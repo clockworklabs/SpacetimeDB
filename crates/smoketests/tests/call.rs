@@ -139,9 +139,7 @@ pub struct Person {
 /// Check calling into a database with no reducers/procedures raises error
 #[test]
 fn test_call_empty_errors() {
-    let test = Smoketest::builder()
-        .module_code(CALL_EMPTY_MODULE_CODE)
-        .build();
+    let test = Smoketest::builder().module_code(CALL_EMPTY_MODULE_CODE).build();
 
     let identity = test.database_identity.as_ref().unwrap();
 

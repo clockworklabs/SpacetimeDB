@@ -162,8 +162,7 @@ log = "0.4"
 "#,
             bindings_path_str, features_str, self.extra_deps
         );
-        fs::write(project_dir.path().join("Cargo.toml"), cargo_toml)
-            .expect("Failed to write Cargo.toml");
+        fs::write(project_dir.path().join("Cargo.toml"), cargo_toml).expect("Failed to write Cargo.toml");
 
         // Copy rust-toolchain.toml
         let toolchain_src = workspace_root.join("rust-toolchain.toml");
@@ -208,7 +207,6 @@ impl Smoketest {
         SmoketestBuilder::new()
     }
 
-
     /// Runs a spacetime CLI command with the configured server.
     ///
     /// Returns the command output. The command is run but not yet asserted.
@@ -220,13 +218,11 @@ impl Smoketest {
 
         // Insert --server after the subcommand
         if let Some((subcommand, rest)) = args.split_first() {
-            cmd.arg(subcommand)
-                .arg("--server")
-                .arg(&self.server_url)
-                .args(rest);
+            cmd.arg(subcommand).arg("--server").arg(&self.server_url).args(rest);
         }
 
-        let output = cmd.current_dir(self.project_dir.path())
+        let output = cmd
+            .current_dir(self.project_dir.path())
             .output()
             .expect("Failed to execute spacetime command");
 
@@ -279,8 +275,7 @@ impl Smoketest {
 
     /// Writes new module code to the project.
     pub fn write_module_code(&self, code: &str) -> Result<()> {
-        fs::write(self.project_dir.path().join("src/lib.rs"), code)
-            .context("Failed to write module code")?;
+        fs::write(self.project_dir.path().join("src/lib.rs"), code).context("Failed to write module code")?;
         Ok(())
     }
 
@@ -358,7 +353,10 @@ impl Smoketest {
         }
 
         let output = self.spacetime(&args)?;
-        eprintln!("[TIMING] spacetime publish (after build): {:?}", publish_start.elapsed());
+        eprintln!(
+            "[TIMING] spacetime publish (after build): {:?}",
+            publish_start.elapsed()
+        );
         eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
 
         // Parse the identity from output like "identity: abc123..."
@@ -376,10 +374,7 @@ impl Smoketest {
     ///
     /// Arguments are passed directly to the CLI as strings.
     pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published")?;
+        let identity = self.database_identity.as_ref().context("No database published")?;
 
         let mut cmd_args = vec!["call", "--", identity.as_str(), name];
         cmd_args.extend(args);
@@ -389,10 +384,7 @@ impl Smoketest {
 
     /// Calls a reducer/procedure and returns the full output including stderr.
     pub fn call_output(&self, name: &str, args: &[&str]) -> Output {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .expect("No database published");
+        let identity = self.database_identity.as_ref().expect("No database published");
 
         let mut cmd_args = vec!["call", "--", identity.as_str(), name];
         cmd_args.extend(args);
@@ -402,12 +394,16 @@ impl Smoketest {
 
     /// Executes a SQL query against the database.
     pub fn sql(&self, query: &str) -> Result<String> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published")?;
+        let identity = self.database_identity.as_ref().context("No database published")?;
 
         self.spacetime(&["sql", identity.as_str(), query])
+    }
+
+    /// Executes a SQL query with the --confirmed flag.
+    pub fn sql_confirmed(&self, query: &str) -> Result<String> {
+        let identity = self.database_identity.as_ref().context("No database published")?;
+
+        self.spacetime(&["sql", "--confirmed", identity.as_str(), query])
     }
 
     /// Asserts that a SQL query produces the expected output.
@@ -437,10 +433,7 @@ impl Smoketest {
 
     /// Fetches the last N log records as JSON values.
     pub fn log_records(&self, n: usize) -> Result<Vec<serde_json::Value>> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published")?;
+        let identity = self.database_identity.as_ref().context("No database published")?;
 
         let output = self.spacetime(&["logs", "--format=json", "-n", &n.to_string(), "--", identity])?;
 
@@ -456,15 +449,30 @@ impl Smoketest {
     /// Returns the updates as JSON values.
     /// For tests that need to perform actions while subscribed, use `subscribe_background` instead.
     pub fn subscribe(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
+        self.subscribe_opts(queries, n, false)
+    }
+
+    /// Starts a subscription with --confirmed flag and waits for N updates.
+    pub fn subscribe_confirmed(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
+        self.subscribe_opts(queries, n, true)
+    }
+
+    /// Internal helper for subscribe with options.
+    fn subscribe_opts(&self, queries: &[&str], n: usize, confirmed: bool) -> Result<Vec<serde_json::Value>> {
         let start = Instant::now();
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published")?;
+        let identity = self.database_identity.as_ref().context("No database published")?;
 
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
-        cmd.args(["subscribe", "--server", &self.server_url, identity, "-t", "600", "-n", &n.to_string(), "--print-initial-update", "--"])
+        let mut args = vec!["subscribe", "--server", &self.server_url, identity, "-t", "30", "-n"];
+        let n_str = n.to_string();
+        args.push(&n_str);
+        args.push("--print-initial-update");
+        if confirmed {
+            args.push("--confirmed");
+        }
+        args.push("--");
+        cmd.args(&args)
             .args(queries)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -473,10 +481,7 @@ impl Smoketest {
         eprintln!("[TIMING] subscribe (n={}): {:?}", n, start.elapsed());
 
         if !output.status.success() {
-            bail!(
-                "subscribe failed:\nstderr: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("subscribe failed:\nstderr: {}", String::from_utf8_lossy(&output.stderr));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -492,6 +497,18 @@ impl Smoketest {
     /// This matches Python's subscribe semantics - start subscription first,
     /// perform actions, then call the handle to collect results.
     pub fn subscribe_background(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
+        self.subscribe_background_opts(queries, n, false)
+    }
+
+    /// Starts a subscription in the background with --confirmed flag.
+    pub fn subscribe_background_confirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
+        self.subscribe_background_opts(queries, n, true)
+    }
+
+    /// Internal helper for background subscribe with options.
+    fn subscribe_background_opts(&self, queries: &[&str], n: usize, confirmed: bool) -> Result<SubscriptionHandle> {
+        use std::io::{BufRead, BufReader};
+
         let identity = self
             .database_identity
             .as_ref()
@@ -500,16 +517,43 @@ impl Smoketest {
 
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
-        // Note: Don't use --print-initial-update here since we want to count only
-        // the actual updates triggered by subsequent operations
-        cmd.args(["subscribe", "--server", &self.server_url, &identity, "-t", "30", "-n", &n.to_string(), "--"])
+        // Use --print-initial-update so we know when subscription is established
+        let mut args = vec![
+            "subscribe".to_string(),
+            "--server".to_string(),
+            self.server_url.clone(),
+            identity,
+            "-t".to_string(),
+            "30".to_string(),
+            "-n".to_string(),
+            n.to_string(),
+            "--print-initial-update".to_string(),
+        ];
+        if confirmed {
+            args.push("--confirmed".to_string());
+        }
+        args.push("--".to_string());
+        cmd.args(&args)
             .args(queries)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let child = cmd.spawn().context("Failed to spawn subscribe command")?;
+        let mut child = cmd.spawn().context("Failed to spawn subscribe command")?;
+        let stdout = child.stdout.take().context("No stdout from subscribe")?;
+        let stderr = child.stderr.take().context("No stderr from subscribe")?;
+        let mut reader = BufReader::new(stdout);
+
+        // Wait for initial update line - this blocks until subscription is established
+        let mut init_line = String::new();
+        reader
+            .read_line(&mut init_line)
+            .context("Failed to read initial update from subscribe")?;
+        eprintln!("[SUBSCRIBE] initial update received: {}", init_line.trim());
+
         Ok(SubscriptionHandle {
             child,
+            reader,
+            stderr,
             n,
             start: Instant::now(),
         })
@@ -519,38 +563,49 @@ impl Smoketest {
 /// Handle for a background subscription.
 pub struct SubscriptionHandle {
     child: std::process::Child,
+    reader: std::io::BufReader<std::process::ChildStdout>,
+    stderr: std::process::ChildStderr,
     n: usize,
     start: Instant,
 }
 
 impl SubscriptionHandle {
     /// Wait for the subscription to complete and return the updates.
-    pub fn collect(self) -> Result<Vec<serde_json::Value>> {
-        let output = self.child.wait_with_output().context("Failed to wait for subscribe command")?;
-        eprintln!("[TIMING] subscribe_background (n={}): {:?}", self.n, self.start.elapsed());
+    pub fn collect(mut self) -> Result<Vec<serde_json::Value>> {
+        use std::io::{BufRead, Read};
 
-        if !output.status.success() {
-            bail!(
-                "subscribe failed:\nstderr: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+        // Read remaining lines from stdout
+        let mut updates = Vec::new();
+        for line in self.reader.by_ref().lines() {
+            let line = line.context("Failed to read line from subscribe")?;
+            if !line.trim().is_empty() {
+                let value: serde_json::Value =
+                    serde_json::from_str(&line).context("Failed to parse subscription update")?;
+                updates.push(value);
+            }
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        stdout
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(|line| serde_json::from_str(line).context("Failed to parse subscription update"))
-            .collect()
+        // Wait for child to complete
+        let status = self.child.wait().context("Failed to wait for subscribe")?;
+        eprintln!(
+            "[TIMING] subscribe_background (n={}): {:?}",
+            self.n,
+            self.start.elapsed()
+        );
+
+        if !status.success() {
+            let mut stderr_buf = String::new();
+            self.stderr.read_to_string(&mut stderr_buf).ok();
+            bail!("subscribe failed:\nstderr: {}", stderr_buf);
+        }
+
+        Ok(updates)
     }
 }
 
 /// Normalizes whitespace by trimming trailing whitespace from each line.
 fn normalize_whitespace(s: &str) -> String {
-    s.lines()
-        .map(|line| line.trim_end())
-        .collect::<Vec<_>>()
-        .join("\n")
+    s.lines().map(|line| line.trim_end()).collect::<Vec<_>>().join("\n")
 }
 
 #[cfg(test)]

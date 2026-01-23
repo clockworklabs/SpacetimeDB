@@ -130,9 +130,7 @@ pub fn test(ctx: &ReducerContext) {
 /// This test is designed to test the format of the output of sql queries
 #[test]
 fn test_sql_format() {
-    let test = Smoketest::builder()
-        .module_code(SQL_FORMAT_MODULE_CODE)
-        .build();
+    let test = Smoketest::builder().module_code(SQL_FORMAT_MODULE_CODE).build();
 
     test.call("test", &[]).unwrap();
 

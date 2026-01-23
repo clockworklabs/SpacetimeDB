@@ -54,10 +54,7 @@ const JOIN_QUERY: &str = "select t1.* from t1 join t2 on t1.id = t2.id where t2.
 /// and the unindexed versions should reject subscriptions.
 #[test]
 fn test_add_then_remove_index() {
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let name = format!("test-db-{}", std::process::id());
 
@@ -65,10 +62,7 @@ fn test_add_then_remove_index() {
     // There are no indices, resulting in an unsupported unindexed join.
     test.publish_module_named(&name, false).unwrap();
     let result = test.subscribe(&[JOIN_QUERY], 0);
-    assert!(
-        result.is_err(),
-        "Expected subscription to fail without indices"
-    );
+    assert!(result.is_err(), "Expected subscription to fail without indices");
 
     // Publish the indexed version.
     // Now we have indices, so the query should be accepted.
@@ -91,8 +85,5 @@ fn test_add_then_remove_index() {
     test.write_module_code(MODULE_CODE).unwrap();
     test.publish_module_named(&name, false).unwrap();
     let result = test.subscribe(&[JOIN_QUERY], 0);
-    assert!(
-        result.is_err(),
-        "Expected subscription to fail after removing indices"
-    );
+    assert!(result.is_err(), "Expected subscription to fail after removing indices");
 }

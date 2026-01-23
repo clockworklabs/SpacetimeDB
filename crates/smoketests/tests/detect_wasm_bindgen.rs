@@ -37,10 +37,7 @@ fn test_detect_wasm_bindgen() {
         .build();
 
     let output = test.spacetime_build();
-    assert!(
-        !output.status.success(),
-        "Expected build to fail with wasm_bindgen"
-    );
+    assert!(!output.status.success(), "Expected build to fail with wasm_bindgen");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -60,10 +57,7 @@ fn test_detect_getrandom() {
         .build();
 
     let output = test.spacetime_build();
-    assert!(
-        !output.status.success(),
-        "Expected build to fail with getrandom"
-    );
+    assert!(!output.status.success(), "Expected build to fail with getrandom");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(

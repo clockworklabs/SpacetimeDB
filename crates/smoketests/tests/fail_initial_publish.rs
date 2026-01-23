@@ -43,10 +43,7 @@ fn test_fail_initial_publish() {
 
     // First publish should fail due to broken module
     let result = test.publish_module_named(&name, false);
-    assert!(
-        result.is_err(),
-        "Expected publish to fail with broken module"
-    );
+    assert!(result.is_err(), "Expected publish to fail with broken module");
 
     // Describe should fail because database doesn't exist
     let describe_output = test.spacetime_cmd(&["describe", "--json", &name]);
@@ -78,10 +75,7 @@ fn test_fail_initial_publish() {
     // with the previous version of the module code.
     test.write_module_code(MODULE_CODE_BROKEN).unwrap();
     let result = test.publish_module_named(&name, false);
-    assert!(
-        result.is_err(),
-        "Expected publish to fail with broken module"
-    );
+    assert!(result.is_err(), "Expected publish to fail with broken module");
 
     // Database should still exist with the fixed code
     let describe_output = test.spacetime(&["describe", "--json", &name]).unwrap();

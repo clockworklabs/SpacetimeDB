@@ -65,10 +65,7 @@ pub fn are_we_updated_yet(ctx: &ReducerContext) {
 /// Test publishing a module without the --delete-data option
 #[test]
 fn test_module_update() {
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let name = format!("test-db-{}", std::process::id());
 

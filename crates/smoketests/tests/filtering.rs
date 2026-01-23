@@ -284,8 +284,10 @@ fn test_filtering() {
     );
 
     // Add some nonunique people.
-    test.call("insert_nonunique_person", &["23", r#""Alice""#, "true"]).unwrap();
-    test.call("insert_nonunique_person", &["42", r#""Bob""#, "true"]).unwrap();
+    test.call("insert_nonunique_person", &["23", r#""Alice""#, "true"])
+        .unwrap();
+    test.call("insert_nonunique_person", &["42", r#""Bob""#, "true"])
+        .unwrap();
 
     // Find a nonunique person who is there.
     test.call("find_nonunique_person", &["23"]).unwrap();
@@ -320,7 +322,8 @@ fn test_filtering() {
     );
 
     // Insert a non-human, then find humans, then find non-humans
-    test.call("insert_nonunique_person", &["64", r#""Jibbitty""#, "false"]).unwrap();
+    test.call("insert_nonunique_person", &["64", r#""Jibbitty""#, "false"])
+        .unwrap();
     test.call("find_nonunique_humans", &[]).unwrap();
     let logs = test.logs(4).unwrap();
     assert!(
@@ -342,7 +345,8 @@ fn test_filtering() {
     );
 
     // Add another person with the same id, and find them both.
-    test.call("insert_nonunique_person", &["23", r#""Claire""#, "true"]).unwrap();
+    test.call("insert_nonunique_person", &["23", r#""Claire""#, "true"])
+        .unwrap();
     test.call("find_nonunique_person", &["23"]).unwrap();
     let logs = test.logs(4).unwrap();
     assert!(
@@ -390,10 +394,14 @@ fn test_filtering() {
     );
 
     // As above, but for non-unique indices: check for consistency between index and DB
-    test.call("insert_indexed_person", &["7", r#""James""#, r#""Bond""#]).unwrap();
-    test.call("insert_indexed_person", &["79", r#""Gold""#, r#""Bond""#]).unwrap();
-    test.call("insert_indexed_person", &["1", r#""Hydrogen""#, r#""Bond""#]).unwrap();
-    test.call("insert_indexed_person", &["100", r#""Whiskey""#, r#""Bond""#]).unwrap();
+    test.call("insert_indexed_person", &["7", r#""James""#, r#""Bond""#])
+        .unwrap();
+    test.call("insert_indexed_person", &["79", r#""Gold""#, r#""Bond""#])
+        .unwrap();
+    test.call("insert_indexed_person", &["1", r#""Hydrogen""#, r#""Bond""#])
+        .unwrap();
+    test.call("insert_indexed_person", &["100", r#""Whiskey""#, r#""Bond""#])
+        .unwrap();
     test.call("delete_indexed_person", &["100"]).unwrap();
     test.call("find_indexed_people", &[r#""Bond""#]).unwrap();
     let logs = test.logs(10).unwrap();
@@ -408,12 +416,15 @@ fn test_filtering() {
         logs
     );
     assert!(
-        logs.iter().any(|msg| msg.contains("INDEXED FOUND: id 1: Bond, Hydrogen")),
+        logs.iter()
+            .any(|msg| msg.contains("INDEXED FOUND: id 1: Bond, Hydrogen")),
         "Expected 'INDEXED FOUND: id 1: Bond, Hydrogen' in logs, got: {:?}",
         logs
     );
     assert!(
-        !logs.iter().any(|msg| msg.contains("INDEXED FOUND: id 100: Bond, Whiskey")),
+        !logs
+            .iter()
+            .any(|msg| msg.contains("INDEXED FOUND: id 100: Bond, Whiskey")),
         "Expected no 'INDEXED FOUND: id 100: Bond, Whiskey' in logs, got: {:?}",
         logs
     );
@@ -430,12 +441,15 @@ fn test_filtering() {
         logs
     );
     assert!(
-        logs.iter().any(|msg| msg.contains("INDEXED FOUND: id 1: Bond, Hydrogen")),
+        logs.iter()
+            .any(|msg| msg.contains("INDEXED FOUND: id 1: Bond, Hydrogen")),
         "Expected 'INDEXED FOUND: id 1: Bond, Hydrogen' in logs, got: {:?}",
         logs
     );
     assert!(
-        !logs.iter().any(|msg| msg.contains("INDEXED FOUND: id 100: Bond, Whiskey")),
+        !logs
+            .iter()
+            .any(|msg| msg.contains("INDEXED FOUND: id 100: Bond, Whiskey")),
         "Expected no 'INDEXED FOUND: id 100: Bond, Whiskey' in logs, got: {:?}",
         logs
     );
@@ -453,10 +467,12 @@ fn test_filtering() {
     // Inserting into a table with unique constraints fails
     // when the second row has the same value in the constrained columns as the first row.
     // In this case, the table has `#[unique] id` and `#[unique] nick` but not `#[unique] name`.
-    test.call("insert_person_twice", &["23", r#""Alice""#, r#""al""#]).unwrap();
+    test.call("insert_person_twice", &["23", r#""Alice""#, r#""al""#])
+        .unwrap();
     let logs = test.logs(2).unwrap();
     assert!(
-        logs.iter().any(|msg| msg.contains("UNIQUE CONSTRAINT VIOLATION ERROR: id = 23, nick = al")),
+        logs.iter()
+            .any(|msg| msg.contains("UNIQUE CONSTRAINT VIOLATION ERROR: id = 23, nick = al")),
         "Expected 'UNIQUE CONSTRAINT VIOLATION ERROR: id = 23, nick = al' in logs, got: {:?}",
         logs
     );

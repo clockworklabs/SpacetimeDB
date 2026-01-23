@@ -47,9 +47,7 @@ fn reducer(_ctx: &ReducerContext, args: ScheduledReducerArgs) {
 /// Ensure cancelling a reducer works
 #[test]
 fn test_cancel_reducer() {
-    let test = Smoketest::builder()
-        .module_code(CANCEL_REDUCER_MODULE_CODE)
-        .build();
+    let test = Smoketest::builder().module_code(CANCEL_REDUCER_MODULE_CODE).build();
 
     // Wait for any scheduled reducers to potentially run
     thread::sleep(Duration::from_secs(2));
@@ -132,7 +130,8 @@ fn test_scheduled_table_subscription_repeated_reducer() {
     assert!(
         invoked_count > 2,
         "Expected repeated reducer to run more than twice, but it ran {} times. Logs: {:?}",
-        invoked_count, logs
+        invoked_count,
+        logs
     );
 }
 
@@ -158,9 +157,7 @@ fn do_insert(ctx: &ReducerContext, x: String) {
 /// Check that volatile_nonatomic_schedule_immediate works
 #[test]
 fn test_volatile_nonatomic_schedule_immediate() {
-    let test = Smoketest::builder()
-        .module_code(VOLATILE_NONATOMIC_MODULE_CODE)
-        .build();
+    let test = Smoketest::builder().module_code(VOLATILE_NONATOMIC_MODULE_CODE).build();
 
     // Insert directly first
     test.call("do_insert", &[r#""yay!""#]).unwrap();

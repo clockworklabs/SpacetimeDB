@@ -34,11 +34,7 @@ pub fn ensure_binaries_built() -> PathBuf {
                 .unwrap_or_else(|_| workspace_root.join("target"));
 
             // Determine profile
-            let profile = if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            };
+            let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
 
             // Build both binaries (standalone needed by CLI's start command)
             for pkg in ["spacetimedb-standalone", "spacetimedb-cli"] {
@@ -74,11 +70,7 @@ pub fn ensure_binaries_built() -> PathBuf {
             };
             let cli_path = target_dir.join(profile).join(cli_name);
 
-            assert!(
-                cli_path.exists(),
-                "CLI binary not found at {}",
-                cli_path.display()
-            );
+            assert!(cli_path.exists(), "CLI binary not found at {}", cli_path.display());
 
             cli_path
         })

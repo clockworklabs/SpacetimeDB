@@ -49,19 +49,14 @@ pub fn init(ctx: &ReducerContext) {
 /// producing update events.
 #[test]
 fn test_delete_database() {
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let name = format!("test-db-{}", std::process::id());
     test.publish_module_named(&name, false).unwrap();
 
     // Start subscription in background to collect updates
     // We request many updates but will stop early when we delete the db
-    let sub = test
-        .subscribe_background(&["SELECT * FROM counter"], 1000)
-        .unwrap();
+    let sub = test.subscribe_background(&["SELECT * FROM counter"], 1000).unwrap();
 
     // Let the scheduled reducer run for a bit
     thread::sleep(Duration::from_secs(2));

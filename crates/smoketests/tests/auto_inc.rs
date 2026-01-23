@@ -141,7 +141,10 @@ fn do_test_autoinc_unique(int_ty: &str) {
 
     // Auto-inc tries to assign id 2, but Robert already has it - should fail
     let result = test.call(&format!("add_new_{}", int_ty), &[r#""Failure""#]);
-    assert!(result.is_err(), "Expected add_new to fail due to unique constraint violation");
+    assert!(
+        result.is_err(),
+        "Expected add_new to fail due to unique constraint violation"
+    );
 
     test.call(&format!("say_hello_{}", int_ty), &[]).unwrap();
 

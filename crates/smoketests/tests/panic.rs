@@ -26,9 +26,7 @@ fn second(_ctx: &ReducerContext) {
 /// Tests to check if a SpacetimeDB module can handle a panic without corrupting
 #[test]
 fn test_panic() {
-    let test = Smoketest::builder()
-        .module_code(PANIC_MODULE_CODE)
-        .build();
+    let test = Smoketest::builder().module_code(PANIC_MODULE_CODE).build();
 
     // First reducer should panic/fail
     let result = test.call("first", &[]);
@@ -57,9 +55,7 @@ fn fail(_ctx: &ReducerContext) -> Result<(), String> {
 /// Tests to ensure an error message returned from a reducer gets printed to logs
 #[test]
 fn test_reducer_error_message() {
-    let test = Smoketest::builder()
-        .module_code(REDUCER_ERROR_MODULE_CODE)
-        .build();
+    let test = Smoketest::builder().module_code(REDUCER_ERROR_MODULE_CODE).build();
 
     // Reducer should fail with error
     let result = test.call("fail", &[]);
