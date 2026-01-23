@@ -41,6 +41,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
+use std::sync::OnceLock;
 use std::time::Instant;
 
 /// Helper macro for timing operations and printing results
@@ -55,13 +56,135 @@ macro_rules! timed {
 }
 
 /// Returns the workspace root directory.
-fn workspace_root() -> PathBuf {
+pub fn workspace_root() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
         .parent()
         .and_then(|p| p.parent())
         .expect("Failed to find workspace root")
         .to_path_buf()
+}
+
+/// Generates a random lowercase alphabetic string suitable for database names.
+pub fn random_string() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    // Convert to base-26 using lowercase letters only (a-z)
+    let mut result = String::with_capacity(20);
+    let mut n = timestamp;
+    while n > 0 || result.len() < 10 {
+        let c = (b'a' + (n % 26) as u8) as char;
+        result.push(c);
+        n /= 26;
+    }
+    result
+}
+
+/// Returns true if dotnet 8.0+ is available on the system.
+pub fn have_dotnet() -> bool {
+    static HAVE_DOTNET: OnceLock<bool> = OnceLock::new();
+    *HAVE_DOTNET.get_or_init(|| {
+        Command::new("dotnet")
+            .args(["--list-sdks"])
+            .output()
+            .map(|output| {
+                if !output.status.success() {
+                    return false;
+                }
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // Check for dotnet 8.0 or higher
+                stdout.lines().any(|line| {
+                    line.starts_with("8.") || line.starts_with("9.") || line.starts_with("10.")
+                })
+            })
+            .unwrap_or(false)
+    })
+}
+
+/// Returns true if psql (PostgreSQL client) is available on the system.
+pub fn have_psql() -> bool {
+    static HAVE_PSQL: OnceLock<bool> = OnceLock::new();
+    *HAVE_PSQL.get_or_init(|| {
+        Command::new("psql")
+            .args(["--version"])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Returns true if pnpm is available on the system.
+pub fn have_pnpm() -> bool {
+    static HAVE_PNPM: OnceLock<bool> = OnceLock::new();
+    *HAVE_PNPM.get_or_init(|| {
+        Command::new("pnpm")
+            .args(["--version"])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Parse code blocks from quickstart markdown documentation.
+/// Extracts code blocks with the specified language tag.
+///
+/// - `language`: "rust", "csharp", or "typescript"
+/// - `module_name`: The name to replace "quickstart-chat" with
+/// - `server`: If true, look for server code blocks (e.g. "rust server"), else client blocks
+pub fn parse_quickstart(doc_content: &str, language: &str, module_name: &str, server: bool) -> String {
+    // Normalize line endings to Unix style (LF) for consistent regex matching
+    let doc_content = doc_content.replace("\r\n", "\n");
+
+    // Determine the codeblock language tag to search for
+    let codeblock_lang = if server {
+        if language == "typescript" {
+            "ts server".to_string()
+        } else {
+            format!("{} server", language)
+        }
+    } else if language == "typescript" {
+        "ts".to_string()
+    } else {
+        language.to_string()
+    };
+
+    // Extract code blocks with the specified language
+    let pattern = format!(r"```{}\n([\s\S]*?)\n```", regex::escape(&codeblock_lang));
+    let re = Regex::new(&pattern).unwrap();
+    let mut blocks: Vec<String> = re
+        .captures_iter(&doc_content)
+        .map(|cap| cap.get(1).unwrap().as_str().to_string())
+        .collect();
+
+    let mut end = String::new();
+
+    // C# specific fixups
+    if language == "csharp" {
+        let mut found_on_connected = false;
+        let mut filtered_blocks = Vec::new();
+
+        for mut block in blocks {
+            // The doc first creates an empty class Module, so we need to fixup the closing brace
+            if block.contains("partial class Module") {
+                block = block.replace("}", "");
+                end = "\n}".to_string();
+            }
+            // Remove the first `OnConnected` block, which body is later updated
+            if block.contains("OnConnected(DbConnection conn") && !found_on_connected {
+                found_on_connected = true;
+                continue;
+            }
+            filtered_blocks.push(block);
+        }
+        blocks = filtered_blocks;
+    }
+
+    // Join blocks and replace module name
+    let result = blocks.join("\n").replace("quickstart-chat", module_name);
+    result + &end
 }
 
 /// A smoketest instance that manages a SpacetimeDB server and module project.
@@ -78,12 +201,38 @@ pub struct Smoketest {
     pub config_path: std::path::PathBuf,
 }
 
+/// Response from an HTTP API call.
+pub struct ApiResponse {
+    /// HTTP status code.
+    pub status_code: u16,
+    /// Response body.
+    pub body: Vec<u8>,
+}
+
+impl ApiResponse {
+    /// Returns the body as a string.
+    pub fn text(&self) -> Result<String> {
+        String::from_utf8(self.body.clone()).context("Response body is not valid UTF-8")
+    }
+
+    /// Parses the body as JSON.
+    pub fn json(&self) -> Result<serde_json::Value> {
+        serde_json::from_slice(&self.body).context("Failed to parse response as JSON")
+    }
+
+    /// Returns true if the status code indicates success (2xx).
+    pub fn is_success(&self) -> bool {
+        (200..300).contains(&self.status_code)
+    }
+}
+
 /// Builder for creating `Smoketest` instances.
 pub struct SmoketestBuilder {
     module_code: Option<String>,
     bindings_features: Vec<String>,
     extra_deps: String,
     autopublish: bool,
+    pg_port: Option<u16>,
 }
 
 impl Default for SmoketestBuilder {
@@ -100,7 +249,14 @@ impl SmoketestBuilder {
             bindings_features: vec!["unstable".to_string()],
             extra_deps: String::new(),
             autopublish: true,
+            pg_port: None,
         }
+    }
+
+    /// Enables the PostgreSQL wire protocol on the specified port.
+    pub fn pg_port(mut self, port: u16) -> Self {
+        self.pg_port = Some(port);
+        self
     }
 
     /// Sets the module code to compile and publish.
@@ -135,7 +291,10 @@ impl SmoketestBuilder {
     pub fn build(self) -> Smoketest {
         let build_start = Instant::now();
 
-        let guard = timed!("server spawn", SpacetimeDbGuard::spawn_in_temp_data_dir());
+        let guard = timed!(
+            "server spawn",
+            SpacetimeDbGuard::spawn_in_temp_data_dir_with_pg_port(self.pg_port)
+        );
         let project_dir = tempfile::tempdir().expect("Failed to create temp project directory");
 
         let project_setup_start = Instant::now();
@@ -210,6 +369,79 @@ impl Smoketest {
     /// Creates a new builder for configuring a smoketest.
     pub fn builder() -> SmoketestBuilder {
         SmoketestBuilder::new()
+    }
+
+    /// Returns the server host (without protocol), e.g., "127.0.0.1:3000".
+    pub fn server_host(&self) -> &str {
+        self.server_url
+            .strip_prefix("http://")
+            .or_else(|| self.server_url.strip_prefix("https://"))
+            .unwrap_or(&self.server_url)
+    }
+
+    /// Returns the PostgreSQL wire protocol port, if enabled.
+    pub fn pg_port(&self) -> Option<u16> {
+        self.guard.pg_port
+    }
+
+    /// Reads the authentication token from the config file.
+    pub fn read_token(&self) -> Result<String> {
+        let config_content = fs::read_to_string(&self.config_path)
+            .context("Failed to read config file")?;
+
+        // Parse as TOML and extract spacetimedb_token
+        let config: toml::Value = config_content
+            .parse()
+            .context("Failed to parse config as TOML")?;
+
+        config
+            .get("spacetimedb_token")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .context("No spacetimedb_token found in config")
+    }
+
+    /// Runs psql command against the PostgreSQL wire protocol server.
+    ///
+    /// Returns the output on success, or an error with stderr on failure.
+    pub fn psql(&self, database: &str, sql: &str) -> Result<String> {
+        let pg_port = self.pg_port().context("PostgreSQL wire protocol not enabled")?;
+        let token = self.read_token()?;
+
+        // Extract just the host part (without port)
+        let host = self.server_host().split(':').next().unwrap_or("127.0.0.1");
+
+        let output = Command::new("psql")
+            .args([
+                "-h", host,
+                "-p", &pg_port.to_string(),
+                "-U", "postgres",
+                "-d", database,
+                "--quiet",
+                "-c", sql,
+            ])
+            .env("PGPASSWORD", &token)
+            .output()
+            .context("Failed to run psql")?;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.is_empty() && !output.status.success() {
+            bail!("{}", stderr.trim());
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Asserts that psql output matches the expected value.
+    pub fn assert_psql(&self, database: &str, sql: &str, expected: &str) {
+        let output = self.psql(database, sql).expect("psql failed");
+        let output_normalized: String = output.lines().map(|l| l.trim_end()).collect::<Vec<_>>().join("\n");
+        let expected_normalized: String = expected.lines().map(|l| l.trim_end()).collect::<Vec<_>>().join("\n");
+        assert_eq!(
+            output_normalized, expected_normalized,
+            "psql output mismatch for query: {}\n\nExpected:\n{}\n\nActual:\n{}",
+            sql, expected_normalized, output_normalized
+        );
     }
 
     /// Runs a spacetime CLI command with the configured server.
@@ -510,6 +742,75 @@ impl Smoketest {
         }
 
         Ok(())
+    }
+
+    /// Makes an HTTP API call to the server.
+    ///
+    /// Returns the response body as bytes, or an error with the HTTP status code.
+    pub fn api_call(&self, method: &str, path: &str) -> Result<ApiResponse> {
+        self.api_call_with_body(method, path, None)
+    }
+
+    /// Makes an HTTP API call with an optional request body.
+    pub fn api_call_with_body(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+    ) -> Result<ApiResponse> {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+
+        // Parse server URL to get host and port
+        let url = &self.server_url;
+        let host_port = url
+            .strip_prefix("http://")
+            .or_else(|| url.strip_prefix("https://"))
+            .unwrap_or(url);
+
+        let mut stream = TcpStream::connect(host_port).context("Failed to connect to server")?;
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .ok();
+
+        // Build HTTP request
+        let content_length = body.map(|b| b.len()).unwrap_or(0);
+        let request = format!(
+            "{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            method, path, host_port, content_length
+        );
+
+        stream.write_all(request.as_bytes())?;
+        if let Some(body) = body {
+            stream.write_all(body)?;
+        }
+
+        // Read response
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response)?;
+
+        // Parse HTTP response
+        let response_str = String::from_utf8_lossy(&response);
+        let mut lines = response_str.lines();
+
+        // Parse status line
+        let status_line = lines.next().context("Empty response")?;
+        let status_code: u16 = status_line
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .context("Failed to parse status code")?;
+
+        // Find body (after empty line)
+        let header_end = response_str.find("\r\n\r\n").unwrap_or(response_str.len());
+        let body_start = header_end + 4;
+        let body = if body_start < response.len() {
+            response[body_start..].to_vec()
+        } else {
+            Vec::new()
+        };
+
+        Ok(ApiResponse { status_code, body })
     }
 
     /// Starts a subscription and waits for N updates (synchronous).
