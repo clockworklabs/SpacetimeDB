@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneConnectionId`.
+    fn one_connection_id(&self) -> __sdk::__query_builder::Table<OneConnectionId>;
+}
+
+impl one_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_connection_id(&self) -> __sdk::__query_builder::Table<OneConnectionId> {
+        __sdk::__query_builder::Table::new("one_connection_id")
+    }
+}

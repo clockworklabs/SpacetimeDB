@@ -1,4 +1,4 @@
-use crate::query_builder::TableNameStr;
+use crate::TableNameStr;
 
 use super::{
     expr::{format_expr, BoolExpr},

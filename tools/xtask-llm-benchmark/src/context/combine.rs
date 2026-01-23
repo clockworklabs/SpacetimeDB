@@ -1,11 +1,33 @@
+use crate::context::constants::docs_dir;
 use crate::context::paths::resolve_mode_paths;
 use crate::eval::lang::Lang;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+
+/// Get the base directory for a given mode (used for stripping prefixes to get relative paths).
+fn base_for_mode(mode: &str) -> Result<PathBuf> {
+    Ok(match mode {
+        "docs" | "llms.md" | "cursor_rules" => docs_dir(),
+        // rustdoc_json is handled separately in build_context_from_rustdoc_json
+        _ => bail!("unknown mode `{mode}` for base_for_mode"),
+    })
+}
+
+/// Produce a consistent, forward-slash relative path for inclusion in context.
+/// This strips the base directory prefix so paths are stable across different machines/environments.
+fn stable_rel_path(base: &Path, p: &Path) -> String {
+    let rel = p.strip_prefix(base).unwrap_or(p);
+    let s = rel.to_string_lossy();
+    if cfg!(windows) {
+        s.replace('\\', "/")
+    } else {
+        s.into_owned()
+    }
+}
 
 /// Build context for the given mode, optionally filtering tabs for a specific language.
 pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
@@ -13,10 +35,11 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
         return build_context_from_rustdoc_json();
     }
 
+    let base = base_for_mode(mode)?;
     let files = resolve_mode_paths(mode)?;
     let mut out = String::with_capacity(1024 * 1024);
     for p in files {
-        let rel = rel_display(&p);
+        let rel = stable_rel_path(&base, &p);
         let contents = fs::read_to_string(&p).with_context(|| format!("read {}", rel))?;
 
         // Filter tabs if a language is specified

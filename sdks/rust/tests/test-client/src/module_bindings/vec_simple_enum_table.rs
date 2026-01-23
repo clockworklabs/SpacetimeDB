@@ -94,3 +94,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecSimpleEnum`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_simple_enumQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecSimpleEnum`.
+    fn vec_simple_enum(&self) -> __sdk::__query_builder::Table<VecSimpleEnum>;
+}
+
+impl vec_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_simple_enum(&self) -> __sdk::__query_builder::Table<VecSimpleEnum> {
+        __sdk::__query_builder::Table::new("vec_simple_enum")
+    }
+}
