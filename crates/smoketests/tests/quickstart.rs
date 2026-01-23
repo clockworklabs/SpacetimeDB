@@ -1,5 +1,4 @@
 #![allow(clippy::disallowed_macros)]
-#![allow(clippy::type_complexity)]
 //! Tests translated from smoketests/tests/quickstart.py
 //!
 //! This test validates that the quickstart documentation is correct by extracting
@@ -163,6 +162,7 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
 }
 
 /// Parse an existing nuget.config file (simplified).
+#[allow(clippy::type_complexity)]
 fn parse_nuget_config(content: &str) -> (Vec<(String, PathBuf)>, Vec<(String, String)>) {
     let mut sources = Vec::new();
     let mut mappings = Vec::new();
