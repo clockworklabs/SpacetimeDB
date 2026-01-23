@@ -284,6 +284,22 @@ impl Smoketest {
         Ok(())
     }
 
+    /// Runs `spacetime build` and returns the raw output.
+    ///
+    /// Use this when you need to check for build failures (e.g., wasm_bindgen detection).
+    pub fn spacetime_build(&self) -> Output {
+        let start = Instant::now();
+        let project_path = self.project_dir.path().to_str().unwrap();
+        let cli_path = ensure_binaries_built();
+        let output = Command::new(&cli_path)
+            .args(["build", "--project-path", project_path])
+            .current_dir(self.project_dir.path())
+            .output()
+            .expect("Failed to execute spacetime build");
+        eprintln!("[TIMING] spacetime build: {:?}", start.elapsed());
+        output
+    }
+
     /// Publishes the module and stores the database identity.
     pub fn publish_module(&mut self) -> Result<String> {
         self.publish_module_opts(None, false)
