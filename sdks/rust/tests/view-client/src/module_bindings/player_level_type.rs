@@ -14,3 +14,39 @@ pub struct PlayerLevel {
 impl __sdk::InModule for PlayerLevel {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PlayerLevel`.
+///
+/// Provides typed access to columns for query building.
+pub struct PlayerLevelCols {
+    pub entity_id: __sdk::__query_builder::Col<PlayerLevel, u64>,
+    pub level: __sdk::__query_builder::Col<PlayerLevel, u64>,
+}
+
+impl __sdk::__query_builder::HasCols for PlayerLevel {
+    type Cols = PlayerLevelCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PlayerLevelCols {
+            entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            level: __sdk::__query_builder::Col::new(table_name, "level"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PlayerLevel`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PlayerLevelIxCols {
+    pub entity_id: __sdk::__query_builder::IxCol<PlayerLevel, u64>,
+    pub level: __sdk::__query_builder::IxCol<PlayerLevel, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PlayerLevel {
+    type IxCols = PlayerLevelIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PlayerLevelIxCols {
+            entity_id: __sdk::__query_builder::IxCol::new(table_name, "entity_id"),
+            level: __sdk::__query_builder::IxCol::new(table_name, "level"),
+        }
+    }
+}

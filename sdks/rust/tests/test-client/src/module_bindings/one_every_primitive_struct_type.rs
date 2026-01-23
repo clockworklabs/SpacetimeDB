@@ -15,3 +15,31 @@ pub struct OneEveryPrimitiveStruct {
 impl __sdk::InModule for OneEveryPrimitiveStruct {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OneEveryPrimitiveStruct`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneEveryPrimitiveStructCols {
+    pub s: __sdk::__query_builder::Col<OneEveryPrimitiveStruct, EveryPrimitiveStruct>,
+}
+
+impl __sdk::__query_builder::HasCols for OneEveryPrimitiveStruct {
+    type Cols = OneEveryPrimitiveStructCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneEveryPrimitiveStructCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneEveryPrimitiveStruct`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneEveryPrimitiveStructIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OneEveryPrimitiveStruct {
+    type IxCols = OneEveryPrimitiveStructIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneEveryPrimitiveStructIxCols {}
+    }
+}

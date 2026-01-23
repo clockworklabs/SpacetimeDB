@@ -7,7 +7,7 @@ import {
   Identity,
   ScheduleAt,
   Uuid,
-} from 'spacetimedb';
+} from '../src';
 
 describe('it correctly serializes and deserializes algebraic values', () => {
   test('when it serializes and deserializes with a product type', () => {
