@@ -219,15 +219,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn infer_python() -> String {
-    let py3_available = cmd!("python3", "--version").run().is_ok();
-    if py3_available {
-        "python3".to_string()
-    } else {
-        "python".to_string()
-    }
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -402,7 +393,7 @@ fn main() -> Result<()> {
                 "cargo",
                 ["test", "-p", "spacetimedb-smoketests"]
                     .into_iter()
-                    .chain(smoketest_args.clone()),
+                    .chain(smoketest_args.iter().map(|s| s.as_str()).clone()),
             )
             .run()?;
         }
