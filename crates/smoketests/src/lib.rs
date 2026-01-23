@@ -457,6 +457,33 @@ impl Smoketest {
             .collect()
     }
 
+    /// Creates a new identity by logging out and logging back in with a server-issued identity.
+    ///
+    /// This is useful for tests that need to test with multiple identities.
+    pub fn new_identity(&self) -> Result<()> {
+        // Logout first
+        let cli_path = ensure_binaries_built();
+        Command::new(&cli_path)
+            .args(["logout", "--server", &self.server_url])
+            .output()
+            .context("Failed to logout")?;
+
+        // Login with server-issued identity
+        let output = Command::new(&cli_path)
+            .args(["login", "--server-issued-login", "--server", &self.server_url])
+            .output()
+            .context("Failed to login with new identity")?;
+
+        if !output.status.success() {
+            bail!(
+                "Failed to create new identity:\nstderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        Ok(())
+    }
+
     /// Starts a subscription and waits for N updates (synchronous).
     ///
     /// Returns the updates as JSON values.
