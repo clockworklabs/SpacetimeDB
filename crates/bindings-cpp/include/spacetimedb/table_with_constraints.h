@@ -158,6 +158,7 @@ concept FilterableValue =
     std::same_as<T, SpacetimeDb::Identity> ||
     std::same_as<T, SpacetimeDb::ConnectionId> ||
     std::same_as<T, SpacetimeDb::Timestamp> ||
+    std::same_as<T, SpacetimeDb::Uuid> ||
     std::same_as<T, SpacetimeDb::I128> ||
     std::same_as<T, SpacetimeDb::U128> ||
     std::same_as<T, SpacetimeDb::I256> ||

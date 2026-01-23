@@ -293,6 +293,7 @@ declare_tests_with_suffix!(rust, "");
 declare_tests_with_suffix!(typescript, "-ts");
 // TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");
+declare_tests_with_suffix!(cpp, "-cpp");
 
 macro_rules! procedure_tests {
     ($mod_name:ident, $suffix:literal) => {
@@ -359,42 +360,54 @@ macro_rules! procedure_tests {
 
 procedure_tests!(rust_procedures, "");
 procedure_tests!(typescript_procedures, "-ts");
+procedure_tests!(cpp_procedures, "-cpp");
 
-mod view {
-    use spacetimedb_testing::sdk::Test;
+macro_rules! view_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            //! Tests of view functionality, using <./view-client> and <../../../modules/sdk-test-view>.
+            //!
+            //! Views are supported in Rust and C++ module implementations.
 
-    const MODULE: &str = "sdk-test-view";
-    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
+            use spacetimedb_testing::sdk::Test;
 
-    fn make_test(subcommand: &str) -> Test {
-        Test::builder()
-            .with_name(subcommand)
-            .with_module(MODULE)
-            .with_client(CLIENT)
-            .with_language("rust")
-            .with_bindings_dir("src/module_bindings")
-            .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
-            .build()
-    }
+            const MODULE: &str = concat!("sdk-test-view", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
 
-    #[test]
-    fn subscribe_anonymous_view() {
-        make_test("view-anonymous-subscribe").run()
-    }
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
+                    .build()
+            }
 
-    #[test]
-    fn subscribe_non_anonymous_view() {
-        make_test("view-non-anonymous-subscribe").run()
-    }
+            #[test]
+            fn subscribe_anonymous_view() {
+                make_test("view-anonymous-subscribe").run()
+            }
 
-    #[test]
-    fn subscribe_view_non_table_return() {
-        make_test("view-non-table-return").run()
-    }
+            #[test]
+            fn subscribe_non_anonymous_view() {
+                make_test("view-non-anonymous-subscribe").run()
+            }
 
-    #[test]
-    fn subscription_updates_for_view() {
-        make_test("view-subscription-update").run()
-    }
+            #[test]
+            fn subscribe_view_non_table_return() {
+                make_test("view-non-table-return").run()
+            }
+
+            #[test]
+            fn subscription_updates_for_view() {
+                make_test("view-subscription-update").run()
+            }
+        }
+    };
 }
+
+view_tests!(view, "");
+view_tests!(view_cpp, "-cpp");

@@ -90,8 +90,9 @@ struct EveryPrimitiveStruct {
     ConnectionId r;
     Timestamp s;
     TimeDuration t;
+    Uuid u;
 };
-SPACETIMEDB_STRUCT(EveryPrimitiveStruct, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t)
+SPACETIMEDB_STRUCT(EveryPrimitiveStruct, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u)
 
 struct EveryVecStruct {
     std::vector<uint8_t> a;
@@ -114,8 +115,9 @@ struct EveryVecStruct {
     std::vector<ConnectionId> r;
     std::vector<Timestamp> s;
     std::vector<TimeDuration> t;
+    std::vector<Uuid> u;
 };
-SPACETIMEDB_STRUCT(EveryVecStruct, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t)
+SPACETIMEDB_STRUCT(EveryVecStruct, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u)
 
 // =============================================================================
 // SINGLE VALUE TABLES - Matching Rust's OneXXX pattern
@@ -310,6 +312,10 @@ struct VecTimestamp { std::vector<Timestamp> t; };
 SPACETIMEDB_STRUCT(VecTimestamp, t)
 SPACETIMEDB_TABLE(VecTimestamp, vec_timestamp, Public)
 
+struct VecUuid { std::vector<Uuid> u; };
+SPACETIMEDB_STRUCT(VecUuid, u)
+SPACETIMEDB_TABLE(VecUuid, vec_uuid, Public)
+
 struct VecSimpleEnum { std::vector<SimpleEnum> e; };
 SPACETIMEDB_STRUCT(VecSimpleEnum, e)
 SPACETIMEDB_TABLE(VecSimpleEnum, vec_simple_enum, Public)
@@ -345,6 +351,10 @@ SPACETIMEDB_TABLE(OptionI32, option_i32, Public)
 struct OptionString { std::optional<std::string> s; };
 SPACETIMEDB_STRUCT(OptionString, s)
 SPACETIMEDB_TABLE(OptionString, option_string, Public)
+
+struct OptionUuid { std::optional<Uuid> u; };
+SPACETIMEDB_STRUCT(OptionUuid, u)
+SPACETIMEDB_TABLE(OptionUuid, option_uuid, Public)
 
 struct OptionIdentity { std::optional<Identity> i; };
 SPACETIMEDB_STRUCT(OptionIdentity, i)
@@ -471,6 +481,11 @@ SPACETIMEDB_TABLE(UniqueIdentity, unique_identity, Public)
 FIELD_Unique(unique_identity, i);
 
 struct UniqueConnectionId { ConnectionId a; int32_t data; };
+struct UniqueUuid { Uuid u; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueUuid, u, data)
+SPACETIMEDB_TABLE(UniqueUuid, unique_uuid, Public)
+FIELD_Unique(unique_uuid, u);
+
 SPACETIMEDB_STRUCT(UniqueConnectionId, a, data)
 SPACETIMEDB_TABLE(UniqueConnectionId, unique_connection_id, Public)
 FIELD_Unique(unique_connection_id, a);
@@ -959,6 +974,12 @@ SPACETIMEDB_REDUCER(insert_vec_timestamp, ReducerContext ctx, std::vector<Timest
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(insert_vec_uuid, ReducerContext ctx, std::vector<Uuid> u)
+{
+    ctx.db[vec_uuid].insert(VecUuid{u});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_simple_enum, ReducerContext ctx, std::vector<SimpleEnum> e)
 {
     ctx.db[vec_simple_enum].insert(VecSimpleEnum{e});
@@ -1008,6 +1029,12 @@ SPACETIMEDB_REDUCER(insert_option_i32, ReducerContext ctx, std::optional<int32_t
 SPACETIMEDB_REDUCER(insert_option_string, ReducerContext ctx, std::optional<std::string> s)
 {
     ctx.db[option_string].insert(OptionString{s});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_option_uuid, ReducerContext ctx, std::optional<Uuid> u)
+{
+    ctx.db[option_uuid].insert(OptionUuid{u});
     return Ok();
 }
 
@@ -1161,6 +1188,12 @@ SPACETIMEDB_REDUCER(insert_unique_bool, ReducerContext ctx, bool b, int32_t data
 SPACETIMEDB_REDUCER(insert_unique_string, ReducerContext ctx, std::string s, int32_t data)
 {
     ctx.db[unique_string].insert(UniqueString{s, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_uuid, ReducerContext ctx, Uuid u, int32_t data)
+{
+    ctx.db[unique_uuid].insert(UniqueUuid{u, data});
     return Ok();
 }
 
@@ -1533,6 +1566,13 @@ SPACETIMEDB_REDUCER(delete_unique_identity, ReducerContext ctx, Identity i)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_unique_uuid, ReducerContext ctx, Uuid u)
+{
+    // Use optimized field accessor for direct index-based delete
+    ctx.db[unique_uuid_u].delete_by_value(u);
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(delete_unique_connection_id, ReducerContext ctx, ConnectionId a)
 {
     // Use optimized field accessor for direct index-based delete
@@ -1786,6 +1826,13 @@ SPACETIMEDB_REDUCER(update_unique_identity, ReducerContext ctx, Identity i, int3
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(update_unique_uuid, ReducerContext ctx, Uuid u, int32_t data)
+{
+    // Use optimized field accessor for direct index-based update
+    ctx.db[unique_uuid_u].update(UniqueUuid{u, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(update_unique_connection_id, ReducerContext ctx, ConnectionId a, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
@@ -1910,7 +1957,7 @@ SPACETIMEDB_REDUCER(insert_primitives_as_strings, ReducerContext ctx, EveryPrimi
         std::to_string(s.g), std::to_string(s.h), std::to_string(s.i), std::to_string(s.j),
         s.k.to_string(), s.l.to_string(),
         s.m ? "true" : "false", format_float(s.n), format_float(s.o), s.p,
-        s.q.to_string(), s.r.to_string(), s.s.to_string(), s.t.to_string()
+        s.q.to_string(), s.r.to_string(), s.s.to_string(), s.t.to_string(), s.u.to_string()
     };
     ctx.db[vec_string].insert(VecString{string_values});
     return Ok();

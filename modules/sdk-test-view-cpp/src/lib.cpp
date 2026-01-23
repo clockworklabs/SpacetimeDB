@@ -16,6 +16,9 @@ using namespace SpacetimeDb;
 // - Optional and Vec return types
 // - Joins across multiple tables
 // - Filtering and complex queries
+//
+// NOTE: This module has NO INIT function. Test data is created dynamically
+// by the test client via the reducers.
 // =============================================================================
 
 // Table: player
@@ -63,7 +66,8 @@ SPACETIMEDB_STRUCT(PlayerAndLevel, entity_id, identity, level)
 // REDUCERS
 // =============================================================================
 
-SPACETIMEDB_REDUCER(insert_player, ReducerContext ctx, Identity identity, uint64_t level) {
+SPACETIMEDB_REDUCER(insert_player, ReducerContext ctx, Identity identity, uint64_t level)
+{
     // Insert player and get the entity_id
     Player player_result = ctx.db[player].insert(Player{0, identity});
     
@@ -73,29 +77,23 @@ SPACETIMEDB_REDUCER(insert_player, ReducerContext ctx, Identity identity, uint64
     return Ok();
 }
 
-SPACETIMEDB_REDUCER(delete_player, ReducerContext ctx, Identity identity) {
-    // Find player by identity
+SPACETIMEDB_REDUCER(delete_player, ReducerContext ctx, Identity identity)
+{
+    // Find player by identity using index
     auto player_opt = ctx.db[player_identity].find(identity);
-    if (!player_opt.has_value()) {
-        return Ok(); // Player doesn't exist, nothing to delete
+    if (player_opt.has_value()) {
+        uint64_t eid = player_opt->entity_id;
+        
+        // Delete from both tables
+        ctx.db[player_entity_id].delete_by_key(eid);
+        ctx.db[player_level_entity_id].delete_by_value(eid);
     }
-    
-    uint64_t eid = player_opt->entity_id;
-    
-    // Delete from both tables
-    ctx.db[player_entity_id].delete_by_value(eid);
-    ctx.db[player_level_entity_id].delete_by_value(eid);
     
     return Ok();
 }
 
-// Test helper that calls insert_player with the caller's identity
-SPACETIMEDB_REDUCER(test_insert_player, ReducerContext ctx, uint64_t level) {
-    // Call insert_player using ctx.sender as the identity
-    return insert_player(ctx, ctx.sender, level);
-}
-
-SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, int32_t dx, int32_t dy) {
+SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, int32_t dx, int32_t dy)
+{
     // Find or create player
     auto my_player_opt = ctx.db[player_identity].find(ctx.sender);
     Player my_player;
@@ -126,37 +124,6 @@ SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, int32_t dx, int32_t dy) {
         });
     }
     
-    return Ok();
-}
-
-SPACETIMEDB_INIT(init, ReducerContext ctx) {
-    Identity alice = Identity{std::array<uint8_t, 32>{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    Identity bob = Identity{std::array<uint8_t, 32>{2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    Identity charlie = Identity{std::array<uint8_t, 32>{3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    Identity david = Identity{std::array<uint8_t, 32>{4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    
-    // Insert players
-    Player p1 = ctx.db[player].insert(Player{0, alice});
-    Player p2 = ctx.db[player].insert(Player{0, bob});
-    Player p3 = ctx.db[player].insert(Player{0, charlie});
-    Player p4 = ctx.db[player].insert(Player{0, david});
-    
-    // Insert player levels - Alice and Bob are level 0, Charlie is level 1, David is level 2
-    ctx.db[player_level].insert(PlayerLevel{p1.entity_id, 0});
-    ctx.db[player_level].insert(PlayerLevel{p2.entity_id, 0});
-    ctx.db[player_level].insert(PlayerLevel{p3.entity_id, 1});
-    ctx.db[player_level].insert(PlayerLevel{p4.entity_id, 2});
-    
-    // Insert player locations
-    // Alice at (0, 0) - active
-    ctx.db[player_location].insert(PlayerLocation{p1.entity_id, true, 0, 0});
-    // Bob at (2, 3) - active (within 5 units of Alice)
-    ctx.db[player_location].insert(PlayerLocation{p2.entity_id, true, 2, 3});
-    // Charlie at (10, 10) - active (NOT within 5 units of Alice)
-    ctx.db[player_location].insert(PlayerLocation{p3.entity_id, true, 10, 10});
-    // David at (1, 1) - inactive (within 5 units but inactive)
-    ctx.db[player_location].insert(PlayerLocation{p4.entity_id, false, 1, 1});
-
     return Ok();
 }
 
@@ -252,46 +219,3 @@ SPACETIMEDB_VIEW(std::vector<PlayerLocation>, nearby_players, Public, ViewContex
     return results;
 }
 
-// =============================================================================
-// TEST REDUCERS - Call views and log results
-// =============================================================================
-
-SPACETIMEDB_REDUCER(test_my_player, ReducerContext ctx) {
-    auto player_opt = my_player(ViewContext{ctx.sender});
-    if (player_opt.has_value()) {
-        LOG_INFO("my_player found: entity_id=" + std::to_string(player_opt->entity_id));
-    } else {
-        LOG_INFO("my_player returned None");
-    }
-    return Ok();
-}
-
-SPACETIMEDB_REDUCER(test_my_player_and_level, ReducerContext ctx) {
-    auto data_opt = my_player_and_level(ViewContext{ctx.sender});
-    if (data_opt.has_value()) {
-        LOG_INFO("my_player_and_level found: entity_id=" + std::to_string(data_opt->entity_id) + 
-                 " level=" + std::to_string(data_opt->level));
-    } else {
-        LOG_INFO("my_player_and_level returned None");
-    }
-    return Ok();
-}
-
-SPACETIMEDB_REDUCER(test_players_at_level_0, ReducerContext ctx) {
-    auto players = players_at_level_0(AnonymousViewContext{});
-    LOG_INFO("players_at_level_0 found " + std::to_string(players.size()) + " players");
-    for (const auto& p : players) {
-        LOG_INFO("  - entity_id=" + std::to_string(p.entity_id));
-    }
-    return Ok();
-}
-
-SPACETIMEDB_REDUCER(test_nearby_players, ReducerContext ctx) {
-    auto locations = nearby_players(ViewContext{ctx.sender});
-    LOG_INFO("nearby_players found " + std::to_string(locations.size()) + " nearby players");
-    for (const auto& loc : locations) {
-        LOG_INFO("  - entity_id=" + std::to_string(loc.entity_id) + 
-                 " at (" + std::to_string(loc.x) + ", " + std::to_string(loc.y) + ")");
-    }
-    return Ok();
-}
