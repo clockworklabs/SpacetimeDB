@@ -301,8 +301,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             mcc.program_hash,
         );
 
+        let raw_def_version = detect_describe_module_abi(&module)?;
         let func_names = {
-            FuncNames::check_required(|name| module.get_export(name))?;
+            FuncNames::check_required(raw_def_version, |name| module.get_export(name))?;
             let mut func_names = FuncNames::default();
             module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
             func_names.preinits.sort_unstable();
