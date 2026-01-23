@@ -48,7 +48,7 @@ pub fn ensure_binaries_built() -> PathBuf {
                 // CARGO_ENCODED_RUSTFLAGS that differ from a normal build,
                 // causing the child cargo to think it needs to recompile.
                 let mut cmd = Command::new("cargo");
-                cmd.args(&args).current_dir(&workspace_root);
+                cmd.args(&args).current_dir(workspace_root);
                 for (key, _) in env::vars() {
                     if key.starts_with("CARGO") && key != "CARGO_HOME" {
                         cmd.env_remove(&key);
