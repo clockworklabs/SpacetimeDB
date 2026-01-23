@@ -174,7 +174,7 @@ pub struct Player {
 #[reducer]
 fn update_score(ctx: &ReducerContext, new_score: u32) {
     // Get the caller's identity
-    let caller = ctx.sender;
+    let caller = ctx.sender();
     
     // Find and update their player record
     if let Some(mut player) = ctx.db.player().identity().find(caller) {
@@ -290,7 +290,7 @@ pub struct ScheduledTask {
 #[reducer]
 fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
     // Only allow the scheduler (module identity) to call this
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         panic!("This reducer can only be called by the scheduler");
     }
     
