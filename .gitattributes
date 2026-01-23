@@ -1,2 +1,3 @@
 **/module_bindings/** linguist-generated=true eol=lf
 /docs/llms/** linguist-generated=true
+/docs/llms/*-details.json linguist-generated=false
