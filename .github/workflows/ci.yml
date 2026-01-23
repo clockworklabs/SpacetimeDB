@@ -719,6 +719,7 @@ jobs:
       # `cargo build --manifest-path` (which apparently build different dependency trees).
       # However, we've been unable to fix it so... /shrug
       - name: Check v8 outputs
+        shell: bash    
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
           if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
