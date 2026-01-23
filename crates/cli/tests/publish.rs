@@ -10,7 +10,7 @@ fn cli_can_publish_spacetimedb_on_disk() {
     // dir = <workspace_root>/modules/quickstart-chat
     let dir = workspace_dir
         .join("templates")
-        .join("quickstart-chat-rust")
+        .join("chat-console-rs")
         .join("spacetimedb");
 
     let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
