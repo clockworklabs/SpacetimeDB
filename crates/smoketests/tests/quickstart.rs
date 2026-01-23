@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+#![allow(clippy::type_complexity)]
 //! Tests translated from smoketests/tests/quickstart.py
 //!
 //! This test validates that the quickstart documentation is correct by extracting
@@ -614,7 +616,7 @@ log = "0.4"
         }
 
         // Add extra code
-        main_code.push_str("\n");
+        main_code.push('\n');
         main_code.push_str(self.config.extra_code);
 
         // Replace server address
