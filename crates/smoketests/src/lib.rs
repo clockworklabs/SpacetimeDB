@@ -308,6 +308,19 @@ impl Smoketest {
         self.publish_module_opts(Some(name), clear)
     }
 
+    /// Re-publishes the module to the existing database identity with optional clear.
+    ///
+    /// This is useful for testing auto-migrations where you want to update
+    /// the module without clearing the database.
+    pub fn publish_module_clear(&mut self, clear: bool) -> Result<String> {
+        let identity = self
+            .database_identity
+            .as_ref()
+            .context("No database published yet")?
+            .clone();
+        self.publish_module_opts(Some(&identity), clear)
+    }
+
     /// Internal helper for publishing with options.
     fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
         let start = Instant::now();
