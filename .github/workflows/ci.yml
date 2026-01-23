@@ -84,14 +84,13 @@ jobs:
         run: choco install psql -y --no-progress
         shell: powershell
 
-      - name: Build and start database (Windows)
+      - name: Update dotnet workloads
         if: runner.os == 'Windows'
         run: |
           # Fail properly if any individual command fails
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
-          Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
