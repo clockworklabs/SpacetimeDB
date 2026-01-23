@@ -350,6 +350,7 @@ fn compute_spacetimedb_cli_path() -> Result<PathBuf> {
 
 fn wait_until_http_ready(timeout: Duration, cli_path: &Path, server_url: &str) -> Result<()> {
     println!("Waiting for server to start: {server_url}..");
+    let start = Instant::now();
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
@@ -362,7 +363,8 @@ fn wait_until_http_ready(timeout: Duration, cli_path: &Path, server_url: &str) -
 
         if let Ok(status) = status {
             if status.status.success() {
-                debug!("Server started: {server_url}");
+                let elapsed = start.elapsed();
+                debug!("Server started: {server_url} (in {:.2?})", elapsed);
                 return Ok(());
             }
         }
