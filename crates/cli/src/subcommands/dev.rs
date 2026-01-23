@@ -277,6 +277,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         client_language,
         resolved_server,
         clear_database,
+        force,
     )
     .await?;
 
@@ -326,6 +327,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 client_language,
                 resolved_server,
                 clear_database,
+                force,
             )
             .await
             {
@@ -394,6 +396,7 @@ async fn generate_build_and_publish(
     client_language: Option<&Language>,
     server: &str,
     clear_database: ClearMode,
+    yes: bool,
 ) -> Result<(), anyhow::Error> {
     let module_language = detect_module_language(spacetimedb_dir)?;
     let client_language = client_language.unwrap_or(match module_language {
@@ -426,7 +429,7 @@ async fn generate_build_and_publish(
     println!("{}", "Build complete!".green());
 
     println!("{}", "Generating module bindings...".cyan());
-    let generate_args = generate::cli().get_matches_from(vec![
+    let mut generate_argv = vec![
         "generate",
         "--lang",
         client_language_str,
@@ -434,7 +437,11 @@ async fn generate_build_and_publish(
         spacetimedb_dir.to_str().unwrap(),
         "--out-dir",
         module_bindings_dir.to_str().unwrap(),
-    ]);
+    ];
+    if yes {
+        generate_argv.push("--yes");
+    }
+    let generate_args = generate::cli().get_matches_from(generate_argv);
     generate::exec(config.clone(), &generate_args).await?;
 
     println!("{}", "Publishing...".cyan());
