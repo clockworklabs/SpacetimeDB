@@ -8225,6 +8225,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-smoketests"
+version = "1.11.3"
+dependencies = [
+ "anyhow",
+ "cargo_metadata",
+ "regex",
+ "serde",
+ "serde_json",
+ "spacetimedb-guard",
+ "tempfile",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "spacetimedb-snapshot"
 version = "1.11.3"
 dependencies = [

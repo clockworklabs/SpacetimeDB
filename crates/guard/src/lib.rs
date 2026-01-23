@@ -16,7 +16,9 @@ static CLI_BINARY_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// Ensures `spacetimedb-cli` and `spacetimedb-standalone` are built once,
 /// returning the path to the CLI binary.
-fn ensure_binaries_built() -> PathBuf {
+///
+/// This is useful for tests that need to run CLI commands directly.
+pub fn ensure_binaries_built() -> PathBuf {
     CLI_BINARY_PATH
         .get_or_init(|| {
             // Navigate from crates/guard/ to workspace root
@@ -245,8 +247,25 @@ fn parse_listen_addr_from_line(line: &str) -> Option<SocketAddr> {
 
 impl Drop for SpacetimeDbGuard {
     fn drop(&mut self) {
-        // Best-effort cleanup.
-        let _ = self.child.kill();
+        // Kill the process tree to ensure all child processes are terminated.
+        // On Windows, child.kill() only kills the direct child (spacetimedb-cli),
+        // leaving spacetimedb-standalone running as an orphan.
+        #[cfg(windows)]
+        {
+            let pid = self.child.id();
+            // Use taskkill /T to kill the process tree
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = self.child.kill();
+        }
+
         let _ = self.child.wait();
 
         // Only print logs if the test is currently panicking
