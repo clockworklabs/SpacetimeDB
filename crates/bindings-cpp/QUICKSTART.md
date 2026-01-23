@@ -35,7 +35,8 @@ This creates a project with the following structure:
 ```
 my-chat-module/
 ├── CMakeLists.txt
-├── lib.cpp
+├── spacetimedb/
+    └── lib.cpp
 └── .gitignore
 ```
 
@@ -78,20 +79,20 @@ SPACETIMEDB_TABLE(Message, message, Public)
 First, add validation helper functions:
 
 ```cpp
-// Validate that a name is not empty
-std::string validate_name(const std::string& name) {
+// Validate that a name is not empty, return an Outcome which houses a error as std::string
+Outcome<std::string> validate_name(const std::string& name) {
     if (name.empty()) {
-        throw std::runtime_error("Names must not be empty");
+        return Err<std::string>("Names must not be empty");
     }
-    return name;
+    return Ok(name);
 }
 
-// Validate that a message is not empty
-std::string validate_message(const std::string& text) {
+// Validate that a message is not empty, return an Outcome which houses a error as std::string
+Outcome<std::string> validate_message(const std::string& text) {
     if (text.empty()) {
-        throw std::runtime_error("Messages must not be empty");
+        return Err<std::string>("Messages must not be empty");
     }
-    return text;
+    return Ok(text);
 }
 ```
 
@@ -100,26 +101,32 @@ Now add the reducers (functions that clients can call to modify the database):
 ```cpp
 // Called when a user sets their name
 SPACETIMEDB_REDUCER(set_name, ReducerContext ctx, std::string name) {
-    name = validate_name(name);
+    auto validated = validate_name(name);
+    if (validated.is_err()) {
+        return Err(validated.error());
+    }
     
-    // Try to find existing user using primary key field accessor
-    for (auto& user_row : ctx.db[user_identity].filter(ctx.sender)) {
-        // Update existing user's name
-        user_row.name = name;
-        ctx.db[user_identity].update(user_row);
+    // Find and update the user by identity (primary key)
+    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    if (user_row.has_value()) {
+        auto user = user_row.value();
+        user.name = validated.value();
+        ctx.db[user_identity].update(user);
         return Ok();
     }
-    return Ok();
+    
+    return Err("Cannot set name for unknown user");
 }
 
 // Called when a user sends a message
 SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, std::string text) {
-    text = validate_message(text);
-    LOG_INFO(text);
+    auto validated = validate_message(text);
+    if (validated.is_err()) {
+        return Err(validated.error());
+    }
     
-    // Create and insert new message
-    Message new_message{ctx.sender, ctx.timestamp, text};
-    ctx.db[message].insert(new_message);
+    Message msg{ctx.sender, ctx.timestamp, validated.value()};
+    ctx.db[message].insert(msg);
     return Ok();
 }
 ```
@@ -131,20 +138,12 @@ Lifecycle reducers are special functions called automatically by SpacetimeDB:
 ```cpp
 // Called when a client connects
 SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
-    LOG_INFO("Connect " + ctx.sender.to_hex_string());
-    
-    // Try to find existing user
-    bool found = false;
-    for (auto& user_row : ctx.db[user_identity].filter(ctx.sender)) {
-        // Update existing user to online
-        user_row.online = true;
-        ctx.db[user_identity].update(user_row);
-        found = true;
-        break;
-    }
-    
-    if (!found) {
-        // Create new user
+    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    if (user_row.has_value()) {
+        auto user = user_row.value();
+        user.online = true;
+        ctx.db[user_identity].update(user);
+    } else {
         User new_user{ctx.sender, std::nullopt, true};
         ctx.db[user].insert(new_user);
     }
@@ -153,17 +152,13 @@ SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
 
 // Called when a client disconnects  
 SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected, ReducerContext ctx) {
-    // Try to find user and mark as offline
-    bool found = false;
-    for (auto& user_row : ctx.db[user_identity].filter(ctx.sender)) {
-        user_row.online = false;
-        ctx.db[user_identity].update(user_row);
-        found = true;
-        break;
-    }
-    
-    if (!found) {
-        LOG_WARN("Warning: No user found for disconnected client.");
+    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    if (user_row.has_value()) {
+        auto user = user_row.value();
+        user.online = false;
+        ctx.db[user_identity].update(user);
+    } else {
+        LOG_WARN("Disconnect event for unknown user");
     }
     return Ok();
 }
