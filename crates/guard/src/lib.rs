@@ -83,6 +83,8 @@ pub struct SpacetimeDbGuard {
     pub child: Child,
     pub host_url: String,
     pub logs: Arc<Mutex<String>>,
+    /// The PostgreSQL wire protocol port, if enabled.
+    pub pg_port: Option<u16>,
 }
 
 // Remove all Cargo-provided env vars from a child process. These are set by the fact that we're running in a cargo
@@ -92,10 +94,15 @@ impl SpacetimeDbGuard {
     /// Start `spacetimedb` in a temporary data directory via:
     /// cargo run -p spacetimedb-cli -- start --data-dir <temp-dir> --listen-addr <addr>
     pub fn spawn_in_temp_data_dir() -> Self {
+        Self::spawn_in_temp_data_dir_with_pg_port(None)
+    }
+
+    /// Start `spacetimedb` in a temporary data directory with optional PostgreSQL wire protocol.
+    pub fn spawn_in_temp_data_dir_with_pg_port(pg_port: Option<u16>) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir = temp_dir.path().display().to_string();
 
-        Self::spawn_spacetime_start(false, &["start", "--data-dir", &data_dir])
+        Self::spawn_spacetime_start(false, &["start", "--data-dir", &data_dir], pg_port)
     }
 
     /// Start `spacetimedb` in a temporary data directory via:
@@ -104,19 +111,23 @@ impl SpacetimeDbGuard {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir = temp_dir.path().display().to_string();
 
-        Self::spawn_spacetime_start(true, &["start", "--data-dir", &data_dir])
+        Self::spawn_spacetime_start(true, &["start", "--data-dir", &data_dir], None)
     }
 
-    fn spawn_spacetime_start(use_installed_cli: bool, extra_args: &[&str]) -> Self {
+    fn spawn_spacetime_start(use_installed_cli: bool, extra_args: &[&str], pg_port: Option<u16>) -> Self {
         // Ask SpacetimeDB/OS to allocate an ephemeral port.
         // Using loopback avoids needing to "connect to 0.0.0.0".
         let address = "127.0.0.1:0".to_string();
+        let pg_port_str = pg_port.map(|p| p.to_string());
 
         let mut args = vec![];
 
         let (child, logs) = if use_installed_cli {
             args.extend_from_slice(extra_args);
             args.extend_from_slice(&["--listen-addr", &address]);
+            if let Some(ref port) = pg_port_str {
+                args.extend_from_slice(&["--pg-port", port]);
+            }
 
             let cmd = Command::new("spacetime");
             Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args)
@@ -125,6 +136,9 @@ impl SpacetimeDbGuard {
 
             args.extend(extra_args);
             args.extend(["--listen-addr", &address]);
+            if let Some(ref port) = pg_port_str {
+                args.extend(["--pg-port", port]);
+            }
 
             let cmd = Command::new(&cli_path);
 
@@ -141,7 +155,12 @@ impl SpacetimeDbGuard {
         let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10))
             .unwrap_or_else(|| panic!("Timed out waiting for SpacetimeDB to report listen address"));
         let host_url = format!("http://{}", listen_addr);
-        let guard = SpacetimeDbGuard { child, host_url, logs };
+        let guard = SpacetimeDbGuard {
+            child,
+            host_url,
+            logs,
+            pg_port,
+        };
         guard.wait_until_http_ready(Duration::from_secs(10));
         guard
     }

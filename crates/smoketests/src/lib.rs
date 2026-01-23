@@ -68,10 +68,7 @@ pub fn workspace_root() -> PathBuf {
 /// Generates a random lowercase alphabetic string suitable for database names.
 pub fn random_string() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     // Convert to base-26 using lowercase letters only (a-z)
     let mut result = String::with_capacity(20);
     let mut n = timestamp;
@@ -96,9 +93,9 @@ pub fn have_dotnet() -> bool {
                 }
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 // Check for dotnet 8.0 or higher
-                stdout.lines().any(|line| {
-                    line.starts_with("8.") || line.starts_with("9.") || line.starts_with("10.")
-                })
+                stdout
+                    .lines()
+                    .any(|line| line.starts_with("8.") || line.starts_with("9.") || line.starts_with("10."))
             })
             .unwrap_or(false)
     })
@@ -386,13 +383,10 @@ impl Smoketest {
 
     /// Reads the authentication token from the config file.
     pub fn read_token(&self) -> Result<String> {
-        let config_content = fs::read_to_string(&self.config_path)
-            .context("Failed to read config file")?;
+        let config_content = fs::read_to_string(&self.config_path).context("Failed to read config file")?;
 
         // Parse as TOML and extract spacetimedb_token
-        let config: toml::Value = config_content
-            .parse()
-            .context("Failed to parse config as TOML")?;
+        let config: toml::Value = config_content.parse().context("Failed to parse config as TOML")?;
 
         config
             .get("spacetimedb_token")
@@ -413,12 +407,17 @@ impl Smoketest {
 
         let output = Command::new("psql")
             .args([
-                "-h", host,
-                "-p", &pg_port.to_string(),
-                "-U", "postgres",
-                "-d", database,
+                "-h",
+                host,
+                "-p",
+                &pg_port.to_string(),
+                "-U",
+                "postgres",
+                "-d",
+                database,
                 "--quiet",
-                "-c", sql,
+                "-c",
+                sql,
             ])
             .env("PGPASSWORD", &token)
             .output()
@@ -752,12 +751,7 @@ impl Smoketest {
     }
 
     /// Makes an HTTP API call with an optional request body.
-    pub fn api_call_with_body(
-        &self,
-        method: &str,
-        path: &str,
-        body: Option<&[u8]>,
-    ) -> Result<ApiResponse> {
+    pub fn api_call_with_body(&self, method: &str, path: &str, body: Option<&[u8]>) -> Result<ApiResponse> {
         use std::io::{Read, Write};
         use std::net::TcpStream;
 
@@ -769,9 +763,7 @@ impl Smoketest {
             .unwrap_or(url);
 
         let mut stream = TcpStream::connect(host_port).context("Failed to connect to server")?;
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
-            .ok();
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
 
         // Build HTTP request
         let content_length = body.map(|b| b.len()).unwrap_or(0);

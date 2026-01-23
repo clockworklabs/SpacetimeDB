@@ -84,11 +84,7 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
     let mut mapping_lines = String::new();
 
     for (key, path) in sources {
-        source_lines.push_str(&format!(
-            "    <add key=\"{}\" value=\"{}\" />\n",
-            key,
-            path.display()
-        ));
+        source_lines.push_str(&format!("    <add key=\"{}\" value=\"{}\" />\n", key, path.display()));
     }
 
     for (key, pattern) in mappings {
@@ -175,8 +171,7 @@ fn parse_nuget_config(content: &str) -> (Vec<(String, PathBuf)>, Vec<(String, St
         sources.push((cap[1].to_string(), PathBuf::from(&cap[2])));
     }
 
-    let mapping_re =
-        regex::Regex::new(r#"<packageSource key="([^"]+)">\s*<package pattern="([^"]+)""#).unwrap();
+    let mapping_re = regex::Regex::new(r#"<packageSource key="([^"]+)">\s*<package pattern="([^"]+)""#).unwrap();
     for cap in mapping_re.captures_iter(content) {
         mappings.push((cap[1].to_string(), cap[2].to_string()));
     }
@@ -212,10 +207,7 @@ impl QuickstartConfig {
                 // Replace the interactive user input to allow direct testing
                 ("user_input_loop(&ctx)", "user_input_direct(&ctx)"),
                 // Don't cache the token, because it will cause the test to fail if we run against a non-default server
-                (
-                    ".with_token(creds_store()",
-                    "//.with_token(creds_store()",
-                ),
+                (".with_token(creds_store()", "//.with_token(creds_store()"),
             ],
             extra_code: r#"
 fn user_input_direct(ctx: &DbConnection) {
@@ -310,10 +302,7 @@ Main();
             build_cmd: &["cargo", "build"],
             replacements: &[
                 ("user_input_loop(&ctx)", "user_input_direct(&ctx)"),
-                (
-                    ".with_token(creds_store()",
-                    "//.with_token(creds_store()",
-                ),
+                (".with_token(creds_store()", "//.with_token(creds_store()"),
             ],
             extra_code: r#"
 fn user_input_direct(ctx: &DbConnection) {
@@ -398,12 +387,8 @@ impl QuickstartTest {
         self.server_postprocess(&project_path)?;
 
         // Build the server (local operation)
-        self.test.spacetime_local(&[
-            "build",
-            "-d",
-            "-p",
-            project_path.to_str().unwrap(),
-        ])?;
+        self.test
+            .spacetime_local(&["build", "-d", "-p", project_path.to_str().unwrap()])?;
 
         Ok(project_path)
     }
@@ -459,10 +444,7 @@ log = "0.4"
 
                 // Install the local SDK
                 let ts_bindings = workspace.join("crates/bindings-typescript");
-                pnpm(
-                    &["install", ts_bindings.to_str().unwrap()],
-                    server_path,
-                )?;
+                pnpm(&["install", ts_bindings.to_str().unwrap()], server_path)?;
             }
             _ => {}
         }
@@ -476,14 +458,7 @@ log = "0.4"
             "rust" => {
                 let parent = client_path.parent().unwrap();
                 run_cmd(
-                    &[
-                        "cargo",
-                        "new",
-                        "--bin",
-                        "--name",
-                        "quickstart_chat_client",
-                        "client",
-                    ],
+                    &["cargo", "new", "--bin", "--name", "quickstart_chat_client", "client"],
                     parent,
                     None,
                 )?;
@@ -515,10 +490,7 @@ log = "0.4"
         match self.config.client_lang {
             "rust" => {
                 let sdk_rust_path = workspace.join("sdks/rust");
-                let sdk_rust_toml_escaped = sdk_rust_path
-                    .display()
-                    .to_string()
-                    .replace('\\', "\\\\\\\\"); // double escape for toml
+                let sdk_rust_toml_escaped = sdk_rust_path.display().to_string().replace('\\', "\\\\\\\\"); // double escape for toml
                 let sdk_rust_toml = format!(
                     "spacetimedb-sdk = {{ path = \"{}\" }}\nlog = \"0.4\"\nhex = \"0.4\"\n",
                     sdk_rust_toml_escaped
@@ -569,11 +541,7 @@ log = "0.4"
         eprintln!("Output for {} client:\n{}", self.config.lang, output);
 
         if !output.contains(contains) {
-            bail!(
-                "Expected output to contain '{}', but got:\n{}",
-                contains,
-                output
-            );
+            bail!("Expected output to contain '{}', but got:\n{}", contains, output);
         }
         Ok(())
     }
@@ -604,7 +572,10 @@ log = "0.4"
             let identity = caps.get(1).unwrap().as_str().to_string();
             self.test.database_identity = Some(identity);
         } else {
-            bail!("Failed to parse database identity from publish output: {}", publish_output);
+            bail!(
+                "Failed to parse database identity from publish output: {}",
+                publish_output
+            );
         }
 
         Ok(base_path.join("client"))
@@ -635,8 +606,7 @@ log = "0.4"
 
         // Read and parse client code from documentation
         let doc_content = fs::read_to_string(self.doc_path())?;
-        let mut main_code =
-            parse_quickstart(&doc_content, self.config.client_lang, &self.module_name(), false);
+        let mut main_code = parse_quickstart(&doc_content, self.config.client_lang, &self.module_name(), false);
 
         // Apply replacements
         for (src, dst) in self.config.replacements {
@@ -692,6 +662,5 @@ fn test_quickstart_typescript() {
     }
 
     let mut qt = QuickstartTest::new(QuickstartConfig::typescript());
-    qt.run_quickstart()
-        .expect("TypeScript quickstart test failed");
+    qt.run_quickstart().expect("TypeScript quickstart test failed");
 }
