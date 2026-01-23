@@ -4,7 +4,7 @@ use std::{
     env,
     io::{BufRead, BufReader},
     net::SocketAddr,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex, OnceLock},
     thread::{self, sleep},
@@ -89,7 +89,7 @@ pub struct SpacetimeDbGuard {
     pub data_dir: PathBuf,
     /// Owns the temporary data directory (if created by spawn_in_temp_data_dir).
     /// When this is Some, dropping the guard will clean up the temp dir.
-    data_dir_handle: Option<tempfile::TempDir>,
+    _data_dir_handle: Option<tempfile::TempDir>,
 }
 
 // Remove all Cargo-provided env vars from a child process. These are set by the fact that we're running in a cargo
@@ -173,7 +173,7 @@ impl SpacetimeDbGuard {
                 logs,
                 pg_port,
                 data_dir,
-                data_dir_handle,
+                _data_dir_handle: data_dir_handle,
             };
             guard.wait_until_http_ready(Duration::from_secs(10));
             guard
@@ -186,7 +186,7 @@ impl SpacetimeDbGuard {
                 logs,
                 pg_port,
                 data_dir,
-                data_dir_handle,
+                _data_dir_handle: data_dir_handle,
             }
         }
     }
@@ -238,7 +238,7 @@ impl SpacetimeDbGuard {
 
     /// Spawns a new server process with the given data directory.
     /// Returns (child, logs, host_url).
-    fn spawn_server(data_dir: &PathBuf, pg_port: Option<u16>) -> (Child, Arc<Mutex<String>>, String) {
+    fn spawn_server(data_dir: &Path, pg_port: Option<u16>) -> (Child, Arc<Mutex<String>>, String) {
         let data_dir_str = data_dir.display().to_string();
         let pg_port_str = pg_port.map(|p| p.to_string());
 
