@@ -29,11 +29,11 @@ fn test_call_reducer_procedure() {
         .build();
 
     // Reducer returns empty
-    let msg = test.call_raw("say_hello", &[]).unwrap();
+    let msg = test.call("say_hello", &[]).unwrap();
     assert_eq!(msg.trim(), "");
 
     // Procedure returns a value
-    let msg = test.call_raw("return_person", &[]).unwrap();
+    let msg = test.call("return_person", &[]).unwrap();
     assert_eq!(msg.trim(), r#"["World"]"#);
 }
 

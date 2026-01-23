@@ -35,7 +35,6 @@
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
-use serde::Serialize;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use std::env;
 use std::fs;
@@ -258,23 +257,8 @@ impl Smoketest {
 
     /// Calls a reducer or procedure with the given arguments.
     ///
-    /// Arguments are serialized to JSON.
-    pub fn call<T: Serialize>(&self, name: &str, args: &[T]) -> Result<String> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published")?;
-
-        let mut cmd_args = vec!["call", "--", identity.as_str(), name];
-        let json_args: Vec<String> = args.iter().map(|a| serde_json::to_string(a).unwrap()).collect();
-        let json_refs: Vec<&str> = json_args.iter().map(|s| s.as_str()).collect();
-        cmd_args.extend(json_refs);
-
-        self.spacetime(&cmd_args)
-    }
-
-    /// Calls a reducer or procedure with raw string arguments (no JSON serialization).
-    pub fn call_raw(&self, name: &str, args: &[&str]) -> Result<String> {
+    /// Arguments are passed directly to the CLI as strings.
+    pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
         let identity = self
             .database_identity
             .as_ref()

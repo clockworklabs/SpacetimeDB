@@ -134,7 +134,7 @@ fn test_sql_format() {
         .module_code(SQL_FORMAT_MODULE_CODE)
         .build();
 
-    test.call_raw("test", &[]).unwrap();
+    test.call("test", &[]).unwrap();
 
     test.assert_sql(
         "SELECT * FROM t_ints",

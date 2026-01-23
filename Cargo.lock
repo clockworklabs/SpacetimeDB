@@ -8231,7 +8231,6 @@ dependencies = [
  "anyhow",
  "cargo_metadata",
  "regex",
- "serde",
  "serde_json",
  "spacetimedb-guard",
  "tempfile",

@@ -8,7 +8,6 @@ rust-version.workspace = true
 # Test utilities (needed in lib for test helpers)
 spacetimedb-guard.workspace = true
 tempfile.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 regex.workspace = true
