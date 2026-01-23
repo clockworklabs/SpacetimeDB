@@ -27,12 +27,10 @@ jobs:
         runner: [spacetimedb-new-runner, windows-latest]
         include:
           - runner: spacetimedb-new-runner
-            smoketest_args: --docker
             container:
               image: localhost:5000/spacetimedb-ci:latest
               options: --privileged
           - runner: windows-latest
-            smoketest_args: --no-build-cli
             container: null
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
