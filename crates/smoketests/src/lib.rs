@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_macros)]
 //! Rust smoketest infrastructure for SpacetimeDB.
 //!
 //! This crate provides utilities for writing end-to-end tests that compile and publish
