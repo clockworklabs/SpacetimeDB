@@ -73,6 +73,8 @@ pub struct Smoketest {
     pub database_identity: Option<String>,
     /// The server URL (e.g., "http://127.0.0.1:3000").
     pub server_url: String,
+    /// Path to the test-specific CLI config file (isolates tests from user config).
+    pub config_path: std::path::PathBuf,
 }
 
 /// Builder for creating `Smoketest` instances.
@@ -185,11 +187,13 @@ pub fn noop(_ctx: &ReducerContext) {}
         eprintln!("[TIMING] project setup: {:?}", project_setup_start.elapsed());
 
         let server_url = guard.host_url.clone();
+        let config_path = project_dir.path().join("config.toml");
         let mut smoketest = Smoketest {
             guard,
             project_dir,
             database_identity: None,
             server_url,
+            config_path,
         };
 
         if self.autopublish {
@@ -210,15 +214,25 @@ impl Smoketest {
     /// Runs a spacetime CLI command with the configured server.
     ///
     /// Returns the command output. The command is run but not yet asserted.
-    /// The `--server` flag is automatically inserted after the first argument (the subcommand).
+    /// The `--server` flag is automatically inserted before any `--` separator,
+    /// or at the end if no separator exists.
     pub fn spacetime_cmd(&self, args: &[&str]) -> Output {
         let start = Instant::now();
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
 
-        // Insert --server after the subcommand
-        if let Some((subcommand, rest)) = args.split_first() {
-            cmd.arg(subcommand).arg("--server").arg(&self.server_url).args(rest);
+        // Use test-specific config path to avoid polluting user's config
+        cmd.arg("--config-path").arg(&self.config_path);
+
+        // Insert --server before any "--" separator, or at the end
+        // This ensures --server is processed as a flag, not a positional arg
+        if let Some(pos) = args.iter().position(|&a| a == "--") {
+            cmd.args(&args[..pos])
+                .arg("--server")
+                .arg(&self.server_url)
+                .args(&args[pos..]);
+        } else {
+            cmd.args(args).arg("--server").arg(&self.server_url);
         }
 
         let output = cmd
@@ -249,11 +263,15 @@ impl Smoketest {
 
     /// Runs a spacetime CLI command without adding the --server flag.
     ///
-    /// Use this for local-only commands like `generate` that don't need a server connection.
+    /// Use this for local-only commands like `generate` or `server` subcommands
+    /// that don't need a server connection.
+    /// Still uses --config-path to isolate test config from user config.
     pub fn spacetime_local(&self, args: &[&str]) -> Result<String> {
         let start = Instant::now();
         let cli_path = ensure_binaries_built();
         let output = Command::new(&cli_path)
+            .arg("--config-path")
+            .arg(&self.config_path)
             .args(args)
             .current_dir(self.project_dir.path())
             .output()
@@ -461,22 +479,31 @@ impl Smoketest {
     ///
     /// This is useful for tests that need to test with multiple identities.
     pub fn new_identity(&self) -> Result<()> {
-        // Logout first
         let cli_path = ensure_binaries_built();
-        Command::new(&cli_path)
-            .args(["logout", "--server", &self.server_url])
-            .output()
-            .context("Failed to logout")?;
+        let config_path_str = self.config_path.to_str().unwrap();
+
+        // Logout first (ignore errors - may not be logged in)
+        let _ = Command::new(&cli_path)
+            .args(["--config-path", config_path_str, "logout"])
+            .output();
 
         // Login with server-issued identity
+        // Format: login --server-issued-login <server>
         let output = Command::new(&cli_path)
-            .args(["login", "--server-issued-login", "--server", &self.server_url])
+            .args([
+                "--config-path",
+                config_path_str,
+                "login",
+                "--server-issued-login",
+                &self.server_url,
+            ])
             .output()
             .context("Failed to login with new identity")?;
 
         if !output.status.success() {
             bail!(
-                "Failed to create new identity:\nstderr: {}",
+                "Failed to create new identity:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
         }
@@ -501,10 +528,21 @@ impl Smoketest {
     fn subscribe_opts(&self, queries: &[&str], n: usize, confirmed: bool) -> Result<Vec<serde_json::Value>> {
         let start = Instant::now();
         let identity = self.database_identity.as_ref().context("No database published")?;
+        let config_path_str = self.config_path.to_str().unwrap();
 
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
-        let mut args = vec!["subscribe", "--server", &self.server_url, identity, "-t", "30", "-n"];
+        let mut args = vec![
+            "--config-path",
+            config_path_str,
+            "subscribe",
+            "--server",
+            &self.server_url,
+            identity,
+            "-t",
+            "30",
+            "-n",
+        ];
         let n_str = n.to_string();
         args.push(&n_str);
         args.push("--print-initial-update");
@@ -521,7 +559,10 @@ impl Smoketest {
         eprintln!("[TIMING] subscribe (n={}): {:?}", n, start.elapsed());
 
         if !output.status.success() {
-            bail!("subscribe failed:\nstderr: {}", String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "subscribe failed:\nstderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -558,7 +599,10 @@ impl Smoketest {
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
         // Use --print-initial-update so we know when subscription is established
+        let config_path_str = self.config_path.to_str().unwrap().to_string();
         let mut args = vec![
+            "--config-path".to_string(),
+            config_path_str,
             "subscribe".to_string(),
             "--server".to_string(),
             self.server_url.clone(),

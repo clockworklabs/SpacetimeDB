@@ -8,9 +8,9 @@ use spacetimedb_smoketests::Smoketest;
 fn test_servers() {
     let test = Smoketest::builder().autopublish(false).build();
 
-    // Add a test server
+    // Add a test server (local-only command, no --server flag needed)
     let output = test
-        .spacetime(&[
+        .spacetime_local(&[
             "server",
             "add",
             "--url",
@@ -26,8 +26,8 @@ fn test_servers() {
         output
     );
 
-    // List servers
-    let servers = test.spacetime(&["server", "list"]).unwrap();
+    // List servers (local-only command)
+    let servers = test.spacetime_local(&["server", "list"]).unwrap();
 
     let testnet_re = Regex::new(r"(?m)^\s*testnet\.spacetimedb\.com\s+https\s+testnet\s*$").unwrap();
     assert!(
@@ -36,9 +36,20 @@ fn test_servers() {
         servers
     );
 
-    // Check fingerprint commands
+    // Add the local test server to the config so we can check its fingerprint
+    test.spacetime_local(&[
+        "server",
+        "add",
+        "--url",
+        &test.server_url,
+        "test-local",
+        "--no-fingerprint",
+    ])
+    .unwrap();
+
+    // Check fingerprint commands (local-only command)
     let output = test
-        .spacetime(&["server", "fingerprint", &test.server_url, "-y"])
+        .spacetime_local(&["server", "fingerprint", "test-local", "-y"])
         .unwrap();
     // The exact message may vary, just check it doesn't error
     assert!(
@@ -53,12 +64,12 @@ fn test_servers() {
 fn test_edit_server() {
     let test = Smoketest::builder().autopublish(false).build();
 
-    // Add a server to edit
-    test.spacetime(&["server", "add", "--url", "https://foo.com", "foo", "--no-fingerprint"])
+    // Add a server to edit (local-only command)
+    test.spacetime_local(&["server", "add", "--url", "https://foo.com", "foo", "--no-fingerprint"])
         .unwrap();
 
-    // Edit the server
-    test.spacetime(&[
+    // Edit the server (local-only command)
+    test.spacetime_local(&[
         "server",
         "edit",
         "foo",
@@ -71,8 +82,8 @@ fn test_edit_server() {
     ])
     .unwrap();
 
-    // Verify the edit
-    let servers = test.spacetime(&["server", "list"]).unwrap();
+    // Verify the edit (local-only command)
+    let servers = test.spacetime_local(&["server", "list"]).unwrap();
     let edited_re = Regex::new(r"(?m)^\s*edited-testnet\.spacetimedb\.com\s+https\s+edited-testnet\s*$").unwrap();
     assert!(
         edited_re.is_match(&servers),
