@@ -606,7 +606,7 @@ fn run_smoketests_batch_captured(
     (output, Ok(()))
 }
 
-fn server_start_config(start_server: bool, docker: Option<String>) -> StartServer {
+fn server_start_config(start_server: bool, parallel: bool, docker: Option<String>) -> StartServer {
     match (start_server, docker.as_ref()) {
         (start_server, Some(compose_file)) => {
             if !start_server {
@@ -616,7 +616,7 @@ fn server_start_config(start_server: bool, docker: Option<String>) -> StartServe
                 compose_file: compose_file.into(),
             }
         }
-        (true, None) => StartServer::Yes { random_port: true },
+        (true, None) => StartServer::Yes { random_port: parallel },
         (false, None) => StartServer::No,
     }
 }
@@ -852,13 +852,13 @@ fn run_smoketests_parallel(
         let batch = blacklisted_batches.join(", ");
         let batch = &batch;
         with_print_lock(|| {
-            println!("===== smoketests batch: {batch} ({:?}) =====", elapsed);
+            println!("===== serial smoketests batch: {batch} ({:?}) =====", elapsed);
             print!("{captured}");
             if let Err(e) = &result {
                 println!("Smoketest batch {batch} failed: {e:?}");
                 failed_batches.push(batch.to_string());
             }
-            println!("===== end smoketests batch: {batch} ({:?}) =====", elapsed);
+            println!("===== end serial smoketests batch: {batch} ({:?}) =====", elapsed);
         });
     }
 
@@ -1036,7 +1036,7 @@ fn main() -> Result<()> {
             parallel,
             python,
         }) => {
-            let start_server = server_start_config(start_server, docker.clone());
+            let start_server = server_start_config(start_server, parallel, docker.clone());
             // Do initial server build
             match start_server.clone() {
                 StartServer::No => {}
