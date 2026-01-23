@@ -30,9 +30,7 @@ pub fn do_thing(ctx: &ReducerContext, thing: String) {
 /// Ensure that a private table can only be queried by the database owner
 #[test]
 fn test_private_table() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE_PRIVATE)
-        .build();
+    let test = Smoketest::builder().module_code(MODULE_CODE_PRIVATE).build();
 
     // Owner can query private table
     test.assert_sql(
@@ -47,10 +45,7 @@ fn test_private_table() {
 
     // Non-owner cannot query private table
     let result = test.sql("SELECT * FROM secret");
-    assert!(
-        result.is_err(),
-        "Expected query on private table to fail for non-owner"
-    );
+    assert!(result.is_err(), "Expected query on private table to fail for non-owner");
 
     // Subscribing to the private table fails
     let result = test.subscribe(&["SELECT * FROM secret"], 0);
@@ -88,10 +83,7 @@ fn test_cannot_delete_others_database() {
 
     // Try to delete the database - should fail
     let result = test.spacetime(&["delete", &identity, "--yes"]);
-    assert!(
-        result.is_err(),
-        "Expected delete to fail for non-owner"
-    );
+    assert!(result.is_err(), "Expected delete to fail for non-owner");
 }
 
 const MODULE_CODE_LIFECYCLE: &str = r#"
@@ -108,9 +100,7 @@ fn lifecycle_client_disconnected(_ctx: &spacetimedb::ReducerContext) {}
 /// Ensure that lifecycle reducers (init, on_connect, etc) can't be called directly
 #[test]
 fn test_lifecycle_reducers_cant_be_called() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE_LIFECYCLE)
-        .build();
+    let test = Smoketest::builder().module_code(MODULE_CODE_LIFECYCLE).build();
 
     let lifecycle_kinds = ["init", "client_connected", "client_disconnected"];
 

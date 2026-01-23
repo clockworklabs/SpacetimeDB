@@ -48,13 +48,10 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 /// Tests that a module with invalid schema changes cannot be published without -c or a migration.
 #[test]
 fn test_reject_schema_changes() {
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE_SIMPLE)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE_SIMPLE).build();
 
     // Try to update with incompatible schema (adding column without default)
-    test.write_module_code(MODULE_CODE_UPDATED_INCOMPATIBLE)
-        .unwrap();
+    test.write_module_code(MODULE_CODE_UPDATED_INCOMPATIBLE).unwrap();
     let result = test.publish_module_clear(false);
 
     assert!(
@@ -242,26 +239,22 @@ fn test_add_table_auto_migration() {
 
     let logs = test.logs(100).unwrap();
     assert!(
-        logs.iter()
-            .any(|l| l.contains("AFTER_PERSON: Samantha - Student")),
+        logs.iter().any(|l| l.contains("AFTER_PERSON: Samantha - Student")),
         "Expected Samantha in AFTER logs: {:?}",
         logs
     );
     assert!(
-        logs.iter()
-            .any(|l| l.contains("AFTER_PERSON: Julie - Student")),
+        logs.iter().any(|l| l.contains("AFTER_PERSON: Julie - Student")),
         "Expected Julie in AFTER logs: {:?}",
         logs
     );
     assert!(
-        logs.iter()
-            .any(|l| l.contains("AFTER_PERSON: Robert - Student")),
+        logs.iter().any(|l| l.contains("AFTER_PERSON: Robert - Student")),
         "Expected Robert in AFTER logs: {:?}",
         logs
     );
     assert!(
-        logs.iter()
-            .any(|l| l.contains("AFTER_PERSON: Husserl - Professor")),
+        logs.iter().any(|l| l.contains("AFTER_PERSON: Husserl - Professor")),
         "Expected Husserl Professor in AFTER logs: {:?}",
         logs
     );

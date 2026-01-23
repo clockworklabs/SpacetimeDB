@@ -54,15 +54,8 @@ fn test_edit_server() {
     let test = Smoketest::builder().autopublish(false).build();
 
     // Add a server to edit
-    test.spacetime(&[
-        "server",
-        "add",
-        "--url",
-        "https://foo.com",
-        "foo",
-        "--no-fingerprint",
-    ])
-    .unwrap();
+    test.spacetime(&["server", "add", "--url", "https://foo.com", "foo", "--no-fingerprint"])
+        .unwrap();
 
     // Edit the server
     test.spacetime(&[
@@ -80,9 +73,7 @@ fn test_edit_server() {
 
     // Verify the edit
     let servers = test.spacetime(&["server", "list"]).unwrap();
-    let edited_re =
-        Regex::new(r"(?m)^\s*edited-testnet\.spacetimedb\.com\s+https\s+edited-testnet\s*$")
-            .unwrap();
+    let edited_re = Regex::new(r"(?m)^\s*edited-testnet\.spacetimedb\.com\s+https\s+edited-testnet\s*$").unwrap();
     assert!(
         edited_re.is_match(&servers),
         "Expected edited server in list: {}",

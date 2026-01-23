@@ -10,9 +10,5 @@ fn test_energy_balance() {
 
     let output = test.spacetime(&["energy", "balance"]).unwrap();
     let re = Regex::new(r#"\{"balance":"-?[0-9]+"\}"#).unwrap();
-    assert!(
-        re.is_match(&output),
-        "Expected energy balance JSON, got: {}",
-        output
-    );
+    assert!(re.is_match(&output), "Expected energy balance JSON, got: {}", output);
 }

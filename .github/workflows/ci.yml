@@ -19,7 +19,8 @@ concurrency:
 
 jobs:
   docker_smoketests:
-    needs: [lints]
+    # TODO: before merging re-enable this
+    # needs: [lints]
     name: Smoketests
     strategy:
       matrix:

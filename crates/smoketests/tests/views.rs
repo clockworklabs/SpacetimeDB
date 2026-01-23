@@ -166,13 +166,10 @@ pub fn player_info_view(ctx: &ViewContext) -> Option<PlayerInfo> {
 /// Tests that views can be queried over HTTP SQL
 #[test]
 fn test_http_sql_views() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE_SQL_VIEWS)
-        .build();
+    let test = Smoketest::builder().module_code(MODULE_CODE_SQL_VIEWS).build();
 
     // Insert initial data
-    test.sql("INSERT INTO player_state (id, level) VALUES (42, 7)")
-        .unwrap();
+    test.sql("INSERT INTO player_state (id, level) VALUES (42, 7)").unwrap();
 
     test.assert_sql(
         "SELECT * FROM player",
@@ -199,9 +196,7 @@ fn test_http_sql_views() {
 /// Tests that anonymous views are updated for reducers
 #[test]
 fn test_query_anonymous_view_reducer() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE_SQL_VIEWS)
-        .build();
+    let test = Smoketest::builder().module_code(MODULE_CODE_SQL_VIEWS).build();
 
     test.call("add_player_level", &["0", "1"]).unwrap();
     test.call("add_player_level", &["1", "2"]).unwrap();

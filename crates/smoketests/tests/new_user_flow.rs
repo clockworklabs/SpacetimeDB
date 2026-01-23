@@ -27,10 +27,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 /// Test the entirety of the new user flow.
 #[test]
 fn test_new_user_flow() {
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     // Create a new identity and publish
     test.new_identity().unwrap();
