@@ -99,3 +99,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `LargeTable`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait large_tableQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `LargeTable`.
+    fn large_table(&self) -> __sdk::__query_builder::Table<LargeTable>;
+}
+
+impl large_tableQueryTableAccess for __sdk::QueryTableAccessor {
+    fn large_table(&self) -> __sdk::__query_builder::Table<LargeTable> {
+        __sdk::__query_builder::Table::new("large_table")
+    }
+}

@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneUuid`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_uuidQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneUuid`.
+    fn one_uuid(&self) -> __sdk::__query_builder::Table<OneUuid>;
+}
+
+impl one_uuidQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_uuid(&self) -> __sdk::__query_builder::Table<OneUuid> {
+        __sdk::__query_builder::Table::new("one_uuid")
+    }
+}

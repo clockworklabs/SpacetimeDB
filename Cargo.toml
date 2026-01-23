@@ -60,6 +60,7 @@ members = [
   "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
+  "crates/query-builder",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace
@@ -138,6 +139,7 @@ spacetimedb-vm = { path = "crates/vm", version = "=1.11.3" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=1.11.3" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "=1.11.3" }
 spacetimedb-subscription = { path = "crates/subscription", version = "=1.11.3" }
+spacetimedb-query-builder = { path = "crates/query-builder", version = "=1.11.3" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
