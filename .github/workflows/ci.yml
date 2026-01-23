@@ -85,18 +85,7 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
-      - name: Build crates
-        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-      - name: Start Docker daemon
-        if: runner.os == 'Linux'
-        run: /usr/local/bin/start-docker.sh
 
-      - name: Build and start database (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
-          rm .dockerignore
-          docker compose -f .github/docker-compose.yml up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -109,9 +98,21 @@ jobs:
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-        if: runner.os == 'Windows'
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
+
       - name: Run smoketests
         run: cargo ci smoketests
 
