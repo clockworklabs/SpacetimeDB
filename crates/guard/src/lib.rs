@@ -153,7 +153,7 @@ impl SpacetimeDbGuard {
         _extra_args: &[&str],
         pg_port: Option<u16>,
         data_dir: PathBuf,
-        data_dir_handle: Option<tempfile::TempDir>,
+        _data_dir_handle: Option<tempfile::TempDir>,
     ) -> Self {
         if use_installed_cli {
             // Use the installed CLI (rare case, mainly for spawn_in_temp_data_dir_use_cli)
@@ -173,7 +173,7 @@ impl SpacetimeDbGuard {
                 logs,
                 pg_port,
                 data_dir,
-                _data_dir_handle: data_dir_handle,
+                _data_dir_handle,
             };
             guard.wait_until_http_ready(Duration::from_secs(10));
             guard
@@ -186,7 +186,7 @@ impl SpacetimeDbGuard {
                 logs,
                 pg_port,
                 data_dir,
-                _data_dir_handle: data_dir_handle,
+                _data_dir_handle,
             }
         }
     }
