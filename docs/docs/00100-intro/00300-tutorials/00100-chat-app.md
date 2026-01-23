@@ -661,9 +661,9 @@ Output will resemble:
 ```
 
 You've just set up your first SpacetimeDB module! You can find the full code for this module:
-- [TypeScript server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-typescript)
-- [C# server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-c-sharp/spacetimedb)
-- [Rust server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-rust/spacetimedb)
+- [TypeScript server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-react-ts)
+- [C# server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-console-cs/spacetimedb)
+- [Rust server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-console-rs/spacetimedb)
 
 ---
 
@@ -1429,7 +1429,7 @@ You've just experienced the core features of SpacetimeDB: real-time synchronizat
 
 ### Conclusion
 
-Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for the client we've created in this quickstart tutorial [here](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-typescript).
+Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for the client we've created in this quickstart tutorial [here](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-react-ts).
 
 At this point you've learned how to create a basic TypeScript client for your SpacetimeDB `quickstart-chat` module. You've learned how to connect to SpacetimeDB and call reducers to update data. You've learned how to subscribe to table data, and hook it up so that it updates reactively in a React application.
 
