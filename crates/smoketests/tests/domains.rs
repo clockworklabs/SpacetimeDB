@@ -22,7 +22,8 @@ fn test_set_name() {
         .unwrap();
 
     // Now logs should work with the new name
-    test.spacetime(&["logs", "--server", &test.server_url, &rand_name]).unwrap();
+    test.spacetime(&["logs", "--server", &test.server_url, &rand_name])
+        .unwrap();
 
     // Original name should no longer work
     let result = test.spacetime(&["logs", "--server", &test.server_url, &orig_name]);
@@ -62,7 +63,14 @@ fn test_set_to_existing_name() {
     test.publish_module_named(&rename_to, false).unwrap();
 
     // Try to rename first db to the name of the second - should fail
-    let result = test.spacetime(&["rename", "--server", &test.server_url, "--to", &rename_to, &id_to_rename]);
+    let result = test.spacetime(&[
+        "rename",
+        "--server",
+        &test.server_url,
+        "--to",
+        &rename_to,
+        &id_to_rename,
+    ]);
     assert!(
         result.is_err(),
         "Expected rename to fail when target name is already in use"

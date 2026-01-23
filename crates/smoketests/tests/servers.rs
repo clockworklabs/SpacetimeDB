@@ -48,9 +48,7 @@ fn test_servers() {
     .unwrap();
 
     // Check fingerprint commands (local-only command)
-    let output = test
-        .spacetime(&["server", "fingerprint", "test-local", "-y"])
-        .unwrap();
+    let output = test.spacetime(&["server", "fingerprint", "test-local", "-y"]).unwrap();
     // The exact message may vary, just check it doesn't error
     assert!(
         output.contains("fingerprint") || output.contains("Fingerprint"),

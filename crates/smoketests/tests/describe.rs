@@ -36,10 +36,26 @@ fn test_describe() {
         .unwrap();
 
     // Describe a specific reducer
-    test.spacetime(&["describe", "--server", &test.server_url, "--json", identity, "reducer", "say_hello"])
-        .unwrap();
+    test.spacetime(&[
+        "describe",
+        "--server",
+        &test.server_url,
+        "--json",
+        identity,
+        "reducer",
+        "say_hello",
+    ])
+    .unwrap();
 
     // Describe a specific table
-    test.spacetime(&["describe", "--server", &test.server_url, "--json", identity, "table", "person"])
-        .unwrap();
+    test.spacetime(&[
+        "describe",
+        "--server",
+        &test.server_url,
+        "--json",
+        identity,
+        "table",
+        "person",
+    ])
+    .unwrap();
 }
