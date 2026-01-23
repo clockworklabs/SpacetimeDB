@@ -50,7 +50,7 @@ pub fn ensure_binaries_built() -> PathBuf {
                 let mut cmd = Command::new("cargo");
                 cmd.args(&args).current_dir(workspace_root);
                 for (key, _) in env::vars() {
-                    if key.starts_with("CARGO") && key != "CARGO_HOME" {
+                    if key.starts_with("CARGO") && key != "CARGO_HOME" && key != "CARGO_TARGET_DIR" {
                         cmd.env_remove(&key);
                     }
                 }
@@ -85,6 +85,11 @@ pub struct SpacetimeDbGuard {
     pub logs: Arc<Mutex<String>>,
     /// The PostgreSQL wire protocol port, if enabled.
     pub pg_port: Option<u16>,
+    /// The data directory path (for restart scenarios).
+    pub data_dir: PathBuf,
+    /// Owns the temporary data directory (if created by spawn_in_temp_data_dir).
+    /// When this is Some, dropping the guard will clean up the temp dir.
+    data_dir_handle: Option<tempfile::TempDir>,
 }
 
 // Remove all Cargo-provided env vars from a child process. These are set by the fact that we're running in a cargo
@@ -100,69 +105,178 @@ impl SpacetimeDbGuard {
     /// Start `spacetimedb` in a temporary data directory with optional PostgreSQL wire protocol.
     pub fn spawn_in_temp_data_dir_with_pg_port(pg_port: Option<u16>) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
-        let data_dir = temp_dir.path().display().to_string();
+        let data_dir_path = temp_dir.path().to_path_buf();
+        let data_dir_str = data_dir_path.display().to_string();
 
-        Self::spawn_spacetime_start(false, &["start", "--data-dir", &data_dir], pg_port)
+        Self::spawn_spacetime_start_with_data_dir(
+            false,
+            &["start", "--data-dir", &data_dir_str],
+            pg_port,
+            data_dir_path,
+            Some(temp_dir),
+        )
     }
 
     /// Start `spacetimedb` in a temporary data directory via:
     /// spacetime start --data-dir <temp-dir> --listen-addr <addr>
     pub fn spawn_in_temp_data_dir_use_cli() -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
-        let data_dir = temp_dir.path().display().to_string();
+        let data_dir_path = temp_dir.path().to_path_buf();
+        let data_dir_str = data_dir_path.display().to_string();
 
-        Self::spawn_spacetime_start(true, &["start", "--data-dir", &data_dir], None)
+        Self::spawn_spacetime_start_with_data_dir(
+            true,
+            &["start", "--data-dir", &data_dir_str],
+            None,
+            data_dir_path,
+            Some(temp_dir),
+        )
     }
 
-    fn spawn_spacetime_start(use_installed_cli: bool, extra_args: &[&str], pg_port: Option<u16>) -> Self {
-        // Ask SpacetimeDB/OS to allocate an ephemeral port.
-        // Using loopback avoids needing to "connect to 0.0.0.0".
-        let address = "127.0.0.1:0".to_string();
+    /// Start `spacetimedb` with an explicit data directory (for restart scenarios).
+    ///
+    /// Unlike `spawn_in_temp_data_dir`, this method does not create a temporary directory.
+    /// The caller is responsible for managing the data directory lifetime.
+    pub fn spawn_with_data_dir(data_dir: PathBuf, pg_port: Option<u16>) -> Self {
+        let data_dir_str = data_dir.display().to_string();
+        Self::spawn_spacetime_start_with_data_dir(
+            false,
+            &["start", "--data-dir", &data_dir_str],
+            pg_port,
+            data_dir,
+            None,
+        )
+    }
+
+    fn spawn_spacetime_start_with_data_dir(
+        use_installed_cli: bool,
+        _extra_args: &[&str],
+        pg_port: Option<u16>,
+        data_dir: PathBuf,
+        data_dir_handle: Option<tempfile::TempDir>,
+    ) -> Self {
+        if use_installed_cli {
+            // Use the installed CLI (rare case, mainly for spawn_in_temp_data_dir_use_cli)
+            let address = "127.0.0.1:0".to_string();
+            let data_dir_str = data_dir.display().to_string();
+
+            let args = ["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
+            let cmd = Command::new("spacetime");
+            let (child, logs) = Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args);
+
+            let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10))
+                .unwrap_or_else(|| panic!("Timed out waiting for SpacetimeDB to report listen address"));
+            let host_url = format!("http://{}", listen_addr);
+            let guard = SpacetimeDbGuard {
+                child,
+                host_url,
+                logs,
+                pg_port,
+                data_dir,
+                data_dir_handle,
+            };
+            guard.wait_until_http_ready(Duration::from_secs(10));
+            guard
+        } else {
+            // Use the built CLI (common case)
+            let (child, logs, host_url) = Self::spawn_server(&data_dir, pg_port);
+            SpacetimeDbGuard {
+                child,
+                host_url,
+                logs,
+                pg_port,
+                data_dir,
+                data_dir_handle,
+            }
+        }
+    }
+
+    /// Stop the server process without dropping the guard.
+    ///
+    /// This kills the server process but preserves the data directory.
+    /// Use `restart()` to start the server again with the same data.
+    pub fn stop(&mut self) {
+        self.kill_process();
+    }
+
+    /// Restart the server with the same data directory.
+    ///
+    /// This stops the current server process and starts a new one
+    /// with the same data directory, preserving all data.
+    pub fn restart(&mut self) {
+        self.stop();
+
+        let (child, logs, host_url) = Self::spawn_server(&self.data_dir, self.pg_port);
+
+        self.child = child;
+        self.logs = logs;
+        self.host_url = host_url;
+    }
+
+    /// Kills the current server process and waits for it to exit.
+    fn kill_process(&mut self) {
+        // Kill the process tree to ensure all child processes are terminated.
+        // On Windows, child.kill() only kills the direct child (spacetimedb-cli),
+        // leaving spacetimedb-standalone running as an orphan.
+        #[cfg(windows)]
+        {
+            let pid = self.child.id();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = self.child.kill();
+        }
+
+        let _ = self.child.wait();
+    }
+
+    /// Spawns a new server process with the given data directory.
+    /// Returns (child, logs, host_url).
+    fn spawn_server(data_dir: &PathBuf, pg_port: Option<u16>) -> (Child, Arc<Mutex<String>>, String) {
+        let data_dir_str = data_dir.display().to_string();
         let pg_port_str = pg_port.map(|p| p.to_string());
 
-        let mut args = vec![];
+        let address = "127.0.0.1:0".to_string();
+        let cli_path = ensure_binaries_built();
 
-        let (child, logs) = if use_installed_cli {
-            args.extend_from_slice(extra_args);
-            args.extend_from_slice(&["--listen-addr", &address]);
-            if let Some(ref port) = pg_port_str {
-                args.extend_from_slice(&["--pg-port", port]);
-            }
+        let mut args = vec!["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
+        if let Some(ref port) = pg_port_str {
+            args.extend(["--pg-port", port]);
+        }
 
-            let cmd = Command::new("spacetime");
-            Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args)
-        } else {
-            let cli_path = ensure_binaries_built();
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("Failed to find workspace root");
 
-            args.extend(extra_args);
-            args.extend(["--listen-addr", &address]);
-            if let Some(ref port) = pg_port_str {
-                args.extend(["--pg-port", port]);
-            }
+        let cmd = Command::new(&cli_path);
+        let (child, logs) = Self::spawn_child(cmd, workspace_root.to_str().unwrap(), &args);
 
-            let cmd = Command::new(&cli_path);
-
-            let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            let workspace_root = manifest_dir
-                .parent()
-                .and_then(|p| p.parent())
-                .expect("Failed to find workspace root");
-
-            Self::spawn_child(cmd, workspace_root.to_str().unwrap(), &args)
-        };
-
-        // Parse the actual bound address from logs.
+        // Wait for the server to be ready
         let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10))
             .unwrap_or_else(|| panic!("Timed out waiting for SpacetimeDB to report listen address"));
         let host_url = format!("http://{}", listen_addr);
-        let guard = SpacetimeDbGuard {
-            child,
-            host_url,
-            logs,
-            pg_port,
-        };
-        guard.wait_until_http_ready(Duration::from_secs(10));
-        guard
+
+        // Wait until HTTP is ready
+        let client = Client::new();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            let url = format!("{}/v1/ping", host_url);
+            if let Ok(resp) = client.get(&url).send() {
+                if resp.status().is_success() {
+                    return (child, logs, host_url);
+                }
+            }
+            sleep(Duration::from_millis(50));
+        }
+        panic!("Timed out waiting for SpacetimeDB HTTP /v1/ping at {}", host_url);
     }
 
     fn spawn_child(mut cmd: Command, workspace_dir: &str, args: &[&str]) -> (Child, Arc<Mutex<String>>) {
@@ -268,26 +382,7 @@ fn parse_listen_addr_from_line(line: &str) -> Option<SocketAddr> {
 
 impl Drop for SpacetimeDbGuard {
     fn drop(&mut self) {
-        // Kill the process tree to ensure all child processes are terminated.
-        // On Windows, child.kill() only kills the direct child (spacetimedb-cli),
-        // leaving spacetimedb-standalone running as an orphan.
-        #[cfg(windows)]
-        {
-            let pid = self.child.id();
-            // Use taskkill /T to kill the process tree
-            let _ = Command::new("taskkill")
-                .args(["/F", "/T", "/PID", &pid.to_string()])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-
-        #[cfg(not(windows))]
-        {
-            let _ = self.child.kill();
-        }
-
-        let _ = self.child.wait();
+        self.kill_process();
 
         // Only print logs if the test is currently panicking
         if std::thread::panicking() {

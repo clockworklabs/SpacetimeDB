@@ -368,6 +368,17 @@ impl Smoketest {
         SmoketestBuilder::new()
     }
 
+    /// Restart the SpacetimeDB server.
+    ///
+    /// This stops the current server process and starts a new one with the
+    /// same data directory. All data is preserved across the restart.
+    /// The server URL may change since a new ephemeral port is allocated.
+    pub fn restart_server(&mut self) {
+        self.guard.restart();
+        // Update server_url since the port may have changed
+        self.server_url = self.guard.host_url.clone();
+    }
+
     /// Returns the server host (without protocol), e.g., "127.0.0.1:3000".
     pub fn server_host(&self) -> &str {
         self.server_url
