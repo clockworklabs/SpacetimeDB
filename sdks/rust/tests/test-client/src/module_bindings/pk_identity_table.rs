@@ -140,3 +140,19 @@ impl<'ctx> PkIdentityIUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkIdentity`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_identityQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkIdentity`.
+    fn pk_identity(&self) -> __sdk::__query_builder::Table<PkIdentity>;
+}
+
+impl pk_identityQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_identity(&self) -> __sdk::__query_builder::Table<PkIdentity> {
+        __sdk::__query_builder::Table::new("pk_identity")
+    }
+}

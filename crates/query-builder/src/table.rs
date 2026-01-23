@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::query_builder::Operand;
+use crate::Operand;
 
 use super::{format_expr, BoolExpr, Query, RHS};
 
