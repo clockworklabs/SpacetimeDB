@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   docker_smoketests:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     name: Smoketests
     strategy:
       matrix:
@@ -114,10 +114,9 @@ jobs:
         run: docker compose -f .github/docker-compose.yml down
 
   test:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     name: Test Suite
-    # TODO: Migrate to spacetimedb-new-runner2 when flakes are fixed
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -222,7 +221,7 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -387,7 +386,7 @@ jobs:
 
   ci_command_docs:
     name: Check CI command docs
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Find Git ref
         env:
@@ -480,16 +479,33 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Build the tool from master to ensure consistent hash computation
+      # with the llm-benchmark-update workflow (which also uses master's tool).
+      - name: Checkout master (build tool from trusted code)
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install llm-benchmark tool from master
+        run: |
+          cargo install --path tools/xtask-llm-benchmark --locked
+          command -v llm_benchmark
+
+      # Now checkout the PR branch to verify its benchmark files
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
       - name: Run hash check (both langs)
-        run: cargo llm ci-check
+        run: llm_benchmark ci-check
 
   unity-testsuite:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
@@ -612,7 +628,7 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
   csharp-testsuite:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
@@ -717,7 +733,7 @@ jobs:
 
   internal-tests:
     name: Internal Tests
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     # Skip if not a PR or a push to master
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
