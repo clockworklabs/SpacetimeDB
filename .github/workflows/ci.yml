@@ -38,7 +38,7 @@ jobs:
     timeout-minutes: 120
     env:
       # TODO: un-comment this
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      #CARGO_TARGET_DIR: ${{ github.workspace }}/target
       # Note: clear_database and replication only work in private
       SMOKETEST_ARGS: ${{ matrix.smoketest_args }} -x clear_database -x replication -x teams
       RUST_LOG: debug
