@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_macros)]
 //! Tests translated from smoketests/tests/csharp_module.py
 
 use spacetimedb_smoketests::{have_dotnet, workspace_root};
