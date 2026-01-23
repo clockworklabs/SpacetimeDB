@@ -19,17 +19,14 @@ concurrency:
 
 jobs:
   docker_smoketests:
-    needs: [lints]
+    needs: [lints, llm_ci_check]
     name: Smoketests
     strategy:
       matrix:
-        runner: [spacetimedb-new-runner, windows-latest]
+        runner: [spacetimedb-new-runner-2, windows-latest]
         include:
-          - runner: spacetimedb-new-runner
+          - runner: spacetimedb-new-runner-2
             smoketest_args: --docker
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
           - runner: windows-latest
             smoketest_args: --no-build-cli
             container: null
@@ -86,10 +83,6 @@ jobs:
         shell: powershell
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-      - name: Start Docker daemon
-        if: runner.os == 'Linux'
-        run: /usr/local/bin/start-docker.sh
-
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -121,13 +114,11 @@ jobs:
         run: docker compose -f .github/docker-compose.yml down
 
   test:
-    needs: [lints]
+    needs: [lints, llm_ci_check]
     name: Test Suite
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    # TODO: Migrate to spacetimedb-new-runner2 when flakes are fixed
+    runs-on: ubuntu-latest
+
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -180,11 +171,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -212,11 +199,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -239,11 +222,7 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: ubuntu-latest
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -272,11 +251,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: spacetimedb-new-runner
+          - runner: spacetimedb-new-runner-2
             target: x86_64-unknown-linux-gnu
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
@@ -324,7 +300,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner
+    runs-on: spacetimedb-new-runner-2
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -439,11 +415,7 @@ jobs:
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -508,33 +480,16 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      # Build the tool from master to ensure consistent hash computation
-      # with the llm-benchmark-update workflow (which also uses master's tool).
-      - name: Checkout master (build tool from trusted code)
-        uses: actions/checkout@v4
-        with:
-          ref: master
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install llm-benchmark tool from master
-        run: |
-          cargo install --path tools/xtask-llm-benchmark --locked
-          command -v llm_benchmark
-
-      # Now checkout the PR branch to verify its benchmark files
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
-        with:
-          clean: false
-
       - name: Run hash check (both langs)
-        run: llm_benchmark ci-check
+        run: cargo llm ci-check
 
   unity-testsuite:
-    needs: [lints]
+    needs: [lints, llm_ci_check]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
@@ -657,13 +612,8 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
   csharp-testsuite:
-    needs: [lints]
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
-        --cgroupns=host
+    needs: [lints, llm_ci_check]
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -767,7 +717,7 @@ jobs:
 
   internal-tests:
     name: Internal Tests
-    needs: [lints]
+    needs: [lints, llm_ci_check]
     # Skip if not a PR or a push to master
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
