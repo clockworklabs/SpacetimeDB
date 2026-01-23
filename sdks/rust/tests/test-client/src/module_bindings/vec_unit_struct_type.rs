@@ -15,3 +15,31 @@ pub struct VecUnitStruct {
 impl __sdk::InModule for VecUnitStruct {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `VecUnitStruct`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecUnitStructCols {
+    pub s: __sdk::__query_builder::Col<VecUnitStruct, Vec<UnitStruct>>,
+}
+
+impl __sdk::__query_builder::HasCols for VecUnitStruct {
+    type Cols = VecUnitStructCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecUnitStructCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecUnitStruct`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecUnitStructIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for VecUnitStruct {
+    type IxCols = VecUnitStructIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecUnitStructIxCols {}
+    }
+}

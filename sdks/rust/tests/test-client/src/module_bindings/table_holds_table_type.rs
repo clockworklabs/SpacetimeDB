@@ -17,3 +17,33 @@ pub struct TableHoldsTable {
 impl __sdk::InModule for TableHoldsTable {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `TableHoldsTable`.
+///
+/// Provides typed access to columns for query building.
+pub struct TableHoldsTableCols {
+    pub a: __sdk::__query_builder::Col<TableHoldsTable, OneU8>,
+    pub b: __sdk::__query_builder::Col<TableHoldsTable, VecU8>,
+}
+
+impl __sdk::__query_builder::HasCols for TableHoldsTable {
+    type Cols = TableHoldsTableCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        TableHoldsTableCols {
+            a: __sdk::__query_builder::Col::new(table_name, "a"),
+            b: __sdk::__query_builder::Col::new(table_name, "b"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `TableHoldsTable`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct TableHoldsTableIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for TableHoldsTable {
+    type IxCols = TableHoldsTableIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        TableHoldsTableIxCols {}
+    }
+}

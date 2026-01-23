@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Player`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait my_playerQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Player`.
+    fn my_player(&self) -> __sdk::__query_builder::Table<Player>;
+}
+
+impl my_playerQueryTableAccess for __sdk::QueryTableAccessor {
+    fn my_player(&self) -> __sdk::__query_builder::Table<Player> {
+        __sdk::__query_builder::Table::new("my_player")
+    }
+}
