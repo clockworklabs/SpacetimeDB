@@ -871,6 +871,38 @@ void V9Builder::RegisterLifecycleReducer(const std::string& reducer_name, Func f
     RegisterReducerCommon(reducer_name, func, empty_names, lifecycle);
 }
 
+// Helper: Convert view return types to vector format (matching Rust's ViewReturn trait)
+// Vec<T> stays as Vec<T>, Option<T> becomes Vec<T> with 0 or 1 elements
+template<typename T>
+std::vector<T> view_result_to_vec(std::vector<T>&& vec) {
+    return std::move(vec);  // Already a vector
+}
+
+template<typename T>
+std::vector<T> view_result_to_vec(const std::vector<T>& vec) {
+    return vec;  // Already a vector
+}
+
+template<typename T>
+std::vector<T> view_result_to_vec(std::optional<T>&& opt) {
+    // Convert Option to Vec: Some(x) -> [x], None -> []
+    std::vector<T> result;
+    if (opt.has_value()) {
+        result.push_back(std::move(*opt));
+    }
+    return result;
+}
+
+template<typename T>
+std::vector<T> view_result_to_vec(const std::optional<T>& opt) {
+    // Convert Option to Vec: Some(x) -> [x], None -> []
+    std::vector<T> result;
+    if (opt.has_value()) {
+        result.push_back(*opt);
+    }
+    return result;
+}
+
 // Template implementation for RegisterView
 template<typename Func>
 void V9Builder::RegisterView(const std::string& view_name, Func func,
@@ -951,11 +983,14 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
                     // Call the view function - returns raw type directly
                     auto result = func(ctx);
                     
+                    // Convert result to vector format (Option<T> -> Vec<T>)
+                    auto result_vec = view_result_to_vec(std::move(result));
+                    
                     // Serialize using pooled buffer
                     IterBuf buf = IterBuf::take();
                     {
                         bsatn::Writer writer(buf.get());
-                        bsatn::serialize(writer, result);
+                        bsatn::serialize(writer, result_vec);
                     }  // Destroy Writer before releasing buffer
                     return buf.release();
                 };
@@ -987,11 +1022,14 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
                     // Call the view function - returns raw type directly
                     auto result = func(ctx);
                     
+                    // Convert result to vector format (Option<T> -> Vec<T>)
+                    auto result_vec = view_result_to_vec(std::move(result));
+                    
                     // Serialize using pooled buffer
                     IterBuf buf = IterBuf::take();
                     {
                         bsatn::Writer writer(buf.get());
-                        bsatn::serialize(writer, result);
+                        bsatn::serialize(writer, result_vec);
                     }  // Destroy Writer before releasing buffer
                     return buf.release();
                 };
