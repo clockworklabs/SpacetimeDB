@@ -122,7 +122,7 @@ impl CompiledModule {
             mode == CompilationMode::Debug,
             None,
         )
-        .unwrap();
+        .expect("Module compilation failed");
         Self {
             name: name.to_owned(),
             path,

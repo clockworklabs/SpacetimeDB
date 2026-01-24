@@ -29,11 +29,11 @@ The SDK uses multiple layers of code generation:
 
 The code created by `spacetime generate` imports the SpacetimeDB SDK and extends its various classes to create a SpacetimeDB client. It also imports `SpacetimeDB.BSATN.Codegen` for its serialization needs.
 
-See [`../../templates/quickstart-chat-c-sharp/module_bindings`](../../templates/quickstart-chat-c-sharp/module_bindings/) for an example of what `spacetime generate`d code looks like.
+See [`../../templates/chat-console-cs/module_bindings`](../../templates/chat-console-cs/module_bindings/) for an example of what `spacetime generate`d code looks like.
 
 If you need to debug `SpacetimeDB.BSATN.Codegen`, you can set `<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>` in the `<PropertyGroup.` of your `.csproj`, build the project, and then look in `obj/Debug/.../generated`. This is where the C# compiler dumps Roslyn-generated code.
 
-A client created with this SDK is at root a `DbConnection`. This class lives in the generated code in the file `SpacetimeDBClient.g.cs`. See e.g. [`../../templates/quickstart-chat-c-sharp/module_bindings/SpacetimeDBClient.g.cs`](../../templates/quickstart-chat-c-sharp/module_bindings/SpacetimeDBClient.g.cs).
+A client created with this SDK is at root a `DbConnection`. This class lives in the generated code in the file `SpacetimeDBClient.g.cs`. See e.g. [`../../templates/chat-console-cs/module_bindings/SpacetimeDBClient.g.cs`](../../templates/chat-console-cs/module_bindings/SpacetimeDBClient.g.cs).
 (Note that `SpacetimeDBClient` is a vestigial name that should probably be retired at some point...)
 
 `DbConnection` in the generated code inherits from `DbConnectionBase<...>` in the SDK code, which lives in [`src/SpacetimeDBClient.cs`](./src/SpacetimeDBClient.cs). This is a general pattern. Similar inheritance patterns are used for tables and indexes: the generated code defines a class that inherits most of its behavior from a class in the SDK.

@@ -13,3 +13,31 @@ pub struct OneConnectionId {
 impl __sdk::InModule for OneConnectionId {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OneConnectionId`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneConnectionIdCols {
+    pub a: __sdk::__query_builder::Col<OneConnectionId, __sdk::ConnectionId>,
+}
+
+impl __sdk::__query_builder::HasCols for OneConnectionId {
+    type Cols = OneConnectionIdCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneConnectionIdCols {
+            a: __sdk::__query_builder::Col::new(table_name, "a"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneConnectionId`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneConnectionIdIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OneConnectionId {
+    type IxCols = OneConnectionIdIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneConnectionIdIxCols {}
+    }
+}

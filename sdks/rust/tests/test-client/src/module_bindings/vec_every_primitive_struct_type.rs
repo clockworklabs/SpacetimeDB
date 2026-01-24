@@ -15,3 +15,31 @@ pub struct VecEveryPrimitiveStruct {
 impl __sdk::InModule for VecEveryPrimitiveStruct {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `VecEveryPrimitiveStruct`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecEveryPrimitiveStructCols {
+    pub s: __sdk::__query_builder::Col<VecEveryPrimitiveStruct, Vec<EveryPrimitiveStruct>>,
+}
+
+impl __sdk::__query_builder::HasCols for VecEveryPrimitiveStruct {
+    type Cols = VecEveryPrimitiveStructCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecEveryPrimitiveStructCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecEveryPrimitiveStruct`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecEveryPrimitiveStructIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for VecEveryPrimitiveStruct {
+    type IxCols = VecEveryPrimitiveStructIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecEveryPrimitiveStructIxCols {}
+    }
+}

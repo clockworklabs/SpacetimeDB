@@ -64,13 +64,13 @@ Creates a full-stack React web application with:
 #### Use Template
 Choose from several built-in templates:
 
-- `basic-typescript` - Basic TypeScript client and server stubs
-- `basic-c-sharp` - Basic C# client and server stubs
-- `basic-rust` - Basic Rust client and server stubs
-- `basic-react` - React web app with TypeScript server
-- `quickstart-chat-rust` - Complete Rust chat implementation
-- `quickstart-chat-c-sharp` - Complete C# chat implementation
-- `quickstart-chat-typescript` - Complete TypeScript chat implementation
+- `basic-ts` - Basic TypeScript client and server stubs
+- `basic-cs` - Basic C# client and server stubs
+- `basic-rs` - Basic Rust client and server stubs
+- `react-ts` - React web app with TypeScript server
+- `chat-console-rs` - Complete Rust chat implementation
+- `chat-console-cs` - Complete C# chat implementation
+- `chat-react-ts` - Complete TypeScript chat implementation
 
 You can also clone an existing project by entering a GitHub repository (`owner/repo`) or git URL.
 
