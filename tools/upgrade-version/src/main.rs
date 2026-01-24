@@ -203,8 +203,8 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("pnpm run build failed!");
         
-        println!("$> pnpm --dir templates/quickstart-chat-typescript generate");
-        cmd!("pnpm", "--dir", "templates/quickstart-chat-typescript", "generate")
+        println!("$> pnpm --dir templates/chat-react-ts generate");
+        cmd!("pnpm", "--dir", "templates/chat-react-ts", "generate")
             .run()
             .expect("pnpm generate failed!");
 
