@@ -194,33 +194,40 @@ fn main() -> anyhow::Result<()> {
         cmd!("cargo", "check").run().expect("Cargo check failed!");
 
         println!("$> pnpm install");
-        cmd!("pnpm", "install")
-            .run()
-            .expect("pnpm run build failed!");
+        cmd!("pnpm", "install").run().expect("pnpm run build failed!");
 
         println!("$> pnpm run build");
-        cmd!("pnpm", "run", "build")
-            .run()
-            .expect("pnpm run build failed!");
-        
+        cmd!("pnpm", "run", "build").run().expect("pnpm run build failed!");
+
         println!("$> pnpm --dir templates/chat-react-ts generate");
         cmd!("pnpm", "--dir", "templates/chat-react-ts", "generate")
             .run()
             .expect("pnpm generate failed!");
 
+        println!("$> cargo install cargo-insta");
+        cmd!("cargo", "install", "cargo-insta")
+            .run()
+            .expect("cargo install cargo-insta failed!");
+
         if matches.get_flag("accept-snapshots") {
             // automatically accept the snapshot
             println!("$> cargo insta accept");
-            cmd!("cargo", "insta", "accept").run()?;
+            cmd!("cargo", "insta", "accept")
+                .run()
+                .expect("cargo insta accept failed!");
         } else {
             // Let the user manually approve the snapshot change
             println!("$> cargo insta review");
-            cmd!("cargo", "insta", "review").run()?;
+            cmd!("cargo", "insta", "review")
+                .run()
+                .expect("cargo insta review failed!");
         }
 
         // This gives an error because the snapshot has been updated
         println!("$> cargo test -p spacetimedb-codegen");
-        let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen").run();
+        cmd!("cargo", "test", "-p", "spacetimedb-codegen")
+            .run()
+            .expect("cargo test -p spacetimedb-codegen failed!");
     }
 
     if matches.get_flag("typescript") || matches.get_flag("all") {
