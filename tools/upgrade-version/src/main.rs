@@ -193,6 +193,11 @@ fn main() -> anyhow::Result<()> {
         println!("$> cargo check");
         cmd!("cargo", "check").run().expect("Cargo check failed!");
 
+        println!("$> pnpm run build");
+        cmd!("pnpm", "run", "build")
+            .run()
+            .expect("pnpm run build failed!");
+        
         println!("$> pnpm --dir templates/quickstart-chat-typescript generate");
         cmd!("pnpm", "--dir", "templates/quickstart-chat-typescript", "generate")
             .run()
