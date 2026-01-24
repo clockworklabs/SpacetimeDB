@@ -15,6 +15,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        # pnpm is required for regenerating the typescript bindings
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
       - name: Verify that upgrade-version still works
         run: cargo bump-versions 123.456.789 --rust-and-cli --csharp --typescript --accept-snapshots
       - name: Show diff
