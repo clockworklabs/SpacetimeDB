@@ -208,10 +208,6 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("pnpm generate failed!");
 
-        // This gives an error because the snapshot has been updated
-        println!("$> cargo test -p spacetimedb-codegen");
-        let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen").run();
-
         if matches.get_flag("accept-snapshots") {
             // automatically accept the snapshot
             println!("$> cargo insta accept");
@@ -221,6 +217,10 @@ fn main() -> anyhow::Result<()> {
             println!("$> cargo insta review");
             cmd!("cargo", "insta", "review").run()?;
         }
+
+        // This gives an error because the snapshot has been updated
+        println!("$> cargo test -p spacetimedb-codegen");
+        let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen").run();
     }
 
     if matches.get_flag("typescript") || matches.get_flag("all") {
