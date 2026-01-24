@@ -72,6 +72,21 @@ pub struct Player {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Player {
+    uint64_t id;
+    std::string name;
+    uint32_t age;
+    Identity user;
+};
+SPACETIMEDB_STRUCT(Player, id, name, age, user)
+SPACETIMEDB_TABLE(Player, players, Public)
+FIELD_PrimaryKey(players, id)
+```
+
+</TabItem>
 
 </Tabs>
 
@@ -144,6 +159,28 @@ And a Rust [client](#client) can call that reducer:
 fn main() {
    // ...setup code, then...
    ctx.reducers.set_player_name(57, "Marceline".into());
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+A reducer can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_REDUCER(set_player_name, ReducerContext ctx, uint64_t id, std::string name) {
+   // ...
+   return Ok();
+}
+```
+
+And an Unreal C++ [client](#client) can call that reducer:
+
+```cpp
+void AMyGameManager::UpdatePlayerName()
+{
+   // ...setup code, then...
+   Conn->Reducers->SetPlayerName(57, "Marceline");
 }
 ```
 
@@ -240,6 +277,27 @@ pub fn world(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
 
 While SpacetimeDB doesn't support nested transactions,
 a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
+or at a specific time.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(world, ReducerContext ctx) {
+    clear_all_tables(ctx);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(hello, ReducerContext ctx) {
+    if (world(ctx).is_err()) {
+        other_changes(ctx);
+    }
+    return Ok();
+}
+```
+
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -361,7 +419,21 @@ fn main() {
 ```
 
 </TabItem>
-<TabItem value="cpp" label="Unreal C++">
+<TabItem value="cpp" label="C++">
+
+A procedure can be defined in a C++ module:
+
+```cpp
+SPACETIMEDB_PROCEDURE(std::string, make_request, ProcedureContext ctx) {
+   // ...
+   return std::string{"result"};
+}
+```
+
+Use the other tabs (TypeScript/C#/Rust/Unreal C++/Blueprint) for client call examples.
+
+</TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
 
 An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
 
@@ -452,6 +524,17 @@ A view can be written in Rust like so:
 #[spacetimedb::view(name = my_player, public)]
 fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender)
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+A view can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
+   return ctx.db[player_identity].find(ctx.sender);
 }
 ```
 
