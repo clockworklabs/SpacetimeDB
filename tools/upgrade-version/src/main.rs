@@ -212,7 +212,7 @@ fn main() -> anyhow::Result<()> {
         // This gives an error because the snapshot will be updated during the test
         println!("$> cargo test -p spacetimedb-codegen (expected to fail)");
         let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen").run();
-        
+
         if matches.get_flag("accept-snapshots") {
             // automatically accept the snapshot
             println!("$> cargo insta accept");
