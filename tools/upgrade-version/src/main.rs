@@ -127,6 +127,12 @@ fn main() -> anyhow::Result<()> {
                 .help("Update all targets (equivalent to --typescript --rust-and-cli --csharp)")
                 .conflicts_with_all(["typescript", "rust-and-cli", "csharp"]),
         )
+        .arg(
+            Arg::new("accept-snapshots")
+                .long("accept-snapshots")
+                .action(clap::ArgAction::SetTrue)
+                .help("If there are snapshots to review automatically accept them all."),
+        )
         .group(
             ArgGroup::new("update-targets")
                 .args(["all", "typescript", "rust-and-cli", "csharp"])
@@ -196,9 +202,15 @@ fn main() -> anyhow::Result<()> {
         println!("$> cargo test -p spacetimedb-codegen");
         let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen").run();
 
-        // Let the user approve the snapshot change
-        println!("$> cargo insta review");
-        cmd!("cargo", "insta", "review").run()?;
+        if matches.get_flag("accept-snapshots") {
+            // automatically accept the snapshot
+            println!("$> cargo insta accept");
+            cmd!("cargo", "insta", "accept").run()?;
+        } else {
+            // Let the user manually approve the snapshot change
+            println!("$> cargo insta review");
+            cmd!("cargo", "insta", "review").run()?;
+        }
     }
 
     if matches.get_flag("typescript") || matches.get_flag("all") {

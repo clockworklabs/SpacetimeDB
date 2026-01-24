@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Verify that upgrade-version still works
-        run: cargo bump-versions 123.456.789 --rust-and-cli --csharp --typescript
+        run: cargo bump-versions 123.456.789 --rust-and-cli --csharp --typescript --accept-snapshots
       - name: Show diff
         run: git diff HEAD
 
