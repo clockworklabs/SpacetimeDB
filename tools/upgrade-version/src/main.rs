@@ -209,23 +209,22 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("cargo install cargo-insta failed!");
 
-        // This gives an error because the snapshot will be updated during the test
-        println!("$> cargo test -p spacetimedb-codegen (expected to fail)");
-        let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen").run();
+        println!("$> INSTA_UPDATE=always cargo test -p spacetimedb-codegen --test codegen");
+        cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+            .env("INSTA_UPDATE", "always")
+            .run()
+            .expect("cargo test -p spacetimedb-codegen --test codegen (INSTA_UPDATE=always) failed!");
 
-        if matches.get_flag("accept-snapshots") {
-            // automatically accept the snapshot
-            println!("$> cargo insta accept");
-            cmd!("cargo", "insta", "accept")
-                .run()
-                .expect("cargo insta accept failed!");
+
+        let insta_command = if matches.get_flag("accept-snapshots") {
+            "accept"
         } else {
-            // Let the user manually approve the snapshot change
-            println!("$> cargo insta review");
-            cmd!("cargo", "insta", "review")
-                .run()
-                .expect("cargo insta review failed!");
-        }
+            "review"
+        };
+        println!("$> cargo insta {}", insta_command);
+        cmd!("cargo", "insta", insta_command)
+            .run()
+            .expect(format!("cargo insta {} failed!", insta_command).as_str());
 
         // This should now pass
         println!("$> cargo test -p spacetimedb-codegen");
