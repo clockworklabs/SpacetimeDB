@@ -219,8 +219,7 @@ fn main() -> anyhow::Result<()> {
 
             // Initial test - this will generate snapshots. This is expected to fail.
             println!("$> cargo test -p spacetimedb-codegen --test codegen");
-            let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
-                .run();
+            let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen").run();
 
             // Review the new snapshots
             println!("$> cargo insta review");
