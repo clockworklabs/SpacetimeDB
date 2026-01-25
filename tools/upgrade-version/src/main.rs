@@ -217,11 +217,10 @@ fn main() -> anyhow::Result<()> {
                 .run()
                 .expect("cargo install cargo-insta failed!");
 
-            // Initial test - this will generate snapshots
+            // Initial test - this will generate snapshots. This is expected to fail.
             println!("$> cargo test -p spacetimedb-codegen --test codegen");
-            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
-                .run()
-                .expect("cargo test -p spacetimedb-codegen --test codegen failed!");
+            let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .run();
 
             // Review the new snapshots
             println!("$> cargo insta review");
