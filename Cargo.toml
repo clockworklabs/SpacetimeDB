@@ -59,6 +59,7 @@ members = [
   "tools/generate-client-api",
   "tools/gen-bindings",
   "tools/xtask-llm-benchmark",
+  "tools/xtask-smoketest",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
   "crates/query-builder",
