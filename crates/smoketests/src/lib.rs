@@ -75,34 +75,21 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Controls whether smoketests share build caches or run in complete isolation.
+/// Returns the shared target directory for smoketest module builds.
 ///
-/// - `true`: All tests share `target/smoketest-modules/` and the global `~/.cargo/` cache.
-///   First test compiles dependencies, subsequent tests reuse cached artifacts.
-///
-/// - `false`: Each test gets its own `CARGO_HOME` and target directory for complete isolation.
-///   No lock contention between parallel tests since nothing is shared.
-const USE_SHARED_TARGET_DIR: bool = true;
-
-/// Returns the shared target directory for smoketest module builds, if enabled.
-///
-/// This directory is shared across all smoketests to cache compiled dependencies.
-/// Using a shared target directory dramatically reduces build times since the
-/// spacetimedb bindings and other dependencies only need to be compiled once.
-fn shared_module_target_dir() -> Option<PathBuf> {
-    if !USE_SHARED_TARGET_DIR {
-        return None;
-    }
+/// All tests share this directory to cache compiled dependencies. The warmup step
+/// pre-compiles dependencies, then each test only needs to compile its unique module.
+/// Cargo serializes builds due to directory locking, but this is still faster than
+/// each test compiling all dependencies from scratch.
+fn shared_target_dir() -> PathBuf {
     static TARGET_DIR: OnceLock<PathBuf> = OnceLock::new();
-    Some(
-        TARGET_DIR
-            .get_or_init(|| {
-                let target_dir = workspace_root().join("target/smoketest-modules");
-                fs::create_dir_all(&target_dir).expect("Failed to create shared module target directory");
-                target_dir
-            })
-            .clone(),
-    )
+    TARGET_DIR
+        .get_or_init(|| {
+            let target_dir = workspace_root().join("target/smoketest-modules");
+            fs::create_dir_all(&target_dir).expect("Failed to create shared module target directory");
+            target_dir
+        })
+        .clone()
 }
 
 /// Generates a random lowercase alphabetic string suitable for database names.
@@ -164,6 +151,7 @@ pub fn have_pnpm() -> bool {
             .unwrap_or(false)
     })
 }
+
 
 /// Parse code blocks from quickstart markdown documentation.
 /// Extracts code blocks with the specified language tag.
@@ -560,19 +548,11 @@ impl Smoketest {
         let start = Instant::now();
         let project_path = self.project_dir.path().to_str().unwrap();
         let cli_path = ensure_binaries_built();
+
         let mut cmd = Command::new(&cli_path);
         cmd.args(["build", "--project-path", project_path])
-            .current_dir(self.project_dir.path());
-
-        if let Some(target_dir) = shared_module_target_dir() {
-            // Shared mode: use shared target directory, inherit global CARGO_HOME
-            cmd.env("CARGO_TARGET_DIR", target_dir);
-        } else {
-            // Isolated mode: each test gets its own CARGO_HOME for complete isolation
-            let isolated_cargo_home = self.project_dir.path().join(".cargo-home");
-            fs::create_dir_all(&isolated_cargo_home).expect("Failed to create isolated CARGO_HOME");
-            cmd.env("CARGO_HOME", &isolated_cargo_home);
-        }
+            .current_dir(self.project_dir.path())
+            .env("CARGO_TARGET_DIR", shared_target_dir());
 
         let output = cmd.output().expect("Failed to execute spacetime build");
         eprintln!("[TIMING] spacetime build: {:?}", start.elapsed());
@@ -613,45 +593,17 @@ impl Smoketest {
         // First, run spacetime build to compile the WASM module (separate from publish)
         let build_start = Instant::now();
         let cli_path = ensure_binaries_built();
-        let target_dir = shared_module_target_dir();
+        let target_dir = shared_target_dir();
+
         let mut build_cmd = Command::new(&cli_path);
         build_cmd
             .args(["build", "--project-path", &project_path])
-            .current_dir(self.project_dir.path());
-
-        if let Some(ref dir) = target_dir {
-            // Shared mode: use shared target directory, inherit global CARGO_HOME
-            build_cmd.env("CARGO_TARGET_DIR", dir);
-        } else {
-            // Isolated mode: each test gets its own CARGO_HOME for complete isolation
-            let isolated_cargo_home = self.project_dir.path().join(".cargo-home");
-            fs::create_dir_all(&isolated_cargo_home).expect("Failed to create isolated CARGO_HOME");
-            build_cmd.env("CARGO_HOME", &isolated_cargo_home);
-        }
+            .current_dir(self.project_dir.path())
+            .env("CARGO_TARGET_DIR", &target_dir);
 
         let build_output = build_cmd.output().expect("Failed to execute spacetime build");
         let build_elapsed = build_start.elapsed();
         eprintln!("[TIMING] spacetime build: {:?}", build_elapsed);
-
-        // In isolated mode, log detailed build breakdown from cargo output
-        if target_dir.is_none() {
-            let stderr = String::from_utf8_lossy(&build_output.stderr);
-            let mut downloading_count = 0;
-            let mut compiling_count = 0;
-            for line in stderr.lines() {
-                if line.contains("Downloading") {
-                    downloading_count += 1;
-                } else if line.contains("Compiling") {
-                    compiling_count += 1;
-                } else if line.contains("Blocking") || line.contains("Waiting") {
-                    eprintln!("[BUILD] {}", line);
-                }
-            }
-            eprintln!(
-                "[BUILD DETAILS] Downloaded {} crates, Compiled {} crates in {:?}",
-                downloading_count, compiling_count, build_elapsed
-            );
-        }
 
         if !build_output.status.success() {
             bail!(
@@ -662,10 +614,8 @@ impl Smoketest {
         }
 
         // Construct the wasm path using the unique module name
-        // Use the target directory where the build output goes (shared or per-project)
         let wasm_filename = format!("{}.wasm", self.module_name);
-        let effective_target_dir = target_dir.unwrap_or_else(|| self.project_dir.path().join("target"));
-        let wasm_path = effective_target_dir
+        let wasm_path = target_dir
             .join("wasm32-unknown-unknown/release")
             .join(&wasm_filename);
         let wasm_path_str = wasm_path.to_str().unwrap().to_string();
