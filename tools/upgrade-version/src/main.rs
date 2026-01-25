@@ -204,33 +204,32 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("pnpm generate failed!");
 
-        println!("$> cargo install cargo-insta");
-        cmd!("cargo", "install", "cargo-insta")
-            .run()
-            .expect("cargo install cargo-insta failed!");
-
-        println!("$> INSTA_UPDATE=always cargo test -p spacetimedb-codegen --test codegen");
-        cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
-            .env("INSTA_UPDATE", "always")
-            .run()
-            .expect("cargo test -p spacetimedb-codegen --test codegen (INSTA_UPDATE=always) failed!");
-
-
-        let insta_command = if matches.get_flag("accept-snapshots") {
-            "accept"
+        if matches.get_flag("accept_snapshots") {
+            // Generate and auto-accept snapshots
+            println!("$> INSTA_UPDATE=always cargo test -p spacetimedb-codegen --test codegen");
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .env("INSTA_UPDATE", "always")
+                .run()
+                .expect("cargo test -p spacetimedb-codegen --test codegen (INSTA_UPDATE=always) failed!");
         } else {
-            "review"
-        };
-        println!("$> cargo insta {}", insta_command);
-        cmd!("cargo", "insta", insta_command)
-            .run()
-            .expect(format!("cargo insta {} failed!", insta_command).as_str());
+            // Initial test - this will generate snapshots
+            println!("$> cargo test -p spacetimedb-codegen --test codegen");
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .run()
+                .expect("cargo test -p spacetimedb-codegen --test codegen failed!");
 
-        // This should now pass
-        println!("$> cargo test -p spacetimedb-codegen");
-        cmd!("cargo", "test", "-p", "spacetimedb-codegen")
-            .run()
-            .expect("cargo test -p spacetimedb-codegen failed!");
+            // Review the new snapshots
+            println!("$> cargo insta review");
+            cmd!("cargo", "insta", "review")
+                .run()
+                .expect("cargo insta review failed!");
+
+            // Test again now that the user has had a chance to accept the snapshots
+            println!("$> cargo test -p spacetimedb-codegen --test codegen");
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .run()
+                .expect("cargo test -p spacetimedb-codegen --test codegen failed!");
+        }
     }
 
     if matches.get_flag("typescript") || matches.get_flag("all") {
