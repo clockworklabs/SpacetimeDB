@@ -10,7 +10,7 @@ cd ..
 # available.
 # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file,
 # and https://tldp.org/LDP/abs/html/here-docs.html for more info on this bash feature.
-cat >nuget.config <<EOF
+cat >NuGet.Config <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <packageSources>
@@ -38,5 +38,7 @@ cat >nuget.config <<EOF
 </configuration>
 EOF
 
-echo "Wrote nuget.config contents:"
-cat nuget.config
+cp NuGet.Config nuget.config
+
+echo "Wrote NuGet.Config contents:"
+cat NuGet.Config
