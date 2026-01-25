@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 //! Tests translated from smoketests/tests/csharp_module.py
 
+use spacetimedb_guard::ensure_binaries_built;
 use spacetimedb_smoketests::{have_dotnet, workspace_root};
 use std::fs;
 use std::process::Command;
@@ -17,15 +18,8 @@ fn test_build_csharp_module() {
 
     let workspace = workspace_root();
     let bindings = workspace.join("crates/bindings-csharp");
-    let cli_path = workspace.join("target/debug/spacetimedb-cli");
-
-    // Build the CLI if needed
-    let status = Command::new("cargo")
-        .args(["build", "-p", "spacetimedb-cli"])
-        .current_dir(&workspace)
-        .status()
-        .expect("Failed to build CLI");
-    assert!(status.success(), "Failed to build spacetimedb-cli");
+    // CLI is pre-built by artifact dependencies during compilation
+    let cli_path = ensure_binaries_built();
 
     // Clear nuget locals
     let status = Command::new("dotnet")

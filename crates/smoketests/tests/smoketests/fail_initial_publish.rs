@@ -46,7 +46,7 @@ fn test_fail_initial_publish() {
     assert!(result.is_err(), "Expected publish to fail with broken module");
 
     // Describe should fail because database doesn't exist
-    let describe_output = test.spacetime_cmd(&["describe", "--json", &name]);
+    let describe_output = test.spacetime_cmd(&["describe", "--server", &test.server_url, "--json", &name]);
     assert!(
         !describe_output.status.success(),
         "Expected describe to fail for non-existent database"

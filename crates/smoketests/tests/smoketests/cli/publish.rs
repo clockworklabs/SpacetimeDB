@@ -1,5 +1,11 @@
-use assert_cmd::cargo::cargo_bin_cmd;
-use spacetimedb_guard::SpacetimeDbGuard;
+//! CLI publish command tests moved from crates/cli/tests/publish.rs
+
+use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
+use std::process::Command;
+
+fn cli_cmd() -> Command {
+    Command::new(ensure_binaries_built())
+}
 
 #[test]
 fn cli_can_publish_spacetimedb_on_disk() {
@@ -7,24 +13,34 @@ fn cli_can_publish_spacetimedb_on_disk() {
 
     // Workspace root for `cargo run -p ...`
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
-    // dir = <workspace_root>/modules/quickstart-chat
+    // dir = <workspace_root>/templates/chat-console-rs/spacetimedb
     let dir = workspace_dir
         .join("templates")
         .join("chat-console-rs")
         .join("spacetimedb");
 
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args(["publish", "--server", &spacetime.host_url.to_string(), "foobar"])
-        .current_dir(dir.clone())
-        .assert()
-        .success();
+    let output = cli_cmd()
+        .args(["publish", "--server", &spacetime.host_url.to_string(), "foobar"])
+        .current_dir(&dir)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "publish failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Can republish without error to the same name
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args(["publish", "--server", &spacetime.host_url.to_string(), "foobar"])
-        .current_dir(dir)
-        .assert()
-        .success();
+    let output = cli_cmd()
+        .args(["publish", "--server", &spacetime.host_url.to_string(), "foobar"])
+        .current_dir(&dir)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "republish failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 // TODO: Somewhere we should test that data is actually deleted properly in all the expected cases,
@@ -36,21 +52,32 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
     let dir = workspace_dir.join("modules").join("module-test");
 
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
-        .current_dir(dir.clone())
-        .assert()
-        .success();
+    let output = cli_cmd()
+        .args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
+        .current_dir(&dir)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "initial publish failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
+    let output = cli_cmd()
+        .args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
         .args(republish_args)
-        .current_dir(dir);
+        .current_dir(&dir)
+        .output()
+        .expect("failed to execute");
 
     if expect_success {
-        cmd.assert().success();
+        assert!(
+            output.status.success(),
+            "republish should have succeeded: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     } else {
-        cmd.assert().failure();
+        assert!(!output.status.success(), "republish should have failed but succeeded");
     }
 }
 
