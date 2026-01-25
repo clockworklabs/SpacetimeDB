@@ -7436,7 +7436,6 @@ name = "spacetimedb-cli"
 version = "1.11.3"
 dependencies = [
  "anyhow",
- "assert_cmd",
  "base64 0.21.7",
  "bytes",
  "cargo_metadata",
@@ -7462,7 +7461,6 @@ dependencies = [
  "names",
  "notify 7.0.0",
  "percent-encoding",
- "predicates",
  "pretty_assertions",
  "quick-xml 0.31.0",
  "regex",
@@ -7479,7 +7477,6 @@ dependencies = [
  "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
- "spacetimedb-guard",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 1.11.3",
  "spacetimedb-paths",
@@ -8211,7 +8208,9 @@ name = "spacetimedb-smoketests"
 version = "1.11.3"
 dependencies = [
  "anyhow",
+ "assert_cmd",
  "cargo_metadata",
+ "predicates",
  "regex",
  "serde_json",
  "spacetimedb-guard",
@@ -11032,6 +11031,15 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",
+]
+
+[[package]]
+name = "xtask-smoketest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "tempfile",
 ]
 
 [[package]]

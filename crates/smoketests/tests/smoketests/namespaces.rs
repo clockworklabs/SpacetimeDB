@@ -1,11 +1,15 @@
 //! Namespace tests translated from smoketests/tests/namespaces.py
+//!
+//! These tests use `module_code()` instead of `precompiled_module()` because
+//! they use `spacetime generate --project-path` which requires a Cargo.toml
+//! to detect the module language. They don't actually compile the module.
 
 use spacetimedb_smoketests::Smoketest;
 use std::fs;
 use std::path::Path;
 
-/// Template module code matching the Python test's default
-const TEMPLATE_MODULE_CODE: &str = r#"
+/// Module code for namespace tests
+const MODULE_CODE: &str = r#"
 use spacetimedb::{ReducerContext, Table};
 
 #[spacetimedb::table(name = person, public)]
@@ -14,19 +18,13 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer(init)]
-pub fn init(_ctx: &ReducerContext) {
-    // Called when the module is initially published
-}
+pub fn init(_ctx: &ReducerContext) {}
 
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(_ctx: &ReducerContext) {
-    // Called everytime a new client connects
-}
+pub fn identity_connected(_ctx: &ReducerContext) {}
 
 #[spacetimedb::reducer(client_disconnected)]
-pub fn identity_disconnected(_ctx: &ReducerContext) {
-    // Called everytime a client disconnects
-}
+pub fn identity_disconnected(_ctx: &ReducerContext) {}
 
 #[spacetimedb::reducer]
 pub fn add(ctx: &ReducerContext, name: String) {
@@ -64,7 +62,7 @@ fn count_matches(dir: &Path, needle: &str) -> usize {
 #[test]
 fn test_spacetimedb_ns_csharp() {
     let test = Smoketest::builder()
-        .module_code(TEMPLATE_MODULE_CODE)
+        .module_code(MODULE_CODE)
         .autopublish(false)
         .build();
 
@@ -99,7 +97,7 @@ fn test_spacetimedb_ns_csharp() {
 #[test]
 fn test_custom_ns_csharp() {
     let test = Smoketest::builder()
-        .module_code(TEMPLATE_MODULE_CODE)
+        .module_code(MODULE_CODE)
         .autopublish(false)
         .build();
 

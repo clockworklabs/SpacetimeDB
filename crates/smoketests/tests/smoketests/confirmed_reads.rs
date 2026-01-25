@@ -6,24 +6,10 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const MODULE_CODE: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(name = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
-}
-"#;
-
 /// Tests that subscribing with confirmed=true receives updates
 #[test]
 fn test_confirmed_reads_receive_updates() {
-    let test = Smoketest::builder().module_code(MODULE_CODE).build();
+    let test = Smoketest::builder().precompiled_module("confirmed-reads").build();
 
     // Start subscription in background with confirmed flag
     let sub = test
@@ -62,7 +48,7 @@ fn test_confirmed_reads_receive_updates() {
 /// Tests that an SQL operation with confirmed=true returns a result
 #[test]
 fn test_sql_with_confirmed_reads_receives_result() {
-    let test = Smoketest::builder().module_code(MODULE_CODE).build();
+    let test = Smoketest::builder().precompiled_module("confirmed-reads").build();
 
     // Insert with confirmed
     test.sql_confirmed("INSERT INTO person (name) VALUES ('Horst')")

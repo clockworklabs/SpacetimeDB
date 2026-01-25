@@ -2,62 +2,10 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const MODULE_CODE_REJECT: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(name = all_u8s, public)]
-pub struct AllU8s {
-    number: u8,
-}
-
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    for i in u8::MIN..=u8::MAX {
-        ctx.db.all_u8s().insert(AllU8s { number: i });
-    }
-}
-
-#[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(_ctx: &ReducerContext) -> Result<(), String> {
-    Err("Rejecting connection from client".to_string())
-}
-
-#[spacetimedb::reducer(client_disconnected)]
-pub fn identity_disconnected(_ctx: &ReducerContext) {
-    panic!("This should never be called, since we reject all connections!")
-}
-"#;
-
-const MODULE_CODE_DISCONNECT_PANIC: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(name = all_u8s, public)]
-pub struct AllU8s {
-    number: u8,
-}
-
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    for i in u8::MIN..=u8::MAX {
-        ctx.db.all_u8s().insert(AllU8s { number: i });
-    }
-}
-
-#[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(_ctx: &ReducerContext) -> Result<(), String> {
-    Ok(())
-}
-
-#[spacetimedb::reducer(client_disconnected)]
-pub fn identity_disconnected(_ctx: &ReducerContext) {
-    panic!("This should be called, but the `st_client` row should still be deleted")
-}
-"#;
-
 /// Test that client_connected returning an error rejects the connection
 #[test]
 fn test_client_connected_error_rejects_connection() {
-    let test = Smoketest::builder().module_code(MODULE_CODE_REJECT).build();
+    let test = Smoketest::builder().precompiled_module("client-connection-reject").build();
 
     // Subscribe should fail because client_connected returns an error
     let result = test.subscribe(&["SELECT * FROM all_u8s"], 0);
@@ -82,7 +30,7 @@ fn test_client_connected_error_rejects_connection() {
 /// Test that client_disconnected panicking still cleans up the st_client row
 #[test]
 fn test_client_disconnected_error_still_deletes_st_client() {
-    let test = Smoketest::builder().module_code(MODULE_CODE_DISCONNECT_PANIC).build();
+    let test = Smoketest::builder().precompiled_module("client-connection-disconnect-panic").build();
 
     // Subscribe should succeed (client_connected returns Ok)
     let result = test.subscribe(&["SELECT * FROM all_u8s"], 0);

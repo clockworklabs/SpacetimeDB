@@ -2,31 +2,6 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const MODULE_CODE: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[spacetimedb::table(name = person)]
-pub struct Person {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { id: 0, name });
-}
-
-#[spacetimedb::reducer]
-pub fn say_hello(ctx: &ReducerContext) {
-    for person in ctx.db.person().iter() {
-        log::info!("Hello, {}!", person.name);
-    }
-    log::info!("Hello, World!");
-}
-"#;
-
 /// Breaking change: adds a new column to Person
 const MODULE_CODE_BREAKING: &str = r#"
 #[spacetimedb::table(name = person)]
@@ -39,33 +14,10 @@ pub struct Person {
 }
 "#;
 
-/// Non-breaking change: adds a new table
-const MODULE_CODE_ADD_TABLE: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[spacetimedb::table(name = person)]
-pub struct Person {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    name: String,
-}
-
-#[spacetimedb::table(name = pets)]
-pub struct Pet {
-    species: String,
-}
-
-#[spacetimedb::reducer]
-pub fn are_we_updated_yet(ctx: &ReducerContext) {
-    log::info!("MODULE UPDATED");
-}
-"#;
-
 /// Test publishing a module without the --delete-data option
 #[test]
 fn test_module_update() {
-    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
+    let mut test = Smoketest::builder().precompiled_module("modules-basic").autopublish(false).build();
 
     let name = format!("test-db-{}", std::process::id());
 
@@ -101,7 +53,7 @@ fn test_module_update() {
     test.call("say_hello", &[]).unwrap();
 
     // Adding a table is ok
-    test.write_module_code(MODULE_CODE_ADD_TABLE).unwrap();
+    test.use_precompiled_module("modules-add-table");
     test.publish_module_named(&name, false).unwrap();
     test.call("are_we_updated_yet", &[]).unwrap();
 
@@ -116,7 +68,7 @@ fn test_module_update() {
 /// Test uploading a basic module and calling some functions and checking logs
 #[test]
 fn test_upload_module() {
-    let test = Smoketest::builder().module_code(MODULE_CODE).build();
+    let test = Smoketest::builder().precompiled_module("modules-basic").build();
 
     test.call("add", &["Robert"]).unwrap();
     test.call("add", &["Julie"]).unwrap();

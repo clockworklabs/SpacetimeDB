@@ -16,19 +16,6 @@ pub struct Person {
 const HIDE_PEOPLE_EXCEPT_ME: Filter = Filter::Sql("SELECT * FROM Person WHERE name = 'me'");
 "#;
 
-/// Fixed module code with correct table name
-const MODULE_CODE_FIXED: &str = r#"
-use spacetimedb::{client_visibility_filter, Filter};
-
-#[spacetimedb::table(name = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[client_visibility_filter]
-const HIDE_PEOPLE_EXCEPT_ME: Filter = Filter::Sql("SELECT * FROM person WHERE name = 'me'");
-"#;
-
 const FIXED_QUERY: &str = r#""sql": "SELECT * FROM person WHERE name = 'me'""#;
 
 /// This tests that publishing an invalid module does not leave a broken entry in the control DB.
@@ -61,7 +48,7 @@ fn test_fail_initial_publish() {
     // We can publish a fixed module under the same database name.
     // This used to be broken; the failed initial publish would leave
     // the control database in a bad state.
-    test.write_module_code(MODULE_CODE_FIXED).unwrap();
+    test.use_precompiled_module("fail-initial-publish-fixed");
     test.publish_module_named(&name, false).unwrap();
 
     let describe_output = test

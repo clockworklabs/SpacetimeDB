@@ -2,30 +2,11 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const CALL_REDUCER_PROCEDURE_MODULE_CODE: &str = r#"
-use spacetimedb::{log, ProcedureContext, ReducerContext, Table};
-
-#[spacetimedb::table(name = person)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn say_hello(_ctx: &ReducerContext) {
-    log::info!("Hello, World!");
-}
-
-#[spacetimedb::procedure]
-pub fn return_person(_ctx: &mut ProcedureContext) -> Person {
-   return Person { name: "World".to_owned() };
-}
-"#;
-
 /// Check calling a reducer (no return) and procedure (return)
 #[test]
 fn test_call_reducer_procedure() {
     let test = Smoketest::builder()
-        .module_code(CALL_REDUCER_PROCEDURE_MODULE_CODE)
+        .precompiled_module("call-reducer-procedure")
         .build();
 
     // Reducer returns empty
@@ -41,7 +22,7 @@ fn test_call_reducer_procedure() {
 #[test]
 fn test_call_errors() {
     let test = Smoketest::builder()
-        .module_code(CALL_REDUCER_PROCEDURE_MODULE_CODE)
+        .precompiled_module("call-reducer-procedure")
         .build();
 
     let identity = test.database_identity.as_ref().unwrap();
@@ -127,19 +108,10 @@ A procedure with a similar name exists: `return_person`"
     );
 }
 
-const CALL_EMPTY_MODULE_CODE: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[spacetimedb::table(name = person)]
-pub struct Person {
-    name: String,
-}
-"#;
-
 /// Check calling into a database with no reducers/procedures raises error
 #[test]
 fn test_call_empty_errors() {
-    let test = Smoketest::builder().module_code(CALL_EMPTY_MODULE_CODE).build();
+    let test = Smoketest::builder().precompiled_module("call-empty").build();
 
     let identity = test.database_identity.as_ref().unwrap();
 

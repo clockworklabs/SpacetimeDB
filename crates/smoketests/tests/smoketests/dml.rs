@@ -2,22 +2,13 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const MODULE_CODE: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(name = t, public)]
-pub struct T {
-    name: String,
-}
-"#;
-
 /// Test that we receive subscription updates from DML
 #[test]
 fn test_subscribe() {
     use std::thread;
     use std::time::Duration;
 
-    let test = Smoketest::builder().module_code(MODULE_CODE).build();
+    let test = Smoketest::builder().precompiled_module("dml").build();
 
     // Start subscription FIRST (in background), matching Python semantics
     let sub = test.subscribe_background(&["SELECT * FROM t"], 2).unwrap();

@@ -3,74 +3,12 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const PERSON_MODULE: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
-pub struct Person {
-    #[primary_key]
-    #[auto_inc]
-    id: u32,
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { id: 0, name });
-}
-
-#[spacetimedb::reducer]
-pub fn say_hello(ctx: &ReducerContext) {
-    for person in ctx.db.person().iter() {
-        log::info!("Hello, {}!", person.name);
-    }
-    log::info!("Hello, World!");
-}
-"#;
-
-const CONNECTED_CLIENT_MODULE: &str = r#"
-use log::info;
-use spacetimedb::{ConnectionId, Identity, ReducerContext, Table};
-
-#[spacetimedb::table(name = connected_client)]
-pub struct ConnectedClient {
-    identity: Identity,
-    connection_id: ConnectionId,
-}
-
-#[spacetimedb::reducer(client_connected)]
-fn on_connect(ctx: &ReducerContext) {
-    ctx.db.connected_client().insert(ConnectedClient {
-        identity: ctx.sender,
-        connection_id: ctx.connection_id.expect("sender connection id unset"),
-    });
-}
-
-#[spacetimedb::reducer(client_disconnected)]
-fn on_disconnect(ctx: &ReducerContext) {
-    let sender_identity = &ctx.sender;
-    let sender_connection_id = ctx.connection_id.as_ref().expect("sender connection id unset");
-    let match_client = |row: &ConnectedClient| {
-        &row.identity == sender_identity && &row.connection_id == sender_connection_id
-    };
-    if let Some(client) = ctx.db.connected_client().iter().find(match_client) {
-        ctx.db.connected_client().delete(client);
-    }
-}
-
-#[spacetimedb::reducer]
-fn print_num_connected(ctx: &ReducerContext) {
-    let n = ctx.db.connected_client().count();
-    info!("CONNECTED CLIENTS: {n}")
-}
-"#;
-
 /// Test data persistence across server restart.
 ///
 /// This tests to see if SpacetimeDB can be queried after a restart.
 #[test]
 fn test_restart_module() {
-    let mut test = Smoketest::builder().module_code(PERSON_MODULE).build();
+    let mut test = Smoketest::builder().precompiled_module("restart-person").build();
 
     test.call("add", &["Robert"]).unwrap();
 
@@ -102,7 +40,7 @@ fn test_restart_module() {
 /// Test SQL queries work after restart.
 #[test]
 fn test_restart_sql() {
-    let mut test = Smoketest::builder().module_code(PERSON_MODULE).build();
+    let mut test = Smoketest::builder().precompiled_module("restart-person").build();
 
     test.call("add", &["Robert"]).unwrap();
     test.call("add", &["Julie"]).unwrap();
@@ -121,7 +59,7 @@ fn test_restart_sql() {
 /// Test clients are auto-disconnected on restart.
 #[test]
 fn test_restart_auto_disconnect() {
-    let mut test = Smoketest::builder().module_code(CONNECTED_CLIENT_MODULE).build();
+    let mut test = Smoketest::builder().precompiled_module("restart-connected-client").build();
 
     // Start two subscribers in the background
     let sub1 = test
@@ -158,51 +96,6 @@ fn test_restart_auto_disconnect() {
     );
 }
 
-// Module code for add_remove_index test (without indices)
-const ADD_REMOVE_MODULE: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(name = t1)]
-pub struct T1 { id: u64 }
-
-#[spacetimedb::table(name = t2)]
-pub struct T2 { id: u64 }
-
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    for id in 0..1_000 {
-        ctx.db.t1().insert(T1 { id });
-        ctx.db.t2().insert(T2 { id });
-    }
-}
-"#;
-
-// Module code for add_remove_index test (with indices)
-const ADD_REMOVE_MODULE_INDEXED: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(name = t1)]
-pub struct T1 { #[index(btree)] id: u64 }
-
-#[spacetimedb::table(name = t2)]
-pub struct T2 { #[index(btree)] id: u64 }
-
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    for id in 0..1_000 {
-        ctx.db.t1().insert(T1 { id });
-        ctx.db.t2().insert(T2 { id });
-    }
-}
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext) {
-    let id = 1_001;
-    ctx.db.t1().insert(T1 { id });
-    ctx.db.t2().insert(T2 { id });
-}
-"#;
-
 const JOIN_QUERY: &str = "select t1.* from t1 join t2 on t1.id = t2.id where t2.id = 1001";
 
 /// Test autoinc sequences work correctly after restart.
@@ -216,7 +109,7 @@ const JOIN_QUERY: &str = "select t1.* from t1 join t2 on t1.id = t2.id where t2.
 #[test]
 fn test_add_remove_index_after_restart() {
     let mut test = Smoketest::builder()
-        .module_code(ADD_REMOVE_MODULE)
+        .precompiled_module("add-remove-index")
         .autopublish(false)
         .build();
 
@@ -233,7 +126,7 @@ fn test_add_remove_index_after_restart() {
 
     // Publish the indexed version.
     // Now we have indices, so the query should be accepted.
-    test.write_module_code(ADD_REMOVE_MODULE_INDEXED).unwrap();
+    test.use_precompiled_module("add-remove-index-indexed");
     test.publish_module_named(&name, false).unwrap();
 
     // Subscription should work now
@@ -252,7 +145,7 @@ fn test_add_remove_index_after_restart() {
 
     // Publish the unindexed version again, removing the index.
     // The initial subscription should be rejected again.
-    test.write_module_code(ADD_REMOVE_MODULE).unwrap();
+    test.use_precompiled_module("add-remove-index");
     test.publish_module_named(&name, false).unwrap();
     let result = test.subscribe(&[JOIN_QUERY], 0);
     assert!(result.is_err(), "Expected subscription to fail after removing indices");

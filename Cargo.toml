@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["crates/smoketests/modules"]
 members = [
   "crates/auth",
   "crates/bench",

@@ -2,28 +2,10 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const MODULE_CODE_VIEWS: &str = r#"
-use spacetimedb::ViewContext;
-
-#[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
-pub struct PlayerState {
-    #[primary_key]
-    id: u64,
-    #[index(btree)]
-    level: u64,
-}
-
-#[spacetimedb::view(name = player, public)]
-pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
-    ctx.db.player_state().id().find(0u64)
-}
-"#;
-
 /// Tests that views populate the st_view_* system tables
 #[test]
 fn test_st_view_tables() {
-    let test = Smoketest::builder().module_code(MODULE_CODE_VIEWS).build();
+    let test = Smoketest::builder().precompiled_module("views-basic").build();
 
     test.assert_sql(
         "SELECT * FROM st_view",
@@ -101,72 +83,10 @@ fn test_fail_publish_wrong_return_type() {
     );
 }
 
-const MODULE_CODE_SQL_VIEWS: &str = r#"
-use spacetimedb::{AnonymousViewContext, ReducerContext, Table, ViewContext};
-
-#[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
-#[spacetimedb::table(name = player_level)]
-pub struct PlayerState {
-    #[primary_key]
-    id: u64,
-    #[index(btree)]
-    level: u64,
-}
-
-#[derive(Clone)]
-#[spacetimedb::table(name = player_info, index(name=age_level_index, btree(columns = [age, level])))]
-pub struct PlayerInfo {
-    #[primary_key]
-    id: u64,
-    age: u64,
-    level: u64,
-}
-
-#[spacetimedb::reducer]
-pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
-    ctx.db.player_level().insert(PlayerState { id, level });
-}
-
-#[spacetimedb::view(name = my_player_and_level, public)]
-pub fn my_player_and_level(ctx: &AnonymousViewContext) -> Option<PlayerState> {
-    ctx.db.player_level().id().find(0)
-}
-
-#[spacetimedb::view(name = player_and_level, public)]
-pub fn player_and_level(ctx: &AnonymousViewContext) -> Vec<PlayerState> {
-    ctx.db.player_level().level().filter(2u64).collect()
-}
-
-#[spacetimedb::view(name = player, public)]
-pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
-    log::info!("player view called");
-    ctx.db.player_state().id().find(42)
-}
-
-#[spacetimedb::view(name = player_none, public)]
-pub fn player_none(_ctx: &ViewContext) -> Option<PlayerState> {
-    None
-}
-
-#[spacetimedb::view(name = player_vec, public)]
-pub fn player_vec(ctx: &ViewContext) -> Vec<PlayerState> {
-    let first = ctx.db.player_state().id().find(42).unwrap();
-    let second = PlayerState { id: 7, level: 3 };
-    vec![first, second]
-}
-
-#[spacetimedb::view(name = player_info_multi_index, public)]
-pub fn player_info_view(ctx: &ViewContext) -> Option<PlayerInfo> {
-    log::info!("player_info called");
-    ctx.db.player_info().age_level_index().filter((25u64, 7u64)).next()
-}
-"#;
-
 /// Tests that views can be queried over HTTP SQL
 #[test]
 fn test_http_sql_views() {
-    let test = Smoketest::builder().module_code(MODULE_CODE_SQL_VIEWS).build();
+    let test = Smoketest::builder().precompiled_module("views-sql").build();
 
     // Insert initial data
     test.sql("INSERT INTO player_state (id, level) VALUES (42, 7)").unwrap();
@@ -196,7 +116,7 @@ fn test_http_sql_views() {
 /// Tests that anonymous views are updated for reducers
 #[test]
 fn test_query_anonymous_view_reducer() {
-    let test = Smoketest::builder().module_code(MODULE_CODE_SQL_VIEWS).build();
+    let test = Smoketest::builder().precompiled_module("views-sql").build();
 
     test.call("add_player_level", &["0", "1"]).unwrap();
     test.call("add_player_level", &["1", "2"]).unwrap();

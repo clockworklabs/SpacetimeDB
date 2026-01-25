@@ -131,6 +131,34 @@ spacetimedb = {{ path = "{}" }}
     Ok(())
 }
 
+fn build_precompiled_modules() -> Result<()> {
+    let workspace_root = env::current_dir()?;
+    let modules_dir = workspace_root.join("crates/smoketests/modules");
+
+    // Check if the modules workspace exists
+    if !modules_dir.join("Cargo.toml").exists() {
+        eprintln!("Skipping pre-compiled modules (workspace not found).\n");
+        return Ok(());
+    }
+
+    eprintln!("Building pre-compiled smoketest modules...");
+
+    let status = Command::new("cargo")
+        .args([
+            "build",
+            "--workspace",
+            "--release",
+            "--target",
+            "wasm32-unknown-unknown",
+        ])
+        .current_dir(&modules_dir)
+        .status()?;
+
+    ensure!(status.success(), "Failed to build pre-compiled modules");
+    eprintln!("Pre-compiled modules built.\n");
+    Ok(())
+}
+
 /// Default parallelism for smoketests.
 /// Limited to avoid cargo build lock contention when many tests run simultaneously.
 const DEFAULT_PARALLELISM: &str = "8";
@@ -142,7 +170,10 @@ fn run_smoketest(args: Vec<String>) -> Result<()> {
     // 2. Warm the WASM dependency cache (single process, no race)
     warmup_wasm_cache()?;
 
-    // 3. Detect whether to use nextest or cargo test
+    // 3. Build pre-compiled modules (if available)
+    build_precompiled_modules()?;
+
+    // 4. Detect whether to use nextest or cargo test
     let use_nextest = Command::new("cargo")
         .args(["nextest", "--version"])
         .stdout(Stdio::null())
@@ -151,7 +182,7 @@ fn run_smoketest(args: Vec<String>) -> Result<()> {
         .map(|s| s.success())
         .unwrap_or(false);
 
-    // 4. Run tests with appropriate runner
+    // 5. Run tests with appropriate runner
     let status = if use_nextest {
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");

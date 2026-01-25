@@ -2,35 +2,10 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-const MODULE_CODE_PRIVATE: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(name = secret, private)]
-pub struct Secret {
-    answer: u8,
-}
-
-#[spacetimedb::table(name = common_knowledge, public)]
-pub struct CommonKnowledge {
-    thing: String,
-}
-
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    ctx.db.secret().insert(Secret { answer: 42 });
-}
-
-#[spacetimedb::reducer]
-pub fn do_thing(ctx: &ReducerContext, thing: String) {
-    ctx.db.secret().insert(Secret { answer: 20 });
-    ctx.db.common_knowledge().insert(CommonKnowledge { thing });
-}
-"#;
-
 /// Ensure that a private table can only be queried by the database owner
 #[test]
 fn test_private_table() {
-    let test = Smoketest::builder().module_code(MODULE_CODE_PRIVATE).build();
+    let test = Smoketest::builder().precompiled_module("permissions-private").build();
 
     // Owner can query private table
     test.assert_sql(
@@ -86,21 +61,10 @@ fn test_cannot_delete_others_database() {
     assert!(result.is_err(), "Expected delete to fail for non-owner");
 }
 
-const MODULE_CODE_LIFECYCLE: &str = r#"
-#[spacetimedb::reducer(init)]
-fn lifecycle_init(_ctx: &spacetimedb::ReducerContext) {}
-
-#[spacetimedb::reducer(client_connected)]
-fn lifecycle_client_connected(_ctx: &spacetimedb::ReducerContext) {}
-
-#[spacetimedb::reducer(client_disconnected)]
-fn lifecycle_client_disconnected(_ctx: &spacetimedb::ReducerContext) {}
-"#;
-
 /// Ensure that lifecycle reducers (init, on_connect, etc) can't be called directly
 #[test]
 fn test_lifecycle_reducers_cant_be_called() {
-    let test = Smoketest::builder().module_code(MODULE_CODE_LIFECYCLE).build();
+    let test = Smoketest::builder().precompiled_module("permissions-lifecycle").build();
 
     let lifecycle_kinds = ["init", "client_connected", "client_disconnected"];
 

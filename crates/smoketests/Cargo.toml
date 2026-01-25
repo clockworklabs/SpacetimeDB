@@ -15,6 +15,8 @@ anyhow.workspace = true
 
 [dev-dependencies]
 cargo_metadata.workspace = true
+assert_cmd = "2"
+predicates = "3"
 
 [lints]
 workspace = true

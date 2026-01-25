@@ -2,32 +2,61 @@
 
 ## Running Tests
 
-### Recommended: cargo-nextest
-
-For faster test execution, use [cargo-nextest](https://nexte.st/):
+### Recommended: cargo smoketest
 
 ```bash
-# Install (one-time)
-cargo install cargo-nextest --locked
-
-# Run all smoketests
-cargo nextest run -p spacetimedb-smoketests
-
-# Run a specific test
-cargo nextest run -p spacetimedb-smoketests test_sql_format
+cargo smoketest
 ```
 
-**Why nextest?** Standard `cargo test` compiles each test file in `tests/` as a separate binary and runs them sequentially. Nextest runs all test binaries in parallel, reducing total runtime by ~40% (160s vs 265s for 25 tests).
+This command:
+1. Builds `spacetimedb-cli` and `spacetimedb-standalone` binaries
+2. Runs all smoketests in parallel using nextest (or cargo test if nextest isn't installed)
+
+To run specific tests:
+```bash
+cargo smoketest test_sql_format
+cargo smoketest "cli::"  # Run all CLI tests
+```
+
+### WARNING: Stale Binary Risk
+
+**Smoketests use pre-built binaries and DO NOT automatically rebuild them.**
+
+If you modify code in `spacetimedb-cli`, `spacetimedb-standalone`, or their dependencies,
+you MUST rebuild before running tests:
+
+```bash
+# Option 1: Use cargo smoketest (always rebuilds first)
+cargo smoketest
+
+# Option 2: Manually rebuild, then run tests directly
+cargo build -p spacetimedb-cli -p spacetimedb-standalone
+cargo nextest run -p spacetimedb-smoketests
+```
+
+**If you run `cargo nextest run` or `cargo test` directly without rebuilding,
+you may be testing against OLD binaries.** This can cause confusing test failures
+or, worse, tests that pass when they shouldn't.
+
+To check which binary you're testing against:
+```bash
+ls -la target/debug/spacetimedb-cli*  # Check modification time
+```
+
+### Why This Design?
+
+Running `cargo build` from inside parallel tests causes race conditions on Windows
+where multiple processes try to replace running executables ("Access denied" errors).
+Pre-building avoids this entirely.
 
 ### Alternative: cargo test
 
-Standard `cargo test` also works:
+Standard `cargo test` also works, but you must rebuild first:
 
 ```bash
+cargo build -p spacetimedb-cli -p spacetimedb-standalone
 cargo test -p spacetimedb-smoketests
 ```
-
-Tests within each file run in parallel, but files run sequentially.
 
 ## Test Performance
 

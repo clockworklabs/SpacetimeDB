@@ -1,0 +1,82 @@
+# Nested workspace for pre-compiled smoketest modules.
+# This workspace is excluded from the root workspace and built separately
+# during the smoketest warmup phase.
+#
+# All modules here are compiled to WASM once during warmup, then reused
+# by tests without per-test compilation overhead.
+
+[workspace]
+resolver = "3"
+members = [
+    # Filtering and query tests
+    "filtering",
+    "dml",
+
+    # Views tests
+    "views-basic",
+    # "views-broken-namespace" - intentionally broken, uses runtime compilation
+    # "views-broken-return-type" - intentionally broken, uses runtime compilation
+    "views-sql",
+
+    # Security and permissions
+    "rls",
+    "permissions-private",
+    "permissions-lifecycle",
+
+    # Call/procedure tests
+    "call-reducer-procedure",
+    "call-empty",
+
+    # SQL format tests
+    "sql-format",
+    "pg-wire",
+
+    # Scheduled reducer tests
+    "schedule-cancel",
+    "schedule-subscribe",
+    "schedule-volatile",
+
+    # Module lifecycle tests
+    "describe",
+    "modules-basic",
+    # "modules-breaking" - intentionally has breaking schema change, uses runtime compilation
+    "modules-add-table",
+
+    # Index tests
+    "add-remove-index",
+    "add-remove-index-indexed",
+
+    # Panic/error handling
+    "panic",
+    "panic-error",
+
+    # Restart tests
+    "restart-person",
+    "restart-connected-client",
+
+    # Connection tests
+    "connect-disconnect",
+    "confirmed-reads",
+    "delete-database",
+    "client-connection-reject",
+    "client-connection-disconnect-panic",
+
+    # Misc tests
+    "namespaces",
+    "new-user-flow",
+    "module-nested-op",
+    # "fail-initial-publish-broken" - intentionally broken, uses runtime compilation
+    "fail-initial-publish-fixed",
+
+    # Auto-increment tests (parameterized variants)
+    "autoinc-basic-u32",
+    "autoinc-basic-u64",
+    "autoinc-basic-i32",
+    "autoinc-basic-i64",
+    "autoinc-unique-u64",
+    "autoinc-unique-i64",
+]
+
+[workspace.dependencies]
+spacetimedb = { path = "../../../crates/bindings", features = ["unstable"] }
+log = "0.4"
