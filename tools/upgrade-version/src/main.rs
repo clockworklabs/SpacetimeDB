@@ -204,7 +204,7 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("pnpm generate failed!");
 
-        if matches.get_flag("accept_snapshots") {
+        if matches.get_flag("accept-snapshots") {
             // Generate and auto-accept snapshots
             println!("$> INSTA_UPDATE=always cargo test -p spacetimedb-codegen --test codegen");
             cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
