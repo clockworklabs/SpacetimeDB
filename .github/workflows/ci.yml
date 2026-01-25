@@ -570,6 +570,7 @@ jobs:
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
+          cp nuget.config ../..
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
