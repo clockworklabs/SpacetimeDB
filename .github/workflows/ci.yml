@@ -571,6 +571,10 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile nuget.config SpacetimeDB.ClientSDK.sln
+
       # Now, setup the Unity tests.
       - name: Patch spacetimedb dependency in Cargo.toml
         working-directory: demo/Blackholio/server-rust
@@ -693,9 +697,13 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile nuget.config SpacetimeDB.ClientSDK.sln
+
       - name: Run .NET tests
         working-directory: sdks/csharp
-        run: dotnet test -warnaserror
+        run: dotnet test -warnaserror --no-restore
 
       - name: Verify C# formatting
         working-directory: sdks/csharp
