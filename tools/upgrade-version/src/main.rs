@@ -212,6 +212,11 @@ fn main() -> anyhow::Result<()> {
                 .run()
                 .expect("cargo test -p spacetimedb-codegen --test codegen (INSTA_UPDATE=always) failed!");
         } else {
+            println!("$> cargo install cargo-insta");
+            cmd!("cargo", "install", "cargo-insta")
+                .run()
+                .expect("cargo install cargo-insta failed!");
+
             // Initial test - this will generate snapshots
             println!("$> cargo test -p spacetimedb-codegen --test codegen");
             cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
