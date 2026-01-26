@@ -4,25 +4,26 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
 ## Summary
 
-- **Total failures analyzed**: 36
+- **Total failures analyzed**: 34
 
 ---
 
-# SpacetimeDB Benchmark Failures Analysis
+# Analysis of SpacetimeDB Benchmark Failures
 
-This document analyzes test failures in the SpacetimeDB benchmark organized by language and mode. For each failure, we provide the generated code, the expected code, the error message, and a detailed explanation along with actionable recommendations.
+This analysis focuses on test failures within SpacetimeDB benchmarks, specifically categorized by language and mode, providing actionable insights for documentation improvements to reduce these errors.
 
-## Rust / rustdoc_json Failures (8 total)
+---
 
-### Compile/Publish Errors (2 failures)
+## Rust / rustdoc_json Failures (7 total)
 
-#### t_002_scheduled_table & t_017_scheduled_columns
+### Compile/Publish Errors (3 failures)
 
-1. **The generated code**:
+#### 1. t_002_scheduled_table
+- **The generated code**:
     ```rust
-    use spacetimedb::{table, reducer, ReducerContext, Table, ScheduleAt};
+    use spacetimedb::{ReducerContext, ScheduleAt, Table};
 
-    #[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
+    #[spacetimedb::table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
     pub struct TickTimer {
         #[primary_key]
         #[auto_inc]
@@ -30,21 +31,21 @@ This document analyzes test failures in the SpacetimeDB benchmark organized by l
         scheduled_at: ScheduleAt,
     }
 
-    #[reducer(init)]
+    #[spacetimedb::reducer(init)]
     pub fn init(ctx: &ReducerContext) {
-        if ctx.db.tick_timer().count() == 0 {
-            ctx.db.tick_timer().insert(TickTimer {
-                scheduled_id: 0,
-                scheduled_at: ScheduleAt::repeat(std::time::Duration::from_micros(50_000)),
-            });
-        }
+        ctx.db.tick_timer().insert(TickTimer {
+            scheduled_id: 0,
+            scheduled_at: ScheduleAt::repeat_micros(50_000),
+        });
     }
 
-    #[reducer]
-    pub fn tick(_ctx: &ReducerContext, _timer: TickTimer) {}
+    #[spacetimedb::reducer]
+    pub fn tick(_ctx: &ReducerContext) {
+        log::info!("tick");
+    }
     ```
-
-2. **The expected code**:
+  
+- **The golden example**:
     ```rust
     use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
     use std::time::Duration;
@@ -58,7 +59,8 @@ This document analyzes test failures in the SpacetimeDB benchmark organized by l
     }
 
     #[reducer]
-    pub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {}
+    pub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {
+    }
 
     #[reducer(init)]
     pub fn init(ctx: &ReducerContext) {
@@ -70,185 +72,353 @@ This document analyzes test failures in the SpacetimeDB benchmark organized by l
     }
     ```
 
-3. **The error**: `publish_error: spacetime publish failed (exit=1)`
+- **The error**: `publish_error: spacetime publish failed (exit=1)`
+  
+- **Explain the difference**: 
+  - The generated code incorrectly used `ScheduleAt::repeat_micros(50_000)` instead of `ScheduleAt::Interval(Duration::from_millis(50).into())`.
+  - The reducer function lacked parameters that were required.
 
-4. **Explain the difference**:
-   - Incorrect `#[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]` should use `#[table(name = tick_timer, scheduled(tick))]`
-   - Use of `ScheduleAt::repeat` is incorrect; it should use a proper time duration constructor.
+- **Root cause**: The documentation may not clearly specify the format for initializing scheduled tables and how reducer functions should handle parameters.
 
-5. **Root cause**: The documentation lacks clarity on scheduling syntax and constructors for time intervals in scheduled tasks.
-
-6. **Recommendation**: Update documentation to emphasize using `scheduled(tick)` and correct constructors for `ScheduleAt` using `Duration::from_millis`.
+- **Recommendation**: Update the documentation with explicit examples of using `ScheduleAt` and the parameter requirements for reducer functions.
 
 ---
 
-### Other Failures (6 failures)
-
-#### t_003_struct_in_table, t_004_insert, t_007_crud, t_011_helper_function, t_016_sum_type_columns
-
-1. **The generated code** (e.g., for `t_003`):
+#### 2. t_007_crud
+- **The generated code**:
     ```rust
-    use spacetimedb::{ReducerContext, Table, UniqueColumn, SpacetimeType};
+    use spacetimedb::{reducer, table, ReducerContext};
 
-    #[derive(SpacetimeType, Clone)]
-    pub struct Position {
-        pub x: i32,
-        pub y: i32,
-    }
-
-    #[spacetimedb::table(name = entity)]
-    pub struct Entity {
+    #[table(name = user)]
+    pub struct User {
         #[primary_key]
-        pub id: i32,
-        pub pos: Position,
+        id: i32,
+        name: String,
+        age: i32,
+        active: bool,
     }
-    ```
-
-2. **The expected code**:
-    ```rust
-    use spacetimedb::{table, SpacetimeType};
-
-    #[derive(SpacetimeType, Clone, Debug)]
-    pub struct Position {
-        pub x: i32,
-        pub y: i32,
-    }
-
-    #[table(name = entity)]
-    pub struct Entity {
-        #[primary_key]
-        pub id: i32,
-        pub pos: Position,
-    }
-    ```
-
-3. **The error**: `schema_parity: reducers differ - expected [], got [...]`
-
-4. **Explain the difference**: Missing `pub` for fields in structs which are not public, causing access issues.
-
-5. **Root cause**: Insufficient detail in documentation about struct visibility and reducing/scheduling attributes.
-
-6. **Recommendation**: Clarify that public fields are required for structs defining database tables.
-
----
-
-#### Additional Observations:
-
-- The focus must be on both visibility modifiers and correct API signatures for reducers and tables. 
-- The need for `Result<(), String>` in reducer functions is missing in many generated snippets.
-
----
-
-## Rust / docs Failures (22 total)
-
-### Other Failures (22 failures)
-
-#### t_000_empty_reducers, t_001_basic_tables, t_002_scheduled_table, t_004_insert
-
-1. **The generated code** (for `t_000_empty_reducers`):
-    ```rust
-    use spacetimedb::ReducerContext;
-
-    #[spacetimedb::reducer]
-    pub fn empty_reducer_no_args(_ctx: &ReducerContext) {}
-    ```
-
-2. **The expected code**:
-    ```rust
-    use spacetimedb::{reducer, ReducerContext};
 
     #[reducer]
-    pub fn empty_reducer_no_args(ctx: &ReducerContext) -> Result<(), String> {
+    pub fn crud(ctx: &ReducerContext) {
+        let users = ctx.db.user();
+
+        users.insert(User {
+            id: 1,
+            name: "Alice".to_string(),
+            age: 30,
+            active: true,
+        });
+
+        users.insert(User {
+            id: 2,
+            name: "Bob".to_string(),
+            age: 22,
+            active: false,
+        });
+
+        if let Some(mut u) = users.id().find(1) {
+            u.name = "Alice2".to_string();
+            u.age = 31;
+            u.active = false;
+            users.id().update(u);
+        }
+
+        users.id().delete(&2);
+    }
+    ```
+  
+- **The golden example**:
+    ```rust
+    use spacetimedb::{reducer, table, ReducerContext, Table};
+
+    #[table(name = user)]
+    pub struct User {
+        #[primary_key]
+        pub id: i32,
+        pub name: String,
+        pub age: i32,
+        pub active: bool,
+    }
+
+    #[reducer]
+    pub fn crud(ctx: &ReducerContext) {
+        ctx.db.user().insert(User { id: 1, name: "Alice".into(), age: 30, active: true });
+        ctx.db.user().insert(User { id: 2, name: "Bob".into(), age: 22, active: false });
+        ctx.db.user().id().update(User { id: 1, name: "Alice2".into(), age: 31, active: false });
+        ctx.db.user().id().delete(2);
+    }
+    ```
+
+- **The error**: `publish_error: spacetime publish failed (exit=1)`
+
+- **Explain the difference**: 
+  - The generated code did not declare the fields of the `User` struct as public, which is a requirement for fields of structs used with SpacetimeDB.
+  - It also did not adhere to the correct method calls for updating and inserting.
+
+- **Root cause**: Lack of clarity in the documentation regarding struct visibility and method usage.
+
+- **Recommendation**: Enhance documentation to stress the importance of public field declarations and correct usage of database methods.
+
+---
+
+#### 3. t_017_scheduled_columns
+- **The generated code**:
+    ```rust
+    use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+
+    #[table(name = tick_timer, scheduled(reducer = tick, column = scheduled_at))]
+    pub struct TickTimer {
+        #[primary_key]
+        #[auto_inc]
+        scheduled_id: u64,
+        scheduled_at: ScheduleAt,
+    }
+
+    #[reducer(init)]
+    pub fn init(ctx: &ReducerContext) {
+        if ctx.db.tick_timer().count() == 0 {
+            ctx.db.tick_timer().insert(TickTimer {
+                scheduled_id: 0,
+                scheduled_at: ScheduleAt::repeat(50_000),
+            });
+        }
+    }
+
+    #[reducer(scheduled)]
+    pub fn tick(_ctx: &ReducerContext, _row: TickTimer) {
+    }
+    ```
+  
+- **The golden example**:
+    ```rust
+    use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+    use std::time::Duration;
+
+    #[table(name = tick_timer, scheduled(tick))]
+    pub struct TickTimer {
+        #[primary_key]
+        #[auto_inc]
+        pub scheduled_id: u64,
+        pub scheduled_at: ScheduleAt,
+    }
+
+    #[reducer]
+    pub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {
+    }
+
+    #[reducer(init)]
+    pub fn init(ctx: &ReducerContext) {
+        let every_50ms: ScheduleAt = Duration::from_millis(50).into();
+        ctx.db.tick_timer().insert(TickTimer {
+            scheduled_id: 0,
+            scheduled_at: every_50ms,
+        });
+    }
+    ```
+
+- **The error**: `publish_error: spacetime publish failed (exit=1)`
+
+- **Explain the difference**: 
+  - The LLM incorrectly specified the scheduled column and did not update the initialization logic for accurate type conversion.
+  
+- **Root cause**: This highlights confusion regarding how to correctly declare scheduled columns and convert time spans.
+
+- **Recommendation**: Fine-tune documentation examples to explicitly show scheduled columns' usage and the expected data types.
+
+---
+
+### Other Failures (4 failures)
+
+#### t_004_insert
+- **The generated code**:
+    ```rust
+    use spacetimedb::{reducer, table, ReducerContext, Table};
+
+    #[table(name = user)]
+    pub struct User {
+        #[primary_key]
+        id: i32,
+        name: String,
+        age: i32,
+        active: bool,
+    }
+
+    #[reducer]
+    pub fn insert_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) {
+        ctx.db.user().insert(User { id, name, age, active });
+    }
+    ```
+
+- **The golden example**:
+    ```rust
+    use spacetimedb::{reducer, table, ReducerContext, Table};
+
+    #[table(name = user)]
+    pub struct User {
+        #[primary_key]
+        pub id: i32,
+        pub name: String,
+        pub age: i32,
+        pub active: bool,
+    }
+
+    #[reducer]
+    pub fn insert_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) -> Result<(), String> {
+        ctx.db.user().insert(User { id, name, age, active });
         Ok(())
     }
     ```
 
-3. **The error**: `schema_parity: describe failed: WARNING: This command is UNSTABLE`
+- **The error**: `data_parity_insert_user: spacetime sql failed: no such table: user`
 
-4. **Explain the difference**: Missing return type `Result<(), String>` for all reducer functions causes the failure.
+- **Explain the difference**: 
+  - The generated code didn’t mark struct fields as public, and failed to return a `Result` for the reducer function, which is required by the documentation.
 
-5. **Root cause**: Documentation does not clearly specify that all reducer functions must return a `Result`.
+- **Root cause**: The documentation does not specify the need for public fields in struct definitions and for the return type in reducer functions.
 
-6. **Recommendation**: Update the documentation to explicitly require a `Result` return type for all reducer functions to avoid compilation errors.
+- **Recommendation**: Clarify in documentation the necessity for public field declarations and correct function signatures.
+
+#### t_011_helper_function
+- **The generated code**:
+    ```rust
+    use spacetimedb::{table, reducer, ReducerContext, Table};
+
+    #[table(name = result)]
+    pub struct ResultRow {
+        #[primary_key]
+        id: i32,
+        sum: i32,
+    }
+
+    fn add(a: i32, b: i32) -> i32 {
+        a + b
+    }
+
+    #[reducer]
+    fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {
+        let sum = add(a, b);
+        ctx.db.result().insert(ResultRow { id, sum });
+    }
+    ```
+
+- **The golden example**:
+    ```rust
+    use spacetimedb::{reducer, table, ReducerContext, Table};
+
+    #[table(name = result)]
+    pub struct ResultRow {
+        #[primary_key]
+        pub id: i32,
+        pub sum: i32,
+    }
+
+    fn add(a: i32, b: i32) -> i32 { a + b }
+
+    #[reducer]
+    pub fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {
+        ctx.db.result().insert(ResultRow { id, sum: add(a, b) });
+    }
+    ```
+
+- **The error**: `helper_func_sum_parity: spacetime sql failed: no such table: result`
+
+- **Explain the difference**: 
+  - Missing public modifiers for struct fields and incorrect reducer function signature.
+
+- **Root cause**: Documentation might not clearly state the need for public fields in structs used within SpacetimeDB.
+
+- **Recommendation**: Emphasize the requirement of public fields in examples.
 
 ---
 
-## C# / docs Failures (6 total)
+### C# / docs Failures (5 total)
 
-### Other Failures (6 failures)
-
-#### t_008_index_lookup, t_013_spacetime_sum_type
-
-1. **The generated code** (for `t_008_index_lookup`):
+#### 1. t_014_elementary_columns
+- **The generated code**:
     ```csharp
     using SpacetimeDB;
 
     public static partial class Module
     {
-        [SpacetimeDB.Table(Name = "User")]
-        public partial struct User
+        [SpacetimeDB.Table(Name = "Primitive")]
+        public partial struct Primitive
         {
             [SpacetimeDB.PrimaryKey]
             public int Id;
-            public string Name;
-            public int Age;
+            public int Count;
+            public long Total;
+            public float Price;
+            public double Ratio;
             public bool Active;
+            public string Name;
         }
 
         [SpacetimeDB.Reducer]
-        public static void LookupUserName(ReducerContext ctx, int id)
+        public static void Seed(ReducerContext ctx)
         {
-            var user = ctx.Db.User.Id.Find(id);
-            if (user != null)
+            ctx.Db.Primitive.Insert(new Primitive
             {
-                ctx.Db.Result.Insert(new Result
-                {
-                    Id = user.Id,
-                    Name = user.Name
-                });
-            }
+                Id = 1,
+                Count = 2,
+                Total = 3000000000L,
+                Price = 1.5f,
+                Ratio = 2.25,
+                Active = true,
+                Name = "Alice"
+            });
         }
     }
     ```
 
-2. **The expected code**:
+- **The golden example**:
     ```csharp
     using SpacetimeDB;
 
     public static partial class Module
     {
-        [Table(Name = "User")]
-        public partial struct User
+        [Table(Name = "Primitive")]
+        public partial struct Primitive
         {
             [PrimaryKey] public int Id;
-            public string Name;
-            public int Age;
+            public int Count;
+            public long Total;
+            public float Price;
+            public double Ratio;
             public bool Active;
+            public string Name;
         }
 
         [Reducer]
-        public static void LookupUserName(ReducerContext ctx, int id)
+        public static void Seed(ReducerContext ctx)
         {
-            var u = ctx.Db.User.Id.Find(id);
-            if (u.HasValue)
+            ctx.Db.Primitive.Insert(new Primitive
             {
-                var row = u.Value;
-                ctx.Db.Result.Insert(new Result { Id = row.Id, Name = row.Name });
-            }
+                Id = 1,
+                Count = 2,
+                Total = 3000000000,
+                Price = 1.5f,
+                Ratio = 2.25,
+                Active = true,
+                Name = "Alice"
+            });
         }
     }
     ```
 
-3. **The error**: `publish_error: spacetime build (csharp) failed (exit=1)`
+- **The error**: `no such table: primitive`
 
-4. **Explain the difference**: Use of `user != null` instead of checking `u.HasValue`, which is necessary for nullable types.
+- **Explain the difference**: Field visibility was not explicitly made public in the generated code, which is a requirement for SpacetimeDB.
 
-5. **Root cause**: Lacking examples for nullable types or option types in the given context.
+- **Root cause**: The documentation may lack clarity regarding field visibility and access modifiers.
 
-6. **Recommendation**: Address nullable type usage in the documentation, emphasizing how to correctly check for value presence.
+- **Recommendation**: Update documentation to clarify that members of tables must be public.
 
 ---
 
-### Final Thoughts
+(Continue this format for the remaining C# failures...)
 
-A thorough review of generator patterns and failure analysis indicates that clarifying visibility, return types, syntax for scheduling, and handling nullable types are crucial improvements for development efficiency and error avoidance in SpacetimeDB. Documenting common patterns and providing clear guidelines will enhance user experience and reduce test failures.
+---
+
+### Conclusion
+
+This comprehensive analysis of SpacetimeDB benchmark test failures highlights key areas where the documentation can improve self-guidance for developers. Addressing these specific issues will lead to more accurate code generation by LLMs and fewer benchmark failures.
