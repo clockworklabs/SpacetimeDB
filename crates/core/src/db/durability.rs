@@ -206,17 +206,23 @@ impl DurabilityWorkerActor {
             return;
         }
 
-        let inserts: Box<_> = tx_data
+        let mut inserts: Box<_> = tx_data
             .persistent_inserts()
             .map(|(table_id, rowdata)| Ops { table_id, rowdata })
             .collect();
+        // What we get from `tx_data` is not necessarily sorted,
+        // but the durability layer expects by-table_id sorted data.
+        // Unstable sorts are valid, there will only ever be one entry per table_id.
+        inserts.sort_unstable_by_key(|ops| ops.table_id);
 
-        let deletes: Box<_> = tx_data
+        let mut deletes: Box<_> = tx_data
             .persistent_deletes()
             .map(|(table_id, rowdata)| Ops { table_id, rowdata })
             .collect();
+        deletes.sort_unstable_by_key(|ops| ops.table_id);
 
-        let truncates: Box<[_]> = tx_data.persistent_truncates().collect();
+        let mut truncates: Box<[_]> = tx_data.persistent_truncates().collect();
+        truncates.sort_unstable_by_key(|table_id| *table_id);
 
         let inputs = reducer_context.map(|rcx| rcx.into());
 

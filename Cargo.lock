@@ -7776,6 +7776,7 @@ version = "1.11.3"
 dependencies = [
  "ahash 0.8.12",
  "crossbeam-queue",
+ "either",
  "hashbrown 0.16.1",
  "nohash-hasher",
  "serde",

@@ -1,6 +1,5 @@
 use core::ops::Deref;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
 
 use super::locking_tx_datastore::datastore::TxMetrics;
@@ -9,6 +8,7 @@ use super::Result;
 use crate::execution_context::Workload;
 use crate::system_tables::ST_TABLE_ID;
 use spacetimedb_data_structures::map::IntSet;
+use spacetimedb_data_structures::small_map::SmallHashMap;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
@@ -171,6 +171,12 @@ pub enum IsolationLevel {
 
 pub type EphemeralTables = IntSet<TableId>;
 
+/// The [`TxData`] entry for one table.
+///
+/// All information about a table is stored in one place
+/// as the access pattern is to write as fast as possible
+/// and because it all fits within a single cache line
+/// and so that we can use `SmallVec`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TxDataTableEntry {
     /// The name of the table for which there were deletions and/or insertions.
@@ -222,7 +228,7 @@ impl TxDataTableEntry {
 /// so that the recording of execution metrics can be done without holding the tx lock.
 #[derive(Default)]
 pub struct TxData {
-    entries: BTreeMap<TableId, TxDataTableEntry>,
+    entries: SmallHashMap<TableId, TxDataTableEntry, 1, 8>,
 
     /// Tx offset of the transaction which performed these operations.
     ///
@@ -250,8 +256,7 @@ impl TxData {
     /// or initializes it with `table_name`.
     fn init_entry(&mut self, table_id: TableId, table_name: &TableName) -> &mut TxDataTableEntry {
         self.entries
-            .entry(table_id)
-            .or_insert_with(|| TxDataTableEntry::new(table_name.clone()))
+            .get_or_insert(table_id, || TxDataTableEntry::new(table_name.clone()))
     }
 
     /// Set `rows` as the inserted rows for `(table_id, table_name)`.
