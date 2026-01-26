@@ -47,18 +47,17 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
-use spacetimedb_datastore::traits::{DatabaseTableUpdate, IsolationLevel, Program, TxData};
+use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{AlgebraicType, ConnectionId};
+use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::AlgebraicTypeRef;
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::reducer_name::ReducerName;
@@ -95,9 +94,14 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(tx_data: &TxData) -> Self {
-        let updates = tx_data.database_table_updates();
-        let mut tables = SmallVec::with_capacity(updates.len());
-        tables.extend(updates);
+        let entries = tx_data.iter_table_entries();
+        let mut tables = SmallVec::with_capacity(entries.len());
+        tables.extend(entries.map(|(table_id, e)| DatabaseTableUpdate {
+            table_id,
+            table_name: e.table_name.clone(),
+            inserts: e.inserts.clone(),
+            deletes: e.deletes.clone(),
+        }));
         DatabaseUpdate { tables }
     }
 
@@ -105,6 +109,17 @@ impl DatabaseUpdate {
     pub fn num_rows(&self) -> usize {
         self.tables.iter().map(|t| t.inserts.len() + t.deletes.len()).sum()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseTableUpdate {
+    pub table_id: TableId,
+    pub table_name: TableName,
+    // Note: `Arc<[ProductValue]>` allows to cheaply
+    // use the values from `TxData` without cloning the
+    // contained `ProductValue`s.
+    pub inserts: Arc<[ProductValue]>,
+    pub deletes: Arc<[ProductValue]>,
 }
 
 #[derive(Debug)]

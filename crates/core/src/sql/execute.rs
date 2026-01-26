@@ -7,8 +7,8 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{
-    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError, ViewCallResult,
-    ViewOutcome, WasmInstance,
+    DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError,
+    ViewCallResult, ViewOutcome, WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
@@ -20,7 +20,7 @@ use anyhow::anyhow;
 use smallvec::SmallVec;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::traits::{DatabaseTableUpdate, IsolationLevel};
+use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;

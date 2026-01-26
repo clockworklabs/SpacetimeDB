@@ -6,11 +6,9 @@ use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
 };
-use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::Identity;
-use spacetimedb_primitives::TableId;
 use tokio::{
     runtime,
     sync::{
@@ -208,32 +206,17 @@ impl DurabilityWorkerActor {
             return;
         }
 
-        let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
-
         let inserts: Box<_> = tx_data
-            .inserts()
-            // Skip ephemeral tables
-            .filter(|(table_id, _)| is_persistent_table(table_id))
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
+            .persistent_inserts()
+            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
             .collect();
-
-        let truncates: IntSet<TableId> = tx_data.truncates().collect();
 
         let deletes: Box<_> = tx_data
-            .deletes()
-            .filter(|(table_id, _)| is_persistent_table(table_id))
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            // filter out deletes for tables that are truncated in the same transaction.
-            .filter(|ops| !truncates.contains(&ops.table_id))
+            .persistent_deletes()
+            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
             .collect();
 
-        let truncates: Box<_> = truncates.into_iter().filter(is_persistent_table).collect();
+        let truncates: Box<[_]> = tx_data.persistent_truncates().collect();
 
         let inputs = reducer_context.map(|rcx| rcx.into());
 

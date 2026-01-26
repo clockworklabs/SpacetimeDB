@@ -1061,7 +1061,7 @@ impl CommittedState {
         );
 
         // Record any truncated tables in the `TxData`.
-        tx_data.add_truncates(truncates);
+        tx_data.set_truncates(truncates);
 
         // Merge read sets from the `MutTxId` into the `CommittedState`.
         // It's important that this happens after applying the changes to `tx_data`,

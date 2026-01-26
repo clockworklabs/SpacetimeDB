@@ -162,6 +162,7 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
+    use smallvec::SmallVec;
     use spacetimedb_client_api_messages::websocket::{BsatnFormat, CompressableQueryUpdate, Compression};
     use spacetimedb_datastore::execution_context::Workload;
     use spacetimedb_lib::bsatn;
@@ -196,7 +197,7 @@ mod tests {
         let q = Expr::Crud(Box::new(CrudExpr::Query(query.clone())));
 
         let mut result = Vec::with_capacity(1);
-        let mut updates = Vec::new();
+        let mut updates = SmallVec::new();
         collect_result(&mut result, &mut updates, run_ast(p, q, sources).into())?;
         Ok(result)
     }
@@ -446,12 +447,13 @@ mod tests {
         }
 
         let update = DatabaseUpdate {
-            tables: vec![DatabaseTableUpdate {
+            tables: [DatabaseTableUpdate {
                 table_id,
                 table_name: TableName::new_from_str("test"),
                 deletes: deletes.into(),
                 inserts: [].into(),
-            }],
+            }]
+            .into(),
         };
 
         db.commit_tx(tx)?;
@@ -536,7 +538,7 @@ mod tests {
         };
 
         let update = DatabaseUpdate {
-            tables: vec![data.clone()],
+            tables: [data.clone()].into(),
         };
 
         check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
@@ -657,7 +659,7 @@ mod tests {
         };
 
         let update = DatabaseUpdate {
-            tables: vec![data1, data2],
+            tables: smallvec::smallvec![data1, data2],
         };
 
         let row_1 = product!(1u64, "health");
@@ -1161,9 +1163,9 @@ mod tests {
             .collect::<Arc<_>>();
 
         let tables = if inserts.is_empty() && deletes.is_empty() {
-            vec![]
+            smallvec::smallvec![]
         } else {
-            vec![DatabaseTableUpdate {
+            smallvec::smallvec![DatabaseTableUpdate {
                 table_id,
                 table_name,
                 inserts,
