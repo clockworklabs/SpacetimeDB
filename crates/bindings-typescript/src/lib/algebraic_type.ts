@@ -152,6 +152,7 @@ export const AlgebraicType = {
         return primitiveSerializers[ty.tag];
     }
   },
+  /** @deprecated Use `makeSerializer` instead. */
   serializeValue(
     writer: BinaryWriter,
     ty: AlgebraicTypeType,
@@ -195,6 +196,7 @@ export const AlgebraicType = {
         return primitiveDeserializers[ty.tag];
     }
   },
+  /** @deprecated Use `makeDeserializer` instead. */
   deserializeValue(
     reader: BinaryReader,
     ty: AlgebraicTypeType,
@@ -497,6 +499,7 @@ writer.offset += ${primitiveSizes[tag]};`
     Object.freeze(serializers);
     return serializer;
   },
+  /** @deprecated Use `makeSerializer` instead. */
   serializeValue(
     writer: BinaryWriter,
     ty: ProductTypeType,
@@ -573,6 +576,7 @@ return result;`
     Object.freeze(deserializers);
     return deserializer;
   },
+  /** @deprecated Use `makeDeserializer` instead. */
   deserializeValue(
     reader: BinaryReader,
     ty: ProductTypeType,
@@ -708,6 +712,7 @@ ${ty.variants
       return serializer;
     }
   },
+  /** @deprecated Use `makeSerializer` instead. */
   serializeValue(
     writer: BinaryWriter,
     ty: SumTypeType,
@@ -797,6 +802,7 @@ ${ty.variants
       return deserializer;
     }
   },
+  /** @deprecated Use `makeDeserializer` instead. */
   deserializeValue(
     reader: BinaryReader,
     ty: SumTypeType,
