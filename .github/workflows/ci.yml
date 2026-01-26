@@ -101,7 +101,7 @@ jobs:
       # `cargo build --manifest-path` (which apparently build different dependency trees).
       # However, we've been unable to fix it so... /shrug
       - name: Check v8 outputs
-        shell: bash    
+        shell: bash
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
           if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
@@ -110,8 +110,90 @@ jobs:
             cargo build -p v8
           fi
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Run smoketests
         run: cargo ci smoketests
+
+  smoketests-python:
+    needs: [lints]
+    name: Smoketests (Python Legacy)
+    strategy:
+      matrix:
+        runner: [spacetimedb-new-runner, windows-latest]
+        include:
+          - runner: spacetimedb-new-runner
+            container:
+              image: localhost:5000/spacetimedb-ci:latest
+              options: --privileged
+          - runner: windows-latest
+            container: null
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 120
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the Rust smoketests job save the cache since it builds more things
+          save-if: false
+          prefix-key: v1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r smoketests/requirements.txt
+
+      - name: Install psql (Windows)
+        if: runner.os == 'Windows'
+        run: choco install psql -y --no-progress
+        shell: powershell
+
+      - name: Update dotnet workloads
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          cd modules
+          dotnet workload config --update-mode manifests
+          dotnet workload update
+
+      - name: Run Python smoketests
+        shell: bash
+        run: |
+          python -m smoketests
 
   test:
     needs: [lints]
@@ -883,3 +965,81 @@ jobs:
               repo: targetRepo,
               run_id: runId,
             });
+
+  warn-python-smoketests:
+    name: Warn about Python smoketest edits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for Python smoketest changes
+        id: check-changes
+        run: |
+          # Get changed files in the PR
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          # Check if any files in smoketests/ (Python) directory were changed
+          PYTHON_SMOKETEST_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^smoketests/" || true)
+
+          if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+            echo "$PYTHON_SMOKETEST_CHANGES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Add warning comment
+        if: steps.check-changes.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const changedFiles = `${{ steps.check-changes.outputs.changed_files }}`;
+            const body = `## ⚠️ Python Smoketests Notice
+
+            This PR modifies files in the legacy Python smoketests directory (\`smoketests/\`).
+
+            **Note:** The Python smoketests are being replaced by Rust smoketests in \`crates/smoketests/\`. Please consider:
+
+            1. If adding new tests, please add them to the Rust smoketests instead
+            2. If fixing bugs, consider whether the fix is also needed in the Rust version
+            3. Both test suites currently run in CI during the transition period
+
+            **Changed files:**
+            \`\`\`
+            ${changedFiles}
+            \`\`\`
+            `;
+
+            // Check if we already left a comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('Python Smoketests Notice')
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }

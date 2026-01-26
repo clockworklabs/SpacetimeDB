@@ -390,9 +390,14 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Smoketests { args: smoketest_args }) => {
+            // Use cargo smoketest (alias for xtask-smoketest) which handles:
+            // - Building binaries first (prevents race conditions)
+            // - Building precompiled modules
+            // - Using nextest if available, falling back to cargo test
+            // - Running in release mode with optimal parallelism
             cmd(
                 "cargo",
-                ["test", "-p", "spacetimedb-smoketests"]
+                ["smoketest"]
                     .into_iter()
                     .chain(smoketest_args.iter().map(|s| s.as_str()).clone()),
             )
