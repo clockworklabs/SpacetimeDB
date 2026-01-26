@@ -10,3 +10,4 @@ export { schema, convertToAccessorMap } from '../lib/schema.ts';
 export { table } from '../lib/table.ts';
 export { reducerSchema, reducers } from '../lib/reducers.ts';
 export { procedureSchema, procedures } from '../lib/procedures.ts';
+export * from './type_utils.ts';

@@ -1,15 +1,7 @@
 import { shallowRef, watch, onUnmounted } from 'vue';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import type { InferTypeOfRow } from '../lib/type_builders';
 import type { UntypedReducerDef } from '../sdk/reducers';
-import type { Prettify } from '../lib/type_util';
-
-type IsEmptyObject<T> = [keyof T] extends [never] ? true : false;
-type MaybeParams<T> = IsEmptyObject<T> extends true ? [] : [params: T];
-
-type ParamsType<R extends UntypedReducerDef> = MaybeParams<
-  Prettify<InferTypeOfRow<R['params']>>
->;
+import type { ParamsType } from '../sdk';
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef
