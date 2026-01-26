@@ -75,8 +75,8 @@ jobs:
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
-          bash sdks/csharp/tools~/write-nuget-config.sh .
-          cp sdks/csharp/NuGet.Config NuGet.Config
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
 
       # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
@@ -578,7 +578,6 @@ jobs:
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
-          cp NuGet.Config ../..
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -708,7 +707,7 @@ jobs:
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
-        run: dotnet restore --configfile nuget.config SpacetimeDB.ClientSDK.sln
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
       - name: Run .NET tests
         working-directory: sdks/csharp
