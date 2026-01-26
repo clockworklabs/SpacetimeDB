@@ -111,10 +111,23 @@ public static partial class Module
         [SpacetimeDB.PrimaryKey]
         public Uuid Id;
 
+        [SpacetimeDB.Index.BTree]
         public string Name;
 
         [SpacetimeDB.Index.BTree]
         public bool IsAdmin;
+
+        [SpacetimeDB.Index.BTree]
+        public byte Age;
+    }
+
+    [SpacetimeDB.Table(Name = "Score", Public = true)]
+    [SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+    public partial struct Score
+    {
+        public uint PlayerId;
+        public uint Level;
+        public long Points;
     }
 
     [SpacetimeDB.Table(Name = "nullable_vec", Public = true)]
@@ -317,14 +330,28 @@ public static partial class Module
             });
         }
 
-        foreach (var (Name, IsAdmin) in new List<(string Name, bool IsAdmin)>
+        foreach (var (Name, IsAdmin, Age) in new List<(string Name, bool IsAdmin, byte Age)>
             {
-                ("Alice", true),
-                ("Bob", false),
-                ("Charlie", true)
+                ("Alice", true, (byte)30),
+                ("Bob", false, (byte)16),
+                ("Charlie", true, (byte)22)
             })
         {
-            ctx.Db.User.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin });
+            ctx.Db.User.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin, Age = Age });
+        }
+
+        if (ctx.Db.Score.Count == 0)
+        {
+            foreach (var (PlayerId, Level, Points) in new List<(uint PlayerId, uint Level, long Points)>
+                {
+                    (123u, 1u, 1_000),
+                    (123u, 5u, 5_000),
+                    (123u, 10u, 10_000),
+                    (999u, 2u, 2_500)
+                })
+            {
+                ctx.Db.Score.Insert(new Score { PlayerId = PlayerId, Level = Level, Points = Points });
+            }
         }
     }
 

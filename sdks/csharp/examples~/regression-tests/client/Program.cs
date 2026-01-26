@@ -72,6 +72,8 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM my_log",
             "SELECT * FROM Admins",
             "SELECT * FROM nullable_vec_view",
+            "SELECT * FROM user",
+            "SELECT * FROM score",
         ]);
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -241,6 +243,32 @@ void ValidateReducerErrorDoesNotContainStackTrace(Exception exception)
     Debug.Assert(!exception.Message.Contains(" at "), "Reducer error message should not contain stack trace");
 }
 
+void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
+{
+    Log.Debug("Checking 'Querying with Indexes' documentation examples...");
+
+    var usersNamedAlice = conn.Db.User.Name.Filter("Alice").ToList();
+    Debug.Assert(usersNamedAlice.Any(u => u.Name == "Alice"), "Expected at least one user named Alice");
+
+    var ages18To65 = conn.Db.User.Age.Filter(new Bound<byte>(18, 65)).Select(u => u.Name).ToHashSet();
+    Debug.Assert(ages18To65.SetEquals(new[] { "Alice", "Charlie" }), "Expected Alice and Charlie in 18-65 age range");
+
+    var ages18OrOlder = conn.Db.User.Age.Filter(new Bound<byte>(18, byte.MaxValue)).Select(u => u.Name).ToHashSet();
+    Debug.Assert(ages18OrOlder.SetEquals(new[] { "Alice", "Charlie" }), "Expected Alice and Charlie to be >= 18");
+
+    var youngerThan18 = conn.Db.User.Age.Filter(new Bound<byte>(byte.MinValue, 17)).Select(u => u.Name).ToHashSet();
+    Debug.Assert(youngerThan18.SetEquals(new[] { "Bob" }), "Expected Bob to be the only minor");
+
+    var player123Scores = conn.Db.Score.by_player_and_level.Filter(123u).ToList();
+    Debug.Assert(player123Scores.Count == 3, $"Expected 3 scores for player 123, got {player123Scores.Count}");
+
+    var player123LevelRange = conn.Db.Score.by_player_and_level.Filter((123u, new Bound<uint>(1u, 10u))).ToList();
+    Debug.Assert(player123LevelRange.Count == 3, "Expected three scores for player 123 between levels 1 and 10 inclusive");
+
+    var player123Level5 = conn.Db.Score.by_player_and_level.Filter((123u, 5u)).ToList();
+    Debug.Assert(player123Level5.Count == 1 && player123Level5[0].Points == 5_000, "Expected a single level-5 score worth 5,000 points for player 123");
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     applied = true;
@@ -321,6 +349,8 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Debug.Assert(context.Db.Admins.Count > 0, $"context.Db.Admins.Count = {context.Db.Admins.Count}");
 
     ValidateNullableVecView(context, expectedHasPos: true, expectedX: 1, expectedY: 2);
+
+    ValidateQueryingWithIndexesExamples(context);
 
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
