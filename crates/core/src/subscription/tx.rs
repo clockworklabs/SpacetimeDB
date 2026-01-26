@@ -46,21 +46,21 @@ impl DeltaTableIndexes {
         fn build_indexes_for_rows<'a>(
             tx: &'a TxId,
             meta: &'a QueriedTableIndexIds,
-            rows: impl Iterator<Item = (&'a TableId, &'a Arc<[ProductValue]>)>,
+            rows: impl Iterator<Item = (TableId, &'a Arc<[ProductValue]>)>,
         ) -> HashMap<(TableId, IndexId), DeltaTableIndex> {
             let mut indexes: HashMap<(TableId, IndexId), DeltaTableIndex> = HashMap::new();
             for (table_id, rows) in rows {
-                if let Some(schema) = tx.get_schema(*table_id) {
+                if let Some(schema) = tx.get_schema(table_id) {
                     // Fetch the column ids for each index
                     let mut cols_for_index = vec![];
-                    for index_id in meta.index_ids_for_table(*table_id) {
+                    for index_id in meta.index_ids_for_table(table_id) {
                         cols_for_index.push((index_id, schema.col_list_for_index_id(index_id)));
                     }
                     for (i, row) in rows.iter().enumerate() {
                         for (index_id, col_list) in &cols_for_index {
                             if !col_list.is_empty() {
                                 indexes
-                                    .entry((*table_id, *index_id))
+                                    .entry((table_id, *index_id))
                                     .or_default()
                                     .entry(row.project(col_list).unwrap())
                                     .or_default()
@@ -161,38 +161,24 @@ impl Datastore for DeltaTx<'_> {
 impl DeltaStore for DeltaTx<'_> {
     fn num_inserts(&self, table_id: TableId) -> usize {
         self.data
-            .and_then(|data| {
-                data.inserts()
-                    .find(|(id, ..)| **id == table_id)
-                    .map(|(.., rows)| rows.len())
-            })
+            .and_then(|data| data.inserts_for_table(table_id).map(|rows| rows.len()))
             .unwrap_or_default()
     }
 
     fn num_deletes(&self, table_id: TableId) -> usize {
         self.data
-            .and_then(|data| {
-                data.deletes()
-                    .find(|(id, ..)| **id == table_id)
-                    .map(|(.., rows)| rows.len())
-            })
+            .and_then(|data| data.deletes_for_table(table_id).map(|rows| rows.len()))
             .unwrap_or_default()
     }
 
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
-        self.data.and_then(|data| {
-            data.inserts()
-                .find(|(id, ..)| **id == table_id)
-                .map(|(.., rows)| rows.iter())
-        })
+        self.data
+            .and_then(|data| data.inserts_for_table(table_id).map(|rows| rows.iter()))
     }
 
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
-        self.data.and_then(|data| {
-            data.deletes()
-                .find(|(id, ..)| **id == table_id)
-                .map(|(.., rows)| rows.iter())
-        })
+        self.data
+            .and_then(|data| data.deletes_for_table(table_id).map(|rows| rows.iter()))
     }
 
     fn index_scan_range_for_delta(
