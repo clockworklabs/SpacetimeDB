@@ -669,32 +669,42 @@ export const SumType = {
     } else {
       let serializer = SERIALIZERS.get(ty);
       if (serializer != null) return serializer;
-      // TODO: do dynamic codegen, as in `ProductType.makeSerializer`
-      serializer = (writer, value) => {
-        const variant = variants.get(value.tag);
-        if (variant == null) {
-          throw `Can't serialize a sum type, couldn't find ${value.tag} tag ${JSON.stringify(value)} in variants ${JSON.stringify([...variants.keys()])}`;
-        }
-        const { index, serialize } = variant;
-        writer.writeU8(index);
-        serialize(writer, value.value);
-      };
+
+      const serializers: Record<string, Serializer<any>> = {};
+
+      const body = `\
+switch (value.tag) {
+${ty.variants
+  .map(
+    ({ name }, i) => `\
+  case ${JSON.stringify(name!)}:
+    writer.writeByte(${i});
+    return this.${name!}(writer, value.value);`
+  )
+  .join('\n')}
+  default:
+    throw new TypeError(
+      \`Could not serialize sum type; unknown tag \${value.tag}\`
+    )
+}
+`;
+
+      serializer = Function('writer', 'value', body).bind(
+        serializers
+      ) as Serializer<any>;
+
       // In case `ty` is recursive, we cache the function *before* before computing
       // `variants`, so that a recursive `makeSerializer` with the same `ty` has
       // an exit condition.
       SERIALIZERS.set(ty, serializer);
-      const variants = new Map(
-        ty.variants.map((element, index) => [
-          element.name!,
-          {
-            index,
-            serialize: AlgebraicType.makeSerializer(
-              element.algebraicType,
-              typespace
-            ),
-          },
-        ])
-      );
+
+      for (const { name, algebraicType } of ty.variants) {
+        serializers[name!] = AlgebraicType.makeSerializer(
+          algebraicType,
+          typespace
+        );
+      }
+      Object.freeze(serializers);
       return serializer;
     }
   },
