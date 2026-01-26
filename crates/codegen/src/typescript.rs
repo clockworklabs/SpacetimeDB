@@ -211,6 +211,10 @@ impl Lang for TypeScript {
         writeln!(out);
         writeln!(out, "// Import all reducer arg schemas");
         for reducer in iter_reducers(module) {
+            if !is_reducer_invokable(reducer) {
+                // Skip system-defined reducers
+                continue;
+            }
             let reducer_name = &reducer.name;
             let reducer_module_name = reducer_module_name(reducer_name);
             let args_type = reducer_args_type_name(&reducer.name);
@@ -553,7 +557,7 @@ fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
         let args_type = procedure_args_type_name(&procedure.name);
         writeln!(
             out,
-            "export type {procedure_name_pascalcase} = __Infer<typeof {args_type}.params>;"
+            "export type {procedure_name_pascalcase}Args = __Infer<typeof {args_type}.params>;"
         );
         writeln!(
             out,
