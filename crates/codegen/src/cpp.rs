@@ -59,8 +59,8 @@ impl<'opts> Cpp<'opts> {
             PrimitiveType::U64 => "uint64_t",
             PrimitiveType::I128 => "SpacetimeDb::I128",
             PrimitiveType::U128 => "SpacetimeDb::U128",
-            PrimitiveType::I256 => "I256Placeholder", // TODO: proper 256-bit support
-            PrimitiveType::U256 => "U256Placeholder", // TODO: proper 256-bit support
+            PrimitiveType::I256 => "SpacetimeDb::I256",
+            PrimitiveType::U256 => "SpacetimeDb::U256",
             PrimitiveType::F32 => "float",
             PrimitiveType::F64 => "double",
         }
@@ -80,8 +80,7 @@ impl<'opts> Cpp<'opts> {
                 write!(output, ">")
             }
             AlgebraicTypeUse::Result { .. } => {
-                // TODO: Implement proper Result<T, E> type support
-                write!(output, "ResultPlaceholder")
+                write!(output, "__sdk::Result")
             }
             AlgebraicTypeUse::String => write!(output, "std::string"),
             AlgebraicTypeUse::Identity => write!(output, "__sdk::Identity"),
@@ -89,7 +88,7 @@ impl<'opts> Cpp<'opts> {
             AlgebraicTypeUse::Timestamp => write!(output, "__sdk::Timestamp"),
             AlgebraicTypeUse::TimeDuration => write!(output, "__sdk::TimeDuration"),
             AlgebraicTypeUse::ScheduleAt => write!(output, "__sdk::ScheduleAt"),
-            AlgebraicTypeUse::Uuid => write!(output, "UuidPlaceholder"), // TODO: Implement proper UUID type
+            AlgebraicTypeUse::Uuid => write!(output, "__sdk::Uuid"),
             AlgebraicTypeUse::Unit => write!(output, "std::monostate"),
             AlgebraicTypeUse::Never => write!(output, "std::monostate"),
             AlgebraicTypeUse::Ref(type_ref) => {
