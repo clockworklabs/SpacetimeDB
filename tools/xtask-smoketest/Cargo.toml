@@ -6,4 +6,3 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-tempfile.workspace = true
