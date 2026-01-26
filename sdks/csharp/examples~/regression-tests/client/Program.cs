@@ -72,6 +72,18 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.Admins().Build())
         .AddQuery(qb => qb.From.NullableVecView().Build())
         .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)).Build())
+        .AddQuery(
+            qb => qb.From.Player()
+                .LeftSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
+                .Build()
+        )
+        .AddQuery(
+            qb => qb.From.Player()
+                .Where(c => c.Name.Eq("NewPlayer"))
+                .RightSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
+                .Where(c => c.Level.Eq(1UL))
+                .Build()
+        )
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -253,11 +265,29 @@ void ValidateWhereSubscription(IRemoteDbContext conn)
     Debug.Assert(rows.Any(r => r.Id == 3 && r.Name == "alsohigh"), "Expected where_test row id=3 name=alsohigh");
 }
 
+void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
+{
+    Log.Debug("Checking typed semijoin subscriptions...");
+
+    var players = conn.Db.Player.Iter().ToList();
+    Debug.Assert(players.Count == 1, $"Expected 1 player row, got {players.Count}");
+    Debug.Assert(players[0].Identity == identity, "Expected player.Identity to match the connection identity");
+    Debug.Assert(players[0].Name == "NewPlayer", $"Expected player.Name == NewPlayer, got {players[0].Name}");
+
+    var playerId = players[0].Id;
+
+    var levels = conn.Db.PlayerLevel.Iter().ToList();
+    Debug.Assert(levels.Count == 1, $"Expected 1 player_level row, got {levels.Count}");
+    Debug.Assert(levels[0].PlayerId == playerId, "Expected player_level.PlayerId to match the subscribed player id");
+    Debug.Assert(levels[0].Level == 1, $"Expected player_level.Level == 1, got {levels[0].Level}");
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     applied = true;
 
     ValidateWhereSubscription(context);
+    ValidateSemijoinSubscriptions(context, context.Identity!.Value);
 
     // Do some operations that alter row state;
     // we will check that everything is in sync in the callbacks for these reducer calls.
