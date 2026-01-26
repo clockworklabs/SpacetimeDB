@@ -18,6 +18,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -378,7 +379,7 @@ pub struct SubscriptionData {
 #[derive(Debug, Clone)]
 pub struct SubscriptionRows {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_rows: FormatSwitch<ws::TableUpdate<BsatnFormat>, ws::TableUpdate<JsonFormat>>,
 }
 

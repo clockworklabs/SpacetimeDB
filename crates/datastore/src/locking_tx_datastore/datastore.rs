@@ -40,6 +40,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{
     indexes::RowPointer,
@@ -1101,7 +1102,7 @@ struct ReplayVisitor<'a, F> {
     // Since deletes are handled before truncation / drop, sometimes the schema
     // info is gone. We save the name on the first delete of that table so metrics
     // can still show a name.
-    dropped_table_names: IntMap<TableId, Box<str>>,
+    dropped_table_names: IntMap<TableId, TableName>,
     error_behavior: ErrorBehavior,
 }
 
@@ -1459,7 +1460,7 @@ mod tests {
         fn from(value: TableRow<'_>) -> Self {
             Self {
                 table_id: value.id.into(),
-                table_name: value.name.into(),
+                table_name: TableName::new_from_str(value.name),
                 table_type: value.ty,
                 table_access: value.access,
                 table_primary_key: value.primary_key.map(ColList::new),
@@ -1610,7 +1611,7 @@ mod tests {
     ) -> TableSchema {
         TableSchema::new(
             TableId::SENTINEL,
-            "Foo".into(),
+            TableName::new_from_str("Foo"),
             None,
             cols.into(),
             indices.into(),

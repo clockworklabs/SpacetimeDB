@@ -15,6 +15,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::page_pool::PagePool;
@@ -490,7 +491,7 @@ criterion_group!(
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
     let mut result = TableSchema::from_product_type(ty);
-    result.table_name = name.into();
+    result.table_name = TableName::new_from_str(name);
     result
 }
 

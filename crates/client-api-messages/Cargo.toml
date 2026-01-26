@@ -10,6 +10,7 @@ rust-version.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["bytestring"] }
+spacetimedb-schema.workspace = true
 
 bytes.workspace = true
 bytestring.workspace = true

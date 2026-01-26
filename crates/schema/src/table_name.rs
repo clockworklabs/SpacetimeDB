@@ -1,0 +1,44 @@
+use core::fmt;
+use core::ops::Deref;
+use ecow::EcoString;
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
+
+/// The name of a table.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TableName(
+    // TODO(perf, centril): Use this sort of optimization
+    // in RawIdentifier and `Identifier` and more places.
+    // TODO(perf): Consider `lean_string` instead for `&'static str` optimization.
+    // This could be useful in e.g., `SumType` and friends.
+    EcoString,
+);
+
+impl_st!([] TableName, _ts => AlgebraicType::String);
+impl_serialize!([] TableName, (self, ser) => ser.serialize_str(&self.0));
+impl_deserialize!([] TableName, de => <Box<str>>::deserialize(de).map(|s| Self(EcoString::from(s.as_ref()))));
+
+impl TableName {
+    pub fn new_from_str(name: &str) -> Self {
+        Self(EcoString::from(name))
+    }
+}
+
+impl Deref for TableName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for TableName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for TableName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}

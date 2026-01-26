@@ -15,6 +15,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
@@ -186,8 +187,7 @@ pub struct TxData {
     truncates: IntSet<TableId>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
-    // TODO: Store table name as ref counted string.
-    tables: IntMap<TableId, String>,
+    tables: IntMap<TableId, TableName>,
     /// Tx offset of the transaction which performed these operations.
     ///
     /// `None` implies that `inserts` and `deletes` are both empty,
@@ -216,17 +216,17 @@ impl TxData {
     }
 
     /// Set `rows` as the inserted rows for `(table_id, table_name)`.
-    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &TableName, rows: Arc<[ProductValue]>) {
         self.inserts.insert(table_id, rows);
-        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+        self.tables.entry(table_id).or_insert_with(|| table_name.clone());
     }
 
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
     ///
     /// When `truncated` is set, the table has been emptied in this transaction.
-    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &TableName, rows: Arc<[ProductValue]>) {
         self.deletes.insert(table_id, rows);
-        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+        self.tables.entry(table_id).or_insert_with(|| table_name.clone());
     }
 
     pub fn add_truncates(&mut self, truncated_tables: impl IntoIterator<Item = TableId>) {
@@ -276,13 +276,13 @@ impl TxData {
     ///
     /// If you don't need access to the table name, [`Self::inserts`] is
     /// slightly more efficient.
-    pub fn inserts_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+    pub fn inserts_with_table_name(&self) -> impl Iterator<Item = (&TableId, &TableName, &Arc<[ProductValue]>)> + '_ {
         self.inserts.iter().map(|(table_id, rows)| {
             let table_name = self
                 .tables
                 .get(table_id)
                 .expect("invalid `TxData`: partial table name mapping");
-            (table_id, table_name.as_str(), rows)
+            (table_id, table_name, rows)
         })
     }
 
@@ -300,13 +300,13 @@ impl TxData {
     ///
     /// If you don't need access to the table name, [`Self::deletes`] is
     /// slightly more efficient.
-    pub fn deletes_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+    pub fn deletes_with_table_name(&self) -> impl Iterator<Item = (&TableId, &TableName, &Arc<[ProductValue]>)> + '_ {
         self.deletes.iter().map(|(table_id, rows)| {
             let table_name = self
                 .tables
                 .get(table_id)
                 .expect("invalid `TxData`: partial table name mapping");
-            (table_id, table_name.as_str(), rows)
+            (table_id, table_name, rows)
         })
     }
 

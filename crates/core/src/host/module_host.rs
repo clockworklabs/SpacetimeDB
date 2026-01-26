@@ -62,6 +62,7 @@ use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::relation::RelValue;
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
@@ -94,9 +95,9 @@ impl DatabaseUpdate {
 
     pub fn from_writes(tx_data: &TxData) -> Self {
         let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
-        let new_update = |table_id, table_name: &str| DatabaseTableUpdate {
+        let new_update = |table_id, table_name: &TableName| DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
+            table_name: table_name.clone(),
             inserts: [].into(),
             deletes: [].into(),
         };
@@ -124,7 +125,7 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     // Note: `Arc<[ProductValue]>` allows to cheaply
     // use the values from `TxData` without cloning the
     // contained `ProductValue`s.
@@ -140,7 +141,7 @@ pub struct DatabaseUpdateRelValue<'a> {
 #[derive(PartialEq, Debug)]
 pub struct DatabaseTableUpdateRelValue<'a> {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub updates: UpdatesRelValue<'a>,
 }
 

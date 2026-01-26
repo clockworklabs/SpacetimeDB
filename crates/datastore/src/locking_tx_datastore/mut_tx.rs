@@ -58,6 +58,7 @@ use spacetimedb_sats::{
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
+    table_name::TableName,
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -729,7 +730,7 @@ impl MutTxId {
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
     fn insert_into_st_view(
         &mut self,
-        view_name: Box<str>,
+        view_name: TableName,
         table_id: TableId,
         is_public: bool,
         is_anonymous: bool,
@@ -900,7 +901,7 @@ impl MutTxId {
     // TODO(centril): remove this. It doesn't seem to be used by anything.
     pub fn rename_table(&mut self, table_id: TableId, new_name: &str) -> Result<()> {
         // Update the table's name in st_tables.
-        self.update_st_table_row(table_id, |st| st.table_name = new_name.into())
+        self.update_st_table_row(table_id, |st| st.table_name = TableName::new_from_str(new_name))
     }
 
     fn update_st_table_row<R>(&mut self, table_id: TableId, updater: impl FnOnce(&mut StTableRow) -> R) -> Result<R> {

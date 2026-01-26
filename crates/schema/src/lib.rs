@@ -8,4 +8,5 @@ pub mod error;
 pub mod identifier;
 pub mod relation;
 pub mod schema;
+pub mod table_name;
 pub mod type_for_generate;

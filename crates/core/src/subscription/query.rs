@@ -174,6 +174,7 @@ mod tests {
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::relation::FieldName;
     use spacetimedb_schema::schema::*;
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};
     use spacetimedb_vm::expr::{Expr, SourceSet};
@@ -203,7 +204,7 @@ mod tests {
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
+            table_name: TableName::new_from_str(table_name),
             deletes: [].into(),
             inserts: [row].into(),
         }
@@ -212,7 +213,7 @@ mod tests {
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
+            table_name: TableName::new_from_str(table_name),
             deletes: [row].into(),
             inserts: [].into(),
         }
@@ -240,7 +241,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: table_name.into(),
+            table_name: TableName::new_from_str(table_name),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -447,7 +448,7 @@ mod tests {
         let update = DatabaseUpdate {
             tables: vec![DatabaseTableUpdate {
                 table_id,
-                table_name: "test".into(),
+                table_name: TableName::new_from_str("test"),
                 deletes: deletes.into(),
                 inserts: [].into(),
             }],
@@ -529,7 +530,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "inventory".into(),
+            table_name: TableName::new_from_str("inventory"),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -643,14 +644,14 @@ mod tests {
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
-            table_name: "inventory".into(),
+            table_name: TableName::new_from_str("inventory"),
             deletes: [row_1].into(),
             inserts: [].into(),
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
-            table_name: "player".into(),
+            table_name: TableName::new_from_str("player"),
             deletes: [].into(),
             inserts: [row_2].into(),
         };
@@ -1013,7 +1014,7 @@ mod tests {
                 result.tables[0],
                 DatabaseTableUpdate {
                     table_id: lhs_id,
-                    table_name: "lhs".into(),
+                    table_name: TableName::new_from_str("lhs"),
                     deletes: [lhs_old].into(),
                     inserts: [lhs_new].into(),
                 },
@@ -1092,8 +1093,7 @@ mod tests {
 
         let (data, _, tx) = db.commit_tx_downgrade(tx, Workload::ForTests);
         let table_id = plan.subscribed_table_id();
-        // This awful construction to convert `Arc<str>` into `Box<str>`.
-        let table_name = (&**plan.subscribed_table_name()).into();
+        let table_name = plan.subscribed_table_name().clone();
         let tx = DeltaTx::new(&tx, &data, &QueriedTableIndexIds::from_iter(plan.index_ids()));
 
         // IMPORTANT: FOR TESTING ONLY!
@@ -1435,7 +1435,7 @@ mod tests {
             result.tables[0],
             DatabaseTableUpdate {
                 table_id: lhs_id,
-                table_name: "lhs".into(),
+                table_name: TableName::new_from_str("lhs"),
                 deletes: [lhs_old].into(),
                 inserts: [lhs_new].into(),
             },

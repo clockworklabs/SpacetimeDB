@@ -29,7 +29,8 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
-use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
+use spacetimedb_schema::table_name::TableName;
+use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -84,7 +85,7 @@ impl Plan {
 
     /// A subscription query return rows from a single table.
     /// This method returns the name of that table.
-    pub fn subscribed_table_name(&self) -> &str {
+    pub fn subscribed_table_name(&self) -> &TableName {
         self.plans[0].subscribed_table_name()
     }
 
@@ -1559,8 +1560,8 @@ impl SendWorker {
                         Json((tbl_upd, update)) => tbl_upd.push(update),
                     },
                     Entry::Vacant(entry) => drop(entry.insert(match upd.update {
-                        Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
-                        Json(update) => Json(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                        Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, upd.table_name, update)),
+                        Json(update) => Json(TableUpdate::new(upd.table_id, upd.table_name, update)),
                     })),
                 }
                 tables
@@ -1667,6 +1668,7 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
     use tokio::sync::oneshot;
 
@@ -2176,7 +2178,7 @@ mod tests {
         // select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: "t".into(),
+            table_name: TableName::new_from_str("t"),
             inserts: [product![2u8]].into(),
             deletes: [product![3u8]].into(),
         };
@@ -2194,7 +2196,7 @@ mod tests {
         // Only: select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: "t".into(),
+            table_name: TableName::new_from_str("t"),
             inserts: [product![8u8]].into(),
             deletes: [product![9u8]].into(),
         };
@@ -2235,7 +2237,7 @@ mod tests {
         // Therefore we must evaluate it for any update on `t`.
         let table_update = DatabaseTableUpdate {
             table_id: t_id,
-            table_name: "t".into(),
+            table_name: TableName::new_from_str("t"),
             inserts: [product![0u8, 0u8]].into(),
             deletes: [].into(),
         };
@@ -2251,7 +2253,7 @@ mod tests {
         // Yes, because `s.a = 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: "s".into(),
+            table_name: TableName::new_from_str("s"),
             inserts: [product![0u8, 1u8]].into(),
             deletes: [].into(),
         };
@@ -2267,7 +2269,7 @@ mod tests {
         // No, because `s.a != 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: "s".into(),
+            table_name: TableName::new_from_str("s"),
             inserts: [product![0u8, 2u8]].into(),
             deletes: [].into(),
         };

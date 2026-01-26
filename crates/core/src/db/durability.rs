@@ -265,6 +265,7 @@ mod tests {
     use futures::FutureExt as _;
     use pretty_assertions::assert_matches;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::table_name::TableName;
     use tokio::sync::watch;
 
     use super::*;
@@ -328,7 +329,7 @@ mod tests {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
             // Ensure the transaction is non-empty.
-            txdata.set_inserts_for_table(4000.into(), "foo", [product![42u8]].into());
+            txdata.set_inserts_for_table(4000.into(), &TableName::new_from_str("foo"), [product![42u8]].into());
 
             worker.request_durability(None, &Arc::new(txdata));
         }

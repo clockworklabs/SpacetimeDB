@@ -18,6 +18,7 @@ use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn::ToBsatn;
 use spacetimedb_sats::Serialize;
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 
 pub mod delta;
@@ -174,7 +175,7 @@ pub enum TableUpdateType {
 pub fn collect_table_update_for_view<Tx, F>(
     plan_fragments: &[ViewProject],
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     tx: &Tx,
     update_type: TableUpdateType,
     rlb_pool: &impl RowListBuilderSource<F>,
@@ -210,7 +211,7 @@ where
 pub fn collect_table_update<F: BuildableWebsocketFormat>(
     plan_fragments: &[PipelinedProject],
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     tx: &(impl Datastore + DeltaStore),
     update_type: TableUpdateType,
     rlb_pool: &impl RowListBuilderSource<F>,
@@ -268,7 +269,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         collect_table_update_for_view(
                             &[view_plan],
                             table_id,
-                            (&**table_name).into(),
+                            table_name.clone(),
                             tx,
                             update_type,
                             rlb_pool,
@@ -278,7 +279,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         collect_table_update(
                             &[pipelined_plan],
                             table_id,
-                            (&**table_name).into(),
+                            table_name.clone(),
                             tx,
                             update_type,
                             rlb_pool,
@@ -289,7 +290,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                     collect_table_update(
                         &[pipelined_plan],
                         table_id,
-                        (&**table_name).into(),
+                        table_name.clone(),
                         tx,
                         update_type,
                         rlb_pool,
@@ -300,7 +301,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
 
                 let (ref _table_update, ref metrics) = result;
                 let query_metrics = metrics::get_query_metrics(
-                    table_name,
+                    table_name.clone(),
                     &plan,
                     metrics.rows_scanned as u64,
                     elapsed.as_micros() as u64,

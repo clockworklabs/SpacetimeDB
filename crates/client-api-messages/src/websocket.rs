@@ -31,6 +31,7 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicType, SpacetimeType,
 };
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
@@ -384,7 +385,7 @@ pub struct SubscribeRows<F: WebsocketFormat> {
     /// The table ID of the query.
     pub table_id: TableId,
     /// The table name of the query.
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     /// The BSATN row values.
     pub table_rows: TableUpdate<F>,
 }
@@ -653,7 +654,7 @@ pub struct TableUpdate<F: WebsocketFormat> {
     ///
     /// NOTE(centril, 1.0): we might want to remove this and instead
     /// tell clients about changes to table_name <-> table_id mappings.
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     /// The sum total of rows in `self.updates`,
     pub num_rows: u64,
     /// The actual insert and delete updates for this table.
@@ -668,7 +669,7 @@ pub struct SingleQueryUpdate<F: WebsocketFormat> {
 }
 
 impl<F: WebsocketFormat> TableUpdate<F> {
-    pub fn new(table_id: TableId, table_name: Box<str>, update: SingleQueryUpdate<F>) -> Self {
+    pub fn new(table_id: TableId, table_name: TableName, update: SingleQueryUpdate<F>) -> Self {
         Self {
             table_id,
             table_name,
@@ -677,7 +678,7 @@ impl<F: WebsocketFormat> TableUpdate<F> {
         }
     }
 
-    pub fn empty(table_id: TableId, table_name: Box<str>) -> Self {
+    pub fn empty(table_id: TableId, table_name: TableName) -> Self {
         Self {
             table_id,
             table_name,
@@ -746,7 +747,7 @@ pub struct OneOffQueryResponse<F: WebsocketFormat> {
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffTable<F: WebsocketFormat> {
     /// The name of the table.
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     ///
