@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ResultIdentityString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait result_identity_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ResultIdentityString`.
+    fn result_identity_string(&self) -> __sdk::__query_builder::Table<ResultIdentityString>;
+}
+
+impl result_identity_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_identity_string(&self) -> __sdk::__query_builder::Table<ResultIdentityString> {
+        __sdk::__query_builder::Table::new("result_identity_string")
+    }
+}

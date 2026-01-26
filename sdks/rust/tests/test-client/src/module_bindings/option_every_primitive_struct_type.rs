@@ -15,3 +15,31 @@ pub struct OptionEveryPrimitiveStruct {
 impl __sdk::InModule for OptionEveryPrimitiveStruct {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OptionEveryPrimitiveStruct`.
+///
+/// Provides typed access to columns for query building.
+pub struct OptionEveryPrimitiveStructCols {
+    pub s: __sdk::__query_builder::Col<OptionEveryPrimitiveStruct, Option<EveryPrimitiveStruct>>,
+}
+
+impl __sdk::__query_builder::HasCols for OptionEveryPrimitiveStruct {
+    type Cols = OptionEveryPrimitiveStructCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OptionEveryPrimitiveStructCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OptionEveryPrimitiveStruct`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OptionEveryPrimitiveStructIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OptionEveryPrimitiveStruct {
+    type IxCols = OptionEveryPrimitiveStructIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OptionEveryPrimitiveStructIxCols {}
+    }
+}

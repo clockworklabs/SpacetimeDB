@@ -172,6 +172,11 @@ impl ModuleDef {
         self.reducers.values()
     }
 
+    /// Returns an iterator over all reducer ids and definitions.
+    pub fn reducer_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (ReducerId, &ReducerDef)> {
+        self.reducers.values().enumerate().map(|(idx, def)| (idx.into(), def))
+    }
+
     /// The procedures of the module definition.
     pub fn procedures(&self) -> impl Iterator<Item = &ProcedureDef> {
         self.procedures.values()
