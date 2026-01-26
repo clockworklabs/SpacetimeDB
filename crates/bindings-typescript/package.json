@@ -36,10 +36,10 @@
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
     "generate:client-api": "cargo run -p generate-client-api && prettier --write src/sdk/client_api",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
-    "generate:examples:quickstart-chat": "pnpm --filter @clockworklabs/quickstart-chat generate",
-    "generate:examples:basic-react": "pnpm --filter @clockworklabs/basic-react generate",
+    "generate:examples:chat-react-ts": "pnpm --filter @clockworklabs/chat-react-ts generate",
+    "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
-    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:quickstart-chat && pnpm generate:examples:basic-react && pnpm generate:examples:empty",
+    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
     "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
   },
   "main": "dist/index.cjs",

@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ResultStringI32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait result_string_i32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ResultStringI32`.
+    fn result_string_i32(&self) -> __sdk::__query_builder::Table<ResultStringI32>;
+}
+
+impl result_string_i32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_string_i32(&self) -> __sdk::__query_builder::Table<ResultStringI32> {
+        __sdk::__query_builder::Table::new("result_string_i32")
+    }
+}
