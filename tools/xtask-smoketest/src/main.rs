@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_macros)]
 use anyhow::{ensure, Result};
 use clap::{Parser, Subcommand};
 use std::env;
