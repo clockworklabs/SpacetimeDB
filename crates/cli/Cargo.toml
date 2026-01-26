@@ -49,6 +49,7 @@ http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
 indicatif.workspace = true
+json5.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true
 percent-encoding.workspace = true

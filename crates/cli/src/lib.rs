@@ -4,6 +4,7 @@ mod config;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
+pub mod project_config;
 mod subcommands;
 mod tasks;
 pub mod util;
