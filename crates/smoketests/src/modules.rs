@@ -24,10 +24,13 @@ static REGISTRY: OnceLock<HashMap<&'static str, PathBuf>> = OnceLock::new();
 /// to the nested workspace yet.
 pub fn precompiled_module(name: &str) -> PathBuf {
     let registry = REGISTRY.get_or_init(build_registry);
-    registry
-        .get(name)
-        .cloned()
-        .unwrap_or_else(|| panic!("Unknown precompiled module: '{}'. Available modules: {:?}", name, registry.keys().collect::<Vec<_>>()))
+    registry.get(name).cloned().unwrap_or_else(|| {
+        panic!(
+            "Unknown precompiled module: '{}'. Available modules: {:?}",
+            name,
+            registry.keys().collect::<Vec<_>>()
+        )
+    })
 }
 
 /// Returns true if pre-compiled modules are available.
@@ -42,8 +45,7 @@ pub fn precompiled_modules_available() -> bool {
 
 /// Returns the target directory where pre-compiled WASM modules are stored.
 fn modules_target_dir() -> PathBuf {
-    workspace_root()
-        .join("crates/smoketests/modules/target/wasm32-unknown-unknown/release")
+    workspace_root().join("crates/smoketests/modules/target/wasm32-unknown-unknown/release")
 }
 
 /// Builds the registry mapping module names to WASM paths.
@@ -63,11 +65,20 @@ fn build_registry() -> HashMap<&'static str, PathBuf> {
 
     // Security and permissions
     reg.insert("rls", target.join("smoketest_module_rls.wasm"));
-    reg.insert("permissions-private", target.join("smoketest_module_permissions_private.wasm"));
-    reg.insert("permissions-lifecycle", target.join("smoketest_module_permissions_lifecycle.wasm"));
+    reg.insert(
+        "permissions-private",
+        target.join("smoketest_module_permissions_private.wasm"),
+    );
+    reg.insert(
+        "permissions-lifecycle",
+        target.join("smoketest_module_permissions_lifecycle.wasm"),
+    );
 
     // Call/procedure tests
-    reg.insert("call-reducer-procedure", target.join("smoketest_module_call_reducer_procedure.wasm"));
+    reg.insert(
+        "call-reducer-procedure",
+        target.join("smoketest_module_call_reducer_procedure.wasm"),
+    );
     reg.insert("call-empty", target.join("smoketest_module_call_empty.wasm"));
 
     // SQL format tests
@@ -76,18 +87,33 @@ fn build_registry() -> HashMap<&'static str, PathBuf> {
 
     // Scheduled reducer tests
     reg.insert("schedule-cancel", target.join("smoketest_module_schedule_cancel.wasm"));
-    reg.insert("schedule-subscribe", target.join("smoketest_module_schedule_subscribe.wasm"));
-    reg.insert("schedule-volatile", target.join("smoketest_module_schedule_volatile.wasm"));
+    reg.insert(
+        "schedule-subscribe",
+        target.join("smoketest_module_schedule_subscribe.wasm"),
+    );
+    reg.insert(
+        "schedule-volatile",
+        target.join("smoketest_module_schedule_volatile.wasm"),
+    );
 
     // Module lifecycle tests
     reg.insert("describe", target.join("smoketest_module_describe.wasm"));
     reg.insert("modules-basic", target.join("smoketest_module_modules_basic.wasm"));
     // modules-breaking is intentionally broken, not precompiled
-    reg.insert("modules-add-table", target.join("smoketest_module_modules_add_table.wasm"));
+    reg.insert(
+        "modules-add-table",
+        target.join("smoketest_module_modules_add_table.wasm"),
+    );
 
     // Index tests
-    reg.insert("add-remove-index", target.join("smoketest_module_add_remove_index.wasm"));
-    reg.insert("add-remove-index-indexed", target.join("smoketest_module_add_remove_index_indexed.wasm"));
+    reg.insert(
+        "add-remove-index",
+        target.join("smoketest_module_add_remove_index.wasm"),
+    );
+    reg.insert(
+        "add-remove-index-indexed",
+        target.join("smoketest_module_add_remove_index_indexed.wasm"),
+    );
 
     // Panic/error handling
     reg.insert("panic", target.join("smoketest_module_panic.wasm"));
@@ -95,29 +121,65 @@ fn build_registry() -> HashMap<&'static str, PathBuf> {
 
     // Restart tests
     reg.insert("restart-person", target.join("smoketest_module_restart_person.wasm"));
-    reg.insert("restart-connected-client", target.join("smoketest_module_restart_connected_client.wasm"));
+    reg.insert(
+        "restart-connected-client",
+        target.join("smoketest_module_restart_connected_client.wasm"),
+    );
 
     // Connection tests
-    reg.insert("connect-disconnect", target.join("smoketest_module_connect_disconnect.wasm"));
+    reg.insert(
+        "connect-disconnect",
+        target.join("smoketest_module_connect_disconnect.wasm"),
+    );
     reg.insert("confirmed-reads", target.join("smoketest_module_confirmed_reads.wasm"));
     reg.insert("delete-database", target.join("smoketest_module_delete_database.wasm"));
-    reg.insert("client-connection-reject", target.join("smoketest_module_client_connection_reject.wasm"));
-    reg.insert("client-connection-disconnect-panic", target.join("smoketest_module_client_connection_disconnect_panic.wasm"));
+    reg.insert(
+        "client-connection-reject",
+        target.join("smoketest_module_client_connection_reject.wasm"),
+    );
+    reg.insert(
+        "client-connection-disconnect-panic",
+        target.join("smoketest_module_client_connection_disconnect_panic.wasm"),
+    );
 
     // Misc tests
     reg.insert("namespaces", target.join("smoketest_module_namespaces.wasm"));
     reg.insert("new-user-flow", target.join("smoketest_module_new_user_flow.wasm"));
-    reg.insert("module-nested-op", target.join("smoketest_module_module_nested_op.wasm"));
+    reg.insert(
+        "module-nested-op",
+        target.join("smoketest_module_module_nested_op.wasm"),
+    );
     // fail-initial-publish-broken is intentionally broken, not precompiled
-    reg.insert("fail-initial-publish-fixed", target.join("smoketest_module_fail_initial_publish_fixed.wasm"));
+    reg.insert(
+        "fail-initial-publish-fixed",
+        target.join("smoketest_module_fail_initial_publish_fixed.wasm"),
+    );
 
     // Auto-increment tests (parameterized variants)
-    reg.insert("autoinc-basic-u32", target.join("smoketest_module_autoinc_basic_u32.wasm"));
-    reg.insert("autoinc-basic-u64", target.join("smoketest_module_autoinc_basic_u64.wasm"));
-    reg.insert("autoinc-basic-i32", target.join("smoketest_module_autoinc_basic_i32.wasm"));
-    reg.insert("autoinc-basic-i64", target.join("smoketest_module_autoinc_basic_i64.wasm"));
-    reg.insert("autoinc-unique-u64", target.join("smoketest_module_autoinc_unique_u64.wasm"));
-    reg.insert("autoinc-unique-i64", target.join("smoketest_module_autoinc_unique_i64.wasm"));
+    reg.insert(
+        "autoinc-basic-u32",
+        target.join("smoketest_module_autoinc_basic_u32.wasm"),
+    );
+    reg.insert(
+        "autoinc-basic-u64",
+        target.join("smoketest_module_autoinc_basic_u64.wasm"),
+    );
+    reg.insert(
+        "autoinc-basic-i32",
+        target.join("smoketest_module_autoinc_basic_i32.wasm"),
+    );
+    reg.insert(
+        "autoinc-basic-i64",
+        target.join("smoketest_module_autoinc_basic_i64.wasm"),
+    );
+    reg.insert(
+        "autoinc-unique-u64",
+        target.join("smoketest_module_autoinc_unique_u64.wasm"),
+    );
+    reg.insert(
+        "autoinc-unique-i64",
+        target.join("smoketest_module_autoinc_unique_i64.wasm"),
+    );
 
     reg
 }

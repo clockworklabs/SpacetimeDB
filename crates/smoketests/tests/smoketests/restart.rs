@@ -59,7 +59,9 @@ fn test_restart_sql() {
 /// Test clients are auto-disconnected on restart.
 #[test]
 fn test_restart_auto_disconnect() {
-    let mut test = Smoketest::builder().precompiled_module("restart-connected-client").build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("restart-connected-client")
+        .build();
 
     // Start two subscribers in the background
     let sub1 = test

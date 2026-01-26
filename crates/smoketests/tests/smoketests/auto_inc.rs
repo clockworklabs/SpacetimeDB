@@ -7,9 +7,7 @@ use spacetimedb_smoketests::Smoketest;
 
 #[test]
 fn test_autoinc_u32() {
-    let test = Smoketest::builder()
-        .precompiled_module("autoinc-basic-u32")
-        .build();
+    let test = Smoketest::builder().precompiled_module("autoinc-basic-u32").build();
 
     test.call("add_u32", &[r#""Robert""#, "1"]).unwrap();
     test.call("add_u32", &[r#""Julie""#, "2"]).unwrap();
@@ -41,9 +39,7 @@ fn test_autoinc_u32() {
 
 #[test]
 fn test_autoinc_u64() {
-    let test = Smoketest::builder()
-        .precompiled_module("autoinc-basic-u64")
-        .build();
+    let test = Smoketest::builder().precompiled_module("autoinc-basic-u64").build();
 
     test.call("add_u64", &[r#""Robert""#, "1"]).unwrap();
     test.call("add_u64", &[r#""Julie""#, "2"]).unwrap();
@@ -75,9 +71,7 @@ fn test_autoinc_u64() {
 
 #[test]
 fn test_autoinc_i32() {
-    let test = Smoketest::builder()
-        .precompiled_module("autoinc-basic-i32")
-        .build();
+    let test = Smoketest::builder().precompiled_module("autoinc-basic-i32").build();
 
     test.call("add_i32", &[r#""Robert""#, "1"]).unwrap();
     test.call("add_i32", &[r#""Julie""#, "2"]).unwrap();
@@ -109,9 +103,7 @@ fn test_autoinc_i32() {
 
 #[test]
 fn test_autoinc_i64() {
-    let test = Smoketest::builder()
-        .precompiled_module("autoinc-basic-i64")
-        .build();
+    let test = Smoketest::builder().precompiled_module("autoinc-basic-i64").build();
 
     test.call("add_i64", &[r#""Robert""#, "1"]).unwrap();
     test.call("add_i64", &[r#""Julie""#, "2"]).unwrap();
@@ -143,9 +135,7 @@ fn test_autoinc_i64() {
 
 #[test]
 fn test_autoinc_unique_u64() {
-    let test = Smoketest::builder()
-        .precompiled_module("autoinc-unique-u64")
-        .build();
+    let test = Smoketest::builder().precompiled_module("autoinc-unique-u64").build();
 
     // Insert Robert with explicit id 2
     test.call("update_u64", &[r#""Robert""#, "2"]).unwrap();
@@ -182,9 +172,7 @@ fn test_autoinc_unique_u64() {
 
 #[test]
 fn test_autoinc_unique_i64() {
-    let test = Smoketest::builder()
-        .precompiled_module("autoinc-unique-i64")
-        .build();
+    let test = Smoketest::builder().precompiled_module("autoinc-unique-i64").build();
 
     // Insert Robert with explicit id 2
     test.call("update_i64", &[r#""Robert""#, "2"]).unwrap();

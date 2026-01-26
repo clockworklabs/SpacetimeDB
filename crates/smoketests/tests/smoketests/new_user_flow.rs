@@ -5,7 +5,10 @@ use spacetimedb_smoketests::Smoketest;
 /// Test the entirety of the new user flow.
 #[test]
 fn test_new_user_flow() {
-    let mut test = Smoketest::builder().precompiled_module("new-user-flow").autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("new-user-flow")
+        .autopublish(false)
+        .build();
 
     // Create a new identity and publish
     test.new_identity().unwrap();

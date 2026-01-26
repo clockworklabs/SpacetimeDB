@@ -57,7 +57,14 @@ fn build_binaries() -> Result<()> {
     eprintln!("Building spacetimedb-cli and spacetimedb-standalone (release)...");
 
     let mut cmd = Command::new("cargo");
-    cmd.args(["build", "--release", "-p", "spacetimedb-cli", "-p", "spacetimedb-standalone"]);
+    cmd.args([
+        "build",
+        "--release",
+        "-p",
+        "spacetimedb-cli",
+        "-p",
+        "spacetimedb-standalone",
+    ]);
 
     // Remove cargo/rust env vars that could cause fingerprint mismatches
     // when the test later runs cargo build from a different environment
@@ -128,10 +135,20 @@ fn run_smoketest(args: Vec<String>) -> Result<()> {
     let status = if use_nextest {
         eprintln!("Running smoketests with cargo nextest (release)...\n");
         let mut cmd = Command::new("cargo");
-        cmd.args(["nextest", "run", "--release", "-p", "spacetimedb-smoketests", "--no-fail-fast"]);
+        cmd.args([
+            "nextest",
+            "run",
+            "--release",
+            "-p",
+            "spacetimedb-smoketests",
+            "--no-fail-fast",
+        ]);
 
         // Set default parallelism if user didn't specify -j
-        if !args.iter().any(|a| a == "-j" || a.starts_with("-j") || a.starts_with("--jobs")) {
+        if !args
+            .iter()
+            .any(|a| a == "-j" || a.starts_with("-j") || a.starts_with("--jobs"))
+        {
             cmd.args(["-j", DEFAULT_PARALLELISM]);
         }
 

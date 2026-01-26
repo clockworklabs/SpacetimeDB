@@ -17,7 +17,10 @@ pub struct Person {
 /// Test publishing a module without the --delete-data option
 #[test]
 fn test_module_update() {
-    let mut test = Smoketest::builder().precompiled_module("modules-basic").autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("modules-basic")
+        .autopublish(false)
+        .build();
 
     let name = format!("test-db-{}", std::process::id());
 

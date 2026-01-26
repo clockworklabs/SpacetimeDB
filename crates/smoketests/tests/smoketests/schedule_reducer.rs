@@ -25,9 +25,7 @@ fn test_cancel_reducer() {
 /// subscription update for scheduled table entry and deletion of reducer once it ran
 #[test]
 fn test_scheduled_table_subscription() {
-    let test = Smoketest::builder()
-        .precompiled_module("schedule-subscribe")
-        .build();
+    let test = Smoketest::builder().precompiled_module("schedule-subscribe").build();
 
     // Call a reducer to schedule a reducer (runs immediately since timestamp is 0)
     test.call("schedule_reducer", &[]).unwrap();
@@ -47,9 +45,7 @@ fn test_scheduled_table_subscription() {
 /// Test that repeated reducers run multiple times
 #[test]
 fn test_scheduled_table_subscription_repeated_reducer() {
-    let test = Smoketest::builder()
-        .precompiled_module("schedule-subscribe")
-        .build();
+    let test = Smoketest::builder().precompiled_module("schedule-subscribe").build();
 
     // Call a reducer to schedule a repeated reducer
     test.call("schedule_repeated_reducer", &[]).unwrap();

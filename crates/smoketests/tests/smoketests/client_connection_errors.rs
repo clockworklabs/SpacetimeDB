@@ -5,7 +5,9 @@ use spacetimedb_smoketests::Smoketest;
 /// Test that client_connected returning an error rejects the connection
 #[test]
 fn test_client_connected_error_rejects_connection() {
-    let test = Smoketest::builder().precompiled_module("client-connection-reject").build();
+    let test = Smoketest::builder()
+        .precompiled_module("client-connection-reject")
+        .build();
 
     // Subscribe should fail because client_connected returns an error
     let result = test.subscribe(&["SELECT * FROM all_u8s"], 0);
@@ -30,7 +32,9 @@ fn test_client_connected_error_rejects_connection() {
 /// Test that client_disconnected panicking still cleans up the st_client row
 #[test]
 fn test_client_disconnected_error_still_deletes_st_client() {
-    let test = Smoketest::builder().precompiled_module("client-connection-disconnect-panic").build();
+    let test = Smoketest::builder()
+        .precompiled_module("client-connection-disconnect-panic")
+        .build();
 
     // Subscribe should succeed (client_connected returns Ok)
     let result = test.subscribe(&["SELECT * FROM all_u8s"], 0);

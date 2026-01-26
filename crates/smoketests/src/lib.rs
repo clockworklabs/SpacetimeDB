@@ -160,7 +160,6 @@ pub fn have_pnpm() -> bool {
     })
 }
 
-
 /// Parse code blocks from quickstart markdown documentation.
 /// Extracts code blocks with the specified language tag.
 ///
@@ -622,8 +621,7 @@ log = "0.4"
 "#,
                 self.module_name, bindings_path_str
             );
-            fs::write(self.project_dir.path().join("Cargo.toml"), cargo_toml)
-                .context("Failed to write Cargo.toml")?;
+            fs::write(self.project_dir.path().join("Cargo.toml"), cargo_toml).context("Failed to write Cargo.toml")?;
 
             // Copy rust-toolchain.toml
             let toolchain_src = workspace_root.join("rust-toolchain.toml");
@@ -734,9 +732,7 @@ log = "0.4"
 
             // Construct the wasm path using the unique module name
             let wasm_filename = format!("{}.wasm", self.module_name);
-            let wasm_path = target_dir
-                .join("wasm32-unknown-unknown/release")
-                .join(&wasm_filename);
+            let wasm_path = target_dir.join("wasm32-unknown-unknown/release").join(&wasm_filename);
             wasm_path.to_str().unwrap().to_string()
         };
 

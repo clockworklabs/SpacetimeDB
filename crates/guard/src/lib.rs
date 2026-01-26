@@ -180,8 +180,7 @@ impl SpacetimeDbGuard {
 
             let args = ["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
             let cmd = Command::new("spacetime");
-            let (child, logs, reader_threads) =
-                Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args, spawn_id);
+            let (child, logs, reader_threads) = Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args, spawn_id);
 
             eprintln!("[SPAWN-{:03}] Waiting for listen address", spawn_id);
             let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10), spawn_id).unwrap_or_else(|| {
@@ -254,8 +253,7 @@ impl SpacetimeDbGuard {
         sleep(Duration::from_millis(100));
 
         eprintln!("[RESTART-{:03}] Spawning new server", spawn_id);
-        let (child, logs, host_url, reader_threads) =
-            Self::spawn_server(&self.data_dir, self.pg_port, spawn_id);
+        let (child, logs, host_url, reader_threads) = Self::spawn_server(&self.data_dir, self.pg_port, spawn_id);
         eprintln!(
             "[RESTART-{:03}] New server ready, pid={}, url={}",
             spawn_id,
@@ -336,8 +334,7 @@ impl SpacetimeDbGuard {
 
         eprintln!("[SPAWN-{:03}] Spawning child process", spawn_id);
         let cmd = Command::new(&cli_path);
-        let (child, logs, reader_threads) =
-            Self::spawn_child(cmd, workspace_root.to_str().unwrap(), &args, spawn_id);
+        let (child, logs, reader_threads) = Self::spawn_child(cmd, workspace_root.to_str().unwrap(), &args, spawn_id);
         eprintln!("[SPAWN-{:03}] Child spawned pid={}", spawn_id, child.id());
 
         // Wait for the server to be ready

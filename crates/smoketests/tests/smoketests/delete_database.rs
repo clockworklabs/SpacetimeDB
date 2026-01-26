@@ -9,7 +9,10 @@ use std::time::Duration;
 /// producing update events.
 #[test]
 fn test_delete_database() {
-    let mut test = Smoketest::builder().precompiled_module("delete-database").autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("delete-database")
+        .autopublish(false)
+        .build();
 
     let name = format!("test-db-{}", std::process::id());
     test.publish_module_named(&name, false).unwrap();

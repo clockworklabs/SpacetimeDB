@@ -11,7 +11,10 @@ const JOIN_QUERY: &str = "select t1.* from t1 join t2 on t1.id = t2.id where t2.
 /// and the unindexed versions should reject subscriptions.
 #[test]
 fn test_add_then_remove_index() {
-    let mut test = Smoketest::builder().precompiled_module("add-remove-index").autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("add-remove-index")
+        .autopublish(false)
+        .build();
 
     let name = format!("test-db-{}", std::process::id());
 

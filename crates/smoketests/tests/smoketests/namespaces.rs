@@ -61,10 +61,7 @@ fn count_matches(dir: &Path, needle: &str) -> usize {
 /// Ensure that the default namespace is working properly
 #[test]
 fn test_spacetimedb_ns_csharp() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let tmpdir = tempfile::tempdir().expect("Failed to create temp dir");
     let project_path = test.project_dir.path().to_str().unwrap();
@@ -96,10 +93,7 @@ fn test_spacetimedb_ns_csharp() {
 /// Ensure that when a custom namespace is specified on the command line, it actually gets used in generation
 #[test]
 fn test_custom_ns_csharp() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let tmpdir = tempfile::tempdir().expect("Failed to create temp dir");
     let project_path = test.project_dir.path().to_str().unwrap();
