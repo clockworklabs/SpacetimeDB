@@ -21,14 +21,6 @@ fn test_build_csharp_module() {
     // CLI is pre-built by artifact dependencies during compilation
     let cli_path = ensure_binaries_built();
 
-    // Clear nuget locals
-    let status = Command::new("dotnet")
-        .args(["nuget", "locals", "all", "--clear"])
-        .current_dir(&bindings)
-        .status()
-        .expect("Failed to clear nuget locals");
-    assert!(status.success(), "Failed to clear nuget locals");
-
     // Install wasi-experimental workload
     let _status = Command::new("dotnet")
         .args(["workload", "install", "wasi-experimental", "--skip-manifest-update"])
@@ -37,9 +29,9 @@ fn test_build_csharp_module() {
         .expect("Failed to install wasi workload");
     // This may fail if already installed, so we don't assert success
 
-    // Pack the bindings
+    // Pack the bindings in Release configuration
     let status = Command::new("dotnet")
-        .args(["pack"])
+        .args(["pack", "-c", "Release"])
         .current_dir(&bindings)
         .status()
         .expect("Failed to pack bindings");
@@ -70,8 +62,10 @@ fn test_build_csharp_module() {
     let server_path = tmpdir.path().join("spacetimedb");
 
     // Create nuget.config with local package sources
+    // Use <clear /> to avoid inheriting sources from machine/user config
     let packed_projects = ["BSATN.Runtime", "Runtime"];
-    let mut sources = String::new();
+    let mut sources =
+        String::from("    <clear />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n");
     let mut mappings = String::new();
 
     for project in &packed_projects {

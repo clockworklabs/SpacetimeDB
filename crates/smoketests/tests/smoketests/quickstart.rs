@@ -78,10 +78,11 @@ fn build_typescript_sdk() -> Result<()> {
     Ok(())
 }
 
-/// Load NuGet config from a file, returning a simple representation.
-/// We'll use a string-based approach for simplicity since we don't have xmltodict.
+/// Create NuGet config with proper source isolation.
+/// Uses `<clear />` to avoid inheriting sources from machine/user config.
 fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, String)]) -> String {
-    let mut source_lines = String::new();
+    let mut source_lines = String::from("    <clear />\n");
+    source_lines.push_str("    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n");
     let mut mapping_lines = String::new();
 
     for (key, path) in sources {
@@ -110,9 +111,12 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
 
 /// Override nuget config to use a local NuGet package on a .NET project.
 fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, build_subdir: &str) -> Result<()> {
+    // Clean before packing to avoid stale artifacts causing conflicts
+    let _ = Command::new("dotnet").args(["clean"]).current_dir(source_dir).output();
+
     // Make sure the local package is built
     let output = Command::new("dotnet")
-        .args(["pack"])
+        .args(["pack", "-c", "Release"])
         .current_dir(source_dir)
         .output()
         .context("Failed to run dotnet pack")?;
@@ -137,11 +141,15 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
         (Vec::new(), Vec::new())
     };
 
-    // Add new source
-    sources.push((package.to_string(), package_path));
+    // Add new source only if not already present (avoid duplicates)
+    if !sources.iter().any(|(k, _)| k == package) {
+        sources.push((package.to_string(), package_path));
+    }
 
-    // Add mapping for the package
-    mappings.push((package.to_string(), package.to_string()));
+    // Add mapping for the package only if not already present
+    if !mappings.iter().any(|(k, _)| k == package) {
+        mappings.push((package.to_string(), package.to_string()));
+    }
 
     // Ensure nuget.org fallback exists
     if !mappings.iter().any(|(k, _)| k == "nuget.org") {
@@ -151,12 +159,6 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
     // Write config
     let config = create_nuget_config(&sources, &mappings);
     fs::write(&nuget_config_path, config)?;
-
-    // Clear nuget caches
-    let _ = Command::new("dotnet")
-        .args(["nuget", "locals", "--clear", "all"])
-        .stderr(Stdio::null())
-        .output();
 
     Ok(())
 }

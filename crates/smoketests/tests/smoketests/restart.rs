@@ -12,6 +12,17 @@ fn test_restart_module() {
 
     test.call("add", &["Robert"]).unwrap();
 
+    // Wait for data to be durable before restarting.
+    // The --confirmed flag ensures we only see durable data.
+    let output = test
+        .sql_confirmed("SELECT * FROM person WHERE name = 'Robert'")
+        .unwrap();
+    assert!(
+        output.contains("Robert"),
+        "Data not confirmed before restart: {}",
+        output
+    );
+
     test.restart_server();
 
     test.call("add", &["Julie"]).unwrap();
@@ -45,6 +56,17 @@ fn test_restart_sql() {
     test.call("add", &["Robert"]).unwrap();
     test.call("add", &["Julie"]).unwrap();
     test.call("add", &["Samantha"]).unwrap();
+
+    // Wait for all data to be durable before restarting.
+    // Query the last inserted row to ensure all data is confirmed.
+    let output = test
+        .sql_confirmed("SELECT * FROM person WHERE name = 'Samantha'")
+        .unwrap();
+    assert!(
+        output.contains("Samantha"),
+        "Data not confirmed before restart: {}",
+        output
+    );
 
     test.restart_server();
 
