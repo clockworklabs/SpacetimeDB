@@ -33,9 +33,9 @@ cd my-chat-module
 
 This creates a project with the following structure:
 ```
-my-chat-module/
+my-chat-module/spacetimedb/
 ├── CMakeLists.txt
-├── spacetimedb/
+├── src/
     └── lib.cpp
 └── .gitignore
 ```
