@@ -5,6 +5,7 @@ packages:
   - 'templates/react-ts'
   - 'templates/basic-ts'
   - 'templates/vue-ts'
+  - 'templates/tanstack-ts'
   - 'modules/benchmarks-ts'
   - 'modules/module-test-ts'
   - 'templates/chat-react-ts/spacetimedb'
