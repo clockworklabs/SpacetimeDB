@@ -538,13 +538,13 @@ SPACETIMEDB_TABLE(Cache, cache, Private)
 
 SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string url) {
     // Fetch from HTTP (outside transaction)
-    auto response = ctx.http.Get(url);
+    auto response = ctx.http.get(url);
     if (!response.is_ok()) {
         LOG_ERROR("HTTP request failed");
         return std::string("");
     }
     
-    std::string body = response.value().body.ToStringUtf8Lossy();
+    std::string body = response.value().body.to_string_utf8_lossy();
     
     // Insert into cache with transaction
     ctx.with_tx([&body](TxContext& tx) {
