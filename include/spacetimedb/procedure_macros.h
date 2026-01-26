@@ -19,7 +19,6 @@ namespace Internal {
  * to std::vector<T> or std::optional<T>. This includes primitives, structs,
  * enums, or any custom type that implements the SpacetimeType concept.
  * 
- * The procedure macro wraps the return type in Outcome<T> automatically.
  */
 template<typename T>
 struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Serializable<T>> {};
@@ -38,7 +37,7 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
  * - Database access via explicit transactions (ctx.WithTx() or ctx.TryWithTx())
  * - HTTP requests via ctx.http (when SPACETIMEDB_UNSTABLE_FEATURES enabled)
  * - UUID generation (ctx.new_uuid_v4(), ctx.new_uuid_v7())
- * - Return type directly (not wrapped in Outcome)
+ * - Return type directly
  * 
  * Key differences from reducers:
  * - NO direct db field (must use ctx.WithTx() for database operations)

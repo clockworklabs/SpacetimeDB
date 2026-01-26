@@ -15,7 +15,7 @@ The SpacetimeDB C++ SDK provides a sophisticated compile-time/runtime hybrid sys
 ### 2. Outcome<T> - Rust-Like Error Handling
 The SDK provides `Outcome<T>`, a type-safe error handling mechanism matching Rust's `Result<T, E>` pattern:
 - **Outcome<void>** (type alias `ReducerResult`): Used by reducers, can return success (`Ok()`) or error (`Err(message)`)
-- **Outcome<T>**: Used by procedures and other operations, returns either a value or an error message
+- **Outcome<T>**: Useful for methods used by Reducers to return a value or an error message
 - **No exceptions**: Errors are handled via return values, not C++ exceptions
 - **Graceful error handling**: Reducer errors are caught by the runtime, rolled back, and reported to the caller without crashing
 - **Serializable**: Error messages are automatically serialized and sent to clients
@@ -112,7 +112,7 @@ SPACETIMEDB_REDUCER(call_other_logic, ReducerContext ctx) {
   - The transaction is logged
   - Success is reported to the caller
 
-### Procedure Error Handling (Outcome<T>)
+### Procedure Error Handling
 
 **Key Difference from Reducers**:
 - Procedures return raw `T` (not `Outcome<T>`)

@@ -1085,7 +1085,7 @@ void V9Builder::RegisterProcedure(const std::string& procedure_name,
             "First parameter of procedure must be ProcedureContext");
     }
     
-    // Procedures return raw T (not Outcome<T>)
+    // Procedures return raw T
     using ReturnType = typename traits::result_type;
     
     // Build the AlgebraicType for the return type
@@ -1121,7 +1121,7 @@ void V9Builder::RegisterProcedure(const std::string& procedure_name,
     if constexpr (traits::arity == 1) {
         // Only ProcedureContext parameter
         handler = [func](ProcedureContext& ctx, BytesSource) -> std::vector<uint8_t> {
-            // Procedures return raw T (not Outcome<T>)
+            // Procedures return raw T
             // Use LOG_PANIC() for errors - procedures cannot return errors gracefully
             auto result = func(ctx);
             
@@ -1148,7 +1148,7 @@ void V9Builder::RegisterProcedure(const std::string& procedure_name,
                         bsatn::deserialize<typename traits::template arg_t<Js + 1>>(reader)...
                     );
                     
-                    // Procedures return raw T (not Outcome<T>)
+                    // Procedures return raw T
                     // Use LOG_PANIC() for errors - procedures cannot return errors gracefully
                     auto result = std::apply([&ctx_inner, fn](auto&&... args) {
                         return fn(ctx_inner, std::forward<decltype(args)>(args)...);
