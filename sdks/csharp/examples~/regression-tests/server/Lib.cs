@@ -105,7 +105,7 @@ public static partial class Module
         public ulong Level;
     }
 
-    [SpacetimeDB.Table(Name = "User", Public = true)]
+    [SpacetimeDB.Table(Name = "user", Public = true)]
     public partial struct User
     {
         [SpacetimeDB.PrimaryKey]
@@ -121,7 +121,7 @@ public static partial class Module
         public byte Age;
     }
 
-    [SpacetimeDB.Table(Name = "Score", Public = true)]
+    [SpacetimeDB.Table(Name = "score", Public = true)]
     [SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
     public partial struct Score
     {
@@ -204,9 +204,86 @@ public static partial class Module
     public static List<User> Admins(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
-        foreach (var user in ctx.Db.User.IsAdmin.Filter(true))
+        foreach (var user in ctx.Db.user.IsAdmin.Filter(true))
         {
             rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_named_alice", Public = true)]
+    public static List<User> UsersNamedAlice(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Name.Filter("Alice"))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_age_18_65", Public = true)]
+    public static List<User> UsersAge1865(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(18, 65)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_age_18_plus", Public = true)]
+    public static List<User> UsersAge18Plus(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(18, byte.MaxValue)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_age_under_18", Public = true)]
+    public static List<User> UsersAgeUnder18(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(byte.MinValue, 17)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "scores_player_123", Public = true)]
+    public static List<Score> ScoresPlayer123(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (var score in ctx.Db.score.by_player_and_level.Filter(123u))
+        {
+            rows.Add(score);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "scores_player_123_range", Public = true)]
+    public static List<Score> ScoresPlayer123Range(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (var score in ctx.Db.score.by_player_and_level.Filter((123u, new Bound<uint>(1u, 10u))))
+        {
+            rows.Add(score);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "scores_player_123_level5", Public = true)]
+    public static List<Score> ScoresPlayer123Level5(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (var score in ctx.Db.score.by_player_and_level.Filter((123u, 5u)))
+        {
+            rows.Add(score);
         }
         return rows;
     }
@@ -337,10 +414,10 @@ public static partial class Module
                 ("Charlie", true, (byte)22)
             })
         {
-            ctx.Db.User.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin, Age = Age });
+            ctx.Db.user.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin, Age = Age });
         }
 
-        if (ctx.Db.Score.Count == 0)
+        if (ctx.Db.score.Count == 0)
         {
             foreach (var (PlayerId, Level, Points) in new List<(uint PlayerId, uint Level, long Points)>
                 {
@@ -350,7 +427,7 @@ public static partial class Module
                     (999u, 2u, 2_500)
                 })
             {
-                ctx.Db.Score.Insert(new Score { PlayerId = PlayerId, Level = Level, Points = Points });
+                ctx.Db.score.Insert(new Score { PlayerId = PlayerId, Level = Level, Points = Points });
             }
         }
     }

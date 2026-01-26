@@ -3,6 +3,7 @@
 /// then in a separate terminal run `tools~/run-regression-tests.sh PATH_TO_SPACETIMEDB_REPO_CHECKOUT`.
 /// This is done on CI in .github/workflows/test.yml.
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -72,6 +73,13 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM my_log",
             "SELECT * FROM Admins",
             "SELECT * FROM nullable_vec_view",
+            "SELECT * FROM users_named_alice",
+            "SELECT * FROM users_age_18_65",
+            "SELECT * FROM users_age_18_plus",
+            "SELECT * FROM users_age_under_18",
+            "SELECT * FROM scores_player_123",
+            "SELECT * FROM scores_player_123_range",
+            "SELECT * FROM scores_player_123_level5",
             "SELECT * FROM user",
             "SELECT * FROM score",
         ]);
@@ -247,25 +255,25 @@ void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
 {
     Log.Debug("Checking 'Querying with Indexes' documentation examples...");
 
-    var usersNamedAlice = conn.Db.User.Name.Filter("Alice").ToList();
-    Debug.Assert(usersNamedAlice.Any(u => u.Name == "Alice"), "Expected at least one user named Alice");
+    var usersNamedAlice = conn.Db.UsersNamedAlice.Iter().Select(u => u.Name).ToList();
+    Debug.Assert(usersNamedAlice.Count == 1 && usersNamedAlice[0] == "Alice", "Expected exactly one Alice in users_named_alice view");
 
-    var ages18To65 = conn.Db.User.Age.Filter(new Bound<byte>(18, 65)).Select(u => u.Name).ToHashSet();
+    var ages18To65 = conn.Db.UsersAge1865.Iter().Select(u => u.Name).ToHashSet();
     Debug.Assert(ages18To65.SetEquals(new[] { "Alice", "Charlie" }), "Expected Alice and Charlie in 18-65 age range");
 
-    var ages18OrOlder = conn.Db.User.Age.Filter(new Bound<byte>(18, byte.MaxValue)).Select(u => u.Name).ToHashSet();
+    var ages18OrOlder = conn.Db.UsersAge18Plus.Iter().Select(u => u.Name).ToHashSet();
     Debug.Assert(ages18OrOlder.SetEquals(new[] { "Alice", "Charlie" }), "Expected Alice and Charlie to be >= 18");
 
-    var youngerThan18 = conn.Db.User.Age.Filter(new Bound<byte>(byte.MinValue, 17)).Select(u => u.Name).ToHashSet();
+    var youngerThan18 = conn.Db.UsersAgeUnder18.Iter().Select(u => u.Name).ToHashSet();
     Debug.Assert(youngerThan18.SetEquals(new[] { "Bob" }), "Expected Bob to be the only minor");
 
-    var player123Scores = conn.Db.Score.by_player_and_level.Filter(123u).ToList();
+    var player123Scores = conn.Db.ScoresPlayer123.Iter().ToList();
     Debug.Assert(player123Scores.Count == 3, $"Expected 3 scores for player 123, got {player123Scores.Count}");
 
-    var player123LevelRange = conn.Db.Score.by_player_and_level.Filter((123u, new Bound<uint>(1u, 10u))).ToList();
+    var player123LevelRange = conn.Db.ScoresPlayer123Range.Iter().ToList();
     Debug.Assert(player123LevelRange.Count == 3, "Expected three scores for player 123 between levels 1 and 10 inclusive");
 
-    var player123Level5 = conn.Db.Score.by_player_and_level.Filter((123u, 5u)).ToList();
+    var player123Level5 = conn.Db.ScoresPlayer123Level5.Iter().ToList();
     Debug.Assert(player123Level5.Count == 1 && player123Level5[0].Points == 5_000, "Expected a single level-5 score worth 5,000 points for player 123");
 }
 
