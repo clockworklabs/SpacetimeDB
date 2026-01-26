@@ -12,30 +12,20 @@
 namespace SpacetimeDb {
 
 inline Outcome<HttpResponse> HttpClient::SendImpl(const HttpRequest& request) {
-    LOG_INFO("HTTP: Starting request to " + request.uri);
-    
     // Convert user-facing request to wire format
     wire::HttpRequest wire_request = convert::to_wire(request);
-    
-    LOG_INFO("HTTP: Converted to wire format");
     
     // Serialize wire request to BSATN
     bsatn::Writer writer;
     bsatn::serialize(writer, wire_request);
     std::vector<uint8_t> request_bytes = writer.take_buffer();
     
-    LOG_INFO("HTTP: Request serialized: " + std::to_string(request_bytes.size()) + " bytes");
-    
     // Prepare body bytes
     const std::vector<uint8_t>& body_bytes = request.body.bytes;
-    
-    LOG_INFO("HTTP: Body size: " + std::to_string(body_bytes.size()) + " bytes");
     
     // Call host function
     // Note: For empty body, we need to pass a valid pointer, not null
     const uint8_t* body_ptr = body_bytes.empty() ? reinterpret_cast<const uint8_t*>("") : body_bytes.data();
-    
-    LOG_INFO("HTTP: Calling procedure_http_request syscall");
     
     BytesSource out[2] = {BytesSource{0}, BytesSource{0}};
     Status status = procedure_http_request(
@@ -44,16 +34,10 @@ inline Outcome<HttpResponse> HttpClient::SendImpl(const HttpRequest& request) {
         out
     );
     
-    LOG_INFO("HTTP: Syscall returned with status: " + std::to_string(status.inner));
-    
     // Check for errors
     if (status.inner != 0) {
-        LOG_INFO("HTTP: Error status detected");
-        
         // HTTP_ERROR (21) means the HTTP call failed - error message is in out[0]
         if (status.inner == 21) {
-            LOG_INFO("HTTP: HTTP_ERROR - reading error message");
-            
             // Read error message from out[0]
             std::vector<uint8_t> error_bytes = Internal::ConsumeBytes(out[0]);
             
@@ -70,35 +54,26 @@ inline Outcome<HttpResponse> HttpClient::SendImpl(const HttpRequest& request) {
         
         // Other errors (WOULD_BLOCK_TRANSACTION, etc.)
         if (status.inner == 17) {
-            LOG_INFO("HTTP: WOULD_BLOCK_TRANSACTION error");
-            return Err<HttpResponse>("HTTP requests are blocked inside transactions. Call HTTP before WithTx() or TryWithTx().");
+            return Err<HttpResponse>("HTTP requests are blocked inside transactions. Call HTTP before with_tx() or try_with_tx().");
         }
         
         LOG_INFO("HTTP: Unknown error code: " + std::to_string(status.inner));
         return Err<HttpResponse>("HTTP request failed with status code: " + std::to_string(status.inner));
     }
     
-    LOG_INFO("HTTP: Success - reading response");
-    
     // Success - decode response from out[0] and body from out[1]
     std::vector<uint8_t> response_bytes = Internal::ConsumeBytes(out[0]);
     std::vector<uint8_t> response_body_bytes = Internal::ConsumeBytes(out[1]);
     
-    LOG_INFO("HTTP: Response bytes: " + std::to_string(response_bytes.size()) + ", body bytes: " + std::to_string(response_body_bytes.size()));
-    
     // Decode wire response
-    LOG_INFO("HTTP: Deserializing response");
     bsatn::Reader response_reader(response_bytes.data(), response_bytes.size());
     wire::HttpResponse wire_response = bsatn::deserialize<wire::HttpResponse>(response_reader);
     
-    LOG_INFO("HTTP: Converting from wire format");
     // Convert wire response to user-facing type
     HttpResponse response = convert::from_wire(wire_response);
     
     // Set the body
     response.body = HttpBody{std::move(response_body_bytes)};
-    
-    LOG_INFO("HTTP: Request completed successfully, status code: " + std::to_string(response.status_code));
     
     return Ok(std::move(response));
 }
