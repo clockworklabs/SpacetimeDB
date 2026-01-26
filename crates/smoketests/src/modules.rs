@@ -199,7 +199,7 @@ mod tests {
         let registry = REGISTRY.get_or_init(build_registry);
         for (name, path) in registry.iter() {
             assert!(
-                path.extension().map_or(false, |ext| ext == "wasm"),
+                path.extension().is_some_and(|ext| ext == "wasm"),
                 "Module {} path should end with .wasm: {:?}",
                 name,
                 path
