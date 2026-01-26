@@ -37,17 +37,17 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
 use scopeguard::ScopeGuard;
+use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
 };
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
-use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
+use spacetimedb_datastore::traits::{DatabaseTableUpdate, IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_expr::expr::CollectViews;
@@ -58,7 +58,7 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ConnectionId};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
+use spacetimedb_sats::AlgebraicTypeRef;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::reducer_name::ReducerName;
@@ -75,7 +75,7 @@ use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
-    pub tables: Vec<DatabaseTableUpdate>,
+    pub tables: SmallVec<[DatabaseTableUpdate; 1]>,
 }
 
 impl FromIterator<DatabaseTableUpdate> for DatabaseUpdate {
@@ -95,43 +95,16 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(tx_data: &TxData) -> Self {
-        let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
-        let new_update = |table_id, table_name: &TableName| DatabaseTableUpdate {
-            table_id,
-            table_name: table_name.clone(),
-            inserts: [].into(),
-            deletes: [].into(),
-        };
-        for (table_id, table_name, rows) in tx_data.inserts_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .inserts = rows.clone();
-        }
-        for (table_id, table_name, rows) in tx_data.deletes_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .deletes = rows.clone();
-        }
-        DatabaseUpdate {
-            tables: map.into_values().collect(),
-        }
+        let updates = tx_data.database_table_updates();
+        let mut tables = SmallVec::with_capacity(updates.len());
+        tables.extend(updates);
+        DatabaseUpdate { tables }
     }
 
     /// The number of rows in the payload
     pub fn num_rows(&self) -> usize {
         self.tables.iter().map(|t| t.inserts.len() + t.deletes.len()).sum()
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatabaseTableUpdate {
-    pub table_id: TableId,
-    pub table_name: TableName,
-    // Note: `Arc<[ProductValue]>` allows to cheaply
-    // use the values from `TxData` without cloning the
-    // contained `ProductValue`s.
-    pub inserts: Arc<[ProductValue]>,
-    pub deletes: Arc<[ProductValue]>,
 }
 
 #[derive(Debug)]

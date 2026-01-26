@@ -170,6 +170,17 @@ pub enum IsolationLevel {
 
 pub type EphemeralTables = IntSet<TableId>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseTableUpdate {
+    pub table_id: TableId,
+    pub table_name: TableName,
+    // Note: `Arc<[ProductValue]>` allows to cheaply
+    // use the values from `TxData` without cloning the
+    // contained `ProductValue`s.
+    pub inserts: Arc<[ProductValue]>,
+    pub deletes: Arc<[ProductValue]>,
+}
+
 /// A record of all the operations within a transaction.
 ///
 /// Some extra information is embedded here
@@ -343,6 +354,20 @@ impl TxData {
     /// Returns the number o tables affected in this transaction.
     pub fn num_tables_affected(&self) -> usize {
         self.tables.len()
+    }
+
+    /// Returns an iterator over all [`DatabaseTableUpdate`]s in this transaction.
+    pub fn database_table_updates(&self) -> impl '_ + ExactSizeIterator<Item = DatabaseTableUpdate> {
+        self.tables.iter().map(move |(table_id, table_name)| {
+            let inserts = self.inserts.get(table_id).cloned().unwrap_or_default();
+            let deletes = self.deletes.get(table_id).cloned().unwrap_or_default();
+            DatabaseTableUpdate {
+                table_id: *table_id,
+                table_name: table_name.clone(),
+                inserts,
+                deletes,
+            }
+        })
     }
 }
 

@@ -6,7 +6,7 @@ use crate::client::messages::{
 };
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::error::DBError;
-use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
+use crate::host::module_host::{ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
@@ -24,6 +24,7 @@ use spacetimedb_data_structures::map::{
     HashMap, HashSet, IntMap,
 };
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::traits::DatabaseTableUpdate;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
