@@ -421,13 +421,10 @@ impl JsInstance {
     }
 
     pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
-        // Get a handle to the current tokio runtime, and pass it to the worker
-        // so that it can execute futures.
-        let rt = tokio::runtime::Handle::current();
         *self
             .send_recv(
                 JsWorkerReply::into_call_procedure,
-                JsWorkerRequest::CallProcedure { params, rt },
+                JsWorkerRequest::CallProcedure { params },
             )
             .await
     }
@@ -442,12 +439,9 @@ impl JsInstance {
         &mut self,
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
-        // Get a handle to the current tokio runtime, and pass it to the worker
-        // so that it can execute futures.
-        let rt = tokio::runtime::Handle::current();
         self.send_recv(
             JsWorkerReply::into_call_scheduled_function,
-            JsWorkerRequest::CallScheduledFunction(params, rt),
+            JsWorkerRequest::CallScheduledFunction(params),
         )
         .await
     }
@@ -489,10 +483,7 @@ enum JsWorkerRequest {
     /// See [`JsInstance::call_view`].
     CallView { cmd: ViewCommand },
     /// See [`JsInstance::call_procedure`].
-    CallProcedure {
-        params: CallProcedureParams,
-        rt: tokio::runtime::Handle,
-    },
+    CallProcedure { params: CallProcedureParams },
     /// See [`JsInstance::clear_all_clients`].
     ClearAllClients,
     /// See [`JsInstance::call_identity_connected`].
@@ -504,7 +495,7 @@ enum JsWorkerRequest {
     /// See [`JsInstance::init_database`].
     InitDatabase(Program),
     /// See [`JsInstance::call_scheduled_function`].
-    CallScheduledFunction(ScheduledFunctionParams, tokio::runtime::Handle),
+    CallScheduledFunction(ScheduledFunctionParams),
 }
 
 // These two should be the same size (once core pinning PR lands).
@@ -579,6 +570,8 @@ async fn spawn_instance_worker(
     std::thread::spawn(move || {
         let _guard = load_balance_guard;
         core_pinner.pin_now();
+
+        let _entered = rt.enter();
 
         // Create the isolate and scope.
         let mut isolate = new_isolate();
@@ -663,11 +656,7 @@ async fn spawn_instance_worker(
                     let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
                     reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
                 }
-                JsWorkerRequest::CallProcedure { params, rt } => {
-                    // The callee passed us a handle to their tokio runtime - enter its
-                    // context so that we can execute futures.
-                    let _guard = rt.enter();
-
+                JsWorkerRequest::CallProcedure { params } => {
                     let (res, trapped) = instance_common
                         .call_procedure(params, &mut inst)
                         .now_or_never()
@@ -711,9 +700,7 @@ async fn spawn_instance_worker(
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
                     reply("init_database", InitDatabase(Box::new(res)), trapped);
                 }
-                JsWorkerRequest::CallScheduledFunction(params, rt) => {
-                    let _guard = rt.enter();
-
+                JsWorkerRequest::CallScheduledFunction(params) => {
                     let (res, trapped) = instance_common
                         .call_scheduled_function(params, &mut inst)
                         .now_or_never()
