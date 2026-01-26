@@ -967,7 +967,7 @@ jobs:
             });
 
   warn-python-smoketests:
-    name: Warn about Python smoketest edits
+    name: Check for Python smoketest edits
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
@@ -976,8 +976,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check for Python smoketest changes
-        id: check-changes
+      - name: Fail if Python smoketests were modified
         run: |
           # Get changed files in the PR
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
@@ -986,60 +985,14 @@ jobs:
           PYTHON_SMOKETEST_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^smoketests/" || true)
 
           if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "changed_files<<EOF" >> $GITHUB_OUTPUT
-            echo "$PYTHON_SMOKETEST_CHANGES" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          else
-            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "::error::This PR modifies legacy Python smoketests. Please add new tests to the Rust smoketests in crates/smoketests/ instead."
+            echo ""
+            echo "Changed files:"
+            echo "$PYTHON_SMOKETEST_CHANGES"
+            echo ""
+            echo "The Python smoketests are being replaced by Rust smoketests."
+            echo "See crates/smoketests/DEVELOP.md for instructions on adding Rust smoketests."
+            exit 1
           fi
 
-      - name: Add warning comment
-        if: steps.check-changes.outputs.has_changes == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const changedFiles = `${{ steps.check-changes.outputs.changed_files }}`;
-            const body = `## ⚠️ Python Smoketests Notice
-
-            This PR modifies files in the legacy Python smoketests directory (\`smoketests/\`).
-
-            **Note:** The Python smoketests are being replaced by Rust smoketests in \`crates/smoketests/\`. Please consider:
-
-            1. If adding new tests, please add them to the Rust smoketests instead
-            2. If fixing bugs, consider whether the fix is also needed in the Rust version
-            3. Both test suites currently run in CI during the transition period
-
-            **Changed files:**
-            \`\`\`
-            ${changedFiles}
-            \`\`\`
-            `;
-
-            // Check if we already left a comment
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existingComment = comments.find(c =>
-              c.user.type === 'Bot' &&
-              c.body.includes('Python Smoketests Notice')
-            );
-
-            if (existingComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existingComment.id,
-                body: body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              });
-            }
+          echo "No Python smoketest changes detected."
