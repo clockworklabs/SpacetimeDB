@@ -78,10 +78,14 @@ export type Serializer<T> = (writer: BinaryWriter, value: T) => void;
 export type Deserializer<T> = (reader: BinaryReader) => T;
 
 // Caches to prevent `makeSerializer`/`makeDeserializer` from recursing
-// infinitely when called on recursive types. We use `WeakMap` because we don't
-// care about iterating these, and it can allow the memory to be freed.
-const SERIALIZERS = new WeakMap<ProductType | SumType, Serializer<any>>();
-const DESERIALIZERS = new WeakMap<ProductType | SumType, Deserializer<any>>();
+// infinitely when called on recursive types.
+//
+// We check for recursion in `{Product,Sum}Type.make{Deser,Ser}ializer` because
+// `ProductType` and `SumType` are the cases where recursive types are possible.
+// Additionally, if the check was in `AlgebraicType`, calling
+// `ProductType.makeSerializer` directly wouldn't cache anything.
+const SERIALIZERS = new Map<ProductType | SumType, Serializer<any>>();
+const DESERIALIZERS = new Map<ProductType | SumType, Deserializer<any>>();
 
 // A value with helper functions to construct the type.
 export const AlgebraicType = {
@@ -269,8 +273,6 @@ const primitiveSerializers: Record<Primitives, Serializer<any>> = {
   String: bindCall(BinaryWriter.prototype.writeString),
 };
 Object.freeze(primitiveSerializers);
-
-const primitives = new Set(Object.keys(primitiveSerializers));
 
 const serializeUint8Array = bindCall(BinaryWriter.prototype.writeUInt8Array);
 
@@ -464,22 +466,22 @@ writer.offset += ${primitiveSizes[tag]};`
       return serializer;
     }
 
-    const primitiveFields = new Set();
+    // Because V8 forces us to generate our code as a string, rather than a proper syntax tree,
+    // we can't have our `body` close over values.
+    // Instead, we construct an object with the values we'd otherwise "close over" in `serializers`,
+    // and use `Function.prototype.bind` to pass it as the `this` argument.
+    //
+    // We populate `serializers` after constructing this type's `serializer`
+    // so that it can close over itself, in the case that `ty` is recursive.
     const serializers: Record<string, Serializer<any>> = {};
     const body =
       '"use strict";\n' +
       ty.elements
-        .map(element => {
-          if (primitives.has(element.algebraicType.tag)) {
-            primitiveFields.add(element.name!);
-            return `writer.write${element.algebraicType.tag}(value.${element.name!});`;
-          } else {
-            return `serializers.${element.name!}(writer, value.${element.name!});`;
-          }
-        })
+        .map(
+          element => `this.${element.name!}(writer, value.${element.name!});`
+        )
         .join('\n');
-    serializer = Function('serializers', 'writer', 'value', body).bind(
-      undefined,
+    serializer = Function('writer', 'value', body).bind(
       serializers
     ) as Serializer<any>;
     // In case `ty` is recursive, we cache the function *before* before computing
@@ -487,7 +489,6 @@ writer.offset += ${primitiveSizes[tag]};`
     // an exit condition.
     SERIALIZERS.set(ty, serializer);
     for (const { name, algebraicType } of ty.elements) {
-      if (primitiveFields.has(name)) continue;
       serializers[name!] = AlgebraicType.makeSerializer(
         algebraicType,
         typespace
@@ -524,7 +525,6 @@ writer.offset += ${primitiveSizes[tag]};`
     if (deserializer != null) return deserializer;
 
     if (isFixedSizeProduct(ty)) {
-      // const size = productSize(ty);
       const body = `\
 "use strict";
 const result = { ${ty.elements.map(getElementInitializer).join(', ')} };
@@ -544,16 +544,22 @@ return result;`;
       return deserializer;
     }
 
+    // Because V8 forces us to generate our code as a string, rather than a proper syntax tree,
+    // we can't have our `body` close over values.
+    // Instead, we construct an object with the values we'd otherwise "close over" in `deserializers`,
+    // and use `Function.prototype.bind` to pass it as the `this` argument.
+    //
+    // We populate `deserializers` after constructing this type's `deserializer`
+    // so that it can close over itself, in the case that `ty` is recursive.
     const deserializers: Record<string, Deserializer<any>> = {};
     deserializer = Function(
-      'deserializers',
       'reader',
       `\
 "use strict";
 const result = { ${ty.elements.map(getElementInitializer).join(', ')} };
-${ty.elements.map(({ name }) => `result.${name!} = deserializers.${name!}(reader);`).join('\n')}
+${ty.elements.map(({ name }) => `result.${name!} = this.${name!}(reader);`).join('\n')}
 return result;`
-    ).bind(undefined, deserializers) as Deserializer<any>;
+    ).bind(deserializers) as Deserializer<any>;
     // In case `ty` is recursive, we cache the function *before* before computing
     // `deserializers`, so that a recursive `makeDeserializer` with the same `ty` has
     // an exit condition.
@@ -663,6 +669,7 @@ export const SumType = {
     } else {
       let serializer = SERIALIZERS.get(ty);
       if (serializer != null) return serializer;
+      // TODO: do dynamic codegen, as in `ProductType.makeSerializer`
       serializer = (writer, value) => {
         const variant = variants.get(value.tag);
         if (variant == null) {
@@ -706,6 +713,11 @@ export const SumType = {
     // In TypeScript we handle Option values as a special case
     // we don't represent the some and none variants, but instead
     // we represent the value directly.
+    //
+    // For these special cases, we don't do dynamic codegen, since that has the
+    // most benefit in cases where the object has a different shape. Since
+    // option/result always have the same number of variants, there's not as
+    // much benefit for the amount of work.
     if (
       ty.variants.length == 2 &&
       ty.variants[0].name === 'some' &&
@@ -753,15 +765,14 @@ export const SumType = {
       if (deserializer != null) return deserializer;
       const deserializers: Record<string, Deserializer<any>> = {};
       deserializer = Function(
-        'deserializers',
         'reader',
         `switch (reader.readU8()) {\n${ty.variants
           .map(
             ({ name }, i) =>
-              `case ${i}: return { tag: ${JSON.stringify(name!)}, value: deserializers.${name!}(reader) };`
+              `case ${i}: return { tag: ${JSON.stringify(name!)}, value: this.${name!}(reader) };`
           )
           .join('\n')} }`
-      ).bind(undefined, deserializers) as Deserializer<any>;
+      ).bind(deserializers) as Deserializer<any>;
       // In case `ty` is recursive, we cache the function *before* before computing
       // `deserializers`, so that a recursive `makeDeserializer` with the same `ty` has
       // an exit condition.
