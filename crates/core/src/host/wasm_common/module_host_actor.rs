@@ -1121,7 +1121,9 @@ impl InstanceCommon {
         });
 
         // Report execution metrics on each view call.
-        self.vm_metrics.get_for_view_id(view_id).report(&result.stats);
+        self.vm_metrics
+            .get_for_view_id(view_id, &self.info.database_identity, &view_name)
+            .report(&result.stats);
 
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
@@ -1340,6 +1342,7 @@ impl InstanceCommon {
 }
 
 /// Pre-fetched VM metrics counters for all reducers and views in a module.
+/// Anonymous views have lazily fetched metrics counters.
 struct AllVmMetrics {
     // We use a `Vec` here as the number of reducers + views
     // will likely be lower than e.g., 128, which would take up a page (4096 / 32).
@@ -1371,21 +1374,32 @@ impl AllVmMetrics {
         Self { counters, num_reducers }
     }
 
-    fn get_for_index(&self, index: u32) -> VmMetrics {
-        self.counters[index as usize].clone()
+    #[inline]
+    fn get_for_index(&self, index: u32) -> Option<VmMetrics> {
+        self.counters.get(index as usize).cloned()
     }
 
     /// Returns the vm metrics counters for `id`,
     /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
+    #[inline]
     fn get_for_reducer_id(&self, id: ReducerId) -> VmMetrics {
         self.get_for_index(id.0)
+            .expect("all counters for reducers should've been pre-fetched")
     }
 
     /// Returns the vm metrics counters for `id`,
     /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
-    fn get_for_view_id(&self, id: ViewId) -> VmMetrics {
-        // Counters for the first view starts after counters for the last reducer.
+    #[inline]
+    fn get_for_view_id(&self, id: ViewId, identity: &Identity, name: &str) -> VmMetrics {
+        // Cosunters for the first view starts after counters for the last reducer.
         self.get_for_index(self.num_reducers + id.0)
+            // For anonymous views, the `id` doesn't have pre-fetched counters available.
+            // Reducers shouldn't have to pay for adding an `Option` layer in the map,
+            // which would be necessary due to `id`s being random here,
+            // so just create `VmMetrics` on the fly instead.
+            // TODO(perf, centril): We could ostensibly add another map for anonymous views,
+            // but this doesn't seem to be a pressing performance concern at the moment.
+            .unwrap_or_else(|| VmMetrics::new(identity, name))
     }
 }
 
