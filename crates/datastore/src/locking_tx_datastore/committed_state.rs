@@ -141,6 +141,11 @@ pub struct CommittedState {
 }
 
 impl CommittedState {
+    /// Returns whether there are no views.
+    pub(super) fn has_no_views_for_table_scans(&self) -> bool {
+        self.read_sets.is_empty()
+    }
+
     /// Returns the views that perform a full scan of this table
     pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.read_sets.views_for_table_scan(table_id)

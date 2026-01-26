@@ -36,6 +36,7 @@ use crate::{
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
+use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
@@ -100,6 +101,11 @@ impl MemoryUsage for ViewReadSets {
 }
 
 impl ViewReadSets {
+    /// Returns whether there are no read sets recorded.
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
+    }
+
     /// Returns the views that perform a full scan of this table
     pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.tables
@@ -337,6 +343,12 @@ impl MutTxId {
 
     /// Returns the views whose read sets overlaps with this transaction's write set
     pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+        // Return early if there are no views.
+        // This is profitable as the method is also called for reducers.
+        if self.committed_state_write_lock.has_no_views_for_table_scans() {
+            return Either::Left(iter::empty());
+        }
+
         let mut res = self
             .tx_state
             .insert_tables
@@ -384,7 +396,7 @@ impl MutTxId {
                 process_views(table_id, row_ref);
             }
         }
-        res.into_iter()
+        Either::Right(res.into_iter())
     }
     /// Removes keys for `view_id` from the committed read set.
     /// Used for dropping views in an auto-migration.
