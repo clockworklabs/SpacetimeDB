@@ -219,7 +219,13 @@ jobs:
           fi
 
       - name: Run Python smoketests
-        run: python -m smoketests
+        shell: bash
+        run: |
+          if command -v python3 &> /dev/null; then
+            python3 -m smoketests
+          else
+            python -m smoketests
+          fi
 
   test:
     needs: [lints]
