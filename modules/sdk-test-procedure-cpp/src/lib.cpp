@@ -149,7 +149,7 @@ SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx) {
     
     // Make HTTP GET request to the schema endpoint (matches Rust)
     std::string url = "http://localhost:3000/v1/database/" + identity_hex + "/schema?version=9";
-    auto result = ctx.http.Get(url);
+    auto result = ctx.http.get(url);
     
     if (!result.is_ok()) {
         LOG_INFO("read_my_schema error: " + result.error());
@@ -158,7 +158,7 @@ SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx) {
     }
     
     auto& response = result.value();
-    std::string body = response.body.ToStringUtf8Lossy();
+    std::string body = response.body.to_string_utf8_lossy();
     
     LOG_INFO("read_my_schema status: " + std::to_string(response.status_code) + ", body length: " + std::to_string(body.length()));
     
@@ -167,12 +167,12 @@ SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx) {
 
 // Test HTTP request with invalid URL (should fail gracefully)
 SPACETIMEDB_PROCEDURE(std::string, invalid_request, ProcedureContext ctx) {
-    auto result = ctx.http.Get("http://foo.invalid/");
+    auto result = ctx.http.get("http://foo.invalid/");
     
     if (result.is_ok()) {
         // Unexpected success - panic like Rust version
         auto& response = result.value();
-        std::string body = response.body.ToStringUtf8Lossy();
+        std::string body = response.body.to_string_utf8_lossy();
         LOG_INFO("invalid_request unexpected success: " + body);
         LOG_PANIC("Got result from requesting `http://foo.invalid`... huh?\n" + body);
         return ""; // Never reached

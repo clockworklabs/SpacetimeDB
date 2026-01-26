@@ -72,28 +72,28 @@ inline wire::HttpMethod to_wire(const HttpMethod& method) {
 inline HttpMethod from_wire(const wire::HttpMethod& method) {
     switch (method.tag) {
         case wire::HttpMethod::Tag::Get:
-            return HttpMethod::Get();
+            return HttpMethod::get();
         case wire::HttpMethod::Tag::Head:
-            return HttpMethod::Head();
+            return HttpMethod::head();
         case wire::HttpMethod::Tag::Post:
-            return HttpMethod::Post();
+            return HttpMethod::post();
         case wire::HttpMethod::Tag::Put:
-            return HttpMethod::Put();
+            return HttpMethod::put();
         case wire::HttpMethod::Tag::Delete:
-            return HttpMethod::Delete();
+            return HttpMethod::del();
         case wire::HttpMethod::Tag::Connect:
-            return HttpMethod::Connect();
+            return HttpMethod::connect();
         case wire::HttpMethod::Tag::Options:
-            return HttpMethod::Options();
+            return HttpMethod::options();
         case wire::HttpMethod::Tag::Trace:
-            return HttpMethod::Trace();
+            return HttpMethod::trace();
         case wire::HttpMethod::Tag::Patch:
-            return HttpMethod::Patch();
+            return HttpMethod::patch();
         case wire::HttpMethod::Tag::Extension:
             return HttpMethod{method.extension};
         default:
             // Should never happen, but default to GET for safety
-            return HttpMethod::Get();
+            return HttpMethod::get();
     }
 }
 
@@ -233,7 +233,7 @@ inline HttpRequest from_wire(const wire::HttpRequest& request) {
     result.timeout = request.timeout;
     result.uri = request.uri;
     result.version = from_wire(request.version);
-    result.body = HttpBody::Empty(); // Body is received separately
+    result.body = HttpBody::empty(); // Body is received separately
     return result;
 }
 
@@ -264,7 +264,7 @@ inline HttpResponse from_wire(const wire::HttpResponse& response) {
     result.headers = from_wire_headers(response.headers);
     result.version = from_wire(response.version);
     result.status_code = response.code;
-    result.body = HttpBody::Empty(); // Body is received separately
+    result.body = HttpBody::empty(); // Body is received separately
     return result;
 }
 

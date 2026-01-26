@@ -9,7 +9,7 @@ use super::return_enum_type::ReturnEnum;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 struct ReturnEnumBArgs {
-    pub arg_0: String,
+    pub b: String,
 }
 
 impl __sdk::InModule for ReturnEnumBArgs {
@@ -21,13 +21,13 @@ impl __sdk::InModule for ReturnEnumBArgs {
 ///
 /// Implemented for [`super::RemoteProcedures`].
 pub trait return_enum_b {
-    fn return_enum_b(&self, arg_0: String) {
-        self.return_enum_b_then(arg_0, |_, _| {});
+    fn return_enum_b(&self, b: String) {
+        self.return_enum_b_then(b, |_, _| {});
     }
 
     fn return_enum_b_then(
         &self,
-        arg_0: String,
+        b: String,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<ReturnEnum, __sdk::InternalError>) + Send + 'static,
     );
@@ -36,14 +36,11 @@ pub trait return_enum_b {
 impl return_enum_b for super::RemoteProcedures {
     fn return_enum_b_then(
         &self,
-        arg_0: String,
+        b: String,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<ReturnEnum, __sdk::InternalError>) + Send + 'static,
     ) {
-        self.imp.invoke_procedure_with_callback::<_, ReturnEnum>(
-            "return_enum_b",
-            ReturnEnumBArgs { arg_0 },
-            __callback,
-        );
+        self.imp
+            .invoke_procedure_with_callback::<_, ReturnEnum>("return_enum_b", ReturnEnumBArgs { b }, __callback);
     }
 }
