@@ -21,5 +21,8 @@ pub struct ResultRow {
 
 #[reducer]
 pub fn set_circle(ctx: &ReducerContext, id: i32, radius: i32) {
-    ctx.db.result().insert(ResultRow { id, value: Shape::Circle(radius) });
+    ctx.db.result().insert(ResultRow {
+        id,
+        value: Shape::Circle(radius),
+    });
 }

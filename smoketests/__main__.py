@@ -77,16 +77,15 @@ def main():
     parser.add_argument("--no-docker-logs", action="store_true")
     parser.add_argument("--skip-dotnet", action="store_true", help="ignore tests which require dotnet")
     parser.add_argument("--show-all-output", action="store_true", help="show all stdout/stderr from the tests as they're running")
-    parser.add_argument("--parallel", action="store_true", help="run test classes in parallel")
-    parser.add_argument("-j", dest='jobs', help="Set number of jobs for parallel test runs. Default is `nproc`", type=int, default=0)
     parser.add_argument('-k', dest='testNamePatterns',
                         action='append', type=_convert_select_pattern,
                         help='Only run tests which match the given substring')
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
     parser.add_argument("--no-build-cli", action="store_true", help="don't cargo build the cli")
-    parser.add_argument("--list", action="store_true", help="list the tests that would be run, but don't run them")
+    parser.add_argument("--list", nargs="?", const="text", choices=("text", "json"), default=None, help="list the tests that would be run (optionally as 'text' or 'json'), but don't run them")
     parser.add_argument("--remote-server", action="store", help="Run against a remote server")
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
+    parser.add_argument("--local-only", action="store_true", help="Only run tests that require a local server")
     args = parser.parse_args()
 
     if args.docker:
@@ -116,22 +115,59 @@ def main():
     loader.testNamePatterns = args.testNamePatterns
 
     tests = loader.loadTestsFromNames(testlist)
-    if args.list:
+
+    if args.local_only:
+        def _is_local_only(test_case):
+            method_name = getattr(test_case, "_testMethodName", None)
+            if method_name is not None and hasattr(test_case, method_name):
+                method = getattr(test_case, method_name)
+                if getattr(method, "_requires_local_server", False):
+                    return True
+            # Also allow class-level decoration
+            if getattr(test_case.__class__, "_requires_local_server", False):
+                return True
+            return False
+
+        filtered = unittest.TestSuite()
+        for t in _iter_all_tests(tests):
+            if _is_local_only(t):
+                filtered.addTest(t)
+        tests = filtered
+
+    if args.list is not None:
         failed_cls = getattr(unittest.loader, "_FailedTest", None)
         any_failed = False
+        test_names = []
+        failed_tests = []
         for test in _iter_all_tests(tests):
             name = test.id()
             if isinstance(test, failed_cls):
                 any_failed = True
-                print('')
-                print("Failed to construct %s:" % test.id())
                 exc = getattr(test, "_exception", None)
-                if exc is not None:
-                    tb = ''.join(traceback.format_exception(exc))
-                    print(tb.rstrip())
-                print('')
+                tb = ''.join(traceback.format_exception(exc)) if exc is not None else None
+                failed_tests.append({
+                    "test_id": name,
+                    "error": tb.rstrip() if tb is not None else None,
+                })
+                if args.list == "text":
+                    print('')
+                    print("Failed to construct %s:" % name)
+                    if tb is not None:
+                        print(tb.rstrip())
+                    print('')
             else:
-                print(f"{name}")
+                test_names.append(name)
+                if args.list == "text":
+                    print(f"{name}")
+
+        if args.list == "json":
+            output = {
+                "tests": test_names,
+                "errors": failed_tests,
+            }
+            print(json.dumps(output))
+            exit(0)
+
         exit(1 if any_failed else 0)
 
     if not args.no_build_cli:
@@ -149,9 +185,16 @@ def main():
         except FileNotFoundError:
             pass
         try:
-            os.symlink(update_bin_name, SPACETIME_BIN)
-        except OSError:
-            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
+            try:
+                os.symlink(update_bin_name, SPACETIME_BIN)
+            except OSError:
+                shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
+        except FileExistsError:
+            # probably a race condition with a parallel smoketest
+            pass
+        except shutil.SameFileError:
+            # probably a race condition with a parallel smoketest
+            pass
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 
@@ -176,14 +219,9 @@ def main():
     buffer = not args.show_all_output
     verbosity = 2
 
-    if args.parallel:
-        print("parallel test running is under construction, this will probably not work correctly")
-        from . import unittest_parallel
-        unittest_parallel.main(buffer=buffer, verbose=verbosity, level="class", discovered_tests=tests, jobs=args.jobs)
-    else:
-        result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
-        if not result.wasSuccessful():
-            parser.exit(status=1)
+    result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
+    if not result.wasSuccessful():
+        parser.exit(status=1)
 
 
 if __name__ == '__main__':

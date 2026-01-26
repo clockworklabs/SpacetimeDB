@@ -19,14 +19,14 @@ concurrency:
 
 jobs:
   docker_smoketests:
-    needs: [lints]
     name: Smoketests
     strategy:
+      fail-fast: false
       matrix:
         runner: [spacetimedb-new-runner, windows-latest]
         include:
           - runner: spacetimedb-new-runner
-            smoketest_args: --docker
+            smoketest_args: ''
             container:
               image: localhost:5000/spacetimedb-ci:latest
               options: --privileged
@@ -37,7 +37,11 @@ jobs:
     container: ${{ matrix.container }}
     timeout-minutes: 120
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      # TODO: un-comment this
+      #CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      # Note: clear_database and replication only work in private
+      SMOKETEST_ARGS: ${{ matrix.smoketest_args }} -x clear_database -x replication -x teams
+      RUST_LOG: debug
     steps:
       - name: Find Git ref
         env:
@@ -70,6 +74,14 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Fix Windows SDK manifests
+        run: |
+          cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
+          dotnet workload config --update-mode manifests
+          dotnet workload update
+        if: runner.os == 'Windows'
+
       # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -84,41 +96,54 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+
       - name: Build crates
+        # TODO: This should be helpful on any platform.. but on Windows, `cargo ci` still ends up doing
+        # a bunch of rebuilding when it runs `cargo build` internally.
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+      - name: Find spacetime binary
+        shell: bash
+        run: |
+          set -x
+          which spacetime || true
+          find target/debug/ -maxdepth 1 -type f || true
+
+      - name: Expand Docker network pool
+        if: runner.os == 'Linux'
+        run: |
+          echo 'current contents:'
+          cat /etc/docker/daemon.json
+          echo 'New contents':
+          echo '{
+            "storage-driver": "vfs",
+            "default-address-pools": [
+              { "base": "10.10.0.0/16", "size": 24 },
+              { "base": "10.20.0.0/16", "size": 24 }
+            ]
+          }' | sudo tee /etc/docker/daemon.json
+          sudo service docker restart
       - name: Start Docker daemon
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
-
-      - name: Build and start database (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
-          rm .dockerignore
-          docker compose -f .github/docker-compose.yml up -d
-      - name: Build and start database (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          # Fail properly if any individual command fails
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-
-          Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
-          cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
-          dotnet workload config --update-mode manifests
-          dotnet workload update
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
         if: runner.os == 'Windows'
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
-      - name: Run smoketests
-        # Note: clear_database and replication only work in private
-        run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
-      - name: Stop containers (Linux)
-        if: always() && runner.os == 'Linux'
-        run: docker compose -f .github/docker-compose.yml down
+      - name: Run smoketests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          export RUST_LOG=debug
+          # Pre-build the crates because this docker compose file uses whatever's pre-built
+          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
+          rm .dockerignore
+          #cargo ci smoketests --docker .github/docker-compose.yml --parallel ${SMOKETEST_ARGS}
+          cargo ci smoketests --parallel ${SMOKETEST_ARGS}
+      - name: Run smoketests (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: pwsh -Command "cargo ci smoketests --parallel $SMOKETEST_ARGS"
 
   test:
     needs: [lints]
