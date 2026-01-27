@@ -73,11 +73,13 @@ cargo run
 ## Keyboard Controls
 
 ### Global
+
 - `q` / `Ctrl+C` - Quit
 - `?` / `F1` - Show help
 - `Esc` - Go back / Cancel
 
 ### Room List
+
 - `↑` / `↓` - Navigate rooms
 - `Enter` - Open selected room
 - `n` - Create new room
@@ -85,6 +87,7 @@ cargo run
 - `s` - Set display name
 
 ### Chat View
+
 - `↑` / `↓` - Select message
 - `i` - Start typing message
 - `e` - Edit selected message (your own only)
@@ -95,19 +98,19 @@ cargo run
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/name <name>` | Set your display name |
-| `/create <room_name>` | Create a new room |
-| `/join <room_id>` | Join a room by ID |
-| `/leave` | Leave current room |
-| `/ephemeral <secs> <msg>` | Send disappearing message |
-| `/schedule <secs> <msg>` | Schedule message for later |
-| `/cancel <id>` | Cancel a scheduled message |
-| `/react <emoji>` | React to selected message |
-| `/read` | Mark all messages as read |
-| `/scheduled` | Show pending scheduled messages |
+| Command                   | Description                     |
+| ------------------------- | ------------------------------- |
+| `/help`                   | Show help                       |
+| `/name <name>`            | Set your display name           |
+| `/create <room_name>`     | Create a new room               |
+| `/join <room_id>`         | Join a room by ID               |
+| `/leave`                  | Leave current room              |
+| `/ephemeral <secs> <msg>` | Send disappearing message       |
+| `/schedule <secs> <msg>`  | Schedule message for later      |
+| `/cancel <id>`            | Cancel a scheduled message      |
+| `/react <emoji>`          | React to selected message       |
+| `/read`                   | Mark all messages as read       |
+| `/scheduled`              | Show pending scheduled messages |
 
 ## View Server Logs
 
@@ -118,6 +121,7 @@ spacetime logs chat-app
 ## Architecture
 
 ### Backend Tables
+
 - `user` - User profiles with online status
 - `room` - Chat rooms
 - `room_member` - Room membership
@@ -133,4 +137,5 @@ spacetime logs chat-app
 - `typing_cleanup_job` - Scheduler for typing indicator expiry
 
 ### Client
+
 Built with [ratatui](https://github.com/ratatui/ratatui) for TUI rendering and the SpacetimeDB Rust SDK for real-time data synchronization.

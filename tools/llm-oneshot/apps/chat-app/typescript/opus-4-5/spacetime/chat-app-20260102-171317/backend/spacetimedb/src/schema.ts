@@ -10,9 +10,7 @@ export const User = table(
   {
     name: 'user',
     public: true,
-    indexes: [
-      { name: 'by_name', algorithm: 'btree', columns: ['name'] },
-    ],
+    indexes: [{ name: 'by_name', algorithm: 'btree', columns: ['name'] }],
   },
   {
     identity: t.identity().primaryKey(),
@@ -34,9 +32,7 @@ export const Room = table(
   {
     name: 'room',
     public: true,
-    indexes: [
-      { name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] },
-    ],
+    indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }],
   },
   {
     id: t.u64().primaryKey().autoInc(),

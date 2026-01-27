@@ -1,4 +1,13 @@
-import { pgTable, serial, text, timestamp, uuid, boolean, integer, primaryKey } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uuid,
+  boolean,
+  integer,
+  primaryKey,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const users = pgTable('users', {
@@ -15,8 +24,12 @@ export const rooms = pgTable('rooms', {
 
 export const messages = pgTable('messages', {
   id: serial('id').primaryKey(),
-  roomId: integer('room_id').references(() => rooms.id, { onDelete: 'cascade' }).notNull(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  roomId: integer('room_id')
+    .references(() => rooms.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: uuid('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
   content: text('content').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   scheduledFor: timestamp('scheduled_for'),
@@ -26,23 +39,33 @@ export const messages = pgTable('messages', {
 
 export const messageEdits = pgTable('message_edits', {
   id: serial('id').primaryKey(),
-  messageId: integer('message_id').references(() => messages.id, { onDelete: 'cascade' }).notNull(),
+  messageId: integer('message_id')
+    .references(() => messages.id, { onDelete: 'cascade' })
+    .notNull(),
   content: text('content').notNull(),
   editedAt: timestamp('edited_at').defaultNow().notNull(),
 });
 
 export const reactions = pgTable('reactions', {
   id: serial('id').primaryKey(),
-  messageId: integer('message_id').references(() => messages.id, { onDelete: 'cascade' }).notNull(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  messageId: integer('message_id')
+    .references(() => messages.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: uuid('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
   emoji: text('emoji').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 export const messageReads = pgTable('message_reads', {
   id: serial('id').primaryKey(),
-  roomId: integer('room_id').references(() => rooms.id, { onDelete: 'cascade' }).notNull(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  roomId: integer('room_id')
+    .references(() => rooms.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: uuid('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
   lastReadMessageId: integer('last_read_message_id'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

@@ -8,23 +8,23 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 5 (05_spacetime_edit_history.md) |
-| **Features Evaluated** | 1-8 (max 15) |
-| **Total Feature Score** | 24 / 24 |
-| **Percentage** | 100% |
+| Metric                  | Value                            |
+| ----------------------- | -------------------------------- |
+| **Prompt Level Used**   | 5 (05_spacetime_edit_history.md) |
+| **Features Evaluated**  | 1-8 (max 15)                     |
+| **Total Feature Score** | 24 / 24                          |
+| **Percentage**          | 100%                             |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
-- [ ] First-try success (required 1 fix for Identity import + readonly array handling)
+- [x] First-try success
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | 752 |
-| Lines of code (frontend) | 1,189 |
-| Number of files created | 13 |
-| External dependencies | spacetimedb ^1.11.0, react ^18.3.1, react-dom ^18.3.1 |
+| Metric                   | Value                                                 |
+| ------------------------ | ----------------------------------------------------- |
+| Lines of code (backend)  | 752                                                   |
+| Lines of code (frontend) | 1,189                                                 |
+| Number of files created  | 13                                                    |
+| External dependencies    | spacetimedb ^1.11.0, react ^18.3.1, react-dom ^18.3.1 |
 
 ---
 
@@ -35,14 +35,14 @@
 - [x] Users can join/leave rooms (0.5)
 - [x] Users can send messages to joined rooms (0.5)
 - [x] Online users are displayed (0.5)
-- [x] Basic validation exists (0.5) — *rate limiting 0.4s, length limits, empty checks*
+- [x] Basic validation exists (0.5) — _rate limiting 0.4s, length limits, empty checks_
 
 ---
 
 ## Feature 2: Typing Indicators (Score: 3 / 3)
 
 - [x] Typing state is broadcast to other room members (1)
-- [x] Typing indicator auto-expires after inactivity (1) — *4s TTL via scheduled job*
+- [x] Typing indicator auto-expires after inactivity (1) — _4s TTL via scheduled job_
 - [x] UI shows "User is typing..." or "Multiple users are typing..." (1)
 
 ---
@@ -67,15 +67,15 @@
 
 - [x] Users can compose and schedule messages for future delivery (1)
 - [x] Pending scheduled messages visible to author with cancel option (1)
-- [x] Message appears in room at scheduled time (1) — *uses SpacetimeDB scheduled tables*
+- [x] Message appears in room at scheduled time (1) — _uses SpacetimeDB scheduled tables_
 
 ---
 
 ## Feature 6: Ephemeral/Disappearing Messages (Score: 3 / 3)
 
 - [x] Users can send messages with auto-delete timer (1)
-- [x] Countdown or disappearing indicator shown in UI (1) — *live countdown "disappears in Xs"*
-- [x] Message is permanently deleted when timer expires (1) — *scheduled cleanup job*
+- [x] Countdown or disappearing indicator shown in UI (1) — _live countdown "disappears in Xs"_
+- [x] Message is permanently deleted when timer expires (1) — _scheduled cleanup job_
 
 ---
 
@@ -84,7 +84,7 @@
 - [x] Users can add emoji reactions to messages (0.75)
 - [x] Reaction counts display and update in real-time (0.75)
 - [x] Users can toggle their own reactions on/off (0.75)
-- [x] Hover/click shows who reacted (0.75) — *title tooltip on hover*
+- [x] Hover/click shows who reacted (0.75) — _title tooltip on hover_
 
 ---
 
@@ -92,14 +92,14 @@
 
 - [x] Users can edit their own messages (1)
 - [x] "(edited)" indicator shows on edited messages (0.5)
-- [x] Edit history is viewable by other users (1) — *modal shows all edits*
+- [x] Edit history is viewable by other users (1) — _modal shows all edits_
 - [x] Edits sync in real-time to all viewers (0.5)
 
 ---
 
 ## Features 9-15: Not Evaluated
 
-*Not included in prompt level 5*
+_Not included in prompt level 5_
 
 - Feature 9: Real-Time Permissions — N/A
 - Feature 10: Rich User Presence — N/A
@@ -113,17 +113,17 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score |
-|---------|-----|-------|
-| 1. Basic Chat | 3 | 3 |
-| 2. Typing Indicators | 3 | 3 |
-| 3. Read Receipts | 3 | 3 |
-| 4. Unread Counts | 3 | 3 |
-| 5. Scheduled Messages | 3 | 3 |
-| 6. Ephemeral Messages | 3 | 3 |
-| 7. Message Reactions | 3 | 3 |
-| 8. Message Editing | 3 | 3 |
-| **TOTAL** | **24** | **24** |
+| Feature               | Max    | Score  |
+| --------------------- | ------ | ------ |
+| 1. Basic Chat         | 3      | 3      |
+| 2. Typing Indicators  | 3      | 3      |
+| 3. Read Receipts      | 3      | 3      |
+| 4. Unread Counts      | 3      | 3      |
+| 5. Scheduled Messages | 3      | 3      |
+| 6. Ephemeral Messages | 3      | 3      |
+| 7. Message Reactions  | 3      | 3      |
+| 8. Message Editing    | 3      | 3      |
+| **TOTAL**             | **24** | **24** |
 
 ---
 
@@ -135,7 +135,7 @@ None critical. Minor observations:
 2. **"Seen by" may include yourself** — Current user not filtered from seen list. Minor UX difference from Discord.
 3. **Reaction tooltip is basic** — Uses browser `title` attribute rather than custom popover.
 
-*These are not grading deductions as the checklist doesn't require Discord-exact behavior.*
+_These are not grading deductions as the checklist doesn't require Discord-exact behavior._
 
 ---
 

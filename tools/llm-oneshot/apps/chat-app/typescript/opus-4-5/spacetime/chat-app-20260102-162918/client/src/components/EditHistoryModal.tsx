@@ -6,9 +6,13 @@ interface EditHistoryModalProps {
   onClose: () => void;
 }
 
-export default function EditHistoryModal({ edits, originalContent, onClose }: EditHistoryModalProps) {
-  const sortedEdits = [...edits].sort(
-    (a, b) => Number(b.editedAt.microsSinceUnixEpoch - a.editedAt.microsSinceUnixEpoch)
+export default function EditHistoryModal({
+  edits,
+  originalContent,
+  onClose,
+}: EditHistoryModalProps) {
+  const sortedEdits = [...edits].sort((a, b) =>
+    Number(b.editedAt.microsSinceUnixEpoch - a.editedAt.microsSinceUnixEpoch)
   );
 
   const formatDateTime = (timestamp: { microsSinceUnixEpoch: bigint }) => {
@@ -22,14 +26,19 @@ export default function EditHistoryModal({ edits, originalContent, onClose }: Ed
         <h3>Edit History</h3>
 
         <div className="edit-history-list">
-          <div className="edit-history-item" style={{ background: 'var(--accent)', opacity: 0.8 }}>
+          <div
+            className="edit-history-item"
+            style={{ background: 'var(--accent)', opacity: 0.8 }}
+          >
             <div className="edit-history-time">Current version</div>
             <div className="edit-history-content">{originalContent}</div>
           </div>
 
           {sortedEdits.map(edit => (
             <div key={edit.id.toString()} className="edit-history-item">
-              <div className="edit-history-time">{formatDateTime(edit.editedAt)}</div>
+              <div className="edit-history-time">
+                {formatDateTime(edit.editedAt)}
+              </div>
               <div className="edit-history-content">{edit.previousContent}</div>
             </div>
           ))}

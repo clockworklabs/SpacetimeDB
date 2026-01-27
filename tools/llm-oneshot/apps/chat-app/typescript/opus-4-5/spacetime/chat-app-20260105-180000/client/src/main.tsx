@@ -23,7 +23,7 @@ const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
   if (token) {
     localStorage.setItem('auth_token', token);
   }
-  
+
   // Subscribe to all tables
   conn.subscriptionBuilder().subscribeToAllTables();
 };

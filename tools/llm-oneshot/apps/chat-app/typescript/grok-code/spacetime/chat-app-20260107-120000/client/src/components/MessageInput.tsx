@@ -11,7 +11,7 @@ export default function MessageInput({
   roomId,
   onSendMessage,
   onStartTyping,
-  onStopTyping
+  onStopTyping,
 }: MessageInputProps) {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -44,7 +44,7 @@ export default function MessageInput({
       await window.__db_conn.reducers.scheduleMessage({
         roomId,
         content: message.trim(),
-        delayMinutes: BigInt(scheduledDelay)
+        delayMinutes: BigInt(scheduledDelay),
       });
       setMessage('');
       setShowAdvanced(false);
@@ -61,7 +61,7 @@ export default function MessageInput({
       await window.__db_conn.reducers.sendEphemeralMessage({
         roomId,
         content: message.trim(),
-        durationMinutes: BigInt(ephemeralDuration)
+        durationMinutes: BigInt(ephemeralDuration),
       });
       setMessage('');
       setShowAdvanced(false);
@@ -128,7 +128,7 @@ export default function MessageInput({
                 resize: 'none',
                 minHeight: '40px',
                 maxHeight: '120px',
-                overflowY: message.split('\n').length > 3 ? 'auto' : 'hidden'
+                overflowY: message.split('\n').length > 3 ? 'auto' : 'hidden',
               }}
               disabled={isSending}
             />
@@ -144,7 +144,14 @@ export default function MessageInput({
         </div>
 
         {/* Advanced Options */}
-        <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div
+          style={{
+            marginTop: '8px',
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'center',
+          }}
+        >
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
@@ -156,20 +163,24 @@ export default function MessageInput({
 
           {showAdvanced && (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
                 <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   Schedule:
                 </label>
                 <input
                   type="number"
                   value={scheduledDelay}
-                  onChange={(e) => setScheduledDelay(Number(e.target.value))}
+                  onChange={e => setScheduledDelay(Number(e.target.value))}
                   min="1"
                   max="1440"
                   style={{ width: '60px', fontSize: '12px' }}
                   className="input"
                 />
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>min</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  min
+                </span>
                 <button
                   type="button"
                   onClick={handleScheduledSubmit}
@@ -181,20 +192,24 @@ export default function MessageInput({
                 </button>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
                 <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   Ephemeral:
                 </label>
                 <input
                   type="number"
                   value={ephemeralDuration}
-                  onChange={(e) => setEphemeralDuration(Number(e.target.value))}
+                  onChange={e => setEphemeralDuration(Number(e.target.value))}
                   min="1"
                   max="60"
                   style={{ width: '50px', fontSize: '12px' }}
                   className="input"
                 />
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>min</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  min
+                </span>
                 <button
                   type="button"
                   onClick={handleEphemeralSubmit}
@@ -210,12 +225,18 @@ export default function MessageInput({
         </div>
 
         {/* Help text */}
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+        <div
+          style={{
+            fontSize: '11px',
+            color: 'var(--text-muted)',
+            marginTop: '4px',
+          }}
+        >
           Press Enter to send, Shift+Enter for new line
           {showAdvanced && (
             <span style={{ marginLeft: '16px' }}>
-              • Schedule: Send message at a future time
-              • Ephemeral: Message disappears after duration
+              • Schedule: Send message at a future time • Ephemeral: Message
+              disappears after duration
             </span>
           )}
         </div>

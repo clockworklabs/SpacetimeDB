@@ -18,20 +18,47 @@ export default function Login() {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      <form onSubmit={handleSubmit} style={{ background: 'var(--bg-secondary)', padding: 40, borderRadius: 5, width: 400 }}>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          background: 'var(--bg-secondary)',
+          padding: 40,
+          borderRadius: 5,
+          width: 400,
+        }}
+      >
         <h2 style={{ textAlign: 'center', marginBottom: 20 }}>Welcome back!</h2>
         <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', marginBottom: 8, fontSize: 12, fontWeight: 'bold', color: '#b5bac1' }}>USERNAME</label>
-          <input 
-            className="input" 
-            style={{ width: '100%' }} 
-            value={username} 
+          <label
+            style={{
+              display: 'block',
+              marginBottom: 8,
+              fontSize: 12,
+              fontWeight: 'bold',
+              color: '#b5bac1',
+            }}
+          >
+            USERNAME
+          </label>
+          <input
+            className="input"
+            style={{ width: '100%' }}
+            value={username}
             onChange={e => setUsername(e.target.value)}
-            required 
+            required
           />
         </div>
-        <button className="btn btn-primary" style={{ width: '100%' }}>Log In</button>
+        <button className="btn btn-primary" style={{ width: '100%' }}>
+          Log In
+        </button>
       </form>
     </div>
   );

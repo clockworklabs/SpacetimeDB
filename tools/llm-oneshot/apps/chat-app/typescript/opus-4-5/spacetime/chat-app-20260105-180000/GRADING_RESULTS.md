@@ -8,22 +8,22 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 9 (Private Rooms and DMs) |
-| **Features Evaluated** | 1-12 (max 12 for this level) |
-| **Total Feature Score** | 36 / 36 |
+| Metric                  | Value                        |
+| ----------------------- | ---------------------------- |
+| **Prompt Level Used**   | 9 (Private Rooms and DMs)    |
+| **Features Evaluated**  | 1-12 (max 12 for this level) |
+| **Total Feature Score** | 36 / 36                      |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
 - [1] First-try success (one fix needed for `t.product()` SDK bug)
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | ~650 |
-| Lines of code (frontend) | ~750 |
-| Number of files created | 11 |
-| External dependencies | spacetimedb (backend), react, react-dom, spacetimedb, vite (client) |
+| Metric                   | Value                                                               |
+| ------------------------ | ------------------------------------------------------------------- |
+| Lines of code (backend)  | ~650                                                                |
+| Lines of code (frontend) | ~750                                                                |
+| Number of files created  | 11                                                                  |
+| External dependencies    | spacetimedb (backend), react, react-dom, spacetimedb, vite (client) |
 
 ---
 
@@ -37,6 +37,7 @@
 - [x] Basic validation exists (0.5)
 
 **Implementation Notes:**
+
 - `set_name` reducer with 50-char limit
 - `create_room` reducer with public/private option
 - `join_room`, `leave_room` reducers with membership tracking
@@ -53,6 +54,7 @@
 - [x] UI shows "User is typing..." or "Multiple users are typing..." (1)
 
 **Implementation Notes:**
+
 - `TypingIndicator` scheduled table with 5-second expiry
 - `start_typing`, `stop_typing` reducers
 - `expire_typing` scheduled reducer auto-deletes expired indicators
@@ -67,6 +69,7 @@
 - [x] Read status updates in real-time (1)
 
 **Implementation Notes:**
+
 - `ReadReceipt` table with message/user tracking
 - `mark_message_read` reducer
 - UI displays "Seen by X, Y, Z" or "Seen by N people" for many readers
@@ -81,6 +84,7 @@
 - [x] Counts update in real-time (1)
 
 **Implementation Notes:**
+
 - `lastReadMessageId` field in `RoomMember` table
 - `getUnreadCount` helper compares message IDs
 - Red badge on room items with unread count
@@ -95,6 +99,7 @@
 - [x] Message appears in room at scheduled time (1)
 
 **Implementation Notes:**
+
 - `ScheduledMessage` scheduled table
 - `schedule_message` reducer with datetime picker
 - Scheduled messages panel shows pending with cancel button
@@ -109,6 +114,7 @@
 - [x] Message is permanently deleted when timer expires (1)
 
 **Implementation Notes:**
+
 - `isEphemeral`, `expiresAt` fields on messages
 - Duration options: 1 min, 5 min, 1 hour
 - Live countdown display (updates every second)
@@ -124,6 +130,7 @@
 - [x] Hover/click shows who reacted (0.75)
 
 **Implementation Notes:**
+
 - `Reaction` table with user/message/emoji
 - `toggle_reaction` reducer adds or removes
 - 8 emoji options: 👍 ❤️ 😂 😮 😢 🔥 🎉 💯
@@ -140,6 +147,7 @@
 - [x] Edits sync in real-time to all viewers (0.5)
 
 **Implementation Notes:**
+
 - `edit_message` reducer with ownership check
 - `MessageEdit` table stores previous content
 - "(edited)" badge on modified messages
@@ -156,6 +164,7 @@
 - [x] Permission changes apply instantly (0.5)
 
 **Implementation Notes:**
+
 - `isAdmin` flag set on room creation
 - `kick_user` deletes membership
 - `ban_user` sets `isBanned` flag
@@ -172,6 +181,7 @@
 - [x] Auto-set to "away" after inactivity period (0.5)
 
 **Implementation Notes:**
+
 - `status` field with 4 options
 - `lastActive` timestamp updated on actions
 - Status dropdown in user panel
@@ -188,6 +198,7 @@
 - [x] New replies sync in real-time to thread viewers (0.5)
 
 **Implementation Notes:**
+
 - `parentMessageId` optional field on messages
 - Reply button sets `replyingTo` state
 - Thread indicator shows "💬 N replies"
@@ -204,6 +215,7 @@
 - [x] Only members can see private room content and member lists (0.75)
 
 **Implementation Notes:**
+
 - `isPrivate`, `isDm` flags on rooms
 - Private room checkbox in create dialog
 - `invite_to_room` reducer by username
@@ -216,40 +228,42 @@
 
 ## Features Not Evaluated (Not in Level 9 Prompt)
 
-| Feature | Max | Score | Notes |
-|---------|-----|-------|-------|
-| 13. Activity Indicators | 3 | N/A | Not requested |
-| 14. Draft Sync | 3 | N/A | Not requested |
-| 15. Anonymous Migration | 3 | N/A | Not requested |
+| Feature                 | Max | Score | Notes         |
+| ----------------------- | --- | ----- | ------------- |
+| 13. Activity Indicators | 3   | N/A   | Not requested |
+| 14. Draft Sync          | 3   | N/A   | Not requested |
+| 15. Anonymous Migration | 3   | N/A   | Not requested |
 
 ---
 
 ## Summary Score Sheet
 
-| Feature | Max | Score | Reprompts |
-|---------|-----|-------|-----------|
-| 1. Basic Chat | 3 | 3 | 0 |
-| 2. Typing Indicators | 3 | 3 | 0 |
-| 3. Read Receipts | 3 | 3 | 0 |
-| 4. Unread Counts | 3 | 3 | 0 |
-| 5. Scheduled Messages | 3 | 3 | 0 |
-| 6. Ephemeral Messages | 3 | 3 | 0 |
-| 7. Message Reactions | 3 | 3 | 0 |
-| 8. Message Editing | 3 | 3 | 0 |
-| 9. Real-Time Permissions | 3 | 3 | 0 |
-| 10. Rich Presence | 3 | 3 | 0 |
-| 11. Message Threading | 3 | 3 | 0 |
-| 12. Private Rooms & DMs | 3 | 3 | 0 |
-| **TOTAL** | **36** | **36** | **0** |
+| Feature                  | Max    | Score  | Reprompts |
+| ------------------------ | ------ | ------ | --------- |
+| 1. Basic Chat            | 3      | 3      | 0         |
+| 2. Typing Indicators     | 3      | 3      | 0         |
+| 3. Read Receipts         | 3      | 3      | 0         |
+| 4. Unread Counts         | 3      | 3      | 0         |
+| 5. Scheduled Messages    | 3      | 3      | 0         |
+| 6. Ephemeral Messages    | 3      | 3      | 0         |
+| 7. Message Reactions     | 3      | 3      | 0         |
+| 8. Message Editing       | 3      | 3      | 0         |
+| 9. Real-Time Permissions | 3      | 3      | 0         |
+| 10. Rich Presence        | 3      | 3      | 0         |
+| 11. Message Threading    | 3      | 3      | 0         |
+| 12. Private Rooms & DMs  | 3      | 3      | 0         |
+| **TOTAL**                | **36** | **36** | **0**     |
 
 ---
 
 ## Technical Notes
 
 ### SDK Issue Encountered
+
 Initial attempt used `t.product()` for view definitions, which failed with "t.product is not a function". Fixed by removing views and making tables public with client-side filtering.
 
 ### Architecture Decisions
+
 - All 12 tables defined in `schema.ts`
 - 25+ reducers in `reducers.ts` covering all features
 - Single-file React component (`App.tsx`) for simplicity
@@ -261,6 +275,7 @@ Initial attempt used `t.product()` for view definitions, which failed with "t.pr
   - Auto-away status (5 min)
 
 ### Files Created
+
 ```
 backend/spacetimedb/
 ├── package.json

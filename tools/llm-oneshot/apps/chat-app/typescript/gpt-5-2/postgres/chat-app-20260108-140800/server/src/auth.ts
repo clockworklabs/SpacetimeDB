@@ -20,7 +20,11 @@ export function signToken(payload: AuthTokenPayload): string {
 
 export function verifyToken(token: string): AuthTokenPayload {
   const decoded = jwt.verify(token, requireJwtSecret());
-  if (!decoded || typeof decoded !== 'object' || typeof (decoded as any).userId !== 'string') {
+  if (
+    !decoded ||
+    typeof decoded !== 'object' ||
+    typeof (decoded as any).userId !== 'string'
+  ) {
     throw new Error('Invalid token payload');
   }
   return decoded as AuthTokenPayload;
@@ -28,7 +32,11 @@ export function verifyToken(token: string): AuthTokenPayload {
 
 export type AuthedRequest = Request & { userId: string };
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+export function authMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   const header = req.header('authorization') || '';
   const m = header.match(/^Bearer\s+(.+)$/i);
   if (!m) return res.status(401).json({ error: 'Unauthorized' });
@@ -46,4 +54,3 @@ export function tokenFromSocketAuth(auth: unknown): string | null {
   const token = (auth as any).token;
   return typeof token === 'string' && token.length > 0 ? token : null;
 }
-

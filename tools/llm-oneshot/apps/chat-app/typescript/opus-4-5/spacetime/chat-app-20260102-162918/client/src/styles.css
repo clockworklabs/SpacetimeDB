@@ -45,7 +45,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ============================================================================
@@ -177,10 +179,19 @@
   border: 3px solid var(--bg-primary);
 }
 
-.status-dot.online { background: var(--online); }
-.status-dot.away { background: var(--away); }
-.status-dot.do_not_disturb { background: var(--dnd); }
-.status-dot.invisible, .status-dot.offline { background: var(--offline); }
+.status-dot.online {
+  background: var(--online);
+}
+.status-dot.away {
+  background: var(--away);
+}
+.status-dot.do_not_disturb {
+  background: var(--dnd);
+}
+.status-dot.invisible,
+.status-dot.offline {
+  background: var(--offline);
+}
 
 .user-info {
   flex: 1;
@@ -208,7 +219,9 @@
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  transition: background 0.15s, opacity 0.15s;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
 }
 
 .btn:disabled {
@@ -250,7 +263,9 @@
   cursor: pointer;
   border-radius: 4px;
   color: var(--text-secondary);
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .btn-icon:hover {
@@ -426,7 +441,9 @@
   font-size: 12px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .reaction:hover {

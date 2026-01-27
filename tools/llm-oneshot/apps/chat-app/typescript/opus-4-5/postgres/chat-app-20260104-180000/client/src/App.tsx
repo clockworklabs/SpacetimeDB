@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from './api';
 import { connectSocket, disconnectSocket, getSocket } from './socket';
-import type { User, Room, Message, Reaction, RoomInvite, MessageEdit } from './types';
+import type {
+  User,
+  Room,
+  Message,
+  Reaction,
+  RoomInvite,
+  MessageEdit,
+} from './types';
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢'];
 
@@ -9,12 +16,13 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [displayNameInput, setDisplayNameInput] = useState('');
-  
+
   // Check for existing session
   useEffect(() => {
     const token = api.getToken();
     if (token) {
-      api.getMe()
+      api
+        .getMe()
         .then(setUser)
         .catch(() => api.clearToken())
         .finally(() => setIsLoading(false));
@@ -26,7 +34,7 @@ export function App() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!displayNameInput.trim()) return;
-    
+
     try {
       const { user, token } = await api.register(displayNameInput.trim());
       api.setToken(token);
@@ -58,11 +66,15 @@ export function App() {
               className="input"
               placeholder="Display name"
               value={displayNameInput}
-              onChange={(e) => setDisplayNameInput(e.target.value)}
+              onChange={e => setDisplayNameInput(e.target.value)}
               maxLength={50}
               autoFocus
             />
-            <button type="submit" className="btn" disabled={!displayNameInput.trim()}>
+            <button
+              type="submit"
+              className="btn"
+              disabled={!displayNameInput.trim()}
+            >
               Join Chat
             </button>
           </form>
@@ -86,23 +98,30 @@ function ChatApp({ user, setUser }: ChatAppProps) {
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
-  const [typingUsers, setTypingUsers] = useState<Record<number, Set<string>>>({});
+  const [typingUsers, setTypingUsers] = useState<Record<number, Set<string>>>(
+    {}
+  );
   const [invites, setInvites] = useState<RoomInvite[]>([]);
   const [showInvites, setShowInvites] = useState(false);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [members, setMembers] = useState<User[]>([]);
   const [reactions, setReactions] = useState<Record<number, Reaction[]>>({});
-  const [readReceipts, setReadReceipts] = useState<Record<number, string[]>>({});
+  const [readReceipts, setReadReceipts] = useState<Record<number, string[]>>(
+    {}
+  );
   const [replyCounts, setReplyCounts] = useState<Record<number, number>>({});
-  const [threadView, setThreadView] = useState<{ parentId: number; parentMessage: Message } | null>(null);
+  const [threadView, setThreadView] = useState<{
+    parentId: number;
+    parentMessage: Message;
+  } | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [scheduledMessages, setScheduledMessages] = useState<Message[]>([]);
-  
+
   // Initialize socket and fetch data
   useEffect(() => {
     const socket = connectSocket();
-    
+
     const loadData = async () => {
       const [publicR, myR, allUsers, unread, inv] = await Promise.all([
         api.getPublicRooms(),
@@ -117,7 +136,7 @@ function ChatApp({ user, setUser }: ChatAppProps) {
       setUnreadCounts(unread);
       setInvites(inv);
     };
-    
+
     loadData();
 
     // Socket event handlers
@@ -125,7 +144,7 @@ function ChatApp({ user, setUser }: ChatAppProps) {
       setUsers(prev => {
         const exists = prev.find(u => u.id === updatedUser.id);
         if (exists) {
-          return prev.map(u => u.id === updatedUser.id ? updatedUser : u);
+          return prev.map(u => (u.id === updatedUser.id ? updatedUser : u));
         }
         return [...prev, updatedUser];
       });
@@ -138,30 +157,47 @@ function ChatApp({ user, setUser }: ChatAppProps) {
       setPublicRooms(prev => [...prev, room]);
     });
 
-    socket.on('room:member:joined', ({ roomId, user: joinedUser }: { roomId: number; user: User }) => {
-      setMembers(prev => {
-        if (prev.find(m => m.id === joinedUser.id)) return prev;
-        return [...prev, joinedUser];
-      });
-    });
+    socket.on(
+      'room:member:joined',
+      ({ roomId, user: joinedUser }: { roomId: number; user: User }) => {
+        setMembers(prev => {
+          if (prev.find(m => m.id === joinedUser.id)) return prev;
+          return [...prev, joinedUser];
+        });
+      }
+    );
 
-    socket.on('room:member:left', ({ roomId, user: leftUser }: { roomId: number; user: User }) => {
-      setMembers(prev => prev.filter(m => m.id !== leftUser.id));
-    });
+    socket.on(
+      'room:member:left',
+      ({ roomId, user: leftUser }: { roomId: number; user: User }) => {
+        setMembers(prev => prev.filter(m => m.id !== leftUser.id));
+      }
+    );
 
-    socket.on('room:member:kicked', ({ roomId, user: kickedUser }: { roomId: number; user: User }) => {
-      setMembers(prev => prev.filter(m => m.id !== kickedUser.id));
-    });
+    socket.on(
+      'room:member:kicked',
+      ({ roomId, user: kickedUser }: { roomId: number; user: User }) => {
+        setMembers(prev => prev.filter(m => m.id !== kickedUser.id));
+      }
+    );
 
-    socket.on('room:member:banned', ({ roomId, user: bannedUser }: { roomId: number; user: User }) => {
-      setMembers(prev => prev.filter(m => m.id !== bannedUser.id));
-    });
+    socket.on(
+      'room:member:banned',
+      ({ roomId, user: bannedUser }: { roomId: number; user: User }) => {
+        setMembers(prev => prev.filter(m => m.id !== bannedUser.id));
+      }
+    );
 
-    socket.on('room:member:promoted', ({ roomId, user: promotedUser }: { roomId: number; user: User }) => {
-      setMembers(prev => prev.map(m => 
-        m.id === promotedUser.id ? { ...m, role: 'admin' as const } : m
-      ));
-    });
+    socket.on(
+      'room:member:promoted',
+      ({ roomId, user: promotedUser }: { roomId: number; user: User }) => {
+        setMembers(prev =>
+          prev.map(m =>
+            m.id === promotedUser.id ? { ...m, role: 'admin' as const } : m
+          )
+        );
+      }
+    );
 
     socket.on('room:kicked', ({ roomId }: { roomId: number }) => {
       setMyRooms(prev => prev.filter(r => r.id !== roomId));
@@ -179,9 +215,20 @@ function ChatApp({ user, setUser }: ChatAppProps) {
       }
     });
 
-    socket.on('room:invite', ({ room, invitedBy }: { room: Room; invitedBy: User }) => {
-      setInvites(prev => [...prev, { id: Date.now(), room, invitedBy, createdAt: new Date().toISOString() }]);
-    });
+    socket.on(
+      'room:invite',
+      ({ room, invitedBy }: { room: Room; invitedBy: User }) => {
+        setInvites(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            room,
+            invitedBy,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+      }
+    );
 
     socket.on('dm:created', ({ room }: { room: Room }) => {
       setMyRooms(prev => {
@@ -205,40 +252,72 @@ function ChatApp({ user, setUser }: ChatAppProps) {
     });
 
     socket.on('message:updated', (message: Message) => {
-      setMessages(prev => prev.map(m => m.id === message.id ? message : m));
+      setMessages(prev => prev.map(m => (m.id === message.id ? message : m)));
     });
 
-    socket.on('message:deleted', ({ messageId, roomId }: { messageId: number; roomId: number }) => {
-      setMessages(prev => prev.filter(m => m.id !== messageId));
-    });
+    socket.on(
+      'message:deleted',
+      ({ messageId, roomId }: { messageId: number; roomId: number }) => {
+        setMessages(prev => prev.filter(m => m.id !== messageId));
+      }
+    );
 
-    socket.on('message:reactions:updated', ({ messageId, reactions: newReactions }: { messageId: number; reactions: Reaction[] }) => {
-      setReactions(prev => ({ ...prev, [messageId]: newReactions }));
-    });
+    socket.on(
+      'message:reactions:updated',
+      ({
+        messageId,
+        reactions: newReactions,
+      }: {
+        messageId: number;
+        reactions: Reaction[];
+      }) => {
+        setReactions(prev => ({ ...prev, [messageId]: newReactions }));
+      }
+    );
 
-    socket.on('message:read', ({ messageId, readers }: { messageId: number; readers: string[] }) => {
-      setReadReceipts(prev => ({ ...prev, [messageId]: readers }));
-    });
+    socket.on(
+      'message:read',
+      ({ messageId, readers }: { messageId: number; readers: string[] }) => {
+        setReadReceipts(prev => ({ ...prev, [messageId]: readers }));
+      }
+    );
 
-    socket.on('message:thread:updated', ({ parentId, replyCount }: { parentId: number; replyCount: number }) => {
-      setReplyCounts(prev => ({ ...prev, [parentId]: replyCount }));
-    });
+    socket.on(
+      'message:thread:updated',
+      ({ parentId, replyCount }: { parentId: number; replyCount: number }) => {
+        setReplyCounts(prev => ({ ...prev, [parentId]: replyCount }));
+      }
+    );
 
-    socket.on('message:scheduled:cancelled', ({ messageId, roomId }: { messageId: number; roomId: number }) => {
-      setScheduledMessages(prev => prev.filter(m => m.id !== messageId));
-    });
+    socket.on(
+      'message:scheduled:cancelled',
+      ({ messageId, roomId }: { messageId: number; roomId: number }) => {
+        setScheduledMessages(prev => prev.filter(m => m.id !== messageId));
+      }
+    );
 
-    socket.on('typing:update', ({ roomId, userId, isTyping }: { roomId: number; userId: string; isTyping: boolean }) => {
-      setTypingUsers(prev => {
-        const roomTyping = new Set(prev[roomId] || []);
-        if (isTyping) {
-          roomTyping.add(userId);
-        } else {
-          roomTyping.delete(userId);
-        }
-        return { ...prev, [roomId]: roomTyping };
-      });
-    });
+    socket.on(
+      'typing:update',
+      ({
+        roomId,
+        userId,
+        isTyping,
+      }: {
+        roomId: number;
+        userId: string;
+        isTyping: boolean;
+      }) => {
+        setTypingUsers(prev => {
+          const roomTyping = new Set(prev[roomId] || []);
+          if (isTyping) {
+            roomTyping.add(userId);
+          } else {
+            roomTyping.delete(userId);
+          }
+          return { ...prev, [roomId]: roomTyping };
+        });
+      }
+    );
 
     return () => {
       disconnectSocket();
@@ -356,8 +435,11 @@ function ChatApp({ user, setUser }: ChatAppProps) {
       .filter(Boolean) as string[];
   }, [activeRoom?.id, typingUsers, users, user.id]);
 
-  const onlineUsers = useMemo(() => 
-    users.filter(u => u.status === 'online' || u.status === 'away' || u.status === 'dnd'),
+  const onlineUsers = useMemo(
+    () =>
+      users.filter(
+        u => u.status === 'online' || u.status === 'away' || u.status === 'dnd'
+      ),
     [users]
   );
 
@@ -367,7 +449,10 @@ function ChatApp({ user, setUser }: ChatAppProps) {
         <div className="sidebar-header">
           <h1>💬 Chat</h1>
           {invites.length > 0 && (
-            <button className="btn btn-small" onClick={() => setShowInvites(true)}>
+            <button
+              className="btn btn-small"
+              onClick={() => setShowInvites(true)}
+            >
               {invites.length} Invite{invites.length > 1 ? 's' : ''}
             </button>
           )}
@@ -376,7 +461,12 @@ function ChatApp({ user, setUser }: ChatAppProps) {
         <div className="sidebar-section">
           <h3>
             Your Rooms
-            <button className="btn-icon" onClick={() => setShowCreateRoom(true)}>+</button>
+            <button
+              className="btn-icon"
+              onClick={() => setShowCreateRoom(true)}
+            >
+              +
+            </button>
           </h3>
           <div className="room-list">
             {myRooms.map(room => (
@@ -386,7 +476,11 @@ function ChatApp({ user, setUser }: ChatAppProps) {
                 onClick={() => setActiveRoom(room)}
               >
                 <span className="room-icon">
-                  {room.roomType === 'dm' ? '👤' : room.roomType === 'private' ? '🔒' : '#'}
+                  {room.roomType === 'dm'
+                    ? '👤'
+                    : room.roomType === 'private'
+                      ? '🔒'
+                      : '#'}
                 </span>
                 <span className="room-name">{room.name}</span>
                 {unreadCounts[room.id] > 0 && (
@@ -395,7 +489,13 @@ function ChatApp({ user, setUser }: ChatAppProps) {
               </button>
             ))}
             {myRooms.length === 0 && (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '8px' }}>
+              <p
+                style={{
+                  color: 'var(--text-muted)',
+                  fontSize: '0.85rem',
+                  padding: '8px',
+                }}
+              >
                 No rooms yet. Create or join one!
               </p>
             )}
@@ -405,38 +505,53 @@ function ChatApp({ user, setUser }: ChatAppProps) {
         <div className="sidebar-section">
           <h3>Public Rooms</h3>
           <div className="room-list">
-            {publicRooms.filter(r => !myRooms.find(m => m.id === r.id)).map(room => (
-              <button
-                key={room.id}
-                className="room-item"
-                onClick={() => handleJoinRoom(room.id)}
-              >
-                <span className="room-icon">#</span>
-                <span className="room-name">{room.name}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Join</span>
-              </button>
-            ))}
+            {publicRooms
+              .filter(r => !myRooms.find(m => m.id === r.id))
+              .map(room => (
+                <button
+                  key={room.id}
+                  className="room-item"
+                  onClick={() => handleJoinRoom(room.id)}
+                >
+                  <span className="room-icon">#</span>
+                  <span className="room-name">{room.name}</span>
+                  <span
+                    style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}
+                  >
+                    Join
+                  </span>
+                </button>
+              ))}
           </div>
         </div>
 
-        <div className="sidebar-section" style={{ flex: 1, overflow: 'hidden' }}>
+        <div
+          className="sidebar-section"
+          style={{ flex: 1, overflow: 'hidden' }}
+        >
           <h3>Online — {onlineUsers.length}</h3>
           <div className="user-list">
-            {onlineUsers.filter(u => u.id !== user.id).map(u => (
-              <button
-                key={u.id}
-                className="user-item"
-                onClick={() => handleStartDM(u)}
-              >
-                <span className={`status-dot ${u.status}`} />
-                <span className="room-name">{u.displayName}</span>
-                {u.status !== 'online' && (
-                  <span className="last-active">
-                    {u.status === 'away' ? 'Away' : u.status === 'dnd' ? 'DND' : ''}
-                  </span>
-                )}
-              </button>
-            ))}
+            {onlineUsers
+              .filter(u => u.id !== user.id)
+              .map(u => (
+                <button
+                  key={u.id}
+                  className="user-item"
+                  onClick={() => handleStartDM(u)}
+                >
+                  <span className={`status-dot ${u.status}`} />
+                  <span className="room-name">{u.displayName}</span>
+                  {u.status !== 'online' && (
+                    <span className="last-active">
+                      {u.status === 'away'
+                        ? 'Away'
+                        : u.status === 'dnd'
+                          ? 'DND'
+                          : ''}
+                    </span>
+                  )}
+                </button>
+              ))}
           </div>
         </div>
 
@@ -456,7 +571,13 @@ function ChatApp({ user, setUser }: ChatAppProps) {
                 className={`status-option ${user.status === status ? 'active' : ''}`}
                 onClick={() => handleUpdateStatus(status)}
               >
-                {status === 'online' ? '🟢' : status === 'away' ? '🟡' : status === 'dnd' ? '🔴' : '⚫'}
+                {status === 'online'
+                  ? '🟢'
+                  : status === 'away'
+                    ? '🟡'
+                    : status === 'dnd'
+                      ? '🔴'
+                      : '⚫'}
               </button>
             ))}
           </div>
@@ -478,9 +599,13 @@ function ChatApp({ user, setUser }: ChatAppProps) {
             showMembers={showMembers}
             onToggleMembers={() => setShowMembers(!showMembers)}
             onLeave={handleLeaveRoom}
-            onReaction={(messageId, emoji) => api.toggleReaction(messageId, emoji)}
-            onMarkRead={(messageId) => api.markAsRead(messageId)}
-            onOpenThread={(msg) => setThreadView({ parentId: msg.id, parentMessage: msg })}
+            onReaction={(messageId, emoji) =>
+              api.toggleReaction(messageId, emoji)
+            }
+            onMarkRead={messageId => api.markAsRead(messageId)}
+            onOpenThread={msg =>
+              setThreadView({ parentId: msg.id, parentMessage: msg })
+            }
             setScheduledMessages={setScheduledMessages}
             setMessages={setMessages}
             setReactions={setReactions}
@@ -488,7 +613,10 @@ function ChatApp({ user, setUser }: ChatAppProps) {
         ) : (
           <div className="empty-state">
             <h3>Welcome to Chat!</h3>
-            <p>Select a room from the sidebar or create a new one to start chatting.</p>
+            <p>
+              Select a room from the sidebar or create a new one to start
+              chatting.
+            </p>
           </div>
         )}
       </div>
@@ -499,8 +627,12 @@ function ChatApp({ user, setUser }: ChatAppProps) {
           messages={threadMessages}
           user={user}
           onClose={() => setThreadView(null)}
-          onSend={async (content) => {
-            const msg = await api.sendMessage(threadView.parentMessage.roomId, content, { parentId: threadView.parentId });
+          onSend={async content => {
+            const msg = await api.sendMessage(
+              threadView.parentMessage.roomId,
+              content,
+              { parentId: threadView.parentId }
+            );
             setThreadMessages(prev => [...prev, msg]);
           }}
         />
@@ -511,10 +643,10 @@ function ChatApp({ user, setUser }: ChatAppProps) {
           members={members}
           currentUser={user}
           room={activeRoom}
-          onKick={(userId) => api.kickUser(activeRoom.id, userId)}
-          onBan={(userId) => api.banUser(activeRoom.id, userId)}
-          onPromote={(userId) => api.promoteUser(activeRoom.id, userId)}
-          onInvite={(username) => api.inviteUser(activeRoom.id, username)}
+          onKick={userId => api.kickUser(activeRoom.id, userId)}
+          onBan={userId => api.banUser(activeRoom.id, userId)}
+          onPromote={userId => api.promoteUser(activeRoom.id, userId)}
+          onInvite={username => api.inviteUser(activeRoom.id, username)}
         />
       )}
 
@@ -527,13 +659,21 @@ function ChatApp({ user, setUser }: ChatAppProps) {
               <div key={invite.id} className="invite-item">
                 <div className="invite-info">
                   <div className="invite-room">{invite.room.name}</div>
-                  <div className="invite-from">From: {invite.invitedBy.displayName}</div>
+                  <div className="invite-from">
+                    From: {invite.invitedBy.displayName}
+                  </div>
                 </div>
                 <div className="invite-actions">
-                  <button className="btn btn-small" onClick={() => handleAcceptInvite(invite.id)}>
+                  <button
+                    className="btn btn-small"
+                    onClick={() => handleAcceptInvite(invite.id)}
+                  >
                     Accept
                   </button>
-                  <button className="btn btn-small btn-secondary" onClick={() => handleDeclineInvite(invite.id)}>
+                  <button
+                    className="btn btn-small btn-secondary"
+                    onClick={() => handleDeclineInvite(invite.id)}
+                  >
                     Decline
                   </button>
                 </div>
@@ -579,13 +719,30 @@ interface ChatRoomProps {
   onOpenThread: (message: Message) => void;
   setScheduledMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  setReactions: React.Dispatch<React.SetStateAction<Record<number, Reaction[]>>>;
+  setReactions: React.Dispatch<
+    React.SetStateAction<Record<number, Reaction[]>>
+  >;
 }
 
 function ChatRoom({
-  room, user, messages, members, reactions, readReceipts, replyCounts,
-  typingUsers, scheduledMessages, showMembers, onToggleMembers, onLeave,
-  onReaction, onMarkRead, onOpenThread, setScheduledMessages, setMessages, setReactions
+  room,
+  user,
+  messages,
+  members,
+  reactions,
+  readReceipts,
+  replyCounts,
+  typingUsers,
+  scheduledMessages,
+  showMembers,
+  onToggleMembers,
+  onLeave,
+  onReaction,
+  onMarkRead,
+  onOpenThread,
+  setScheduledMessages,
+  setMessages,
+  setReactions,
 }: ChatRoomProps) {
   const [messageInput, setMessageInput] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -636,12 +793,19 @@ function ChatRoom({
 
     try {
       if (editingMessage) {
-        const updated = await api.editMessage(editingMessage.id, messageInput.trim());
-        setMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+        const updated = await api.editMessage(
+          editingMessage.id,
+          messageInput.trim()
+        );
+        setMessages(prev => prev.map(m => (m.id === updated.id ? updated : m)));
         setEditingMessage(null);
       } else {
-        const options: { parentId?: number; scheduledFor?: string; expiresInMinutes?: number } = {};
-        
+        const options: {
+          parentId?: number;
+          scheduledFor?: string;
+          expiresInMinutes?: number;
+        } = {};
+
         if (replyTo) {
           options.parentId = replyTo.id;
         }
@@ -652,18 +816,22 @@ function ChatRoom({
           options.expiresInMinutes = ephemeralMinutes;
         }
 
-        const msg = await api.sendMessage(room.id, messageInput.trim(), options);
-        
+        const msg = await api.sendMessage(
+          room.id,
+          messageInput.trim(),
+          options
+        );
+
         if (msg.isScheduled) {
           setScheduledMessages(prev => [...prev, msg]);
         }
-        
+
         setReplyTo(null);
         setShowSchedule(false);
         setScheduledTime('');
         setEphemeralMinutes(null);
       }
-      
+
       setMessageInput('');
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -687,17 +855,27 @@ function ChatRoom({
     return now.toISOString().slice(0, 16);
   };
 
-  const isAdmin = room.role === 'admin' || members.find(m => m.id === user.id)?.role === 'admin';
+  const isAdmin =
+    room.role === 'admin' ||
+    members.find(m => m.id === user.id)?.role === 'admin';
   const displayMessages = messages.filter(m => !m.parentId);
 
   return (
     <>
       <div className="chat-header">
         <h2>
-          {room.roomType === 'dm' ? '👤' : room.roomType === 'private' ? '🔒' : '#'} {room.name}
+          {room.roomType === 'dm'
+            ? '👤'
+            : room.roomType === 'private'
+              ? '🔒'
+              : '#'}{' '}
+          {room.name}
         </h2>
         <div className="chat-header-actions">
-          <button className="btn btn-small btn-secondary" onClick={onToggleMembers}>
+          <button
+            className="btn btn-small btn-secondary"
+            onClick={onToggleMembers}
+          >
             👥 {members.length}
           </button>
           <button className="btn btn-small btn-secondary" onClick={onLeave}>
@@ -708,7 +886,13 @@ function ChatRoom({
 
       {scheduledMessages.length > 0 && (
         <div className="scheduled-panel" style={{ margin: '12px 24px' }}>
-          <h4 style={{ fontSize: '0.85rem', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+          <h4
+            style={{
+              fontSize: '0.85rem',
+              marginBottom: '8px',
+              color: 'var(--text-secondary)',
+            }}
+          >
             📅 Scheduled Messages
           </h4>
           {scheduledMessages.map(msg => (
@@ -728,7 +912,11 @@ function ChatRoom({
         </div>
       )}
 
-      <div className="messages-container" ref={containerRef} onScroll={handleScroll}>
+      <div
+        className="messages-container"
+        ref={containerRef}
+        onScroll={handleScroll}
+      >
         {displayMessages.map(msg => (
           <MessageItem
             key={msg.id}
@@ -738,8 +926,10 @@ function ChatRoom({
             readers={readReceipts[msg.id] || []}
             replyCount={replyCounts[msg.id] || 0}
             showEmojiPicker={showEmojiPicker === msg.id}
-            onToggleEmojiPicker={() => setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)}
-            onReaction={(emoji) => {
+            onToggleEmojiPicker={() =>
+              setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)
+            }
+            onReaction={emoji => {
               onReaction(msg.id, emoji);
               setShowEmojiPicker(null);
             }}
@@ -761,30 +951,40 @@ function ChatRoom({
       </div>
 
       <div className="typing-indicator">
-        {typingUsers.length > 0 && (
-          typingUsers.length === 1
+        {typingUsers.length > 0 &&
+          (typingUsers.length === 1
             ? `${typingUsers[0]} is typing...`
-            : `${typingUsers.length} users are typing...`
-        )}
+            : `${typingUsers.length} users are typing...`)}
       </div>
 
       <div className="message-input-container">
         {replyTo && (
           <div className="reply-indicator">
             <span className="reply-indicator-text">
-              Replying to {replyTo.user.displayName}: {replyTo.content.slice(0, 50)}...
+              Replying to {replyTo.user.displayName}:{' '}
+              {replyTo.content.slice(0, 50)}...
             </span>
-            <button className="reply-indicator-close" onClick={() => setReplyTo(null)}>×</button>
+            <button
+              className="reply-indicator-close"
+              onClick={() => setReplyTo(null)}
+            >
+              ×
+            </button>
           </div>
         )}
-        
+
         {editingMessage && (
           <div className="reply-indicator">
             <span className="reply-indicator-text">Editing message</span>
-            <button className="reply-indicator-close" onClick={() => {
-              setEditingMessage(null);
-              setMessageInput('');
-            }}>×</button>
+            <button
+              className="reply-indicator-close"
+              onClick={() => {
+                setEditingMessage(null);
+                setMessageInput('');
+              }}
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -792,13 +992,15 @@ function ChatRoom({
           <div className="message-input-field">
             <textarea
               className="message-input"
-              placeholder={editingMessage ? 'Edit message...' : 'Type a message...'}
+              placeholder={
+                editingMessage ? 'Edit message...' : 'Type a message...'
+              }
               value={messageInput}
-              onChange={(e) => {
+              onChange={e => {
                 setMessageInput(e.target.value);
                 handleTyping();
               }}
-              onKeyDown={(e) => {
+              onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend(e);
@@ -806,7 +1008,7 @@ function ChatRoom({
               }}
               rows={1}
             />
-            
+
             {!editingMessage && (
               <div className="message-options">
                 <button
@@ -822,28 +1024,32 @@ function ChatRoom({
                     className="input"
                     style={{ width: 'auto' }}
                     value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
+                    onChange={e => setScheduledTime(e.target.value)}
                     min={getMinDateTime()}
                   />
                 )}
                 <button
                   type="button"
                   className={`option-btn ${ephemeralMinutes === 1 ? 'active' : ''}`}
-                  onClick={() => setEphemeralMinutes(ephemeralMinutes === 1 ? null : 1)}
+                  onClick={() =>
+                    setEphemeralMinutes(ephemeralMinutes === 1 ? null : 1)
+                  }
                 >
                   ⏱️ 1m
                 </button>
                 <button
                   type="button"
                   className={`option-btn ${ephemeralMinutes === 5 ? 'active' : ''}`}
-                  onClick={() => setEphemeralMinutes(ephemeralMinutes === 5 ? null : 5)}
+                  onClick={() =>
+                    setEphemeralMinutes(ephemeralMinutes === 5 ? null : 5)
+                  }
                 >
                   ⏱️ 5m
                 </button>
               </div>
             )}
           </div>
-          
+
           <button type="submit" className="btn" disabled={!messageInput.trim()}>
             {editingMessage ? 'Save' : 'Send'}
           </button>
@@ -857,7 +1063,9 @@ function ChatRoom({
           ) : (
             editHistory.map(edit => (
               <div key={edit.id} className="edit-history-item">
-                <div className="edit-history-content">{edit.previousContent}</div>
+                <div className="edit-history-content">
+                  {edit.previousContent}
+                </div>
                 <div className="edit-history-time">
                   {new Date(edit.editedAt).toLocaleString()}
                 </div>
@@ -887,8 +1095,19 @@ interface MessageItemProps {
 }
 
 function MessageItem({
-  message, isOwn, reactions, readers, replyCount, showEmojiPicker,
-  onToggleEmojiPicker, onReaction, onReply, onEdit, onOpenThread, onShowHistory, onVisible
+  message,
+  isOwn,
+  reactions,
+  readers,
+  replyCount,
+  showEmojiPicker,
+  onToggleEmojiPicker,
+  onReaction,
+  onReply,
+  onEdit,
+  onOpenThread,
+  onShowHistory,
+  onVisible,
 }: MessageItemProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -910,17 +1129,23 @@ function MessageItem({
     return () => observer.disconnect();
   }, [onVisible]);
 
-  const timeRemaining = message.expiresAt 
-    ? Math.max(0, Math.floor((new Date(message.expiresAt).getTime() - Date.now()) / 1000))
+  const timeRemaining = message.expiresAt
+    ? Math.max(
+        0,
+        Math.floor((new Date(message.expiresAt).getTime() - Date.now()) / 1000)
+      )
     : null;
 
   const [countdown, setCountdown] = useState(timeRemaining);
 
   useEffect(() => {
     if (!message.expiresAt) return;
-    
+
     const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.floor((new Date(message.expiresAt!).getTime() - Date.now()) / 1000));
+      const remaining = Math.max(
+        0,
+        Math.floor((new Date(message.expiresAt!).getTime() - Date.now()) / 1000)
+      );
       setCountdown(remaining);
     }, 1000);
 
@@ -939,17 +1164,19 @@ function MessageItem({
             {new Date(message.createdAt).toLocaleTimeString()}
           </span>
           {message.isEdited && (
-            <span className="message-edited" onClick={onShowHistory} style={{ cursor: 'pointer' }}>
+            <span
+              className="message-edited"
+              onClick={onShowHistory}
+              style={{ cursor: 'pointer' }}
+            >
               (edited)
             </span>
           )}
         </div>
         <div className="message-text">{message.content}</div>
-        
+
         {countdown !== null && countdown > 0 && (
-          <div className="message-ephemeral">
-            ⏱️ Disappears in {countdown}s
-          </div>
+          <div className="message-ephemeral">⏱️ Disappears in {countdown}s</div>
         )}
 
         {reactions.length > 0 && (
@@ -970,7 +1197,8 @@ function MessageItem({
 
         {readers.length > 0 && (
           <div className="read-receipts">
-            Seen by {readers.slice(0, 3).join(', ')}{readers.length > 3 ? ` +${readers.length - 3}` : ''}
+            Seen by {readers.slice(0, 3).join(', ')}
+            {readers.length > 3 ? ` +${readers.length - 3}` : ''}
           </div>
         )}
 
@@ -981,16 +1209,30 @@ function MessageItem({
         )}
 
         <div className="message-actions">
-          <button className="message-action-btn" onClick={onToggleEmojiPicker}>😀</button>
-          <button className="message-action-btn" onClick={onReply}>Reply</button>
-          {isOwn && <button className="message-action-btn" onClick={onEdit}>Edit</button>}
-          <button className="message-action-btn" onClick={onOpenThread}>Thread</button>
+          <button className="message-action-btn" onClick={onToggleEmojiPicker}>
+            😀
+          </button>
+          <button className="message-action-btn" onClick={onReply}>
+            Reply
+          </button>
+          {isOwn && (
+            <button className="message-action-btn" onClick={onEdit}>
+              Edit
+            </button>
+          )}
+          <button className="message-action-btn" onClick={onOpenThread}>
+            Thread
+          </button>
         </div>
 
         {showEmojiPicker && (
           <div className="emoji-picker">
             {EMOJIS.map(emoji => (
-              <button key={emoji} className="emoji-btn" onClick={() => onReaction(emoji)}>
+              <button
+                key={emoji}
+                className="emoji-btn"
+                onClick={() => onReaction(emoji)}
+              >
                 {emoji}
               </button>
             ))}
@@ -1009,7 +1251,13 @@ interface ThreadPanelProps {
   onSend: (content: string) => void;
 }
 
-function ThreadPanel({ parentMessage, messages, user, onClose, onSend }: ThreadPanelProps) {
+function ThreadPanel({
+  parentMessage,
+  messages,
+  user,
+  onClose,
+  onSend,
+}: ThreadPanelProps) {
   const [input, setInput] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1023,17 +1271,28 @@ function ThreadPanel({ parentMessage, messages, user, onClose, onSend }: ThreadP
     <div className="thread-container">
       <div className="thread-header">
         <h3>Thread</h3>
-        <button className="btn-icon" onClick={onClose}>×</button>
+        <button className="btn-icon" onClick={onClose}>
+          ×
+        </button>
       </div>
 
       <div className="thread-messages">
-        <div className="message" style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+        <div
+          className="message"
+          style={{
+            marginBottom: '16px',
+            paddingBottom: '16px',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
           <div className="message-avatar">
             {parentMessage.user.displayName[0].toUpperCase()}
           </div>
           <div className="message-content">
             <div className="message-header">
-              <span className="message-author">{parentMessage.user.displayName}</span>
+              <span className="message-author">
+                {parentMessage.user.displayName}
+              </span>
               <span className="message-time">
                 {new Date(parentMessage.createdAt).toLocaleTimeString()}
               </span>
@@ -1044,7 +1303,10 @@ function ThreadPanel({ parentMessage, messages, user, onClose, onSend }: ThreadP
 
         {messages.map(msg => (
           <div key={msg.id} className="message">
-            <div className="message-avatar" style={{ width: '32px', height: '32px', fontSize: '0.75rem' }}>
+            <div
+              className="message-avatar"
+              style={{ width: '32px', height: '32px', fontSize: '0.75rem' }}
+            >
               {msg.user.displayName[0].toUpperCase()}
             </div>
             <div className="message-content">
@@ -1066,8 +1328,8 @@ function ThreadPanel({ parentMessage, messages, user, onClose, onSend }: ThreadP
             className="message-input"
             placeholder="Reply in thread..."
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleSubmit(e);
@@ -1075,7 +1337,9 @@ function ThreadPanel({ parentMessage, messages, user, onClose, onSend }: ThreadP
             }}
             rows={1}
           />
-          <button type="submit" className="btn" disabled={!input.trim()}>Send</button>
+          <button type="submit" className="btn" disabled={!input.trim()}>
+            Send
+          </button>
         </form>
       </div>
     </div>
@@ -1092,7 +1356,15 @@ interface MembersPanelProps {
   onInvite: (username: string) => void;
 }
 
-function MembersPanel({ members, currentUser, room, onKick, onBan, onPromote, onInvite }: MembersPanelProps) {
+function MembersPanel({
+  members,
+  currentUser,
+  room,
+  onKick,
+  onBan,
+  onPromote,
+  onInvite,
+}: MembersPanelProps) {
   const [inviteUsername, setInviteUsername] = useState('');
   const isAdmin = members.find(m => m.id === currentUser.id)?.role === 'admin';
 
@@ -1114,10 +1386,14 @@ function MembersPanel({ members, currentUser, room, onKick, onBan, onPromote, on
             className="input"
             placeholder="Invite by username..."
             value={inviteUsername}
-            onChange={(e) => setInviteUsername(e.target.value)}
+            onChange={e => setInviteUsername(e.target.value)}
             style={{ marginBottom: '8px' }}
           />
-          <button type="submit" className="btn btn-small" style={{ width: '100%' }}>
+          <button
+            type="submit"
+            className="btn btn-small"
+            style={{ width: '100%' }}
+          >
             Invite
           </button>
         </form>
@@ -1131,7 +1407,9 @@ function MembersPanel({ members, currentUser, room, onKick, onBan, onPromote, on
           </div>
           <div className="member-info">
             <div className="member-name">{member.displayName}</div>
-            {member.role === 'admin' && <div className="member-role">Admin</div>}
+            {member.role === 'admin' && (
+              <div className="member-role">Admin</div>
+            )}
           </div>
           {isAdmin && member.id !== currentUser.id && (
             <div style={{ display: 'flex', gap: '4px' }}>
@@ -1175,11 +1453,13 @@ interface ModalProps {
 function Modal({ onClose, title, children }: ModalProps) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
         <h3>{title}</h3>
         {children}
         <div className="modal-actions">
-          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          <button className="btn btn-secondary" onClick={onClose}>
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -1203,7 +1483,7 @@ function CreateRoomModal({ onClose, onCreate }: CreateRoomModalProps) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
         <h3>Create Room</h3>
         <form onSubmit={handleSubmit}>
           <input
@@ -1211,7 +1491,7 @@ function CreateRoomModal({ onClose, onCreate }: CreateRoomModalProps) {
             className="input"
             placeholder="Room name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={e => setName(e.target.value)}
             maxLength={100}
             autoFocus
             style={{ marginBottom: '16px' }}
@@ -1235,8 +1515,16 @@ function CreateRoomModal({ onClose, onCreate }: CreateRoomModalProps) {
             </button>
           </div>
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn" disabled={!name.trim()}>Create</button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="btn" disabled={!name.trim()}>
+              Create
+            </button>
           </div>
         </form>
       </div>

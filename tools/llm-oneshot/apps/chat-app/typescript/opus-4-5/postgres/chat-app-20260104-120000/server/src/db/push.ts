@@ -3,14 +3,16 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import * as schema from './schema.js';
 
-const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/chat-app';
+const connectionString =
+  process.env.DATABASE_URL ||
+  'postgres://postgres:postgres@localhost:5432/chat-app';
 
 async function push() {
   console.log('Pushing schema to database...');
-  
+
   const client = postgres(connectionString, { max: 1 });
   const db = drizzle(client, { schema });
-  
+
   // Create tables using raw SQL based on schema
   await client`
     CREATE TABLE IF NOT EXISTS users (
@@ -22,7 +24,7 @@ async function push() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS rooms (
       id SERIAL PRIMARY KEY,
@@ -33,7 +35,7 @@ async function push() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS room_members (
       id SERIAL PRIMARY KEY,
@@ -46,10 +48,10 @@ async function push() {
       UNIQUE(room_id, user_id)
     )
   `;
-  
+
   await client`CREATE INDEX IF NOT EXISTS room_members_room_idx ON room_members(room_id)`;
   await client`CREATE INDEX IF NOT EXISTS room_members_user_idx ON room_members(user_id)`;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS room_invitations (
       id SERIAL PRIMARY KEY,
@@ -61,9 +63,9 @@ async function push() {
       UNIQUE(room_id, invited_user_id)
     )
   `;
-  
+
   await client`CREATE INDEX IF NOT EXISTS invitations_user_idx ON room_invitations(invited_user_id)`;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
@@ -77,12 +79,12 @@ async function push() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `;
-  
+
   await client`CREATE INDEX IF NOT EXISTS messages_room_idx ON messages(room_id)`;
   await client`CREATE INDEX IF NOT EXISTS messages_scheduled_idx ON messages(scheduled_for)`;
   await client`CREATE INDEX IF NOT EXISTS messages_expires_idx ON messages(expires_at)`;
   await client`CREATE INDEX IF NOT EXISTS messages_reply_idx ON messages(reply_to_id)`;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS message_edits (
       id SERIAL PRIMARY KEY,
@@ -91,9 +93,9 @@ async function push() {
       edited_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `;
-  
+
   await client`CREATE INDEX IF NOT EXISTS edits_message_idx ON message_edits(message_id)`;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS message_reactions (
       id SERIAL PRIMARY KEY,
@@ -104,9 +106,9 @@ async function push() {
       UNIQUE(message_id, user_id, emoji)
     )
   `;
-  
+
   await client`CREATE INDEX IF NOT EXISTS reactions_message_idx ON message_reactions(message_id)`;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS read_receipts (
       id SERIAL PRIMARY KEY,
@@ -116,10 +118,10 @@ async function push() {
       UNIQUE(message_id, user_id)
     )
   `;
-  
+
   await client`CREATE INDEX IF NOT EXISTS receipts_message_idx ON read_receipts(message_id)`;
   await client`CREATE INDEX IF NOT EXISTS receipts_user_idx ON read_receipts(user_id)`;
-  
+
   await client`
     CREATE TABLE IF NOT EXISTS typing_indicators (
       id SERIAL PRIMARY KEY,
@@ -129,15 +131,15 @@ async function push() {
       UNIQUE(room_id, user_id)
     )
   `;
-  
+
   await client`CREATE INDEX IF NOT EXISTS typing_room_idx ON typing_indicators(room_id)`;
-  
+
   console.log('Schema pushed successfully!');
   await client.end();
   process.exit(0);
 }
 
-push().catch((err) => {
+push().catch(err => {
   console.error('Error pushing schema:', err);
   process.exit(1);
 });

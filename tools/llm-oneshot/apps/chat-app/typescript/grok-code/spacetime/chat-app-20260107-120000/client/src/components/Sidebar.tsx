@@ -15,7 +15,7 @@ export default function Sidebar({
   onRoomSelect,
   currentUser,
   users,
-  userStatuses
+  userStatuses,
 }: SidebarProps) {
   const [newRoomName, setNewRoomName] = useState('');
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
@@ -28,7 +28,8 @@ export default function Sidebar({
 
   // Get rooms the current user is a member of
   const myRoomMemberships = roomMembers.filter(
-    member => member.userId.toHexString() === currentUser?.identity.toHexString()
+    member =>
+      member.userId.toHexString() === currentUser?.identity.toHexString()
   );
 
   const myRoomIds = new Set(myRoomMemberships.map(m => m.roomId));
@@ -57,7 +58,7 @@ export default function Sidebar({
         await window.__db_conn.reducers.createRoom({
           name: newRoomName.trim(),
           description: '',
-          isPublic: true
+          isPublic: true,
         });
         setNewRoomName('');
       }
@@ -80,19 +81,26 @@ export default function Sidebar({
 
   // Get online users
   const onlineUsers = users.filter(user => {
-    const status = userStatuses.find(s => s.identity.toHexString() === user.identity.toHexString());
+    const status = userStatuses.find(
+      s => s.identity.toHexString() === user.identity.toHexString()
+    );
     return status?.isOnline;
   });
 
   return (
     <div className="sidebar">
       {/* Room Creation */}
-      <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
+      <div
+        style={{
+          padding: '16px',
+          borderBottom: '1px solid var(--border-color)',
+        }}
+      >
         <div style={{ marginBottom: '8px' }}>
           <input
             type="text"
             value={newRoomName}
-            onChange={(e) => setNewRoomName(e.target.value)}
+            onChange={e => setNewRoomName(e.target.value)}
             placeholder="Create new room..."
             className="input"
             style={{ width: '100%', marginBottom: '8px' }}
@@ -111,7 +119,15 @@ export default function Sidebar({
 
       {/* My Rooms */}
       <div className="room-list">
-        <div style={{ padding: '8px 16px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>
+        <div
+          style={{
+            padding: '8px 16px',
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            fontWeight: '600',
+          }}
+        >
           My Rooms
         </div>
         {myRooms.map(room => {
@@ -133,7 +149,15 @@ export default function Sidebar({
 
       {/* Public Rooms */}
       <div className="room-list" style={{ flex: 1 }}>
-        <div style={{ padding: '8px 16px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>
+        <div
+          style={{
+            padding: '8px 16px',
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            fontWeight: '600',
+          }}
+        >
           Public Rooms
         </div>
         {rooms
@@ -145,14 +169,24 @@ export default function Sidebar({
               onClick={() => handleJoinRoom(room.id)}
             >
               <span># {room.name}</span>
-              <button className="btn" style={{ marginLeft: 'auto' }}>Join</button>
+              <button className="btn" style={{ marginLeft: 'auto' }}>
+                Join
+              </button>
             </div>
           ))}
       </div>
 
       {/* Online Users */}
       <div className="user-list">
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', marginBottom: '8px' }}>
+        <div
+          style={{
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            fontWeight: '600',
+            marginBottom: '8px',
+          }}
+        >
           Online — {onlineUsers.length}
         </div>
         {onlineUsers.slice(0, 20).map(user => (

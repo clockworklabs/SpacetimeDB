@@ -95,39 +95,39 @@ The app will be available at http://localhost:3000
 
 ## Backend Tables
 
-| Table | Purpose |
-|-------|---------|
-| `user` | User profiles with presence status |
-| `room` | Chat rooms (public, private, DM) |
-| `room_member` | Room membership with admin flag |
-| `room_ban` | Banned users per room |
-| `room_invite` | Pending room invitations |
-| `message` | Chat messages with threading support |
-| `message_edit` | Edit history for messages |
-| `message_reaction` | Emoji reactions on messages |
-| `read_receipt` | Track who has seen which messages |
-| `typing_indicator` | Real-time typing status |
-| `typing_expiry` | Scheduled cleanup for typing indicators |
-| `scheduled_message` | Messages scheduled for future delivery |
+| Table                       | Purpose                                     |
+| --------------------------- | ------------------------------------------- |
+| `user`                      | User profiles with presence status          |
+| `room`                      | Chat rooms (public, private, DM)            |
+| `room_member`               | Room membership with admin flag             |
+| `room_ban`                  | Banned users per room                       |
+| `room_invite`               | Pending room invitations                    |
+| `message`                   | Chat messages with threading support        |
+| `message_edit`              | Edit history for messages                   |
+| `message_reaction`          | Emoji reactions on messages                 |
+| `read_receipt`              | Track who has seen which messages           |
+| `typing_indicator`          | Real-time typing status                     |
+| `typing_expiry`             | Scheduled cleanup for typing indicators     |
+| `scheduled_message`         | Messages scheduled for future delivery      |
 | `ephemeral_message_cleanup` | Scheduled cleanup for disappearing messages |
-| `auto_away_check` | Scheduled auto-away status updates |
+| `auto_away_check`           | Scheduled auto-away status updates          |
 
 ## Key Reducers
 
-| Reducer | Purpose |
-|---------|---------|
-| `set_name` | Set user display name |
-| `set_status` | Update presence status |
-| `create_room` | Create public/private room |
-| `join_room` / `leave_room` | Room membership |
-| `invite_to_room` / `respond_to_invite` | Private room invitations |
-| `kick_user` / `ban_user` / `promote_to_admin` | Admin controls |
-| `start_dm` | Create direct message room |
-| `send_message` | Send regular message |
-| `send_ephemeral_message` | Send disappearing message |
-| `schedule_message` / `cancel_scheduled_message` | Scheduled messages |
-| `reply_to_message` | Thread replies |
-| `edit_message` / `delete_message` | Message management |
-| `toggle_reaction` | Add/remove emoji reactions |
-| `start_typing` / `stop_typing` | Typing indicators |
-| `mark_messages_read` | Update read receipts |
+| Reducer                                         | Purpose                    |
+| ----------------------------------------------- | -------------------------- |
+| `set_name`                                      | Set user display name      |
+| `set_status`                                    | Update presence status     |
+| `create_room`                                   | Create public/private room |
+| `join_room` / `leave_room`                      | Room membership            |
+| `invite_to_room` / `respond_to_invite`          | Private room invitations   |
+| `kick_user` / `ban_user` / `promote_to_admin`   | Admin controls             |
+| `start_dm`                                      | Create direct message room |
+| `send_message`                                  | Send regular message       |
+| `send_ephemeral_message`                        | Send disappearing message  |
+| `schedule_message` / `cancel_scheduled_message` | Scheduled messages         |
+| `reply_to_message`                              | Thread replies             |
+| `edit_message` / `delete_message`               | Message management         |
+| `toggle_reaction`                               | Add/remove emoji reactions |
+| `start_typing` / `stop_typing`                  | Typing indicators          |
+| `mark_messages_read`                            | Update read receipts       |

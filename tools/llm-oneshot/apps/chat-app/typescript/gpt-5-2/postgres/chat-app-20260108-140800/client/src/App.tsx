@@ -59,15 +59,21 @@ export function App() {
   const [scheduleInSeconds, setScheduleInSeconds] = useState(30);
   const [scheduleAtLocal, setScheduleAtLocal] = useState('');
 
-  const [unreadByRoomId, setUnreadByRoomId] = useState<Record<number, number>>({});
+  const [unreadByRoomId, setUnreadByRoomId] = useState<Record<number, number>>(
+    {}
+  );
 
-  const [typingUsers, setTypingUsers] = useState<{ userId: string; displayName: string }[]>([]);
+  const [typingUsers, setTypingUsers] = useState<
+    { userId: string; displayName: string }[]
+  >([]);
 
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
 
   const [historyOpenFor, setHistoryOpenFor] = useState<number | null>(null);
-  const [historyVersions, setHistoryVersions] = useState<{ label: string; content: string }[]>([]);
+  const [historyVersions, setHistoryVersions] = useState<
+    { label: string; content: string }[]
+  >([]);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -75,8 +81,8 @@ export function App() {
   const typingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeRoom = useMemo(
-    () => rooms.find((r) => r.id === activeRoomId) || null,
-    [rooms, activeRoomId],
+    () => rooms.find(r => r.id === activeRoomId) || null,
+    [rooms, activeRoomId]
   );
 
   async function refreshRooms() {
@@ -94,13 +100,16 @@ export function App() {
     if (!activeRoomId) return;
     setLoadingRoom(true);
     try {
-      const [msgs, mems] = await Promise.all([listMessages(activeRoomId), listMembers(activeRoomId)]);
+      const [msgs, mems] = await Promise.all([
+        listMessages(activeRoomId),
+        listMembers(activeRoomId),
+      ]);
       setMessagesState(msgs);
       setMembers(mems);
 
       const lastId = msgs.length ? msgs[msgs.length - 1].id : null;
       await markRead(activeRoomId, lastId);
-      setUnreadByRoomId((prev) => ({ ...prev, [activeRoomId]: 0 }));
+      setUnreadByRoomId(prev => ({ ...prev, [activeRoomId]: 0 }));
     } finally {
       setLoadingRoom(false);
     }
@@ -145,7 +154,11 @@ export function App() {
         const roomId = Number(p?.roomId);
         if (!Number.isFinite(roomId)) return;
         if (roomId === activeRoomId) void refreshActiveRoom();
-        else setUnreadByRoomId((prev) => ({ ...prev, [roomId]: (prev[roomId] || 0) + 1 }));
+        else
+          setUnreadByRoomId(prev => ({
+            ...prev,
+            [roomId]: (prev[roomId] || 0) + 1,
+          }));
       });
       socket.on('message:updated', (p: any) => {
         if (Number(p?.roomId) === activeRoomId) void refreshActiveRoom();
@@ -187,7 +200,10 @@ export function App() {
     if (!socket) return;
     socket.emit('typing:start', { roomId });
     if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
-    typingDebounceRef.current = setTimeout(() => socket.emit('typing:stop', { roomId }), 2500);
+    typingDebounceRef.current = setTimeout(
+      () => socket.emit('typing:stop', { roomId }),
+      2500
+    );
   }
 
   async function handleLoginSubmit(e: React.FormEvent) {
@@ -214,14 +230,14 @@ export function App() {
     if (!name) return;
     const room = await createRoom(name);
     setRoomName('');
-    setRooms((prev) => [room, ...prev]);
+    setRooms(prev => [room, ...prev]);
     setActiveRoomId(room.id);
   }
 
   async function handleSelectRoom(roomId: number) {
     setActiveRoomId(roomId);
     await joinRoom(roomId);
-    setUnreadByRoomId((prev) => ({ ...prev, [roomId]: 0 }));
+    setUnreadByRoomId(prev => ({ ...prev, [roomId]: 0 }));
   }
 
   async function handleSend(e: React.FormEvent) {
@@ -249,7 +265,8 @@ export function App() {
     let seconds = scheduleInSeconds;
     if (scheduleAtLocal) {
       const t = new Date(scheduleAtLocal).getTime();
-      if (Number.isFinite(t)) seconds = Math.max(5, Math.ceil((t - Date.now()) / 1000));
+      if (Number.isFinite(t))
+        seconds = Math.max(5, Math.ceil((t - Date.now()) / 1000));
     }
     await scheduleMessage(activeRoomId, content, seconds);
     setDraft('');
@@ -282,21 +299,25 @@ export function App() {
     setHistoryVersions(versions);
   }
 
-  const onlineMembers = useMemo(() => members.filter((m) => m.isOnline), [members]);
+  const onlineMembers = useMemo(
+    () => members.filter(m => m.isOnline),
+    [members]
+  );
 
   const typingText = useMemo(() => {
-    const others = typingUsers.filter((u) => u.userId !== me?.id);
+    const others = typingUsers.filter(u => u.userId !== me?.id);
     if (!others.length) return '';
     if (others.length === 1) return `${others[0].displayName} is typing...`;
-    if (others.length === 2) return `${others[0].displayName} and ${others[1].displayName} are typing...`;
+    if (others.length === 2)
+      return `${others[0].displayName} and ${others[1].displayName} are typing...`;
     return `Multiple users are typing...`;
   }, [typingUsers, me?.id]);
 
   function seenByForMessage(msg: Message): string[] {
     const seen = members
-      .filter((m) => m.id !== msg.authorId)
-      .filter((m) => (m.lastReadMessageId ?? 0) >= msg.id)
-      .map((m) => m.displayName);
+      .filter(m => m.id !== msg.authorId)
+      .filter(m => (m.lastReadMessageId ?? 0) >= msg.id)
+      .map(m => m.displayName);
     return seen;
   }
 
@@ -311,7 +332,7 @@ export function App() {
               name="displayName"
               placeholder="Display name"
               value={loginName}
-              onChange={(e) => setLoginName(e.target.value)}
+              onChange={e => setLoginName(e.target.value)}
               autoFocus
             />
             <button type="submit">Join</button>
@@ -334,7 +355,7 @@ export function App() {
             placeholder="Room name"
             name="roomName"
             value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
+            onChange={e => setRoomName(e.target.value)}
             className="small"
           />
           <button type="submit" data-testid="create-room" className="small">
@@ -349,7 +370,7 @@ export function App() {
           <div className="muted pad">No rooms yet. Create one.</div>
         ) : (
           <div className="room-list">
-            {rooms.map((r) => {
+            {rooms.map(r => {
               const unread = unreadByRoomId[r.id] || 0;
               const active = r.id === activeRoomId;
               return (
@@ -360,7 +381,9 @@ export function App() {
                   type="button"
                 >
                   <span className="room-name">{formatRoomName(r.name)}</span>
-                  {unread > 0 ? <span className="badge unread-count">({unread})</span> : null}
+                  {unread > 0 ? (
+                    <span className="badge unread-count">({unread})</span>
+                  ) : null}
                 </button>
               );
             })}
@@ -372,14 +395,20 @@ export function App() {
           <div className="muted pad">No pending messages.</div>
         ) : (
           <div className="scheduled-list">
-            {scheduled.map((s) => (
+            {scheduled.map(s => (
               <div key={s.id} className="scheduled-item">
                 <div className="scheduled-meta">
-                  <div className="scheduled-room">{formatRoomName(s.roomName)}</div>
+                  <div className="scheduled-room">
+                    {formatRoomName(s.roomName)}
+                  </div>
                   <div className="muted">{formatWhen(new Date(s.sendAt))}</div>
                 </div>
                 <div className="scheduled-content">{s.content}</div>
-                <button className="danger small" onClick={() => void handleCancelScheduled(s.id)} type="button">
+                <button
+                  className="danger small"
+                  onClick={() => void handleCancelScheduled(s.id)}
+                  type="button"
+                >
                   Cancel
                 </button>
               </div>
@@ -390,7 +419,9 @@ export function App() {
 
       <main className="chat">
         <header className="chat-header">
-          <div className="chat-title">{activeRoom ? formatRoomName(activeRoom.name) : 'Select a room'}</div>
+          <div className="chat-title">
+            {activeRoom ? formatRoomName(activeRoom.name) : 'Select a room'}
+          </div>
           <div className="chat-actions">
             <div className="muted">{onlineMembers.length} online</div>
             {activeRoomId ? (
@@ -420,15 +451,23 @@ export function App() {
             <div className="muted pad">No messages yet. Say hi!</div>
           ) : (
             <div className="messages">
-              {messagesState.map((m) => {
+              {messagesState.map(m => {
                 const isMine = m.authorId === me.id;
                 const seenBy = seenByForMessage(m);
-                const exp = m.expiresAt ? secondsLeft(m.expiresAt, nowMs) : null;
-                const reactionThumbs = m.reactions.find((r) => r.emoji === '👍');
-                const thumbCount = reactionThumbs ? reactionThumbs.userIds.length : 0;
+                const exp = m.expiresAt
+                  ? secondsLeft(m.expiresAt, nowMs)
+                  : null;
+                const reactionThumbs = m.reactions.find(r => r.emoji === '👍');
+                const thumbCount = reactionThumbs
+                  ? reactionThumbs.userIds.length
+                  : 0;
                 const thumbTitle = reactionThumbs
                   ? reactionThumbs.userIds
-                      .map((id) => members.find((mm) => mm.id === id)?.displayName || id.slice(0, 6))
+                      .map(
+                        id =>
+                          members.find(mm => mm.id === id)?.displayName ||
+                          id.slice(0, 6)
+                      )
                       .join(', ')
                   : '';
 
@@ -437,7 +476,9 @@ export function App() {
                     <div className="msg-main">
                       <div className="msg-top">
                         <span className="msg-author">{m.authorName}</span>
-                        <span className="msg-time muted">{formatWhen(new Date(m.createdAt))}</span>
+                        <span className="msg-time muted">
+                          {formatWhen(new Date(m.createdAt))}
+                        </span>
                         {m.edited ? (
                           <button
                             type="button"
@@ -459,8 +500,8 @@ export function App() {
                         <textarea
                           className="edit-input"
                           value={editingDraft}
-                          onChange={(e) => setEditingDraft(e.target.value)}
-                          onKeyDown={(e) => {
+                          onChange={e => setEditingDraft(e.target.value)}
+                          onKeyDown={e => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault();
                               void commitEdit(m.id);
@@ -530,12 +571,15 @@ export function App() {
               placeholder="Message"
               name="message"
               value={draft}
-              onChange={(e) => {
+              onChange={e => {
                 setDraft(e.target.value);
                 if (activeRoomId) startTyping(activeRoomId);
               }}
               onBlur={() => {
-                if (activeRoomId) socketRef.current?.emit('typing:stop', { roomId: activeRoomId });
+                if (activeRoomId)
+                  socketRef.current?.emit('typing:stop', {
+                    roomId: activeRoomId,
+                  });
               }}
             />
             <button type="submit" data-testid="send-button">
@@ -548,7 +592,11 @@ export function App() {
               type="button"
               className={`pill ${composerMode === 'ephemeral' ? 'active' : ''}`}
               data-testid="ephemeral"
-              onClick={() => setComposerMode((m) => (m === 'ephemeral' ? 'normal' : 'ephemeral'))}
+              onClick={() =>
+                setComposerMode(m =>
+                  m === 'ephemeral' ? 'normal' : 'ephemeral'
+                )
+              }
               title="Disappear"
             >
               Disappear
@@ -557,7 +605,7 @@ export function App() {
             {composerMode === 'ephemeral' ? (
               <select
                 value={String(ephemeralSeconds)}
-                onChange={(e) => setEphemeralSeconds(Number(e.target.value))}
+                onChange={e => setEphemeralSeconds(Number(e.target.value))}
                 aria-label="Ephemeral duration"
               >
                 <option value="60">1 minute</option>
@@ -565,7 +613,12 @@ export function App() {
               </select>
             ) : null}
 
-            <button type="button" className="pill" data-testid="schedule" onClick={() => void handleScheduleClick()}>
+            <button
+              type="button"
+              className="pill"
+              data-testid="schedule"
+              onClick={() => void handleScheduleClick()}
+            >
               Schedule
             </button>
 
@@ -575,7 +628,7 @@ export function App() {
                   <label className="muted">In</label>
                   <select
                     value={String(scheduleInSeconds)}
-                    onChange={(e) => setScheduleInSeconds(Number(e.target.value))}
+                    onChange={e => setScheduleInSeconds(Number(e.target.value))}
                   >
                     <option value="30">30s</option>
                     <option value="60">1m</option>
@@ -586,10 +639,14 @@ export function App() {
                   <input
                     type="datetime-local"
                     value={scheduleAtLocal}
-                    onChange={(e) => setScheduleAtLocal(e.target.value)}
+                    onChange={e => setScheduleAtLocal(e.target.value)}
                   />
                 </div>
-                <button type="button" className="small" onClick={() => setShowSchedulePanel(false)}>
+                <button
+                  type="button"
+                  className="small"
+                  onClick={() => setShowSchedulePanel(false)}
+                >
                   Close
                 </button>
               </div>
@@ -604,7 +661,7 @@ export function App() {
           <div className="muted pad">No one online.</div>
         ) : (
           <div className="member-list">
-            {onlineMembers.map((m) => (
+            {onlineMembers.map(m => (
               <div key={m.id} className="member">
                 <span className="dot" />
                 <span>{m.displayName}</span>
@@ -616,10 +673,14 @@ export function App() {
 
       {historyOpenFor ? (
         <div className="modal-backdrop" onClick={() => setHistoryOpenFor(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title">Edit history</div>
-              <button type="button" className="small" onClick={() => setHistoryOpenFor(null)}>
+              <button
+                type="button"
+                className="small"
+                onClick={() => setHistoryOpenFor(null)}
+              >
                 Close
               </button>
             </div>
@@ -637,4 +698,3 @@ export function App() {
     </div>
   );
 }
-

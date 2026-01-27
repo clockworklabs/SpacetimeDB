@@ -27,7 +27,10 @@ export default function RoomSettingsModal({
     }
 
     try {
-      conn.reducers.inviteToRoom({ roomId: room.id, inviteeName: inviteeName.trim() });
+      conn.reducers.inviteToRoom({
+        roomId: room.id,
+        inviteeName: inviteeName.trim(),
+      });
       setSuccess(`Invitation sent to ${inviteeName}`);
       setInviteeName('');
       setError('');
@@ -38,7 +41,9 @@ export default function RoomSettingsModal({
 
   const admins = members.filter(m => m.isAdmin);
   const adminNames = admins.map(
-    a => users.find(u => u.identity.toHexString() === a.userId.toHexString())?.name ?? 'Unknown'
+    a =>
+      users.find(u => u.identity.toHexString() === a.userId.toHexString())
+        ?.name ?? 'Unknown'
   );
 
   return (
@@ -48,24 +53,34 @@ export default function RoomSettingsModal({
 
         <div className="form-group">
           <label>Room Name</label>
-          <div style={{ color: 'var(--text-primary)', fontSize: '16px' }}>{room.name}</div>
+          <div style={{ color: 'var(--text-primary)', fontSize: '16px' }}>
+            {room.name}
+          </div>
         </div>
 
         <div className="form-group">
           <label>Type</label>
           <div style={{ color: 'var(--text-primary)' }}>
-            {room.isDm ? 'Direct Message' : room.isPrivate ? 'Private Room' : 'Public Room'}
+            {room.isDm
+              ? 'Direct Message'
+              : room.isPrivate
+                ? 'Private Room'
+                : 'Public Room'}
           </div>
         </div>
 
         <div className="form-group">
           <label>Admins</label>
-          <div style={{ color: 'var(--text-primary)' }}>{adminNames.join(', ')}</div>
+          <div style={{ color: 'var(--text-primary)' }}>
+            {adminNames.join(', ')}
+          </div>
         </div>
 
         <div className="form-group">
           <label>Members</label>
-          <div style={{ color: 'var(--text-primary)' }}>{members.length} members</div>
+          <div style={{ color: 'var(--text-primary)' }}>
+            {members.length} members
+          </div>
         </div>
 
         {room.isPrivate && !room.isDm && (
@@ -84,8 +99,28 @@ export default function RoomSettingsModal({
                 Invite
               </button>
             </div>
-            {error && <p style={{ color: 'var(--danger)', fontSize: '12px', marginTop: '4px' }}>{error}</p>}
-            {success && <p style={{ color: 'var(--success)', fontSize: '12px', marginTop: '4px' }}>{success}</p>}
+            {error && (
+              <p
+                style={{
+                  color: 'var(--danger)',
+                  fontSize: '12px',
+                  marginTop: '4px',
+                }}
+              >
+                {error}
+              </p>
+            )}
+            {success && (
+              <p
+                style={{
+                  color: 'var(--success)',
+                  fontSize: '12px',
+                  marginTop: '4px',
+                }}
+              >
+                {success}
+              </p>
+            )}
           </div>
         )}
 

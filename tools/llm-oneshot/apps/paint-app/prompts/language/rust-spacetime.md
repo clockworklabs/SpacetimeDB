@@ -16,6 +16,7 @@ Module name: `paint-app`
 **Client:** Rust axum server with embedded HTML/CSS/JS GUI that opens in browser
 
 The client should:
+
 - Connect to SpacetimeDB using `spacetimedb-sdk`
 - Serve a web GUI via axum on localhost
 - Auto-open the browser with the `open` crate
@@ -23,10 +24,10 @@ The client should:
 
 ## Constraints
 
-* Only create/modify code under:
-    * `.../backend/` (Rust SpacetimeDB module)
-    * `.../client/` (Rust client with web-based GUI)
-* Keep it minimal and readable.
+- Only create/modify code under:
+  - `.../backend/` (Rust SpacetimeDB module)
+  - `.../client/` (Rust client with web-based GUI)
+- Keep it minimal and readable.
 
 ## Output
 

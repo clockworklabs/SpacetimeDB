@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { DbConnection, Message, User, MessageReaction, ReadReceipt, MessageEdit } from '../module_bindings';
+import {
+  DbConnection,
+  Message,
+  User,
+  MessageReaction,
+  ReadReceipt,
+  MessageEdit,
+} from '../module_bindings';
 import { Identity } from 'spacetimedb/react';
 import EditHistoryModal from './EditHistoryModal';
 
@@ -35,8 +42,11 @@ export default function MessageItem({
   const [editContent, setEditContent] = useState(message.content);
   const [showEditHistory, setShowEditHistory] = useState(false);
 
-  const sender = users.find(u => u.identity.toHexString() === message.senderId.toHexString());
-  const isMyMessage = myIdentity && message.senderId.toHexString() === myIdentity.toHexString();
+  const sender = users.find(
+    u => u.identity.toHexString() === message.senderId.toHexString()
+  );
+  const isMyMessage =
+    myIdentity && message.senderId.toHexString() === myIdentity.toHexString();
 
   const formatTime = (timestamp: { microsSinceUnixEpoch: bigint }) => {
     const date = new Date(Number(timestamp.microsSinceUnixEpoch / 1000n));
@@ -49,13 +59,25 @@ export default function MessageItem({
   };
 
   // Group reactions by emoji
-  const reactionGroups = new Map<string, { count: number; users: string[]; hasMyReaction: boolean }>();
+  const reactionGroups = new Map<
+    string,
+    { count: number; users: string[]; hasMyReaction: boolean }
+  >();
   for (const reaction of reactions) {
-    const group = reactionGroups.get(reaction.emoji) ?? { count: 0, users: [], hasMyReaction: false };
+    const group = reactionGroups.get(reaction.emoji) ?? {
+      count: 0,
+      users: [],
+      hasMyReaction: false,
+    };
     group.count++;
-    const user = users.find(u => u.identity.toHexString() === reaction.userId.toHexString());
+    const user = users.find(
+      u => u.identity.toHexString() === reaction.userId.toHexString()
+    );
     if (user?.name) group.users.push(user.name);
-    if (myIdentity && reaction.userId.toHexString() === myIdentity.toHexString()) {
+    if (
+      myIdentity &&
+      reaction.userId.toHexString() === myIdentity.toHexString()
+    ) {
       group.hasMyReaction = true;
     }
     reactionGroups.set(reaction.emoji, group);
@@ -64,7 +86,11 @@ export default function MessageItem({
   // Who has seen this message (excluding sender)
   const seenBy = readReceipts
     .filter(r => r.userId.toHexString() !== message.senderId.toHexString())
-    .map(r => users.find(u => u.identity.toHexString() === r.userId.toHexString())?.name)
+    .map(
+      r =>
+        users.find(u => u.identity.toHexString() === r.userId.toHexString())
+          ?.name
+    )
     .filter((name): name is string => !!name);
 
   const handleReaction = (emoji: string) => {
@@ -74,7 +100,10 @@ export default function MessageItem({
 
   const handleEdit = () => {
     if (editContent.trim() && editContent !== message.content) {
-      conn.reducers.editMessage({ messageId: message.id, newContent: editContent.trim() });
+      conn.reducers.editMessage({
+        messageId: message.id,
+        newContent: editContent.trim(),
+      });
     }
     setIsEditing(false);
   };
@@ -90,7 +119,10 @@ export default function MessageItem({
   let ephemeralSecondsLeft = 0;
   if (isEphemeral && message.expiresAt) {
     const now = BigInt(Date.now()) * 1000n;
-    ephemeralSecondsLeft = Math.max(0, Number((message.expiresAt.microsSinceUnixEpoch - now) / 1_000_000n));
+    ephemeralSecondsLeft = Math.max(
+      0,
+      Number((message.expiresAt.microsSinceUnixEpoch - now) / 1_000_000n)
+    );
   }
 
   return (
@@ -101,7 +133,9 @@ export default function MessageItem({
       <div className="message-content">
         <div className="message-header">
           <span className="message-author">{sender?.name ?? 'Unknown'}</span>
-          <span className="message-timestamp">{formatDate(message.createdAt)} {formatTime(message.createdAt)}</span>
+          <span className="message-timestamp">
+            {formatDate(message.createdAt)} {formatTime(message.createdAt)}
+          </span>
           {message.isEdited && (
             <span
               className="message-edited"
@@ -127,8 +161,15 @@ export default function MessageItem({
               }}
               autoFocus
             />
-            <button className="btn btn-primary btn-small" onClick={handleEdit}>Save</button>
-            <button className="btn btn-secondary btn-small" onClick={() => setIsEditing(false)}>Cancel</button>
+            <button className="btn btn-primary btn-small" onClick={handleEdit}>
+              Save
+            </button>
+            <button
+              className="btn btn-secondary btn-small"
+              onClick={() => setIsEditing(false)}
+            >
+              Cancel
+            </button>
           </div>
         ) : (
           <div className="message-text">{message.content}</div>
@@ -136,7 +177,10 @@ export default function MessageItem({
 
         {isEphemeral && (
           <div className="ephemeral-indicator">
-            ⏳ Disappears in {ephemeralSecondsLeft > 60 ? `${Math.ceil(ephemeralSecondsLeft / 60)}m` : `${ephemeralSecondsLeft}s`}
+            ⏳ Disappears in{' '}
+            {ephemeralSecondsLeft > 60
+              ? `${Math.ceil(ephemeralSecondsLeft / 60)}m`
+              : `${ephemeralSecondsLeft}s`}
           </div>
         )}
 
@@ -163,7 +207,8 @@ export default function MessageItem({
 
         {seenBy.length > 0 && isMyMessage && (
           <div className="read-receipts">
-            Seen by {seenBy.slice(0, 3).join(', ')}{seenBy.length > 3 ? ` and ${seenBy.length - 3} more` : ''}
+            Seen by {seenBy.slice(0, 3).join(', ')}
+            {seenBy.length > 3 ? ` and ${seenBy.length - 3} more` : ''}
           </div>
         )}
 
@@ -176,15 +221,27 @@ export default function MessageItem({
             >
               😀
             </button>
-            <button className="btn-icon btn-small" onClick={onViewThread} title="Reply in thread">
+            <button
+              className="btn-icon btn-small"
+              onClick={onViewThread}
+              title="Reply in thread"
+            >
               💬
             </button>
             {isMyMessage && (
               <>
-                <button className="btn-icon btn-small" onClick={() => setIsEditing(true)} title="Edit">
+                <button
+                  className="btn-icon btn-small"
+                  onClick={() => setIsEditing(true)}
+                  title="Edit"
+                >
                   ✏️
                 </button>
-                <button className="btn-icon btn-small" onClick={handleDelete} title="Delete">
+                <button
+                  className="btn-icon btn-small"
+                  onClick={handleDelete}
+                  title="Delete"
+                >
                   🗑️
                 </button>
               </>

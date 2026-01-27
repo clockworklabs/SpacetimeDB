@@ -25,7 +25,8 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
@@ -51,7 +52,8 @@ button:disabled {
   cursor: not-allowed;
 }
 
-input, select {
+input,
+select {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -62,7 +64,8 @@ input, select {
   transition: border-color 0.2s;
 }
 
-input:focus, select:focus {
+input:focus,
+select:focus {
   border-color: var(--accent-primary);
 }
 
@@ -90,7 +93,9 @@ input::placeholder {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Setup Screen */
@@ -333,7 +338,8 @@ input::placeholder {
   font-weight: 600;
 }
 
-.join-btn, .leave-btn {
+.join-btn,
+.leave-btn {
   padding: 4px 10px;
   font-size: 12px;
 }
@@ -376,10 +382,18 @@ input::placeholder {
   border-radius: 50%;
 }
 
-.status-dot.status-online { background-color: #00d9ff; }
-.status-dot.status-away { background-color: #ff9f43; }
-.status-dot.status-dnd { background-color: #e94560; }
-.status-dot.status-invisible { background-color: #6c6c8a; }
+.status-dot.status-online {
+  background-color: #00d9ff;
+}
+.status-dot.status-away {
+  background-color: #ff9f43;
+}
+.status-dot.status-dnd {
+  background-color: #e94560;
+}
+.status-dot.status-invisible {
+  background-color: #6c6c8a;
+}
 
 /* Main Content */
 .main-content {
@@ -522,7 +536,8 @@ input::placeholder {
   padding: 16px 20px;
 }
 
-.loading-messages, .empty-messages {
+.loading-messages,
+.empty-messages {
   text-align: center;
   color: var(--text-secondary);
   padding: 40px 20px;

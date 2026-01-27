@@ -1,6 +1,7 @@
 # Chat App Grading Checklist
 
 **Instructions:** For each criterion, mark with a number:
+
 - `[x]` = Working (0 reprompts needed)
 - `[1]` = Working after 1 reprompt
 - `[2]` = Working after 2 reprompts
@@ -11,23 +12,23 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 09 (Private Rooms) |
-| **Features Evaluated** | 1-12 (max 15) |
-| **Total Feature Score** | 34.5 / 36 |
-| **Percentage** | 95.8% |
+| Metric                  | Value              |
+| ----------------------- | ------------------ |
+| **Prompt Level Used**   | 09 (Private Rooms) |
+| **Features Evaluated**  | 1-12 (max 15)      |
+| **Total Feature Score** | 34.5 / 36          |
+| **Percentage**          | 95.8%              |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
 - [x] First-try success (worked without manual fixes)
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | ~1,500 |
-| Lines of code (frontend) | ~1,700 |
-| Number of files created | 12 (+ ~90 generated bindings) |
-| External dependencies | spacetimedb, react, vite |
+| Metric                   | Value                         |
+| ------------------------ | ----------------------------- |
+| Lines of code (backend)  | ~1,500                        |
+| Lines of code (frontend) | ~1,700                        |
+| Number of files created  | 12 (+ ~90 generated bindings) |
+| External dependencies    | spacetimedb, react, vite      |
 
 ---
 
@@ -172,25 +173,25 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score | Reprompts |
-|---------|-----|-------|-----------|
-| 1. Basic Chat | 3 | 3 | 0 |
-| 2. Typing Indicators | 3 | 3 | 0 |
-| 3. Read Receipts | 3 | 3 | 0 |
-| 4. Unread Counts | 3 | 3 | 0 |
-| 5. Scheduled Messages | 3 | 3 | 0 |
-| 6. Ephemeral Messages | 3 | 3 | 0 |
-| 7. Message Reactions | 3 | 3 | 0 |
-| 8. Message Editing | 3 | 3 | 0 |
-| 9. Real-Time Permissions | 3 | 1.5 | 0 |
-| 10. Rich Presence | 3 | 3 | 0 |
-| 11. Message Threading | 3 | 3 | 0 |
-| 12. Private Rooms & DMs | 3 | 3 | 0 |
-| 13. Activity Indicators | 3 | 0 | N/A |
-| 14. Draft Sync | 3 | 0 | N/A |
-| 15. Anonymous Migration | 3 | 0 | N/A |
-| **TOTAL (1-12)** | **36** | **34.5** | **0** |
-| **TOTAL (1-15)** | **45** | **34.5** | **0** |
+| Feature                  | Max    | Score    | Reprompts |
+| ------------------------ | ------ | -------- | --------- |
+| 1. Basic Chat            | 3      | 3        | 0         |
+| 2. Typing Indicators     | 3      | 3        | 0         |
+| 3. Read Receipts         | 3      | 3        | 0         |
+| 4. Unread Counts         | 3      | 3        | 0         |
+| 5. Scheduled Messages    | 3      | 3        | 0         |
+| 6. Ephemeral Messages    | 3      | 3        | 0         |
+| 7. Message Reactions     | 3      | 3        | 0         |
+| 8. Message Editing       | 3      | 3        | 0         |
+| 9. Real-Time Permissions | 3      | 1.5      | 0         |
+| 10. Rich Presence        | 3      | 3        | 0         |
+| 11. Message Threading    | 3      | 3        | 0         |
+| 12. Private Rooms & DMs  | 3      | 3        | 0         |
+| 13. Activity Indicators  | 3      | 0        | N/A       |
+| 14. Draft Sync           | 3      | 0        | N/A       |
+| 15. Anonymous Migration  | 3      | 0        | N/A       |
+| **TOTAL (1-12)**         | **36** | **34.5** | **0**     |
+| **TOTAL (1-15)**         | **45** | **34.5** | **0**     |
 
 ---
 
@@ -205,6 +206,7 @@
 ## Scoring Philosophy
 
 Scores reflect **user-facing functionality**, not implementation effort:
+
 - Features with critical bugs that break the user flow receive minimal/zero credit
 - "Code exists" ≠ "feature works"
 - Actual testing trumps code analysis — if it doesn't work in practice, it doesn't get credit

@@ -9,12 +9,12 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://server:3001',
-        changeOrigin: true
+        changeOrigin: true,
       },
       '/socket.io': {
         target: 'http://server:3001',
-        ws: true
-      }
-    }
-  }
+        ws: true,
+      },
+    },
+  },
 });

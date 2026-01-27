@@ -22,13 +22,15 @@ export default function MessageInput({ roomId }: MessageInputProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           content,
-          scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : undefined,
-          expiresInSeconds: expiresIn ? parseInt(expiresIn) : undefined
-        })
+          scheduledFor: scheduledFor
+            ? new Date(scheduledFor).toISOString()
+            : undefined,
+          expiresInSeconds: expiresIn ? parseInt(expiresIn) : undefined,
+        }),
       });
       setContent('');
       setScheduledFor('');
@@ -43,7 +45,7 @@ export default function MessageInput({ roomId }: MessageInputProps) {
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
     setContent(e.target.value);
     socket.emit('typing:start', roomId);
-    
+
     // Debounce stop
     const timeoutId = setTimeout(() => {
       socket.emit('typing:stop', roomId);
@@ -54,23 +56,46 @@ export default function MessageInput({ roomId }: MessageInputProps) {
   return (
     <div style={{ padding: 16, borderTop: '1px solid var(--bg-tertiary)' }}>
       {showOptions && (
-        <div style={{ marginBottom: 10, padding: 10, background: 'var(--bg-tertiary)', borderRadius: 4 }}>
+        <div
+          style={{
+            marginBottom: 10,
+            padding: 10,
+            background: 'var(--bg-tertiary)',
+            borderRadius: 4,
+          }}
+        >
           <div style={{ display: 'flex', gap: 10, marginBottom: 5 }}>
             <label style={{ flex: 1 }}>
-              <span style={{ fontSize: 12, display: 'block', color: 'var(--text-muted)' }}>Schedule for</span>
-              <input 
-                type="datetime-local" 
-                className="input" 
+              <span
+                style={{
+                  fontSize: 12,
+                  display: 'block',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                Schedule for
+              </span>
+              <input
+                type="datetime-local"
+                className="input"
                 style={{ width: '100%', fontSize: 14 }}
                 value={scheduledFor}
                 onChange={e => setScheduledFor(e.target.value)}
               />
             </label>
             <label style={{ flex: 1 }}>
-              <span style={{ fontSize: 12, display: 'block', color: 'var(--text-muted)' }}>Expires in (seconds)</span>
-              <input 
-                type="number" 
-                className="input" 
+              <span
+                style={{
+                  fontSize: 12,
+                  display: 'block',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                Expires in (seconds)
+              </span>
+              <input
+                type="number"
+                className="input"
                 style={{ width: '100%', fontSize: 14 }}
                 value={expiresIn}
                 onChange={e => setExpiresIn(e.target.value)}
@@ -81,11 +106,14 @@ export default function MessageInput({ roomId }: MessageInputProps) {
         </div>
       )}
       <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 10 }}>
-        <button 
-          type="button" 
-          className="btn" 
+        <button
+          type="button"
+          className="btn"
           onClick={() => setShowOptions(!showOptions)}
-          style={{ background: showOptions ? 'var(--bg-tertiary)' : 'transparent', color: 'var(--text-muted)' }}
+          style={{
+            background: showOptions ? 'var(--bg-tertiary)' : 'transparent',
+            color: 'var(--text-muted)',
+          }}
           title="Message Options"
         >
           <Clock size={20} />

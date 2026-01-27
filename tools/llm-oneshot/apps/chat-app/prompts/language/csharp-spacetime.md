@@ -17,10 +17,10 @@ Module name: `chat-app`
 
 ## Constraints
 
-* Only create/modify code under:
-    * `.../backend/` (C# SpacetimeDB module)
-    * `.../client/` (C# MAUI client application)
-* Keep it minimal and readable.
+- Only create/modify code under:
+  - `.../backend/` (C# SpacetimeDB module)
+  - `.../client/` (C# MAUI client application)
+- Keep it minimal and readable.
 
 ## Output
 

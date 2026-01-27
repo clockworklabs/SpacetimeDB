@@ -5,12 +5,14 @@ A real-time chat application built with SpacetimeDB, featuring Discord-like func
 ## Features
 
 ### Core Chat Features
+
 - **Real-time messaging** - Messages appear instantly for all users
 - **User presence** - See who's online, away, or do-not-disturb
 - **Display names** - Users can set custom display names
 - **Room management** - Create public or private rooms, join/leave rooms
 
 ### Advanced Features
+
 - **Message editing with history** - Edit messages and view full edit history
 - **Message reactions** - React to messages with emoji
 - **Read receipts** - Track message read status
@@ -48,21 +50,25 @@ chat-app-20260107-120000/
 ## Running the Application
 
 ### Prerequisites
+
 - SpacetimeDB installed and running
 - Node.js and npm
 
 ### 1. Start SpacetimeDB
+
 ```bash
 spacetime start
 ```
 
 ### 2. Publish the backend module
+
 ```bash
 cd backend/spacetimedb
 spacetime publish chat-app --clear-database -y --project-path .
 ```
 
 ### 3. Install dependencies
+
 ```bash
 # Backend
 cd backend/spacetimedb
@@ -74,6 +80,7 @@ npm install
 ```
 
 ### 4. Start the frontend
+
 ```bash
 cd client
 npm run dev
@@ -94,11 +101,13 @@ The app implements Discord-like message editing with full history tracking:
 ## Technical Implementation
 
 ### Backend (SpacetimeDB)
+
 - **Schema**: Tables for users, rooms, messages, message edits, reactions, etc.
 - **Reducers**: Business logic for all chat operations
 - **Real-time sync**: Automatic data synchronization via SpacetimeDB subscriptions
 
 ### Frontend (React + TypeScript)
+
 - **State management**: SpacetimeDB tables provide reactive state
 - **UI components**: Discord-inspired dark theme and layout
 - **WebSocket connection**: Real-time updates via SpacetimeDB client

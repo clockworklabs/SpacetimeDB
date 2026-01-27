@@ -12,7 +12,7 @@ export function startJobs(
   realtime: {
     broadcastMessageCreated(roomId: number, messageId: number): void;
     broadcastMessageDeleted(roomId: number, messageId: number): void;
-  },
+  }
 ) {
   const scheduledTimer = setInterval(async () => {
     const due = await db
@@ -22,8 +22,8 @@ export function startJobs(
         and(
           isNull(scheduledMessages.cancelledAt),
           isNull(scheduledMessages.sentAt),
-          lte(scheduledMessages.sendAt, new Date()),
-        ),
+          lte(scheduledMessages.sendAt, new Date())
+        )
       )
       .limit(20);
 
@@ -55,7 +55,9 @@ export function startJobs(
     const expired = await db
       .select({ id: messages.id, roomId: messages.roomId })
       .from(messages)
-      .where(and(isNotNull(messages.expiresAt), lte(messages.expiresAt, new Date())))
+      .where(
+        and(isNotNull(messages.expiresAt), lte(messages.expiresAt, new Date()))
+      )
       .limit(50);
 
     for (const msg of expired) {
@@ -75,4 +77,3 @@ export function startJobs(
 
   return { stop };
 }
-

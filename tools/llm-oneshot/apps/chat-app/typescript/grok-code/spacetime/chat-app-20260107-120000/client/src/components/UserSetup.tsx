@@ -15,7 +15,9 @@ export default function UserSetup({ onUserCreated }: UserSetupProps) {
     setIsSubmitting(true);
     try {
       if (window.__db_conn) {
-        await window.__db_conn.reducers.setDisplayName({ displayName: displayName.trim() });
+        await window.__db_conn.reducers.setDisplayName({
+          displayName: displayName.trim(),
+        });
         onUserCreated();
       }
     } catch (error) {
@@ -26,36 +28,44 @@ export default function UserSetup({ onUserCreated }: UserSetupProps) {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100vh',
-      backgroundColor: 'var(--bg-primary)',
-      color: 'var(--text-primary)'
-    }}>
-      <div style={{
-        backgroundColor: 'var(--bg-secondary)',
-        padding: '32px',
-        borderRadius: '8px',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-        maxWidth: '400px',
-        width: '100%'
-      }}>
-        <h2 style={{ marginBottom: '24px', textAlign: 'center' }}>Welcome to SpacetimeDB Chat</h2>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        backgroundColor: 'var(--bg-primary)',
+        color: 'var(--text-primary)',
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: 'var(--bg-secondary)',
+          padding: '32px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+          maxWidth: '400px',
+          width: '100%',
+        }}
+      >
+        <h2 style={{ marginBottom: '24px', textAlign: 'center' }}>
+          Welcome to SpacetimeDB Chat
+        </h2>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{
-              display: 'block',
-              marginBottom: '8px',
-              fontWeight: '500'
-            }}>
+            <label
+              style={{
+                display: 'block',
+                marginBottom: '8px',
+                fontWeight: '500',
+              }}
+            >
               Choose a display name:
             </label>
             <input
               type="text"
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              onChange={e => setDisplayName(e.target.value)}
               className="input"
               placeholder="Enter your display name"
               maxLength={50}

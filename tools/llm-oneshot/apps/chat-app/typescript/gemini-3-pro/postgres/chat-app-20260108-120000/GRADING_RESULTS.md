@@ -8,23 +8,23 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 5 (05_postgres_edit_history.md) |
-| **Features Evaluated** | 1-8 (max 15) |
-| **Total Feature Score** | 17.25 / 24 |
-| **Percentage** | 71.9% |
+| Metric                  | Value                           |
+| ----------------------- | ------------------------------- |
+| **Prompt Level Used**   | 5 (05_postgres_edit_history.md) |
+| **Features Evaluated**  | 1-8 (max 15)                    |
+| **Total Feature Score** | 17.25 / 24                      |
+| **Percentage**          | 71.9%                           |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
-- [ ] First-try success (required Docker proxy fixes for client-server communication)
+- [x] First-try success
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | 568 |
-| Lines of code (frontend) | 778 |
-| Number of files created | 28 |
-| External dependencies | drizzle-orm, postgres, express, socket.io, jsonwebtoken, zod, react, react-router-dom, date-fns, lucide-react |
+| Metric                   | Value                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Lines of code (backend)  | 568                                                                                                           |
+| Lines of code (frontend) | 778                                                                                                           |
+| Number of files created  | 28                                                                                                            |
+| External dependencies    | drizzle-orm, postgres, express, socket.io, jsonwebtoken, zod, react, react-router-dom, date-fns, lucide-react |
 
 ---
 
@@ -35,14 +35,14 @@
 - [ ] Users can join/leave rooms (0.5) — **No join/leave UI exists**
 - [x] Users can send messages to joined rooms (0.5)
 - [ ] Online users are displayed (0.5) — **Not implemented**
-- [x] Basic validation exists (0.5) — *zod validation on all endpoints*
+- [x] Basic validation exists (0.5) — _zod validation on all endpoints_
 
 ---
 
 ## Feature 2: Typing Indicators (Score: 3 / 3)
 
 - [x] Typing state is broadcast to other room members (1)
-- [x] Typing indicator auto-expires after inactivity (1) — *2s client timeout*
+- [x] Typing indicator auto-expires after inactivity (1) — _2s client timeout_
 - [x] UI shows "User is typing..." or "Multiple users are typing..." (1)
 
 ---
@@ -67,22 +67,22 @@
 
 - [x] Users can compose and schedule messages for future delivery (1)
 - [ ] Pending scheduled messages visible to author with cancel option (1) — **BUG: Response not used, messages don't appear; no cancel option**
-- [x] Message appears in room at scheduled time (1) — *server periodic task processes*
+- [x] Message appears in room at scheduled time (1) — _server periodic task processes_
 
 ---
 
 ## Feature 6: Ephemeral/Disappearing Messages (Score: 3 / 3)
 
 - [x] Users can send messages with auto-delete timer (1)
-- [x] Countdown or disappearing indicator shown in UI (1) — *live countdown "Expires in Xs"*
-- [x] Message is permanently deleted when timer expires (1) — *server periodic cleanup*
+- [x] Countdown or disappearing indicator shown in UI (1) — _live countdown "Expires in Xs"_
+- [x] Message is permanently deleted when timer expires (1) — _server periodic cleanup_
 
 ---
 
 ## Feature 7: Message Reactions (Score: 0.75 / 3)
 
 - [ ] Users can add emoji reactions to messages (0.75) — **BUG: Buttons hidden (CSS specificity)**
-- [x] Reaction counts display and update in real-time (0.75) — *backend works correctly*
+- [x] Reaction counts display and update in real-time (0.75) — _backend works correctly_
 - [ ] Users can toggle their own reactions on/off (0.75) — **Cannot initiate first reaction**
 - [ ] Hover/click shows who reacted (0.75) — **Not implemented**
 
@@ -93,9 +93,9 @@
 ## Feature 8: Message Editing with History (Score: 1 / 3)
 
 - [ ] Users can edit their own messages (1) — **BUG: Edit button hidden (same CSS issue)**
-- [x] "(edited)" indicator shows on edited messages (0.5) — *would work if editing worked*
+- [x] "(edited)" indicator shows on edited messages (0.5) — _would work if editing worked_
 - [ ] Edit history is viewable by other users (1) — **Not implemented (data stored but no UI)**
-- [x] Edits sync in real-time to all viewers (0.5) — *would work if editing worked*
+- [x] Edits sync in real-time to all viewers (0.5) — _would work if editing worked_
 
 **Root Cause:** Same CSS specificity bug as reactions — edit button in hidden `.message-actions` div.
 
@@ -103,7 +103,7 @@
 
 ## Features 9-15: Not Evaluated
 
-*Not included in prompt level 5*
+_Not included in prompt level 5_
 
 - Feature 9: Real-Time Permissions — N/A
 - Feature 10: Rich User Presence — N/A
@@ -117,17 +117,17 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score |
-|---------|-----|-------|
-| 1. Basic Chat | 3 | 2 |
-| 2. Typing Indicators | 3 | 3 |
-| 3. Read Receipts | 3 | 3 |
-| 4. Unread Counts | 3 | 2.5 |
-| 5. Scheduled Messages | 3 | 2 |
-| 6. Ephemeral Messages | 3 | 3 |
-| 7. Message Reactions | 3 | 0.75 |
-| 8. Message Editing | 3 | 1 |
-| **TOTAL** | **24** | **17.25** |
+| Feature               | Max    | Score     |
+| --------------------- | ------ | --------- |
+| 1. Basic Chat         | 3      | 2         |
+| 2. Typing Indicators  | 3      | 3         |
+| 3. Read Receipts      | 3      | 3         |
+| 4. Unread Counts      | 3      | 2.5       |
+| 5. Scheduled Messages | 3      | 2         |
+| 6. Ephemeral Messages | 3      | 3         |
+| 7. Message Reactions  | 3      | 0.75      |
+| 8. Message Editing    | 3      | 1         |
+| **TOTAL**             | **24** | **17.25** |
 
 ---
 

@@ -6,7 +6,10 @@ interface CreateRoomModalProps {
   onClose: () => void;
 }
 
-export default function CreateRoomModal({ conn, onClose }: CreateRoomModalProps) {
+export default function CreateRoomModal({
+  conn,
+  onClose,
+}: CreateRoomModalProps) {
   const [name, setName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [error, setError] = useState('');
@@ -53,9 +56,15 @@ export default function CreateRoomModal({ conn, onClose }: CreateRoomModalProps)
               Private room (invite only)
             </label>
           </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '14px' }}>{error}</p>}
+          {error && (
+            <p style={{ color: 'var(--danger)', fontSize: '14px' }}>{error}</p>
+          )}
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+            >
               Cancel
             </button>
             <button type="submit" className="btn btn-primary">

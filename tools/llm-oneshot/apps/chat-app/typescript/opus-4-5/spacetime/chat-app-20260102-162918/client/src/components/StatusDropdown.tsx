@@ -13,7 +13,10 @@ const STATUS_OPTIONS = [
   { value: 'invisible', label: 'Invisible', color: 'var(--offline)' },
 ];
 
-export default function StatusDropdown({ conn, currentUser }: StatusDropdownProps) {
+export default function StatusDropdown({
+  conn,
+  currentUser,
+}: StatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const handleStatusChange = (status: string) => {
@@ -21,7 +24,9 @@ export default function StatusDropdown({ conn, currentUser }: StatusDropdownProp
     setIsOpen(false);
   };
 
-  const currentStatus = STATUS_OPTIONS.find(s => s.value === currentUser.status) ?? STATUS_OPTIONS[0];
+  const currentStatus =
+    STATUS_OPTIONS.find(s => s.value === currentUser.status) ??
+    STATUS_OPTIONS[0];
 
   return (
     <div className="status-dropdown">

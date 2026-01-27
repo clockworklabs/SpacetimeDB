@@ -4,36 +4,36 @@
   --bg-tertiary: #1c1c28;
   --bg-hover: #252536;
   --bg-active: #2d2d42;
-  
+
   --text-primary: #e8e8ed;
   --text-secondary: #9898a8;
   --text-muted: #6868788;
-  
+
   --accent: #6366f1;
   --accent-hover: #818cf8;
   --accent-muted: #4f46e5;
-  
+
   --success: #22c55e;
   --warning: #f59e0b;
   --danger: #ef4444;
   --info: #3b82f6;
-  
+
   --border: #2a2a3a;
   --border-light: #3a3a4a;
-  
+
   --online: #22c55e;
   --away: #f59e0b;
   --dnd: #ef4444;
   --invisible: #6b7280;
-  
+
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
-  
+
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-full: 9999px;
-  
+
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
@@ -53,7 +53,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-input, textarea, button, select {
+input,
+textarea,
+button,
+select {
   font-family: inherit;
   font-size: inherit;
 }
@@ -65,7 +68,8 @@ button {
   color: inherit;
 }
 
-input, textarea {
+input,
+textarea {
   border: none;
   outline: none;
   background: none;
@@ -385,8 +389,13 @@ input, textarea {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* Message input */
@@ -585,10 +594,19 @@ input, textarea {
   border: 2px solid var(--bg-secondary);
 }
 
-.member-status.online { background: var(--online); }
-.member-status.away { background: var(--away); }
-.member-status.dnd { background: var(--dnd); }
-.member-status.invisible, .member-status.offline { background: var(--invisible); }
+.member-status.online {
+  background: var(--online);
+}
+.member-status.away {
+  background: var(--away);
+}
+.member-status.dnd {
+  background: var(--dnd);
+}
+.member-status.invisible,
+.member-status.offline {
+  background: var(--invisible);
+}
 
 .member-info {
   flex: 1;
@@ -673,8 +691,12 @@ input, textarea {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .modal {
@@ -689,11 +711,11 @@ input, textarea {
 }
 
 @keyframes slideUp {
-  from { 
+  from {
     opacity: 0;
     transform: translateY(20px);
   }
-  to { 
+  to {
     opacity: 1;
     transform: translateY(0);
   }
@@ -849,10 +871,18 @@ input, textarea {
   border-radius: var(--radius-full);
 }
 
-.status-dot.online { background: var(--online); }
-.status-dot.away { background: var(--away); }
-.status-dot.dnd { background: var(--dnd); }
-.status-dot.invisible { background: var(--invisible); }
+.status-dot.online {
+  background: var(--online);
+}
+.status-dot.away {
+  background: var(--away);
+}
+.status-dot.dnd {
+  background: var(--dnd);
+}
+.status-dot.invisible {
+  background: var(--invisible);
+}
 
 /* Thread panel */
 .thread-panel {
@@ -1041,5 +1071,7 @@ input, textarea {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }

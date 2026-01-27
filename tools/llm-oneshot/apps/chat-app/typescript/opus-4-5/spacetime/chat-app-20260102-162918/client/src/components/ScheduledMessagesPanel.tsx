@@ -24,23 +24,40 @@ export default function ScheduledMessagesPanel({
   };
 
   return (
-    <div style={{ 
-      padding: '16px', 
-      background: 'var(--bg-secondary)', 
-      borderBottom: '1px solid var(--border)' 
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+    <div
+      style={{
+        padding: '16px',
+        background: 'var(--bg-secondary)',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+        }}
+      >
         <h4 style={{ margin: 0 }}>Scheduled Messages</h4>
-        <button className="btn-icon" onClick={onClose}>✕</button>
+        <button className="btn-icon" onClick={onClose}>
+          ✕
+        </button>
       </div>
 
       {scheduledMessages.map(sm => (
         <div key={sm.scheduledId.toString()} className="scheduled-message">
           <div className="scheduled-message-header">
             <span className="scheduled-time">
-              📅 {formatScheduledTime(sm.scheduledAt as unknown as { tag: string; value: bigint })}
+              📅{' '}
+              {formatScheduledTime(
+                sm.scheduledAt as unknown as { tag: string; value: bigint }
+              )}
             </span>
-            <button className="btn btn-danger btn-small" onClick={() => handleCancel(sm.scheduledId)}>
+            <button
+              className="btn btn-danger btn-small"
+              onClick={() => handleCancel(sm.scheduledId)}
+            >
               Cancel
             </button>
           </div>

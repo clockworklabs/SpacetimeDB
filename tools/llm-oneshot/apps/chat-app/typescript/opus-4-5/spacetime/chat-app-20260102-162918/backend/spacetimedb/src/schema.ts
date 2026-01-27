@@ -70,9 +70,7 @@ export const RoomBan = table(
   {
     name: 'room_ban',
     public: true,
-    indexes: [
-      { name: 'by_room', algorithm: 'btree', columns: ['roomId'] },
-    ],
+    indexes: [{ name: 'by_room', algorithm: 'btree', columns: ['roomId'] }],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -114,7 +112,11 @@ export const Message = table(
     indexes: [
       { name: 'by_room', algorithm: 'btree', columns: ['roomId'] },
       { name: 'by_sender', algorithm: 'btree', columns: ['senderId'] },
-      { name: 'by_thread_parent', algorithm: 'btree', columns: ['threadParentId'] },
+      {
+        name: 'by_thread_parent',
+        algorithm: 'btree',
+        columns: ['threadParentId'],
+      },
     ],
   },
   {
@@ -192,9 +194,7 @@ export const TypingIndicator = table(
   {
     name: 'typing_indicator',
     public: true,
-    indexes: [
-      { name: 'by_room', algorithm: 'btree', columns: ['roomId'] },
-    ],
+    indexes: [{ name: 'by_room', algorithm: 'btree', columns: ['roomId'] }],
   },
   {
     id: t.u64().primaryKey().autoInc(),

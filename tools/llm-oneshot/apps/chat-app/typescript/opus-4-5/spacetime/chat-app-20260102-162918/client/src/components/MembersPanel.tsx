@@ -25,12 +25,18 @@ export default function MembersPanel({
   const [inviteeName, setInviteeName] = useState('');
 
   const memberDetails = members.map(m => {
-    const user = users.find(u => u.identity.toHexString() === m.userId.toHexString());
+    const user = users.find(
+      u => u.identity.toHexString() === m.userId.toHexString()
+    );
     return { member: m, user };
   });
 
-  const onlineMembers = memberDetails.filter(({ user }) => user?.online && user.status !== 'invisible');
-  const offlineMembers = memberDetails.filter(({ user }) => !user?.online || user.status === 'invisible');
+  const onlineMembers = memberDetails.filter(
+    ({ user }) => user?.online && user.status !== 'invisible'
+  );
+  const offlineMembers = memberDetails.filter(
+    ({ user }) => !user?.online || user.status === 'invisible'
+  );
 
   const handleKick = (userId: Identity) => {
     if (confirm('Kick this user from the room?')) {
@@ -75,7 +81,9 @@ export default function MembersPanel({
       {isAdmin && (
         <div style={{ marginBottom: '16px' }}>
           {showInvite ? (
-            <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+            <div
+              style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}
+            >
               <input
                 type="text"
                 className="input"
@@ -85,16 +93,26 @@ export default function MembersPanel({
                 onKeyDown={e => e.key === 'Enter' && handleInvite()}
               />
               <div style={{ display: 'flex', gap: '4px' }}>
-                <button className="btn btn-primary btn-small" onClick={handleInvite}>
+                <button
+                  className="btn btn-primary btn-small"
+                  onClick={handleInvite}
+                >
                   Invite
                 </button>
-                <button className="btn btn-secondary btn-small" onClick={() => setShowInvite(false)}>
+                <button
+                  className="btn btn-secondary btn-small"
+                  onClick={() => setShowInvite(false)}
+                >
                   Cancel
                 </button>
               </div>
             </div>
           ) : (
-            <button className="btn btn-secondary btn-small" onClick={() => setShowInvite(true)} style={{ width: '100%' }}>
+            <button
+              className="btn btn-secondary btn-small"
+              onClick={() => setShowInvite(true)}
+              style={{ width: '100%' }}
+            >
               + Invite User
             </button>
           )}
@@ -138,11 +156,16 @@ export default function MembersPanel({
         <div className="members-section">
           <h4>Banned — {bans.length}</h4>
           {bans.map(ban => {
-            const user = users.find(u => u.identity.toHexString() === ban.userId.toHexString());
+            const user = users.find(
+              u => u.identity.toHexString() === ban.userId.toHexString()
+            );
             return (
               <div key={ban.id.toString()} className="member-item">
                 <div className="member-info">
-                  <div className="member-name" style={{ color: 'var(--danger)' }}>
+                  <div
+                    className="member-name"
+                    style={{ color: 'var(--danger)' }}
+                  >
                     {user?.name ?? 'Unknown'}
                   </div>
                 </div>
@@ -166,7 +189,16 @@ interface MemberItemProps {
   lastActive?: string;
 }
 
-function MemberItem({ member, user, isAdmin, isMe, onKick, onBan, onPromote, lastActive }: MemberItemProps) {
+function MemberItem({
+  member,
+  user,
+  isAdmin,
+  isMe,
+  onKick,
+  onBan,
+  onPromote,
+  lastActive,
+}: MemberItemProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -190,7 +222,11 @@ function MemberItem({ member, user, isAdmin, isMe, onKick, onBan, onPromote, las
       {isAdmin && !isMe && showActions && (
         <div style={{ display: 'flex', gap: '4px' }}>
           {!member.isAdmin && (
-            <button className="btn-icon btn-small" onClick={onPromote} title="Promote to admin">
+            <button
+              className="btn-icon btn-small"
+              onClick={onPromote}
+              title="Promote to admin"
+            >
               👑
             </button>
           )}

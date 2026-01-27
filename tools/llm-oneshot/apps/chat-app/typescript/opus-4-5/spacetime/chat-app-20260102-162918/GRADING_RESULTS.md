@@ -1,6 +1,7 @@
 # Chat App Grading Checklist
 
 **Instructions:** For each criterion, mark with a number:
+
 - `[x]` = Working (0 reprompts needed)
 - `[1]` = Working after 1 reprompt
 - `[2]` = Working after 2 reprompts
@@ -11,23 +12,23 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 09_spacetime_private_rooms.md |
-| **Features Evaluated** | 1-12 (Features 13-15 not in prompt) |
-| **Total Feature Score** | 34 / 36 |
-| **Percentage** | 94.4% |
+| Metric                  | Value                               |
+| ----------------------- | ----------------------------------- |
+| **Prompt Level Used**   | 09_spacetime_private_rooms.md       |
+| **Features Evaluated**  | 1-12 (Features 13-15 not in prompt) |
+| **Total Feature Score** | 34 / 36                             |
+| **Percentage**          | 94.4%                               |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
 - [x] First-try success
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | 1008 |
-| Lines of code (frontend) | ~1500 |
-| Number of files created | 26 |
-| External dependencies | spacetimedb, react, react-dom, vite, typescript |
+| Metric                   | Value                                           |
+| ------------------------ | ----------------------------------------------- |
+| Lines of code (backend)  | 1008                                            |
+| Lines of code (frontend) | ~1500                                           |
+| Number of files created  | 26                                              |
+| External dependencies    | spacetimedb, react, react-dom, vite, typescript |
 
 ---
 
@@ -105,7 +106,7 @@
 ## Feature 9: Real-Time Permissions (Score: 2 / 3)
 
 - [x] Room creator is admin and can kick/ban users (1)
-- [ ] Kicked users immediately lose access and stop receiving updates (0) — *UI does not update when kicked*
+- [ ] Kicked users immediately lose access and stop receiving updates (0) — _UI does not update when kicked_
 - [x] Admins can promote other users to admin (0.5)
 - [x] Permission changes apply instantly (0.5)
 
@@ -174,25 +175,25 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score | Reprompts |
-|---------|-----|-------|-----------|
-| 1. Basic Chat | 3 | 3 | 0 |
-| 2. Typing Indicators | 3 | 3 | 0 |
-| 3. Read Receipts | 3 | 3 | 0 |
-| 4. Unread Counts | 3 | 3 | 0 |
-| 5. Scheduled Messages | 3 | 2 | 0 |
-| 6. Ephemeral Messages | 3 | 3 | 0 |
-| 7. Message Reactions | 3 | 3 | 0 |
-| 8. Message Editing | 3 | 3 | 0 |
-| 9. Real-Time Permissions | 3 | 2 | 0 |
-| 10. Rich Presence | 3 | 3 | 0 |
-| 11. Message Threading | 3 | 3 | 0 |
-| 12. Private Rooms & DMs | 3 | 3 | 0 |
-| 13. Activity Indicators | 3 | 0 | N/A |
-| 14. Draft Sync | 3 | 0 | N/A |
-| 15. Anonymous Migration | 3 | 0 | N/A |
-| **TOTAL (1-12)** | **36** | **34** | **0** |
-| **TOTAL (1-15)** | **45** | **34** | **0** |
+| Feature                  | Max    | Score  | Reprompts |
+| ------------------------ | ------ | ------ | --------- |
+| 1. Basic Chat            | 3      | 3      | 0         |
+| 2. Typing Indicators     | 3      | 3      | 0         |
+| 3. Read Receipts         | 3      | 3      | 0         |
+| 4. Unread Counts         | 3      | 3      | 0         |
+| 5. Scheduled Messages    | 3      | 2      | 0         |
+| 6. Ephemeral Messages    | 3      | 3      | 0         |
+| 7. Message Reactions     | 3      | 3      | 0         |
+| 8. Message Editing       | 3      | 3      | 0         |
+| 9. Real-Time Permissions | 3      | 2      | 0         |
+| 10. Rich Presence        | 3      | 3      | 0         |
+| 11. Message Threading    | 3      | 3      | 0         |
+| 12. Private Rooms & DMs  | 3      | 3      | 0         |
+| 13. Activity Indicators  | 3      | 0      | N/A       |
+| 14. Draft Sync           | 3      | 0      | N/A       |
+| 15. Anonymous Migration  | 3      | 0      | N/A       |
+| **TOTAL (1-12)**         | **36** | **34** | **0**     |
+| **TOTAL (1-15)**         | **45** | **34** | **0**     |
 
 ---
 
@@ -225,6 +226,7 @@ chat-app-20260102-162918/
 ## Scoring Philosophy
 
 Scores reflect **user-facing functionality**, not implementation effort:
+
 - Features with critical bugs that break the user flow receive minimal/zero credit
 - "Code exists" ≠ "feature works"
 - Actual testing trumps code analysis — if it doesn't work in practice, it doesn't get credit

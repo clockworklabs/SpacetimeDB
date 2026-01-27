@@ -19,7 +19,7 @@ export default function RoomList() {
   useEffect(() => {
     fetchRooms();
 
-    socket.on('room:created', (newRoom) => {
+    socket.on('room:created', newRoom => {
       setRooms(prev => [newRoom, ...prev]);
     });
 
@@ -35,16 +35,16 @@ export default function RoomList() {
   const createRoom = async () => {
     const name = prompt('Enter room name:');
     if (!name) return;
-    
+
     const token = localStorage.getItem('token');
     try {
       const res = await fetch('/api/rooms', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name }),
       });
       if (res.ok) {
         const room = await res.json();
@@ -58,10 +58,34 @@ export default function RoomList() {
   };
 
   return (
-    <div style={{ width: 240, background: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <div style={{ padding: 16, borderBottom: '1px solid var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div
+      style={{
+        width: 240,
+        background: 'var(--bg-secondary)',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+      }}
+    >
+      <div
+        style={{
+          padding: 16,
+          borderBottom: '1px solid var(--bg-tertiary)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
         <h2 style={{ margin: 0, fontSize: 16 }}>Rooms</h2>
-        <button onClick={createRoom} className="btn" style={{ padding: 4, background: 'transparent', color: 'var(--text-normal)' }}>
+        <button
+          onClick={createRoom}
+          className="btn"
+          style={{
+            padding: 4,
+            background: 'transparent',
+            color: 'var(--text-normal)',
+          }}
+        >
           <Plus size={20} />
         </button>
       </div>
@@ -76,25 +100,44 @@ export default function RoomList() {
               padding: '8px 12px',
               textDecoration: 'none',
               color: isActive ? 'white' : 'var(--text-muted)',
-              backgroundColor: isActive ? 'var(--message-hover)' : 'transparent',
+              backgroundColor: isActive
+                ? 'var(--message-hover)'
+                : 'transparent',
               borderRadius: 4,
               marginBottom: 2,
-              justifyContent: 'space-between'
+              justifyContent: 'space-between',
             })}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                overflow: 'hidden',
+              }}
+            >
               <Hash size={18} />
-              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{room.name}</span>
+              <span
+                style={{
+                  textOverflow: 'ellipsis',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {room.name}
+              </span>
             </div>
             {room.unreadCount ? (
-              <span style={{ 
-                background: 'var(--danger)', 
-                color: 'white', 
-                fontSize: 10, 
-                borderRadius: 10, 
-                padding: '2px 6px', 
-                fontWeight: 'bold' 
-              }}>
+              <span
+                style={{
+                  background: 'var(--danger)',
+                  color: 'white',
+                  fontSize: 10,
+                  borderRadius: 10,
+                  padding: '2px 6px',
+                  fontWeight: 'bold',
+                }}
+              >
                 {room.unreadCount}
               </span>
             ) : null}
@@ -103,7 +146,14 @@ export default function RoomList() {
       </div>
       <div style={{ padding: 16, borderTop: '1px solid var(--bg-tertiary)' }}>
         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          Logged in as <strong>{JSON.parse(atob(localStorage.getItem('token')?.split('.')[1] || '{}')).username}</strong>
+          Logged in as{' '}
+          <strong>
+            {
+              JSON.parse(
+                atob(localStorage.getItem('token')?.split('.')[1] || '{}')
+              ).username
+            }
+          </strong>
         </div>
       </div>
     </div>

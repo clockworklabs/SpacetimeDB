@@ -21,7 +21,9 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    const error = await response
+      .json()
+      .catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || 'Request failed');
   }
 
@@ -44,7 +46,8 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
 
-  searchUsers: (q: string) => request<any[]>(`/users/search?q=${encodeURIComponent(q)}`),
+  searchUsers: (q: string) =>
+    request<any[]>(`/users/search?q=${encodeURIComponent(q)}`),
 
   getOnlineUsers: () => request<any[]>('/users/online'),
 
@@ -69,7 +72,8 @@ export const api = {
   leaveRoom: (roomId: number) =>
     request<any>(`/rooms/${roomId}/leave`, { method: 'POST' }),
 
-  getRoomMembers: (roomId: number) => request<any[]>(`/rooms/${roomId}/members`),
+  getRoomMembers: (roomId: number) =>
+    request<any[]>(`/rooms/${roomId}/members`),
 
   inviteToRoom: (roomId: number, targetUserId: string) =>
     request<any>(`/rooms/${roomId}/invite`, {

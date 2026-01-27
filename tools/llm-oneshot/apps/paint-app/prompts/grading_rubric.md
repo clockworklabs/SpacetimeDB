@@ -4,12 +4,12 @@
 
 Each feature: **0–3 points**
 
-| Score | Meaning |
-|-------|---------|
-| 0 | Not implemented or broken |
-| 1 | Partial - major issues |
-| 2 | Mostly working - minor bugs |
-| 3 | Fully working |
+| Score | Meaning                     |
+| ----- | --------------------------- |
+| 0     | Not implemented or broken   |
+| 1     | Partial - major issues      |
+| 2     | Mostly working - minor bugs |
+| 3     | Fully working               |
 
 ---
 
@@ -167,24 +167,24 @@ Each feature: **0–3 points**
 
 ## Summary
 
-| Feature | Max | Score |
-|---------|-----|-------|
-| 1. Basic Drawing | 3 | |
-| 2. Live Cursors | 3 | |
-| 3. Shapes | 3 | |
-| 4. Selection | 3 | |
-| 5. Layers + Locking | 3 | |
-| 6. Presence | 3 | |
-| 7. Comments | 3 | |
-| 8. Version History | 3 | |
-| 9. Permissions | 3 | |
-| 10. Follow Mode | 3 | |
-| 11. Activity Feed | 3 | |
-| 12. Sharing | 3 | |
-| 13. Canvas Chat | 3 | |
-| 14. Auto-Cleanup | 3 | |
-| 15. Text & Stickies | 3 | |
-| **TOTAL** | **45** | |
+| Feature             | Max    | Score |
+| ------------------- | ------ | ----- |
+| 1. Basic Drawing    | 3      |       |
+| 2. Live Cursors     | 3      |       |
+| 3. Shapes           | 3      |       |
+| 4. Selection        | 3      |       |
+| 5. Layers + Locking | 3      |       |
+| 6. Presence         | 3      |       |
+| 7. Comments         | 3      |       |
+| 8. Version History  | 3      |       |
+| 9. Permissions      | 3      |       |
+| 10. Follow Mode     | 3      |       |
+| 11. Activity Feed   | 3      |       |
+| 12. Sharing         | 3      |       |
+| 13. Canvas Chat     | 3      |       |
+| 14. Auto-Cleanup    | 3      |       |
+| 15. Text & Stickies | 3      |       |
+| **TOTAL**           | **45** |       |
 
 ## Key Differentiator Tests
 

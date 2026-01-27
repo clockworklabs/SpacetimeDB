@@ -19,14 +19,17 @@ import type {
 // =====================
 
 function formatTime(date: string): string {
-  return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(date).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatDate(date: string): string {
   const d = new Date(date);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
-  
+
   if (diff < 60000) return 'Just now';
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
@@ -34,7 +37,12 @@ function formatDate(date: string): string {
 }
 
 function getInitials(name: string): string {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  return name
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 }
 
 // =====================
@@ -69,7 +77,7 @@ function Login({ onLogin }: { onLogin: (user: User, token: string) => void }) {
       <div className="login-card">
         <h1 className="login-title">Welcome</h1>
         <p className="login-subtitle">Enter a display name to get started</p>
-        
+
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">Display Name</label>
@@ -78,15 +86,26 @@ function Login({ onLogin }: { onLogin: (user: User, token: string) => void }) {
               className="form-input"
               placeholder="Your name..."
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              onChange={e => setDisplayName(e.target.value)}
               maxLength={50}
               autoFocus
             />
           </div>
-          
-          {error && <p style={{ color: 'var(--danger)', marginBottom: 16, fontSize: 14 }}>{error}</p>}
-          
-          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
+
+          {error && (
+            <p
+              style={{ color: 'var(--danger)', marginBottom: 16, fontSize: 14 }}
+            >
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ width: '100%' }}
+            disabled={loading}
+          >
             {loading ? 'Joining...' : 'Join Chat'}
           </button>
         </form>
@@ -112,10 +131,12 @@ function Modal({
 }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{title}</h2>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
@@ -128,7 +149,13 @@ function Modal({
 // Create Room Modal
 // =====================
 
-function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreated: (room: Room) => void }) {
+function CreateRoomModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (room: Room) => void;
+}) {
   const [name, setName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -158,8 +185,14 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading || !name.trim()}>
+          <button className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={loading || !name.trim()}
+          >
             {loading ? 'Creating...' : 'Create Room'}
           </button>
         </>
@@ -173,7 +206,7 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
             className="form-input"
             placeholder="general"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={e => setName(e.target.value)}
             maxLength={100}
             autoFocus
           />
@@ -182,11 +215,15 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <input
             type="checkbox"
             checked={isPrivate}
-            onChange={(e) => setIsPrivate(e.target.checked)}
+            onChange={e => setIsPrivate(e.target.checked)}
           />
           Make this room private (invite only)
         </label>
-        {error && <p style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14 }}>{error}</p>}
+        {error && (
+          <p style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14 }}>
+            {error}
+          </p>
+        )}
       </form>
     </Modal>
   );
@@ -211,7 +248,9 @@ function CreateDmModal({
   const [loading, setLoading] = useState(false);
 
   const filteredUsers = users.filter(
-    (u) => u.id !== currentUserId && u.displayName.toLowerCase().includes(search.toLowerCase())
+    u =>
+      u.id !== currentUserId &&
+      u.displayName.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleSelectUser = async (targetUserId: string) => {
@@ -235,15 +274,23 @@ function CreateDmModal({
           className="form-input"
           placeholder="Search users..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={e => setSearch(e.target.value)}
           autoFocus
         />
       </div>
       <div style={{ maxHeight: 300, overflowY: 'auto' }}>
         {filteredUsers.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No users found</p>
+          <p
+            style={{
+              color: 'var(--text-muted)',
+              textAlign: 'center',
+              padding: 20,
+            }}
+          >
+            No users found
+          </p>
         ) : (
-          filteredUsers.map((user) => (
+          filteredUsers.map(user => (
             <div
               key={user.id}
               className="member-item"
@@ -305,7 +352,11 @@ function InviteUserModal({
       title="Invite User"
       onClose={onClose}
       footer={
-        <button className="btn btn-primary" onClick={handleSubmit} disabled={loading || !username.trim()}>
+        <button
+          className="btn btn-primary"
+          onClick={handleSubmit}
+          disabled={loading || !username.trim()}
+        >
           {loading ? 'Inviting...' : 'Send Invite'}
         </button>
       }
@@ -318,12 +369,18 @@ function InviteUserModal({
             className="form-input"
             placeholder="Enter exact display name..."
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={e => setUsername(e.target.value)}
             autoFocus
           />
         </div>
-        {error && <p style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</p>}
-        {success && <p style={{ color: 'var(--success)', fontSize: 14 }}>Invitation sent!</p>}
+        {error && (
+          <p style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</p>
+        )}
+        {success && (
+          <p style={{ color: 'var(--success)', fontSize: 14 }}>
+            Invitation sent!
+          </p>
+        )}
       </form>
     </Modal>
   );
@@ -355,13 +412,21 @@ function InvitationsModal({
             <div key={invitation.id} className="invitation-item">
               <div className="invitation-info">
                 <div className="invitation-room">{room.name}</div>
-                <div className="invitation-from">Invited by {inviter.displayName}</div>
+                <div className="invitation-from">
+                  Invited by {inviter.displayName}
+                </div>
               </div>
               <div className="invitation-actions">
-                <button className="btn btn-sm btn-secondary" onClick={() => onRespond(invitation.id, 'decline')}>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => onRespond(invitation.id, 'decline')}
+                >
                   Decline
                 </button>
-                <button className="btn btn-sm btn-primary" onClick={() => onRespond(invitation.id, 'accept')}>
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={() => onRespond(invitation.id, 'accept')}
+                >
                   Accept
                 </button>
               </div>
@@ -392,9 +457,22 @@ function EditHistoryModal({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {edits.map((edit) => (
-            <div key={edit.id} style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+          {edits.map(edit => (
+            <div
+              key={edit.id}
+              style={{
+                padding: 12,
+                background: 'var(--bg-tertiary)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-muted)',
+                  marginBottom: 4,
+                }}
+              >
                 {formatDate(edit.editedAt)}
               </div>
               <div style={{ fontSize: 14 }}>{edit.previousContent}</div>
@@ -428,13 +506,16 @@ function ScheduledMessagesModal({
         </div>
       ) : (
         <div className="scheduled-list">
-          {messages.map((message) => (
+          {messages.map(message => (
             <div key={message.id} className="scheduled-item">
               <div className="scheduled-time">
                 Scheduled for {new Date(message.scheduledFor!).toLocaleString()}
               </div>
               <div className="scheduled-content">{message.content}</div>
-              <button className="btn btn-sm btn-danger" onClick={() => onCancel(message.id)}>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => onCancel(message.id)}
+              >
                 Cancel
               </button>
             </div>
@@ -449,7 +530,13 @@ function ScheduledMessagesModal({
 // Status Selector
 // =====================
 
-function StatusSelector({ status, onChange }: { status: string; onChange: (status: string) => void }) {
+function StatusSelector({
+  status,
+  onChange,
+}: {
+  status: string;
+  onChange: (status: string) => void;
+}) {
   const statuses = [
     { value: 'online', label: 'Online' },
     { value: 'away', label: 'Away' },
@@ -459,7 +546,7 @@ function StatusSelector({ status, onChange }: { status: string; onChange: (statu
 
   return (
     <div className="status-select">
-      {statuses.map((s) => (
+      {statuses.map(s => (
         <div
           key={s.value}
           className={`status-option ${status === s.value ? 'selected' : ''}`}
@@ -507,24 +594,32 @@ function MessageItem({
   onViewThread: (messageId: number) => void;
 }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showReactionUsers, setShowReactionUsers] = useState<string | null>(null);
+  const [showReactionUsers, setShowReactionUsers] = useState<string | null>(
+    null
+  );
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   const emojis = ['👍', '❤️', '😂', '😮', '😢'];
 
   // Group reactions by emoji
-  const groupedReactions = reactions.reduce((acc, r) => {
-    if (!acc[r.emoji]) acc[r.emoji] = [];
-    acc[r.emoji].push(r);
-    return acc;
-  }, {} as Record<string, MessageReaction[]>);
+  const groupedReactions = reactions.reduce(
+    (acc, r) => {
+      if (!acc[r.emoji]) acc[r.emoji] = [];
+      acc[r.emoji].push(r);
+      return acc;
+    },
+    {} as Record<string, MessageReaction[]>
+  );
 
   // Ephemeral countdown
   useEffect(() => {
     if (!message.expiresAt) return;
 
     const updateTimer = () => {
-      const remaining = Math.max(0, new Date(message.expiresAt!).getTime() - Date.now());
+      const remaining = Math.max(
+        0,
+        new Date(message.expiresAt!).getTime() - Date.now()
+      );
       setTimeLeft(Math.ceil(remaining / 1000));
     };
 
@@ -534,41 +629,46 @@ function MessageItem({
   }, [message.expiresAt]);
 
   const readByUsers = receipts
-    .filter((r) => r.receipt.userId !== message.userId)
-    .map((r) => r.user.displayName);
+    .filter(r => r.receipt.userId !== message.userId)
+    .map(r => r.user.displayName);
 
   return (
     <div className={`message ${message.expiresAt ? 'message-ephemeral' : ''}`}>
       {replyTo && (
         <div className="message-reply-indicator">
-          ↳ Replying to {replyTo.user.displayName}: {replyTo.message.content.slice(0, 50)}...
+          ↳ Replying to {replyTo.user.displayName}:{' '}
+          {replyTo.message.content.slice(0, 50)}...
         </div>
       )}
-      
+
       <div className="message-header">
         <span className="message-author">{user.displayName}</span>
         <span className="message-time">{formatTime(message.createdAt)}</span>
         {message.isEdited && (
-          <span className="message-edited" onClick={() => onViewHistory(message.id)} style={{ cursor: 'pointer' }}>
+          <span
+            className="message-edited"
+            onClick={() => onViewHistory(message.id)}
+            style={{ cursor: 'pointer' }}
+          >
             (edited)
           </span>
         )}
       </div>
-      
+
       <div className="message-content">{message.content}</div>
-      
+
       {message.expiresAt && timeLeft !== null && (
         <div className="message-ephemeral-timer">
           ⏱️ Disappears in {timeLeft}s
         </div>
       )}
-      
+
       {Object.keys(groupedReactions).length > 0 && (
         <div className="message-reactions">
           {Object.entries(groupedReactions).map(([emoji, reacts]) => (
             <div
               key={emoji}
-              className={`reaction-badge ${reacts.some((r) => r.userId === currentUserId) ? 'mine' : ''}`}
+              className={`reaction-badge ${reacts.some(r => r.userId === currentUserId) ? 'mine' : ''}`}
               onClick={() => onReact(message.id, emoji)}
               onMouseEnter={() => setShowReactionUsers(emoji)}
               onMouseLeave={() => setShowReactionUsers(null)}
@@ -577,34 +677,43 @@ function MessageItem({
               <span className="reaction-count">{reacts.length}</span>
               {showReactionUsers === emoji && (
                 <div className="tooltip-content" style={{ opacity: 1 }}>
-                  {reacts.map((r) => users.get(r.userId)?.displayName || 'Unknown').join(', ')}
+                  {reacts
+                    .map(r => users.get(r.userId)?.displayName || 'Unknown')
+                    .join(', ')}
                 </div>
               )}
             </div>
           ))}
         </div>
       )}
-      
+
       {readByUsers.length > 0 && (
         <div className="message-read-receipts">
-          Seen by {readByUsers.slice(0, 3).join(', ')}{readByUsers.length > 3 ? ` +${readByUsers.length - 3}` : ''}
+          Seen by {readByUsers.slice(0, 3).join(', ')}
+          {readByUsers.length > 3 ? ` +${readByUsers.length - 3}` : ''}
         </div>
       )}
-      
+
       {replyCount && replyCount > 0 && (
-        <div className="message-thread-count" onClick={() => onViewThread(message.id)}>
+        <div
+          className="message-thread-count"
+          onClick={() => onViewThread(message.id)}
+        >
           💬 {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
         </div>
       )}
-      
+
       <div className="message-actions">
         <div style={{ position: 'relative' }}>
-          <button className="message-action-btn" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+          <button
+            className="message-action-btn"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          >
             😀
           </button>
           {showEmojiPicker && (
             <div className="emoji-picker">
-              {emojis.map((emoji) => (
+              {emojis.map(emoji => (
                 <button
                   key={emoji}
                   className="emoji-btn"
@@ -619,11 +728,17 @@ function MessageItem({
             </div>
           )}
         </div>
-        <button className="message-action-btn" onClick={() => onReply(message, user)}>
+        <button
+          className="message-action-btn"
+          onClick={() => onReply(message, user)}
+        >
           ↩️
         </button>
         {message.userId === currentUserId && (
-          <button className="message-action-btn" onClick={() => onEdit(message)}>
+          <button
+            className="message-action-btn"
+            onClick={() => onEdit(message)}
+          >
             ✏️
           </button>
         )}
@@ -662,29 +777,42 @@ function ThreadPanel({
     <div className="thread-panel">
       <div className="thread-header">
         <span className="thread-title">Thread</span>
-        <button className="btn btn-ghost btn-icon" onClick={onClose}>×</button>
+        <button className="btn btn-ghost btn-icon" onClick={onClose}>
+          ×
+        </button>
       </div>
-      
+
       <div className="thread-messages">
-        <div className="message" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 12 }}>
+        <div
+          className="message"
+          style={{
+            borderBottom: '1px solid var(--border)',
+            paddingBottom: 12,
+            marginBottom: 12,
+          }}
+        >
           <div className="message-header">
             <span className="message-author">{parentUser.displayName}</span>
-            <span className="message-time">{formatTime(parentMessage.createdAt)}</span>
+            <span className="message-time">
+              {formatTime(parentMessage.createdAt)}
+            </span>
           </div>
           <div className="message-content">{parentMessage.content}</div>
         </div>
-        
+
         {replies.map(({ message, user }) => (
           <div key={message.id} className="message">
             <div className="message-header">
               <span className="message-author">{user.displayName}</span>
-              <span className="message-time">{formatTime(message.createdAt)}</span>
+              <span className="message-time">
+                {formatTime(message.createdAt)}
+              </span>
             </div>
             <div className="message-content">{message.content}</div>
           </div>
         ))}
       </div>
-      
+
       <div className="message-input-container">
         <form onSubmit={handleSubmit}>
           <div className="message-input-row">
@@ -692,8 +820,8 @@ function ThreadPanel({
               className="message-input"
               placeholder="Reply in thread..."
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onKeyDown={(e) => {
+              onChange={e => setContent(e.target.value)}
+              onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSubmit(e);
@@ -701,7 +829,11 @@ function ThreadPanel({
               }}
               rows={1}
             />
-            <button type="submit" className="btn btn-primary" disabled={!content.trim()}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!content.trim()}
+            >
               Send
             </button>
           </div>
@@ -734,12 +866,12 @@ function MembersPanel({
 }) {
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
-  const onlineMembers = members.filter((m) => {
+  const onlineMembers = members.filter(m => {
     const u = users.get(m.user.id);
     return u && u.status === 'online';
   });
 
-  const offlineMembers = members.filter((m) => {
+  const offlineMembers = members.filter(m => {
     const u = users.get(m.user.id);
     return !u || u.status !== 'online';
   });
@@ -750,7 +882,9 @@ function MembersPanel({
       <div
         key={m.member.id}
         className="member-item"
-        onClick={() => setSelectedMember(selectedMember === m.user.id ? null : m.user.id)}
+        onClick={() =>
+          setSelectedMember(selectedMember === m.user.id ? null : m.user.id)
+        }
       >
         <div className="member-avatar">
           {getInitials(user.displayName)}
@@ -759,26 +893,56 @@ function MembersPanel({
         <div className="member-info">
           <div className="member-name">{user.displayName}</div>
           {user.status !== 'online' && user.lastActiveAt && (
-            <div className="member-last-active">{formatDate(user.lastActiveAt)}</div>
+            <div className="member-last-active">
+              {formatDate(user.lastActiveAt)}
+            </div>
           )}
         </div>
         {m.member.isAdmin && <span className="member-admin-badge">ADMIN</span>}
-        
-        {selectedMember === m.user.id && isAdmin && m.user.id !== currentUserId && (
-          <div style={{ position: 'absolute', right: 8, display: 'flex', gap: 4, zIndex: 10 }}>
-            {!m.member.isAdmin && (
-              <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); onPromote(m.user.id); }}>
-                Promote
+
+        {selectedMember === m.user.id &&
+          isAdmin &&
+          m.user.id !== currentUserId && (
+            <div
+              style={{
+                position: 'absolute',
+                right: 8,
+                display: 'flex',
+                gap: 4,
+                zIndex: 10,
+              }}
+            >
+              {!m.member.isAdmin && (
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onPromote(m.user.id);
+                  }}
+                >
+                  Promote
+                </button>
+              )}
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={e => {
+                  e.stopPropagation();
+                  onKick(m.user.id);
+                }}
+              >
+                Kick
               </button>
-            )}
-            <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); onKick(m.user.id); }}>
-              Kick
-            </button>
-            <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); onBan(m.user.id); }}>
-              Ban
-            </button>
-          </div>
-        )}
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={e => {
+                  e.stopPropagation();
+                  onBan(m.user.id);
+                }}
+              >
+                Ban
+              </button>
+            </div>
+          )}
       </div>
     );
   };
@@ -789,7 +953,14 @@ function MembersPanel({
       <div className="member-list">
         {onlineMembers.length > 0 && (
           <>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 12px', fontWeight: 600 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                padding: '8px 12px',
+                fontWeight: 600,
+              }}
+            >
               ONLINE — {onlineMembers.length}
             </div>
             {onlineMembers.map(renderMember)}
@@ -797,7 +968,15 @@ function MembersPanel({
         )}
         {offlineMembers.length > 0 && (
           <>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 12px', fontWeight: 600, marginTop: 8 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                padding: '8px 12px',
+                fontWeight: 600,
+                marginTop: 8,
+              }}
+            >
               OFFLINE — {offlineMembers.length}
             </div>
             {offlineMembers.map(renderMember)}
@@ -815,7 +994,9 @@ function MembersPanel({
 export default function App() {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem('token')
+  );
   const [loading, setLoading] = useState(true);
 
   // App state
@@ -824,7 +1005,9 @@ export default function App() {
   const [messages, setMessages] = useState<MessageWithUser[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [receipts, setReceipts] = useState<ReceiptWithUser[]>([]);
-  const [replyCounts, setReplyCounts] = useState<Map<number, number>>(new Map());
+  const [replyCounts, setReplyCounts] = useState<Map<number, number>>(
+    new Map()
+  );
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
   const [typing, setTyping] = useState<TypingUser[]>([]);
@@ -845,12 +1028,17 @@ export default function App() {
 
   // Message input state
   const [messageContent, setMessageContent] = useState('');
-  const [replyTo, setReplyTo] = useState<{ message: Message; user: User } | null>(null);
+  const [replyTo, setReplyTo] = useState<{
+    message: Message;
+    user: User;
+  } | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [showScheduleOptions, setShowScheduleOptions] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   const [showEphemeralOptions, setShowEphemeralOptions] = useState(false);
-  const [ephemeralDuration, setEphemeralDuration] = useState<number | null>(null);
+  const [ephemeralDuration, setEphemeralDuration] = useState<number | null>(
+    null
+  );
 
   // Thread state
   const [threadMessageId, setThreadMessageId] = useState<number | null>(null);
@@ -892,19 +1080,21 @@ export default function App() {
   // Load initial data
   const loadInitialData = async () => {
     try {
-      const [roomsRes, usersRes, unreadRes, invitationsRes] = await Promise.all([
-        api.getRooms(),
-        api.getUsers(),
-        api.getUnreadCounts(),
-        api.getInvitations(),
-      ]);
+      const [roomsRes, usersRes, unreadRes, invitationsRes] = await Promise.all(
+        [
+          api.getRooms(),
+          api.getUsers(),
+          api.getUnreadCounts(),
+          api.getInvitations(),
+        ]
+      );
 
       setRooms(roomsRes.rooms);
       setUnreadCounts(unreadRes.unreadCounts);
       setInvitations(invitationsRes.invitations);
 
       const usersMap = new Map<string, User>();
-      usersRes.users.forEach((u) => usersMap.set(u.id, u));
+      usersRes.users.forEach(u => usersMap.set(u.id, u));
       setUsers(usersMap);
     } catch (err) {
       console.error('Failed to load initial data:', err);
@@ -918,22 +1108,26 @@ export default function App() {
 
     // User events
     socket.on('user:online', ({ user }) => {
-      setUsers((prev) => new Map(prev).set(user.id, user));
+      setUsers(prev => new Map(prev).set(user.id, user));
     });
 
     socket.on('user:offline', ({ userId, lastActiveAt }) => {
-      setUsers((prev) => {
+      setUsers(prev => {
         const updated = new Map(prev);
         const user = updated.get(userId);
         if (user) {
-          updated.set(userId, { ...user, status: 'offline' as any, lastActiveAt });
+          updated.set(userId, {
+            ...user,
+            status: 'offline' as any,
+            lastActiveAt,
+          });
         }
         return updated;
       });
     });
 
     socket.on('user:status', ({ userId, status, lastActiveAt }) => {
-      setUsers((prev) => {
+      setUsers(prev => {
         const updated = new Map(prev);
         const user = updated.get(userId);
         if (user) {
@@ -944,7 +1138,7 @@ export default function App() {
     });
 
     socket.on('user:updated', ({ user }) => {
-      setUsers((prev) => new Map(prev).set(user.id, user));
+      setUsers(prev => new Map(prev).set(user.id, user));
       if (user.id === currentUser.id) {
         setCurrentUser(user);
       }
@@ -952,39 +1146,43 @@ export default function App() {
 
     // Room events
     socket.on('room:created', ({ room }) => {
-      setRooms((prev) => {
-        if (prev.some((r) => r.id === room.id)) return prev;
+      setRooms(prev => {
+        if (prev.some(r => r.id === room.id)) return prev;
         return [...prev, room];
       });
     });
 
     socket.on('room:member:joined', ({ roomId, user }) => {
-      setUsers((prev) => new Map(prev).set(user.id, user));
+      setUsers(prev => new Map(prev).set(user.id, user));
       if (selectedRoom?.id === roomId) {
         loadRoomMembers(roomId);
       }
     });
 
     socket.on('room:member:left', ({ userId }) => {
-      setMembers((prev) => prev.filter((m) => m.user.id !== userId));
+      setMembers(prev => prev.filter(m => m.user.id !== userId));
     });
 
     socket.on('room:member:kicked', ({ userId }) => {
-      setMembers((prev) => prev.filter((m) => m.user.id !== userId));
+      setMembers(prev => prev.filter(m => m.user.id !== userId));
     });
 
     socket.on('room:member:banned', ({ userId }) => {
-      setMembers((prev) => prev.filter((m) => m.user.id !== userId));
+      setMembers(prev => prev.filter(m => m.user.id !== userId));
     });
 
     socket.on('room:member:promoted', ({ userId }) => {
-      setMembers((prev) =>
-        prev.map((m) => (m.user.id === userId ? { ...m, member: { ...m.member, isAdmin: true } } : m))
+      setMembers(prev =>
+        prev.map(m =>
+          m.user.id === userId
+            ? { ...m, member: { ...m.member, isAdmin: true } }
+            : m
+        )
       );
     });
 
     socket.on('room:kicked', ({ roomId }) => {
-      setRooms((prev) => prev.filter((r) => r.id !== roomId));
+      setRooms(prev => prev.filter(r => r.id !== roomId));
       if (selectedRoom?.id === roomId) {
         setSelectedRoom(null);
         setMessages([]);
@@ -992,7 +1190,7 @@ export default function App() {
     });
 
     socket.on('room:banned', ({ roomId }) => {
-      setRooms((prev) => prev.filter((r) => r.id !== roomId));
+      setRooms(prev => prev.filter(r => r.id !== roomId));
       if (selectedRoom?.id === roomId) {
         setSelectedRoom(null);
         setMessages([]);
@@ -1001,13 +1199,13 @@ export default function App() {
 
     // Message events
     socket.on('message:created', ({ message, user }) => {
-      setUsers((prev) => new Map(prev).set(user.id, user));
-      
+      setUsers(prev => new Map(prev).set(user.id, user));
+
       if (message.roomId === selectedRoom?.id) {
-        setMessages((prev) => [...prev, { message, user }]);
+        setMessages(prev => [...prev, { message, user }]);
         scrollToBottom();
       } else {
-        setUnreadCounts((prev) => ({
+        setUnreadCounts(prev => ({
           ...prev,
           [message.roomId]: (prev[message.roomId] || 0) + 1,
         }));
@@ -1015,52 +1213,75 @@ export default function App() {
     });
 
     socket.on('message:updated', ({ message, user }) => {
-      setMessages((prev) =>
-        prev.map((m) => (m.message.id === message.id ? { message, user } : m))
+      setMessages(prev =>
+        prev.map(m => (m.message.id === message.id ? { message, user } : m))
       );
     });
 
     socket.on('message:deleted', ({ messageId, roomId }) => {
       if (roomId === selectedRoom?.id) {
-        setMessages((prev) => prev.filter((m) => m.message.id !== messageId));
+        setMessages(prev => prev.filter(m => m.message.id !== messageId));
       }
     });
 
     socket.on('thread:reply', ({ parentId, message, user }) => {
-      setReplyCounts((prev) => {
+      setReplyCounts(prev => {
         const updated = new Map(prev);
         updated.set(parentId, (updated.get(parentId) || 0) + 1);
         return updated;
       });
-      
+
       if (threadMessageId === parentId) {
-        setThreadReplies((prev) => [...prev, { message, user }]);
+        setThreadReplies(prev => [...prev, { message, user }]);
       }
     });
 
     // Reaction events
     socket.on('reaction:added', ({ messageId, userId, emoji, user }) => {
-      setUsers((prev) => new Map(prev).set(user.id, user));
-      setReactions((prev) => [
+      setUsers(prev => new Map(prev).set(user.id, user));
+      setReactions(prev => [
         ...prev,
-        { id: Date.now(), messageId, userId, emoji, createdAt: new Date().toISOString() },
+        {
+          id: Date.now(),
+          messageId,
+          userId,
+          emoji,
+          createdAt: new Date().toISOString(),
+        },
       ]);
     });
 
     socket.on('reaction:removed', ({ messageId, userId, emoji }) => {
-      setReactions((prev) =>
-        prev.filter((r) => !(r.messageId === messageId && r.userId === userId && r.emoji === emoji))
+      setReactions(prev =>
+        prev.filter(
+          r =>
+            !(
+              r.messageId === messageId &&
+              r.userId === userId &&
+              r.emoji === emoji
+            )
+        )
       );
     });
 
     // Read receipt events
     socket.on('messages:read', ({ roomId, userId, messageIds, user }) => {
       if (roomId === selectedRoom?.id) {
-        setReceipts((prev) => {
+        setReceipts(prev => {
           const newReceipts = messageIds
-            .filter((id: number) => !prev.some((r) => r.receipt.messageId === id && r.receipt.userId === userId))
+            .filter(
+              (id: number) =>
+                !prev.some(
+                  r => r.receipt.messageId === id && r.receipt.userId === userId
+                )
+            )
             .map((id: number) => ({
-              receipt: { id: Date.now(), messageId: id, userId, readAt: new Date().toISOString() },
+              receipt: {
+                id: Date.now(),
+                messageId: id,
+                userId,
+                readAt: new Date().toISOString(),
+              },
               user,
             }));
           return [...prev, ...newReceipts];
@@ -1071,20 +1292,20 @@ export default function App() {
     // Typing events
     socket.on('typing:start', ({ roomId, userId, user }) => {
       if (roomId === selectedRoom?.id && userId !== currentUser.id) {
-        setTyping((prev) => {
-          if (prev.some((t) => t.userId === userId)) return prev;
+        setTyping(prev => {
+          if (prev.some(t => t.userId === userId)) return prev;
           return [...prev, { roomId, userId, user }];
         });
       }
     });
 
     socket.on('typing:stop', ({ userId }) => {
-      setTyping((prev) => prev.filter((t) => t.userId !== userId));
+      setTyping(prev => prev.filter(t => t.userId !== userId));
     });
 
     // Invitation events
     socket.on('invitation:received', ({ invitation, room, inviter }) => {
-      setInvitations((prev) => [...prev, { invitation, room, inviter }]);
+      setInvitations(prev => [...prev, { invitation, room, inviter }]);
     });
 
     return () => {
@@ -1165,18 +1386,24 @@ export default function App() {
       setReplyCounts(counts);
 
       // Update users
-      setUsers((prev) => {
+      setUsers(prev => {
         const updated = new Map(prev);
-        membersRes.members.forEach((m: MemberWithUser) => updated.set(m.user.id, m.user));
-        messagesRes.messages.forEach((m: MessageWithUser) => updated.set(m.user.id, m.user));
+        membersRes.members.forEach((m: MemberWithUser) =>
+          updated.set(m.user.id, m.user)
+        );
+        messagesRes.messages.forEach((m: MessageWithUser) =>
+          updated.set(m.user.id, m.user)
+        );
         return updated;
       });
 
       // Mark all as read
-      const messageIds = messagesRes.messages.map((m: MessageWithUser) => m.message.id);
+      const messageIds = messagesRes.messages.map(
+        (m: MessageWithUser) => m.message.id
+      );
       if (messageIds.length > 0) {
         await api.markRead(room.id, messageIds);
-        setUnreadCounts((prev) => ({ ...prev, [room.id]: 0 }));
+        setUnreadCounts(prev => ({ ...prev, [room.id]: 0 }));
       }
 
       scrollToBottom();
@@ -1203,7 +1430,7 @@ export default function App() {
   // Handle room selection
   const handleSelectRoom = (room: Room) => {
     if (selectedRoom?.id === room.id) return;
-    
+
     const socket = getSocket();
     if (socket && selectedRoom) {
       socket.emit('room:leave', selectedRoom.id);
@@ -1321,7 +1548,9 @@ export default function App() {
     if (!selectedRoom || !threadMessageId) return;
 
     try {
-      await api.sendMessage(selectedRoom.id, content, { replyToId: threadMessageId });
+      await api.sendMessage(selectedRoom.id, content, {
+        replyToId: threadMessageId,
+      });
     } catch (err) {
       console.error('Failed to send reply:', err);
     }
@@ -1333,7 +1562,7 @@ export default function App() {
 
     try {
       await api.leaveRoom(selectedRoom.id);
-      setRooms((prev) => prev.filter((r) => r.id !== selectedRoom.id));
+      setRooms(prev => prev.filter(r => r.id !== selectedRoom.id));
       setSelectedRoom(null);
       setMessages([]);
     } catch (err) {
@@ -1342,13 +1571,18 @@ export default function App() {
   };
 
   // Handle invitation response
-  const handleInvitationResponse = async (invitationId: number, action: 'accept' | 'decline') => {
+  const handleInvitationResponse = async (
+    invitationId: number,
+    action: 'accept' | 'decline'
+  ) => {
     try {
       const result = await api.respondToInvitation(invitationId, action);
-      setInvitations((prev) => prev.filter((i) => i.invitation.id !== invitationId));
-      
+      setInvitations(prev =>
+        prev.filter(i => i.invitation.id !== invitationId)
+      );
+
       if (action === 'accept' && result.room) {
-        setRooms((prev) => [...prev, result.room]);
+        setRooms(prev => [...prev, result.room]);
       }
     } catch (err) {
       console.error('Failed to respond to invitation:', err);
@@ -1398,7 +1632,7 @@ export default function App() {
   const handleCancelScheduled = async (messageId: number) => {
     try {
       await api.cancelScheduled(messageId);
-      setScheduledMessages((prev) => prev.filter((m) => m.id !== messageId));
+      setScheduledMessages(prev => prev.filter(m => m.id !== messageId));
     } catch (err) {
       console.error('Failed to cancel scheduled message:', err);
     }
@@ -1421,31 +1655,33 @@ export default function App() {
   }
 
   // Get current user's membership
-  const currentMembership = members.find((m) => m.user.id === currentUser.id);
+  const currentMembership = members.find(m => m.user.id === currentUser.id);
   const isAdmin = currentMembership?.member.isAdmin || false;
   const isMember = !!currentMembership;
 
   // Get thread parent message
-  const threadParent = threadMessageId ? messages.find((m) => m.message.id === threadMessageId) : null;
+  const threadParent = threadMessageId
+    ? messages.find(m => m.message.id === threadMessageId)
+    : null;
 
   // Typing text
   const typingText =
     typing.length === 0
       ? null
       : typing.length === 1
-      ? `${typing[0].user?.displayName || 'Someone'} is typing...`
-      : typing.length === 2
-      ? `${typing[0].user?.displayName || 'Someone'} and ${typing[1].user?.displayName || 'someone'} are typing...`
-      : 'Multiple users are typing...';
+        ? `${typing[0].user?.displayName || 'Someone'} is typing...`
+        : typing.length === 2
+          ? `${typing[0].user?.displayName || 'Someone'} and ${typing[1].user?.displayName || 'someone'} are typing...`
+          : 'Multiple users are typing...';
 
   // Get local datetime for min value
   const now = new Date();
   const minDateTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
   // Separate rooms by type
-  const publicRooms = rooms.filter((r) => !r.isPrivate && !r.isDm);
-  const privateRooms = rooms.filter((r) => r.isPrivate && !r.isDm);
-  const dmRooms = rooms.filter((r) => r.isDm);
+  const publicRooms = rooms.filter(r => !r.isPrivate && !r.isDm);
+  const privateRooms = rooms.filter(r => r.isPrivate && !r.isDm);
+  const dmRooms = rooms.filter(r => r.isDm);
 
   return (
     <div className="app">
@@ -1484,10 +1720,15 @@ export default function App() {
           {/* Public Rooms */}
           <div className="sidebar-section-title">
             Rooms
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowCreateRoom(true)}>+</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowCreateRoom(true)}
+            >
+              +
+            </button>
           </div>
           <div className="room-list">
-            {publicRooms.map((room) => (
+            {publicRooms.map(room => (
               <div
                 key={room.id}
                 className={`room-item ${selectedRoom?.id === room.id ? 'active' : ''}`}
@@ -1495,7 +1736,9 @@ export default function App() {
               >
                 <span className="room-item-name"># {room.name}</span>
                 {unreadCounts[room.id] > 0 && (
-                  <span className="room-item-badge">{unreadCounts[room.id]}</span>
+                  <span className="room-item-badge">
+                    {unreadCounts[room.id]}
+                  </span>
                 )}
               </div>
             ))}
@@ -1508,7 +1751,7 @@ export default function App() {
                 Private Rooms
               </div>
               <div className="room-list">
-                {privateRooms.map((room) => (
+                {privateRooms.map(room => (
                   <div
                     key={room.id}
                     className={`room-item ${selectedRoom?.id === room.id ? 'active' : ''}`}
@@ -1517,7 +1760,9 @@ export default function App() {
                     <span className="room-item-private">🔒</span>
                     <span className="room-item-name">{room.name}</span>
                     {unreadCounts[room.id] > 0 && (
-                      <span className="room-item-badge">{unreadCounts[room.id]}</span>
+                      <span className="room-item-badge">
+                        {unreadCounts[room.id]}
+                      </span>
                     )}
                   </div>
                 ))}
@@ -1528,10 +1773,15 @@ export default function App() {
           {/* DMs */}
           <div className="sidebar-section-title" style={{ marginTop: 16 }}>
             Direct Messages
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowCreateDm(true)}>+</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowCreateDm(true)}
+            >
+              +
+            </button>
           </div>
           <div className="room-list">
-            {dmRooms.map((room) => (
+            {dmRooms.map(room => (
               <div
                 key={room.id}
                 className={`room-item ${selectedRoom?.id === room.id ? 'active' : ''}`}
@@ -1539,7 +1789,9 @@ export default function App() {
               >
                 <span className="room-item-name">{room.name}</span>
                 {unreadCounts[room.id] > 0 && (
-                  <span className="room-item-badge">{unreadCounts[room.id]}</span>
+                  <span className="room-item-badge">
+                    {unreadCounts[room.id]}
+                  </span>
                 )}
               </div>
             ))}
@@ -1549,7 +1801,9 @@ export default function App() {
         {/* User panel */}
         <div className="user-panel">
           <div className="user-profile">
-            <div className="user-avatar">{getInitials(currentUser.displayName)}</div>
+            <div className="user-avatar">
+              {getInitials(currentUser.displayName)}
+            </div>
             <div className="user-info">
               <div className="user-name">{currentUser.displayName}</div>
               <div
@@ -1560,14 +1814,21 @@ export default function App() {
                 {currentUser.status} ▾
               </div>
             </div>
-            <button className="btn btn-ghost btn-icon" onClick={handleLogout} title="Logout">
+            <button
+              className="btn btn-ghost btn-icon"
+              onClick={handleLogout}
+              title="Logout"
+            >
               ⏻
             </button>
           </div>
-          
+
           {showStatusMenu && (
             <div style={{ marginTop: 12 }}>
-              <StatusSelector status={currentUser.status} onChange={handleStatusChange} />
+              <StatusSelector
+                status={currentUser.status}
+                onChange={handleStatusChange}
+              />
             </div>
           )}
         </div>
@@ -1585,12 +1846,18 @@ export default function App() {
               </div>
               <div className="main-header-actions">
                 {selectedRoom.isPrivate && isAdmin && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => setShowInviteUser(true)}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowInviteUser(true)}
+                  >
                     Invite
                   </button>
                 )}
                 {scheduledMessages.length > 0 && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => setShowScheduled(true)}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowScheduled(true)}
+                  >
                     📅 {scheduledMessages.length}
                   </button>
                 )}
@@ -1601,7 +1868,10 @@ export default function App() {
                   👥
                 </button>
                 {isMember && !selectedRoom.isDm && (
-                  <button className="btn btn-ghost btn-sm" onClick={handleLeaveRoom}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={handleLeaveRoom}
+                  >
                     Leave
                   </button>
                 )}
@@ -1614,12 +1884,14 @@ export default function App() {
                 <div className="empty-state">
                   <div className="empty-state-icon">💬</div>
                   <div className="empty-state-text">No messages yet</div>
-                  <div className="empty-state-subtext">Be the first to say something!</div>
+                  <div className="empty-state-subtext">
+                    Be the first to say something!
+                  </div>
                 </div>
               ) : (
                 messages.map(({ message, user }) => {
                   const replyToMessage = message.replyToId
-                    ? messages.find((m) => m.message.id === message.replyToId)
+                    ? messages.find(m => m.message.id === message.replyToId)
                     : undefined;
 
                   return (
@@ -1628,13 +1900,17 @@ export default function App() {
                       message={message}
                       user={user}
                       currentUserId={currentUser.id}
-                      reactions={reactions.filter((r) => r.messageId === message.id)}
-                      receipts={receipts.filter((r) => r.receipt.messageId === message.id)}
+                      reactions={reactions.filter(
+                        r => r.messageId === message.id
+                      )}
+                      receipts={receipts.filter(
+                        r => r.receipt.messageId === message.id
+                      )}
                       users={users}
                       replyCount={replyCounts.get(message.id)}
                       replyTo={replyToMessage}
                       onReact={handleReaction}
-                      onEdit={(m) => {
+                      onEdit={m => {
                         setEditingMessage(m);
                         setMessageContent(m.content);
                       }}
@@ -1657,10 +1933,15 @@ export default function App() {
                 {replyTo && (
                   <div className="reply-preview">
                     <span>Replying to {replyTo.user.displayName}</span>
-                    <button className="reply-preview-close" onClick={() => setReplyTo(null)}>×</button>
+                    <button
+                      className="reply-preview-close"
+                      onClick={() => setReplyTo(null)}
+                    >
+                      ×
+                    </button>
                   </div>
                 )}
-                
+
                 {editingMessage && (
                   <div className="reply-preview">
                     <span>Editing message</span>
@@ -1705,7 +1986,7 @@ export default function App() {
                       type="datetime-local"
                       className="form-input"
                       value={scheduleDate}
-                      onChange={(e) => setScheduleDate(e.target.value)}
+                      onChange={e => setScheduleDate(e.target.value)}
                       min={minDateTime}
                       style={{ width: 'auto' }}
                     />
@@ -1727,18 +2008,29 @@ export default function App() {
                       { label: '1m', value: 60 },
                       { label: '5m', value: 300 },
                       { label: '15m', value: 900 },
-                    ].map((opt) => (
+                    ].map(opt => (
                       <button
                         key={opt.value}
                         className={`btn btn-sm ${ephemeralDuration === opt.value ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => setEphemeralDuration(ephemeralDuration === opt.value ? null : opt.value)}
+                        onClick={() =>
+                          setEphemeralDuration(
+                            ephemeralDuration === opt.value ? null : opt.value
+                          )
+                        }
                       >
                         {opt.label}
                       </button>
                     ))}
                     {ephemeralDuration && (
-                      <span style={{ fontSize: 12, color: 'var(--warning)', alignSelf: 'center' }}>
-                        Message will disappear after {ephemeralDuration / 60} minute(s)
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: 'var(--warning)',
+                          alignSelf: 'center',
+                        }}
+                      >
+                        Message will disappear after {ephemeralDuration / 60}{' '}
+                        minute(s)
                       </span>
                     )}
                   </div>
@@ -1751,15 +2043,15 @@ export default function App() {
                       scheduleDate
                         ? 'Schedule a message...'
                         : ephemeralDuration
-                        ? 'Send a disappearing message...'
-                        : 'Type a message...'
+                          ? 'Send a disappearing message...'
+                          : 'Type a message...'
                     }
                     value={messageContent}
-                    onChange={(e) => {
+                    onChange={e => {
                       setMessageContent(e.target.value);
                       handleTyping();
                     }}
-                    onKeyDown={(e) => {
+                    onKeyDown={e => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         handleSendMessage();
@@ -1772,14 +2064,24 @@ export default function App() {
                     onClick={handleSendMessage}
                     disabled={!messageContent.trim()}
                   >
-                    {editingMessage ? 'Save' : scheduleDate ? 'Schedule' : 'Send'}
+                    {editingMessage
+                      ? 'Save'
+                      : scheduleDate
+                        ? 'Schedule'
+                        : 'Send'}
                   </button>
                 </div>
               </div>
             )}
 
             {!isMember && selectedRoom.isPrivate && (
-              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div
+                style={{
+                  padding: 20,
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                }}
+              >
                 You are not a member of this room
               </div>
             )}
@@ -1788,7 +2090,9 @@ export default function App() {
           <div className="empty-state" style={{ flex: 1 }}>
             <div className="empty-state-icon">👋</div>
             <div className="empty-state-text">Welcome to Chat!</div>
-            <div className="empty-state-subtext">Select a room or start a conversation</div>
+            <div className="empty-state-subtext">
+              Select a room or start a conversation
+            </div>
           </div>
         )}
       </div>
@@ -1821,8 +2125,8 @@ export default function App() {
       {showCreateRoom && (
         <CreateRoomModal
           onClose={() => setShowCreateRoom(false)}
-          onCreated={(room) => {
-            setRooms((prev) => [...prev, room]);
+          onCreated={room => {
+            setRooms(prev => [...prev, room]);
             handleSelectRoom(room);
           }}
         />
@@ -1833,8 +2137,8 @@ export default function App() {
           users={Array.from(users.values())}
           currentUserId={currentUser.id}
           onClose={() => setShowCreateDm(false)}
-          onCreated={(room) => {
-            setRooms((prev) => [...prev, room]);
+          onCreated={room => {
+            setRooms(prev => [...prev, room]);
             handleSelectRoom(room);
           }}
         />

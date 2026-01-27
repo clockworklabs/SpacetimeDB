@@ -21,10 +21,12 @@ export default function ChatRoom() {
   useEffect(() => {
     if (!roomId) return;
     setLoading(true);
-    
+
     // Fetch messages
     const token = localStorage.getItem('token');
-    fetch(`/api/rooms/${roomId}/messages`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`/api/rooms/${roomId}/messages`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then(res => res.json())
       .then(data => {
         setMessages(data);
@@ -59,7 +61,7 @@ export default function ChatRoom() {
     };
 
     const onMessageUpdated = (msg: Message) => {
-      setMessages(prev => prev.map(m => m.id === msg.id ? msg : m));
+      setMessages(prev => prev.map(m => (m.id === msg.id ? msg : m)));
     };
 
     const onMessageDeleted = ({ id }: { id: number }) => {
@@ -78,10 +80,16 @@ export default function ChatRoom() {
       });
     };
 
-    const onReadUpdated = ({ userId, lastReadMessageId }: { userId: string, lastReadMessageId: number }) => {
+    const onReadUpdated = ({
+      userId,
+      lastReadMessageId,
+    }: {
+      userId: string;
+      lastReadMessageId: number;
+    }) => {
       setReadStatus(prev => ({
         ...prev,
-        [userId]: lastReadMessageId
+        [userId]: lastReadMessageId,
       }));
     };
 
@@ -111,11 +119,11 @@ export default function ChatRoom() {
     const token = localStorage.getItem('token');
     fetch(`/api/rooms/${roomId}/read`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}` 
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ lastReadMessageId: messageId })
+      body: JSON.stringify({ lastReadMessageId: messageId }),
     });
   };
 
@@ -123,11 +131,11 @@ export default function ChatRoom() {
     const token = localStorage.getItem('token');
     await fetch(`/api/messages/${id}/reactions`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}` 
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ emoji })
+      body: JSON.stringify({ emoji }),
     });
   };
 
@@ -135,11 +143,11 @@ export default function ChatRoom() {
     const token = localStorage.getItem('token');
     await fetch(`/api/messages/${id}`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}` 
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ content })
+      body: JSON.stringify({ content }),
     });
   };
 
@@ -149,11 +157,11 @@ export default function ChatRoom() {
     return Object.entries(readStatus)
       .filter(([uid, lastRead]) => lastRead >= messageId && uid !== user?.id) // Exclude self
       .map(([uid]) => {
-         // Need username. But I only have IDs in readStatus.
-         // I can fetch user list or just rely on finding user in previous messages?
-         // For now, I'll display User ID or try to find it in message authors.
-         const knownUser = messages.find(m => m.userId === uid)?.author;
-         return knownUser ? knownUser.username : uid.slice(0, 8);
+        // Need username. But I only have IDs in readStatus.
+        // I can fetch user list or just rely on finding user in previous messages?
+        // For now, I'll display User ID or try to find it in message authors.
+        const knownUser = messages.find(m => m.userId === uid)?.author;
+        return knownUser ? knownUser.username : uid.slice(0, 8);
       });
   };
 
@@ -161,18 +169,26 @@ export default function ChatRoom() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ padding: 16, borderBottom: '1px solid var(--bg-tertiary)' }}>
+      <div
+        style={{ padding: 16, borderBottom: '1px solid var(--bg-tertiary)' }}
+      >
         <h3 style={{ margin: 0 }}>Room #{roomId}</h3>
       </div>
-      
-      <div 
+
+      <div
         ref={scrollRef}
-        style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '16px 0' }}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '16px 0',
+        }}
       >
         {messages.map(msg => (
-          <MessageItem 
-            key={msg.id} 
-            message={msg} 
+          <MessageItem
+            key={msg.id}
+            message={msg}
             seenBy={getSeenBy(msg.id)}
             onReact={handleReact}
             onEdit={handleEdit}
@@ -182,8 +198,16 @@ export default function ChatRoom() {
       </div>
 
       {typingUsers.size > 0 && (
-        <div style={{ padding: '0 16px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'is' : 'are'} typing...
+        <div
+          style={{
+            padding: '0 16px',
+            fontSize: 12,
+            color: 'var(--text-muted)',
+            fontStyle: 'italic',
+          }}
+        >
+          {Array.from(typingUsers).join(', ')}{' '}
+          {typingUsers.size === 1 ? 'is' : 'are'} typing...
         </div>
       )}
 

@@ -8,31 +8,31 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 9 (09_postgres_private_rooms.md) |
-| **Features Evaluated** | 1-12 (max 15) |
-| **Total Feature Score** | 27.25 / 36 |
-| **Percentage** | 75.7% |
+| Metric                  | Value                            |
+| ----------------------- | -------------------------------- |
+| **Prompt Level Used**   | 9 (09_postgres_private_rooms.md) |
+| **Features Evaluated**  | 1-12 (max 15)                    |
+| **Total Feature Score** | 27.25 / 36                       |
+| **Percentage**          | 75.7%                            |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
-- [ ] First-try success (had 403/undefined errors requiring investigation)
+- [x] First-try success
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | 1,004 |
-| Lines of code (frontend) | 2,285 |
-| Number of files created | 21 |
-| External dependencies | drizzle-orm, postgres, express, socket.io, jsonwebtoken, cors, react, socket.io-client |
+| Metric                   | Value                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| Lines of code (backend)  | 1,004                                                                                  |
+| Lines of code (frontend) | 2,285                                                                                  |
+| Number of files created  | 21                                                                                     |
+| External dependencies    | drizzle-orm, postgres, express, socket.io, jsonwebtoken, cors, react, socket.io-client |
 
 ---
 
 ## Feature 1: Basic Chat Features (Score: 2.0 / 3)
 
 - [x] Users can set a display name (0.5)
-- [x] Users can create chat rooms (0) — *bug: room appears twice, not persistent — broken UX*
-- [x] Users can join/leave rooms (0) — *bug: only non-admin can leave, room hidden after — broken UX*
+- [x] Users can create chat rooms (0) — _bug: room appears twice, not persistent — broken UX_
+- [x] Users can join/leave rooms (0) — _bug: only non-admin can leave, room hidden after — broken UX_
 - [x] Users can send messages to joined rooms (0.5)
 - [x] Online users are displayed (0.5)
 - [x] Basic validation exists (0.5)
@@ -57,9 +57,9 @@
 
 ## Feature 4: Unread Message Counts (Score: 1.5 / 3)
 
-- [x] Unread count badge shows on room list (0.5) — *very inconsistent*
-- [x] Count tracks last-read position per user per room (0.5) — *very inconsistent*
-- [x] Counts update in real-time (0.5) — *very inconsistent*
+- [x] Unread count badge shows on room list (0.5) — _very inconsistent_
+- [x] Count tracks last-read position per user per room (0.5) — _very inconsistent_
+- [x] Counts update in real-time (0.5) — _very inconsistent_
 
 ---
 
@@ -67,7 +67,7 @@
 
 - [x] Users can compose and schedule messages for future delivery (1)
 - [x] Pending scheduled messages visible to author with cancel option (1)
-- [x] Message appears in room at scheduled time (0) — *errors on arrival; needs refresh — real-time broken*
+- [x] Message appears in room at scheduled time (0) — _errors on arrival; needs refresh — real-time broken_
 
 ---
 
@@ -93,14 +93,14 @@
 - [x] Users can edit their own messages (1)
 - [x] "(edited)" indicator shows on edited messages (0.5)
 - [x] Edit history is viewable by other users (1)
-- [x] Edits sync in real-time to all viewers (0.25) — *history window doesn't update in realtime*
+- [x] Edits sync in real-time to all viewers (0.25) — _history window doesn't update in realtime_
 
 ---
 
 ## Feature 9: Real-Time Permissions (Score: 1.5 / 3)
 
-- [x] Room creator is admin and can kick/ban users (0.5) — *kick exists but doesn't disconnect*
-- [ ] Kicked users immediately lose access and stop receiving updates (0) — *completely broken*
+- [x] Room creator is admin and can kick/ban users (0.5) — _kick exists but doesn't disconnect_
+- [ ] Kicked users immediately lose access and stop receiving updates (0) — _completely broken_
 - [x] Admins can promote other users to admin (0.5)
 - [x] Permission changes apply instantly (0.5)
 
@@ -110,16 +110,16 @@
 
 - [x] Users can set status: online, away, do-not-disturb, invisible (1)
 - [x] "Last active X minutes ago" shows for offline users (0.5)
-- [x] Status changes sync to all viewers in real-time (0.5) — *not shown in Members view*
+- [x] Status changes sync to all viewers in real-time (0.5) — _not shown in Members view_
 - [x] Auto-set to "away" after inactivity period (0.5)
 
 ---
 
 ## Feature 11: Message Threading (Score: 1.5 / 3)
 
-- [x] Users can reply to specific messages, creating a thread (0.5) — *no visual indication in main view*
+- [x] Users can reply to specific messages, creating a thread (0.5) — _no visual indication in main view_
 - [x] Parent messages show reply count and preview (0.5)
-- [x] Threaded view shows all replies to a message (0.5) — *not realtime, need to reopen*
+- [x] Threaded view shows all replies to a message (0.5) — _not realtime, need to reopen_
 - [ ] New replies sync in real-time to thread viewers (0)
 
 ---
@@ -127,15 +127,15 @@
 ## Feature 12: Private Rooms & Direct Messages (Score: 1.5 / 3)
 
 - [x] Users can create private/invite-only rooms (0.75)
-- [ ] Room creators can invite specific users by username (0) — *can accept but can't access room — invites useless*
+- [ ] Room creators can invite specific users by username (0) — _can accept but can't access room — invites useless_
 - [x] Direct messages (DMs) between two users work (0.75)
-- [ ] Only members can see private room content and member lists (0) — *invite bug breaks membership*
+- [ ] Only members can see private room content and member lists (0) — _invite bug breaks membership_
 
 ---
 
 ## Features 13-15: Not Evaluated
 
-*Not included in prompt level 9*
+_Not included in prompt level 9_
 
 - Feature 13: Room Activity Indicators — N/A
 - Feature 14: Draft Sync — N/A
@@ -145,21 +145,21 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score | Reprompts |
-|---------|-----|-------|-----------|
-| 1. Basic Chat | 3 | 2.0 | 0 |
-| 2. Typing Indicators | 3 | 3 | 0 |
-| 3. Read Receipts | 3 | 3 | 0 |
-| 4. Unread Counts | 3 | 1.5 | 0 |
-| 5. Scheduled Messages | 3 | 2.0 | 0 |
-| 6. Ephemeral Messages | 3 | 3 | 0 |
-| 7. Message Reactions | 3 | 3 | 0 |
-| 8. Message Editing | 3 | 2.75 | 0 |
-| 9. Real-Time Permissions | 3 | 1.5 | 0 |
-| 10. Rich Presence | 3 | 2.5 | 0 |
-| 11. Message Threading | 3 | 1.5 | 0 |
-| 12. Private Rooms & DMs | 3 | 1.5 | 0 |
-| **TOTAL** | **36** | **27.25** | **0** |
+| Feature                  | Max    | Score     | Reprompts |
+| ------------------------ | ------ | --------- | --------- |
+| 1. Basic Chat            | 3      | 2.0       | 0         |
+| 2. Typing Indicators     | 3      | 3         | 0         |
+| 3. Read Receipts         | 3      | 3         | 0         |
+| 4. Unread Counts         | 3      | 1.5       | 0         |
+| 5. Scheduled Messages    | 3      | 2.0       | 0         |
+| 6. Ephemeral Messages    | 3      | 3         | 0         |
+| 7. Message Reactions     | 3      | 3         | 0         |
+| 8. Message Editing       | 3      | 2.75      | 0         |
+| 9. Real-Time Permissions | 3      | 1.5       | 0         |
+| 10. Rich Presence        | 3      | 2.5       | 0         |
+| 11. Message Threading    | 3      | 1.5       | 0         |
+| 12. Private Rooms & DMs  | 3      | 1.5       | 0         |
+| **TOTAL**                | **36** | **27.25** | **0**     |
 
 ---
 
@@ -180,6 +180,7 @@
 ## Scoring Philosophy
 
 Scores reflect **user-facing functionality**, not implementation effort:
+
 - Features with critical bugs that break the user flow receive minimal/zero credit
 - "Code exists" ≠ "feature works"
 - A broken flow is worse than no flow (confuses users)

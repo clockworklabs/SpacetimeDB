@@ -18,7 +18,17 @@ window.__my_identity = null;
 // TYPES
 // ============================================================================
 
-type Tool = 'select' | 'brush' | 'eraser' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'text' | 'sticky' | 'comment';
+type Tool =
+  | 'select'
+  | 'brush'
+  | 'eraser'
+  | 'rectangle'
+  | 'ellipse'
+  | 'line'
+  | 'arrow'
+  | 'text'
+  | 'sticky'
+  | 'comment';
 
 interface Point {
   x: number;
@@ -37,51 +47,69 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const connectionBuilder = useMemo(() =>
-    DbConnection.builder()
-      .withUri(SPACETIMEDB_URI)
-      .withModuleName(MODULE_NAME)
-      .withToken(localStorage.getItem('paint_auth_token') || undefined)
-      .onConnect((conn, identity, token) => {
-        console.log('Connected!', identity.toHexString());
-        localStorage.setItem('paint_auth_token', token);
-        window.__db_conn = conn;
-        window.__my_identity = identity;
-        conn.subscriptionBuilder()
-          .onApplied(() => {
-            console.log('Subscriptions applied!');
-            setConnected(true);
-          })
-          .onError((err) => {
-            console.error('Subscription error:', err);
-            setError('Subscription error: ' + String(err));
-          })
-          .subscribeToAllTables();
-      })
-      .onConnectError((_ctx: ErrorContext, err: Error) => {
-        console.error('Connection error:', err);
-        setError('Connection error: ' + err.message);
-        if (err.message?.includes('Unauthorized') || err.message?.includes('401')) {
-          localStorage.removeItem('paint_auth_token');
-        }
-      })
-      .onDisconnect(() => {
-        console.log('Disconnected');
-        setConnected(false);
-      }),
+  const connectionBuilder = useMemo(
+    () =>
+      DbConnection.builder()
+        .withUri(SPACETIMEDB_URI)
+        .withModuleName(MODULE_NAME)
+        .withToken(localStorage.getItem('paint_auth_token') || undefined)
+        .onConnect((conn, identity, token) => {
+          console.log('Connected!', identity.toHexString());
+          localStorage.setItem('paint_auth_token', token);
+          window.__db_conn = conn;
+          window.__my_identity = identity;
+          conn
+            .subscriptionBuilder()
+            .onApplied(() => {
+              console.log('Subscriptions applied!');
+              setConnected(true);
+            })
+            .onError(err => {
+              console.error('Subscription error:', err);
+              setError('Subscription error: ' + String(err));
+            })
+            .subscribeToAllTables();
+        })
+        .onConnectError((_ctx: ErrorContext, err: Error) => {
+          console.error('Connection error:', err);
+          setError('Connection error: ' + err.message);
+          if (
+            err.message?.includes('Unauthorized') ||
+            err.message?.includes('401')
+          ) {
+            localStorage.removeItem('paint_auth_token');
+          }
+        })
+        .onDisconnect(() => {
+          console.log('Disconnected');
+          setConnected(false);
+        }),
     []
   );
 
   return (
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-      {error ? <ErrorScreen error={error} /> : connected ? <PaintApp /> : <LoadingScreen />}
+      {error ? (
+        <ErrorScreen error={error} />
+      ) : connected ? (
+        <PaintApp />
+      ) : (
+        <LoadingScreen />
+      )}
     </SpacetimeDBProvider>
   );
 }
 
 function LoadingScreen() {
   return (
-    <div className="app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div
+      className="app"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <div className="loading">
         <div className="loading-spinner" />
         <span>Connecting to SpacetimeDB...</span>
@@ -97,11 +125,22 @@ function ErrorScreen({ error }: { error: string }) {
   };
 
   return (
-    <div className="app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div
+      className="app"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <div style={{ textAlign: 'center', padding: '2rem' }}>
         <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>❌</div>
-        <div style={{ color: 'var(--stdb-red)', marginBottom: '1rem' }}>{error}</div>
-        <button className="btn btn-primary" onClick={handleRetry}>Retry</button>
+        <div style={{ color: 'var(--stdb-red)', marginBottom: '1rem' }}>
+          {error}
+        </div>
+        <button className="btn btn-primary" onClick={handleRetry}>
+          Retry
+        </button>
       </div>
     </div>
   );
@@ -141,35 +180,59 @@ function PaintApp() {
   const [showSettings, setShowSettings] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<'users' | 'activity' | 'versions' | 'comments'>('users');
+  const [rightPanelTab, setRightPanelTab] = useState<
+    'users' | 'activity' | 'versions' | 'comments'
+  >('users');
 
   const myIdentity = window.__my_identity;
-  const myUser = users.find(u => u.identity.toHexString() === myIdentity?.toHexString());
+  const myUser = users.find(
+    u => u.identity.toHexString() === myIdentity?.toHexString()
+  );
 
   // Get current canvas data
   const activeCanvas = canvases.find(c => c.id === activeCanvasId);
-  const canvasLayers = layers.filter(l => l.canvasId === activeCanvasId).sort((a, b) => a.orderIndex - b.orderIndex);
+  const canvasLayers = layers
+    .filter(l => l.canvasId === activeCanvasId)
+    .sort((a, b) => a.orderIndex - b.orderIndex);
   const canvasStrokes = strokes.filter(s => s.canvasId === activeCanvasId);
   const canvasShapes = shapes.filter(s => s.canvasId === activeCanvasId);
   const canvasTexts = textElements.filter(t => t.canvasId === activeCanvasId);
   const canvasCursors = cursors.filter(c => c.canvasId === activeCanvasId);
-  const canvasSelections = selections.filter(s => s.canvasId === activeCanvasId);
+  const canvasSelections = selections.filter(
+    s => s.canvasId === activeCanvasId
+  );
   const canvasComments = comments.filter(c => c.canvasId === activeCanvasId);
-  const canvasChat = [...chatMessages.filter(m => m.canvasId === activeCanvasId)].sort((a, b) => 
+  const canvasChat = [
+    ...chatMessages.filter(m => m.canvasId === activeCanvasId),
+  ].sort((a, b) =>
     Number(a.createdAt.microsSinceUnixEpoch - b.createdAt.microsSinceUnixEpoch)
   );
-  const canvasActivity = [...activityEntries.filter(a => a.canvasId === activeCanvasId)].sort((a, b) =>
-    Number(b.createdAt.microsSinceUnixEpoch - a.createdAt.microsSinceUnixEpoch)
-  ).slice(0, 100);
-  const canvasVersions = [...versions.filter(v => v.canvasId === activeCanvasId)].sort((a, b) =>
+  const canvasActivity = [
+    ...activityEntries.filter(a => a.canvasId === activeCanvasId),
+  ]
+    .sort((a, b) =>
+      Number(
+        b.createdAt.microsSinceUnixEpoch - a.createdAt.microsSinceUnixEpoch
+      )
+    )
+    .slice(0, 100);
+  const canvasVersions = [
+    ...versions.filter(v => v.canvasId === activeCanvasId),
+  ].sort((a, b) =>
     Number(b.createdAt.microsSinceUnixEpoch - a.createdAt.microsSinceUnixEpoch)
   );
-  const canvasPresenceList = canvasPresences.filter(p => p.canvasId === activeCanvasId);
-  const canvasTyping = typingIndicators.filter(t => t.canvasId === activeCanvasId);
+  const canvasPresenceList = canvasPresences.filter(
+    p => p.canvasId === activeCanvasId
+  );
+  const canvasTyping = typingIndicators.filter(
+    t => t.canvasId === activeCanvasId
+  );
 
   // Get my membership
   const myMembership = canvasMembers.find(
-    m => m.canvasId === activeCanvasId && m.userIdentity.toHexString() === myIdentity?.toHexString()
+    m =>
+      m.canvasId === activeCanvasId &&
+      m.userIdentity.toHexString() === myIdentity?.toHexString()
   );
   const isViewer = myMembership?.role === 'viewer';
 
@@ -194,7 +257,9 @@ function PaintApp() {
   // My canvases
   const myCanvases = canvases.filter(c => {
     const isMember = canvasMembers.some(
-      m => m.canvasId === c.id && m.userIdentity.toHexString() === myIdentity?.toHexString()
+      m =>
+        m.canvasId === c.id &&
+        m.userIdentity.toHexString() === myIdentity?.toHexString()
     );
     return isMember;
   });
@@ -312,10 +377,19 @@ function PaintApp() {
             )}
           </>
         ) : (
-          <div className="canvas-area" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div
+            className="canvas-area"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
             <div className="empty-state">
               <div className="empty-state-icon">🎨</div>
-              <div className="empty-state-text">Select a canvas to start drawing</div>
+              <div className="empty-state-text">
+                Select a canvas to start drawing
+              </div>
             </div>
           </div>
         )}
@@ -352,7 +426,14 @@ function PaintApp() {
         />
       )}
 
-      {isViewer && <div className="view-only-badge" style={{ position: 'fixed', bottom: '1rem', left: '220px' }}>View Only</div>}
+      {isViewer && (
+        <div
+          className="view-only-badge"
+          style={{ position: 'fixed', bottom: '1rem', left: '220px' }}
+        >
+          View Only
+        </div>
+      )}
     </div>
   );
 }
@@ -374,18 +455,42 @@ interface AppHeaderProps {
   isViewer: boolean;
 }
 
-function AppHeader({ myUser, activeCanvas, canvasPresenceList, unreadNotifications, unreadChatCount, showChat, setShowChat, setShowSettings, setShowShare, isViewer }: AppHeaderProps) {
+function AppHeader({
+  myUser,
+  activeCanvas,
+  canvasPresenceList,
+  unreadNotifications,
+  unreadChatCount,
+  showChat,
+  setShowChat,
+  setShowSettings,
+  setShowShare,
+  isViewer,
+}: AppHeaderProps) {
   return (
     <header className="app-header">
       <div className="app-title">
         <span className="logo">●</span>
         Paint App
-        {activeCanvas && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> / {activeCanvas.name}</span>}
+        {activeCanvas && (
+          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+            {' '}
+            / {activeCanvas.name}
+          </span>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         {activeCanvas && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              color: 'var(--text-muted)',
+              fontSize: '0.875rem',
+            }}
+          >
             <span>👁</span>
             <span>{canvasPresenceList.length} viewing</span>
           </div>
@@ -394,24 +499,44 @@ function AppHeader({ myUser, activeCanvas, canvasPresenceList, unreadNotificatio
         {isViewer && <span className="view-only-badge">View Only</span>}
 
         {activeCanvas && (
-          <button className="btn btn-primary" onClick={() => setShowShare(true)} style={{ padding: '0.4rem 0.75rem' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowShare(true)}
+            style={{ padding: '0.4rem 0.75rem' }}
+          >
             Share
           </button>
         )}
 
-        <button className="btn btn-icon" style={{ position: 'relative' }} onClick={() => setShowChat(!showChat)} data-tooltip="Chat">
+        <button
+          className="btn btn-icon"
+          style={{ position: 'relative' }}
+          onClick={() => setShowChat(!showChat)}
+          data-tooltip="Chat"
+        >
           💬
-          {unreadChatCount > 0 && <span className="notification-badge">{unreadChatCount}</span>}
+          {unreadChatCount > 0 && (
+            <span className="notification-badge">{unreadChatCount}</span>
+          )}
         </button>
 
-        <button className="btn btn-icon" style={{ position: 'relative' }} data-tooltip="Notifications">
+        <button
+          className="btn btn-icon"
+          style={{ position: 'relative' }}
+          data-tooltip="Notifications"
+        >
           🔔
-          {unreadNotifications > 0 && <span className="notification-badge">{unreadNotifications}</span>}
+          {unreadNotifications > 0 && (
+            <span className="notification-badge">{unreadNotifications}</span>
+          )}
         </button>
 
         <div
           className="user-avatar"
-          style={{ background: myUser?.avatarColor || '#4cf490', cursor: 'pointer' }}
+          style={{
+            background: myUser?.avatarColor || '#4cf490',
+            cursor: 'pointer',
+          }}
           onClick={() => setShowSettings(true)}
           data-tooltip="Settings"
         >
@@ -434,7 +559,13 @@ interface LeftSidebarProps {
   canvasMembers: RowType[];
 }
 
-function LeftSidebar({ canvases, activeCanvasId, setActiveCanvasId, conn, canvasMembers }: LeftSidebarProps) {
+function LeftSidebar({
+  canvases,
+  activeCanvasId,
+  setActiveCanvasId,
+  conn,
+  canvasMembers,
+}: LeftSidebarProps) {
   const [showNewCanvas, setShowNewCanvas] = useState(false);
   const [newCanvasName, setNewCanvasName] = useState('');
 
@@ -454,9 +585,22 @@ function LeftSidebar({ canvases, activeCanvasId, setActiveCanvasId, conn, canvas
   return (
     <div className="sidebar">
       <div className="sidebar-section">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '0.75rem',
+          }}
+        >
           <h3 style={{ margin: 0 }}>Canvases</h3>
-          <button className="btn btn-icon" onClick={() => setShowNewCanvas(!showNewCanvas)} data-tooltip="New Canvas">+</button>
+          <button
+            className="btn btn-icon"
+            onClick={() => setShowNewCanvas(!showNewCanvas)}
+            data-tooltip="New Canvas"
+          >
+            +
+          </button>
         </div>
 
         {showNewCanvas && (
@@ -470,9 +614,19 @@ function LeftSidebar({ canvases, activeCanvasId, setActiveCanvasId, conn, canvas
               onKeyDown={e => e.key === 'Enter' && handleCreateCanvas()}
               autoFocus
             />
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <button className="btn btn-primary" onClick={handleCreateCanvas} style={{ flex: 1 }}>Create</button>
-              <button className="btn" onClick={() => setShowNewCanvas(false)}>Cancel</button>
+            <div
+              style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}
+            >
+              <button
+                className="btn btn-primary"
+                onClick={handleCreateCanvas}
+                style={{ flex: 1 }}
+              >
+                Create
+              </button>
+              <button className="btn" onClick={() => setShowNewCanvas(false)}>
+                Cancel
+              </button>
             </div>
           </div>
         )}
@@ -484,10 +638,16 @@ function LeftSidebar({ canvases, activeCanvasId, setActiveCanvasId, conn, canvas
             </div>
           ) : (
             canvases.map(canvas => {
-              const members = canvasMembers.filter(m => m.canvasId === canvas.id);
+              const members = canvasMembers.filter(
+                m => m.canvasId === canvas.id
+              );
               const memberCount = members.length;
-              const lastActive = new Date(Number(canvas.lastActivityAt.microsSinceUnixEpoch / 1000n));
-              const daysAgo = Math.floor((Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24));
+              const lastActive = new Date(
+                Number(canvas.lastActivityAt.microsSinceUnixEpoch / 1000n)
+              );
+              const daysAgo = Math.floor(
+                (Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24)
+              );
 
               return (
                 <div
@@ -495,17 +655,33 @@ function LeftSidebar({ canvases, activeCanvasId, setActiveCanvasId, conn, canvas
                   className={`canvas-item ${canvas.id === activeCanvasId ? 'active' : ''}`}
                   onClick={() => handleJoinCanvas(canvas.id)}
                 >
-                  <div style={{ width: 32, height: 32, background: 'var(--bg-hover)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      background: 'var(--bg-hover)',
+                      borderRadius: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
                     🎨
                   </div>
                   <div className="canvas-item-info">
                     <div className="canvas-item-name">{canvas.name}</div>
                     <div className="canvas-item-meta">
-                      {memberCount} member{memberCount !== 1 ? 's' : ''} • 
-                      {daysAgo === 0 ? ' Today' : daysAgo === 1 ? ' Yesterday' : ` ${daysAgo} days ago`}
+                      {memberCount} member{memberCount !== 1 ? 's' : ''} •
+                      {daysAgo === 0
+                        ? ' Today'
+                        : daysAgo === 1
+                          ? ' Yesterday'
+                          : ` ${daysAgo} days ago`}
                     </div>
                   </div>
-                  {canvas.isPrivate && <span style={{ color: 'var(--text-muted)' }}>🔒</span>}
+                  {canvas.isPrivate && (
+                    <span style={{ color: 'var(--text-muted)' }}>🔒</span>
+                  )}
                 </div>
               );
             })
@@ -534,7 +710,19 @@ interface ToolbarProps {
   activeCanvasId: bigint | null;
 }
 
-function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillColor, setFillColor, brushSize, setBrushSize, isViewer, conn, activeCanvasId }: ToolbarProps) {
+function Toolbar({
+  activeTool,
+  setActiveTool,
+  strokeColor,
+  setStrokeColor,
+  fillColor,
+  setFillColor,
+  brushSize,
+  setBrushSize,
+  isViewer,
+  conn,
+  activeCanvasId,
+}: ToolbarProps) {
   const tools: { id: Tool; icon: string; label: string; shortcut: string }[] = [
     { id: 'select', icon: '⬚', label: 'Select', shortcut: 'V' },
     { id: 'brush', icon: '🖌', label: 'Brush', shortcut: 'B' },
@@ -551,7 +739,11 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
 
       // Undo: Ctrl+Z
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -563,7 +755,10 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
       }
 
       // Redo: Ctrl+Y or Ctrl+Shift+Z
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === 'y' || (e.key === 'z' && e.shiftKey))
+      ) {
         e.preventDefault();
         if (conn && activeCanvasId && !isViewer) {
           conn.reducers.redo({ canvasId: activeCanvasId });
@@ -572,8 +767,16 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
       }
 
       const shortcuts: Record<string, Tool> = {
-        v: 'select', b: 'brush', e: 'eraser', r: 'rectangle',
-        o: 'ellipse', l: 'line', a: 'arrow', t: 'text', s: 'sticky', c: 'comment'
+        v: 'select',
+        b: 'brush',
+        e: 'eraser',
+        r: 'rectangle',
+        o: 'ellipse',
+        l: 'line',
+        a: 'arrow',
+        t: 'text',
+        s: 'sticky',
+        c: 'comment',
       };
 
       const tool = shortcuts[e.key.toLowerCase()];
@@ -621,7 +824,9 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
 
       <div className="toolbar-group">
         <div className="color-picker">
-          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Stroke</label>
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            Stroke
+          </label>
           <input
             type="color"
             value={strokeColor}
@@ -630,7 +835,9 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
           />
         </div>
         <div className="color-picker">
-          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Fill</label>
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            Fill
+          </label>
           <input
             type="color"
             value={fillColor === 'transparent' ? '#000000' : fillColor}
@@ -640,7 +847,12 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
           <button
             className="btn btn-icon"
             onClick={() => setFillColor('transparent')}
-            style={{ width: 24, height: 24, fontSize: '0.75rem', opacity: fillColor === 'transparent' ? 1 : 0.5 }}
+            style={{
+              width: 24,
+              height: 24,
+              fontSize: '0.75rem',
+              opacity: fillColor === 'transparent' ? 1 : 0.5,
+            }}
             data-tooltip="No fill"
             disabled={isViewer}
           >
@@ -650,7 +862,9 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
       </div>
 
       <div className="toolbar-group">
-        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Size</label>
+        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+          Size
+        </label>
         <input
           type="range"
           min="1"
@@ -660,11 +874,19 @@ function Toolbar({ activeTool, setActiveTool, strokeColor, setStrokeColor, fillC
           style={{ width: 80 }}
           disabled={isViewer}
         />
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', width: 24 }}>{brushSize}</span>
+        <span
+          style={{ fontSize: '0.75rem', color: 'var(--text-muted)', width: 24 }}
+        >
+          {brushSize}
+        </span>
       </div>
 
       <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
-        <button className="btn btn-danger" onClick={handleClearCanvas} disabled={isViewer}>
+        <button
+          className="btn btn-danger"
+          onClick={handleClearCanvas}
+          disabled={isViewer}
+        >
           Clear
         </button>
       </div>
@@ -697,8 +919,23 @@ interface DrawingCanvasProps {
 }
 
 function DrawingCanvas({
-  conn, canvasId, layerId, layers, strokes, shapes, textElements, cursors, selections, comments, users,
-  activeTool, strokeColor, fillColor, brushSize, isViewer, myIdentity
+  conn,
+  canvasId,
+  layerId,
+  layers,
+  strokes,
+  shapes,
+  textElements,
+  cursors,
+  selections,
+  comments,
+  users,
+  activeTool,
+  strokeColor,
+  fillColor,
+  brushSize,
+  isViewer,
+  myIdentity,
 }: DrawingCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -706,7 +943,12 @@ function DrawingCanvas({
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
   const [shapeStart, setShapeStart] = useState<Point | null>(null);
   const [shapeEnd, setShapeEnd] = useState<Point | null>(null);
-  const [shapePreview, setShapePreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [shapePreview, setShapePreview] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
@@ -755,15 +997,27 @@ function DrawingCanvas({
       const layerTexts = textElements.filter(t => t.layerId === layer.id);
 
       // Combine and sort by creation time for proper z-order
-      type DrawElement = 
-        | { type: 'stroke'; data: typeof layerStrokes[0]; time: bigint }
-        | { type: 'shape'; data: typeof layerShapes[0]; time: bigint }
-        | { type: 'text'; data: typeof layerTexts[0]; time: bigint };
+      type DrawElement =
+        | { type: 'stroke'; data: (typeof layerStrokes)[0]; time: bigint }
+        | { type: 'shape'; data: (typeof layerShapes)[0]; time: bigint }
+        | { type: 'text'; data: (typeof layerTexts)[0]; time: bigint };
 
       const allElements: DrawElement[] = [
-        ...layerStrokes.map(s => ({ type: 'stroke' as const, data: s, time: s.createdAt.microsSinceUnixEpoch })),
-        ...layerShapes.map(s => ({ type: 'shape' as const, data: s, time: s.createdAt.microsSinceUnixEpoch })),
-        ...layerTexts.map(t => ({ type: 'text' as const, data: t, time: t.createdAt.microsSinceUnixEpoch })),
+        ...layerStrokes.map(s => ({
+          type: 'stroke' as const,
+          data: s,
+          time: s.createdAt.microsSinceUnixEpoch,
+        })),
+        ...layerShapes.map(s => ({
+          type: 'shape' as const,
+          data: s,
+          time: s.createdAt.microsSinceUnixEpoch,
+        })),
+        ...layerTexts.map(t => ({
+          type: 'text' as const,
+          data: t,
+          time: t.createdAt.microsSinceUnixEpoch,
+        })),
       ].sort((a, b) => Number(a.time - b.time));
 
       for (const element of allElements) {
@@ -801,11 +1055,17 @@ function DrawingCanvas({
               shape.y + shape.height / 2,
               Math.abs(shape.width / 2),
               Math.abs(shape.height / 2),
-              0, 0, Math.PI * 2
+              0,
+              0,
+              Math.PI * 2
             );
-            if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fill();
+            if (shape.fillColor && shape.fillColor !== 'transparent')
+              ctx.fill();
             ctx.stroke();
-          } else if (shape.shapeType === 'line' || shape.shapeType === 'arrow') {
+          } else if (
+            shape.shapeType === 'line' ||
+            shape.shapeType === 'arrow'
+          ) {
             ctx.moveTo(shape.x, shape.y);
             ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
             ctx.stroke();
@@ -836,9 +1096,18 @@ function DrawingCanvas({
           }
 
           ctx.fillStyle = text.textColor;
-          const sizes: Record<string, number> = { small: 12, medium: 16, large: 24, 'x-large': 32 };
+          const sizes: Record<string, number> = {
+            small: 12,
+            medium: 16,
+            large: 24,
+            'x-large': 32,
+          };
           ctx.font = `${sizes[text.fontSize] || 16}px ${text.fontFamily}`;
-          ctx.fillText(text.content, text.x + 4, text.y + (sizes[text.fontSize] || 16) + 4);
+          ctx.fillText(
+            text.content,
+            text.x + 4,
+            text.y + (sizes[text.fontSize] || 16) + 4
+          );
         }
       }
 
@@ -869,15 +1138,28 @@ function DrawingCanvas({
       ctx.setLineDash([5, 5]);
 
       if (activeTool === 'rectangle') {
-        if (fillColor !== 'transparent') ctx.fillRect(shapePreview.x, shapePreview.y, shapePreview.width, shapePreview.height);
-        ctx.strokeRect(shapePreview.x, shapePreview.y, shapePreview.width, shapePreview.height);
+        if (fillColor !== 'transparent')
+          ctx.fillRect(
+            shapePreview.x,
+            shapePreview.y,
+            shapePreview.width,
+            shapePreview.height
+          );
+        ctx.strokeRect(
+          shapePreview.x,
+          shapePreview.y,
+          shapePreview.width,
+          shapePreview.height
+        );
       } else if (activeTool === 'ellipse') {
         ctx.ellipse(
           shapePreview.x + shapePreview.width / 2,
           shapePreview.y + shapePreview.height / 2,
           Math.abs(shapePreview.width / 2),
           Math.abs(shapePreview.height / 2),
-          0, 0, Math.PI * 2
+          0,
+          0,
+          Math.PI * 2
         );
         if (fillColor !== 'transparent') ctx.fill();
         ctx.stroke();
@@ -894,9 +1176,15 @@ function DrawingCanvas({
           const headLen = 15;
           ctx.beginPath();
           ctx.moveTo(endX, endY);
-          ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+          ctx.lineTo(
+            endX - headLen * Math.cos(angle - Math.PI / 6),
+            endY - headLen * Math.sin(angle - Math.PI / 6)
+          );
           ctx.moveTo(endX, endY);
-          ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+          ctx.lineTo(
+            endX - headLen * Math.cos(angle + Math.PI / 6),
+            endY - headLen * Math.sin(angle + Math.PI / 6)
+          );
           ctx.stroke();
         }
       }
@@ -906,29 +1194,39 @@ function DrawingCanvas({
 
     // Draw selections with drag preview
     for (const sel of selections) {
-      const user = users.find(u => u.identity.toHexString() === sel.userIdentity.toHexString());
-      const isMine = sel.userIdentity.toHexString() === myIdentity?.toHexString();
-      const color = isMine ? '#4cf490' : (user?.avatarColor || '#a880ff');
+      const user = users.find(
+        u => u.identity.toHexString() === sel.userIdentity.toHexString()
+      );
+      const isMine =
+        sel.userIdentity.toHexString() === myIdentity?.toHexString();
+      const color = isMine ? '#4cf490' : user?.avatarColor || '#a880ff';
 
       let bounds: { x: number; y: number; w: number; h: number } | null = null;
 
       if (sel.elementType === 'shape') {
         const shape = shapes.find(s => s.id === sel.elementId);
-        if (shape) bounds = { x: shape.x, y: shape.y, w: shape.width, h: shape.height };
+        if (shape)
+          bounds = { x: shape.x, y: shape.y, w: shape.width, h: shape.height };
       } else if (sel.elementType === 'text') {
         const text = textElements.find(t => t.id === sel.elementId);
-        if (text) bounds = { x: text.x, y: text.y, w: text.width, h: text.height };
+        if (text)
+          bounds = { x: text.x, y: text.y, w: text.width, h: text.height };
       }
 
       if (bounds) {
         // Apply drag offset for my selections
-        const offsetX = (isMine && dragOffset) ? dragOffset.x : 0;
-        const offsetY = (isMine && dragOffset) ? dragOffset.y : 0;
+        const offsetX = isMine && dragOffset ? dragOffset.x : 0;
+        const offsetY = isMine && dragOffset ? dragOffset.y : 0;
 
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
-        ctx.strokeRect(bounds.x + offsetX - 4, bounds.y + offsetY - 4, bounds.w + 8, bounds.h + 8);
+        ctx.strokeRect(
+          bounds.x + offsetX - 4,
+          bounds.y + offsetY - 4,
+          bounds.w + 8,
+          bounds.h + 8
+        );
         ctx.setLineDash([]);
 
         // Draw move handles for my selections
@@ -936,14 +1234,50 @@ function DrawingCanvas({
           ctx.fillStyle = color;
           const handleSize = 8;
           // Corner handles
-          ctx.fillRect(bounds.x + offsetX - handleSize/2 - 4, bounds.y + offsetY - handleSize/2 - 4, handleSize, handleSize);
-          ctx.fillRect(bounds.x + offsetX + bounds.w - handleSize/2 + 4, bounds.y + offsetY - handleSize/2 - 4, handleSize, handleSize);
-          ctx.fillRect(bounds.x + offsetX - handleSize/2 - 4, bounds.y + offsetY + bounds.h - handleSize/2 + 4, handleSize, handleSize);
-          ctx.fillRect(bounds.x + offsetX + bounds.w - handleSize/2 + 4, bounds.y + offsetY + bounds.h - handleSize/2 + 4, handleSize, handleSize);
+          ctx.fillRect(
+            bounds.x + offsetX - handleSize / 2 - 4,
+            bounds.y + offsetY - handleSize / 2 - 4,
+            handleSize,
+            handleSize
+          );
+          ctx.fillRect(
+            bounds.x + offsetX + bounds.w - handleSize / 2 + 4,
+            bounds.y + offsetY - handleSize / 2 - 4,
+            handleSize,
+            handleSize
+          );
+          ctx.fillRect(
+            bounds.x + offsetX - handleSize / 2 - 4,
+            bounds.y + offsetY + bounds.h - handleSize / 2 + 4,
+            handleSize,
+            handleSize
+          );
+          ctx.fillRect(
+            bounds.x + offsetX + bounds.w - handleSize / 2 + 4,
+            bounds.y + offsetY + bounds.h - handleSize / 2 + 4,
+            handleSize,
+            handleSize
+          );
         }
       }
     }
-  }, [layers, strokes, shapes, textElements, selections, currentPoints, shapePreview, shapeStart, activeTool, strokeColor, fillColor, brushSize, users, myIdentity, dragOffset]);
+  }, [
+    layers,
+    strokes,
+    shapes,
+    textElements,
+    selections,
+    currentPoints,
+    shapePreview,
+    shapeStart,
+    activeTool,
+    strokeColor,
+    fillColor,
+    brushSize,
+    users,
+    myIdentity,
+    dragOffset,
+  ]);
 
   // Mouse handlers
   const getMousePos = (e: React.MouseEvent): Point => {
@@ -961,7 +1295,11 @@ function DrawingCanvas({
     if (activeTool === 'brush' || activeTool === 'eraser') {
       setIsDrawing(true);
       setCurrentPoints([pos]);
-    } else if (['rectangle', 'ellipse', 'line', 'arrow', 'text', 'sticky'].includes(activeTool)) {
+    } else if (
+      ['rectangle', 'ellipse', 'line', 'arrow', 'text', 'sticky'].includes(
+        activeTool
+      )
+    ) {
       setShapeStart(pos);
       setShapePreview({ x: pos.x, y: pos.y, width: 0, height: 0 });
     } else if (activeTool === 'comment') {
@@ -973,33 +1311,55 @@ function DrawingCanvas({
       }
     } else if (activeTool === 'select') {
       // Check if clicking on a shape or text
-      let foundElement: { type: string; id: bigint; x: number; y: number } | null = null;
+      let foundElement: {
+        type: string;
+        id: bigint;
+        x: number;
+        y: number;
+      } | null = null;
 
       for (const shape of shapes) {
         // For lines, use a larger hit area
-        const isLine = shape.shapeType === 'line' || shape.shapeType === 'arrow';
+        const isLine =
+          shape.shapeType === 'line' || shape.shapeType === 'arrow';
         let hitTest = false;
         if (isLine) {
           // Distance from point to line segment
-          const x1 = shape.x, y1 = shape.y;
-          const x2 = shape.x + shape.width, y2 = shape.y + shape.height;
-          const dist = Math.abs((y2-y1)*pos.x - (x2-x1)*pos.y + x2*y1 - y2*x1) / 
-                       Math.sqrt((y2-y1)**2 + (x2-x1)**2);
+          const x1 = shape.x,
+            y1 = shape.y;
+          const x2 = shape.x + shape.width,
+            y2 = shape.y + shape.height;
+          const dist =
+            Math.abs(
+              (y2 - y1) * pos.x - (x2 - x1) * pos.y + x2 * y1 - y2 * x1
+            ) / Math.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2);
           hitTest = dist < 10;
         } else {
-          hitTest = pos.x >= shape.x && pos.x <= shape.x + shape.width &&
-                    pos.y >= shape.y && pos.y <= shape.y + shape.height;
+          hitTest =
+            pos.x >= shape.x &&
+            pos.x <= shape.x + shape.width &&
+            pos.y >= shape.y &&
+            pos.y <= shape.y + shape.height;
         }
         if (hitTest) {
-          foundElement = { type: 'shape', id: shape.id, x: shape.x, y: shape.y };
+          foundElement = {
+            type: 'shape',
+            id: shape.id,
+            x: shape.x,
+            y: shape.y,
+          };
           break;
         }
       }
 
       if (!foundElement) {
         for (const text of textElements) {
-          if (pos.x >= text.x && pos.x <= text.x + text.width &&
-              pos.y >= text.y && pos.y <= text.y + text.height) {
+          if (
+            pos.x >= text.x &&
+            pos.x <= text.x + text.width &&
+            pos.y >= text.y &&
+            pos.y <= text.y + text.height
+          ) {
             foundElement = { type: 'text', id: text.id, x: text.x, y: text.y };
             break;
           }
@@ -1009,7 +1369,9 @@ function DrawingCanvas({
       if (foundElement && conn) {
         // Check if this element is already selected
         const isAlreadySelected = selections.some(
-          s => s.elementType === foundElement!.type && s.elementId === foundElement!.id
+          s =>
+            s.elementType === foundElement!.type &&
+            s.elementId === foundElement!.id
         );
 
         if (isAlreadySelected && !isViewer) {
@@ -1067,7 +1429,10 @@ function DrawingCanvas({
       let height = pos.y - shapeStart.y;
 
       // Shift for perfect squares/circles
-      if (e.shiftKey && (activeTool === 'rectangle' || activeTool === 'ellipse')) {
+      if (
+        e.shiftKey &&
+        (activeTool === 'rectangle' || activeTool === 'ellipse')
+      ) {
         const size = Math.max(Math.abs(width), Math.abs(height));
         width = width >= 0 ? size : -size;
         height = height >= 0 ? size : -size;
@@ -1087,7 +1452,12 @@ function DrawingCanvas({
 
   const handleMouseUp = () => {
     // Handle drag move
-    if (isDragging && dragOffset && conn && (dragOffset.x !== 0 || dragOffset.y !== 0)) {
+    if (
+      isDragging &&
+      dragOffset &&
+      conn &&
+      (dragOffset.x !== 0 || dragOffset.y !== 0)
+    ) {
       // Move all selected elements
       for (const sel of selections) {
         if (sel.elementType === 'shape') {
@@ -1137,7 +1507,7 @@ function DrawingCanvas({
 
     if (shapeStart && shapePreview && conn && layerId) {
       if (shapePreview.width > 5 || shapePreview.height > 5) {
-if (['rectangle', 'ellipse', 'line', 'arrow'].includes(activeTool)) {
+        if (['rectangle', 'ellipse', 'line', 'arrow'].includes(activeTool)) {
           // For lines/arrows, store start point and delta to end
           const isLine = activeTool === 'line' || activeTool === 'arrow';
           conn.reducers.addShape({
@@ -1146,8 +1516,14 @@ if (['rectangle', 'ellipse', 'line', 'arrow'].includes(activeTool)) {
             shapeType: activeTool,
             x: isLine ? shapeStart.x : shapePreview.x,
             y: isLine ? shapeStart.y : shapePreview.y,
-            width: isLine && shapeEnd ? (shapeEnd.x - shapeStart.x) : shapePreview.width,
-            height: isLine && shapeEnd ? (shapeEnd.y - shapeStart.y) : shapePreview.height,
+            width:
+              isLine && shapeEnd
+                ? shapeEnd.x - shapeStart.x
+                : shapePreview.width,
+            height:
+              isLine && shapeEnd
+                ? shapeEnd.y - shapeStart.y
+                : shapePreview.height,
             strokeColor,
             fillColor: fillColor === 'transparent' ? '' : fillColor,
             strokeWidth: brushSize,
@@ -1198,17 +1574,26 @@ if (['rectangle', 'ellipse', 'line', 'arrow'].includes(activeTool)) {
       {cursors
         .filter(c => c.userIdentity.toHexString() !== myIdentity?.toHexString())
         .map(cursor => {
-          const user = users.find(u => u.identity.toHexString() === cursor.userIdentity.toHexString());
+          const user = users.find(
+            u => u.identity.toHexString() === cursor.userIdentity.toHexString()
+          );
           return (
             <div
               key={cursor.id.toString()}
               className="remote-cursor"
               style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)` }}
             >
-              <svg className="cursor-pointer" viewBox="0 0 24 24" fill={user?.avatarColor || '#a880ff'}>
+              <svg
+                className="cursor-pointer"
+                viewBox="0 0 24 24"
+                fill={user?.avatarColor || '#a880ff'}
+              >
                 <path d="M5 2l14 14-6 2-2 6L5 2z" />
               </svg>
-              <div className="cursor-label" style={{ background: user?.avatarColor || '#a880ff' }}>
+              <div
+                className="cursor-label"
+                style={{ background: user?.avatarColor || '#a880ff' }}
+              >
                 {user?.displayName || 'Unknown'} • {cursor.tool}
               </div>
               <div
@@ -1229,7 +1614,9 @@ if (['rectangle', 'ellipse', 'line', 'arrow'].includes(activeTool)) {
 
       {/* Comment pins */}
       {comments.map(comment => {
-        const user = users.find(u => u.identity.toHexString() === comment.authorIdentity.toHexString());
+        const user = users.find(
+          u => u.identity.toHexString() === comment.authorIdentity.toHexString()
+        );
         return (
           <div
             key={comment.id.toString()}
@@ -1259,7 +1646,15 @@ interface LayersPanelProps {
   isViewer: boolean;
 }
 
-function LayersPanel({ layers, activeLayerId, setActiveLayerId, conn, canvasId, users, isViewer }: LayersPanelProps) {
+function LayersPanel({
+  layers,
+  activeLayerId,
+  setActiveLayerId,
+  conn,
+  canvasId,
+  users,
+  isViewer,
+}: LayersPanelProps) {
   const handleAddLayer = () => {
     if (!conn || isViewer) return;
     conn.reducers.createLayer({ canvasId, name: `Layer ${layers.length + 1}` });
@@ -1282,15 +1677,33 @@ function LayersPanel({ layers, activeLayerId, setActiveLayerId, conn, canvasId, 
   return (
     <div className="layers-floating-panel">
       <div className="sidebar-section" style={{ padding: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '0.5rem',
+          }}
+        >
           <h3 style={{ margin: 0, fontSize: '0.8rem' }}>Layers</h3>
-          <button className="btn btn-icon" style={{ width: 28, height: 28 }} onClick={handleAddLayer} disabled={isViewer} data-tooltip="Add Layer">+</button>
+          <button
+            className="btn btn-icon"
+            style={{ width: 28, height: 28 }}
+            onClick={handleAddLayer}
+            disabled={isViewer}
+            data-tooltip="Add Layer"
+          >
+            +
+          </button>
         </div>
 
         <div className="layers-panel">
           {layers.map(layer => {
             const lockedByUser = layer.lockedBy
-              ? users.find(u => u.identity.toHexString() === layer.lockedBy?.toHexString())
+              ? users.find(
+                  u =>
+                    u.identity.toHexString() === layer.lockedBy?.toHexString()
+                )
               : null;
 
             return (
@@ -1303,15 +1716,25 @@ function LayersPanel({ layers, activeLayerId, setActiveLayerId, conn, canvasId, 
                 <div className="layer-actions">
                   <button
                     className={`layer-btn ${layer.visible ? 'active' : ''}`}
-                    onClick={e => { e.stopPropagation(); handleToggleVisibility(layer.id); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleToggleVisibility(layer.id);
+                    }}
                     title={layer.visible ? 'Hide' : 'Show'}
                   >
                     {layer.visible ? '👁' : '👁‍🗨'}
                   </button>
                   <button
                     className={`layer-btn ${layer.lockedBy ? 'active' : ''}`}
-                    onClick={e => { e.stopPropagation(); handleToggleLock(layer); }}
-                    title={lockedByUser ? `Locked by ${lockedByUser.displayName}` : 'Lock'}
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleToggleLock(layer);
+                    }}
+                    title={
+                      lockedByUser
+                        ? `Locked by ${lockedByUser.displayName}`
+                        : 'Lock'
+                    }
                   >
                     {layer.lockedBy ? '🔒' : '🔓'}
                   </button>
@@ -1343,15 +1766,35 @@ interface RightPanelProps {
   myIdentity: Identity | null;
 }
 
-function RightPanel({ activeTab, setActiveTab, presences, users, activities, versions, comments, commentReplies, conn, canvasId, myIdentity }: RightPanelProps) {
+function RightPanel({
+  activeTab,
+  setActiveTab,
+  presences,
+  users,
+  activities,
+  versions,
+  comments,
+  commentReplies,
+  conn,
+  canvasId,
+  myIdentity,
+}: RightPanelProps) {
   const handleSaveVersion = () => {
     if (!conn || !canvasId) return;
     const name = prompt('Version name (optional):');
-    conn.reducers.saveVersion({ canvasId, name: name || undefined, description: undefined });
+    conn.reducers.saveVersion({
+      canvasId,
+      name: name || undefined,
+      description: undefined,
+    });
   };
 
   const handleRestoreVersion = (versionId: bigint) => {
-    if (!conn || !confirm('Restore this version? Current changes will be saved first.')) return;
+    if (
+      !conn ||
+      !confirm('Restore this version? Current changes will be saved first.')
+    )
+      return;
     conn.reducers.restoreVersion({ versionId });
   };
 
@@ -1395,7 +1838,10 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
         >
           Comments
           {unresolvedComments.length > 0 && (
-            <span className="notification-badge" style={{ position: 'static', marginLeft: 4 }}>
+            <span
+              className="notification-badge"
+              style={{ position: 'static', marginLeft: 4 }}
+            >
               {unresolvedComments.length}
             </span>
           )}
@@ -1406,16 +1852,27 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
         {activeTab === 'users' && (
           <div className="user-list">
             {presences.map(presence => {
-              const user = users.find(u => u.identity.toHexString() === presence.userIdentity.toHexString());
-              const isMe = presence.userIdentity.toHexString() === myIdentity?.toHexString();
+              const user = users.find(
+                u =>
+                  u.identity.toHexString() ===
+                  presence.userIdentity.toHexString()
+              );
+              const isMe =
+                presence.userIdentity.toHexString() ===
+                myIdentity?.toHexString();
 
               return (
                 <div key={presence.id.toString()} className="user-item">
-                  <div className="user-avatar" style={{ background: user?.avatarColor || '#4cf490' }}>
+                  <div
+                    className="user-avatar"
+                    style={{ background: user?.avatarColor || '#4cf490' }}
+                  >
                     {user?.displayName?.slice(0, 2).toUpperCase() || '??'}
                   </div>
                   <div className="user-info">
-                    <div className="user-name">{user?.displayName || 'Unknown'} {isMe && '(you)'}</div>
+                    <div className="user-name">
+                      {user?.displayName || 'Unknown'} {isMe && '(you)'}
+                    </div>
                     <div className="user-status">
                       <span className={`status-dot ${presence.status}`} />
                       {presence.status} • {presence.currentTool}
@@ -1445,15 +1902,25 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
               </div>
             ) : (
               activities.map(activity => {
-                const user = users.find(u => u.identity.toHexString() === activity.userIdentity.toHexString());
+                const user = users.find(
+                  u =>
+                    u.identity.toHexString() ===
+                    activity.userIdentity.toHexString()
+                );
                 return (
                   <div key={activity.id.toString()} className="activity-item">
-                    <div className="activity-dot" style={{ background: user?.avatarColor || '#4cf490' }} />
+                    <div
+                      className="activity-dot"
+                      style={{ background: user?.avatarColor || '#4cf490' }}
+                    />
                     <div className="activity-content">
                       <div className="activity-text">
-                        <strong>{user?.displayName || 'Someone'}</strong> {activity.action.replace(/_/g, ' ')}
+                        <strong>{user?.displayName || 'Someone'}</strong>{' '}
+                        {activity.action.replace(/_/g, ' ')}
                       </div>
-                      <div className="activity-time">{formatTime(activity.createdAt)}</div>
+                      <div className="activity-time">
+                        {formatTime(activity.createdAt)}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1464,7 +1931,11 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
 
         {activeTab === 'versions' && (
           <div>
-            <button className="btn btn-primary" onClick={handleSaveVersion} style={{ width: '100%', marginBottom: '0.75rem' }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveVersion}
+              style={{ width: '100%', marginBottom: '0.75rem' }}
+            >
               Save Version
             </button>
             <div className="version-list">
@@ -1475,7 +1946,11 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
               ) : (
                 versions.map(version => {
                   const user = version.createdBy
-                    ? users.find(u => u.identity.toHexString() === version.createdBy?.toHexString())
+                    ? users.find(
+                        u =>
+                          u.identity.toHexString() ===
+                          version.createdBy?.toHexString()
+                      )
                     : null;
                   return (
                     <div
@@ -1485,10 +1960,13 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
                     >
                       <div className="version-name">
                         {version.name || 'Untitled'}
-                        {version.isAutoSave && <span className="version-auto">Auto</span>}
+                        {version.isAutoSave && (
+                          <span className="version-auto">Auto</span>
+                        )}
                       </div>
                       <div className="version-meta">
-                        {formatTime(version.createdAt)} • {user?.displayName || 'System'}
+                        {formatTime(version.createdAt)} •{' '}
+                        {user?.displayName || 'System'}
                       </div>
                     </div>
                   );
@@ -1506,25 +1984,69 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
               </div>
             ) : (
               comments.map(comment => {
-                const user = users.find(u => u.identity.toHexString() === comment.authorIdentity.toHexString());
-                const replies = commentReplies.filter(r => r.commentId === comment.id);
+                const user = users.find(
+                  u =>
+                    u.identity.toHexString() ===
+                    comment.authorIdentity.toHexString()
+                );
+                const replies = commentReplies.filter(
+                  r => r.commentId === comment.id
+                );
 
                 return (
-                  <div key={comment.id.toString()} className="activity-item" style={{ opacity: comment.resolved ? 0.5 : 1 }}>
-                    <div className="activity-dot" style={{ background: user?.avatarColor || '#fbdc8e' }} />
+                  <div
+                    key={comment.id.toString()}
+                    className="activity-item"
+                    style={{ opacity: comment.resolved ? 0.5 : 1 }}
+                  >
+                    <div
+                      className="activity-dot"
+                      style={{ background: user?.avatarColor || '#fbdc8e' }}
+                    />
                     <div className="activity-content">
                       <div className="activity-text">
-                        <strong>{user?.displayName || 'Someone'}</strong>: {comment.content}
-                        {comment.resolved && <span style={{ color: 'var(--stdb-green)', marginLeft: '0.5rem' }}>✓ Resolved</span>}
+                        <strong>{user?.displayName || 'Someone'}</strong>:{' '}
+                        {comment.content}
+                        {comment.resolved && (
+                          <span
+                            style={{
+                              color: 'var(--stdb-green)',
+                              marginLeft: '0.5rem',
+                            }}
+                          >
+                            ✓ Resolved
+                          </span>
+                        )}
                       </div>
-                      <div className="activity-time">{formatTime(comment.createdAt)}</div>
+                      <div className="activity-time">
+                        {formatTime(comment.createdAt)}
+                      </div>
                       {replies.length > 0 && (
-                        <div style={{ marginTop: '0.5rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border-color)' }}>
+                        <div
+                          style={{
+                            marginTop: '0.5rem',
+                            paddingLeft: '0.5rem',
+                            borderLeft: '2px solid var(--border-color)',
+                          }}
+                        >
                           {replies.map(reply => {
-                            const replyUser = users.find(u => u.identity.toHexString() === reply.authorIdentity.toHexString());
+                            const replyUser = users.find(
+                              u =>
+                                u.identity.toHexString() ===
+                                reply.authorIdentity.toHexString()
+                            );
                             return (
-                              <div key={reply.id.toString()} style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}>
-                                <strong>{replyUser?.displayName || 'Someone'}</strong>: {reply.content}
+                              <div
+                                key={reply.id.toString()}
+                                style={{
+                                  marginTop: '0.25rem',
+                                  fontSize: '0.75rem',
+                                }}
+                              >
+                                <strong>
+                                  {replyUser?.displayName || 'Someone'}
+                                </strong>
+                                : {reply.content}
                               </div>
                             );
                           })}
@@ -1533,8 +2055,16 @@ function RightPanel({ activeTab, setActiveTab, presences, users, activities, ver
                       {!comment.resolved && conn && (
                         <button
                           className="btn"
-                          style={{ marginTop: '0.5rem', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                          onClick={() => conn.reducers.resolveComment({ commentId: comment.id })}
+                          style={{
+                            marginTop: '0.5rem',
+                            padding: '0.25rem 0.5rem',
+                            fontSize: '0.75rem',
+                          }}
+                          onClick={() =>
+                            conn.reducers.resolveComment({
+                              commentId: comment.id,
+                            })
+                          }
                         >
                           Resolve
                         </button>
@@ -1565,7 +2095,15 @@ interface ChatPanelProps {
   onClose: () => void;
 }
 
-function ChatPanel({ messages, users, typingIndicators, conn, canvasId, myIdentity, onClose }: ChatPanelProps) {
+function ChatPanel({
+  messages,
+  users,
+  typingIndicators,
+  conn,
+  canvasId,
+  myIdentity,
+  onClose,
+}: ChatPanelProps) {
   const [message, setMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -1591,27 +2129,44 @@ function ChatPanel({ messages, users, typingIndicators, conn, canvasId, myIdenti
 
   const typingUsers = typingIndicators
     .filter(t => t.userIdentity.toHexString() !== myIdentity?.toHexString())
-    .map(t => users.find(u => u.identity.toHexString() === t.userIdentity.toHexString())?.displayName || 'Someone');
+    .map(
+      t =>
+        users.find(
+          u => u.identity.toHexString() === t.userIdentity.toHexString()
+        )?.displayName || 'Someone'
+    );
 
   return (
     <div className="chat-panel open">
       <div className="panel-header">
         <span className="panel-title">Chat</span>
-        <button className="panel-close" onClick={onClose}>✕</button>
+        <button className="panel-close" onClick={onClose}>
+          ✕
+        </button>
       </div>
 
       <div className="chat-messages">
         {messages.map(msg => {
-          const user = users.find(u => u.identity.toHexString() === msg.authorIdentity.toHexString());
-          const isMe = msg.authorIdentity.toHexString() === myIdentity?.toHexString();
+          const user = users.find(
+            u => u.identity.toHexString() === msg.authorIdentity.toHexString()
+          );
+          const isMe =
+            msg.authorIdentity.toHexString() === myIdentity?.toHexString();
 
           return (
             <div key={msg.id.toString()} className="chat-message">
-              <div className="chat-message-avatar" style={{ background: user?.avatarColor || '#4cf490' }} />
+              <div
+                className="chat-message-avatar"
+                style={{ background: user?.avatarColor || '#4cf490' }}
+              />
               <div className="chat-message-content">
                 <div className="chat-message-header">
-                  <span className="chat-message-author">{user?.displayName || 'Unknown'} {isMe && '(you)'}</span>
-                  <span className="chat-message-time">{formatTime(msg.createdAt)}</span>
+                  <span className="chat-message-author">
+                    {user?.displayName || 'Unknown'} {isMe && '(you)'}
+                  </span>
+                  <span className="chat-message-time">
+                    {formatTime(msg.createdAt)}
+                  </span>
                 </div>
                 <div className="chat-message-text">{msg.content}</div>
               </div>
@@ -1623,7 +2178,8 @@ function ChatPanel({ messages, users, typingIndicators, conn, canvasId, myIdenti
 
       {typingUsers.length > 0 && (
         <div className="typing-indicator">
-          {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+          {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'}{' '}
+          typing...
         </div>
       )}
 
@@ -1643,7 +2199,9 @@ function ChatPanel({ messages, users, typingIndicators, conn, canvasId, myIdenti
             }}
             onBlur={() => handleTyping(false)}
           />
-          <button className="btn btn-primary" onClick={handleSend}>Send</button>
+          <button className="btn btn-primary" onClick={handleSend}>
+            Send
+          </button>
         </div>
       </div>
     </div>
@@ -1663,18 +2221,31 @@ interface ShareModalProps {
   onClose: () => void;
 }
 
-function ShareModal({ canvas, members, users, conn, myIdentity, onClose }: ShareModalProps) {
-  const [sharePermission, setSharePermission] = useState<'view' | 'edit'>('view');
+function ShareModal({
+  canvas,
+  members,
+  users,
+  conn,
+  myIdentity,
+  onClose,
+}: ShareModalProps) {
+  const [sharePermission, setSharePermission] = useState<'view' | 'edit'>(
+    'view'
+  );
   const [copied, setCopied] = useState(false);
 
-  const isOwner = canvas.ownerIdentity.toHexString() === myIdentity?.toHexString();
-  const shareLink = canvas.shareLinkToken 
+  const isOwner =
+    canvas.ownerIdentity.toHexString() === myIdentity?.toHexString();
+  const shareLink = canvas.shareLinkToken
     ? `${window.location.origin}?join=${canvas.shareLinkToken}`
     : null;
 
   const handleGenerateLink = () => {
     if (!conn) return;
-    conn.reducers.generateShareLink({ canvasId: canvas.id, permission: sharePermission });
+    conn.reducers.generateShareLink({
+      canvasId: canvas.id,
+      permission: sharePermission,
+    });
   };
 
   const handleRevokeLink = () => {
@@ -1704,19 +2275,38 @@ function ShareModal({ canvas, members, users, conn, myIdentity, onClose }: Share
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+      <div
+        className="modal"
+        style={{ maxWidth: 500 }}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="modal-header">
           <span className="modal-title">Share "{canvas.name}"</span>
-          <button className="panel-close" onClick={onClose}>✕</button>
+          <button className="panel-close" onClick={onClose}>
+            ✕
+          </button>
         </div>
         <div className="modal-body">
           {isOwner && (
             <div style={{ marginBottom: '1.5rem' }}>
-              <h4 style={{ marginBottom: '0.75rem', color: 'var(--text-primary)' }}>Share Link</h4>
-              
+              <h4
+                style={{
+                  marginBottom: '0.75rem',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Share Link
+              </h4>
+
               {shareLink ? (
                 <div>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '0.5rem',
+                      marginBottom: '0.75rem',
+                    }}
+                  >
                     <input
                       type="text"
                       className="form-input"
@@ -1724,33 +2314,71 @@ function ShareModal({ canvas, members, users, conn, myIdentity, onClose }: Share
                       readOnly
                       style={{ flex: 1 }}
                     />
-                    <button className="btn btn-primary" onClick={handleCopyLink}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleCopyLink}
+                    >
                       {copied ? '✓ Copied!' : 'Copy'}
                     </button>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                      Anyone with the link can <strong>{canvas.shareLinkPermission}</strong>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '0.875rem',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      Anyone with the link can{' '}
+                      <strong>{canvas.shareLinkPermission}</strong>
                     </span>
-                    <button className="btn btn-danger" onClick={handleRevokeLink} style={{ marginLeft: 'auto' }}>
+                    <button
+                      className="btn btn-danger"
+                      onClick={handleRevokeLink}
+                      style={{ marginLeft: 'auto' }}
+                    >
                       Revoke
                     </button>
                   </div>
                 </div>
               ) : (
                 <div>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
-                    <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Permission:</span>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '0.5rem',
+                      alignItems: 'center',
+                      marginBottom: '0.75rem',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '0.875rem',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      Permission:
+                    </span>
                     <select
                       value={sharePermission}
-                      onChange={e => setSharePermission(e.target.value as 'view' | 'edit')}
+                      onChange={e =>
+                        setSharePermission(e.target.value as 'view' | 'edit')
+                      }
                       style={{ padding: '0.5rem' }}
                     >
                       <option value="view">Can View</option>
                       <option value="edit">Can Edit</option>
                     </select>
                   </div>
-                  <button className="btn btn-primary" onClick={handleGenerateLink}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleGenerateLink}
+                  >
                     Generate Share Link
                   </button>
                 </div>
@@ -1763,24 +2391,35 @@ function ShareModal({ canvas, members, users, conn, myIdentity, onClose }: Share
           </h4>
           <div className="user-list">
             {canvasMembers.map(member => {
-              const user = users.find(u => u.identity.toHexString() === member.userIdentity.toHexString());
-              const isMe = member.userIdentity.toHexString() === myIdentity?.toHexString();
+              const user = users.find(
+                u =>
+                  u.identity.toHexString() === member.userIdentity.toHexString()
+              );
+              const isMe =
+                member.userIdentity.toHexString() === myIdentity?.toHexString();
               const isMemberOwner = member.role === 'owner';
 
               return (
                 <div key={member.id.toString()} className="user-item">
-                  <div className="user-avatar" style={{ background: user?.avatarColor || '#4cf490' }}>
+                  <div
+                    className="user-avatar"
+                    style={{ background: user?.avatarColor || '#4cf490' }}
+                  >
                     {user?.displayName?.slice(0, 2).toUpperCase() || '??'}
                   </div>
                   <div className="user-info">
-                    <div className="user-name">{user?.displayName || 'Unknown'} {isMe && '(you)'}</div>
+                    <div className="user-name">
+                      {user?.displayName || 'Unknown'} {isMe && '(you)'}
+                    </div>
                     <div className="user-status">{member.role}</div>
                   </div>
                   {isOwner && !isMemberOwner && !isMe && (
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <select
                         value={member.role}
-                        onChange={e => handleChangeRole(member.userIdentity, e.target.value)}
+                        onChange={e =>
+                          handleChangeRole(member.userIdentity, e.target.value)
+                        }
                         style={{ padding: '0.25rem', fontSize: '0.75rem' }}
                       >
                         <option value="editor">Editor</option>
@@ -1789,7 +2428,11 @@ function ShareModal({ canvas, members, users, conn, myIdentity, onClose }: Share
                       <button
                         className="btn btn-icon"
                         onClick={() => handleRemoveMember(member.userIdentity)}
-                        style={{ width: 28, height: 28, color: 'var(--stdb-red)' }}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          color: 'var(--stdb-red)',
+                        }}
                         title="Remove"
                       >
                         ✕
@@ -1802,7 +2445,9 @@ function ShareModal({ canvas, members, users, conn, myIdentity, onClose }: Share
           </div>
         </div>
         <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Close</button>
+          <button className="btn" onClick={onClose}>
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -1821,7 +2466,9 @@ interface SettingsModalProps {
 
 function SettingsModal({ myUser, conn, onClose }: SettingsModalProps) {
   const [displayName, setDisplayName] = useState(myUser?.displayName || '');
-  const [avatarColor, setAvatarColor] = useState(myUser?.avatarColor || '#4cf490');
+  const [avatarColor, setAvatarColor] = useState(
+    myUser?.avatarColor || '#4cf490'
+  );
 
   const handleSave = () => {
     if (!conn) return;
@@ -1839,7 +2486,9 @@ function SettingsModal({ myUser, conn, onClose }: SettingsModalProps) {
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">Settings</span>
-          <button className="panel-close" onClick={onClose}>✕</button>
+          <button className="panel-close" onClick={onClose}>
+            ✕
+          </button>
         </div>
         <div className="modal-body">
           <div className="form-group">
@@ -1854,24 +2503,27 @@ function SettingsModal({ myUser, conn, onClose }: SettingsModalProps) {
           </div>
           <div className="form-group">
             <label className="form-label">Avatar Color</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+            >
               <input
                 type="color"
                 value={avatarColor}
                 onChange={e => setAvatarColor(e.target.value)}
               />
-              <div
-                className="user-avatar"
-                style={{ background: avatarColor }}
-              >
+              <div className="user-avatar" style={{ background: avatarColor }}>
                 {displayName.slice(0, 2).toUpperCase() || '??'}
               </div>
             </div>
           </div>
         </div>
         <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave}>Save</button>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={handleSave}>
+            Save
+          </button>
         </div>
       </div>
     </div>

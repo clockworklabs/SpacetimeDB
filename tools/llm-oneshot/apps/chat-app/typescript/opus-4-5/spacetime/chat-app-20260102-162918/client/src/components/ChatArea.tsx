@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTable, Identity } from 'spacetimedb/react';
-import { DbConnection, tables, User, RoomMember, Message } from '../module_bindings';
+import {
+  DbConnection,
+  tables,
+  User,
+  RoomMember,
+  Message,
+} from '../module_bindings';
 import MessageItem from './MessageItem';
 import MessageInput from './MessageInput';
 import MembersPanel from './MembersPanel';
@@ -16,7 +22,13 @@ interface ChatAreaProps {
   roomMembers: RoomMember[];
 }
 
-export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers }: ChatAreaProps) {
+export default function ChatArea({
+  conn,
+  roomId,
+  myIdentity,
+  users,
+  roomMembers,
+}: ChatAreaProps) {
   const [showMembers, setShowMembers] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showScheduled, setShowScheduled] = useState(false);
@@ -34,9 +46,11 @@ export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers 
 
   const room = rooms?.find(r => r.id === roomId);
   const roomMemberList = roomMembers.filter(m => m.roomId === roomId);
-  const roomMessageList = messages?.filter(m => m.roomId === roomId && m.threadParentId == null) ?? [];
-  const sortedMessages = [...roomMessageList].sort(
-    (a, b) => Number(a.createdAt.microsSinceUnixEpoch - b.createdAt.microsSinceUnixEpoch)
+  const roomMessageList =
+    messages?.filter(m => m.roomId === roomId && m.threadParentId == null) ??
+    [];
+  const sortedMessages = [...roomMessageList].sort((a, b) =>
+    Number(a.createdAt.microsSinceUnixEpoch - b.createdAt.microsSinceUnixEpoch)
   );
 
   const myMembership = roomMemberList.find(
@@ -45,13 +59,27 @@ export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers 
   const isMember = !!myMembership;
   const isAdmin = myMembership?.isAdmin ?? false;
 
-  const typingUsers = typingIndicators
-    ?.filter(t => t.roomId === roomId && myIdentity && t.userId.toHexString() !== myIdentity.toHexString())
-    .map(t => users.find(u => u.identity.toHexString() === t.userId.toHexString())?.name ?? 'Someone') ?? [];
+  const typingUsers =
+    typingIndicators
+      ?.filter(
+        t =>
+          t.roomId === roomId &&
+          myIdentity &&
+          t.userId.toHexString() !== myIdentity.toHexString()
+      )
+      .map(
+        t =>
+          users.find(u => u.identity.toHexString() === t.userId.toHexString())
+            ?.name ?? 'Someone'
+      ) ?? [];
 
-  const myScheduledMessages = scheduledMessages?.filter(
-    sm => sm.roomId === roomId && myIdentity && sm.senderId.toHexString() === myIdentity.toHexString()
-  ) ?? [];
+  const myScheduledMessages =
+    scheduledMessages?.filter(
+      sm =>
+        sm.roomId === roomId &&
+        myIdentity &&
+        sm.senderId.toHexString() === myIdentity.toHexString()
+    ) ?? [];
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -64,7 +92,9 @@ export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers 
 
     const lastMessage = sortedMessages[sortedMessages.length - 1];
     const alreadyRead = readReceipts?.some(
-      r => r.messageId === lastMessage.id && r.userId.toHexString() === myIdentity.toHexString()
+      r =>
+        r.messageId === lastMessage.id &&
+        r.userId.toHexString() === myIdentity.toHexString()
     );
 
     if (!alreadyRead) {
@@ -114,19 +144,31 @@ export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers 
             {isMember ? (
               <>
                 {isAdmin && (
-                  <button className="btn btn-secondary btn-small" onClick={() => setShowSettings(true)}>
+                  <button
+                    className="btn btn-secondary btn-small"
+                    onClick={() => setShowSettings(true)}
+                  >
                     ⚙️ Settings
                   </button>
                 )}
-                <button className="btn-icon" onClick={() => setShowMembers(!showMembers)}>
+                <button
+                  className="btn-icon"
+                  onClick={() => setShowMembers(!showMembers)}
+                >
                   👥
                 </button>
-                <button className="btn btn-secondary btn-small" onClick={handleLeaveRoom}>
+                <button
+                  className="btn btn-secondary btn-small"
+                  onClick={handleLeaveRoom}
+                >
                   Leave
                 </button>
               </>
             ) : (
-              <button className="btn btn-primary btn-small" onClick={handleJoinRoom}>
+              <button
+                className="btn btn-primary btn-small"
+                onClick={handleJoinRoom}
+              >
                 Join Room
               </button>
             )}
@@ -143,7 +185,13 @@ export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers 
 
         <div className="messages-container">
           {sortedMessages.length === 0 ? (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '32px' }}>
+            <div
+              style={{
+                textAlign: 'center',
+                color: 'var(--text-muted)',
+                padding: '32px',
+              }}
+            >
               No messages yet. Start the conversation!
             </div>
           ) : (
@@ -154,9 +202,15 @@ export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers 
                 conn={conn}
                 myIdentity={myIdentity}
                 users={users}
-                reactions={reactions?.filter(r => r.messageId === message.id) ?? []}
-                readReceipts={readReceipts?.filter(r => r.messageId === message.id) ?? []}
-                edits={messageEdits?.filter(e => e.messageId === message.id) ?? []}
+                reactions={
+                  reactions?.filter(r => r.messageId === message.id) ?? []
+                }
+                readReceipts={
+                  readReceipts?.filter(r => r.messageId === message.id) ?? []
+                }
+                edits={
+                  messageEdits?.filter(e => e.messageId === message.id) ?? []
+                }
                 replyCount={getReplyCount(message.id)}
                 onViewThread={() => setSelectedThreadId(message.id)}
                 isMember={isMember}
@@ -171,14 +225,12 @@ export default function ChatArea({ conn, roomId, myIdentity, users, roomMembers 
             {typingUsers.length === 1
               ? `${typingUsers[0]} is typing...`
               : typingUsers.length === 2
-              ? `${typingUsers[0]} and ${typingUsers[1]} are typing...`
-              : 'Several people are typing...'}
+                ? `${typingUsers[0]} and ${typingUsers[1]} are typing...`
+                : 'Several people are typing...'}
           </div>
         )}
 
-        {isMember && (
-          <MessageInput conn={conn} roomId={roomId} />
-        )}
+        {isMember && <MessageInput conn={conn} roomId={roomId} />}
       </div>
 
       {showMembers && isMember && (

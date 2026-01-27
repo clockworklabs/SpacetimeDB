@@ -38,12 +38,18 @@ export default function UserSetup({ conn }: UserSetupProps) {
           className="input"
           placeholder="Enter your name..."
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={e => setName(e.target.value)}
           maxLength={50}
           autoFocus
         />
-        {error && <p style={{ color: 'var(--danger)', fontSize: '14px' }}>{error}</p>}
-        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+        {error && (
+          <p style={{ color: 'var(--danger)', fontSize: '14px' }}>{error}</p>
+        )}
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={isSubmitting}
+        >
           {isSubmitting ? 'Setting name...' : 'Continue'}
         </button>
       </form>

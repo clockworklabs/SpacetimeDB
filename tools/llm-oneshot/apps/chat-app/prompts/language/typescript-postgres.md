@@ -17,10 +17,10 @@ Database name: `chat-app`
 
 ## Constraints
 
-* Only create/modify code under:
-    * `.../server/` (server-side TypeScript)
-    * `.../client/` (client-side TypeScript/React)
-* Keep it minimal and readable.
+- Only create/modify code under:
+  - `.../server/` (server-side TypeScript)
+  - `.../client/` (client-side TypeScript/React)
+- Keep it minimal and readable.
 
 ## Output
 

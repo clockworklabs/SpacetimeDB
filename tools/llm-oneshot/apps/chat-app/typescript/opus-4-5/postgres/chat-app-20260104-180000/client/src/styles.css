@@ -24,7 +24,11 @@
 }
 
 body {
-  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Outfit',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
@@ -57,7 +61,11 @@ body {
 .sidebar-header h1 {
   font-size: 1.25rem;
   font-weight: 600;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary),
+    var(--accent-hover)
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -80,7 +88,8 @@ body {
   justify-content: space-between;
 }
 
-.room-list, .user-list {
+.room-list,
+.user-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -88,7 +97,8 @@ body {
   overflow-y: auto;
 }
 
-.room-item, .user-item {
+.room-item,
+.user-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -105,7 +115,8 @@ body {
   font-family: inherit;
 }
 
-.room-item:hover, .user-item:hover {
+.room-item:hover,
+.user-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -144,10 +155,19 @@ body {
   flex-shrink: 0;
 }
 
-.status-dot.online { background: var(--success); }
-.status-dot.away { background: var(--warning); }
-.status-dot.dnd { background: var(--danger); }
-.status-dot.invisible, .status-dot.offline { background: var(--text-muted); }
+.status-dot.online {
+  background: var(--success);
+}
+.status-dot.away {
+  background: var(--warning);
+}
+.status-dot.dnd {
+  background: var(--danger);
+}
+.status-dot.invisible,
+.status-dot.offline {
+  background: var(--text-muted);
+}
 
 .last-active {
   font-size: 0.75rem;
@@ -513,7 +533,11 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-primary) 0%,
+    var(--bg-secondary) 100%
+  );
 }
 
 .auth-card {
@@ -530,7 +554,11 @@ body {
   font-size: 1.75rem;
   font-weight: 700;
   margin-bottom: 8px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary),
+    var(--accent-hover)
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

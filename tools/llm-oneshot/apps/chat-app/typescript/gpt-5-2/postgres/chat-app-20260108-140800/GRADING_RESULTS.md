@@ -8,23 +8,23 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 5 (05_postgres_edit_history.md) |
-| **Features Evaluated** | 1-8 (max 15) |
-| **Total Feature Score** | 10 / 24 |
-| **Percentage** | 42% |
+| Metric                  | Value                           |
+| ----------------------- | ------------------------------- |
+| **Prompt Level Used**   | 5 (05_postgres_edit_history.md) |
+| **Features Evaluated**  | 1-8 (max 15)                    |
+| **Total Feature Score** | 10 / 24                         |
+| **Percentage**          | 42%                             |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
-- [ ] First-try success (required Docker CMD fix for tsx module resolution)
+- [x] First-try success
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | ~500 |
-| Lines of code (frontend) | ~640 |
-| Number of files created | 18 |
-| External dependencies | drizzle-orm, postgres, express, socket.io, jsonwebtoken, react, socket.io-client |
+| Metric                   | Value                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| Lines of code (backend)  | ~500                                                                             |
+| Lines of code (frontend) | ~640                                                                             |
+| Number of files created  | 18                                                                               |
+| External dependencies    | drizzle-orm, postgres, express, socket.io, jsonwebtoken, react, socket.io-client |
 
 ---
 
@@ -33,23 +33,23 @@
 - [x] Users can set a display name (0.5)
 - [x] Users can create chat rooms (0.5)
 - [ ] Users can join/leave rooms (0.5) — **No room discovery; can only see own rooms**
-- [x] Users can send messages to joined rooms (0.5) — *works but no error feedback*
+- [x] Users can send messages to joined rooms (0.5) — _works but no error feedback_
 - [ ] Online users are displayed (0.5) — **Broken (stale closure in socket handler)**
-- [ ] Basic validation exists (0.5) — *Server-side exists but errors not shown to user*
+- [ ] Basic validation exists (0.5) — _Server-side exists but errors not shown to user_
 
 ---
 
 ## Feature 2: Typing Indicators (Score: 0 / 3)
 
 - [ ] Typing state is broadcast to other room members (1) — **Stale closure breaks handler**
-- [ ] Typing indicator auto-expires after inactivity (1) — *Server-side timeout exists*
+- [ ] Typing indicator auto-expires after inactivity (1) — _Server-side timeout exists_
 - [ ] UI shows "User is typing..." or "Multiple users are typing..." (1) — **Never triggers due to stale closure**
 
 ---
 
 ## Feature 3: Read Receipts (Score: 1 / 3)
 
-- [x] System tracks which users have seen which messages (1) — *Backend works correctly*
+- [x] System tracks which users have seen which messages (1) — _Backend works correctly_
 - [ ] "Seen by X, Y, Z" indicator displays under messages (1) — **Doesn't update in real-time**
 - [ ] Read status updates in real-time (1) — **Stale closure breaks it**
 
@@ -59,7 +59,7 @@
 
 - [x] Unread count badge shows on room list (1)
 - [x] Count tracks last-read position per user per room (1)
-- [x] Counts update in real-time (1) — *Only working real-time feature (uses function updater)*
+- [x] Counts update in real-time (1) — _Only working real-time feature (uses function updater)_
 
 ---
 
@@ -74,7 +74,7 @@
 ## Feature 6: Ephemeral/Disappearing Messages (Score: 1.5 / 3)
 
 - [x] Users can send messages with auto-delete timer (1)
-- [x] Countdown or disappearing indicator shown in UI (1) — *Partial: countdown exists*
+- [x] Countdown or disappearing indicator shown in UI (1) — _Partial: countdown exists_
 - [ ] Message is permanently deleted when timer expires (1) — **Server job works but real-time update broken**
 
 ---
@@ -83,7 +83,7 @@
 
 - [x] Users can add emoji reactions to messages (0.75)
 - [ ] Reaction counts display and update in real-time (0.75) — **Stale closure breaks it**
-- [x] Users can toggle their own reactions on/off (0.75) — *Works locally*
+- [x] Users can toggle their own reactions on/off (0.75) — _Works locally_
 - [ ] Hover/click shows who reacted (0.75) — **Untested**
 
 ---
@@ -99,7 +99,7 @@
 
 ## Features 9-15: Not Evaluated
 
-*Not included in prompt level 5*
+_Not included in prompt level 5_
 
 - Feature 9: Real-Time Permissions — N/A
 - Feature 10: Rich User Presence — N/A
@@ -113,17 +113,17 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score |
-|---------|-----|-------|
-| 1. Basic Chat | 3 | 1.5 |
-| 2. Typing Indicators | 3 | 0 |
-| 3. Read Receipts | 3 | 1 |
-| 4. Unread Counts | 3 | 3 |
-| 5. Scheduled Messages | 3 | 2 |
-| 6. Ephemeral Messages | 3 | 1.5 |
-| 7. Message Reactions | 3 | 1 |
-| 8. Message Editing | 3 | 0 |
-| **TOTAL** | **24** | **10** |
+| Feature               | Max    | Score  |
+| --------------------- | ------ | ------ |
+| 1. Basic Chat         | 3      | 1.5    |
+| 2. Typing Indicators  | 3      | 0      |
+| 3. Read Receipts      | 3      | 1      |
+| 4. Unread Counts      | 3      | 3      |
+| 5. Scheduled Messages | 3      | 2      |
+| 6. Ephemeral Messages | 3      | 1.5    |
+| 7. Message Reactions  | 3      | 1      |
+| 8. Message Editing    | 3      | 0      |
+| **TOTAL**             | **24** | **10** |
 
 ---
 
@@ -167,7 +167,7 @@ The application did not work on first deployment:
 - **Database:** PostgreSQL 16 (Docker)
 - **Frontend:** React 18 + Vite + Socket.IO client
 - **Auth:** JWT tokens
-- **Real-time:** Socket.IO rooms for message broadcasting — *server broadcasts correctly*
+- **Real-time:** Socket.IO rooms for message broadcasting — _server broadcasts correctly_
 - **Schema:** 8 tables (users, rooms, roomMembers, messages, messageEdits, reactions, scheduledMessages, roomReadPositions)
 - **Periodic Tasks:** setInterval for scheduled message delivery and ephemeral cleanup
 

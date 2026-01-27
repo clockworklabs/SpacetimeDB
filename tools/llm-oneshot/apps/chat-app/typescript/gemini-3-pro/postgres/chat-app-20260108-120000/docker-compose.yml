@@ -4,7 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5433:5432"
+      - '5433:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
@@ -16,7 +16,7 @@ services:
     build: ./server
     restart: on-failure
     ports:
-      - "3001:3001"
+      - '3001:3001'
     environment:
       DATABASE_URL: postgres://postgres:password@postgres:5432/chat-app
       JWT_SECRET: chat-app-20260108-120000-secret
@@ -29,7 +29,7 @@ services:
   client:
     build: ./client
     ports:
-      - "5173:5173"
+      - '5173:5173'
     environment:
       VITE_API_URL: http://server:3001
     depends_on:

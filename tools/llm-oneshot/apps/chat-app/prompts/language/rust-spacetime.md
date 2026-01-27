@@ -16,6 +16,7 @@ Module name: `chat-app`
 **Client:** Rust CLI application using `spacetimedb-sdk`
 
 The client should:
+
 - Connect to SpacetimeDB using `spacetimedb-sdk`
 - Provide a terminal-based interface (TUI with ratatui/crossterm, or simple stdin/stdout)
 - Display real-time updates in the terminal
@@ -23,10 +24,10 @@ The client should:
 
 ## Constraints
 
-* Only create/modify code under:
-    * `.../backend/` (Rust SpacetimeDB module)
-    * `.../client/` (Rust CLI application)
-* Keep it minimal and readable.
+- Only create/modify code under:
+  - `.../backend/` (Rust SpacetimeDB module)
+  - `.../client/` (Rust CLI application)
+- Keep it minimal and readable.
 
 ## Output
 

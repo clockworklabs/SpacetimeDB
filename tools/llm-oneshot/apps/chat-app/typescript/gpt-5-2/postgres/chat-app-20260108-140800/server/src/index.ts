@@ -5,7 +5,12 @@ import cors from 'cors';
 import { Server } from 'socket.io';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 
-import { authMiddleware, signToken, tokenFromSocketAuth, verifyToken } from './auth';
+import {
+  authMiddleware,
+  signToken,
+  tokenFromSocketAuth,
+  verifyToken,
+} from './auth';
 import { db } from './db';
 import {
   messageEdits,
@@ -29,7 +34,7 @@ app.use(
   cors({
     origin: CLIENT_ORIGIN,
     credentials: true,
-  }),
+  })
 );
 app.use(express.json({ limit: '1mb' }));
 
@@ -37,32 +42,51 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 
 app.post('/auth/login', async (req, res) => {
   try {
-    const displayName = nonEmptyTrimmed('displayName', req.body?.displayName, 40);
+    const displayName = nonEmptyTrimmed(
+      'displayName',
+      req.body?.displayName,
+      40
+    );
     const userId = crypto.randomUUID();
     await db.insert(users).values({ id: userId, displayName, isOnline: false });
     const token = signToken({ userId });
     return res.json({ token, user: { id: userId, displayName } });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
 
 app.get('/me', authMiddleware, async (req, res) => {
   const userId = (req as any).userId as string;
-  const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  const user = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
   if (!user[0]) return res.status(401).json({ error: 'Unauthorized' });
-  return res.json({ user: { id: user[0].id, displayName: user[0].displayName } });
+  return res.json({
+    user: { id: user[0].id, displayName: user[0].displayName },
+  });
 });
 
 app.patch('/me', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
-    const displayName = nonEmptyTrimmed('displayName', req.body?.displayName, 40);
-    await db.update(users).set({ displayName, lastActiveAt: new Date() }).where(eq(users.id, userId));
+    const displayName = nonEmptyTrimmed(
+      'displayName',
+      req.body?.displayName,
+      40
+    );
+    await db
+      .update(users)
+      .set({ displayName, lastActiveAt: new Date() })
+      .where(eq(users.id, userId));
     return res.json({ ok: true });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
@@ -73,7 +97,7 @@ app.get('/rooms', authMiddleware, async (req, res) => {
     .select({ roomId: roomMembers.roomId })
     .from(roomMembers)
     .where(eq(roomMembers.userId, userId));
-  const roomIds = memberships.map((m) => m.roomId);
+  const roomIds = memberships.map(m => m.roomId);
   const roomRows =
     roomIds.length === 0
       ? []
@@ -89,13 +113,19 @@ app.get('/rooms', authMiddleware, async (req, res) => {
       : await db
           .select()
           .from(roomReadPositions)
-          .where(and(eq(roomReadPositions.userId, userId), inArray(roomReadPositions.roomId, roomIds)));
+          .where(
+            and(
+              eq(roomReadPositions.userId, userId),
+              inArray(roomReadPositions.roomId, roomIds)
+            )
+          );
 
   const lastReadByRoom = new Map<number, number | null>();
-  for (const r of readRows) lastReadByRoom.set(r.roomId, r.lastReadMessageId ?? null);
+  for (const r of readRows)
+    lastReadByRoom.set(r.roomId, r.lastReadMessageId ?? null);
 
   return res.json({
-    rooms: roomRows.map((r) => ({
+    rooms: roomRows.map(r => ({
       id: r.id,
       name: r.name,
       lastReadMessageId: lastReadByRoom.get(r.id) ?? null,
@@ -107,13 +137,17 @@ app.post('/rooms', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const name = nonEmptyTrimmed('name', req.body?.name, 64);
-    const [room] = await db.insert(rooms).values({ name, createdBy: userId }).returning();
+    const [room] = await db
+      .insert(rooms)
+      .values({ name, createdBy: userId })
+      .returning();
     await db.insert(roomMembers).values({ roomId: room.id, userId });
     realtime.broadcastRoomsChanged();
     realtime.broadcastRoomMembersChanged(room.id);
     return res.json({ room: { id: room.id, name: room.name } });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
@@ -158,7 +192,11 @@ app.get('/rooms/:roomId/members', authMiddleware, async (req, res) => {
   if (!myMembership[0]) return res.status(403).json({ error: 'Forbidden' });
 
   const memberRows = await db
-    .select({ userId: roomMembers.userId, displayName: users.displayName, isOnline: users.isOnline })
+    .select({
+      userId: roomMembers.userId,
+      displayName: users.displayName,
+      isOnline: users.isOnline,
+    })
     .from(roomMembers)
     .innerJoin(users, eq(users.id, roomMembers.userId))
     .where(eq(roomMembers.roomId, roomId));
@@ -168,10 +206,11 @@ app.get('/rooms/:roomId/members', authMiddleware, async (req, res) => {
     .from(roomReadPositions)
     .where(eq(roomReadPositions.roomId, roomId));
   const lastReadByUser = new Map<string, number | null>();
-  for (const r of readRows) lastReadByUser.set(r.userId, r.lastReadMessageId ?? null);
+  for (const r of readRows)
+    lastReadByUser.set(r.userId, r.lastReadMessageId ?? null);
 
   return res.json({
-    members: memberRows.map((m) => ({
+    members: memberRows.map(m => ({
       id: m.userId,
       displayName: m.displayName,
       isOnline: m.isOnline,
@@ -209,13 +248,17 @@ app.get('/rooms/:roomId/messages', authMiddleware, async (req, res) => {
     .limit(100);
 
   const msgs = [...rows].reverse();
-  const messageIds = msgs.map((m) => m.id);
+  const messageIds = msgs.map(m => m.id);
 
   const reactionRows =
     messageIds.length === 0
       ? []
       : await db
-          .select({ messageId: reactions.messageId, emoji: reactions.emoji, userId: reactions.userId })
+          .select({
+            messageId: reactions.messageId,
+            emoji: reactions.emoji,
+            userId: reactions.userId,
+          })
           .from(reactions)
           .where(inArray(reactions.messageId, messageIds));
 
@@ -228,19 +271,23 @@ app.get('/rooms/:roomId/messages', authMiddleware, async (req, res) => {
           .where(inArray(messageEdits.messageId, messageIds));
 
   const editsCount = new Map<number, number>();
-  for (const e of editRows) editsCount.set(e.messageId, (editsCount.get(e.messageId) || 0) + 1);
+  for (const e of editRows)
+    editsCount.set(e.messageId, (editsCount.get(e.messageId) || 0) + 1);
 
-  const reactionsByMessage = new Map<number, { emoji: string; userIds: string[] }[]>();
+  const reactionsByMessage = new Map<
+    number,
+    { emoji: string; userIds: string[] }[]
+  >();
   for (const r of reactionRows) {
     const arr = reactionsByMessage.get(r.messageId) || [];
-    const existing = arr.find((x) => x.emoji === r.emoji);
+    const existing = arr.find(x => x.emoji === r.emoji);
     if (existing) existing.userIds.push(r.userId);
     else arr.push({ emoji: r.emoji, userIds: [r.userId] });
     reactionsByMessage.set(r.messageId, arr);
   }
 
   return res.json({
-    messages: msgs.map((m) => ({
+    messages: msgs.map(m => ({
       id: m.id,
       roomId: m.roomId,
       authorId: m.authorId,
@@ -264,28 +311,46 @@ app.post('/rooms/:roomId/messages', authMiddleware, async (req, res) => {
     const myMembership = await db
       .select()
       .from(roomMembers)
-      .where(and(eq(roomMembers.userId, userId), eq(roomMembers.roomId, roomId)))
+      .where(
+        and(eq(roomMembers.userId, userId), eq(roomMembers.roomId, roomId))
+      )
       .limit(1);
     if (!myMembership[0]) return res.status(403).json({ error: 'Forbidden' });
 
     const content = nonEmptyTrimmed('content', req.body?.content, 2000);
 
     // simple spam prevention: 1 message per second
-    const me = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-    const lastMessageAt = me[0]?.lastMessageAt ? new Date(me[0].lastMessageAt) : null;
+    const me = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const lastMessageAt = me[0]?.lastMessageAt
+      ? new Date(me[0].lastMessageAt)
+      : null;
     if (lastMessageAt && Date.now() - lastMessageAt.getTime() < 900) {
       return res.status(429).json({ error: 'Too many messages' });
     }
 
     const scheduleInSeconds =
-      typeof req.body?.scheduleInSeconds === 'number' ? req.body.scheduleInSeconds : null;
+      typeof req.body?.scheduleInSeconds === 'number'
+        ? req.body.scheduleInSeconds
+        : null;
     const scheduleAt =
-      typeof req.body?.scheduleAt === 'string' ? new Date(req.body.scheduleAt) : null;
+      typeof req.body?.scheduleAt === 'string'
+        ? new Date(req.body.scheduleAt)
+        : null;
 
-    if (scheduleInSeconds || (scheduleAt && Number.isFinite(scheduleAt.getTime()))) {
-      const sendAt = scheduleAt && Number.isFinite(scheduleAt.getTime())
-        ? scheduleAt
-        : new Date(Date.now() + Math.max(5, Number(scheduleInSeconds || 30)) * 1000);
+    if (
+      scheduleInSeconds ||
+      (scheduleAt && Number.isFinite(scheduleAt.getTime()))
+    ) {
+      const sendAt =
+        scheduleAt && Number.isFinite(scheduleAt.getTime())
+          ? scheduleAt
+          : new Date(
+              Date.now() + Math.max(5, Number(scheduleInSeconds || 30)) * 1000
+            );
 
       const [scheduled] = await db
         .insert(scheduledMessages)
@@ -297,7 +362,9 @@ app.post('/rooms/:roomId/messages', authMiddleware, async (req, res) => {
     }
 
     const ephemeralSeconds =
-      typeof req.body?.ephemeralSeconds === 'number' ? req.body.ephemeralSeconds : null;
+      typeof req.body?.ephemeralSeconds === 'number'
+        ? req.body.ephemeralSeconds
+        : null;
 
     const expiresAt =
       ephemeralSeconds && ephemeralSeconds > 0
@@ -308,12 +375,16 @@ app.post('/rooms/:roomId/messages', authMiddleware, async (req, res) => {
       .insert(messages)
       .values({ roomId, authorId: userId, content, expiresAt })
       .returning();
-    await db.update(users).set({ lastMessageAt: new Date() }).where(eq(users.id, userId));
+    await db
+      .update(users)
+      .set({ lastMessageAt: new Date() })
+      .where(eq(users.id, userId));
 
     realtime.broadcastMessageCreated(roomId, msg.id);
     return res.json({ messageId: msg.id });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
@@ -322,7 +393,10 @@ app.post('/rooms/:roomId/read', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const roomId = assertInt('roomId', req.params.roomId);
-    const lastReadMessageId = req.body?.lastReadMessageId === null ? null : assertInt('lastReadMessageId', req.body?.lastReadMessageId);
+    const lastReadMessageId =
+      req.body?.lastReadMessageId === null
+        ? null
+        : assertInt('lastReadMessageId', req.body?.lastReadMessageId);
 
     await db
       .insert(roomReadPositions)
@@ -334,7 +408,8 @@ app.post('/rooms/:roomId/read', authMiddleware, async (req, res) => {
     realtime.broadcastReadPositionChanged(roomId, userId);
     return res.json({ ok: true });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
@@ -345,20 +420,34 @@ app.patch('/messages/:messageId', authMiddleware, async (req, res) => {
     const messageId = assertInt('messageId', req.params.messageId);
     const newContent = nonEmptyTrimmed('content', req.body?.content, 2000);
 
-    const [msg] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+    const [msg] = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.id, messageId))
+      .limit(1);
     if (!msg) return res.status(404).json({ error: 'Not found' });
-    if (msg.authorId !== userId) return res.status(403).json({ error: 'Forbidden' });
+    if (msg.authorId !== userId)
+      return res.status(403).json({ error: 'Forbidden' });
 
     await db
       .insert(messageEdits)
-      .values({ messageId: msg.id, editorId: userId, oldContent: msg.content, newContent })
+      .values({
+        messageId: msg.id,
+        editorId: userId,
+        oldContent: msg.content,
+        newContent,
+      })
       .returning();
 
-    await db.update(messages).set({ content: newContent, updatedAt: new Date() }).where(eq(messages.id, msg.id));
+    await db
+      .update(messages)
+      .set({ content: newContent, updatedAt: new Date() })
+      .where(eq(messages.id, msg.id));
     realtime.broadcastMessageUpdated(msg.roomId, msg.id);
     return res.json({ ok: true });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
@@ -367,24 +456,35 @@ app.get('/messages/:messageId/history', authMiddleware, async (req, res) => {
   const userId = (req as any).userId as string;
   const messageId = assertInt('messageId', req.params.messageId);
 
-  const [msg] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+  const [msg] = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.id, messageId))
+    .limit(1);
   if (!msg) return res.status(404).json({ error: 'Not found' });
 
   const myMembership = await db
     .select()
     .from(roomMembers)
-    .where(and(eq(roomMembers.userId, userId), eq(roomMembers.roomId, msg.roomId)))
+    .where(
+      and(eq(roomMembers.userId, userId), eq(roomMembers.roomId, msg.roomId))
+    )
     .limit(1);
   if (!myMembership[0]) return res.status(403).json({ error: 'Forbidden' });
 
   const edits = await db
-    .select({ oldContent: messageEdits.oldContent, newContent: messageEdits.newContent, editedAt: messageEdits.editedAt })
+    .select({
+      oldContent: messageEdits.oldContent,
+      newContent: messageEdits.newContent,
+      editedAt: messageEdits.editedAt,
+    })
     .from(messageEdits)
     .where(eq(messageEdits.messageId, msg.id))
     .orderBy(messageEdits.id);
 
   const versions: { content: string; label: string }[] = [];
-  if (edits.length === 0) versions.push({ content: msg.content, label: 'Original' });
+  if (edits.length === 0)
+    versions.push({ content: msg.content, label: 'Original' });
   else {
     versions.push({ content: edits[0].oldContent, label: 'Original' });
     for (let i = 0; i < edits.length; i++) {
@@ -401,26 +501,44 @@ app.post('/messages/:messageId/reactions', authMiddleware, async (req, res) => {
     const messageId = assertInt('messageId', req.params.messageId);
     const emoji = nonEmptyTrimmed('emoji', req.body?.emoji, 16);
 
-    const [msg] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+    const [msg] = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.id, messageId))
+      .limit(1);
     if (!msg) return res.status(404).json({ error: 'Not found' });
 
     const myMembership = await db
       .select()
       .from(roomMembers)
-      .where(and(eq(roomMembers.userId, userId), eq(roomMembers.roomId, msg.roomId)))
+      .where(
+        and(eq(roomMembers.userId, userId), eq(roomMembers.roomId, msg.roomId))
+      )
       .limit(1);
     if (!myMembership[0]) return res.status(403).json({ error: 'Forbidden' });
 
     const existing = await db
       .select()
       .from(reactions)
-      .where(and(eq(reactions.messageId, messageId), eq(reactions.userId, userId), eq(reactions.emoji, emoji)))
+      .where(
+        and(
+          eq(reactions.messageId, messageId),
+          eq(reactions.userId, userId),
+          eq(reactions.emoji, emoji)
+        )
+      )
       .limit(1);
 
     if (existing[0]) {
       await db
         .delete(reactions)
-        .where(and(eq(reactions.messageId, messageId), eq(reactions.userId, userId), eq(reactions.emoji, emoji)));
+        .where(
+          and(
+            eq(reactions.messageId, messageId),
+            eq(reactions.userId, userId),
+            eq(reactions.emoji, emoji)
+          )
+        );
     } else {
       await db.insert(reactions).values({ messageId, userId, emoji });
     }
@@ -428,7 +546,8 @@ app.post('/messages/:messageId/reactions', authMiddleware, async (req, res) => {
     realtime.broadcastReactionsChanged(messageId);
     return res.json({ ok: true });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
@@ -446,7 +565,11 @@ app.get('/scheduled', authMiddleware, async (req, res) => {
     .from(scheduledMessages)
     .innerJoin(rooms, eq(rooms.id, scheduledMessages.roomId))
     .where(
-      and(eq(scheduledMessages.authorId, userId), isNull(scheduledMessages.cancelledAt), isNull(scheduledMessages.sentAt)),
+      and(
+        eq(scheduledMessages.authorId, userId),
+        isNull(scheduledMessages.cancelledAt),
+        isNull(scheduledMessages.sentAt)
+      )
     )
     .orderBy(desc(scheduledMessages.id))
     .limit(50);
@@ -461,15 +584,24 @@ app.delete('/scheduled/:scheduledId', authMiddleware, async (req, res) => {
     const existing = await db
       .select()
       .from(scheduledMessages)
-      .where(and(eq(scheduledMessages.id, scheduledId), eq(scheduledMessages.authorId, userId)))
+      .where(
+        and(
+          eq(scheduledMessages.id, scheduledId),
+          eq(scheduledMessages.authorId, userId)
+        )
+      )
       .limit(1);
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
 
-    await db.update(scheduledMessages).set({ cancelledAt: new Date() }).where(eq(scheduledMessages.id, scheduledId));
+    await db
+      .update(scheduledMessages)
+      .set({ cancelledAt: new Date() })
+      .where(eq(scheduledMessages.id, scheduledId));
     io.emit('scheduled:changed', { userId });
     return res.json({ ok: true });
   } catch (e) {
-    const err = e instanceof ClientError ? e : new ClientError(500, 'Server error');
+    const err =
+      e instanceof ClientError ? e : new ClientError(500, 'Server error');
     return res.status(err.status).json({ error: err.message });
   }
 });
@@ -494,9 +626,13 @@ io.use(async (socket, next) => {
   }
 });
 
-io.on('connection', async (socket) => {
+io.on('connection', async socket => {
   const userId = (socket as any).userId as string;
-  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
   if (!user) {
     socket.disconnect(true);
     return;
@@ -508,4 +644,3 @@ httpServer.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`server listening on http://localhost:${PORT}`);
 });
-

@@ -1,13 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { api } from './api';
-import type { User, Room, Message, RoomMember, RoomInvitation, TypingUser, MessageEdit, ReadReceipt, Reaction } from './types';
+import type {
+  User,
+  Room,
+  Message,
+  RoomMember,
+  RoomInvitation,
+  TypingUser,
+  MessageEdit,
+  ReadReceipt,
+  Reaction,
+} from './types';
 
 const SOCKET_URL = 'http://localhost:3001';
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢'];
 
 export default function App() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem('token')
+  );
   const [user, setUser] = useState<User | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
 
@@ -55,10 +67,13 @@ export default function App() {
   // Initialize
   useEffect(() => {
     if (token) {
-      api.getMe().then(setUser).catch(() => {
-        localStorage.removeItem('token');
-        setToken(null);
-      });
+      api
+        .getMe()
+        .then(setUser)
+        .catch(() => {
+          localStorage.removeItem('token');
+          setToken(null);
+        });
     }
   }, [token]);
 
@@ -104,13 +119,16 @@ export default function App() {
       setMessages(prev => prev.filter(m => m.id !== id));
     });
 
-    newSocket.on('message:replyAdded', ({ messageId }: { messageId: number }) => {
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === messageId ? { ...m, replyCount: m.replyCount + 1 } : m
-        )
-      );
-    });
+    newSocket.on(
+      'message:replyAdded',
+      ({ messageId }: { messageId: number }) => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === messageId ? { ...m, replyCount: m.replyCount + 1 } : m
+          )
+        );
+      }
+    );
 
     newSocket.on('reaction:added', (reaction: Reaction) => {
       setMessages(prev =>
@@ -122,46 +140,75 @@ export default function App() {
       );
     });
 
-    newSocket.on('reaction:removed', ({ messageId, userId, emoji }: { messageId: number; userId: string; emoji: string }) => {
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === messageId
-            ? {
-                ...m,
-                reactions: m.reactions.filter(
-                  r => !(r.userId === userId && r.emoji === emoji)
-                ),
-              }
-            : m
-        )
-      );
-    });
-
-    newSocket.on('messages:read', ({ userId: readUserId, messageIds }: { userId: string; messageIds: number[] }) => {
-      // Update UI if needed
-      if (readUserId === user?.id) {
-        setUnreadCounts(prev => {
-          const updated = { ...prev };
-          if (selectedRoom) updated[selectedRoom.id] = 0;
-          return updated;
-        });
+    newSocket.on(
+      'reaction:removed',
+      ({
+        messageId,
+        userId,
+        emoji,
+      }: {
+        messageId: number;
+        userId: string;
+        emoji: string;
+      }) => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  reactions: m.reactions.filter(
+                    r => !(r.userId === userId && r.emoji === emoji)
+                  ),
+                }
+              : m
+          )
+        );
       }
-    });
+    );
 
-    newSocket.on('typing:started', ({ roomId, userId: typingUserId }: TypingUser) => {
-      if (typingUserId !== user?.id) {
-        setTypingUsers(prev => {
-          if (prev.find(t => t.roomId === roomId && t.userId === typingUserId)) return prev;
-          return [...prev, { roomId, userId: typingUserId }];
-        });
+    newSocket.on(
+      'messages:read',
+      ({
+        userId: readUserId,
+        messageIds,
+      }: {
+        userId: string;
+        messageIds: number[];
+      }) => {
+        // Update UI if needed
+        if (readUserId === user?.id) {
+          setUnreadCounts(prev => {
+            const updated = { ...prev };
+            if (selectedRoom) updated[selectedRoom.id] = 0;
+            return updated;
+          });
+        }
       }
-    });
+    );
 
-    newSocket.on('typing:stopped', ({ roomId, userId: typingUserId }: TypingUser) => {
-      setTypingUsers(prev =>
-        prev.filter(t => !(t.roomId === roomId && t.userId === typingUserId))
-      );
-    });
+    newSocket.on(
+      'typing:started',
+      ({ roomId, userId: typingUserId }: TypingUser) => {
+        if (typingUserId !== user?.id) {
+          setTypingUsers(prev => {
+            if (
+              prev.find(t => t.roomId === roomId && t.userId === typingUserId)
+            )
+              return prev;
+            return [...prev, { roomId, userId: typingUserId }];
+          });
+        }
+      }
+    );
+
+    newSocket.on(
+      'typing:stopped',
+      ({ roomId, userId: typingUserId }: TypingUser) => {
+        setTypingUsers(prev =>
+          prev.filter(t => !(t.roomId === roomId && t.userId === typingUserId))
+        );
+      }
+    );
 
     newSocket.on('user:online', (onlineUser: User) => {
       setOnlineUsers(prev => {
@@ -177,41 +224,107 @@ export default function App() {
       setOnlineUsers(prev => prev.filter(u => u.id !== userId));
     });
 
-    newSocket.on('user:status', ({ userId, status, lastActive }: { userId: string; status: string; lastActive: string }) => {
-      setOnlineUsers(prev =>
-        prev.map(u =>
-          u.id === userId ? { ...u, status: status as User['status'], lastActive } : u
-        )
-      );
-    });
-
-    newSocket.on('member:joined', ({ roomId, userId: joinedUserId }: { roomId: number; userId: string }) => {
-      if (selectedRoom?.id === roomId) {
-        loadRoomMembers(roomId);
+    newSocket.on(
+      'user:status',
+      ({
+        userId,
+        status,
+        lastActive,
+      }: {
+        userId: string;
+        status: string;
+        lastActive: string;
+      }) => {
+        setOnlineUsers(prev =>
+          prev.map(u =>
+            u.id === userId
+              ? { ...u, status: status as User['status'], lastActive }
+              : u
+          )
+        );
       }
-    });
+    );
 
-    newSocket.on('member:left', ({ roomId, userId: leftUserId }: { roomId: number; userId: string }) => {
-      setRoomMembers(prev => prev.filter(m => !(m.member.roomId === roomId && m.member.userId === leftUserId)));
-    });
+    newSocket.on(
+      'member:joined',
+      ({
+        roomId,
+        userId: joinedUserId,
+      }: {
+        roomId: number;
+        userId: string;
+      }) => {
+        if (selectedRoom?.id === roomId) {
+          loadRoomMembers(roomId);
+        }
+      }
+    );
 
-    newSocket.on('member:kicked', ({ roomId, userId: kickedUserId }: { roomId: number; userId: string }) => {
-      setRoomMembers(prev => prev.filter(m => !(m.member.roomId === roomId && m.member.userId === kickedUserId)));
-    });
+    newSocket.on(
+      'member:left',
+      ({ roomId, userId: leftUserId }: { roomId: number; userId: string }) => {
+        setRoomMembers(prev =>
+          prev.filter(
+            m => !(m.member.roomId === roomId && m.member.userId === leftUserId)
+          )
+        );
+      }
+    );
 
-    newSocket.on('member:banned', ({ roomId, userId: bannedUserId }: { roomId: number; userId: string }) => {
-      setRoomMembers(prev => prev.filter(m => !(m.member.roomId === roomId && m.member.userId === bannedUserId)));
-    });
+    newSocket.on(
+      'member:kicked',
+      ({
+        roomId,
+        userId: kickedUserId,
+      }: {
+        roomId: number;
+        userId: string;
+      }) => {
+        setRoomMembers(prev =>
+          prev.filter(
+            m =>
+              !(m.member.roomId === roomId && m.member.userId === kickedUserId)
+          )
+        );
+      }
+    );
 
-    newSocket.on('member:promoted', ({ roomId, userId: promotedUserId }: { roomId: number; userId: string }) => {
-      setRoomMembers(prev =>
-        prev.map(m =>
-          m.member.roomId === roomId && m.member.userId === promotedUserId
-            ? { ...m, member: { ...m.member, role: 'admin' as const } }
-            : m
-        )
-      );
-    });
+    newSocket.on(
+      'member:banned',
+      ({
+        roomId,
+        userId: bannedUserId,
+      }: {
+        roomId: number;
+        userId: string;
+      }) => {
+        setRoomMembers(prev =>
+          prev.filter(
+            m =>
+              !(m.member.roomId === roomId && m.member.userId === bannedUserId)
+          )
+        );
+      }
+    );
+
+    newSocket.on(
+      'member:promoted',
+      ({
+        roomId,
+        userId: promotedUserId,
+      }: {
+        roomId: number;
+        userId: string;
+      }) => {
+        setRoomMembers(prev =>
+          prev.map(m =>
+            m.member.roomId === roomId && m.member.userId === promotedUserId
+              ? { ...m, member: { ...m.member, role: 'admin' as const } }
+              : m
+          )
+        );
+      }
+    );
 
     newSocket.on('room:kicked', ({ roomId }: { roomId: number }) => {
       setRooms(prev => prev.filter(r => r.id !== roomId));
@@ -229,9 +342,15 @@ export default function App() {
       }
     });
 
-    newSocket.on('invitation:received', (data: { invitation: any; room: Room; inviter: User }) => {
-      setInvitations(prev => [...prev, { invitation: data.invitation, room: data.room }]);
-    });
+    newSocket.on(
+      'invitation:received',
+      (data: { invitation: any; room: Room; inviter: User }) => {
+        setInvitations(prev => [
+          ...prev,
+          { invitation: data.invitation, room: data.room },
+        ]);
+      }
+    );
 
     setSocket(newSocket);
 
@@ -273,7 +392,10 @@ export default function App() {
     if (!selectedRoom || messages.length === 0 || !user) return;
     const unreadMessages = messages.filter(m => m.userId !== user.id);
     if (unreadMessages.length > 0) {
-      api.markAsRead(selectedRoom.id, unreadMessages.map(m => m.id));
+      api.markAsRead(
+        selectedRoom.id,
+        unreadMessages.map(m => m.id)
+      );
       setUnreadCounts(prev => ({ ...prev, [selectedRoom.id]: 0 }));
     }
   }, [selectedRoom?.id, messages, user]);
@@ -369,7 +491,9 @@ export default function App() {
     e.preventDefault();
     if (!displayName.trim()) return;
     try {
-      const { token: newToken, user: newUser } = await api.register(displayName.trim());
+      const { token: newToken, user: newUser } = await api.register(
+        displayName.trim()
+      );
       localStorage.setItem('token', newToken);
       setToken(newToken);
       setUser(newUser);
@@ -473,7 +597,9 @@ export default function App() {
     if (!selectedRoom) return;
     try {
       await api.leaveRoom(selectedRoom.id);
-      setRooms(prev => prev.filter(r => r.id !== selectedRoom.id || !r.isPrivate));
+      setRooms(prev =>
+        prev.filter(r => r.id !== selectedRoom.id || !r.isPrivate)
+      );
       setSelectedRoom(null);
       setMessages([]);
     } catch (err) {
@@ -503,10 +629,15 @@ export default function App() {
     }
   };
 
-  const handleRespondToInvitation = async (invitation: RoomInvitation, accept: boolean) => {
+  const handleRespondToInvitation = async (
+    invitation: RoomInvitation,
+    accept: boolean
+  ) => {
     try {
       await api.respondToInvitation(invitation.invitation.id, accept);
-      setInvitations(prev => prev.filter(i => i.invitation.id !== invitation.invitation.id));
+      setInvitations(prev =>
+        prev.filter(i => i.invitation.id !== invitation.invitation.id)
+      );
       if (accept) {
         loadRooms();
       }
@@ -609,14 +740,17 @@ export default function App() {
   const handleUpdateStatus = async (status: User['status']) => {
     try {
       await api.updateStatus(status);
-      setUser(prev => prev ? { ...prev, status } : null);
+      setUser(prev => (prev ? { ...prev, status } : null));
     } catch (err) {
       console.error('Failed to update status:', err);
     }
   };
 
   const formatTime = (date: string) => {
-    return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(date).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const formatLastActive = (date: string) => {
@@ -679,7 +813,11 @@ export default function App() {
               maxLength={50}
               autoFocus
             />
-            <button type="submit" className="btn btn-primary" disabled={!displayName.trim()}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!displayName.trim()}
+            >
               Join Chat
             </button>
           </form>
@@ -706,18 +844,24 @@ export default function App() {
           <h1>💬 Chat</h1>
           {user && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{user.displayName}</div>
+              <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>
+                {user.displayName}
+              </div>
               <div className="status-selector">
-                {(['online', 'away', 'dnd', 'invisible'] as const).map(status => (
-                  <button
-                    key={status}
-                    className={`status-option ${user.status === status ? 'active' : ''}`}
-                    onClick={() => handleUpdateStatus(status)}
-                  >
-                    <span className={`user-status ${status}`} />
-                    {status === 'dnd' ? 'DND' : status.charAt(0).toUpperCase() + status.slice(1)}
-                  </button>
-                ))}
+                {(['online', 'away', 'dnd', 'invisible'] as const).map(
+                  status => (
+                    <button
+                      key={status}
+                      className={`status-option ${user.status === status ? 'active' : ''}`}
+                      onClick={() => handleUpdateStatus(status)}
+                    >
+                      <span className={`user-status ${status}`} />
+                      {status === 'dnd'
+                        ? 'DND'
+                        : status.charAt(0).toUpperCase() + status.slice(1)}
+                    </button>
+                  )
+                )}
               </div>
             </div>
           )}
@@ -727,16 +871,31 @@ export default function App() {
         {invitations.length > 0 && (
           <div className="sidebar-section">
             <div className="sidebar-section-title">
-              Invitations <span className="invitation-badge">{invitations.length}</span>
+              Invitations{' '}
+              <span className="invitation-badge">{invitations.length}</span>
             </div>
             {invitations.map(inv => (
-              <div key={inv.invitation.id} className="room-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              <div
+                key={inv.invitation.id}
+                className="room-item"
+                style={{
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: 8,
+                }}
+              >
                 <span>📩 {inv.room.name}</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-sm btn-primary" onClick={() => handleRespondToInvitation(inv, true)}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => handleRespondToInvitation(inv, true)}
+                  >
                     Accept
                   </button>
-                  <button className="btn btn-sm btn-secondary" onClick={() => handleRespondToInvitation(inv, false)}>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => handleRespondToInvitation(inv, false)}
+                  >
                     Decline
                   </button>
                 </div>
@@ -749,26 +908,43 @@ export default function App() {
         <div className="sidebar-section" style={{ flex: 1 }}>
           <div className="sidebar-section-title">
             Rooms
-            <button className="btn-icon" onClick={() => setShowCreateRoom(true)} title="Create Room">
+            <button
+              className="btn-icon"
+              onClick={() => setShowCreateRoom(true)}
+              title="Create Room"
+            >
               ➕
             </button>
           </div>
           <div className="room-list">
-            {rooms.filter(r => !r.isDm).map(room => (
-              <button
-                key={room.id}
-                className={`room-item ${selectedRoom?.id === room.id ? 'active' : ''}`}
-                onClick={() => handleJoinRoom(room)}
-              >
-                <span className="room-icon">{room.isPrivate ? '🔒' : '#'}</span>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {room.name}
-                </span>
-                {unreadCounts[room.id] > 0 && (
-                  <span className="unread-badge">{unreadCounts[room.id]}</span>
-                )}
-              </button>
-            ))}
+            {rooms
+              .filter(r => !r.isDm)
+              .map(room => (
+                <button
+                  key={room.id}
+                  className={`room-item ${selectedRoom?.id === room.id ? 'active' : ''}`}
+                  onClick={() => handleJoinRoom(room)}
+                >
+                  <span className="room-icon">
+                    {room.isPrivate ? '🔒' : '#'}
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {room.name}
+                  </span>
+                  {unreadCounts[room.id] > 0 && (
+                    <span className="unread-badge">
+                      {unreadCounts[room.id]}
+                    </span>
+                  )}
+                </button>
+              ))}
             {rooms.filter(r => !r.isDm).length === 0 && (
               <div className="empty-state" style={{ padding: 20 }}>
                 <p>No rooms yet</p>
@@ -781,44 +957,69 @@ export default function App() {
         <div className="sidebar-section">
           <div className="sidebar-section-title">
             Direct Messages
-            <button className="btn-icon" onClick={() => setShowUserSearch(true)} title="New DM">
+            <button
+              className="btn-icon"
+              onClick={() => setShowUserSearch(true)}
+              title="New DM"
+            >
               ➕
             </button>
           </div>
           <div className="room-list">
-            {rooms.filter(r => r.isDm).map(room => (
-              <button
-                key={room.id}
-                className={`room-item ${selectedRoom?.id === room.id ? 'active' : ''}`}
-                onClick={() => setSelectedRoom(room)}
-              >
-                <span className="room-icon">💬</span>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {room.name}
-                </span>
-                {unreadCounts[room.id] > 0 && (
-                  <span className="unread-badge">{unreadCounts[room.id]}</span>
-                )}
-              </button>
-            ))}
+            {rooms
+              .filter(r => r.isDm)
+              .map(room => (
+                <button
+                  key={room.id}
+                  className={`room-item ${selectedRoom?.id === room.id ? 'active' : ''}`}
+                  onClick={() => setSelectedRoom(room)}
+                >
+                  <span className="room-icon">💬</span>
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {room.name}
+                  </span>
+                  {unreadCounts[room.id] > 0 && (
+                    <span className="unread-badge">
+                      {unreadCounts[room.id]}
+                    </span>
+                  )}
+                </button>
+              ))}
           </div>
         </div>
 
         {/* Online Users */}
         <div className="sidebar-section">
-          <div className="sidebar-section-title">Online — {onlineUsers.filter(u => u.status !== 'invisible').length}</div>
+          <div className="sidebar-section-title">
+            Online — {onlineUsers.filter(u => u.status !== 'invisible').length}
+          </div>
           <div className="user-list">
-            {onlineUsers.filter(u => u.status !== 'invisible').map(u => (
-              <div key={u.id} className="user-item" onClick={() => u.id !== user?.id && handleStartDM(u.id)}>
-                <span className={`user-status ${u.status}`} />
-                <div className="user-info">
-                  <div className="user-name">{u.displayName}</div>
-                  {u.status !== 'online' && (
-                    <div className="user-last-active">{formatLastActive(u.lastActive)}</div>
-                  )}
+            {onlineUsers
+              .filter(u => u.status !== 'invisible')
+              .map(u => (
+                <div
+                  key={u.id}
+                  className="user-item"
+                  onClick={() => u.id !== user?.id && handleStartDM(u.id)}
+                >
+                  <span className={`user-status ${u.status}`} />
+                  <div className="user-info">
+                    <div className="user-name">{u.displayName}</div>
+                    {u.status !== 'online' && (
+                      <div className="user-last-active">
+                        {formatLastActive(u.lastActive)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       </div>
@@ -828,15 +1029,23 @@ export default function App() {
         {selectedRoom ? (
           <>
             <div className="chat-header">
-              <h2>{selectedRoom.isPrivate ? '🔒' : '#'} {selectedRoom.name}</h2>
+              <h2>
+                {selectedRoom.isPrivate ? '🔒' : '#'} {selectedRoom.name}
+              </h2>
               <div className="chat-header-actions">
                 {selectedRoom.isPrivate && isAdmin && (
-                  <button className="btn btn-sm btn-secondary" onClick={() => setShowInviteUser(true)}>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => setShowInviteUser(true)}
+                  >
                     Invite
                   </button>
                 )}
                 {!selectedRoom.isDm && (
-                  <button className="btn btn-sm btn-secondary" onClick={handleLeaveRoom}>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={handleLeaveRoom}
+                  >
                     Leave
                   </button>
                 )}
@@ -846,18 +1055,31 @@ export default function App() {
             {/* Scheduled Messages */}
             {scheduledMessages.length > 0 && (
               <div className="scheduled-messages">
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                <div
+                  style={{
+                    fontSize: '0.8rem',
+                    color: 'var(--text-muted)',
+                    marginBottom: 8,
+                  }}
+                >
                   📅 Scheduled Messages
                 </div>
                 {scheduledMessages.map(msg => (
                   <div key={msg.id} className="scheduled-item">
                     <div className="scheduled-info">
-                      <div>{msg.content.slice(0, 50)}{msg.content.length > 50 ? '...' : ''}</div>
+                      <div>
+                        {msg.content.slice(0, 50)}
+                        {msg.content.length > 50 ? '...' : ''}
+                      </div>
                       <div className="scheduled-time">
-                        Sending at {new Date(msg.scheduledFor!).toLocaleString()}
+                        Sending at{' '}
+                        {new Date(msg.scheduledFor!).toLocaleString()}
                       </div>
                     </div>
-                    <button className="btn btn-sm btn-danger" onClick={() => handleCancelScheduled(msg.id)}>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => handleCancelScheduled(msg.id)}
+                    >
                       Cancel
                     </button>
                   </div>
@@ -883,10 +1105,17 @@ export default function App() {
                   const grouped = groupReactions(message.reactions);
 
                   return (
-                    <div key={message.id} className={`message ${isOwn ? 'own' : 'other'}`}>
+                    <div
+                      key={message.id}
+                      className={`message ${isOwn ? 'own' : 'other'}`}
+                    >
                       <div className="message-header">
-                        <span className="message-author">{message.user.displayName}</span>
-                        <span className="message-time">{formatTime(message.createdAt)}</span>
+                        <span className="message-author">
+                          {message.user.displayName}
+                        </span>
+                        <span className="message-time">
+                          {formatTime(message.createdAt)}
+                        </span>
                         {message.isEdited && (
                           <span
                             className="message-edited"
@@ -912,18 +1141,29 @@ export default function App() {
                               <button
                                 key={emoji}
                                 className={`reaction ${reacts.some(r => r.userId === user?.id) ? 'own' : ''}`}
-                                onClick={() => handleToggleReaction(message.id, emoji)}
-                                title={reacts.map(r => r.user?.displayName || 'Unknown').join(', ')}
+                                onClick={() =>
+                                  handleToggleReaction(message.id, emoji)
+                                }
+                                title={reacts
+                                  .map(r => r.user?.displayName || 'Unknown')
+                                  .join(', ')}
                               >
-                                {emoji} <span className="reaction-count">{reacts.length}</span>
+                                {emoji}{' '}
+                                <span className="reaction-count">
+                                  {reacts.length}
+                                </span>
                               </button>
                             ))}
                           </div>
                         )}
 
                         {message.replyCount > 0 && (
-                          <span className="thread-indicator" onClick={() => handleShowThread(message)}>
-                            💬 {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
+                          <span
+                            className="thread-indicator"
+                            onClick={() => handleShowThread(message)}
+                          >
+                            💬 {message.replyCount}{' '}
+                            {message.replyCount === 1 ? 'reply' : 'replies'}
                           </span>
                         )}
 
@@ -939,11 +1179,18 @@ export default function App() {
                       <div className="message-actions">
                         <button
                           className="message-action-btn"
-                          onClick={() => setShowEmojiPicker(showEmojiPicker === message.id ? null : message.id)}
+                          onClick={() =>
+                            setShowEmojiPicker(
+                              showEmojiPicker === message.id ? null : message.id
+                            )
+                          }
                         >
                           😀
                         </button>
-                        <button className="message-action-btn" onClick={() => handleShowThread(message)}>
+                        <button
+                          className="message-action-btn"
+                          onClick={() => handleShowThread(message)}
+                        >
                           Reply
                         </button>
                         {isOwn && (
@@ -960,12 +1207,21 @@ export default function App() {
                       </div>
 
                       {showEmojiPicker === message.id && (
-                        <div className="emoji-picker" style={{ position: 'absolute', bottom: '100%', left: 0 }}>
+                        <div
+                          className="emoji-picker"
+                          style={{
+                            position: 'absolute',
+                            bottom: '100%',
+                            left: 0,
+                          }}
+                        >
                           {EMOJIS.map(emoji => (
                             <button
                               key={emoji}
                               className="emoji-btn"
-                              onClick={() => handleToggleReaction(message.id, emoji)}
+                              onClick={() =>
+                                handleToggleReaction(message.id, emoji)
+                              }
                             >
                               {emoji}
                             </button>
@@ -987,17 +1243,25 @@ export default function App() {
             {/* Message Input */}
             <div className="message-input-area">
               <div className="input-actions">
-                <button className="btn btn-sm btn-secondary" onClick={() => setShowScheduleModal(true)}>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setShowScheduleModal(true)}
+                >
                   📅 Schedule
                 </button>
-                <button className="btn btn-sm btn-secondary" onClick={() => setShowEphemeralModal(true)}>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setShowEphemeralModal(true)}
+                >
                   ⏱️ Ephemeral
                 </button>
               </div>
               <form className="input-row" onSubmit={handleSendMessage}>
                 <textarea
                   className="message-input"
-                  placeholder={showThreadPanel ? 'Reply to thread...' : 'Type a message...'}
+                  placeholder={
+                    showThreadPanel ? 'Reply to thread...' : 'Type a message...'
+                  }
                   value={messageInput}
                   onChange={e => {
                     setMessageInput(e.target.value);
@@ -1011,7 +1275,11 @@ export default function App() {
                   }}
                   rows={1}
                 />
-                <button type="submit" className="btn btn-primary" disabled={!messageInput.trim()}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={!messageInput.trim()}
+                >
                   Send
                 </button>
               </form>
@@ -1031,18 +1299,32 @@ export default function App() {
         <div className="thread-panel">
           <div className="thread-header">
             <h3>Thread</h3>
-            <button className="modal-close" onClick={() => setShowThreadPanel(null)}>×</button>
+            <button
+              className="modal-close"
+              onClick={() => setShowThreadPanel(null)}
+            >
+              ×
+            </button>
           </div>
           <div className="thread-parent">
-            <div className="message-author">{showThreadPanel.user.displayName}</div>
+            <div className="message-author">
+              {showThreadPanel.user.displayName}
+            </div>
             <div className="message-content">{showThreadPanel.content}</div>
           </div>
           <div className="messages-container" style={{ flex: 1 }}>
             {threadReplies.map(reply => (
-              <div key={reply.id} className={`message ${reply.userId === user?.id ? 'own' : 'other'}`}>
+              <div
+                key={reply.id}
+                className={`message ${reply.userId === user?.id ? 'own' : 'other'}`}
+              >
                 <div className="message-header">
-                  <span className="message-author">{reply.user.displayName}</span>
-                  <span className="message-time">{formatTime(reply.createdAt)}</span>
+                  <span className="message-author">
+                    {reply.user.displayName}
+                  </span>
+                  <span className="message-time">
+                    {formatTime(reply.createdAt)}
+                  </span>
                 </div>
                 <div className="message-content">{reply.content}</div>
               </div>
@@ -1059,18 +1341,32 @@ export default function App() {
             <div key={member.member.id} className="member-item">
               <span className={`user-status ${member.user.status}`} />
               <span className="user-name">{member.user.displayName}</span>
-              {member.member.role === 'admin' && <span className="member-role">Admin</span>}
+              {member.member.role === 'admin' && (
+                <span className="member-role">Admin</span>
+              )}
               {isAdmin && member.user.id !== user?.id && (
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                   {member.member.role !== 'admin' && (
-                    <button className="btn-icon" onClick={() => handlePromoteUser(member.user.id)} title="Promote">
+                    <button
+                      className="btn-icon"
+                      onClick={() => handlePromoteUser(member.user.id)}
+                      title="Promote"
+                    >
                       ⬆️
                     </button>
                   )}
-                  <button className="btn-icon" onClick={() => handleKickUser(member.user.id)} title="Kick">
+                  <button
+                    className="btn-icon"
+                    onClick={() => handleKickUser(member.user.id)}
+                    title="Kick"
+                  >
                     🚪
                   </button>
-                  <button className="btn-icon" onClick={() => handleBanUser(member.user.id)} title="Ban">
+                  <button
+                    className="btn-icon"
+                    onClick={() => handleBanUser(member.user.id)}
+                    title="Ban"
+                  >
                     🚫
                   </button>
                 </div>
@@ -1083,10 +1379,18 @@ export default function App() {
       {/* Create Room Modal */}
       {showCreateRoom && (
         <div className="modal-overlay" onClick={() => setShowCreateRoom(false)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Create Room</h3>
-              <button className="modal-close" onClick={() => setShowCreateRoom(false)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setShowCreateRoom(false)}
+              >
+                ×
+              </button>
             </div>
             <form onSubmit={handleCreateRoom}>
               <div className="modal-body">
@@ -1102,7 +1406,14 @@ export default function App() {
                     autoFocus
                   />
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={isPrivateRoom}
@@ -1112,10 +1423,18 @@ export default function App() {
                 </label>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowCreateRoom(false)}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowCreateRoom(false)}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={!newRoomName.trim()}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={!newRoomName.trim()}
+                >
                   Create
                 </button>
               </div>
@@ -1127,10 +1446,18 @@ export default function App() {
       {/* Invite User Modal */}
       {showInviteUser && (
         <div className="modal-overlay" onClick={() => setShowInviteUser(false)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Invite User</h3>
-              <button className="modal-close" onClick={() => setShowInviteUser(false)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setShowInviteUser(false)}
+              >
+                ×
+              </button>
             </div>
             <div className="modal-body">
               <div className="input-group">
@@ -1144,7 +1471,11 @@ export default function App() {
                     onChange={e => setUserSearchQuery(e.target.value)}
                     autoFocus
                   />
-                  <button type="button" className="btn btn-primary" onClick={handleSearchUsers}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleSearchUsers}
+                  >
                     Search
                   </button>
                 </div>
@@ -1152,7 +1483,11 @@ export default function App() {
               {userSearchResults.length > 0 && (
                 <div className="user-list" style={{ marginTop: 12 }}>
                   {userSearchResults.map(u => (
-                    <div key={u.id} className="user-item" onClick={() => handleInviteUser(u.id)}>
+                    <div
+                      key={u.id}
+                      className="user-item"
+                      onClick={() => handleInviteUser(u.id)}
+                    >
                       <span className={`user-status ${u.status}`} />
                       <span className="user-name">{u.displayName}</span>
                     </div>
@@ -1167,10 +1502,18 @@ export default function App() {
       {/* User Search (DM) Modal */}
       {showUserSearch && (
         <div className="modal-overlay" onClick={() => setShowUserSearch(false)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Start Direct Message</h3>
-              <button className="modal-close" onClick={() => setShowUserSearch(false)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setShowUserSearch(false)}
+              >
+                ×
+              </button>
             </div>
             <div className="modal-body">
               <div className="input-group">
@@ -1184,19 +1527,29 @@ export default function App() {
                     onChange={e => setUserSearchQuery(e.target.value)}
                     autoFocus
                   />
-                  <button type="button" className="btn btn-primary" onClick={handleSearchUsers}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleSearchUsers}
+                  >
                     Search
                   </button>
                 </div>
               </div>
               {userSearchResults.length > 0 && (
                 <div className="user-list" style={{ marginTop: 12 }}>
-                  {userSearchResults.filter(u => u.id !== user?.id).map(u => (
-                    <div key={u.id} className="user-item" onClick={() => handleStartDM(u.id)}>
-                      <span className={`user-status ${u.status}`} />
-                      <span className="user-name">{u.displayName}</span>
-                    </div>
-                  ))}
+                  {userSearchResults
+                    .filter(u => u.id !== user?.id)
+                    .map(u => (
+                      <div
+                        key={u.id}
+                        className="user-item"
+                        onClick={() => handleStartDM(u.id)}
+                      >
+                        <span className={`user-status ${u.status}`} />
+                        <span className="user-name">{u.displayName}</span>
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
@@ -1207,10 +1560,18 @@ export default function App() {
       {/* Edit Message Modal */}
       {editingMessage && (
         <div className="modal-overlay" onClick={() => setEditingMessage(null)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Edit Message</h3>
-              <button className="modal-close" onClick={() => setEditingMessage(null)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setEditingMessage(null)}
+              >
+                ×
+              </button>
             </div>
             <div className="modal-body">
               <textarea
@@ -1222,10 +1583,17 @@ export default function App() {
               />
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setEditingMessage(null)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setEditingMessage(null)}
+              >
                 Cancel
               </button>
-              <button className="btn btn-primary" onClick={handleEditMessage} disabled={!editContent.trim()}>
+              <button
+                className="btn btn-primary"
+                onClick={handleEditMessage}
+                disabled={!editContent.trim()}
+              >
                 Save
               </button>
             </div>
@@ -1236,18 +1604,42 @@ export default function App() {
       {/* Edit History Modal */}
       {showEditHistory !== null && (
         <div className="modal-overlay" onClick={() => setShowEditHistory(null)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Edit History</h3>
-              <button className="modal-close" onClick={() => setShowEditHistory(null)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setShowEditHistory(null)}
+              >
+                ×
+              </button>
             </div>
             <div className="modal-body">
               {editHistory.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)' }}>No edit history available</p>
+                <p style={{ color: 'var(--text-muted)' }}>
+                  No edit history available
+                </p>
               ) : (
                 editHistory.map((edit, i) => (
-                  <div key={edit.id} style={{ marginBottom: 12, padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                  <div
+                    key={edit.id}
+                    style={{
+                      marginBottom: 12,
+                      padding: 12,
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '0.8rem',
+                        color: 'var(--text-muted)',
+                        marginBottom: 4,
+                      }}
+                    >
                       {new Date(edit.editedAt).toLocaleString()}
                     </div>
                     <div>{edit.previousContent}</div>
@@ -1261,23 +1653,40 @@ export default function App() {
 
       {/* Read Receipts Modal */}
       {showReadReceipts !== null && (
-        <div className="modal-overlay" onClick={() => setShowReadReceipts(null)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowReadReceipts(null)}
+        >
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Seen by</h3>
-              <button className="modal-close" onClick={() => setShowReadReceipts(null)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setShowReadReceipts(null)}
+              >
+                ×
+              </button>
             </div>
             <div className="modal-body">
               {readReceipts.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)' }}>No one has seen this message yet</p>
+                <p style={{ color: 'var(--text-muted)' }}>
+                  No one has seen this message yet
+                </p>
               ) : (
                 <div className="user-list">
                   {readReceipts.map(receipt => (
                     <div key={receipt.id} className="user-item">
                       <span className={`user-status ${receipt.user.status}`} />
                       <div className="user-info">
-                        <div className="user-name">{receipt.user.displayName}</div>
-                        <div className="user-last-active">{formatTime(receipt.readAt)}</div>
+                        <div className="user-name">
+                          {receipt.user.displayName}
+                        </div>
+                        <div className="user-last-active">
+                          {formatTime(receipt.readAt)}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1290,11 +1699,22 @@ export default function App() {
 
       {/* Schedule Message Modal */}
       {showScheduleModal && (
-        <div className="modal-overlay" onClick={() => setShowScheduleModal(false)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowScheduleModal(false)}
+        >
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Schedule Message</h3>
-              <button className="modal-close" onClick={() => setShowScheduleModal(false)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setShowScheduleModal(false)}
+              >
+                ×
+              </button>
             </div>
             <div className="modal-body">
               <div className="input-group">
@@ -1319,7 +1739,10 @@ export default function App() {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowScheduleModal(false)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowScheduleModal(false)}
+              >
                 Cancel
               </button>
               <button
@@ -1336,11 +1759,22 @@ export default function App() {
 
       {/* Ephemeral Message Modal */}
       {showEphemeralModal && (
-        <div className="modal-overlay" onClick={() => setShowEphemeralModal(false)}>
-          <div className="modal animate-fade-in" onClick={e => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowEphemeralModal(false)}
+        >
+          <div
+            className="modal animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3 className="modal-title">Disappearing Message</h3>
-              <button className="modal-close" onClick={() => setShowEphemeralModal(false)}>×</button>
+              <button
+                className="modal-close"
+                onClick={() => setShowEphemeralModal(false)}
+              >
+                ×
+              </button>
             </div>
             <div className="modal-body">
               <div className="input-group">
@@ -1369,7 +1803,10 @@ export default function App() {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowEphemeralModal(false)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowEphemeralModal(false)}
+              >
                 Cancel
               </button>
               <button

@@ -9,12 +9,20 @@ interface StartDmModalProps {
   onClose: () => void;
 }
 
-export default function StartDmModal({ conn, users, myIdentity, onClose }: StartDmModalProps) {
+export default function StartDmModal({
+  conn,
+  users,
+  myIdentity,
+  onClose,
+}: StartDmModalProps) {
   const [targetName, setTargetName] = useState('');
   const [error, setError] = useState('');
 
   const otherUsers = users.filter(
-    u => myIdentity && u.identity.toHexString() !== myIdentity.toHexString() && u.name
+    u =>
+      myIdentity &&
+      u.identity.toHexString() !== myIdentity.toHexString() &&
+      u.name
   );
 
   const handleSubmit = (e: FormEvent) => {
@@ -46,15 +54,24 @@ export default function StartDmModal({ conn, users, myIdentity, onClose }: Start
             >
               <option value="">Choose a user...</option>
               {otherUsers.map(user => (
-                <option key={user.identity.toHexString()} value={user.name ?? ''}>
+                <option
+                  key={user.identity.toHexString()}
+                  value={user.name ?? ''}
+                >
                   {user.name}
                 </option>
               ))}
             </select>
           </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '14px' }}>{error}</p>}
+          {error && (
+            <p style={{ color: 'var(--danger)', fontSize: '14px' }}>{error}</p>
+          )}
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+            >
               Cancel
             </button>
             <button type="submit" className="btn btn-primary">

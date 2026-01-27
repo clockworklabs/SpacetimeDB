@@ -18,11 +18,11 @@ Use `paint-app` as the **database name** for PostgreSQL.
 
 ## Constraints
 
-* Work **entirely inside** your timestamped folder. Do not touch any other existing code.
-* Only create/modify code under:
-    * `apps/paint-app/postgres/paint-app-YYYYMMDD-HHMMSS/server/` (server-side TypeScript)
-    * `apps/paint-app/postgres/paint-app-YYYYMMDD-HHMMSS/client/` (client-side TypeScript/React)
-* Keep it minimal and readable.
+- Work **entirely inside** your timestamped folder. Do not touch any other existing code.
+- Only create/modify code under:
+  - `apps/paint-app/postgres/paint-app-YYYYMMDD-HHMMSS/server/` (server-side TypeScript)
+  - `apps/paint-app/postgres/paint-app-YYYYMMDD-HHMMSS/client/` (client-side TypeScript/React)
+- Keep it minimal and readable.
 
 ## UI Requirements
 

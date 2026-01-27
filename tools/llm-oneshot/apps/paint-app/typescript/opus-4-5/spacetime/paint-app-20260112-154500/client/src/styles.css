@@ -6,7 +6,7 @@
   --stdb-green-50: #4cf49080;
   --stdb-green-25: #4cf49040;
   --stdb-green-10: #4cf4901a;
-  
+
   --stdb-purple: #a880ff;
   --stdb-blue: #02befa;
   --stdb-yellow: #fbdc8e;
@@ -14,18 +14,18 @@
   --stdb-teal: #00ccb4;
   --stdb-orange: #ff9e9e;
   --stdb-red: #ff4c4c;
-  
+
   --bg-darkest: #060606;
   --bg-dark: #0d0d0e;
   --bg-surface: #141416;
   --bg-hover: #363840;
   --border-color: #202126;
-  
+
   --text-primary: #f4f6fc;
   --text-bright: #e6e9f0;
   --text-body: #b6c0cf;
   --text-muted: #6f7987;
-  
+
   --glow-green: 0 0 20px #4cf49040, 0 0 40px #4cf49020;
   --glow-purple: 0 0 20px #a880ff40;
 }
@@ -37,7 +37,8 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg-darkest);
   color: var(--text-body);
   min-height: 100vh;
@@ -242,30 +243,36 @@ body {
 }
 
 /* Form elements */
-input, select, textarea {
+input,
+select,
+textarea {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   color: var(--text-body);
   font-size: 0.875rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-input:focus, select:focus, textarea:focus {
+input:focus,
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--stdb-green-50);
   box-shadow: 0 0 0 2px var(--stdb-green-25);
 }
 
-input[type="color"] {
+input[type='color'] {
   padding: 0.25rem;
   width: 40px;
   height: 36px;
   cursor: pointer;
 }
 
-input[type="range"] {
+input[type='range'] {
   -webkit-appearance: none;
   height: 6px;
   background: var(--border-color);
@@ -273,7 +280,7 @@ input[type="range"] {
   padding: 0;
 }
 
-input[type="range"]::-webkit-slider-thumb {
+input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px;
   height: 16px;
@@ -406,9 +413,15 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
 }
 
-.status-dot.active { background: var(--stdb-green); }
-.status-dot.idle { background: var(--stdb-yellow); }
-.status-dot.away { background: var(--text-muted); }
+.status-dot.active {
+  background: var(--stdb-green);
+}
+.status-dot.idle {
+  background: var(--stdb-yellow);
+}
+.status-dot.away {
+  background: var(--text-muted);
+}
 
 /* Layers floating panel */
 .layers-floating-panel {
@@ -420,7 +433,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   z-index: 50;
   overflow: hidden;
 }
@@ -550,7 +563,7 @@ input[type="range"]::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transition: transform 0.15s ease;
 }
 
@@ -576,7 +589,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   z-index: 60;
 }
 
@@ -800,7 +813,7 @@ input[type="range"]::-webkit-slider-thumb {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.8);
+  background: rgba(0, 0, 0, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -815,7 +828,7 @@ input[type="range"]::-webkit-slider-thumb {
   max-width: 400px;
   max-height: 80vh;
   overflow: hidden;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 
 .modal-header {
@@ -932,10 +945,12 @@ input[type="range"]::-webkit-slider-thumb {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    visibility 0.15s ease;
   margin-top: 6px;
   z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 [data-tooltip]:hover::after {
@@ -964,7 +979,9 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Empty states */

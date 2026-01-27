@@ -170,9 +170,7 @@ export const TypingIndicator = table(
     name: 'typing_indicator',
     public: true,
     scheduled: 'expire_typing',
-    indexes: [
-      { name: 'by_room', algorithm: 'btree', columns: ['roomId'] },
-    ],
+    indexes: [{ name: 'by_room', algorithm: 'btree', columns: ['roomId'] }],
   },
   {
     scheduledId: t.u64().primaryKey().autoInc(),

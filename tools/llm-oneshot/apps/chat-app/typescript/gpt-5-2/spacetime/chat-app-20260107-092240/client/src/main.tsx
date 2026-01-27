@@ -51,7 +51,7 @@ function Root() {
         .onConnectError((_ctx, err) => {
           setConnectError(err.message || 'Failed to connect');
         }),
-    [onConnect],
+    [onConnect]
   );
 
   return (
@@ -62,4 +62,3 @@ function Root() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<Root />);
-

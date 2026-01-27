@@ -25,7 +25,7 @@ export function connectSocket(): Socket {
 
   // Activity tracking for auto-away
   let activityTimeout: ReturnType<typeof setTimeout>;
-  
+
   const sendActivity = () => {
     if (socket?.connected) {
       socket.emit('activity');

@@ -21,7 +21,10 @@ class ApiClient {
     return this.token;
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(
+    path: string,
+    options: RequestInit = {}
+  ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -75,7 +78,9 @@ class ApiClient {
   }
 
   getUserByName(displayName: string) {
-    return this.request<any>(`/api/users/by-name/${encodeURIComponent(displayName)}`);
+    return this.request<any>(
+      `/api/users/by-name/${encodeURIComponent(displayName)}`
+    );
   }
 
   // Rooms
@@ -107,15 +112,21 @@ class ApiClient {
   }
 
   kickUser(roomId: number, userId: string) {
-    return this.request<any>(`/api/rooms/${roomId}/kick/${userId}`, { method: 'POST' });
+    return this.request<any>(`/api/rooms/${roomId}/kick/${userId}`, {
+      method: 'POST',
+    });
   }
 
   banUser(roomId: number, userId: string) {
-    return this.request<any>(`/api/rooms/${roomId}/ban/${userId}`, { method: 'POST' });
+    return this.request<any>(`/api/rooms/${roomId}/ban/${userId}`, {
+      method: 'POST',
+    });
   }
 
   promoteUser(roomId: number, userId: string) {
-    return this.request<any>(`/api/rooms/${roomId}/promote/${userId}`, { method: 'POST' });
+    return this.request<any>(`/api/rooms/${roomId}/promote/${userId}`, {
+      method: 'POST',
+    });
   }
 
   inviteUser(roomId: number, username: string) {
@@ -135,11 +146,15 @@ class ApiClient {
   }
 
   acceptInvite(inviteId: number) {
-    return this.request<any>(`/api/invites/${inviteId}/accept`, { method: 'POST' });
+    return this.request<any>(`/api/invites/${inviteId}/accept`, {
+      method: 'POST',
+    });
   }
 
   declineInvite(inviteId: number) {
-    return this.request<any>(`/api/invites/${inviteId}/decline`, { method: 'POST' });
+    return this.request<any>(`/api/invites/${inviteId}/decline`, {
+      method: 'POST',
+    });
   }
 
   // DMs
@@ -155,7 +170,15 @@ class ApiClient {
     return this.request<any[]>(`/api/rooms/${roomId}/messages`);
   }
 
-  sendMessage(roomId: number, content: string, options: { parentId?: number; scheduledFor?: string; expiresInMinutes?: number } = {}) {
+  sendMessage(
+    roomId: number,
+    content: string,
+    options: {
+      parentId?: number;
+      scheduledFor?: string;
+      expiresInMinutes?: number;
+    } = {}
+  ) {
     return this.request<any>(`/api/rooms/${roomId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content, ...options }),
@@ -167,7 +190,9 @@ class ApiClient {
   }
 
   cancelScheduledMessage(messageId: number) {
-    return this.request<any>(`/api/messages/${messageId}/scheduled`, { method: 'DELETE' });
+    return this.request<any>(`/api/messages/${messageId}/scheduled`, {
+      method: 'DELETE',
+    });
   }
 
   editMessage(messageId: number, content: string) {
@@ -199,7 +224,9 @@ class ApiClient {
 
   // Read receipts
   markAsRead(messageId: number) {
-    return this.request<any>(`/api/messages/${messageId}/read`, { method: 'POST' });
+    return this.request<any>(`/api/messages/${messageId}/read`, {
+      method: 'POST',
+    });
   }
 
   getReadReceipts(messageId: number) {

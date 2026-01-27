@@ -8,7 +8,12 @@ interface MessageInputProps {
   onSent?: () => void;
 }
 
-export default function MessageInput({ conn, roomId, replyToId, onSent }: MessageInputProps) {
+export default function MessageInput({
+  conn,
+  roomId,
+  replyToId,
+  onSent,
+}: MessageInputProps) {
   const [content, setContent] = useState('');
   const [showOptions, setShowOptions] = useState(false);
   const [isEphemeral, setIsEphemeral] = useState(false);
@@ -22,7 +27,8 @@ export default function MessageInput({ conn, roomId, replyToId, onSent }: Messag
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
+      textareaRef.current.style.height =
+        Math.min(textareaRef.current.scrollHeight, 200) + 'px';
     }
   }, [content]);
 
@@ -53,9 +59,17 @@ export default function MessageInput({ conn, roomId, replyToId, onSent }: Messag
     if (isScheduled && scheduledTime) {
       const scheduledDate = new Date(scheduledTime);
       const sendAtTimestamp = BigInt(scheduledDate.getTime()) * 1000n;
-      conn.reducers.scheduleMessage({ roomId, content: trimmed, sendAtTimestamp });
+      conn.reducers.scheduleMessage({
+        roomId,
+        content: trimmed,
+        sendAtTimestamp,
+      });
     } else if (isEphemeral) {
-      conn.reducers.sendEphemeralMessage({ roomId, content: trimmed, durationSecs: BigInt(ephemeralDuration) });
+      conn.reducers.sendEphemeralMessage({
+        roomId,
+        content: trimmed,
+        durationSecs: BigInt(ephemeralDuration),
+      });
     } else if (replyToId != null) {
       conn.reducers.replyToMessage({ messageId: replyToId, content: trimmed });
     } else {
@@ -96,7 +110,7 @@ export default function MessageInput({ conn, roomId, replyToId, onSent }: Messag
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
-            placeholder={replyToId ? "Reply in thread..." : "Type a message..."}
+            placeholder={replyToId ? 'Reply in thread...' : 'Type a message...'}
             rows={1}
           />
         </div>
@@ -107,7 +121,11 @@ export default function MessageInput({ conn, roomId, replyToId, onSent }: Messag
         >
           ⚙️
         </button>
-        <button className="btn btn-primary" onClick={handleSubmit} disabled={!content.trim()}>
+        <button
+          className="btn btn-primary"
+          onClick={handleSubmit}
+          disabled={!content.trim()}
+        >
           Send
         </button>
       </div>

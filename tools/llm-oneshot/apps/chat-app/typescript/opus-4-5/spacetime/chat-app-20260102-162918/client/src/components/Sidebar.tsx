@@ -45,13 +45,20 @@ export default function Sidebar({
       const roomMessages = messages.filter(m => m.roomId === room.id);
       const myReadMessageIds = new Set(
         readReceipts
-          .filter(r => r.userId.toHexString() === myIdentity.toHexString() && r.roomId === room.id)
+          .filter(
+            r =>
+              r.userId.toHexString() === myIdentity.toHexString() &&
+              r.roomId === room.id
+          )
           .map(r => r.messageId)
       );
 
       let unread = 0;
       for (const msg of roomMessages) {
-        if (msg.senderId.toHexString() !== myIdentity.toHexString() && !myReadMessageIds.has(msg.id)) {
+        if (
+          msg.senderId.toHexString() !== myIdentity.toHexString() &&
+          !myReadMessageIds.has(msg.id)
+        ) {
           unread++;
         }
       }
@@ -64,7 +71,9 @@ export default function Sidebar({
   // Separate DMs from regular rooms
   const dmRooms = rooms.filter(r => r.isDm && myRoomIds.has(r.id));
   const publicRooms = rooms.filter(r => !r.isDm && !r.isPrivate);
-  const privateRooms = rooms.filter(r => !r.isDm && r.isPrivate && myRoomIds.has(r.id));
+  const privateRooms = rooms.filter(
+    r => !r.isDm && r.isPrivate && myRoomIds.has(r.id)
+  );
 
   return (
     <div className="sidebar">
@@ -82,12 +91,22 @@ export default function Sidebar({
         <div className="sidebar-section">
           <div className="sidebar-section-header">
             <span>Direct Messages</span>
-            <button className="btn-icon" onClick={() => setShowStartDm(true)} title="New DM">
+            <button
+              className="btn-icon"
+              onClick={() => setShowStartDm(true)}
+              title="New DM"
+            >
               +
             </button>
           </div>
           {dmRooms.length === 0 ? (
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 12px' }}>
+            <p
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                padding: '8px 12px',
+              }}
+            >
               No DMs yet
             </p>
           ) : (
@@ -127,12 +146,22 @@ export default function Sidebar({
         <div className="sidebar-section">
           <div className="sidebar-section-header">
             <span>Rooms</span>
-            <button className="btn-icon" onClick={() => setShowCreateRoom(true)} title="Create Room">
+            <button
+              className="btn-icon"
+              onClick={() => setShowCreateRoom(true)}
+              title="Create Room"
+            >
               +
             </button>
           </div>
           {publicRooms.length === 0 ? (
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 12px' }}>
+            <p
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                padding: '8px 12px',
+              }}
+            >
               No rooms yet. Create one!
             </p>
           ) : (
@@ -152,7 +181,10 @@ export default function Sidebar({
         {/* Online Users */}
         <div className="sidebar-section">
           <div className="sidebar-section-header">
-            <span>Online — {users.filter(u => u.online && u.status !== 'invisible').length}</span>
+            <span>
+              Online —{' '}
+              {users.filter(u => u.online && u.status !== 'invisible').length}
+            </span>
           </div>
           {users
             .filter(u => u.online && u.status !== 'invisible')
@@ -179,7 +211,12 @@ export default function Sidebar({
       )}
 
       {showStartDm && (
-        <StartDmModal conn={conn} users={users} myIdentity={myIdentity} onClose={() => setShowStartDm(false)} />
+        <StartDmModal
+          conn={conn}
+          users={users}
+          myIdentity={myIdentity}
+          onClose={() => setShowStartDm(false)}
+        />
       )}
     </div>
   );
@@ -193,7 +230,13 @@ interface RoomItemProps {
   onClick: () => void;
 }
 
-function RoomItem({ room, isSelected, isMember, unreadCount, onClick }: RoomItemProps) {
+function RoomItem({
+  room,
+  isSelected,
+  isMember,
+  unreadCount,
+  onClick,
+}: RoomItemProps) {
   return (
     <div
       className={`room-item ${isSelected ? 'selected' : ''}`}
@@ -203,8 +246,16 @@ function RoomItem({ room, isSelected, isMember, unreadCount, onClick }: RoomItem
         {room.isDm ? '💬' : room.isPrivate ? '🔒' : '#'}
       </span>
       <span className="room-name">{room.name}</span>
-      {!isMember && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Join</span>}
-      {unreadCount > 0 && <span className="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+      {!isMember && (
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+          Join
+        </span>
+      )}
+      {unreadCount > 0 && (
+        <span className="unread-badge">
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </span>
+      )}
     </div>
   );
 }

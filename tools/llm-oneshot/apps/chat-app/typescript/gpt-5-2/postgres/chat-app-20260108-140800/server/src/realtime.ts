@@ -5,12 +5,18 @@ import { users } from './db/schema';
 
 type TypingEntry = { userId: string; displayName: string; expiresAtMs: number };
 
-export function createRealtime(io: Server, db: PostgresJsDatabase<Record<string, never>>) {
+export function createRealtime(
+  io: Server,
+  db: PostgresJsDatabase<Record<string, never>>
+) {
   const userSocketCounts = new Map<string, number>();
   const typingByRoom = new Map<number, Map<string, TypingEntry>>();
 
   function setOnline(userId: string, isOnline: boolean) {
-    void db.update(users).set({ isOnline, lastActiveAt: new Date() }).where(eq(users.id, userId));
+    void db
+      .update(users)
+      .set({ isOnline, lastActiveAt: new Date() })
+      .where(eq(users.id, userId));
     io.emit('presence:changed', { userId, isOnline });
   }
 
@@ -23,18 +29,27 @@ export function createRealtime(io: Server, db: PostgresJsDatabase<Record<string,
       const prev = userSocketCounts.get(userId) || 0;
       userSocketCounts.set(userId, next);
       if (prev === 0) setOnline(userId, true);
-      else void db.update(users).set({ lastActiveAt: new Date() }).where(eq(users.id, userId));
+      else
+        void db
+          .update(users)
+          .set({ lastActiveAt: new Date() })
+          .where(eq(users.id, userId));
     }
   }
 
   function emitTyping(roomId: number) {
     const entries = [...(typingByRoom.get(roomId)?.values() || [])]
-      .filter((e) => e.expiresAtMs > Date.now())
-      .map((e) => ({ userId: e.userId, displayName: e.displayName }));
+      .filter(e => e.expiresAtMs > Date.now())
+      .map(e => ({ userId: e.userId, displayName: e.displayName }));
     io.emit('typing:state', { roomId, users: entries });
   }
 
-  function setTyping(roomId: number, userId: string, displayName: string, isTyping: boolean) {
+  function setTyping(
+    roomId: number,
+    userId: string,
+    displayName: string,
+    isTyping: boolean
+  ) {
     let room = typingByRoom.get(roomId);
     if (!room) {
       room = new Map();
@@ -133,4 +148,3 @@ export function createRealtime(io: Server, db: PostgresJsDatabase<Record<string,
     broadcastReadPositionChanged,
   };
 }
-

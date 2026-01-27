@@ -9,22 +9,22 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 5 (Message Editing with History) |
-| **Features Evaluated** | 1-8 (max 8 for this level) |
-| **Total Feature Score** | 18.25 / 24 (76.0%) |
+| Metric                  | Value                            |
+| ----------------------- | -------------------------------- |
+| **Prompt Level Used**   | 5 (Message Editing with History) |
+| **Features Evaluated**  | 1-8 (max 8 for this level)       |
+| **Total Feature Score** | 18.25 / 24 (76.0%)               |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
-- [ ] First-try success (required multiple TypeScript fixes)
+- [x] First-try success
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | ~516 (`schema.ts` ~154 + `index.ts` ~362) |
-| Lines of code (frontend) | ~875 (components ~660 + `main.tsx` ~40 + CSS ~175) |
-| Number of files created | 12 (excluding generated bindings) |
-| External dependencies | spacetimedb (backend), react, react-dom, spacetimedb, vite (client) |
+| Metric                   | Value                                                               |
+| ------------------------ | ------------------------------------------------------------------- |
+| Lines of code (backend)  | ~516 (`schema.ts` ~154 + `index.ts` ~362)                           |
+| Lines of code (frontend) | ~875 (components ~660 + `main.tsx` ~40 + CSS ~175)                  |
+| Number of files created  | 12 (excluding generated bindings)                                   |
+| External dependencies    | spacetimedb (backend), react, react-dom, spacetimedb, vite (client) |
 
 ---
 
@@ -38,6 +38,7 @@
 - [ ] Basic validation exists (0.25) ⚠️
 
 **Implementation Notes:**
+
 - `set_display_name` reducer with 50-char limit
 - `create_room` reducer with name/description validation
 - `send_message` reducer with 2000-char limit and rate limiting (5 msgs/min)
@@ -52,7 +53,7 @@
 // clientConnected auto-creates users:
 ctx.db.user.insert({
   identity: ctx.sender,
-  displayName: `User_${ctx.sender.toHexString().slice(0, 8)}`,  // ← Auto-generated!
+  displayName: `User_${ctx.sender.toHexString().slice(0, 8)}`, // ← Auto-generated!
   // ...
 });
 ```
@@ -73,6 +74,7 @@ ctx.db.user.insert({
 - [x] UI shows "User is typing..." or "Multiple users are typing..." (1)
 
 **Implementation Notes:**
+
 - `TypingIndicator` table with room/user tracking and `public: true`
 - `start_typing`, `stop_typing` reducers
 - Client-side 3-second timeout to call `stop_typing`
@@ -88,6 +90,7 @@ ctx.db.user.insert({
 - [x] Read status updates in real-time (1)
 
 **Implementation Notes:**
+
 - `ReadReceipt` table with message/user/timestamp tracking
 - `mark_message_read` reducer updates both ReadReceipt and RoomMember.lastReadMessageId
 - Auto-marks latest message as read when viewing room
@@ -103,12 +106,14 @@ ctx.db.user.insert({
 - [x] Counts update in real-time (0.5)
 
 **Implementation Notes:**
+
 - `RoomMember.lastReadMessageId` field tracks position
 - `getUnreadCount` callback in Sidebar compares message IDs
 - Badge displayed with `unread-badge` class
 - Counts update reactively via SpacetimeDB subscriptions
 
 **Bug Found:**
+
 - **Own messages show as unread** — `send_message` reducer creates a `ReadReceipt` but does NOT update `RoomMember.lastReadMessageId`. The unread count logic uses `lastReadMessageId`, so when you send a message, it immediately shows as 1 unread in your own room. This is a critical UX bug that makes unread counts unreliable.
 
 ---
@@ -120,6 +125,7 @@ ctx.db.user.insert({
 - [x] Message appears in room at scheduled time (0.5) ⚠️
 
 **Implementation Notes:**
+
 - `ScheduledMessage` scheduled table with `send_scheduled_message` reducer
 - `schedule_message` reducer with delay validation (1-1440 minutes)
 - `cancel_scheduled_message` reducer exists
@@ -130,6 +136,7 @@ ctx.db.user.insert({
 1. **`ScheduledMessage` table missing `public: true`** — The table is not marked as public, so clients cannot subscribe to see pending scheduled messages. The UI code exists but receives no data.
 
 **Score Rationale:**
+
 - Backend scheduling logic is correct
 - UI code to display scheduled messages exists
 - Table not public = clients can't see pending messages
@@ -144,6 +151,7 @@ ctx.db.user.insert({
 - [ ] Message is permanently deleted when timer expires (0.5) ⚠️
 
 **Implementation Notes:**
+
 - `EphemeralMessage` scheduled table with `delete_ephemeral_message` reducer
 - `send_ephemeral_message` reducer creates both Message and scheduled deletion
 - Duration validation: 1-60 minutes
@@ -167,6 +175,7 @@ ctx.db.user.insert({
 - [x] Hover/click shows who reacted (0.75)
 
 **Implementation Notes:**
+
 - `MessageReaction` table with user/message/emoji tracking
 - `toggle_reaction` reducer adds or removes reaction
 - 5 emoji options: 👍 ❤️ 😂 😮 😢
@@ -175,14 +184,17 @@ ctx.db.user.insert({
 - Title tooltip shows who reacted
 
 **Bug Found:**
+
 - **Quick reaction buttons only appear on OWN messages** — The message-actions div (containing Edit button and quick reaction buttons) only renders when `isMyMessage && !isEditing`. Users can click EXISTING reactions on any message to toggle them, but cannot ADD a new reaction to someone else's message if that emoji isn't already there.
 
 ```tsx
-{isMyMessage && !isEditing && (
-  <div className="message-actions">
-    {/* Edit and reaction buttons only for own messages */}
-  </div>
-)}
+{
+  isMyMessage && !isEditing && (
+    <div className="message-actions">
+      {/* Edit and reaction buttons only for own messages */}
+    </div>
+  );
+}
 ```
 
 ---
@@ -195,6 +207,7 @@ ctx.db.user.insert({
 - [x] Edits sync in real-time to all viewers (0.5)
 
 **Implementation Notes:**
+
 - `edit_message` reducer with ownership check and 5-minute window
 - `MessageEdit` table stores previous content, new content, timestamp, and editor
 - "(edited)" badge displayed with expandable history button
@@ -213,31 +226,31 @@ ctx.db.user.insert({
 
 ## Features Not Evaluated (Not in Level 5 Prompt)
 
-| Feature | Max | Score | Notes |
-|---------|-----|-------|-------|
-| 9. Real-Time Permissions | 3 | N/A | Not requested |
-| 10. Rich Presence | 3 | N/A | Not requested |
-| 11. Message Threading | 3 | N/A | Not requested |
-| 12. Private Rooms & DMs | 3 | N/A | Not requested |
-| 13. Activity Indicators | 3 | N/A | Not requested |
-| 14. Draft Sync | 3 | N/A | Not requested |
-| 15. Anonymous Migration | 3 | N/A | Not requested |
+| Feature                  | Max | Score | Notes         |
+| ------------------------ | --- | ----- | ------------- |
+| 9. Real-Time Permissions | 3   | N/A   | Not requested |
+| 10. Rich Presence        | 3   | N/A   | Not requested |
+| 11. Message Threading    | 3   | N/A   | Not requested |
+| 12. Private Rooms & DMs  | 3   | N/A   | Not requested |
+| 13. Activity Indicators  | 3   | N/A   | Not requested |
+| 14. Draft Sync           | 3   | N/A   | Not requested |
+| 15. Anonymous Migration  | 3   | N/A   | Not requested |
 
 ---
 
 ## Summary Score Sheet
 
-| Feature | Max | Score | Notes |
-|---------|-----|-------|-------|
-| 1. Basic Chat | 3 | **2.0** | Display name broken, no leave UI, no error feedback |
-| 2. Typing Indicators | 3 | 3 | Full marks |
-| 3. Read Receipts | 3 | 3 | Full marks |
-| 4. Unread Counts | 3 | **2** | Own messages show as unread |
-| 5. Scheduled Messages | 3 | **1.5** | Table not public, queue invisible |
-| 6. Ephemeral Messages | 3 | **1.5** | Table not public, no indicator |
-| 7. Message Reactions | 3 | **2.75** | Can't add NEW reactions to others' messages |
-| 8. Message Editing | 3 | **2.5** | 5-min limit undocumented, silent failures |
-| **TOTAL** | **24** | **18.25** | **76.0%** |
+| Feature               | Max    | Score     | Notes                                               |
+| --------------------- | ------ | --------- | --------------------------------------------------- |
+| 1. Basic Chat         | 3      | **2.0**   | Display name broken, no leave UI, no error feedback |
+| 2. Typing Indicators  | 3      | 3         | Full marks                                          |
+| 3. Read Receipts      | 3      | 3         | Full marks                                          |
+| 4. Unread Counts      | 3      | **2**     | Own messages show as unread                         |
+| 5. Scheduled Messages | 3      | **1.5**   | Table not public, queue invisible                   |
+| 6. Ephemeral Messages | 3      | **1.5**   | Table not public, no indicator                      |
+| 7. Message Reactions  | 3      | **2.75**  | Can't add NEW reactions to others' messages         |
+| 8. Message Editing    | 3      | **2.5**   | 5-min limit undocumented, silent failures           |
+| **TOTAL**             | **24** | **18.25** | **76.0%**                                           |
 
 ---
 
@@ -342,19 +355,20 @@ client/
 
 ## Comparison to Other Implementations (Same Prompt Level)
 
-| Feature | Grok | Gemini | Opus 4.5 Best |
-|---------|------|--------|---------------|
-| 1. Basic Chat | **2.0** | 2.5 | 3 |
-| 2. Typing Indicators | 3 | 2.5 | 3 |
-| 3. Read Receipts | 3 | 3 | 3 |
-| 4. Unread Counts | **2** | 3 | 3 |
-| 5. Scheduled Messages | **1.5** | 2 | 3 |
-| 6. Ephemeral Messages | **1.5** | 2 | 2.5 |
-| 7. Message Reactions | **2.75** | 2.5 | 2.5 |
-| 8. Message Editing | **2.5** | 3 | 3 |
-| **TOTAL** | **18.25** | **20.5** | **23** |
+| Feature               | Grok      | Gemini   | Opus 4.5 Best |
+| --------------------- | --------- | -------- | ------------- |
+| 1. Basic Chat         | **2.0**   | 2.5      | 3             |
+| 2. Typing Indicators  | 3         | 2.5      | 3             |
+| 3. Read Receipts      | 3         | 3        | 3             |
+| 4. Unread Counts      | **2**     | 3        | 3             |
+| 5. Scheduled Messages | **1.5**   | 2        | 3             |
+| 6. Ephemeral Messages | **1.5**   | 2        | 2.5           |
+| 7. Message Reactions  | **2.75**  | 2.5      | 2.5           |
+| 8. Message Editing    | **2.5**   | 3        | 3             |
+| **TOTAL**             | **18.25** | **20.5** | **23**        |
 
 **Key Differences from Gemini:**
+
 - Grok has worse basic chat (display name completely broken vs partially working)
 - Grok has better typing indicators (auto-expiry works on both client and server)
 - Grok has broken unread counts (own messages show as unread)
@@ -364,6 +378,7 @@ client/
 - Both missed ephemeral indicator
 
 **Key Differences from Opus 4.5:**
+
 - Opus achieved full marks on Basic Chat, Scheduled Messages, and Message Editing
 - Opus had better error handling feedback
 - Opus had fewer critical UX bugs

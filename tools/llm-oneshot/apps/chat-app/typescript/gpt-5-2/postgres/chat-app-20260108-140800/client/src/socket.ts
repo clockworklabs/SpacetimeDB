@@ -13,7 +13,10 @@ export type RealtimeEvents =
   | 'typing:state'
   | 'scheduled:changed';
 
-export type TypingStatePayload = { roomId: number; users: { userId: string; displayName: string }[] };
+export type TypingStatePayload = {
+  roomId: number;
+  users: { userId: string; displayName: string }[];
+};
 
 export function connectSocket(token: string): Socket {
   const socket = io(API_URL, {
@@ -22,4 +25,3 @@ export function connectSocket(token: string): Socket {
   });
   return socket;
 }
-

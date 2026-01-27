@@ -36,4 +36,3 @@ export type ScheduledMessage = {
   content: string;
   sendAt: string;
 };
-

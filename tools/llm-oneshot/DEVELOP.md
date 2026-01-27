@@ -15,6 +15,7 @@ Execute: @apps/chat-app/prompts/language/<LANGUAGE>.md @apps/chat-app/prompts/co
 ```
 
 **Example (TypeScript, full features):**
+
 ```
 Read all rules first. Do not reference AI-generated apps in apps/ for guidance.
 
@@ -25,37 +26,38 @@ Execute: @apps/chat-app/prompts/language/typescript-spacetime.md @apps/chat-app/
 
 ## Stacks
 
-| Language File | Stack |
-|---------------|-------|
-| `typescript-spacetime.md` | TypeScript + SpacetimeDB (React) |
-| `typescript-postgres.md` | TypeScript + PostgreSQL (Express) |
-| `rust-spacetime.md` | Rust + SpacetimeDB (CLI/egui) |
-| `csharp-spacetime.md` | C# + SpacetimeDB (MAUI) |
+| Language File             | Stack                             |
+| ------------------------- | --------------------------------- |
+| `typescript-spacetime.md` | TypeScript + SpacetimeDB (React)  |
+| `typescript-postgres.md`  | TypeScript + PostgreSQL (Express) |
+| `rust-spacetime.md`       | Rust + SpacetimeDB (CLI/egui)     |
+| `csharp-spacetime.md`     | C# + SpacetimeDB (MAUI)           |
 
 ## Feature Levels
 
 Each level is **cumulative**.
 
-| Level | Features Added |
-|-------|----------------|
-| 01 | Basic Chat, Typing, Read Receipts, Unread |
-| 02 | + Scheduled Messages |
-| 03 | + Ephemeral Messages |
-| 04 | + Reactions |
-| 05 | + Edit History |
-| 06 | + Permissions |
-| 07 | + Presence |
-| 08 | + Threading |
-| 09 | + Private Rooms |
-| 10 | + Activity Indicators |
-| 11 | + Draft Sync |
-| 12 | + Anonymous Migration (ALL) |
+| Level | Features Added                            |
+| ----- | ----------------------------------------- |
+| 01    | Basic Chat, Typing, Read Receipts, Unread |
+| 02    | + Scheduled Messages                      |
+| 03    | + Ephemeral Messages                      |
+| 04    | + Reactions                               |
+| 05    | + Edit History                            |
+| 06    | + Permissions                             |
+| 07    | + Presence                                |
+| 08    | + Threading                               |
+| 09    | + Private Rooms                           |
+| 10    | + Activity Indicators                     |
+| 11    | + Draft Sync                              |
+| 12    | + Anonymous Migration (ALL)               |
 
 ---
 
 ## After Generation
 
 The AI will ask (per `deployment.mdc` rules):
+
 1. **Deploy?** — Local / Cloud / Skip
 2. **Benchmark?** — Run E2E tests or AI-grade
 

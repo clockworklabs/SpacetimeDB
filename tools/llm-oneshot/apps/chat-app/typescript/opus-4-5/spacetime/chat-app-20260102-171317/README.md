@@ -5,58 +5,70 @@ A full-featured Discord-like chat application built with SpacetimeDB and React.
 ## Features
 
 ### Basic Chat
+
 - User display names
 - Create, join, and leave chat rooms
 - Real-time messaging
 - Online user presence
 
 ### Typing Indicators
+
 - Real-time "User is typing..." indicators
 - Auto-expires after 5 seconds of inactivity
 
 ### Read Receipts
+
 - "Seen by X, Y, Z" under messages
 - Real-time updates as users view messages
 
 ### Unread Message Counts
+
 - Badge counts on room list
 - Tracks last-read position per user per room
 
 ### Scheduled Messages
+
 - Schedule messages to send at a future time
 - View and cancel pending scheduled messages
 
 ### Ephemeral/Disappearing Messages
+
 - Messages that auto-delete after a set duration (1 min, 5 min, 1 hour)
 - Visual countdown indicator
 
 ### Message Reactions
+
 - React with emojis: 👍 ❤️ 😂 😮 😢 👎 🎉 🔥
 - Toggle reactions on/off
 - See who reacted on hover
 
 ### Message Editing with History
+
 - Edit your own messages
 - "(edited)" indicator
 - View edit history by clicking the indicator
 
 ### Real-Time Permissions
+
 - Room creators are admins
 - Kick/ban users from rooms
 - Promote users to admin
 - Instant permission updates
 
 ### Rich User Presence
+
 - Status options: Online, Away, Do Not Disturb, Invisible
 - "Last active X minutes ago" for offline users
 - Auto-away after 5 minutes of inactivity
 
 ### Message Threading
+
 - Reply to specific messages
 - View reply count and thread panel
 - Nested conversation support
 
 ### Private Rooms and DMs
+
 - Create private/invite-only rooms
 - Invite users by username
 - Direct messages (DMs) between two users
@@ -89,17 +101,20 @@ chat-app-20260102-171317/
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js 18+
 - SpacetimeDB CLI
 
 ### Backend Setup
 
 1. Start SpacetimeDB:
+
    ```bash
    spacetime start
    ```
 
 2. Publish the module:
+
    ```bash
    cd backend/spacetimedb
    spacetime publish chat-app --project-path .
@@ -113,12 +128,14 @@ chat-app-20260102-171317/
 ### Client Setup
 
 1. Install dependencies:
+
    ```bash
    cd client
    npm install
    ```
 
 2. Start the development server:
+
    ```bash
    npm run dev
    ```
@@ -130,6 +147,7 @@ chat-app-20260102-171317/
 ### Backend (SpacetimeDB)
 
 **Tables:**
+
 - `user` - User profiles and presence
 - `room` - Chat rooms (public, private, DMs)
 - `room_member` - Room memberships with admin status
@@ -146,6 +164,7 @@ chat-app-20260102-171317/
 - `presence_away_job` - Auto-away scheduling
 
 **Reducers:**
+
 - User: `set_name`, `set_status`, `update_activity`
 - Rooms: `create_room`, `join_room`, `leave_room`
 - DMs: `start_dm`

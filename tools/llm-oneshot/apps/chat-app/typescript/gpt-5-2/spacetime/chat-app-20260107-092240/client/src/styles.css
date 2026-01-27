@@ -33,8 +33,18 @@ body {
     Arial,
     'Apple Color Emoji',
     'Segoe UI Emoji';
-  background: radial-gradient(1400px 800px at 20% -10%, rgba(124, 92, 255, 0.18), transparent 55%),
-    radial-gradient(1200px 600px at 80% 0%, rgba(61, 220, 151, 0.12), transparent 45%), var(--bg);
+  background:
+    radial-gradient(
+      1400px 800px at 20% -10%,
+      rgba(124, 92, 255, 0.18),
+      transparent 55%
+    ),
+    radial-gradient(
+      1200px 600px at 80% 0%,
+      rgba(61, 220, 151, 0.12),
+      transparent 45%
+    ),
+    var(--bg);
   color: var(--text);
 }
 
@@ -61,7 +71,9 @@ a {
 }
 
 .panel {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 40%), var(--panel);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 40%),
+    var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
@@ -135,7 +147,10 @@ a {
   padding: 8px 10px;
   border-radius: 10px;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
   font-size: 14px;
 }
 
@@ -149,7 +164,11 @@ a {
 }
 
 .btnPrimary {
-  background: linear-gradient(180deg, rgba(124, 92, 255, 0.35), rgba(124, 92, 255, 0.12));
+  background: linear-gradient(
+    180deg,
+    rgba(124, 92, 255, 0.35),
+    rgba(124, 92, 255, 0.12)
+  );
   border-color: rgba(124, 92, 255, 0.65);
 }
 
@@ -221,7 +240,8 @@ a {
 .messages {
   padding: 12px;
   overflow: auto;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), transparent 40%), var(--panel2);
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.12), transparent 40%), var(--panel2);
 }
 
 .messageRow {
@@ -357,4 +377,3 @@ a {
   background: var(--border);
   margin: 10px 0;
 }
-

@@ -4,7 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      - '5432:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,7 +22,7 @@ services:
       context: ./server
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - '3001:3001'
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chat-app
       JWT_SECRET: chat-app-20260104-120000-secret
@@ -36,7 +36,7 @@ services:
       context: ./client
       dockerfile: Dockerfile
     ports:
-      - "5174:80"
+      - '5174:80'
     depends_on:
       - server
 

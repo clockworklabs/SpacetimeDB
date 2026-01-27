@@ -22,7 +22,12 @@ function microsToDate(micros: bigint) {
 
 function formatTime(micros: bigint) {
   const d = microsToDate(micros);
-  return d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', month: 'short', day: '2-digit' });
+  return d.toLocaleString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    day: '2-digit',
+  });
 }
 
 function formatCountdownSeconds(nowMicros: bigint, targetMicros: bigint) {
@@ -37,7 +42,7 @@ function formatCountdownSeconds(nowMicros: bigint, targetMicros: bigint) {
 function localDateTimeInputFromNow(now = new Date()) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(
-    now.getMinutes(),
+    now.getMinutes()
   )}`;
 }
 
@@ -52,7 +57,10 @@ function parseLocalDateTimeInputToMicros(value: string): bigint | null {
 function useNowMicros(intervalMs = 250) {
   const [now, setNow] = useState(() => BigInt(Date.now()) * 1000n);
   useEffect(() => {
-    const id = setInterval(() => setNow(BigInt(Date.now()) * 1000n), intervalMs);
+    const id = setInterval(
+      () => setNow(BigInt(Date.now()) * 1000n),
+      intervalMs
+    );
     return () => clearInterval(id);
   }, [intervalMs]);
   return now;
@@ -68,8 +76,13 @@ function Modal({
   children: React.ReactNode;
 }) {
   return (
-    <div className="modalBackdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      className="modalBackdrop"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={onClose}
+    >
+      <div className="modal" onMouseDown={e => e.stopPropagation()}>
         <div className="panelHeader">
           <h2>{title}</h2>
           <button className="btn btnSmall" onClick={onClose}>
@@ -106,14 +119,21 @@ export function App({ conn, identity, connectError }: Props) {
   type MessageEditRow = (typeof messageEdits)[number];
 
   const [selectedRoomId, setSelectedRoomId] = useState<bigint | null>(null);
-  const [status, setStatus] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [status, setStatus] = useState<{
+    kind: 'error' | 'success';
+    text: string;
+  } | null>(null);
 
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [roomNameDraft, setRoomNameDraft] = useState('');
 
   const [messageDraft, setMessageDraft] = useState('');
-  const [sendMode, setSendMode] = useState<'normal' | 'scheduled' | 'ephemeral'>('normal');
-  const [scheduledAtDraft, setScheduledAtDraft] = useState(() => localDateTimeInputFromNow(new Date(Date.now() + 5 * 60_000)));
+  const [sendMode, setSendMode] = useState<
+    'normal' | 'scheduled' | 'ephemeral'
+  >('normal');
+  const [scheduledAtDraft, setScheduledAtDraft] = useState(() =>
+    localDateTimeInputFromNow(new Date(Date.now() + 5 * 60_000))
+  );
   const [ephemeralTtl, setEphemeralTtl] = useState(60);
 
   const [editingMessageId, setEditingMessageId] = useState<bigint | null>(null);
@@ -130,7 +150,13 @@ export function App({ conn, identity, connectError }: Props) {
     return null;
   }, [users, identity]);
 
-  const onlineUsers = useMemo(() => users.filter((u) => u.online).sort((a, b) => a.displayName.localeCompare(b.displayName)), [users]);
+  const onlineUsers = useMemo(
+    () =>
+      users
+        .filter(u => u.online)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [users]
+  );
 
   const membershipByRoomId = useMemo(() => {
     const m = new Map<bigint, boolean>();
@@ -143,22 +169,34 @@ export function App({ conn, identity, connectError }: Props) {
 
   const selectedRoom = useMemo(() => {
     if (selectedRoomId == null) return null;
-    return rooms.find((r) => r.id === selectedRoomId) ?? null;
+    return rooms.find(r => r.id === selectedRoomId) ?? null;
   }, [rooms, selectedRoomId]);
 
   const roomMessages = useMemo(() => {
     if (selectedRoomId == null) return [];
-    const filtered = messages.filter((m) => m.roomId === selectedRoomId);
-    filtered.sort((a, b) => (a.createdAtMicros < b.createdAtMicros ? -1 : a.createdAtMicros > b.createdAtMicros ? 1 : 0));
+    const filtered = messages.filter(m => m.roomId === selectedRoomId);
+    filtered.sort((a, b) =>
+      a.createdAtMicros < b.createdAtMicros
+        ? -1
+        : a.createdAtMicros > b.createdAtMicros
+          ? 1
+          : 0
+    );
     return filtered;
   }, [messages, selectedRoomId]);
 
   const scheduledForSelectedRoom = useMemo(() => {
     if (!identity || selectedRoomId == null) return [];
     const filtered = scheduledMessages.filter(
-      (sm) => sm.roomId === selectedRoomId && identityEq(sm.author, identity),
+      sm => sm.roomId === selectedRoomId && identityEq(sm.author, identity)
     );
-    filtered.sort((a, b) => (a.scheduledAtMicros < b.scheduledAtMicros ? -1 : a.scheduledAtMicros > b.scheduledAtMicros ? 1 : 0));
+    filtered.sort((a, b) =>
+      a.scheduledAtMicros < b.scheduledAtMicros
+        ? -1
+        : a.scheduledAtMicros > b.scheduledAtMicros
+          ? 1
+          : 0
+    );
     return filtered;
   }, [scheduledMessages, selectedRoomId, identity]);
 
@@ -170,7 +208,13 @@ export function App({ conn, identity, connectError }: Props) {
       else map.set(rr.messageId, [rr]);
     }
     for (const arr of map.values()) {
-      arr.sort((a, b) => (a.readAtMicros < b.readAtMicros ? -1 : a.readAtMicros > b.readAtMicros ? 1 : 0));
+      arr.sort((a, b) =>
+        a.readAtMicros < b.readAtMicros
+          ? -1
+          : a.readAtMicros > b.readAtMicros
+            ? 1
+            : 0
+      );
     }
     return map;
   }, [readReceipts]);
@@ -178,7 +222,8 @@ export function App({ conn, identity, connectError }: Props) {
   const reactionsByMessageId = useMemo(() => {
     const byMsg = new Map<bigint, Map<string, ReactionRow[]>>();
     for (const r of reactions) {
-      const byEmoji = byMsg.get(r.messageId) ?? new Map<string, ReactionRow[]>();
+      const byEmoji =
+        byMsg.get(r.messageId) ?? new Map<string, ReactionRow[]>();
       const arr = byEmoji.get(r.emoji);
       if (arr) arr.push(r);
       else byEmoji.set(r.emoji, [r]);
@@ -195,7 +240,13 @@ export function App({ conn, identity, connectError }: Props) {
       else map.set(e.messageId, [e]);
     }
     for (const arr of map.values()) {
-      arr.sort((a, b) => (a.editedAtMicros < b.editedAtMicros ? -1 : a.editedAtMicros > b.editedAtMicros ? 1 : 0));
+      arr.sort((a, b) =>
+        a.editedAtMicros < b.editedAtMicros
+          ? -1
+          : a.editedAtMicros > b.editedAtMicros
+            ? 1
+            : 0
+      );
     }
     return map;
   }, [messageEdits]);
@@ -231,8 +282,13 @@ export function App({ conn, identity, connectError }: Props) {
   const typingInSelectedRoom = useMemo(() => {
     if (!identity || selectedRoomId == null) return [];
     return typingIndicators
-      .filter((ti) => ti.roomId === selectedRoomId && ti.expiresAtMicros > nowMicros && !identityEq(ti.identity, identity))
-      .map((ti) => ti.identity);
+      .filter(
+        ti =>
+          ti.roomId === selectedRoomId &&
+          ti.expiresAtMicros > nowMicros &&
+          !identityEq(ti.identity, identity)
+      )
+      .map(ti => ti.identity);
   }, [typingIndicators, selectedRoomId, identity, nowMicros]);
 
   const canSendInSelectedRoom = useMemo(() => {
@@ -248,7 +304,8 @@ export function App({ conn, identity, connectError }: Props) {
     if (!el) return;
     const onScroll = () => {
       const threshold = 60;
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      const atBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
       setIsAtBottom(atBottom);
     };
     onScroll();
@@ -328,19 +385,31 @@ export function App({ conn, identity, connectError }: Props) {
 
   const handleSend = async () => {
     if (!conn || selectedRoomId == null) return;
-    if (!canSendInSelectedRoom) return showError('Join the room to send messages');
+    if (!canSendInSelectedRoom)
+      return showError('Join the room to send messages');
 
     try {
       if (sendMode === 'normal') {
-        await conn.reducers.sendMessage({ roomId: selectedRoomId, content: messageDraft });
+        await conn.reducers.sendMessage({
+          roomId: selectedRoomId,
+          content: messageDraft,
+        });
         setMessageDraft('');
       } else if (sendMode === 'ephemeral') {
-        await conn.reducers.sendEphemeralMessage({ roomId: selectedRoomId, content: messageDraft, ttlSeconds: BigInt(ephemeralTtl) });
+        await conn.reducers.sendEphemeralMessage({
+          roomId: selectedRoomId,
+          content: messageDraft,
+          ttlSeconds: BigInt(ephemeralTtl),
+        });
         setMessageDraft('');
       } else {
         const micros = parseLocalDateTimeInputToMicros(scheduledAtDraft);
         if (!micros) return showError('Invalid scheduled time');
-        await conn.reducers.scheduleMessage({ roomId: selectedRoomId, content: messageDraft, scheduledAtMicros: micros });
+        await conn.reducers.scheduleMessage({
+          roomId: selectedRoomId,
+          content: messageDraft,
+          scheduledAtMicros: micros,
+        });
         setMessageDraft('');
         showSuccess('Scheduled message');
       }
@@ -379,7 +448,10 @@ export function App({ conn, identity, connectError }: Props) {
   const saveEditing = async () => {
     if (!conn || editingMessageId == null) return;
     try {
-      await conn.reducers.editMessage({ messageId: editingMessageId, newContent: editingDraft });
+      await conn.reducers.editMessage({
+        messageId: editingMessageId,
+        newContent: editingDraft,
+      });
       cancelEditing();
       showSuccess('Message edited');
     } catch (e: any) {
@@ -398,14 +470,20 @@ export function App({ conn, identity, connectError }: Props) {
   };
 
   const statusClass =
-    status?.kind === 'error' ? 'statusBar statusError' : status?.kind === 'success' ? 'statusBar statusSuccess' : 'statusBar';
+    status?.kind === 'error'
+      ? 'statusBar statusError'
+      : status?.kind === 'success'
+        ? 'statusBar statusSuccess'
+        : 'statusBar';
 
   return (
     <div className="app">
       <div className="panel">
         <div className="panelHeader">
           <h2>Rooms</h2>
-          <span className="muted">{identity ? me?.displayName ?? '...' : 'Connecting...'}</span>
+          <span className="muted">
+            {identity ? (me?.displayName ?? '...') : 'Connecting...'}
+          </span>
         </div>
         <div className="panelBody stack">
           {status ? <div className={statusClass}>{status.text}</div> : null}
@@ -416,9 +494,13 @@ export function App({ conn, identity, connectError }: Props) {
                 className="input"
                 placeholder="Set display name…"
                 value={displayNameDraft}
-                onChange={(e) => setDisplayNameDraft(e.target.value)}
+                onChange={e => setDisplayNameDraft(e.target.value)}
               />
-              <button className="btn btnPrimary" onClick={handleSetName} disabled={!conn}>
+              <button
+                className="btn btnPrimary"
+                onClick={handleSetName}
+                disabled={!conn}
+              >
                 Save
               </button>
             </div>
@@ -428,9 +510,13 @@ export function App({ conn, identity, connectError }: Props) {
                 className="input"
                 placeholder="Create a room…"
                 value={roomNameDraft}
-                onChange={(e) => setRoomNameDraft(e.target.value)}
+                onChange={e => setRoomNameDraft(e.target.value)}
               />
-              <button className="btn btnPrimary" onClick={handleCreateRoom} disabled={!conn}>
+              <button
+                className="btn btnPrimary"
+                onClick={handleCreateRoom}
+                disabled={!conn}
+              >
                 Create
               </button>
             </div>
@@ -439,13 +525,21 @@ export function App({ conn, identity, connectError }: Props) {
           <div className="divider" />
 
           {rooms.length === 0 ? (
-            <div className="muted">No rooms yet. Create one to get started.</div>
+            <div className="muted">
+              No rooms yet. Create one to get started.
+            </div>
           ) : (
             <div className="roomList">
               {rooms
                 .slice()
-                .sort((a, b) => (a.createdAtMicros < b.createdAtMicros ? -1 : a.createdAtMicros > b.createdAtMicros ? 1 : 0))
-                .map((r) => {
+                .sort((a, b) =>
+                  a.createdAtMicros < b.createdAtMicros
+                    ? -1
+                    : a.createdAtMicros > b.createdAtMicros
+                      ? 1
+                      : 0
+                )
+                .map(r => {
                   const active = selectedRoomId === r.id;
                   const joined = membershipByRoomId.get(r.id) === true;
                   const unread = unreadCountByRoomId.get(r.id) ?? 0;
@@ -464,13 +558,15 @@ export function App({ conn, identity, connectError }: Props) {
                             {joined ? 'Joined' : 'Not joined'}
                           </div>
                         </div>
-                        {unread > 0 ? <span className="badge">{unread}</span> : null}
+                        {unread > 0 ? (
+                          <span className="badge">{unread}</span>
+                        ) : null}
                       </div>
                       <div className="row">
                         {joined ? (
                           <button
                             className="btn btnSmall"
-                            onClick={(e) => {
+                            onClick={e => {
                               e.stopPropagation();
                               handleLeaveRoom(r.id);
                             }}
@@ -481,7 +577,7 @@ export function App({ conn, identity, connectError }: Props) {
                         ) : (
                           <button
                             className="btn btnSmall btnPrimary"
-                            onClick={(e) => {
+                            onClick={e => {
                               e.stopPropagation();
                               handleJoinRoom(r.id);
                             }}
@@ -502,7 +598,13 @@ export function App({ conn, identity, connectError }: Props) {
       <div className="panel messagePane">
         <div className="panelHeader">
           <h2>{selectedRoom ? `#${selectedRoom.name}` : 'Chat'}</h2>
-          <span className="muted">{selectedRoom ? (canSendInSelectedRoom ? 'You can chat' : 'Join to chat') : ''}</span>
+          <span className="muted">
+            {selectedRoom
+              ? canSendInSelectedRoom
+                ? 'You can chat'
+                : 'Join to chat'
+              : ''}
+          </span>
         </div>
 
         <div className="messages" ref={messageListRef}>
@@ -511,8 +613,10 @@ export function App({ conn, identity, connectError }: Props) {
           ) : roomMessages.length === 0 ? (
             <div className="muted">No messages yet. Say hello.</div>
           ) : (
-            roomMessages.map((m) => {
-              const authorName = userNameByHex.get(m.author.toHexString()) ?? m.author.toHexString().slice(0, 10);
+            roomMessages.map(m => {
+              const authorName =
+                userNameByHex.get(m.author.toHexString()) ??
+                m.author.toHexString().slice(0, 10);
               const mine = identity ? identityEq(m.author, identity) : false;
               const edited = m.editedAtMicros != null;
 
@@ -520,9 +624,13 @@ export function App({ conn, identity, connectError }: Props) {
               const receipts = receiptsByMessageId.get(m.id) ?? [];
               const myHex = identity?.toHexString();
               const seenNames = receipts
-                .filter((rr) => rr.identity.toHexString() !== myHex) // Don't show yourself
-                .map((rr) => userNameByHex.get(rr.identity.toHexString()) ?? rr.identity.toHexString().slice(0, 10))
-                .filter((n) => n !== authorName);
+                .filter(rr => rr.identity.toHexString() !== myHex) // Don't show yourself
+                .map(
+                  rr =>
+                    userNameByHex.get(rr.identity.toHexString()) ??
+                    rr.identity.toHexString().slice(0, 10)
+                )
+                .filter(n => n !== authorName);
 
               const isEditing = editingMessageId === m.id;
               const expiresAt = m.expiresAtMicros ?? null;
@@ -534,20 +642,32 @@ export function App({ conn, identity, connectError }: Props) {
                       <div className="messageAuthor">{authorName}</div>
                       <div className="messageTime">
                         {formatTime(m.createdAtMicros)}
-                        {edited ? <span className="muted"> (edited)</span> : null}
+                        {edited ? (
+                          <span className="muted"> (edited)</span>
+                        ) : null}
                         {m.isEphemeral && expiresAt ? (
-                          <span className="muted"> · disappears in {formatCountdownSeconds(nowMicros, expiresAt)}</span>
+                          <span className="muted">
+                            {' '}
+                            · disappears in{' '}
+                            {formatCountdownSeconds(nowMicros, expiresAt)}
+                          </span>
                         ) : null}
                       </div>
                     </div>
                     <div className="row">
                       {mine && !m.isEphemeral ? (
-                        <button className="btn btnSmall" onClick={() => startEditing(m.id, m.content)}>
+                        <button
+                          className="btn btnSmall"
+                          onClick={() => startEditing(m.id, m.content)}
+                        >
                           Edit
                         </button>
                       ) : null}
                       {edited ? (
-                        <button className="btn btnSmall" onClick={() => setHistoryMessageId(m.id)}>
+                        <button
+                          className="btn btnSmall"
+                          onClick={() => setHistoryMessageId(m.id)}
+                        >
                           History
                         </button>
                       ) : null}
@@ -560,10 +680,13 @@ export function App({ conn, identity, connectError }: Props) {
                         className="input"
                         style={{ minHeight: 72, resize: 'vertical' }}
                         value={editingDraft}
-                        onChange={(e) => setEditingDraft(e.target.value)}
+                        onChange={e => setEditingDraft(e.target.value)}
                       />
                       <div className="row">
-                        <button className="btn btnPrimary" onClick={saveEditing}>
+                        <button
+                          className="btn btnPrimary"
+                          onClick={saveEditing}
+                        >
                           Save
                         </button>
                         <button className="btn" onClick={cancelEditing}>
@@ -577,11 +700,15 @@ export function App({ conn, identity, connectError }: Props) {
 
                   <div className="messageFooter">
                     <div className="pillRow">
-                      {ALLOWED_EMOJIS.map((emoji) => {
+                      {ALLOWED_EMOJIS.map(emoji => {
                         const arr = rxn?.get(emoji) ?? [];
                         const count = arr.length;
                         const who = arr
-                          .map((r) => userNameByHex.get(r.identity.toHexString()) ?? r.identity.toHexString().slice(0, 10))
+                          .map(
+                            r =>
+                              userNameByHex.get(r.identity.toHexString()) ??
+                              r.identity.toHexString().slice(0, 10)
+                          )
                           .join(', ');
                         const label = count > 0 ? `${emoji} ${count}` : emoji;
                         return (
@@ -590,7 +717,9 @@ export function App({ conn, identity, connectError }: Props) {
                             className="pill"
                             title={who ? `Reacted: ${who}` : 'React'}
                             onClick={() => handleToggleReaction(m.id, emoji)}
-                            disabled={!conn || !selectedRoom || !canSendInSelectedRoom}
+                            disabled={
+                              !conn || !selectedRoom || !canSendInSelectedRoom
+                            }
                           >
                             <span>{label}</span>
                           </button>
@@ -598,8 +727,13 @@ export function App({ conn, identity, connectError }: Props) {
                       })}
                     </div>
 
-                    <div className="muted" style={{ fontSize: 12, textAlign: 'right' }}>
-                      {seenNames.length > 0 ? `Seen by ${seenNames.slice(0, 4).join(', ')}${seenNames.length > 4 ? '…' : ''}` : ''}
+                    <div
+                      className="muted"
+                      style={{ fontSize: 12, textAlign: 'right' }}
+                    >
+                      {seenNames.length > 0
+                        ? `Seen by ${seenNames.slice(0, 4).join(', ')}${seenNames.length > 4 ? '…' : ''}`
+                        : ''}
                     </div>
                   </div>
                 </div>
@@ -622,21 +756,30 @@ export function App({ conn, identity, connectError }: Props) {
               <textarea
                 className="input"
                 style={{ minHeight: 80, resize: 'vertical' }}
-                placeholder={canSendInSelectedRoom ? 'Write a message…' : 'Join the room to send messages…'}
+                placeholder={
+                  canSendInSelectedRoom
+                    ? 'Write a message…'
+                    : 'Join the room to send messages…'
+                }
                 value={messageDraft}
-                onChange={(e) => {
+                onChange={e => {
                   setMessageDraft(e.target.value);
                   handleStartTyping();
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSend();
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey))
+                    handleSend();
                 }}
                 disabled={!canSendInSelectedRoom}
               />
 
               <div className="composerActions">
                 <div className="rowWrap">
-                  <select className="select" value={sendMode} onChange={(e) => setSendMode(e.target.value as any)}>
+                  <select
+                    className="select"
+                    value={sendMode}
+                    onChange={e => setSendMode(e.target.value as any)}
+                  >
                     <option value="normal">Send now</option>
                     <option value="scheduled">Schedule</option>
                     <option value="ephemeral">Ephemeral</option>
@@ -647,14 +790,20 @@ export function App({ conn, identity, connectError }: Props) {
                       className="input"
                       type="datetime-local"
                       value={scheduledAtDraft}
-                      min={localDateTimeInputFromNow(new Date(Date.now() + 60_000))}
-                      onChange={(e) => setScheduledAtDraft(e.target.value)}
+                      min={localDateTimeInputFromNow(
+                        new Date(Date.now() + 60_000)
+                      )}
+                      onChange={e => setScheduledAtDraft(e.target.value)}
                       title="Local time"
                     />
                   ) : null}
 
                   {sendMode === 'ephemeral' ? (
-                    <select className="select" value={ephemeralTtl} onChange={(e) => setEphemeralTtl(Number(e.target.value))}>
+                    <select
+                      className="select"
+                      value={ephemeralTtl}
+                      onChange={e => setEphemeralTtl(Number(e.target.value))}
+                    >
                       <option value={60}>Disappear in 1 minute</option>
                       <option value={300}>Disappear in 5 minutes</option>
                       <option value={900}>Disappear in 15 minutes</option>
@@ -662,34 +811,66 @@ export function App({ conn, identity, connectError }: Props) {
                   ) : null}
                 </div>
 
-                <button className="btn btnPrimary" onClick={handleSend} disabled={!conn || !canSendInSelectedRoom || !messageDraft.trim()}>
-                  {sendMode === 'scheduled' ? 'Schedule' : sendMode === 'ephemeral' ? 'Send (ephemeral)' : 'Send'}
+                <button
+                  className="btn btnPrimary"
+                  onClick={handleSend}
+                  disabled={
+                    !conn || !canSendInSelectedRoom || !messageDraft.trim()
+                  }
+                >
+                  {sendMode === 'scheduled'
+                    ? 'Schedule'
+                    : sendMode === 'ephemeral'
+                      ? 'Send (ephemeral)'
+                      : 'Send'}
                 </button>
               </div>
 
               {scheduledForSelectedRoom.length > 0 ? (
                 <div className="statusBar">
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
                     <strong>Scheduled (yours)</strong>
-                    <span className="muted">{scheduledForSelectedRoom.length}</span>
+                    <span className="muted">
+                      {scheduledForSelectedRoom.length}
+                    </span>
                   </div>
                   <div className="stack" style={{ marginTop: 10 }}>
-                    {scheduledForSelectedRoom.slice(0, 5).map((sm) => (
-                      <div key={sm.id.toString()} className="row" style={{ justifyContent: 'space-between' }}>
+                    {scheduledForSelectedRoom.slice(0, 5).map(sm => (
+                      <div
+                        key={sm.id.toString()}
+                        className="row"
+                        style={{ justifyContent: 'space-between' }}
+                      >
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
                             {sm.content}
                           </div>
                           <div className="muted" style={{ fontSize: 12 }}>
                             Sends at {formatTime(sm.scheduledAtMicros)}
                           </div>
                         </div>
-                        <button className="btn btnSmall btnDanger" onClick={() => cancelScheduled(sm.id)} disabled={!conn}>
+                        <button
+                          className="btn btnSmall btnDanger"
+                          onClick={() => cancelScheduled(sm.id)}
+                          disabled={!conn}
+                        >
                           Cancel
                         </button>
                       </div>
                     ))}
-                    {scheduledForSelectedRoom.length > 5 ? <div className="muted">…and more</div> : null}
+                    {scheduledForSelectedRoom.length > 5 ? (
+                      <div className="muted">…and more</div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -710,8 +891,12 @@ export function App({ conn, identity, connectError }: Props) {
             <div className="muted">No one online yet.</div>
           ) : (
             <div className="stack">
-              {onlineUsers.map((u) => (
-                <div key={u.id.toString()} className="row" style={{ justifyContent: 'space-between' }}>
+              {onlineUsers.map(u => (
+                <div
+                  key={u.id.toString()}
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
                   <div>
                     <strong>{u.displayName}</strong>
                     <div className="muted" style={{ fontSize: 12 }}>
@@ -732,27 +917,39 @@ export function App({ conn, identity, connectError }: Props) {
         <Modal title="Edit history" onClose={() => setHistoryMessageId(null)}>
           {(() => {
             const edits = editsByMessageId.get(historyMessageId) ?? [];
-            if (edits.length === 0) return <div className="muted">No history available.</div>;
+            if (edits.length === 0)
+              return <div className="muted">No history available.</div>;
             return (
               <div className="stack">
-                {edits.map((e) => {
-                  const editorName = userNameByHex.get(e.editor.toHexString()) ?? e.editor.toHexString().slice(0, 10);
+                {edits.map(e => {
+                  const editorName =
+                    userNameByHex.get(e.editor.toHexString()) ??
+                    e.editor.toHexString().slice(0, 10);
                   return (
                     <div key={e.id.toString()} className="statusBar">
-                      <div className="row" style={{ justifyContent: 'space-between' }}>
+                      <div
+                        className="row"
+                        style={{ justifyContent: 'space-between' }}
+                      >
                         <strong>{editorName}</strong>
-                        <span className="muted">{formatTime(e.editedAtMicros)}</span>
+                        <span className="muted">
+                          {formatTime(e.editedAtMicros)}
+                        </span>
                       </div>
                       <div className="divider" />
                       <div className="muted" style={{ fontSize: 12 }}>
                         Before
                       </div>
-                      <div style={{ whiteSpace: 'pre-wrap' }}>{e.oldContent}</div>
+                      <div style={{ whiteSpace: 'pre-wrap' }}>
+                        {e.oldContent}
+                      </div>
                       <div className="divider" />
                       <div className="muted" style={{ fontSize: 12 }}>
                         After
                       </div>
-                      <div style={{ whiteSpace: 'pre-wrap' }}>{e.newContent}</div>
+                      <div style={{ whiteSpace: 'pre-wrap' }}>
+                        {e.newContent}
+                      </div>
                     </div>
                   );
                 })}
@@ -764,4 +961,3 @@ export function App({ conn, identity, connectError }: Props) {
     </div>
   );
 }
-

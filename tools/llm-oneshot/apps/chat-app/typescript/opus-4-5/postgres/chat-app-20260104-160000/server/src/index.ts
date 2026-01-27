@@ -5,15 +5,33 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { db } from './db.js';
 import {
-  users, rooms, roomMembers, messages, reactions,
-  readReceipts, typingIndicators, messageEdits, roomInvitations
+  users,
+  rooms,
+  roomMembers,
+  messages,
+  reactions,
+  readReceipts,
+  typingIndicators,
+  messageEdits,
+  roomInvitations,
 } from './schema.js';
-import { eq, and, desc, gt, lt, isNull, or, sql, ne, inArray } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  desc,
+  gt,
+  lt,
+  isNull,
+  or,
+  sql,
+  ne,
+  inArray,
+} from 'drizzle-orm';
 
 const app = express();
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
+  cors: { origin: '*', methods: ['GET', 'POST'] },
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'chat-app-20260104-160000-secret';
@@ -37,7 +55,11 @@ function checkRateLimit(userId: string): boolean {
 }
 
 // Auth middleware for REST
-function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+function authMiddleware(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
@@ -69,27 +91,34 @@ io.use((socket, next) => {
 
 // Helper to get user's accessible rooms
 async function getUserRooms(userId: string): Promise<number[]> {
-  const memberships = await db.select({ roomId: roomMembers.roomId })
+  const memberships = await db
+    .select({ roomId: roomMembers.roomId })
     .from(roomMembers)
-    .where(and(eq(roomMembers.userId, userId), eq(roomMembers.isBanned, false)));
+    .where(
+      and(eq(roomMembers.userId, userId), eq(roomMembers.isBanned, false))
+    );
   return memberships.map(m => m.roomId);
 }
 
 // Background jobs
 async function processScheduledMessages() {
   const now = new Date();
-  const scheduled = await db.select().from(messages)
-    .where(and(
-      eq(messages.isScheduled, true),
-      lt(messages.scheduledFor, now)
-    ));
+  const scheduled = await db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.isScheduled, true), lt(messages.scheduledFor, now)));
 
   for (const msg of scheduled) {
-    await db.update(messages)
+    await db
+      .update(messages)
       .set({ isScheduled: false, scheduledFor: null })
       .where(eq(messages.id, msg.id));
 
-    const user = await db.select().from(users).where(eq(users.id, msg.userId)).limit(1);
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, msg.userId))
+      .limit(1);
     const fullMessage = { ...msg, isScheduled: false, user: user[0] };
     io.to(`room:${msg.roomId}`).emit('message:created', fullMessage);
   }
@@ -97,28 +126,34 @@ async function processScheduledMessages() {
 
 async function processExpiredMessages() {
   const now = new Date();
-  const expired = await db.select().from(messages)
-    .where(and(
-      eq(messages.isEphemeral, true),
-      lt(messages.expiresAt, now)
-    ));
+  const expired = await db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.isEphemeral, true), lt(messages.expiresAt, now)));
 
   for (const msg of expired) {
     await db.delete(messages).where(eq(messages.id, msg.id));
-    io.to(`room:${msg.roomId}`).emit('message:deleted', { id: msg.id, roomId: msg.roomId });
+    io.to(`room:${msg.roomId}`).emit('message:deleted', {
+      id: msg.id,
+      roomId: msg.roomId,
+    });
   }
 }
 
 async function cleanupTypingIndicators() {
   const now = new Date();
-  const expired = await db.select().from(typingIndicators)
+  const expired = await db
+    .select()
+    .from(typingIndicators)
     .where(lt(typingIndicators.expiresAt, now));
 
   for (const indicator of expired) {
-    await db.delete(typingIndicators).where(eq(typingIndicators.id, indicator.id));
+    await db
+      .delete(typingIndicators)
+      .where(eq(typingIndicators.id, indicator.id));
     io.to(`room:${indicator.roomId}`).emit('typing:stopped', {
       roomId: indicator.roomId,
-      userId: indicator.userId
+      userId: indicator.userId,
     });
   }
 }
@@ -140,11 +175,19 @@ setInterval(async () => {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { displayName } = req.body;
-    if (!displayName || typeof displayName !== 'string' || displayName.length < 1 || displayName.length > 50) {
-      return res.status(400).json({ error: 'Display name must be 1-50 characters' });
+    if (
+      !displayName ||
+      typeof displayName !== 'string' ||
+      displayName.length < 1 ||
+      displayName.length > 50
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'Display name must be 1-50 characters' });
     }
 
-    const [user] = await db.insert(users)
+    const [user] = await db
+      .insert(users)
       .values({ displayName: displayName.trim() })
       .returning();
 
@@ -177,7 +220,8 @@ app.patch('/api/users/status', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
-    const [user] = await db.update(users)
+    const [user] = await db
+      .update(users)
       .set({ status, lastActive: new Date() })
       .where(eq(users.id, userId))
       .returning();
@@ -197,7 +241,9 @@ app.get('/api/users/search', authMiddleware, async (req, res) => {
       return res.json([]);
     }
 
-    const found = await db.select().from(users)
+    const found = await db
+      .select()
+      .from(users)
       .where(sql`LOWER(${users.displayName}) LIKE LOWER(${'%' + query + '%'})`)
       .limit(10);
     res.json(found);
@@ -209,7 +255,9 @@ app.get('/api/users/search', authMiddleware, async (req, res) => {
 // Get all online users
 app.get('/api/users/online', authMiddleware, async (req, res) => {
   try {
-    const onlineUsers = await db.select().from(users)
+    const onlineUsers = await db
+      .select()
+      .from(users)
       .where(ne(users.status, 'invisible'));
     res.json(onlineUsers);
   } catch (err) {
@@ -221,21 +269,28 @@ app.get('/api/users/online', authMiddleware, async (req, res) => {
 app.get('/api/rooms', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
-    const publicRooms = await db.select().from(rooms)
+    const publicRooms = await db
+      .select()
+      .from(rooms)
       .where(eq(rooms.isPrivate, false));
 
     // Also get private rooms user is member of
-    const memberRooms = await db.select({ room: rooms })
+    const memberRooms = await db
+      .select({ room: rooms })
       .from(roomMembers)
       .innerJoin(rooms, eq(rooms.id, roomMembers.roomId))
-      .where(and(
-        eq(roomMembers.userId, userId),
-        eq(roomMembers.isBanned, false),
-        eq(rooms.isPrivate, true)
-      ));
+      .where(
+        and(
+          eq(roomMembers.userId, userId),
+          eq(roomMembers.isBanned, false),
+          eq(rooms.isPrivate, true)
+        )
+      );
 
     const allRooms = [...publicRooms, ...memberRooms.map(r => r.room)];
-    const uniqueRooms = allRooms.filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
+    const uniqueRooms = allRooms.filter(
+      (r, i, arr) => arr.findIndex(x => x.id === r.id) === i
+    );
     res.json(uniqueRooms);
   } catch (err) {
     res.status(500).json({ error: 'Failed to get rooms' });
@@ -248,16 +303,25 @@ app.post('/api/rooms', authMiddleware, async (req, res) => {
     const userId = (req as any).userId;
     const { name, isPrivate } = req.body;
 
-    if (!name || typeof name !== 'string' || name.length < 1 || name.length > 100) {
-      return res.status(400).json({ error: 'Room name must be 1-100 characters' });
+    if (
+      !name ||
+      typeof name !== 'string' ||
+      name.length < 1 ||
+      name.length > 100
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'Room name must be 1-100 characters' });
     }
 
-    const [room] = await db.insert(rooms)
+    const [room] = await db
+      .insert(rooms)
       .values({ name: name.trim(), isPrivate: !!isPrivate, createdBy: userId })
       .returning();
 
     // Creator automatically joins as admin
-    await db.insert(roomMembers)
+    await db
+      .insert(roomMembers)
       .values({ roomId: room.id, userId, role: 'admin' });
 
     if (!isPrivate) {
@@ -281,45 +345,56 @@ app.post('/api/rooms/dm', authMiddleware, async (req, res) => {
     }
 
     // Check if DM already exists
-    const existingDms = await db.select({ roomId: roomMembers.roomId })
+    const existingDms = await db
+      .select({ roomId: roomMembers.roomId })
       .from(roomMembers)
       .innerJoin(rooms, eq(rooms.id, roomMembers.roomId))
-      .where(and(
-        eq(roomMembers.userId, userId),
-        eq(rooms.isDm, true)
-      ));
+      .where(and(eq(roomMembers.userId, userId), eq(rooms.isDm, true)));
 
     for (const dm of existingDms) {
-      const otherMember = await db.select()
+      const otherMember = await db
+        .select()
         .from(roomMembers)
-        .where(and(
-          eq(roomMembers.roomId, dm.roomId),
-          eq(roomMembers.userId, targetUserId)
-        ));
+        .where(
+          and(
+            eq(roomMembers.roomId, dm.roomId),
+            eq(roomMembers.userId, targetUserId)
+          )
+        );
       if (otherMember.length > 0) {
-        const [room] = await db.select().from(rooms).where(eq(rooms.id, dm.roomId));
+        const [room] = await db
+          .select()
+          .from(rooms)
+          .where(eq(rooms.id, dm.roomId));
         return res.json(room);
       }
     }
 
     // Get target user for room name
-    const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId));
-    const [currentUser] = await db.select().from(users).where(eq(users.id, userId));
+    const [targetUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, targetUserId));
+    const [currentUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId));
     if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
-    const [room] = await db.insert(rooms)
+    const [room] = await db
+      .insert(rooms)
       .values({
         name: `${currentUser.displayName} & ${targetUser.displayName}`,
         isPrivate: true,
         isDm: true,
-        createdBy: userId
+        createdBy: userId,
       })
       .returning();
 
     // Both users join automatically
     await db.insert(roomMembers).values([
       { roomId: room.id, userId, role: 'admin' },
-      { roomId: room.id, userId: targetUserId, role: 'admin' }
+      { roomId: room.id, userId: targetUserId, role: 'admin' },
     ]);
 
     // Notify both users
@@ -345,19 +420,26 @@ app.post('/api/rooms/:roomId/join', authMiddleware, async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Room not found' });
 
     if (room.isPrivate) {
-      return res.status(403).json({ error: 'Cannot join private room directly' });
+      return res
+        .status(403)
+        .json({ error: 'Cannot join private room directly' });
     }
 
     // Check if banned
-    const [existing] = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+    const [existing] = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     if (existing?.isBanned) {
       return res.status(403).json({ error: 'You are banned from this room' });
     }
 
     if (!existing) {
-      await db.insert(roomMembers)
+      await db
+        .insert(roomMembers)
         .values({ roomId, userId })
         .onConflictDoNothing();
     }
@@ -375,8 +457,11 @@ app.post('/api/rooms/:roomId/leave', authMiddleware, async (req, res) => {
     const userId = (req as any).userId;
     const roomId = parseInt(req.params.roomId);
 
-    await db.delete(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+    await db
+      .delete(roomMembers)
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     io.to(`room:${roomId}`).emit('member:left', { roomId, userId });
     res.json({ success: true });
@@ -393,8 +478,12 @@ app.post('/api/rooms/:roomId/invite', authMiddleware, async (req, res) => {
     const { targetUserId } = req.body;
 
     // Check if user is admin
-    const [membership] = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+    const [membership] = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     if (!membership || membership.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can invite' });
@@ -404,23 +493,29 @@ app.post('/api/rooms/:roomId/invite', authMiddleware, async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Room not found' });
 
     // Create invitation
-    const [invitation] = await db.insert(roomInvitations)
+    const [invitation] = await db
+      .insert(roomInvitations)
       .values({ roomId, invitedUserId: targetUserId, invitedBy: userId })
       .onConflictDoUpdate({
         target: [roomInvitations.roomId, roomInvitations.invitedUserId],
-        set: { status: 'pending', invitedBy: userId, createdAt: new Date() }
+        set: { status: 'pending', invitedBy: userId, createdAt: new Date() },
       })
       .returning();
 
     // Notify invited user
     const targetSockets = userSockets.get(targetUserId);
     if (targetSockets) {
-      const [inviter] = await db.select().from(users).where(eq(users.id, userId));
-      targetSockets.forEach(s => io.to(s).emit('invitation:received', {
-        invitation,
-        room,
-        inviter
-      }));
+      const [inviter] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId));
+      targetSockets.forEach(s =>
+        io.to(s).emit('invitation:received', {
+          invitation,
+          room,
+          inviter,
+        })
+      );
     }
 
     res.json(invitation);
@@ -434,16 +529,19 @@ app.post('/api/rooms/:roomId/invite', authMiddleware, async (req, res) => {
 app.get('/api/invitations', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
-    const invitations = await db.select({
-      invitation: roomInvitations,
-      room: rooms,
-    })
+    const invitations = await db
+      .select({
+        invitation: roomInvitations,
+        room: rooms,
+      })
       .from(roomInvitations)
       .innerJoin(rooms, eq(rooms.id, roomInvitations.roomId))
-      .where(and(
-        eq(roomInvitations.invitedUserId, userId),
-        eq(roomInvitations.status, 'pending')
-      ));
+      .where(
+        and(
+          eq(roomInvitations.invitedUserId, userId),
+          eq(roomInvitations.status, 'pending')
+        )
+      );
 
     res.json(invitations);
   } catch (err) {
@@ -458,31 +556,45 @@ app.post('/api/invitations/:id/respond', authMiddleware, async (req, res) => {
     const invitationId = parseInt(req.params.id);
     const { accept } = req.body;
 
-    const [invitation] = await db.select().from(roomInvitations)
-      .where(and(
-        eq(roomInvitations.id, invitationId),
-        eq(roomInvitations.invitedUserId, userId)
-      ));
+    const [invitation] = await db
+      .select()
+      .from(roomInvitations)
+      .where(
+        and(
+          eq(roomInvitations.id, invitationId),
+          eq(roomInvitations.invitedUserId, userId)
+        )
+      );
 
-    if (!invitation) return res.status(404).json({ error: 'Invitation not found' });
+    if (!invitation)
+      return res.status(404).json({ error: 'Invitation not found' });
 
     if (accept) {
-      await db.update(roomInvitations)
+      await db
+        .update(roomInvitations)
         .set({ status: 'accepted' })
         .where(eq(roomInvitations.id, invitationId));
 
-      await db.insert(roomMembers)
+      await db
+        .insert(roomMembers)
         .values({ roomId: invitation.roomId, userId })
         .onConflictDoNothing();
 
-      const [room] = await db.select().from(rooms).where(eq(rooms.id, invitation.roomId));
-      io.to(`room:${invitation.roomId}`).emit('member:joined', { roomId: invitation.roomId, userId });
+      const [room] = await db
+        .select()
+        .from(rooms)
+        .where(eq(rooms.id, invitation.roomId));
+      io.to(`room:${invitation.roomId}`).emit('member:joined', {
+        roomId: invitation.roomId,
+        userId,
+      });
 
       // Notify user of new room
       const sockets = userSockets.get(userId);
       if (sockets) sockets.forEach(s => io.to(s).emit('room:created', room));
     } else {
-      await db.update(roomInvitations)
+      await db
+        .update(roomInvitations)
         .set({ status: 'declined' })
         .where(eq(roomInvitations.id, invitationId));
     }
@@ -500,18 +612,25 @@ app.get('/api/rooms/:roomId/members', authMiddleware, async (req, res) => {
     const roomId = parseInt(req.params.roomId);
 
     // Check if user is member
-    const [membership] = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+    const [membership] = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     const [room] = await db.select().from(rooms).where(eq(rooms.id, roomId));
     if (room?.isPrivate && !membership) {
       return res.status(403).json({ error: 'Not a member' });
     }
 
-    const members = await db.select({ member: roomMembers, user: users })
+    const members = await db
+      .select({ member: roomMembers, user: users })
       .from(roomMembers)
       .innerJoin(users, eq(users.id, roomMembers.userId))
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.isBanned, false)));
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.isBanned, false))
+      );
 
     res.json(members);
   } catch (err) {
@@ -526,17 +645,30 @@ app.post('/api/rooms/:roomId/kick', authMiddleware, async (req, res) => {
     const roomId = parseInt(req.params.roomId);
     const { targetUserId } = req.body;
 
-    const [membership] = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+    const [membership] = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     if (!membership || membership.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can kick' });
     }
 
-    await db.delete(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, targetUserId)));
+    await db
+      .delete(roomMembers)
+      .where(
+        and(
+          eq(roomMembers.roomId, roomId),
+          eq(roomMembers.userId, targetUserId)
+        )
+      );
 
-    io.to(`room:${roomId}`).emit('member:kicked', { roomId, userId: targetUserId });
+    io.to(`room:${roomId}`).emit('member:kicked', {
+      roomId,
+      userId: targetUserId,
+    });
 
     // Notify kicked user
     const targetSockets = userSockets.get(targetUserId);
@@ -557,18 +689,31 @@ app.post('/api/rooms/:roomId/ban', authMiddleware, async (req, res) => {
     const roomId = parseInt(req.params.roomId);
     const { targetUserId } = req.body;
 
-    const [membership] = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+    const [membership] = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     if (!membership || membership.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can ban' });
     }
 
-    await db.update(roomMembers)
+    await db
+      .update(roomMembers)
       .set({ isBanned: true })
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, targetUserId)));
+      .where(
+        and(
+          eq(roomMembers.roomId, roomId),
+          eq(roomMembers.userId, targetUserId)
+        )
+      );
 
-    io.to(`room:${roomId}`).emit('member:banned', { roomId, userId: targetUserId });
+    io.to(`room:${roomId}`).emit('member:banned', {
+      roomId,
+      userId: targetUserId,
+    });
 
     const targetSockets = userSockets.get(targetUserId);
     if (targetSockets) {
@@ -588,18 +733,31 @@ app.post('/api/rooms/:roomId/promote', authMiddleware, async (req, res) => {
     const roomId = parseInt(req.params.roomId);
     const { targetUserId } = req.body;
 
-    const [membership] = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+    const [membership] = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     if (!membership || membership.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can promote' });
     }
 
-    await db.update(roomMembers)
+    await db
+      .update(roomMembers)
       .set({ role: 'admin' })
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, targetUserId)));
+      .where(
+        and(
+          eq(roomMembers.roomId, roomId),
+          eq(roomMembers.userId, targetUserId)
+        )
+      );
 
-    io.to(`room:${roomId}`).emit('member:promoted', { roomId, userId: targetUserId });
+    io.to(`room:${roomId}`).emit('member:promoted', {
+      roomId,
+      userId: targetUserId,
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to promote user' });
@@ -615,49 +773,63 @@ app.get('/api/rooms/:roomId/messages', authMiddleware, async (req, res) => {
     // Check membership for private rooms
     const [room] = await db.select().from(rooms).where(eq(rooms.id, roomId));
     if (room?.isPrivate) {
-      const [membership] = await db.select().from(roomMembers)
-        .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId), eq(roomMembers.isBanned, false)));
+      const [membership] = await db
+        .select()
+        .from(roomMembers)
+        .where(
+          and(
+            eq(roomMembers.roomId, roomId),
+            eq(roomMembers.userId, userId),
+            eq(roomMembers.isBanned, false)
+          )
+        );
       if (!membership) return res.status(403).json({ error: 'Not a member' });
     }
 
-    const roomMessages = await db.select({ message: messages, user: users })
+    const roomMessages = await db
+      .select({ message: messages, user: users })
       .from(messages)
       .innerJoin(users, eq(users.id, messages.userId))
-      .where(and(
-        eq(messages.roomId, roomId),
-        eq(messages.isScheduled, false)
-      ))
+      .where(and(eq(messages.roomId, roomId), eq(messages.isScheduled, false)))
       .orderBy(messages.createdAt);
 
     // Get reactions for messages
     const messageIds = roomMessages.map(m => m.message.id);
-    const allReactions = messageIds.length > 0
-      ? await db.select({ reaction: reactions, user: users })
-          .from(reactions)
-          .innerJoin(users, eq(users.id, reactions.userId))
-          .where(inArray(reactions.messageId, messageIds))
-      : [];
+    const allReactions =
+      messageIds.length > 0
+        ? await db
+            .select({ reaction: reactions, user: users })
+            .from(reactions)
+            .innerJoin(users, eq(users.id, reactions.userId))
+            .where(inArray(reactions.messageId, messageIds))
+        : [];
 
     // Get reply counts
-    const replyCounts = messageIds.length > 0
-      ? await db.select({
-          parentId: messages.parentMessageId,
-          count: sql<number>`count(*)::int`
-        })
-          .from(messages)
-          .where(and(
-            inArray(messages.parentMessageId, messageIds),
-            eq(messages.isScheduled, false)
-          ))
-          .groupBy(messages.parentMessageId)
-      : [];
+    const replyCounts =
+      messageIds.length > 0
+        ? await db
+            .select({
+              parentId: messages.parentMessageId,
+              count: sql<number>`count(*)::int`,
+            })
+            .from(messages)
+            .where(
+              and(
+                inArray(messages.parentMessageId, messageIds),
+                eq(messages.isScheduled, false)
+              )
+            )
+            .groupBy(messages.parentMessageId)
+        : [];
 
     const result = roomMessages.map(m => ({
       ...m.message,
       user: m.user,
-      reactions: allReactions.filter(r => r.reaction.messageId === m.message.id)
+      reactions: allReactions
+        .filter(r => r.reaction.messageId === m.message.id)
         .map(r => ({ ...r.reaction, user: r.user })),
-      replyCount: replyCounts.find(rc => rc.parentId === m.message.id)?.count || 0
+      replyCount:
+        replyCounts.find(rc => rc.parentId === m.message.id)?.count || 0,
     }));
 
     res.json(result);
@@ -673,12 +845,16 @@ app.get('/api/rooms/:roomId/scheduled', authMiddleware, async (req, res) => {
     const userId = (req as any).userId;
     const roomId = parseInt(req.params.roomId);
 
-    const scheduled = await db.select().from(messages)
-      .where(and(
-        eq(messages.roomId, roomId),
-        eq(messages.userId, userId),
-        eq(messages.isScheduled, true)
-      ))
+    const scheduled = await db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.roomId, roomId),
+          eq(messages.userId, userId),
+          eq(messages.isScheduled, true)
+        )
+      )
       .orderBy(messages.scheduledFor);
 
     res.json(scheduled);
@@ -692,28 +868,47 @@ app.post('/api/rooms/:roomId/messages', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const roomId = parseInt(req.params.roomId);
-    const { content, parentMessageId, scheduledFor, ephemeralMinutes } = req.body;
+    const { content, parentMessageId, scheduledFor, ephemeralMinutes } =
+      req.body;
 
     if (!checkRateLimit(userId)) {
       return res.status(429).json({ error: 'Rate limited' });
     }
 
-    if (!content || typeof content !== 'string' || content.length < 1 || content.length > 2000) {
-      return res.status(400).json({ error: 'Content must be 1-2000 characters' });
+    if (
+      !content ||
+      typeof content !== 'string' ||
+      content.length < 1 ||
+      content.length > 2000
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'Content must be 1-2000 characters' });
     }
 
     // Check membership
-    const [membership] = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId), eq(roomMembers.isBanned, false)));
+    const [membership] = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(
+          eq(roomMembers.roomId, roomId),
+          eq(roomMembers.userId, userId),
+          eq(roomMembers.isBanned, false)
+        )
+      );
 
     if (!membership) {
-      return res.status(403).json({ error: 'Must be a room member to send messages' });
+      return res
+        .status(403)
+        .json({ error: 'Must be a room member to send messages' });
     }
 
     const isScheduled = !!scheduledFor;
     const isEphemeral = !!ephemeralMinutes;
 
-    const [message] = await db.insert(messages)
+    const [message] = await db
+      .insert(messages)
       .values({
         roomId,
         userId,
@@ -722,7 +917,9 @@ app.post('/api/rooms/:roomId/messages', authMiddleware, async (req, res) => {
         isScheduled,
         scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
         isEphemeral,
-        expiresAt: isEphemeral ? new Date(Date.now() + ephemeralMinutes * 60 * 1000) : null,
+        expiresAt: isEphemeral
+          ? new Date(Date.now() + ephemeralMinutes * 60 * 1000)
+          : null,
       })
       .returning();
 
@@ -734,7 +931,9 @@ app.post('/api/rooms/:roomId/messages', authMiddleware, async (req, res) => {
 
       // Update parent reply count if this is a reply
       if (parentMessageId) {
-        io.to(`room:${roomId}`).emit('message:replyAdded', { messageId: parentMessageId });
+        io.to(`room:${roomId}`).emit('message:replyAdded', {
+          messageId: parentMessageId,
+        });
       }
     }
 
@@ -746,22 +945,29 @@ app.post('/api/rooms/:roomId/messages', authMiddleware, async (req, res) => {
 });
 
 // Cancel scheduled message
-app.delete('/api/messages/:messageId/scheduled', authMiddleware, async (req, res) => {
-  try {
-    const userId = (req as any).userId;
-    const messageId = parseInt(req.params.messageId);
+app.delete(
+  '/api/messages/:messageId/scheduled',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const messageId = parseInt(req.params.messageId);
 
-    const [message] = await db.select().from(messages).where(eq(messages.id, messageId));
-    if (!message || message.userId !== userId) {
-      return res.status(403).json({ error: 'Not authorized' });
+      const [message] = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.id, messageId));
+      if (!message || message.userId !== userId) {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      await db.delete(messages).where(eq(messages.id, messageId));
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to cancel scheduled message' });
     }
-
-    await db.delete(messages).where(eq(messages.id, messageId));
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to cancel scheduled message' });
   }
-});
+);
 
 // Edit message
 app.patch('/api/messages/:messageId', authMiddleware, async (req, res) => {
@@ -770,20 +976,32 @@ app.patch('/api/messages/:messageId', authMiddleware, async (req, res) => {
     const messageId = parseInt(req.params.messageId);
     const { content } = req.body;
 
-    if (!content || typeof content !== 'string' || content.length < 1 || content.length > 2000) {
-      return res.status(400).json({ error: 'Content must be 1-2000 characters' });
+    if (
+      !content ||
+      typeof content !== 'string' ||
+      content.length < 1 ||
+      content.length > 2000
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'Content must be 1-2000 characters' });
     }
 
-    const [message] = await db.select().from(messages).where(eq(messages.id, messageId));
+    const [message] = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.id, messageId));
     if (!message || message.userId !== userId) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
     // Save edit history
-    await db.insert(messageEdits)
+    await db
+      .insert(messageEdits)
       .values({ messageId, previousContent: message.content });
 
-    const [updated] = await db.update(messages)
+    const [updated] = await db
+      .update(messages)
       .set({ content: content.trim(), isEdited: true })
       .where(eq(messages.id, messageId))
       .returning();
@@ -796,78 +1014,107 @@ app.patch('/api/messages/:messageId', authMiddleware, async (req, res) => {
 });
 
 // Get edit history
-app.get('/api/messages/:messageId/history', authMiddleware, async (req, res) => {
-  try {
-    const messageId = parseInt(req.params.messageId);
-    const history = await db.select().from(messageEdits)
-      .where(eq(messageEdits.messageId, messageId))
-      .orderBy(desc(messageEdits.editedAt));
-    res.json(history);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to get edit history' });
+app.get(
+  '/api/messages/:messageId/history',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const messageId = parseInt(req.params.messageId);
+      const history = await db
+        .select()
+        .from(messageEdits)
+        .where(eq(messageEdits.messageId, messageId))
+        .orderBy(desc(messageEdits.editedAt));
+      res.json(history);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to get edit history' });
+    }
   }
-});
+);
 
 // Get thread replies
-app.get('/api/messages/:messageId/replies', authMiddleware, async (req, res) => {
-  try {
-    const messageId = parseInt(req.params.messageId);
+app.get(
+  '/api/messages/:messageId/replies',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const messageId = parseInt(req.params.messageId);
 
-    const replies = await db.select({ message: messages, user: users })
-      .from(messages)
-      .innerJoin(users, eq(users.id, messages.userId))
-      .where(eq(messages.parentMessageId, messageId))
-      .orderBy(messages.createdAt);
+      const replies = await db
+        .select({ message: messages, user: users })
+        .from(messages)
+        .innerJoin(users, eq(users.id, messages.userId))
+        .where(eq(messages.parentMessageId, messageId))
+        .orderBy(messages.createdAt);
 
-    const result = replies.map(r => ({ ...r.message, user: r.user }));
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to get replies' });
+      const result = replies.map(r => ({ ...r.message, user: r.user }));
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to get replies' });
+    }
   }
-});
+);
 
 // Toggle reaction
-app.post('/api/messages/:messageId/reactions', authMiddleware, async (req, res) => {
-  try {
-    const userId = (req as any).userId;
-    const messageId = parseInt(req.params.messageId);
-    const { emoji } = req.body;
+app.post(
+  '/api/messages/:messageId/reactions',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const messageId = parseInt(req.params.messageId);
+      const { emoji } = req.body;
 
-    if (!emoji || typeof emoji !== 'string' || emoji.length > 10) {
-      return res.status(400).json({ error: 'Invalid emoji' });
+      if (!emoji || typeof emoji !== 'string' || emoji.length > 10) {
+        return res.status(400).json({ error: 'Invalid emoji' });
+      }
+
+      const [message] = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.id, messageId));
+      if (!message) return res.status(404).json({ error: 'Message not found' });
+
+      // Check if reaction exists
+      const [existing] = await db
+        .select()
+        .from(reactions)
+        .where(
+          and(
+            eq(reactions.messageId, messageId),
+            eq(reactions.userId, userId),
+            eq(reactions.emoji, emoji)
+          )
+        );
+
+      if (existing) {
+        await db.delete(reactions).where(eq(reactions.id, existing.id));
+        io.to(`room:${message.roomId}`).emit('reaction:removed', {
+          messageId,
+          userId,
+          emoji,
+        });
+      } else {
+        const [reaction] = await db
+          .insert(reactions)
+          .values({ messageId, userId, emoji })
+          .returning();
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, userId));
+        io.to(`room:${message.roomId}`).emit('reaction:added', {
+          ...reaction,
+          user,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to toggle reaction' });
     }
-
-    const [message] = await db.select().from(messages).where(eq(messages.id, messageId));
-    if (!message) return res.status(404).json({ error: 'Message not found' });
-
-    // Check if reaction exists
-    const [existing] = await db.select().from(reactions)
-      .where(and(
-        eq(reactions.messageId, messageId),
-        eq(reactions.userId, userId),
-        eq(reactions.emoji, emoji)
-      ));
-
-    if (existing) {
-      await db.delete(reactions).where(eq(reactions.id, existing.id));
-      io.to(`room:${message.roomId}`).emit('reaction:removed', {
-        messageId, userId, emoji
-      });
-    } else {
-      const [reaction] = await db.insert(reactions)
-        .values({ messageId, userId, emoji })
-        .returning();
-      const [user] = await db.select().from(users).where(eq(users.id, userId));
-      io.to(`room:${message.roomId}`).emit('reaction:added', {
-        ...reaction, user
-      });
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to toggle reaction' });
   }
-});
+);
 
 // Mark messages as read
 app.post('/api/rooms/:roomId/read', authMiddleware, async (req, res) => {
@@ -881,13 +1128,17 @@ app.post('/api/rooms/:roomId/read', authMiddleware, async (req, res) => {
     }
 
     // Update last read timestamp for room member
-    await db.update(roomMembers)
+    await db
+      .update(roomMembers)
       .set({ lastReadAt: new Date() })
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+      .where(
+        and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))
+      );
 
     // Insert read receipts
     for (const messageId of messageIds) {
-      await db.insert(readReceipts)
+      await db
+        .insert(readReceipts)
         .values({ messageId, userId })
         .onConflictDoNothing();
     }
@@ -901,39 +1152,51 @@ app.post('/api/rooms/:roomId/read', authMiddleware, async (req, res) => {
 });
 
 // Get read receipts for messages
-app.get('/api/messages/:messageId/receipts', authMiddleware, async (req, res) => {
-  try {
-    const messageId = parseInt(req.params.messageId);
-    const receipts = await db.select({ receipt: readReceipts, user: users })
-      .from(readReceipts)
-      .innerJoin(users, eq(users.id, readReceipts.userId))
-      .where(eq(readReceipts.messageId, messageId));
+app.get(
+  '/api/messages/:messageId/receipts',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const messageId = parseInt(req.params.messageId);
+      const receipts = await db
+        .select({ receipt: readReceipts, user: users })
+        .from(readReceipts)
+        .innerJoin(users, eq(users.id, readReceipts.userId))
+        .where(eq(readReceipts.messageId, messageId));
 
-    res.json(receipts.map(r => ({ ...r.receipt, user: r.user })));
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to get receipts' });
+      res.json(receipts.map(r => ({ ...r.receipt, user: r.user })));
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to get receipts' });
+    }
   }
-});
+);
 
 // Get unread counts for all rooms
 app.get('/api/unread', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
 
-    const memberships = await db.select().from(roomMembers)
-      .where(and(eq(roomMembers.userId, userId), eq(roomMembers.isBanned, false)));
+    const memberships = await db
+      .select()
+      .from(roomMembers)
+      .where(
+        and(eq(roomMembers.userId, userId), eq(roomMembers.isBanned, false))
+      );
 
     const counts: Record<number, number> = {};
     for (const membership of memberships) {
       const lastRead = membership.lastReadAt || new Date(0);
-      const [result] = await db.select({ count: sql<number>`count(*)::int` })
+      const [result] = await db
+        .select({ count: sql<number>`count(*)::int` })
         .from(messages)
-        .where(and(
-          eq(messages.roomId, membership.roomId),
-          gt(messages.createdAt, lastRead),
-          eq(messages.isScheduled, false),
-          ne(messages.userId, userId)
-        ));
+        .where(
+          and(
+            eq(messages.roomId, membership.roomId),
+            gt(messages.createdAt, lastRead),
+            eq(messages.isScheduled, false),
+            ne(messages.userId, userId)
+          )
+        );
       counts[membership.roomId] = result?.count || 0;
     }
 
@@ -955,7 +1218,8 @@ io.on('connection', async (socket: Socket) => {
   userSockets.get(userId)!.add(socket.id);
 
   // Set user online
-  await db.update(users)
+  await db
+    .update(users)
     .set({ status: 'online', lastActive: new Date() })
     .where(eq(users.id, userId));
 
@@ -969,18 +1233,25 @@ io.on('connection', async (socket: Socket) => {
   // Handle typing
   socket.on('typing:start', async (roomId: number) => {
     const expiresAt = new Date(Date.now() + TYPING_TIMEOUT);
-    await db.insert(typingIndicators)
+    await db
+      .insert(typingIndicators)
       .values({ roomId, userId, expiresAt })
       .onConflictDoUpdate({
         target: [typingIndicators.roomId, typingIndicators.userId],
-        set: { expiresAt }
+        set: { expiresAt },
       });
     socket.to(`room:${roomId}`).emit('typing:started', { roomId, userId });
   });
 
   socket.on('typing:stop', async (roomId: number) => {
-    await db.delete(typingIndicators)
-      .where(and(eq(typingIndicators.roomId, roomId), eq(typingIndicators.userId, userId)));
+    await db
+      .delete(typingIndicators)
+      .where(
+        and(
+          eq(typingIndicators.roomId, roomId),
+          eq(typingIndicators.userId, userId)
+        )
+      );
     socket.to(`room:${roomId}`).emit('typing:stopped', { roomId, userId });
   });
 
@@ -995,7 +1266,8 @@ io.on('connection', async (socket: Socket) => {
 
   // Heartbeat for activity tracking
   socket.on('heartbeat', async () => {
-    await db.update(users)
+    await db
+      .update(users)
       .set({ lastActive: new Date() })
       .where(eq(users.id, userId));
   });
@@ -1008,7 +1280,8 @@ io.on('connection', async (socket: Socket) => {
       if (sockets.size === 0) {
         userSockets.delete(userId);
         // Set user offline
-        await db.update(users)
+        await db
+          .update(users)
           .set({ lastActive: new Date() })
           .where(eq(users.id, userId));
         io.emit('user:offline', { userId });
@@ -1020,18 +1293,22 @@ io.on('connection', async (socket: Socket) => {
 // Auto-away detection (runs every minute)
 setInterval(async () => {
   const threshold = new Date(Date.now() - AWAY_TIMEOUT);
-  const inactive = await db.select().from(users)
-    .where(and(
-      eq(users.status, 'online'),
-      lt(users.lastActive, threshold)
-    ));
+  const inactive = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.status, 'online'), lt(users.lastActive, threshold)));
 
   for (const user of inactive) {
     if (userSockets.has(user.id)) {
-      await db.update(users)
+      await db
+        .update(users)
         .set({ status: 'away' })
         .where(eq(users.id, user.id));
-      io.emit('user:status', { userId: user.id, status: 'away', lastActive: user.lastActive });
+      io.emit('user:status', {
+        userId: user.id,
+        status: 'away',
+        lastActive: user.lastActive,
+      });
     }
   }
 }, 60000);

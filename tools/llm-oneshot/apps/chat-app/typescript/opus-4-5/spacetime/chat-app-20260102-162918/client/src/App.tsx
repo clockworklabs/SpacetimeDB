@@ -9,7 +9,9 @@ import './styles.css';
 
 export default function App() {
   const [conn, setConn] = useState<DbConnection | null>(window.__db_conn);
-  const [myIdentity, setMyIdentity] = useState<Identity | null>(window.__my_identity);
+  const [myIdentity, setMyIdentity] = useState<Identity | null>(
+    window.__my_identity
+  );
   const [selectedRoomId, setSelectedRoomId] = useState<bigint | null>(null);
   const [showInvites, setShowInvites] = useState(false);
 
@@ -22,7 +24,8 @@ export default function App() {
   useEffect(() => {
     const interval = setInterval(() => {
       if (window.__db_conn && !conn) setConn(window.__db_conn);
-      if (window.__my_identity && !myIdentity) setMyIdentity(window.__my_identity);
+      if (window.__my_identity && !myIdentity)
+        setMyIdentity(window.__my_identity);
     }, 100);
     return () => clearInterval(interval);
   }, [conn, myIdentity]);
@@ -44,16 +47,23 @@ export default function App() {
 
   const myRoomIds = new Set(
     roomMembers
-      ?.filter(m => myIdentity && m.userId.toHexString() === myIdentity.toHexString())
+      ?.filter(
+        m => myIdentity && m.userId.toHexString() === myIdentity.toHexString()
+      )
       .map(m => m.roomId) ?? []
   );
 
   // Filter rooms: show public rooms OR rooms I'm a member of
-  const visibleRooms = rooms?.filter(r => !r.isPrivate || myRoomIds.has(r.id)) ?? [];
+  const visibleRooms =
+    rooms?.filter(r => !r.isPrivate || myRoomIds.has(r.id)) ?? [];
 
-  const pendingInvites = roomInvites?.filter(
-    inv => myIdentity && inv.inviteeId.toHexString() === myIdentity.toHexString() && inv.status === 'pending'
-  ) ?? [];
+  const pendingInvites =
+    roomInvites?.filter(
+      inv =>
+        myIdentity &&
+        inv.inviteeId.toHexString() === myIdentity.toHexString() &&
+        inv.status === 'pending'
+    ) ?? [];
 
   if (!conn || isLoading) {
     return (
@@ -101,7 +111,9 @@ export default function App() {
       ) : (
         <div className="no-room-selected">
           <h2>Welcome to Chat App</h2>
-          <p>Select a room from the sidebar or create a new one to get started.</p>
+          <p>
+            Select a room from the sidebar or create a new one to get started.
+          </p>
         </div>
       )}
     </div>

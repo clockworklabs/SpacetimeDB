@@ -53,7 +53,10 @@ export async function getMe(): Promise<User | null> {
 }
 
 export async function setDisplayName(displayName: string): Promise<void> {
-  await http<{ ok: true }>('/me', { method: 'PATCH', body: JSON.stringify({ displayName }) });
+  await http<{ ok: true }>('/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ displayName }),
+  });
 }
 
 export async function listRooms(): Promise<Room[]> {
@@ -70,11 +73,17 @@ export async function createRoom(name: string): Promise<Room> {
 }
 
 export async function joinRoom(roomId: number): Promise<void> {
-  await http<{ ok: true }>(`/rooms/${roomId}/join`, { method: 'POST', body: JSON.stringify({}) });
+  await http<{ ok: true }>(`/rooms/${roomId}/join`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 export async function leaveRoom(roomId: number): Promise<void> {
-  await http<{ ok: true }>(`/rooms/${roomId}/leave`, { method: 'POST', body: JSON.stringify({}) });
+  await http<{ ok: true }>(`/rooms/${roomId}/leave`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 export async function listMembers(roomId: number): Promise<Member[]> {
@@ -87,43 +96,71 @@ export async function listMessages(roomId: number): Promise<Message[]> {
   return data.messages;
 }
 
-export async function sendMessage(roomId: number, content: string): Promise<void> {
-  await http(`/rooms/${roomId}/messages`, { method: 'POST', body: JSON.stringify({ content }) });
+export async function sendMessage(
+  roomId: number,
+  content: string
+): Promise<void> {
+  await http(`/rooms/${roomId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
 }
 
-export async function sendEphemeral(roomId: number, content: string, seconds: number): Promise<void> {
+export async function sendEphemeral(
+  roomId: number,
+  content: string,
+  seconds: number
+): Promise<void> {
   await http(`/rooms/${roomId}/messages`, {
     method: 'POST',
     body: JSON.stringify({ content, ephemeralSeconds: seconds }),
   });
 }
 
-export async function scheduleMessage(roomId: number, content: string, scheduleInSeconds: number): Promise<void> {
+export async function scheduleMessage(
+  roomId: number,
+  content: string,
+  scheduleInSeconds: number
+): Promise<void> {
   await http(`/rooms/${roomId}/messages`, {
     method: 'POST',
     body: JSON.stringify({ content, scheduleInSeconds }),
   });
 }
 
-export async function markRead(roomId: number, lastReadMessageId: number | null): Promise<void> {
+export async function markRead(
+  roomId: number,
+  lastReadMessageId: number | null
+): Promise<void> {
   await http(`/rooms/${roomId}/read`, {
     method: 'POST',
     body: JSON.stringify({ lastReadMessageId }),
   });
 }
 
-export async function editMessage(messageId: number, content: string): Promise<void> {
-  await http(`/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify({ content }) });
+export async function editMessage(
+  messageId: number,
+  content: string
+): Promise<void> {
+  await http(`/messages/${messageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  });
 }
 
-export async function getEditHistory(messageId: number): Promise<{ content: string; label: string }[]> {
+export async function getEditHistory(
+  messageId: number
+): Promise<{ content: string; label: string }[]> {
   const data = await http<{ versions: { content: string; label: string }[] }>(
-    `/messages/${messageId}/history`,
+    `/messages/${messageId}/history`
   );
   return data.versions;
 }
 
-export async function toggleReaction(messageId: number, emoji: string): Promise<void> {
+export async function toggleReaction(
+  messageId: number,
+  emoji: string
+): Promise<void> {
   await http(`/messages/${messageId}/reactions`, {
     method: 'POST',
     body: JSON.stringify({ emoji }),
@@ -142,4 +179,3 @@ export async function cancelScheduled(id: number): Promise<void> {
 export function getStoredToken(): string | null {
   return getToken();
 }
-

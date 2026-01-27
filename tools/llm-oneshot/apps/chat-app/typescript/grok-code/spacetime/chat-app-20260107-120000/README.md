@@ -5,18 +5,21 @@ A real-time chat application built with SpacetimeDB featuring message editing wi
 ## Features
 
 ### Core Chat Features
+
 - **Real-time messaging** with WebSocket connections
 - **User display names** and online status
 - **Room creation and joining** (public rooms)
 - **Rate limiting** (5 messages per minute per user per room)
 
 ### Message Editing with History ✨
+
 - **Edit your own messages** within 5 minutes of sending
 - **View edit history** with timestamps and previous content
 - **"(edited)" indicator** on modified messages
 - **Full audit trail** of all message changes
 
 ### Advanced Features
+
 - **Emoji reactions** with real-time updates
 - **Typing indicators** ("User is typing...")
 - **Read receipts** ("Seen by X, Y, Z")
@@ -55,26 +58,31 @@ chat-app-20260107-120000/
 ## Setup and Running
 
 ### Prerequisites
+
 - Node.js 18+
 - SpacetimeDB CLI (`spacetime`)
 
 ### 1. Start SpacetimeDB Server
+
 ```bash
 spacetime start
 ```
 
 ### 2. Publish the Backend Module
+
 ```bash
 cd backend/spacetimedb
 spacetime publish chat-app --project-path .
 ```
 
 ### 3. Generate Client Bindings
+
 ```bash
 spacetime generate --lang typescript --out-dir ../client/src/module_bindings --project-path .
 ```
 
 ### 4. Start the Client
+
 ```bash
 cd ../client
 npm run dev
@@ -115,6 +123,7 @@ export const CONFIG = {
 ### Edit History Tracking
 
 When a message is edited:
+
 1. Original content is saved to `message_edit` table
 2. Message is updated with new content and `editedAt` timestamp
 3. `isEdited` flag is set to true

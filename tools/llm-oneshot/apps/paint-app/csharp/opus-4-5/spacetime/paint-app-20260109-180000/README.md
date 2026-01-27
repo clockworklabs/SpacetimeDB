@@ -5,6 +5,7 @@ A real-time collaborative paint/drawing application built with SpacetimeDB for t
 ## Features
 
 ### Basic Drawing
+
 - ✅ Users can set display names
 - ✅ Create and join canvases
 - ✅ Pencil/brush tool with adjustable size and opacity
@@ -13,25 +14,30 @@ A real-time collaborative paint/drawing application built with SpacetimeDB for t
 - ✅ Real-time sync of strokes
 
 ### Cursor Presence
+
 - ✅ Real-time cursor positions from other users
 - ✅ Each cursor shows user's name and selected tool
 - ✅ Distinct colors per user
 
 ### Shapes & Fill
+
 - ✅ Rectangle, ellipse, and line shape tools
 - ✅ Fill tool for enclosed areas
 - ✅ Stroke and fill color support
 
 ### Selection & Transform
+
 - ✅ Selection tool
 - ✅ Move, resize, and rotate elements
 - ✅ Delete selected elements
 
 ### Undo/Redo
+
 - ✅ Per-user undo/redo stack
 - ✅ Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
 
 ### Layers
+
 - ✅ Multiple layers per canvas
 - ✅ Create, rename, and delete layers
 - ✅ Toggle layer visibility
@@ -39,42 +45,50 @@ A real-time collaborative paint/drawing application built with SpacetimeDB for t
 - ✅ Real-time layer sync
 
 ### Comments
+
 - ✅ Comment pins at specific locations
 - ✅ Comment threads with replies
 - ✅ Resolve/unresolve comments
 - ✅ Real-time comment sync
 
 ### Version History
+
 - ✅ Manual save points with names
 - ✅ Auto-save at regular intervals
 - ✅ View saved versions list
 - ✅ Restore previous versions
 
 ### Permissions
+
 - ✅ Canvas creator can set user roles (viewer/editor)
 - ✅ Viewers cannot draw
 - ✅ Permission changes take effect immediately
 - ✅ Kick users from canvas
 
 ### Text Tool
+
 - ✅ Add text anywhere on canvas
 - ✅ Font size and color selection
 
 ### Zoom & Pan
+
 - ✅ Zoom in/out with buttons
 - ✅ Fit-to-screen button
 - ✅ Viewport tracking for follow mode
 
 ### Private Canvases
+
 - ✅ Create private canvases
 - ✅ Invite collaborators by identity
 - ✅ Accept/decline invitations
 
 ### Image Import
+
 - ✅ Import images as canvas elements
 - ✅ Position and resize imported images
 
 ### Templates
+
 - ✅ Save canvas as template
 - ✅ Create canvas from template
 - ✅ Public and private templates
@@ -156,16 +170,19 @@ spacetime generate --lang csharp --out-dir ../client/module_bindings --bin-path 
 **IMPORTANT**: The MAUI Windows client requires Visual Studio 2022 for full build.
 
 **Option A: Using Visual Studio 2022** (Recommended)
+
 1. Open `client/client.csproj` in Visual Studio 2022
 2. Build and run from the IDE
 
 **Option B: Using VS Developer Command Prompt**
+
 ```bash
 cd client
 devenv client.csproj /build Debug
 ```
 
 **Option C: Using `dotnet` CLI** (may fail on resource packaging)
+
 ```bash
 cd client
 dotnet restore
@@ -177,6 +194,7 @@ Note: The `dotnet` CLI build may fail due to Windows App SDK's PRI resource gene
 ## UI Theme
 
 The app uses a **SpacetimeDB cosmic theme**:
+
 - Deep space background (`#0a0a0f`)
 - Purple accents (`#6366f1`)
 - Cyan accents (`#22d3ee`)
@@ -184,27 +202,27 @@ The app uses a **SpacetimeDB cosmic theme**:
 
 ## SpacetimeDB Tables
 
-| Table | Description |
-|-------|-------------|
-| `user` | User profiles and online status |
-| `canvas` | Canvas metadata |
-| `canvas_member` | Canvas membership and roles |
-| `layer` | Canvas layers |
-| `stroke` | Brush/eraser strokes |
-| `shape` | Rectangle, ellipse, line shapes |
-| `text_element` | Text on canvas |
-| `image_element` | Imported images |
-| `fill` | Fill tool operations |
-| `cursor` | Real-time cursor positions |
-| `selection` | User selections |
-| `undo_action` | Undo/redo history |
-| `comment` | Canvas comments |
-| `comment_reply` | Comment replies |
-| `canvas_version` | Version snapshots |
-| `template` | Canvas templates |
-| `invitation` | Private canvas invitations |
-| `viewport` | User viewport for follow mode |
-| `autosave_job` | Scheduled auto-save tasks |
+| Table            | Description                     |
+| ---------------- | ------------------------------- |
+| `user`           | User profiles and online status |
+| `canvas`         | Canvas metadata                 |
+| `canvas_member`  | Canvas membership and roles     |
+| `layer`          | Canvas layers                   |
+| `stroke`         | Brush/eraser strokes            |
+| `shape`          | Rectangle, ellipse, line shapes |
+| `text_element`   | Text on canvas                  |
+| `image_element`  | Imported images                 |
+| `fill`           | Fill tool operations            |
+| `cursor`         | Real-time cursor positions      |
+| `selection`      | User selections                 |
+| `undo_action`    | Undo/redo history               |
+| `comment`        | Canvas comments                 |
+| `comment_reply`  | Comment replies                 |
+| `canvas_version` | Version snapshots               |
+| `template`       | Canvas templates                |
+| `invitation`     | Private canvas invitations      |
+| `viewport`       | User viewport for follow mode   |
+| `autosave_job`   | Scheduled auto-save tasks       |
 
 ## License
 

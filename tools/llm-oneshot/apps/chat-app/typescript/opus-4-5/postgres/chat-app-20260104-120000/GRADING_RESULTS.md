@@ -8,24 +8,24 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 9 |
-| **Features Evaluated** | 1-12 |
+| Metric                  | Value     |
+| ----------------------- | --------- |
+| **Prompt Level Used**   | 9         |
+| **Features Evaluated**  | 1-12      |
 | **Total Feature Score** | 27.5 / 36 |
-| **Percentage** | 76.4% |
-| **Reprompts** | 0 |
+| **Percentage**          | 76.4%     |
+| **Reprompts**           | 0         |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
 - [x] First-try success (worked without manual fixes)
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | 1,689 |
-| Lines of code (frontend) | 2,849 |
-| Number of files created | 23 |
-| External dependencies | drizzle-orm, postgres, express, socket.io, jsonwebtoken, node-cron, react, socket.io-client |
+| Metric                   | Value                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| Lines of code (backend)  | 1,689                                                                                       |
+| Lines of code (frontend) | 2,849                                                                                       |
+| Number of files created  | 23                                                                                          |
+| External dependencies    | drizzle-orm, postgres, express, socket.io, jsonwebtoken, node-cron, react, socket.io-client |
 
 ---
 
@@ -100,8 +100,8 @@
 
 ## Feature 9: Real-Time Permissions (Score: 2 / 3)
 
-- [x] Room creator is admin and can kick/ban users (0.5) — *kick exists but doesn't force-disconnect socket*
-- [ ] Kicked users immediately lose access and stop receiving updates (0) — *client removes UI but socket stays subscribed*
+- [x] Room creator is admin and can kick/ban users (0.5) — _kick exists but doesn't force-disconnect socket_
+- [ ] Kicked users immediately lose access and stop receiving updates (0) — _client removes UI but socket stays subscribed_
 - [x] Admins can promote other users to admin (0.5)
 - [x] Permission changes apply instantly (0.5)
 
@@ -146,21 +146,21 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score | Reprompts |
-|---------|-----|-------|-----------|
-| 1. Basic Chat | 3 | 2.0 | 0 |
-| 2. Typing Indicators | 3 | 3 | 0 |
-| 3. Read Receipts | 3 | 0 | 0 |
-| 4. Unread Counts | 3 | 0 | 0 |
-| 5. Scheduled Messages | 3 | 3 | 0 |
-| 6. Ephemeral Messages | 3 | 3 | 0 |
-| 7. Message Reactions | 3 | 3 | 0 |
-| 8. Message Editing | 3 | 2.5 | 0 |
-| 9. Real-Time Permissions | 3 | 2 | 0 |
-| 10. Rich Presence | 3 | 3 | 0 |
-| 11. Message Threading | 3 | 3 | 0 |
-| 12. Private Rooms & DMs | 3 | 3 | 0 |
-| **TOTAL** | **36** | **27.5** | **0** |
+| Feature                  | Max    | Score    | Reprompts |
+| ------------------------ | ------ | -------- | --------- |
+| 1. Basic Chat            | 3      | 2.0      | 0         |
+| 2. Typing Indicators     | 3      | 3        | 0         |
+| 3. Read Receipts         | 3      | 0        | 0         |
+| 4. Unread Counts         | 3      | 0        | 0         |
+| 5. Scheduled Messages    | 3      | 3        | 0         |
+| 6. Ephemeral Messages    | 3      | 3        | 0         |
+| 7. Message Reactions     | 3      | 3        | 0         |
+| 8. Message Editing       | 3      | 2.5      | 0         |
+| 9. Real-Time Permissions | 3      | 2        | 0         |
+| 10. Rich Presence        | 3      | 3        | 0         |
+| 11. Message Threading    | 3      | 3        | 0         |
+| 12. Private Rooms & DMs  | 3      | 3        | 0         |
+| **TOTAL**                | **36** | **27.5** | **0**     |
 
 ---
 
@@ -178,6 +178,7 @@
 ## Scoring Philosophy
 
 Scores reflect **user-facing functionality**, not implementation effort:
+
 - Features with critical bugs that break the user flow receive minimal/zero credit
 - "Code exists" ≠ "feature works"
 - A broken flow is worse than no flow (confuses users)

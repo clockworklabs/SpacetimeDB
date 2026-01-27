@@ -1,9 +1,9 @@
-import ReactDOM from 'react-dom/client'
+import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings/index.ts';
 import { CONFIG } from './config.ts';
-import App from './App.tsx'
-import './index.css'
+import App from './App.tsx';
+import './index.css';
 
 // Global connection and identity storage
 declare global {

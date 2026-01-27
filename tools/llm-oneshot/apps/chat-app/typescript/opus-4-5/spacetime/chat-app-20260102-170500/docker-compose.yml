@@ -3,7 +3,7 @@ services:
   spacetimedb:
     image: clockworklabs/spacetimedb-standalone:latest
     ports:
-      - "3000:3000"
+      - '3000:3000'
     volumes:
       - spacetimedb-data:/stdb
 volumes:

@@ -34,11 +34,13 @@ A Discord-like real-time chat application built with PostgreSQL, Express, Socket
 ### Local Development
 
 1. Start PostgreSQL (or use Docker):
+
    ```bash
    docker run -d --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=chat-app -p 5432:5432 postgres:16-alpine
    ```
 
 2. Start the server:
+
    ```bash
    cd server
    npm install
@@ -47,6 +49,7 @@ A Discord-like real-time chat application built with PostgreSQL, Express, Socket
    ```
 
 3. Start the client:
+
    ```bash
    cd client
    npm install
@@ -66,9 +69,11 @@ Then open http://localhost:5174
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` - Register new user
 
 ### Users
+
 - `GET /api/users/me` - Get current user
 - `PATCH /api/users/me` - Update display name
 - `PATCH /api/users/me/status` - Update status
@@ -76,6 +81,7 @@ Then open http://localhost:5174
 - `GET /api/users/search?q=` - Search users
 
 ### Rooms
+
 - `GET /api/rooms` - Get rooms
 - `POST /api/rooms` - Create room
 - `POST /api/dms` - Create DM
@@ -88,11 +94,13 @@ Then open http://localhost:5174
 - `POST /api/rooms/:id/promote/:userId` - Promote to admin
 
 ### Invitations
+
 - `GET /api/invitations` - Get pending invitations
 - `POST /api/invitations/:id/accept` - Accept invitation
 - `POST /api/invitations/:id/decline` - Decline invitation
 
 ### Messages
+
 - `GET /api/rooms/:id/messages` - Get messages
 - `POST /api/rooms/:id/messages` - Send message
 - `PATCH /api/messages/:id` - Edit message
@@ -102,16 +110,19 @@ Then open http://localhost:5174
 - `DELETE /api/messages/:id/scheduled` - Cancel scheduled
 
 ### Reactions
+
 - `POST /api/messages/:id/reactions` - Toggle reaction
 - `GET /api/messages/:id/reactions` - Get reactions
 
 ### Read Receipts
+
 - `POST /api/rooms/:id/read` - Mark messages as read
 - `GET /api/rooms/unread` - Get unread counts
 
 ## Socket Events
 
 ### Client → Server
+
 - `room:join` - Join room for updates
 - `room:leave` - Leave room
 - `typing:start` - Start typing
@@ -119,6 +130,7 @@ Then open http://localhost:5174
 - `activity` - Report user activity
 
 ### Server → Client
+
 - `user:online` - User came online
 - `user:offline` - User went offline
 - `user:status` - User status changed

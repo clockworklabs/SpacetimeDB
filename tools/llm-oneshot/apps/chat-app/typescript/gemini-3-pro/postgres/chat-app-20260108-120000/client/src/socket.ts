@@ -2,9 +2,9 @@ import { io, Socket } from 'socket.io-client';
 
 export const socket: Socket = io('/', {
   autoConnect: false,
-  auth: (cb) => {
+  auth: cb => {
     cb({ token: localStorage.getItem('token') });
-  }
+  },
 });
 
 // Helper to update auth token

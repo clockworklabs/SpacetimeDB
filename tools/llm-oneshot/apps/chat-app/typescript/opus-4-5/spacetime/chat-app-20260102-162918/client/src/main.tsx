@@ -19,7 +19,11 @@ window.__my_identity = null;
 
 function Root() {
   const builder = useMemo(() => {
-    const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
+    const onConnect = (
+      conn: DbConnection,
+      identity: Identity,
+      token: string
+    ) => {
       window.__db_conn = conn;
       window.__my_identity = identity;
       if (token) {
@@ -30,7 +34,10 @@ function Root() {
 
     const onConnectError = (_ctx: unknown, err: Error) => {
       console.error('Connection error:', err);
-      if (err.message?.includes('Unauthorized') || err.message?.includes('401')) {
+      if (
+        err.message?.includes('Unauthorized') ||
+        err.message?.includes('401')
+      ) {
         localStorage.removeItem('auth_token');
         window.location.reload();
       }

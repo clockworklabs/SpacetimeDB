@@ -10,7 +10,11 @@ interface ChatAreaProps {
   users: readonly any[];
 }
 
-export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) {
+export default function ChatArea({
+  roomId,
+  currentUser,
+  users,
+}: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showScheduled, setShowScheduled] = useState(false);
 
@@ -24,15 +28,17 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
 
   // Filter data for current room
   const roomMessages = roomId ? messages.filter(m => m.roomId === roomId) : [];
-  const roomEdits = roomId ? messageEdits.filter(e =>
-    roomMessages.some(m => m.id === e.messageId)
-  ) : [];
-  const roomReactions = roomId ? reactions.filter(r =>
-    roomMessages.some(m => m.id === r.messageId)
-  ) : [];
-  const roomTypingIndicators = roomId ? typingIndicators.filter(t => t.roomId === roomId) : [];
-  const myScheduledMessages = scheduledMessages.filter(s =>
-    s.authorId.toHexString() === currentUser?.identity.toHexString()
+  const roomEdits = roomId
+    ? messageEdits.filter(e => roomMessages.some(m => m.id === e.messageId))
+    : [];
+  const roomReactions = roomId
+    ? reactions.filter(r => roomMessages.some(m => m.id === r.messageId))
+    : [];
+  const roomTypingIndicators = roomId
+    ? typingIndicators.filter(t => t.roomId === roomId)
+    : [];
+  const myScheduledMessages = scheduledMessages.filter(
+    s => s.authorId.toHexString() === currentUser?.identity.toHexString()
   );
 
   // Get room info
@@ -48,7 +54,9 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
   const typingUsers = roomTypingIndicators
     .filter(t => t.userId.toHexString() !== currentUser?.identity.toHexString())
     .map(t => {
-      const user = users.find(u => u.identity.toHexString() === t.userId.toHexString());
+      const user = users.find(
+        u => u.identity.toHexString() === t.userId.toHexString()
+      );
       return user?.displayName || 'Unknown';
     })
     .filter(Boolean);
@@ -63,7 +71,9 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
     if (roomId && sortedMessages.length > 0 && window.__db_conn) {
       const latestMessage = sortedMessages[sortedMessages.length - 1];
       try {
-        window.__db_conn.reducers.markMessageRead({ messageId: latestMessage.id });
+        window.__db_conn.reducers.markMessageRead({
+          messageId: latestMessage.id,
+        });
       } catch (error) {
         console.error('Failed to mark message read:', error);
       }
@@ -73,13 +83,15 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
   if (!roomId || !currentRoom) {
     return (
       <div className="main-content">
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          color: 'var(--text-muted)'
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            color: 'var(--text-muted)',
+          }}
+        >
           Select a room to start chatting
         </div>
       </div>
@@ -102,13 +114,15 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
 
       {/* Scheduled Messages Panel */}
       {showScheduled && (
-        <div style={{
-          backgroundColor: 'var(--bg-secondary)',
-          borderBottom: '1px solid var(--border-color)',
-          padding: '16px',
-          maxHeight: '200px',
-          overflowY: 'auto'
-        }}>
+        <div
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            borderBottom: '1px solid var(--border-color)',
+            padding: '16px',
+            maxHeight: '200px',
+            overflowY: 'auto',
+          }}
+        >
           <h4 style={{ marginBottom: '8px' }}>Scheduled Messages</h4>
           {myScheduledMessages.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
@@ -118,15 +132,27 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
             myScheduledMessages.map(msg => {
               const room = rooms.find(r => r.id === msg.roomId);
               return (
-                <div key={msg.scheduledId.toString()} className="scheduled-message">
+                <div
+                  key={msg.scheduledId.toString()}
+                  className="scheduled-message"
+                >
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    #{room?.name} • Scheduled for {msg.scheduledAt.tag === 'Time' ? new Date(Number(msg.scheduledAt.value.microsSinceUnixEpoch / 1000n)).toLocaleString() : 'Unknown time'}
+                    #{room?.name} • Scheduled for{' '}
+                    {msg.scheduledAt.tag === 'Time'
+                      ? new Date(
+                          Number(
+                            msg.scheduledAt.value.microsSinceUnixEpoch / 1000n
+                          )
+                        ).toLocaleString()
+                      : 'Unknown time'}
                   </div>
                   <div>{msg.content}</div>
                   <button
                     onClick={() => {
                       if (window.__db_conn) {
-                        window.__db_conn.reducers.cancelScheduledMessage({ scheduledId: msg.scheduledId });
+                        window.__db_conn.reducers.cancelScheduledMessage({
+                          scheduledId: msg.scheduledId,
+                        });
                       }
                     }}
                     className="btn"
@@ -154,12 +180,18 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
             currentUser={currentUser}
             onEdit={async (messageId, newContent) => {
               if (window.__db_conn) {
-                await window.__db_conn.reducers.editMessage({ messageId, newContent });
+                await window.__db_conn.reducers.editMessage({
+                  messageId,
+                  newContent,
+                });
               }
             }}
             onReact={async (messageId, emoji) => {
               if (window.__db_conn) {
-                await window.__db_conn.reducers.toggleReaction({ messageId, emoji });
+                await window.__db_conn.reducers.toggleReaction({
+                  messageId,
+                  emoji,
+                });
               }
             }}
           />
@@ -172,15 +204,14 @@ export default function ChatArea({ roomId, currentUser, users }: ChatAreaProps) 
         <div className="typing-indicator">
           {typingUsers.length === 1
             ? `${typingUsers[0]} is typing...`
-            : `${typingUsers.slice(0, -1).join(', ')} and ${typingUsers[typingUsers.length - 1]} are typing...`
-          }
+            : `${typingUsers.slice(0, -1).join(', ')} and ${typingUsers[typingUsers.length - 1]} are typing...`}
         </div>
       )}
 
       {/* Message Input */}
       <MessageInput
         roomId={roomId}
-        onSendMessage={async (content) => {
+        onSendMessage={async content => {
           if (window.__db_conn) {
             await window.__db_conn.reducers.sendMessage({ roomId, content });
           }

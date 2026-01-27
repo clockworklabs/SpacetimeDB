@@ -7,8 +7,8 @@ export const User = table(
     public: true,
     indexes: [
       { name: 'identity', algorithm: 'btree', columns: ['identity'] },
-      { name: 'name', algorithm: 'btree', columns: ['name'] }
-    ]
+      { name: 'name', algorithm: 'btree', columns: ['name'] },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -24,9 +24,7 @@ export const Room = table(
   {
     name: 'room',
     public: true,
-    indexes: [
-      { name: 'name', algorithm: 'btree', columns: ['name'] }
-    ]
+    indexes: [{ name: 'name', algorithm: 'btree', columns: ['name'] }],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -43,10 +41,14 @@ export const RoomMember = table(
     name: 'room_member',
     public: true,
     indexes: [
-      { name: 'room_identity', algorithm: 'btree', columns: ['roomId', 'identity'] },
+      {
+        name: 'room_identity',
+        algorithm: 'btree',
+        columns: ['roomId', 'identity'],
+      },
       { name: 'room_id', algorithm: 'btree', columns: ['roomId'] },
-      { name: 'identity', algorithm: 'btree', columns: ['identity'] }
-    ]
+      { name: 'identity', algorithm: 'btree', columns: ['identity'] },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -64,8 +66,12 @@ export const Message = table(
     public: true,
     indexes: [
       { name: 'room_id', algorithm: 'btree', columns: ['roomId'] },
-      { name: 'sender_timestamp', algorithm: 'btree', columns: ['senderId', 'sentAt'] }
-    ]
+      {
+        name: 'sender_timestamp',
+        algorithm: 'btree',
+        columns: ['senderId', 'sentAt'],
+      },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -87,8 +93,12 @@ export const MessageEdit = table(
     public: true,
     indexes: [
       { name: 'message_id', algorithm: 'btree', columns: ['messageId'] },
-      { name: 'message_timestamp', algorithm: 'btree', columns: ['messageId', 'editedAt'] }
-    ]
+      {
+        name: 'message_timestamp',
+        algorithm: 'btree',
+        columns: ['messageId', 'editedAt'],
+      },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -107,8 +117,12 @@ export const Reaction = table(
     public: true,
     indexes: [
       { name: 'message_id', algorithm: 'btree', columns: ['messageId'] },
-      { name: 'message_user', algorithm: 'btree', columns: ['messageId', 'userId'] }
-    ]
+      {
+        name: 'message_user',
+        algorithm: 'btree',
+        columns: ['messageId', 'userId'],
+      },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -127,8 +141,12 @@ export const ReadReceipt = table(
     indexes: [
       { name: 'message_id', algorithm: 'btree', columns: ['messageId'] },
       { name: 'user_id', algorithm: 'btree', columns: ['userId'] },
-      { name: 'user_message', algorithm: 'btree', columns: ['userId', 'messageId'] }
-    ]
+      {
+        name: 'user_message',
+        algorithm: 'btree',
+        columns: ['userId', 'messageId'],
+      },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -145,8 +163,8 @@ export const RoomReadPosition = table(
     public: true,
     indexes: [
       { name: 'room_user', algorithm: 'btree', columns: ['roomId', 'userId'] },
-      { name: 'user_id', algorithm: 'btree', columns: ['userId'] }
-    ]
+      { name: 'user_id', algorithm: 'btree', columns: ['userId'] },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -164,8 +182,8 @@ export const TypingIndicator = table(
     public: true,
     indexes: [
       { name: 'room_user', algorithm: 'btree', columns: ['roomId', 'userId'] },
-      { name: 'room_id', algorithm: 'btree', columns: ['roomId'] }
-    ]
+      { name: 'room_id', algorithm: 'btree', columns: ['roomId'] },
+    ],
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -182,8 +200,12 @@ export const ScheduledMessage = table(
     name: 'scheduled_message',
     scheduled: 'send_scheduled_message',
     indexes: [
-      { name: 'room_sender', algorithm: 'btree', columns: ['roomId', 'senderId'] }
-    ]
+      {
+        name: 'room_sender',
+        algorithm: 'btree',
+        columns: ['roomId', 'senderId'],
+      },
+    ],
   },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
@@ -201,8 +223,8 @@ export const EphemeralMessage = table(
     name: 'ephemeral_message',
     scheduled: 'cleanup_ephemeral_message',
     indexes: [
-      { name: 'message_id', algorithm: 'btree', columns: ['messageId'] }
-    ]
+      { name: 'message_id', algorithm: 'btree', columns: ['messageId'] },
+    ],
   },
   {
     scheduledId: t.u64().primaryKey().autoInc(),

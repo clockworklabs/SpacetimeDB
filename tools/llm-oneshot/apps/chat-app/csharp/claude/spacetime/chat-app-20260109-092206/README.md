@@ -106,6 +106,7 @@ chat-app-YYYYMMDD-HHMMSS/
 ## Dark Theme
 
 The app uses a Discord-inspired dark theme with:
+
 - Background colors: #1e1f22, #2b2d31, #313338
 - Accent: #5865f2 (Discord blue)
 - Success: #23a559, Warning: #f0b232, Error: #da373c

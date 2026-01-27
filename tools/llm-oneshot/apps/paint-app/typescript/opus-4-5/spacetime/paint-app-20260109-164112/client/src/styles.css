@@ -27,7 +27,8 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--stdb-bg);
   color: var(--stdb-text-body);
   min-height: 100vh;
@@ -424,7 +425,9 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Empty state */
@@ -584,11 +587,33 @@ body {
   cursor: pointer;
 }
 
-.transform-handle.nw { top: -5px; left: -5px; cursor: nw-resize; }
-.transform-handle.ne { top: -5px; right: -5px; cursor: ne-resize; }
-.transform-handle.sw { bottom: -5px; left: -5px; cursor: sw-resize; }
-.transform-handle.se { bottom: -5px; right: -5px; cursor: se-resize; }
-.transform-handle.rotate { top: -25px; left: 50%; transform: translateX(-50%); cursor: grab; border-radius: 50%; }
+.transform-handle.nw {
+  top: -5px;
+  left: -5px;
+  cursor: nw-resize;
+}
+.transform-handle.ne {
+  top: -5px;
+  right: -5px;
+  cursor: ne-resize;
+}
+.transform-handle.sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: sw-resize;
+}
+.transform-handle.se {
+  bottom: -5px;
+  right: -5px;
+  cursor: se-resize;
+}
+.transform-handle.rotate {
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: grab;
+  border-radius: 50%;
+}
 
 /* Canvas badge for member count */
 .canvas-badge {

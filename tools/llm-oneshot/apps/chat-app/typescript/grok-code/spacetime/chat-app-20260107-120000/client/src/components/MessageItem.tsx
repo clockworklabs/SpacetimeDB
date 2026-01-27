@@ -19,28 +19,39 @@ export default function MessageItem({
   users,
   currentUser,
   onEdit,
-  onReact
+  onReact,
 }: MessageItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const [showEditHistory, setShowEditHistory] = useState(false);
 
-  const author = users.find(u => u.identity.toHexString() === message.authorId.toHexString());
-  const isMyMessage = message.authorId.toHexString() === currentUser?.identity.toHexString();
+  const author = users.find(
+    u => u.identity.toHexString() === message.authorId.toHexString()
+  );
+  const isMyMessage =
+    message.authorId.toHexString() === currentUser?.identity.toHexString();
 
   // Group reactions by emoji
-  const reactionGroups = reactions.reduce((acc, reaction) => {
-    const emoji = reaction.emoji;
-    if (!acc[emoji]) {
-      acc[emoji] = { count: 0, users: [], hasMyReaction: false };
-    }
-    acc[emoji].count++;
-    acc[emoji].users.push(reaction.userId.toHexString());
-    if (reaction.userId.toHexString() === currentUser?.identity.toHexString()) {
-      acc[emoji].hasMyReaction = true;
-    }
-    return acc;
-  }, {} as Record<string, { count: number; users: string[]; hasMyReaction: boolean }>);
+  const reactionGroups = reactions.reduce(
+    (acc, reaction) => {
+      const emoji = reaction.emoji;
+      if (!acc[emoji]) {
+        acc[emoji] = { count: 0, users: [], hasMyReaction: false };
+      }
+      acc[emoji].count++;
+      acc[emoji].users.push(reaction.userId.toHexString());
+      if (
+        reaction.userId.toHexString() === currentUser?.identity.toHexString()
+      ) {
+        acc[emoji].hasMyReaction = true;
+      }
+      return acc;
+    },
+    {} as Record<
+      string,
+      { count: number; users: string[]; hasMyReaction: boolean }
+    >
+  );
 
   const handleEdit = async () => {
     if (editContent.trim() && editContent !== message.content) {
@@ -74,7 +85,9 @@ export default function MessageItem({
   const readers = readReceipts
     .filter(r => r.userId.toHexString() !== message.authorId.toHexString())
     .map(r => {
-      const user = users.find(u => u.identity.toHexString() === r.userId.toHexString());
+      const user = users.find(
+        u => u.identity.toHexString() === r.userId.toHexString()
+      );
       return user?.displayName || 'Unknown';
     })
     .filter(Boolean);
@@ -86,7 +99,9 @@ export default function MessageItem({
       </div>
       <div className="message-content">
         <div className="message-header">
-          <span className="message-author">{author?.displayName || 'Unknown'}</span>
+          <span className="message-author">
+            {author?.displayName || 'Unknown'}
+          </span>
           <span className="message-time">{formatTime(message.createdAt)}</span>
           {message.isEdited && (
             <span className="edit-indicator">
@@ -109,10 +124,10 @@ export default function MessageItem({
             <input
               type="text"
               value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
+              onChange={e => setEditContent(e.target.value)}
               className="input"
               style={{ marginBottom: '8px', width: '100%' }}
-              onKeyDown={(e) => {
+              onKeyDown={e => {
                 if (e.key === 'Enter') handleEdit();
                 if (e.key === 'Escape') {
                   setIsEditing(false);
@@ -122,7 +137,11 @@ export default function MessageItem({
               autoFocus
             />
             <div>
-              <button onClick={handleEdit} className="btn btn-primary" style={{ marginRight: '8px' }}>
+              <button
+                onClick={handleEdit}
+                className="btn btn-primary"
+                style={{ marginRight: '8px' }}
+              >
                 Save
               </button>
               <button
@@ -143,19 +162,43 @@ export default function MessageItem({
         {/* Edit History */}
         {showEditHistory && edits.length > 0 && (
           <div className="edit-history">
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+            <div
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                marginBottom: '8px',
+              }}
+            >
               Edit History:
             </div>
             {[...edits]
-              .sort((a: any, b: any) => Number(b.editedAt.microsSinceUnixEpoch - a.editedAt.microsSinceUnixEpoch))
+              .sort((a: any, b: any) =>
+                Number(
+                  b.editedAt.microsSinceUnixEpoch -
+                    a.editedAt.microsSinceUnixEpoch
+                )
+              )
               .map((edit: any) => {
-                const editor = users.find(u => u.identity.toHexString() === edit.editedBy.toHexString());
+                const editor = users.find(
+                  u => u.identity.toHexString() === edit.editedBy.toHexString()
+                );
                 return (
-                  <div key={edit.id.toString()} style={{ marginBottom: '4px', fontSize: '12px' }}>
+                  <div
+                    key={edit.id.toString()}
+                    style={{ marginBottom: '4px', fontSize: '12px' }}
+                  >
                     <span style={{ color: 'var(--text-muted)' }}>
-                      {editor?.displayName || 'Unknown'} edited {formatTime(edit.editedAt)}:
+                      {editor?.displayName || 'Unknown'} edited{' '}
+                      {formatTime(edit.editedAt)}:
                     </span>
-                    <div style={{ marginTop: '2px', padding: '4px', backgroundColor: 'var(--bg-accent)', borderRadius: '2px' }}>
+                    <div
+                      style={{
+                        marginTop: '2px',
+                        padding: '4px',
+                        backgroundColor: 'var(--bg-accent)',
+                        borderRadius: '2px',
+                      }}
+                    >
                       {edit.previousContent}
                     </div>
                   </div>
@@ -172,10 +215,14 @@ export default function MessageItem({
                 key={emoji}
                 onClick={() => handleReaction(emoji)}
                 className={`reaction ${(data as any).hasMyReaction ? 'mine' : ''}`}
-                title={`${(data as any).users.map((id: string) => {
-                  const user = users.find(u => u.identity.toHexString() === id);
-                  return user?.displayName || 'Unknown';
-                }).join(', ')} reacted with ${emoji}`}
+                title={`${(data as any).users
+                  .map((id: string) => {
+                    const user = users.find(
+                      u => u.identity.toHexString() === id
+                    );
+                    return user?.displayName || 'Unknown';
+                  })
+                  .join(', ')} reacted with ${emoji}`}
               >
                 {emoji} {(data as any).count}
               </button>
@@ -185,7 +232,13 @@ export default function MessageItem({
 
         {/* Read Receipts */}
         {readers.length > 0 && (
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+          <div
+            style={{
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              marginTop: '4px',
+            }}
+          >
             Seen by {readers.join(', ')}
           </div>
         )}

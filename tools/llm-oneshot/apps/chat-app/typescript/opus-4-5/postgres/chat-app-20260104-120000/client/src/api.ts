@@ -20,7 +20,9 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    const error = await response
+      .json()
+      .catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || 'Request failed');
   }
 
@@ -48,7 +50,8 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
   getUsers: () => request<{ users: any[] }>('/users'),
-  searchUsers: (q: string) => request<{ users: any[] }>(`/users/search?q=${encodeURIComponent(q)}`),
+  searchUsers: (q: string) =>
+    request<{ users: any[] }>(`/users/search?q=${encodeURIComponent(q)}`),
 
   // Rooms
   getRooms: () => request<{ rooms: any[] }>('/rooms'),
@@ -74,20 +77,34 @@ export const api = {
       body: JSON.stringify({ username }),
     }),
   kickUser: (roomId: number, targetUserId: string) =>
-    request<{ success: boolean }>(`/rooms/${roomId}/kick/${targetUserId}`, { method: 'POST' }),
+    request<{ success: boolean }>(`/rooms/${roomId}/kick/${targetUserId}`, {
+      method: 'POST',
+    }),
   banUser: (roomId: number, targetUserId: string) =>
-    request<{ success: boolean }>(`/rooms/${roomId}/ban/${targetUserId}`, { method: 'POST' }),
+    request<{ success: boolean }>(`/rooms/${roomId}/ban/${targetUserId}`, {
+      method: 'POST',
+    }),
   promoteUser: (roomId: number, targetUserId: string) =>
-    request<{ success: boolean }>(`/rooms/${roomId}/promote/${targetUserId}`, { method: 'POST' }),
+    request<{ success: boolean }>(`/rooms/${roomId}/promote/${targetUserId}`, {
+      method: 'POST',
+    }),
 
   // Invitations
   getInvitations: () => request<{ invitations: any[] }>('/invitations'),
   respondToInvitation: (invitationId: number, action: 'accept' | 'decline') =>
-    request<{ success: boolean; room?: any }>(`/invitations/${invitationId}/${action}`, { method: 'POST' }),
+    request<{ success: boolean; room?: any }>(
+      `/invitations/${invitationId}/${action}`,
+      { method: 'POST' }
+    ),
 
   // Messages
   getMessages: (roomId: number) =>
-    request<{ messages: any[]; reactions: any[]; receipts: any[]; replyCounts: any[] }>(`/rooms/${roomId}/messages`),
+    request<{
+      messages: any[];
+      reactions: any[];
+      receipts: any[];
+      replyCounts: any[];
+    }>(`/rooms/${roomId}/messages`),
   sendMessage: (
     roomId: number,
     content: string,
@@ -109,7 +126,9 @@ export const api = {
   getScheduled: (roomId: number) =>
     request<{ scheduled: any[] }>(`/rooms/${roomId}/scheduled`),
   cancelScheduled: (messageId: number) =>
-    request<{ success: boolean }>(`/messages/${messageId}/scheduled`, { method: 'DELETE' }),
+    request<{ success: boolean }>(`/messages/${messageId}/scheduled`, {
+      method: 'DELETE',
+    }),
 
   // Reactions
   toggleReaction: (messageId: number, emoji: string) =>
@@ -126,5 +145,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ messageIds }),
     }),
-  getUnreadCounts: () => request<{ unreadCounts: Record<number, number> }>('/rooms/unread'),
+  getUnreadCounts: () =>
+    request<{ unreadCounts: Record<number, number> }>('/rooms/unread'),
 };

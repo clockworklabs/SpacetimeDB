@@ -18,11 +18,11 @@ Use `paint-app` as the **module name** for SpacetimeDB.
 
 ## Constraints
 
-* Work **entirely inside** your timestamped folder. Do not touch any other existing code.
-* Only create/modify code under:
-    * `apps/paint-app/spacetime/paint-app-YYYYMMDD-HHMMSS/backend/spacetimedb/` (server-side TypeScript)
-    * `apps/paint-app/spacetime/paint-app-YYYYMMDD-HHMMSS/client/src/` (client-side TypeScript/React)
-* Keep it minimal and readable.
+- Work **entirely inside** your timestamped folder. Do not touch any other existing code.
+- Only create/modify code under:
+  - `apps/paint-app/spacetime/paint-app-YYYYMMDD-HHMMSS/backend/spacetimedb/` (server-side TypeScript)
+  - `apps/paint-app/spacetime/paint-app-YYYYMMDD-HHMMSS/client/src/` (client-side TypeScript/React)
+- Keep it minimal and readable.
 
 ## UI Requirements
 

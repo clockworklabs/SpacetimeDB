@@ -8,23 +8,23 @@
 
 ## Overall Metrics
 
-| Metric | Value |
-|--------|-------|
-| **Prompt Level Used** | 09_spacetime_private_rooms.md |
-| **Features Evaluated** | 1-12 (Features 13-15 not in prompt) |
-| **Total Feature Score** | 32.5 / 36 |
-| **Percentage** | 90.3% |
+| Metric                  | Value                               |
+| ----------------------- | ----------------------------------- |
+| **Prompt Level Used**   | 09_spacetime_private_rooms.md       |
+| **Features Evaluated**  | 1-12 (Features 13-15 not in prompt) |
+| **Total Feature Score** | 32.5 / 36                           |
+| **Percentage**          | 90.3%                               |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
 - [x] First-try success (worked without manual fixes)
 
-| Metric | Value |
-|--------|-------|
-| Lines of code (backend) | 879 |
-| Lines of code (frontend) | 1803 |
-| Number of files created | 16 |
-| External dependencies | spacetimedb, react, react-dom, vite, typescript |
+| Metric                   | Value                                           |
+| ------------------------ | ----------------------------------------------- |
+| Lines of code (backend)  | 879                                             |
+| Lines of code (frontend) | 1803                                            |
+| Number of files created  | 16                                              |
+| External dependencies    | spacetimedb, react, react-dom, vite, typescript |
 
 ---
 
@@ -174,25 +174,25 @@
 
 ## Summary Score Sheet
 
-| Feature | Max | Score | Reprompts |
-|---------|-----|-------|-----------|
-| 1. Basic Chat | 3 | 3 | 0 |
-| 2. Typing Indicators | 3 | 3 | 0 |
-| 3. Read Receipts | 3 | 3 | 0 |
-| 4. Unread Counts | 3 | 3 | 0 |
-| 5. Scheduled Messages | 3 | 2 | 0 |
-| 6. Ephemeral Messages | 3 | 3 | 0 |
-| 7. Message Reactions | 3 | 3 | 0 |
-| 8. Message Editing | 3 | 3 | 0 |
-| 9. Real-Time Permissions | 3 | 2.5 | 0 |
-| 10. Rich Presence | 3 | 2.5 | 0 |
-| 11. Message Threading | 3 | 3 | 0 |
-| 12. Private Rooms & DMs | 3 | 3 | 0 |
-| 13. Activity Indicators | 3 | 0 | N/A |
-| 14. Draft Sync | 3 | 0 | N/A |
-| 15. Anonymous Migration | 3 | 0 | N/A |
-| **TOTAL (1-12)** | **36** | **32.5** | **0** |
-| **TOTAL (1-15)** | **45** | **32.5** | **0** |
+| Feature                  | Max    | Score    | Reprompts |
+| ------------------------ | ------ | -------- | --------- |
+| 1. Basic Chat            | 3      | 3        | 0         |
+| 2. Typing Indicators     | 3      | 3        | 0         |
+| 3. Read Receipts         | 3      | 3        | 0         |
+| 4. Unread Counts         | 3      | 3        | 0         |
+| 5. Scheduled Messages    | 3      | 2        | 0         |
+| 6. Ephemeral Messages    | 3      | 3        | 0         |
+| 7. Message Reactions     | 3      | 3        | 0         |
+| 8. Message Editing       | 3      | 3        | 0         |
+| 9. Real-Time Permissions | 3      | 2.5      | 0         |
+| 10. Rich Presence        | 3      | 2.5      | 0         |
+| 11. Message Threading    | 3      | 3        | 0         |
+| 12. Private Rooms & DMs  | 3      | 3        | 0         |
+| 13. Activity Indicators  | 3      | 0        | N/A       |
+| 14. Draft Sync           | 3      | 0        | N/A       |
+| 15. Anonymous Migration  | 3      | 0        | N/A       |
+| **TOTAL (1-12)**         | **36** | **32.5** | **0**     |
+| **TOTAL (1-15)**         | **45** | **32.5** | **0**     |
 
 ---
 
@@ -225,6 +225,7 @@ chat-app-20260102-170500/
 ## Architecture Notes
 
 ### Backend Tables (12 tables)
+
 - `user` - User profiles with identity, name, status, online state
 - `room` - Chat rooms (public, private, DM)
 - `room_member` - Room membership with roles
@@ -239,12 +240,14 @@ chat-app-20260102-170500/
 - `typing_cleanup` - Typing indicator cleanup jobs
 
 ### Key Implementation Decisions
+
 - **Single-file client**: All React logic in App.tsx for simplicity
 - **Server-side scheduling**: Uses SpacetimeDB scheduled reducers for delayed messages
 - **Identity-based auth**: Uses SpacetimeDB identity system (no custom auth)
 - **Dark theme**: Discord-inspired UI with CSS variables
 
 ### Missing Features (from prompt)
+
 - **Ban functionality**: Only kick is implemented
 - **Auto-away**: Heartbeat exists but doesn't auto-set status to "away"
 - **Scheduled messages visibility**: Panel shows but scheduled table may not sync properly to client
@@ -260,6 +263,7 @@ This implementation was created in a single pass without reprompts. The code fol
 ## Scoring Philosophy
 
 Scores reflect **user-facing functionality**, not implementation effort:
+
 - Features with critical bugs that break the user flow receive minimal/zero credit
 - "Code exists" ≠ "feature works"
 - Actual testing trumps code analysis — if it doesn't work in practice, it doesn't get credit
