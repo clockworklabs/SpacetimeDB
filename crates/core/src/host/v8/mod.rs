@@ -98,7 +98,11 @@ impl V8RuntimeInner {
         // as we intend to run on a single core.
         // Per the docs, `new_single_threaded_default_platform` requires
         // that we pass `--single-threaded`.
-        v8::V8::set_flags_from_string("--single-threaded");
+        let mut flags = "--single-threaded".to_owned();
+        if let Ok(env_flags) = std::env::var("STDB_V8_FLAGS") {
+            flags.extend([" ", &env_flags]);
+        }
+        v8::V8::set_flags_from_string(&flags);
         let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);

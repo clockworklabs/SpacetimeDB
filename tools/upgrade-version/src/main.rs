@@ -190,6 +190,7 @@ fn main() -> anyhow::Result<()> {
 
         process_license_file("LICENSE.txt", &full_version);
         process_license_file("licenses/BSL.txt", &full_version);
+        // Rebuild `Cargo.lock`
         println!("$> cargo check");
         cmd!("cargo", "check").run().expect("Cargo check failed!");
 

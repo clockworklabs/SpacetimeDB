@@ -71,6 +71,12 @@
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
       "default": "./dist/server/index.mjs"
+    },
+    "./vue": {
+      "types": "./dist/vue/index.d.ts",
+      "import": "./dist/vue/index.mjs",
+      "require": "./dist/vue/index.cjs",
+      "default": "./dist/vue/index.mjs"
     }
   },
   "size-limit": [
@@ -161,10 +167,14 @@
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
+    "vue": "^3.3.0",
     "undici": "^6.19.2"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "vue": {
       "optional": true
     },
     "undici": {
