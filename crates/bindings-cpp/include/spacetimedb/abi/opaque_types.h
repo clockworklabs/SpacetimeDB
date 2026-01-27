@@ -24,7 +24,7 @@
  * - Direct ABI compatibility with C imports
  */
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Macro to define opaque typedef with C# style single-field struct
 // This ensures ABI compatibility - struct with single field has same
@@ -164,30 +164,30 @@ inline std::string format_status(Status status) {
 }
 
 // Enable std::hash for opaque types
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Specializations for std::hash
 namespace std {
-    template<> struct hash<SpacetimeDb::TableId> {
-        size_t operator()(const SpacetimeDb::TableId& id) const {
+    template<> struct hash<SpacetimeDB::TableId> {
+        size_t operator()(const SpacetimeDB::TableId& id) const {
             return hash<uint32_t>{}(id.inner);
         }
     };
     
-    template<> struct hash<SpacetimeDb::IndexId> {
-        size_t operator()(const SpacetimeDb::IndexId& id) const {
+    template<> struct hash<SpacetimeDB::IndexId> {
+        size_t operator()(const SpacetimeDB::IndexId& id) const {
             return hash<uint32_t>{}(id.inner);
         }
     };
     
-    template<> struct hash<SpacetimeDb::RowIter> {
-        size_t operator()(const SpacetimeDb::RowIter& iter) const {
+    template<> struct hash<SpacetimeDB::RowIter> {
+        size_t operator()(const SpacetimeDB::RowIter& iter) const {
             return hash<uint32_t>{}(iter.inner);
         }
     };
     
-    template<> struct hash<SpacetimeDb::ConsoleTimerId> {
-        size_t operator()(const SpacetimeDb::ConsoleTimerId& id) const {
+    template<> struct hash<SpacetimeDB::ConsoleTimerId> {
+        size_t operator()(const SpacetimeDB::ConsoleTimerId& id) const {
             return hash<uint32_t>{}(id.inner);
         }
     };

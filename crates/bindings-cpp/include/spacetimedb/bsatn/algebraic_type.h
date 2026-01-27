@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <type_traits>
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 // Forward declarations
 class AlgebraicType;
@@ -511,6 +511,6 @@ inline ArrayType& ArrayType::operator=(const ArrayType& other) {
     return *this;
 }
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 #endif // SPACETIMEDB_BSATN_ALGEBRAIC_TYPE_H

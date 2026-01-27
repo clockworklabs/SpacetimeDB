@@ -38,7 +38,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 // =============================================================================
@@ -76,10 +76,10 @@ struct is_optional<std::optional<T>> : std::true_type {};
 
 // Check for big integer types
 template<typename T>
-constexpr bool is_big_integer_v = std::is_same_v<T, ::SpacetimeDb::u128> ||
-                                   std::is_same_v<T, ::SpacetimeDb::i128> ||
-                                   std::is_same_v<T, ::SpacetimeDb::u256> ||
-                                   std::is_same_v<T, ::SpacetimeDb::i256>;
+constexpr bool is_big_integer_v = std::is_same_v<T, ::SpacetimeDB::u128> ||
+                                   std::is_same_v<T, ::SpacetimeDB::i128> ||
+                                   std::is_same_v<T, ::SpacetimeDB::u256> ||
+                                   std::is_same_v<T, ::SpacetimeDB::i256>;
 
 // Check if type needs registry registration
 template<typename T>
@@ -725,6 +725,6 @@ inline std::vector<std::string> parse_parameter_names(const std::string& params_
 }
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_MODULE_IMPL_H

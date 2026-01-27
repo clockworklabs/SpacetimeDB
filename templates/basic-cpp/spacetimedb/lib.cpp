@@ -1,6 +1,6 @@
 #include "spacetimedb.h"
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Define a simple table
 struct Person {

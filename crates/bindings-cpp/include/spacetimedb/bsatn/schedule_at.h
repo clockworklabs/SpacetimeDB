@@ -5,7 +5,7 @@
 #include "time_duration.h"
 #include <stdexcept>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * ScheduleAt represents when a scheduled reducer should execute.
@@ -157,10 +157,10 @@ public:
     }
     
     // BSATN serialization (implemented below)
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const;
-    void bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const;
+    void bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader);
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_BSATN_SCHEDULE_AT_H

@@ -15,18 +15,18 @@
 #include "ProductType.g.h"
 #include "AlgebraicType.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawProcedureDefV9) {
     std::string name;
-    SpacetimeDb::Internal::ProductType params;
-    SpacetimeDb::Internal::AlgebraicType return_type;
+    SpacetimeDB::Internal::ProductType params;
+    SpacetimeDB::Internal::AlgebraicType return_type;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, params);
-        ::SpacetimeDb::bsatn::serialize(writer, return_type);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, params);
+        ::SpacetimeDB::bsatn::serialize(writer, return_type);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, params, return_type)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

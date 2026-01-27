@@ -44,7 +44,7 @@
  * @ingroup sdk_runtime
  */
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Type alias for reducer return type, matching Rust's ReducerResult
@@ -111,7 +111,7 @@ namespace Internal {
  *
  * @code
  * if (amount <= 0) {
- *     SpacetimeDb::fail_reducer("Amount must be positive");
+ *     SpacetimeDB::fail_reducer("Amount must be positive");
  *     return Ok();  // Or just return;
  * }
  *
@@ -159,6 +159,6 @@ inline void fail_reducer_fmt(const char* format, Args... args) {
     fail_reducer(std::move(result));
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_REDUCER_ERROR_H

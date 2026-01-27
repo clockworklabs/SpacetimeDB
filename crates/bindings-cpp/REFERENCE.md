@@ -27,7 +27,7 @@ A SpacetimeDB C++ module consists of:
 
 ```cpp
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // 1. Data structures (structs/enums)
 struct MyData { 
@@ -443,10 +443,10 @@ struct AllTypes {
     int64_t i64_field;
     
     // Large integers (SpacetimeDB types)
-    SpacetimeDb::u128 u128_field;
-    SpacetimeDb::u256 u256_field;
-    SpacetimeDb::i128 i128_field;
-    SpacetimeDb::i256 i256_field;
+    SpacetimeDB::u128 u128_field;
+    SpacetimeDB::u256 u256_field;
+    SpacetimeDB::i128 i128_field;
+    SpacetimeDB::i256 i256_field;
     
     // Floating point
     float f32_field;
@@ -482,7 +482,7 @@ SPACETIMEDB_ENUM(StatusType, Pending, Active, Inactive)
 // Manual implementation for complex cases
 enum class Priority : uint8_t { Low = 0, Medium = 1, High = 2 };
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 template<>
 struct bsatn_traits<Priority> {
     static AlgebraicType algebraic_type() {
@@ -1120,7 +1120,7 @@ The build system automatically configures:
 
 ```cpp
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // User data structure
 struct User {

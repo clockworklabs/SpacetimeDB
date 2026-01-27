@@ -19,7 +19,7 @@
 #include <chrono>
 #include <string>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 struct Duration {
     uint64_t milliseconds;
@@ -53,14 +53,14 @@ class ScheduleReducer {
 public:
     static void register_scheduled([[maybe_unused]] const char* reducer_name, [[maybe_unused]] Duration interval) {
         #ifdef DEBUG
-        SpacetimeDb::Log::debug("Scheduling reducer", reducer_name, "with interval", 
+        SpacetimeDB::Log::debug("Scheduling reducer", reducer_name, "with interval", 
                                 std::to_string(interval.milliseconds), "ms");
         #endif
     }
     
     static void register_scheduled_at([[maybe_unused]] const char* reducer_name) {
         #ifdef DEBUG
-        SpacetimeDb::Log::debug("Registering scheduled_at reducer", reducer_name);
+        SpacetimeDB::Log::debug("Registering scheduled_at reducer", reducer_name);
         #endif
     }
     
@@ -76,11 +76,11 @@ public:
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
-namespace SpacetimeDb {
-    using Duration = SpacetimeDb::Duration;
-    using ScheduleReducer = SpacetimeDb::ScheduleReducer;
+namespace SpacetimeDB {
+    using Duration = SpacetimeDB::Duration;
+    using ScheduleReducer = SpacetimeDB::ScheduleReducer;
 }
 */
 

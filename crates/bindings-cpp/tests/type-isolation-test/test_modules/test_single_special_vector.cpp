@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test: Single vector of special type to isolate the exact error
 // Start with just std::vector<Identity> to pinpoint the issue

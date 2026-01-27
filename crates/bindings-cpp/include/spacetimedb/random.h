@@ -6,7 +6,7 @@
 #include <memory>
 #include <spacetimedb/bsatn/timestamp.h>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Deterministic random number generator for SpacetimeDB reducers
@@ -320,6 +320,6 @@ public:
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_RANDOM_H

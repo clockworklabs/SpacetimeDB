@@ -6,7 +6,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 /**
@@ -97,30 +97,30 @@ public:
     bool read_bool() { return read_u8() != 0; }
     
     // Big integer support
-    ::SpacetimeDb::u128 read_u128_le() {
+    ::SpacetimeDB::u128 read_u128_le() {
         uint64_t low = read_u64_le();
         uint64_t high = read_u64_le();
-        return ::SpacetimeDb::u128(high, low);
+        return ::SpacetimeDB::u128(high, low);
     }
     
-    ::SpacetimeDb::i128 read_i128_le() {
+    ::SpacetimeDB::i128 read_i128_le() {
         uint64_t low = read_u64_le();
         uint64_t high = read_u64_le();
-        return ::SpacetimeDb::i128(static_cast<int64_t>(high), low);
+        return ::SpacetimeDB::i128(static_cast<int64_t>(high), low);
     }
     
-    ::SpacetimeDb::u256 read_u256_le() {
-        ::SpacetimeDb::u256 result;
+    ::SpacetimeDB::u256 read_u256_le() {
+        ::SpacetimeDB::u256 result;
         read_bytes(result.data.data(), 32);
         return result;
     }
     
-    ::SpacetimeDb::i256 read_i256_le() {
-        ::SpacetimeDb::i256 result;
+    ::SpacetimeDB::i256 read_i256_le() {
+        ::SpacetimeDB::i256 result;
         read_bytes(result.data.data(), 32);
         return result;
     }
 };
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB

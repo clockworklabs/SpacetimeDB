@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test auto-increment on non-integer column types
 // AutoInc should only work on integer types (uint32_t, uint64_t, etc.)
@@ -11,7 +11,7 @@ struct StringAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(StringAutoInc, id, data)
-SPACETIMEDB_TABLE(StringAutoInc, string_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(StringAutoInc, string_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(string_autoinc_table, id);  // ERROR: AutoInc on string!
 
 // AutoInc on float field - INVALID
@@ -20,7 +20,7 @@ struct FloatAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(FloatAutoInc, id, data)
-SPACETIMEDB_TABLE(FloatAutoInc, float_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(FloatAutoInc, float_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(float_autoinc_table, id);  // ERROR: AutoInc on float!
 
 // AutoInc on double field - INVALID
@@ -29,7 +29,7 @@ struct DoubleAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(DoubleAutoInc, id, data)
-SPACETIMEDB_TABLE(DoubleAutoInc, double_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(DoubleAutoInc, double_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(double_autoinc_table, id);  // ERROR: AutoInc on double!
 
 // AutoInc on bool field - INVALID
@@ -38,7 +38,7 @@ struct BoolAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(BoolAutoInc, id, data)
-SPACETIMEDB_TABLE(BoolAutoInc, bool_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(BoolAutoInc, bool_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(bool_autoinc_table, id);  // ERROR: AutoInc on bool!
 
 // AutoInc on Identity field - INVALID (Identity is not an integer)
@@ -47,7 +47,7 @@ struct IdentityAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(IdentityAutoInc, id, data)
-SPACETIMEDB_TABLE(IdentityAutoInc, identity_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(IdentityAutoInc, identity_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(identity_autoinc_table, id);  // ERROR: AutoInc on Identity!
 
 // AutoInc on struct field - INVALID
@@ -62,7 +62,7 @@ struct StructAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(StructAutoInc, id, data)
-SPACETIMEDB_TABLE(StructAutoInc, struct_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(StructAutoInc, struct_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(struct_autoinc_table, id);  // ERROR: AutoInc on struct!
 
 // AutoInc on vector field - INVALID
@@ -71,7 +71,7 @@ struct VectorAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(VectorAutoInc, id, data)
-SPACETIMEDB_TABLE(VectorAutoInc, vector_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(VectorAutoInc, vector_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(vector_autoinc_table, id);  // ERROR: AutoInc on vector!
 
 // AutoInc on optional field - INVALID
@@ -80,7 +80,7 @@ struct OptionalAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(OptionalAutoInc, id, data)
-SPACETIMEDB_TABLE(OptionalAutoInc, optional_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(OptionalAutoInc, optional_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(optional_autoinc_table, id);  // ERROR: AutoInc on optional!
 
 // Valid AutoInc tables for comparison
@@ -89,7 +89,7 @@ struct ValidU32AutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(ValidU32AutoInc, id, data)
-SPACETIMEDB_TABLE(ValidU32AutoInc, valid_u32_autoinc, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidU32AutoInc, valid_u32_autoinc, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(valid_u32_autoinc, id);  // Correct: AutoInc on uint32_t
 
 struct ValidU64AutoInc {
@@ -97,7 +97,7 @@ struct ValidU64AutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(ValidU64AutoInc, id, data)
-SPACETIMEDB_TABLE(ValidU64AutoInc, valid_u64_autoinc, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidU64AutoInc, valid_u64_autoinc, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(valid_u64_autoinc, id);  // Correct: AutoInc on uint64_t
 
 struct ValidI32AutoInc {
@@ -105,7 +105,7 @@ struct ValidI32AutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(ValidI32AutoInc, id, data)
-SPACETIMEDB_TABLE(ValidI32AutoInc, valid_i32_autoinc, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidI32AutoInc, valid_i32_autoinc, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(valid_i32_autoinc, id);  // Correct: AutoInc on int32_t
 
 struct ValidI64AutoInc {
@@ -113,11 +113,11 @@ struct ValidI64AutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(ValidI64AutoInc, id, data)
-SPACETIMEDB_TABLE(ValidI64AutoInc, valid_i64_autoinc, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidI64AutoInc, valid_i64_autoinc, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(valid_i64_autoinc, id);  // Correct: AutoInc on int64_t
 
 // Test reducer
-SPACETIMEDB_REDUCER(test_autoinc_types, SpacetimeDb::ReducerContext ctx)
+SPACETIMEDB_REDUCER(test_autoinc_types, SpacetimeDB::ReducerContext ctx)
 {
     LOG_INFO("Testing auto-increment on non-integer types - should fail validation");
     

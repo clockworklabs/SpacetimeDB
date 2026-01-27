@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 #include <vector>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Minimal test - just one vector variant to see how it's serialized
 

@@ -3,7 +3,7 @@
 #include <optional>
 #include <variant>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Module 11: Optional types
 // Testing if optional types cause WASM issues

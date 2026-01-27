@@ -9,7 +9,7 @@
 #include <vector>
 #include <type_traits>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 // Note: parseParameterNames is in macros.h and works for any context type
@@ -35,7 +35,7 @@ struct is_valid_view_return_type<std::optional<T>>
     : std::integral_constant<bool, bsatn::Serializable<T>> {};
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 /**
  * @brief Macro for defining SpacetimeDB views
@@ -84,11 +84,11 @@ struct is_valid_view_return_type<std::optional<T>>
  */
 #define SPACETIMEDB_VIEW(return_type, view_name, access_enum, ctx_param) \
     /* Compile-time assertion that views must be Public for now */ \
-    static_assert(access_enum == SpacetimeDb::Internal::TableAccess::Public, \
+    static_assert(access_enum == SpacetimeDB::Internal::TableAccess::Public, \
         "Views must be Public - Private views are not yet supported"); \
     \
     /* Validate return type at compile-time */ \
-    static_assert(::SpacetimeDb::Internal::is_valid_view_return_type<return_type>::value, \
+    static_assert(::SpacetimeDB::Internal::is_valid_view_return_type<return_type>::value, \
         "View return type must be std::vector<T> or std::optional<T> where T is a SpacetimeType"); \
     \
     /* TODO: When parameters are supported, forward declaration becomes: */ \
@@ -100,7 +100,7 @@ struct is_valid_view_return_type<std::optional<T>>
     __attribute__((export_name("__preinit__40_view_" #view_name))) \
     extern "C" void CONCAT(_spacetimedb_preinit_register_view_, view_name)() { \
         /* Convert access_enum to bool (matching SPACETIMEDB_TABLE pattern) */ \
-        bool is_public = (access_enum == SpacetimeDb::Internal::TableAccess::Public); \
+        bool is_public = (access_enum == SpacetimeDB::Internal::TableAccess::Public); \
         \
         /* TODO: When parameters are supported, uncomment: */ \
         /* std::vector<std::string> param_names = parseParameterNames(#__VA_ARGS__); */ \
@@ -108,7 +108,7 @@ struct is_valid_view_return_type<std::optional<T>>
         \
         /* Register the view with the V9Builder system */ \
         /* RegisterView validates ctx_param is ViewContext or AnonymousViewContext */ \
-        ::SpacetimeDb::Internal::getV9Builder().RegisterView<decltype(&view_name)>( \
+        ::SpacetimeDB::Internal::getV9Builder().RegisterView<decltype(&view_name)>( \
             #view_name, view_name, is_public, param_names); \
     } \
     \

@@ -31,7 +31,7 @@
 #include "../reducer_error.h"  // For Outcome
 #include "buffer_pool.h"  // For IterBuf
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Forward declarations for view context types (defined in view_context.h)
 struct ViewContext;
@@ -356,7 +356,7 @@ void V9Builder::RegisterTable(const std::string& table_name,
     // RegisterTable implementation
     
     // First, ensure field registration happens
-    SpacetimeDb::field_registrar<T>::register_fields();
+    SpacetimeDB::field_registrar<T>::register_fields();
     
     // Check if circular reference was detected during field registration
     if (g_circular_ref_error) {
@@ -368,7 +368,7 @@ void V9Builder::RegisterTable(const std::string& table_name,
     }
     
     // Get field descriptors for the table type
-    auto& descriptor_map = SpacetimeDb::get_table_descriptors();
+    auto& descriptor_map = SpacetimeDB::get_table_descriptors();
     auto it = descriptor_map.find(&typeid(T));
     if (it == descriptor_map.end()) {
         // No descriptors registered for this type - this shouldn't happen if SPACETIMEDB_STRUCT was used
@@ -472,8 +472,8 @@ void V9Builder::AddFieldConstraint(const std::string& table_name,
     }
     
     // Get field descriptors to find the field index
-    SpacetimeDb::field_registrar<T>::register_fields();
-    auto& descriptor_map = SpacetimeDb::get_table_descriptors();
+    SpacetimeDB::field_registrar<T>::register_fields();
+    auto& descriptor_map = SpacetimeDB::get_table_descriptors();
     auto it = descriptor_map.find(&typeid(T));
     if (it == descriptor_map.end()) {
         fprintf(stderr, "ERROR: No field descriptors found for table %s\n", table_name.c_str());
@@ -542,7 +542,7 @@ void V9Builder::AddFieldConstraint(const std::string& table_name,
         seq_def.name = table_name + "_" + field_name + "_seq";
         seq_def.column = field_idx;
         seq_def.start = std::nullopt;
-        seq_def.increment = SpacetimeDb::I128(1);
+        seq_def.increment = SpacetimeDB::I128(1);
         seq_def.min_value = std::nullopt;
         seq_def.max_value = std::nullopt;
         table->sequences.push_back(std::move(seq_def));
@@ -569,8 +569,8 @@ void V9Builder::AddMultiColumnIndex(const std::string& table_name,
     }
     
     // Get field descriptors to find the field index
-    SpacetimeDb::field_registrar<T>::register_fields();
-    auto& descriptor_map = SpacetimeDb::get_table_descriptors();
+    SpacetimeDB::field_registrar<T>::register_fields();
+    auto& descriptor_map = SpacetimeDB::get_table_descriptors();
     auto it = descriptor_map.find(&typeid(T));
     if (it == descriptor_map.end()) {
         fprintf(stderr, "ERROR: No field descriptors found for table %s\n", table_name.c_str());
@@ -641,8 +641,8 @@ void V9Builder::AddColumnDefault(const std::string& table_name,
     }
     
     // Get field descriptors to find the field index
-    SpacetimeDb::field_registrar<T>::register_fields();
-    auto& descriptor_map = SpacetimeDb::get_table_descriptors();
+    SpacetimeDB::field_registrar<T>::register_fields();
+    auto& descriptor_map = SpacetimeDB::get_table_descriptors();
     auto it = descriptor_map.find(&typeid(T));
     if (it == descriptor_map.end()) {
         fprintf(stderr, "ERROR: No field descriptors found for table %s\n", table_name.c_str());
@@ -1195,6 +1195,6 @@ V9Builder& getV9Builder();
 // =============================================================================
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_V9_BUILDER_H

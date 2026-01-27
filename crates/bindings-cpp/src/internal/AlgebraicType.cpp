@@ -5,7 +5,7 @@
 #include "spacetimedb/internal/autogen/SumTypeVariant.g.h"
 #include "spacetimedb/internal/autogen/ProductTypeElement.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 // Default constructor - String type
 AlgebraicType::AlgebraicType() : tag_(Tag::String), data_(std::in_place_index<4>, std::monostate{}) {}
@@ -17,13 +17,13 @@ AlgebraicType::AlgebraicType(Tag primitive_tag) : tag_(primitive_tag) {
             data_.emplace<0>(uint32_t{0}); 
             break;
         case Tag::Sum: 
-            data_.emplace<1>(std::unique_ptr<SpacetimeDb::Internal::SumType>{}); 
+            data_.emplace<1>(std::unique_ptr<SpacetimeDB::Internal::SumType>{}); 
             break;
         case Tag::Product: 
-            data_.emplace<2>(std::unique_ptr<SpacetimeDb::Internal::ProductType>{}); 
+            data_.emplace<2>(std::unique_ptr<SpacetimeDB::Internal::ProductType>{}); 
             break;
         case Tag::Array: 
-            data_.emplace<3>(std::unique_ptr<SpacetimeDb::Internal::AlgebraicType>{}); 
+            data_.emplace<3>(std::unique_ptr<SpacetimeDB::Internal::AlgebraicType>{}); 
             break;
         default: 
             // All primitive types use index 4 with monostate
@@ -42,27 +42,27 @@ AlgebraicType::AlgebraicType(const AlgebraicType& other) : tag_(other.tag_) {
         case Tag::Sum: {
             auto& ptr = std::get<1>(other.data_);
             if (ptr) {
-                data_.emplace<1>(std::make_unique<SpacetimeDb::Internal::SumType>(*ptr));
+                data_.emplace<1>(std::make_unique<SpacetimeDB::Internal::SumType>(*ptr));
             } else {
-                data_.emplace<1>(std::unique_ptr<SpacetimeDb::Internal::SumType>{});
+                data_.emplace<1>(std::unique_ptr<SpacetimeDB::Internal::SumType>{});
             }
             break;
         }
         case Tag::Product: {
             auto& ptr = std::get<2>(other.data_);
             if (ptr) {
-                data_.emplace<2>(std::make_unique<SpacetimeDb::Internal::ProductType>(*ptr));
+                data_.emplace<2>(std::make_unique<SpacetimeDB::Internal::ProductType>(*ptr));
             } else {
-                data_.emplace<2>(std::unique_ptr<SpacetimeDb::Internal::ProductType>{});
+                data_.emplace<2>(std::unique_ptr<SpacetimeDB::Internal::ProductType>{});
             }
             break;
         }
         case Tag::Array: {
             auto& ptr = std::get<3>(other.data_);
             if (ptr) {
-                data_.emplace<3>(std::make_unique<SpacetimeDb::Internal::AlgebraicType>(*ptr));
+                data_.emplace<3>(std::make_unique<SpacetimeDB::Internal::AlgebraicType>(*ptr));
             } else {
-                data_.emplace<3>(std::unique_ptr<SpacetimeDb::Internal::AlgebraicType>{});
+                data_.emplace<3>(std::unique_ptr<SpacetimeDB::Internal::AlgebraicType>{});
             }
             break;
         }
@@ -97,7 +97,7 @@ void AlgebraicType::set(T&& value) {
 }
 
 // BSATN serialization (only serialization needed for Internal types)
-void AlgebraicType::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
+void AlgebraicType::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
     writer.write_u8(static_cast<uint8_t>(tag_));
     //fprintf(stdout, "DEBUG: AlgebraicType serializing tag=%d START\n", static_cast<int>(tag_));
     
@@ -168,4 +168,4 @@ template void AlgebraicType::set<2, std::unique_ptr<ProductType>>(std::unique_pt
 template void AlgebraicType::set<3, std::unique_ptr<AlgebraicType>>(std::unique_ptr<AlgebraicType>&&);
 template void AlgebraicType::set<4, std::monostate>(std::monostate&&);
 
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

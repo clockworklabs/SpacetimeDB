@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test enum variants containing vectors - the missing pattern from lib.cpp
 SPACETIMEDB_ENUM(SimpleEnum, A, B, C)

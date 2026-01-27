@@ -9,7 +9,7 @@
 #include <cstring>
 #include <cstdio>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // LogLevel is now from opaque_types.h, imported via FFI.h
 
@@ -42,14 +42,14 @@ namespace detail {
 }
 
 // Compile-time macro for extracting just the filename
-#define STDB_FILENAME ::SpacetimeDb::detail::extract_filename(__FILE__)
+#define STDB_FILENAME ::SpacetimeDB::detail::extract_filename(__FILE__)
 
 // Default log level - can be overridden at compile time
 #ifndef STDB_LOG_LEVEL
     #ifdef NDEBUG
-        #define STDB_LOG_LEVEL ::SpacetimeDb::LogLevelValue::INFO
+        #define STDB_LOG_LEVEL ::SpacetimeDB::LogLevelValue::INFO
     #else
-        #define STDB_LOG_LEVEL ::SpacetimeDb::LogLevelValue::DEBUG
+        #define STDB_LOG_LEVEL ::SpacetimeDB::LogLevelValue::DEBUG
     #endif
 #endif
 
@@ -101,58 +101,58 @@ inline void log(LogLevel level, const std::string& message) {
 // Optimized logging macros with compile-time level filtering
 #define LOG_ERROR(message) \
     do { \
-        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDb::LogLevelValue::ERROR) { \
-            ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
+        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDB::LogLevelValue::ERROR) { \
+            ::SpacetimeDB::log_with_caller_info(::SpacetimeDB::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
         } \
     } while(0)
 
 #define LOG_WARN(message) \
     do { \
-        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDb::LogLevelValue::WARN) { \
-            ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::WARN, (message), __func__, STDB_FILENAME, __LINE__); \
+        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDB::LogLevelValue::WARN) { \
+            ::SpacetimeDB::log_with_caller_info(::SpacetimeDB::LogLevelValue::WARN, (message), __func__, STDB_FILENAME, __LINE__); \
         } \
     } while(0)
 
 #define LOG_INFO(message) \
     do { \
-        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDb::LogLevelValue::INFO) { \
-            ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::INFO, (message), __func__, STDB_FILENAME, __LINE__); \
+        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDB::LogLevelValue::INFO) { \
+            ::SpacetimeDB::log_with_caller_info(::SpacetimeDB::LogLevelValue::INFO, (message), __func__, STDB_FILENAME, __LINE__); \
         } \
     } while(0)
 
 #define LOG_DEBUG(message) \
     do { \
-        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDb::LogLevelValue::DEBUG) { \
-            ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::DEBUG, (message), __func__, STDB_FILENAME, __LINE__); \
+        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDB::LogLevelValue::DEBUG) { \
+            ::SpacetimeDB::log_with_caller_info(::SpacetimeDB::LogLevelValue::DEBUG, (message), __func__, STDB_FILENAME, __LINE__); \
         } \
     } while(0)
 
 #define LOG_TRACE(message) \
     do { \
-        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDb::LogLevelValue::TRACE) { \
-            ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::TRACE, (message), __func__, STDB_FILENAME, __LINE__); \
+        if constexpr (STDB_LOG_LEVEL >= ::SpacetimeDB::LogLevelValue::TRACE) { \
+            ::SpacetimeDB::log_with_caller_info(::SpacetimeDB::LogLevelValue::TRACE, (message), __func__, STDB_FILENAME, __LINE__); \
         } \
     } while(0)
 
 // Printf-style logging macros for convenience
-#define LOG_ERROR_F(fmt, ...) LOG_ERROR(::SpacetimeDb::detail::format(fmt, ##__VA_ARGS__))
-#define LOG_WARN_F(fmt, ...) LOG_WARN(::SpacetimeDb::detail::format(fmt, ##__VA_ARGS__))
-#define LOG_INFO_F(fmt, ...) LOG_INFO(::SpacetimeDb::detail::format(fmt, ##__VA_ARGS__))
-#define LOG_DEBUG_F(fmt, ...) LOG_DEBUG(::SpacetimeDb::detail::format(fmt, ##__VA_ARGS__))
-#define LOG_TRACE_F(fmt, ...) LOG_TRACE(::SpacetimeDb::detail::format(fmt, ##__VA_ARGS__))
+#define LOG_ERROR_F(fmt, ...) LOG_ERROR(::SpacetimeDB::detail::format(fmt, ##__VA_ARGS__))
+#define LOG_WARN_F(fmt, ...) LOG_WARN(::SpacetimeDB::detail::format(fmt, ##__VA_ARGS__))
+#define LOG_INFO_F(fmt, ...) LOG_INFO(::SpacetimeDB::detail::format(fmt, ##__VA_ARGS__))
+#define LOG_DEBUG_F(fmt, ...) LOG_DEBUG(::SpacetimeDB::detail::format(fmt, ##__VA_ARGS__))
+#define LOG_TRACE_F(fmt, ...) LOG_TRACE(::SpacetimeDB::detail::format(fmt, ##__VA_ARGS__))
 
 // Special panic macro that logs as ERROR level matching to LOG_FATAL
 // ERROR level is used due to PANIC logging a stack trace which won't work correctly from C++
 #define LOG_PANIC(message) \
     do { \
-        ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
+        ::SpacetimeDB::log_with_caller_info(::SpacetimeDB::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
         __builtin_trap(); \
     } while(0)
 
 // Fatal error macro that logs and aborts (for exception-free code)
 #define LOG_FATAL(message) \
     do { \
-        ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
+        ::SpacetimeDB::log_with_caller_info(::SpacetimeDB::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
         __builtin_trap(); \
     } while(0)
 
@@ -291,6 +291,6 @@ private:
     std::chrono::steady_clock::time_point end_time_;
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_LIBRARY_LOGGING_H

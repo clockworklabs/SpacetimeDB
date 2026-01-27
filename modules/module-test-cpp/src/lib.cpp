@@ -1,13 +1,13 @@
 // Set log level to TRACE for this module for repeating_test reducer
-#define STDB_LOG_LEVEL ::SpacetimeDb::LogLevelValue::TRACE
+#define STDB_LOG_LEVEL ::SpacetimeDB::LogLevelValue::TRACE
 
 #include <spacetimedb.h>
 #include <variant>
 #include <optional>
 
-using namespace SpacetimeDb;
-using SpacetimeDb::Public;
-using SpacetimeDb::Private;
+using namespace SpacetimeDB;
+using SpacetimeDB::Public;
+using SpacetimeDB::Private;
 
 
 // =============================================================================

@@ -49,7 +49,7 @@ Open `lib.cpp` and replace the generated code with our chat server implementatio
 ```cpp
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Define a User table to store connected users
 struct User {

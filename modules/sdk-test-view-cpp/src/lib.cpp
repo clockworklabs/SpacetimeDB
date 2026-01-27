@@ -3,7 +3,7 @@
 #include <vector>
 #include <cmath>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // =============================================================================
 // C++ bindings View Test Module - Mirrors Rust sdk-test-view

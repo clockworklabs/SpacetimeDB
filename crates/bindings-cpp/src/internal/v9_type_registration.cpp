@@ -12,7 +12,7 @@
 #include <cstdio>
 #include <stdexcept>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 // Use the correct namespaces - these types are already in the correct namespace
@@ -124,7 +124,7 @@ AlgebraicType V9TypeRegistration::registerType(const bsatn::AlgebraicType& bsatn
         type_name = extractTypeName(cpp_type);
     } else if (!type_name.empty()) {
         // Even if we have an explicit name, ensure it doesn't contain namespace separators
-        // This fixes issues with special types like SpacetimeDb::ScheduleAt
+        // This fixes issues with special types like SpacetimeDB::ScheduleAt
         size_t last_colon = type_name.rfind("::");
         if (last_colon != std::string::npos) {
             type_name = type_name.substr(last_colon + 2);
@@ -742,4 +742,4 @@ void V9TypeRegistration::updateTypeNameInModule(uint32_t type_index, const std::
 
 } // namespace Internal
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB

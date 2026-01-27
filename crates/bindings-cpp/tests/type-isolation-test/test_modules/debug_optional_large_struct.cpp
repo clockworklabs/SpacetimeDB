@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 #include <optional>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // ISOLATION TEST: std::optional<LargeStruct> causing client codegen issues
 // Testing if optional wrapper around large struct causes the error

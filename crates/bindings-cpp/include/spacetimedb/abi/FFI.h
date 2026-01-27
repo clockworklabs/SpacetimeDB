@@ -32,11 +32,11 @@
 // C++ TYPE ALIASES AND CONVENIENCE FUNCTIONS
 // ========================================================================
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace FFI {
 
-using LogLevel = ::SpacetimeDb::LogLevel;
-using IndexType = ::SpacetimeDb::IndexType;
+using LogLevel = ::SpacetimeDB::LogLevel;
+using IndexType = ::SpacetimeDB::IndexType;
 
 // Re-export all functions from the raw ABI
 // Since we now use ABI-compatible opaque types, no conversion is needed
@@ -121,7 +121,7 @@ inline bool read_all_from_source(BytesSource source_handle, uint8_t* buffer, siz
 
 // Additional status codes
 namespace StatusCode {
-    using namespace ::SpacetimeDb::StatusCode;
+    using namespace ::SpacetimeDB::StatusCode;
     constexpr Status EXHAUSTED{16};
 }
 
@@ -131,6 +131,6 @@ inline void console_log(const uint8_t* message, size_t message_len, LogLevel lev
 }
 
 } // namespace FFI
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_FFI_H

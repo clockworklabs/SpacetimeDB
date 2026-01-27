@@ -6,7 +6,7 @@
 #include "database.h"
 #include <string>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Read-only database context for views
@@ -93,6 +93,6 @@ public:
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_READONLY_DATABASE_CONTEXT_H

@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Module 3: Basic signed integers (I8, I16, I32)
 // Testing if basic signed integer types cause WASM issues

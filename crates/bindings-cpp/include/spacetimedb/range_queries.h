@@ -4,7 +4,7 @@
 #include <optional>
 #include <type_traits>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // =============================================================================
 // C++20 Concepts-based Range Query System
@@ -174,7 +174,7 @@ namespace range_operators {
     constexpr RangeEnd range_end{};
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // Usage Examples (for documentation)
@@ -192,7 +192,7 @@ namespace range_operators {
 Example usage in a reducer:
 
 SPACETIMEDB_REDUCER(test_range_queries, ReducerContext ctx) {
-    using namespace SpacetimeDb;
+    using namespace SpacetimeDB;
     
     // Find all people aged 25 and above
     auto adults = ctx.db[person_age].filter(range_from(25));

@@ -78,7 +78,7 @@ For existing projects, add the following to your C++ module:
 ```cpp
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Define a table structure
 struct User {

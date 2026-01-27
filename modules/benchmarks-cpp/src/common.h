@@ -3,7 +3,7 @@
 #include <spacetimedb.h>
 #include <cstdint>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Black box function to prevent compiler optimizations during benchmarking
 template<typename T>

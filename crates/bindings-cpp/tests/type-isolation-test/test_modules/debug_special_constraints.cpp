@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // ISOLATION TEST: Test constraints on special types
 // Based on working test_special_minimal, add constraints to see if they cause WASM traps

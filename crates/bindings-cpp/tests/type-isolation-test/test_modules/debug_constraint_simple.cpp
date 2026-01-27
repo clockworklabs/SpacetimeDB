@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Simple test with just one primary key constraint
 struct SimpleConstraintTest {
@@ -8,7 +8,7 @@ struct SimpleConstraintTest {
     std::string data;
 };
 SPACETIMEDB_STRUCT(SimpleConstraintTest, id, data)
-SPACETIMEDB_TABLE(SimpleConstraintTest, simple_constraint_test, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(SimpleConstraintTest, simple_constraint_test, SpacetimeDB::Public)
 FIELD_PrimaryKey(simple_constraint_test, id);
 
 SPACETIMEDB_INIT(init, ReducerContext ctx) {
@@ -16,7 +16,7 @@ SPACETIMEDB_INIT(init, ReducerContext ctx) {
     return Ok();
 }
 
-SPACETIMEDB_REDUCER(test_simple_constraint, SpacetimeDb::ReducerContext ctx) {
+SPACETIMEDB_REDUCER(test_simple_constraint, SpacetimeDB::ReducerContext ctx) {
     LOG_INFO("Testing simple constraint");
     SimpleConstraintTest test{1, "Test data"};
     ctx.db[simple_constraint_test].insert(test);

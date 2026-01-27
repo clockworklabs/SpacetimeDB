@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /// A row-level security filter,
 /// which can be registered using the SPACETIMEDB_CLIENT_VISIBILITY_FILTER macro.
@@ -38,4 +38,4 @@ private:
     explicit Filter(const char* sql) : sql_text_(sql) {}
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB

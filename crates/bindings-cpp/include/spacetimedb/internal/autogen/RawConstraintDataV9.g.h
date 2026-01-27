@@ -14,7 +14,7 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "RawUniqueConstraintDataV9.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawConstraintDataV9, SpacetimeDb::Internal::RawUniqueConstraintDataV9)
-} // namespace SpacetimeDb::Internal
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawConstraintDataV9, SpacetimeDB::Internal::RawUniqueConstraintDataV9)
+} // namespace SpacetimeDB::Internal

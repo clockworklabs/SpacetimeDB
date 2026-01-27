@@ -16,7 +16,7 @@
 #include "RawProcedureDefV9.g.h"
 #include "RawViewDefV9.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawMiscModuleExportV9, SpacetimeDb::Internal::RawColumnDefaultValueV9, SpacetimeDb::Internal::RawProcedureDefV9, SpacetimeDb::Internal::RawViewDefV9)
-} // namespace SpacetimeDb::Internal
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawMiscModuleExportV9, SpacetimeDB::Internal::RawColumnDefaultValueV9, SpacetimeDB::Internal::RawProcedureDefV9, SpacetimeDB::Internal::RawViewDefV9)
+} // namespace SpacetimeDB::Internal

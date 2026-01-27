@@ -14,16 +14,16 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "RawConstraintDataV9.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawConstraintDefV9) {
     std::optional<std::string> name;
-    SpacetimeDb::Internal::RawConstraintDataV9 data;
+    SpacetimeDB::Internal::RawConstraintDataV9 data;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, data);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, data);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, data)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

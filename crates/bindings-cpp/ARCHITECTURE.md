@@ -58,7 +58,7 @@ template<typename T> class Outcome<T>;
 ```cpp
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 struct User {
     Identity identity;
@@ -220,7 +220,7 @@ SPACETIMEDB_TABLE(User, users, Public)
 // Generates:
 extern "C" __attribute__((export_name("__preinit__20_register_table_User_line_42")))
 void __preinit__20_register_table_User_line_42() {
-    SpacetimeDb::Module::RegisterTable<User>("users", true);
+    SpacetimeDB::Module::RegisterTable<User>("users", true);
 }
 ```
 
@@ -242,10 +242,10 @@ FIELD_PrimaryKeyAutoInc(users, id);
 // Generates both constraint registration AND auto-increment integration:
 
 // 1. Auto-increment integration function (unique per field via __LINE__)
-namespace SpacetimeDb { namespace detail {
-    static void autoinc_integrate_47(User& row, SpacetimeDb::bsatn::Reader& reader) {
+namespace SpacetimeDB { namespace detail {
+    static void autoinc_integrate_47(User& row, SpacetimeDB::bsatn::Reader& reader) {
         using FieldType = decltype(std::declval<User>().id);
-        FieldType generated_value = SpacetimeDb::bsatn::deserialize<FieldType>(reader);
+        FieldType generated_value = SpacetimeDB::bsatn::deserialize<FieldType>(reader);
         row.id = generated_value;  // Update field with generated ID
     }
 }}
@@ -253,8 +253,8 @@ namespace SpacetimeDb { namespace detail {
 // 2. Registration function to register the integrator
 extern "C" __attribute__((export_name("__preinit__19_autoinc_register_47")))
 void __preinit__19_autoinc_register_47() {
-    SpacetimeDb::detail::get_autoinc_integrator<User>() = 
-        &SpacetimeDb::detail::autoinc_integrate_47;
+    SpacetimeDB::detail::get_autoinc_integrator<User>() = 
+        &SpacetimeDB::detail::autoinc_integrate_47;
 }
 ```
 
@@ -411,7 +411,7 @@ The C++ bindings provides a unique compile-time namespace qualification system f
 **Location**: `enum_macro.h` - namespace_info template specialization
 
 ```cpp
-namespace SpacetimeDb::detail {
+namespace SpacetimeDB::detail {
     // Primary template - no namespace by default
     template<typename T>
     struct namespace_info {
@@ -421,7 +421,7 @@ namespace SpacetimeDb::detail {
 
 // SPACETIMEDB_NAMESPACE macro creates specialization
 #define SPACETIMEDB_NAMESPACE(EnumType, NamespacePrefix) \
-    namespace SpacetimeDb::detail { \
+    namespace SpacetimeDB::detail { \
         template<> \
         struct namespace_info<EnumType> { \
             static constexpr const char* value = NamespacePrefix; \
@@ -439,9 +439,9 @@ class LazyTypeRegistrar {
         std::string qualified_name = type_name;
         
         // Compile-time check for namespace information
-        if constexpr (requires { SpacetimeDb::detail::namespace_info<T>::value; }) {
+        if constexpr (requires { SpacetimeDB::detail::namespace_info<T>::value; }) {
             constexpr const char* namespace_prefix = 
-                SpacetimeDb::detail::namespace_info<T>::value;
+                SpacetimeDB::detail::namespace_info<T>::value;
             if (namespace_prefix != nullptr) {
                 qualified_name = std::string(namespace_prefix) + "." + type_name;
             }

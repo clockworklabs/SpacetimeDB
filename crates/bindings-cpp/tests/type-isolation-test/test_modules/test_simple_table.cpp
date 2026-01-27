@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 SPACETIMEDB_INIT(init, ReducerContext ctx) {
     LOG_INFO("Test simple table initialized");

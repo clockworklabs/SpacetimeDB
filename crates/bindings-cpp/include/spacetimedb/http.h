@@ -41,7 +41,7 @@
  * @ingroup sdk_runtime
  */
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief HTTP method (e.g., GET, POST, PUT, DELETE)
@@ -310,7 +310,7 @@ private:
     Outcome<HttpResponse> SendImpl(const HttpRequest& request);
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Include implementation after class definition to avoid circular dependencies
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES

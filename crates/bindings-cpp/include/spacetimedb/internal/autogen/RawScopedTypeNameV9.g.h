@@ -13,16 +13,16 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawScopedTypeNameV9) {
     std::vector<std::string> scope;
     std::string name;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, scope);
-        ::SpacetimeDb::bsatn::serialize(writer, name);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, scope);
+        ::SpacetimeDB::bsatn::serialize(writer, name);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(scope, name)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal
