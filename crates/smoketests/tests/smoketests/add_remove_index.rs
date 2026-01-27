@@ -29,16 +29,11 @@ fn test_add_then_remove_index() {
     test.use_precompiled_module("add-remove-index-indexed");
     test.publish_module_named(&name, false).unwrap();
 
-    // Subscription should work now (n=0 just verifies the query is accepted)
-    let result = test.subscribe(&[JOIN_QUERY], 0);
-    assert!(
-        result.is_ok(),
-        "Expected subscription to succeed with indices, got: {:?}",
-        result.err()
-    );
-
-    // Verify call works too
-    test.call("add", &[]).unwrap();
+    // Subscribe and hold across the call, then collect results
+    let sub = test.subscribe_background(&[JOIN_QUERY], 1).unwrap();
+    test.call_anon("add", &[]).unwrap();
+    let results = sub.collect().unwrap();
+    assert_eq!(results.len(), 1, "Expected 1 update from subscription");
 
     // Publish the unindexed version again, removing the index.
     // The initial subscription should be rejected again.
