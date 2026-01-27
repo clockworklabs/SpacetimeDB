@@ -1008,11 +1008,7 @@ jobs:
 
       - name: Fail if Python smoketests were modified
         run: |
-          # Get changed files in the PR
-          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-
-          # Check if any files in smoketests/ (Python) directory were changed
-          PYTHON_SMOKETEST_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^smoketests/" || true)
+          PYTHON_SMOKETEST_CHANGES=$(git diff --name-only origin/${{ github.base_ref }} HEAD -- 'smoketests/**.py')
 
           if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
             echo "::error::This PR modifies legacy Python smoketests. Please add new tests to the Rust smoketests in crates/smoketests/ instead."
