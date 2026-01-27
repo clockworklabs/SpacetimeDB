@@ -1668,6 +1668,7 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
     use tokio::sync::oneshot;
@@ -2524,7 +2525,7 @@ mod tests {
             caller_identity: id0,
             caller_connection_id: Some(client0.id.connection_id),
             function_call: ModuleFunctionCall {
-                reducer: "DummyReducer".into(),
+                reducer: ReducerName::new_from_str("DummyReducer"),
                 reducer_id: u32::MAX.into(),
                 args: ArgsTuple::nullary(),
             },

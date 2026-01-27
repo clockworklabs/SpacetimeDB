@@ -282,7 +282,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 status,
                 caller_identity: event.caller_identity,
                 reducer_call: ws::ReducerCallInfo {
-                    reducer_name: event.function_call.reducer.to_owned().into(),
+                    reducer_name: event.function_call.reducer.clone(),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id,

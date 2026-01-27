@@ -31,7 +31,7 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicType, SpacetimeType,
 };
-use spacetimedb_schema::table_name::TableName;
+use spacetimedb_schema::{reducer_name::ReducerName, table_name::TableName};
 use std::sync::Arc;
 
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
@@ -152,7 +152,7 @@ impl<Args> ClientMessage<Args> {
 #[sats(crate = spacetimedb_lib)]
 pub struct CallReducer<Args> {
     /// The name of the reducer to call.
-    pub reducer: Box<str>,
+    pub reducer: ReducerName,
     /// The arguments to the reducer.
     ///
     /// In the wire format, this will be a [`Bytes`], BSATN or JSON encoded according to the reducer's argument schema
@@ -589,7 +589,7 @@ pub struct ReducerCallInfo<F: WebsocketFormat> {
     /// We should consider not sending this at all and instead
     /// having a startup message where the name <-> id bindings
     /// are established between the host and the client.
-    pub reducer_name: Box<str>,
+    pub reducer_name: ReducerName,
     /// The numerical id of the reducer that was called.
     pub reducer_id: u32,
     /// The arguments to the reducer, encoded as BSATN or JSON according to the reducer's argument schema

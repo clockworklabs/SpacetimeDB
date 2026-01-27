@@ -343,8 +343,8 @@ pub(super) fn parse_table_update(
         let reducer_name = reducer.name.deref();
         let func_name = reducer_function_name(reducer);
         let set_reducer_flags_trait = reducer_flags_trait_name(reducer);
-        let args_type = function_args_type_name(&reducer.name);
-        let enum_variant_name = reducer_variant_name(&reducer.name);
+        let args_type = function_args_type_name(&reducer.name.into_identifier());
+        let enum_variant_name = reducer_variant_name(&reducer.name.into_identifier());
 
         // Define an "args struct" for the reducer.
         // This is not user-facing (note the `pub(super)` visibility);
@@ -366,7 +366,7 @@ pub(super) fn parse_table_update(
 
         out.newline();
 
-        let callback_id = reducer_callback_id_name(&reducer.name);
+        let callback_id = reducer_callback_id_name(&reducer.name.into_identifier());
 
         let FormattedArglist {
             arglist_no_delimiters,
@@ -494,7 +494,7 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         );
 
         OutputFile {
-            filename: reducer_module_name(&reducer.name) + ".rs",
+            filename: reducer_module_name(&reducer.name.into_identifier()) + ".rs",
             code: output.into_inner(),
         }
     }
@@ -1129,7 +1129,7 @@ fn reducer_flags_trait_name(reducer: &ReducerDef) -> String {
 fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
         iter_types(module).map(|ty| type_module_name(&ty.name)),
-        iter_reducers(module).map(|r| reducer_module_name(&r.name)),
+        iter_reducers(module).map(|r| reducer_module_name(&r.name.into_identifier())),
         iter_tables(module).map(|tbl| table_module_name(&tbl.name)),
         iter_views(module).map(|view| table_module_name(&view.name)),
         iter_procedures(module).map(|proc| procedure_module_name(&proc.name)),
@@ -1160,10 +1160,10 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
         writeln!(out, "pub use {mod_name}::*;");
     }
     for reducer in iter_reducers(module) {
-        let mod_name = reducer_module_name(&reducer.name);
+        let mod_name = reducer_module_name(&reducer.name.into_identifier());
         let reducer_trait_name = reducer_function_name(reducer);
         let flags_trait_name = reducer_flags_trait_name(reducer);
-        let callback_id_name = reducer_callback_id_name(&reducer.name);
+        let callback_id_name = reducer_callback_id_name(&reducer.name.into_identifier());
         writeln!(
             out,
             "pub use {mod_name}::{{{reducer_trait_name}, {flags_trait_name}, {callback_id_name}}};"
@@ -1193,7 +1193,7 @@ fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
         "pub enum Reducer {",
         |out| {
             for reducer in iter_reducers(module) {
-                write!(out, "{} ", reducer_variant_name(&reducer.name));
+                write!(out, "{} ", reducer_variant_name(&reducer.name.into_identifier()));
                 if !reducer.params_for_generate.elements.is_empty() {
                     // If the reducer has any arguments, generate a "struct variant,"
                     // like `Foo { bar: Baz, }`.
@@ -1226,7 +1226,11 @@ impl __sdk::InModule for Reducer {{
                         "match self {",
                         |out| {
                             for reducer in iter_reducers(module) {
-                                write!(out, "Reducer::{}", reducer_variant_name(&reducer.name));
+                                write!(
+                                    out,
+                                    "Reducer::{}",
+                                    reducer_variant_name(&reducer.name.into_identifier())
+                                );
                                 if !reducer.params_for_generate.elements.is_empty() {
                                     // Because we're emitting unit variants when the payload is empty,
                                     // we will emit different patterns for empty vs non-empty variants.
@@ -1282,8 +1286,8 @@ impl __sdk::InModule for Reducer {{
                                     out,
                                     "{:?} => Ok(__sdk::parse_reducer_args::<{}::{}>({:?}, &value.args)?.into()),",
                                     reducer.name.deref(),
-                                    reducer_module_name(&reducer.name),
-                                    function_args_type_name(&reducer.name),
+                                    reducer_module_name(&reducer.name.into_identifier()),
+                                    function_args_type_name(&reducer.name.into_identifier()),
                                     reducer.name.deref(),
                                 );
                             }

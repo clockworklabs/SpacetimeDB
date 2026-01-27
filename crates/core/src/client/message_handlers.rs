@@ -11,6 +11,7 @@ use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use spacetimedb_schema::reducer_name::ReducerName;
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -163,7 +164,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:#})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<Box<str>>,
+    pub reducer: Option<ReducerName>,
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
     pub caller_connection_id: Option<ConnectionId>,
@@ -178,7 +179,7 @@ impl MessageExecutionError {
             caller_identity: self.caller_identity,
             caller_connection_id: self.caller_connection_id,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".into()).into(),
+                reducer: self.reducer.unwrap_or_else(|| ReducerName::new_from_str("<none>")),
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },

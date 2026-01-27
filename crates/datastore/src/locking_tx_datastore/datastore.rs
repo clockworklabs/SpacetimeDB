@@ -39,8 +39,11 @@ use spacetimedb_sats::{
     algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
 };
 use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
-use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
+use spacetimedb_schema::{
+    reducer_name::ReducerName,
+    schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
+};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{
     indexes::RowPointer,
@@ -390,7 +393,7 @@ impl Tx for Locking {
     /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String) {
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, ReducerName) {
         tx.release()
     }
 }
@@ -948,13 +951,13 @@ impl MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String) {
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, ReducerName) {
         tx.rollback()
     }
 
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx`.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, ReducerName)>> {
         Ok(Some(tx.commit()))
     }
 }

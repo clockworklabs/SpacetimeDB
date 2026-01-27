@@ -14,6 +14,7 @@ use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
@@ -399,8 +400,8 @@ pub trait Tx {
     ///   observed transactions.
     ///
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String);
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, ReducerName);
 }
 
 pub trait MutTx {
@@ -424,15 +425,15 @@ pub trait MutTx {
     ///
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran during this transaction.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>>;
+    /// - `ReducerName`, the name of the reducer which ran during this transaction.
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, ReducerName)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String);
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, ReducerName);
 }
 
 /// Standard metadata associated with a database.

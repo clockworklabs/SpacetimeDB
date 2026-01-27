@@ -157,7 +157,7 @@ impl Lang for TypeScript {
         define_body_for_reducer(module, out, &reducer.params_for_generate.elements);
 
         OutputFile {
-            filename: reducer_module_name(&reducer.name) + ".ts",
+            filename: reducer_module_name(&reducer.name.into_identifier()) + ".ts",
             code: output.into_inner(),
         }
     }
@@ -212,8 +212,8 @@ impl Lang for TypeScript {
         writeln!(out, "// Import and reexport all reducer arg types");
         for reducer in iter_reducers(module) {
             let reducer_name = &reducer.name;
-            let reducer_module_name = reducer_module_name(reducer_name);
-            let args_type = reducer_args_type_name(&reducer.name);
+            let reducer_module_name = reducer_module_name(&reducer_name.into_identifier());
+            let args_type = reducer_args_type_name(&reducer.name.into_identifier());
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
             writeln!(out, "export {{ {args_type} }};");
         }
@@ -290,7 +290,7 @@ impl Lang for TypeScript {
                 continue;
             }
             let reducer_name = &reducer.name;
-            let args_type = reducer_args_type_name(&reducer.name);
+            let args_type = reducer_args_type_name(&reducer.name.into_identifier());
             writeln!(out, "__reducerSchema(\"{}\", {}),", reducer_name, args_type);
         }
         out.dedent(1);

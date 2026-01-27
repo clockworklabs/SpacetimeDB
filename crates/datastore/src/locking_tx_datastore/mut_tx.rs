@@ -57,6 +57,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
+    reducer_name::ReducerName,
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
     table_name::TableName,
 };
@@ -1922,7 +1923,7 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, ReducerName) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -2008,7 +2009,7 @@ impl MutTxId {
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn rollback(mut self) -> (TxOffset, TxMetrics, String) {
+    pub fn rollback(mut self) -> (TxOffset, TxMetrics, ReducerName) {
         let offset = self
             .committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);

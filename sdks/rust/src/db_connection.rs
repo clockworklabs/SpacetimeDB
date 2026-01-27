@@ -40,6 +40,7 @@ use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, Compression};
 use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity};
 use spacetimedb_sats::Deserialize;
+use spacetimedb_schema::reducer_name::ReducerName;
 use std::{
     collections::HashMap,
     sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
@@ -368,7 +369,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
                 let flags = inner.call_reducer_flags.get_flags(reducer);
                 let msg = ws::ClientMessage::CallReducer(ws::CallReducer {
-                    reducer: reducer.into(),
+                    reducer: ReducerName::new_from_str(reducer),
                     args: args_bsatn.into(),
                     // We could call `next_request_id` to get a unique ID to include here,
                     // but we don't have any use for such an ID, so we don't bother.

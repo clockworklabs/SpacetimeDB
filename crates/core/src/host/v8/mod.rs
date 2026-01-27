@@ -882,6 +882,7 @@ mod test {
     use crate::host::ArgsTuple;
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::ReducerId;
+    use spacetimedb_schema::reducer_name::ReducerName;
 
     fn with_module_catch<T>(
         code: &str,
@@ -905,7 +906,7 @@ mod test {
                 let hooks = get_hooks(scope).unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
-                    name: "foobar",
+                    name: &ReducerName::new_from_str("foobar"),
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
