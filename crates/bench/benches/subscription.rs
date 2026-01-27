@@ -19,6 +19,7 @@ use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
 
+use spacetimedb_schema::table_name::TableName;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -54,7 +55,7 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
 fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
     DatabaseTableUpdate {
         table_id,
-        table_name: table_name.into(),
+        table_name: TableName::new_from_str(table_name),
         inserts: [row].into(),
         deletes: [].into(),
     }

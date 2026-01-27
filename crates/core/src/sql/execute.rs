@@ -137,7 +137,7 @@ pub fn execute_sql(
                 caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: <_>::default(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
@@ -342,7 +342,7 @@ fn run_inner<I: WasmInstance>(
                 caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: <_>::default(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
