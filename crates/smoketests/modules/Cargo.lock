@@ -634,6 +634,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-hotswap-basic"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-hotswap-updated"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-module-nested-op"
 version = "0.1.0"
 dependencies = [
@@ -651,6 +667,14 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-modules-basic"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-modules-breaking"
 version = "0.1.0"
 dependencies = [
  "log",
@@ -763,6 +787,14 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-sql-format"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-upload-module-2"
 version = "0.1.0"
 dependencies = [
  "log",

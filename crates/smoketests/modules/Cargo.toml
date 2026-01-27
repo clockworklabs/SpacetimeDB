@@ -41,6 +41,9 @@ members = [
     "modules-basic",
     "modules-breaking",
     "modules-add-table",
+    "upload-module-2",
+    "hotswap-basic",
+    "hotswap-updated",
 
     # Index tests
     "add-remove-index",
