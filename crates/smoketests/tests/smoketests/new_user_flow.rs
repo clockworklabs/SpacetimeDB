@@ -1,5 +1,6 @@
 use spacetimedb_smoketests::Smoketest;
 
+// TODO: This test originally was testing to make sure that our tutorial isn't broken. Since our onboarding has changed we should probably update this test in the future.
 /// Test the entirety of the new user flow.
 #[test]
 fn test_new_user_flow() {
