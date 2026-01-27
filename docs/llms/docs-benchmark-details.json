@@ -149,8 +149,8 @@
                   "golden_published": true,
                   "model_name": "GPT-5",
                   "total_tests": 2,
-                  "passed_tests": 2,
-                  "llm_output": "use spacetimedb::{table, reducer, ReducerContext, Table};\n\n#[table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[reducer]\npub fn insert_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) {\n    ctx.db.user().insert(User { id, name, age, active });\n}",
+                  "passed_tests": 1,
+                  "llm_output": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[reducer]\npub fn insert_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) {\n    ctx.db.user().insert(User { id, name, age, active });\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-004-insert-golden",
@@ -159,8 +159,8 @@
                   "work_dir_llm": "target/llm-runs/basics/t_004_insert/rust/server/gpt-5/llm",
                   "scorer_details": {
                     "data_parity_insert_user": {
-                      "pass": true,
-                      "partial": 1.0,
+                      "pass": false,
+                      "partial": 0.0,
                       "notes": {
                         "args": [
                           1,
@@ -263,7 +263,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 3,
                   "passed_tests": 3,
-                  "llm_output": "use spacetimedb::{table, reducer, ReducerContext, Table};\n\n#[table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[reducer]\npub fn delete_user(ctx: &ReducerContext, id: i32) {\n    ctx.db.user().id().delete(&id);\n}",
+                  "llm_output": "use spacetimedb::{table, reducer, ReducerContext};\n\n#[table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[reducer]\npub fn delete_user(ctx: &ReducerContext, id: i32) {\n    ctx.db.user().id().delete(&id);\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-006-delete-golden",
@@ -285,6 +285,13 @@
                         "actual": 0,
                         "expected": 0,
                         "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1"
+                      }
+                    },
+                    "seed_users_row": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "sql": "INSERT INTO user(id, name, age, active) VALUES (1, 'Alice', 30, true)"
                       }
                     },
                     "schema_parity": {
@@ -309,7 +316,7 @@
                   "hash": "e6a5a5374022e3250e0df2cb5e4f7e4777081f474a0ebc4e99302be42151ef59",
                   "task": "t_007_crud",
                   "lang": "rust",
-                  "golden_published": true,
+                  "golden_published": false,
                   "model_name": "GPT-5",
                   "total_tests": 4,
                   "passed_tests": 4,
@@ -321,9 +328,9 @@
                   "work_dir_golden": "target/llm-runs/basics/t_007_crud/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_007_crud/rust/server/gpt-5/llm",
                   "scorer_details": {
-                    "crud_total_count_one": {
-                      "pass": true,
-                      "partial": 1.0,
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
                       "notes": {
                         "actual": 1,
                         "expected": 1,
@@ -416,11 +423,17 @@
                         "tables_equal": true
                       }
                     },
-                    "seed_user_row": {
+                    "schema_parity": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "sql": "INSERT INTO user(id, name, age, active) VALUES (1, 'Alice', 30, true)"
+                        "golden_db": "basics-t-008-index-lookup-golden",
+                        "llm_db": "basics-t-008-index-lookup-gpt-5-llm",
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "server": "http://127.0.0.1:34081",
+                        "tables_diff": null,
+                        "tables_equal": true
                       }
                     }
                   },
@@ -436,7 +449,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 4,
                   "passed_tests": 4,
-                  "llm_output": "use spacetimedb::{ReducerContext, Table};\n\n#[spacetimedb::table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[spacetimedb::reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    let user = ctx.db.user();\n    user.insert(User { id: 1, name: \"Alice\".to_string(), age: 30, active: true });\n    user.insert(User { id: 2, name: \"Bob\".to_string(), age: 22, active: false });\n}",
+                  "llm_output": "use spacetimedb::{ReducerContext, Table};\n\n#[spacetimedb::table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[spacetimedb::reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    ctx.db.user().insert(User { id: 1, name: \"Alice\".to_string(), age: 30, active: true });\n    ctx.db.user().insert(User { id: 2, name: \"Bob\".to_string(), age: 22, active: false });\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-009-init-golden",
@@ -482,6 +495,24 @@
                         "server": "http://127.0.0.1:34355",
                         "tables_diff": null,
                         "tables_equal": true
+                      }
+                    },
+                    "init_seed_alice": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1 AND name='Alice' AND age=30 AND active=true"
+                      }
+                    },
+                    "init_seed_bob": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=2 AND name='Bob'   AND age=22 AND active=false"
                       }
                     }
                   },
@@ -530,8 +561,8 @@
                   "golden_published": true,
                   "model_name": "GPT-5",
                   "total_tests": 3,
-                  "passed_tests": 3,
-                  "llm_output": "use spacetimedb::{table, reducer, ReducerContext, Table};\n\n#[table(name = result)]\npub struct ResultRow {\n    #[primary_key]\n    id: i32,\n    sum: i32,\n}\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\n#[reducer]\npub fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {\n    let sum = add(a, b);\n    ctx.db.result().insert(ResultRow { id, sum });\n}",
+                  "passed_tests": 2,
+                  "llm_output": "use spacetimedb::{table, reducer, ReducerContext, Table};\n\n#[table(name = result)]\npub struct ResultRow {\n    #[primary_key]\n    id: i32,\n    sum: i32,\n}\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\n#[reducer]\nfn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {\n    let sum = add(a, b);\n    ctx.db.result().insert(ResultRow { id, sum });\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-011-helper-function-golden",
@@ -550,6 +581,14 @@
                         "server": "http://127.0.0.1:34355",
                         "tables_diff": null,
                         "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `result`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34081/v1/database/c20018816d0c78b41d0a1ebdd62b788e682bdd9fd17555d6ba26e941ae120e74/sql)\n",
+                        "phase": "sql_golden"
                       }
                     },
                     "helper_func_sum_abs": {
@@ -662,8 +701,8 @@
                   "work_dir_llm": "target/llm-runs/schema/t_013_spacetime_sum_type/rust/server/gpt-5/llm",
                   "scorer_details": {
                     "sum_type_row_parity": {
-                      "pass": false,
-                      "partial": 0.0,
+                      "pass": true,
+                      "partial": 1.0,
                       "notes": {
                         "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `result`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34355/v1/database/c2001fcd14923f0a4ee32425c198f0848a4b5dd1d2cd2dbdd504064c963a79f4/sql)\n",
                         "phase": "sql_golden"
@@ -804,6 +843,14 @@
                       "notes": {
                         "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `drawings`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34355/v1/database/c200ea920cded2e0d48228d9c5f12b5129ceee5e5796bc785bec062cbccba269/sql)\n",
                         "phase": "sql_golden"
+                      }
+                    },
+                    "sum_type_columns_row_count": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `drawings`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34081/v1/database/c200f0f8cf7ce43e0b888fecfda5572f02aac26af6bea4ac6867cab46bd5e36f/sql)\n",
+                        "phase": "sql"
                       }
                     },
                     "schema_parity": {
@@ -998,6 +1045,30 @@
                   "work_dir_golden": "target/llm-runs/schema/t_020_ecs/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/schema/t_020_ecs/rust/server/gpt-5/llm",
                   "scorer_details": {
+                    "ecs_next_pos_entity1": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `next_positions`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34081/v1/database/c2002214a80a8c41eccac4e56c7e632cd82fed302ea0753203a8cb149cbfc10d/sql)\n",
+                        "phase": "sql"
+                      }
+                    },
+                    "ecs_next_pos_entity2": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `next_positions`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34081/v1/database/c2002214a80a8c41eccac4e56c7e632cd82fed302ea0753203a8cb149cbfc10d/sql)\n",
+                        "phase": "sql"
+                      }
+                    },
+                    "ecs_seed_positions_count": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `positions`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34081/v1/database/c2002214a80a8c41eccac4e56c7e632cd82fed302ea0753203a8cb149cbfc10d/sql)\n",
+                        "phase": "sql"
+                      }
+                    },
                     "schema_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -1086,9 +1157,9 @@
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 3,
-                        "expected": 3,
-                        "sql": "SELECT COUNT(*) AS n FROM log"
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM log WHERE user_id=7 AND day=2"
                       }
                     },
                     "schema_parity": {
@@ -1129,7 +1200,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 1,
                   "passed_tests": 0,
-                  "llm_output": "use spacetimedb::ReducerContext;\n\n#[spacetimedb::reducer]\npub fn empty_reducer_no_args(_ctx: &ReducerContext) {}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_int(_ctx: &ReducerContext, _count: i32) {}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_string(_ctx: &ReducerContext, _name: String) {}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_two_args(_ctx: &ReducerContext, _count: i32, _name: String) {}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_three_args(_ctx: &ReducerContext, _active: bool, _ratio: f32, _label: String) {}",
+                  "llm_output": "use spacetimedb::ReducerContext;\n\n#[spacetimedb::reducer]\npub fn empty_reducer_no_args(_ctx: &ReducerContext) {\n}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_int(_ctx: &ReducerContext, _count: i32) {\n}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_string(_ctx: &ReducerContext, _name: String) {\n}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_two_args(_ctx: &ReducerContext, _count: i32, _name: String) {\n}\n\n#[spacetimedb::reducer]\npub fn empty_reducer_with_three_args(_ctx: &ReducerContext, _active: bool, _ratio: f32, _label: String) {\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-000-empty-reducers-golden",
@@ -1290,6 +1361,14 @@
                   "work_dir_golden": "target/llm-runs/basics/t_005_update/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_005_update/rust/server/gpt-5/llm",
                   "scorer_details": {
+                    "data_parity_update_user": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-005-update-golden`.\n",
+                        "phase": "call_reducer_golden"
+                      }
+                    },
                     "schema_parity": {
                       "pass": false,
                       "partial": 0.0,
@@ -1305,14 +1384,6 @@
                         "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-005-update-golden`.\n",
                         "phase": "sql_golden",
                         "sql": "INSERT INTO user(id, name, age, active) VALUES (1, 'Alice', 30, true)"
-                      }
-                    },
-                    "data_parity_update_user": {
-                      "pass": false,
-                      "partial": 0.0,
-                      "notes": {
-                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-005-update-golden`.\n",
-                        "phase": "call_reducer_golden"
                       }
                     }
                   },
@@ -1351,6 +1422,14 @@
                         "actual": 0,
                         "expected": 0,
                         "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-006-delete-golden`.\n",
+                        "phase": "describe_golden"
                       }
                     },
                     "seed_users_row": {
@@ -1484,13 +1563,13 @@
                   "work_dir_golden": "target/llm-runs/basics/t_009_init/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_009_init/rust/server/gpt-5/llm",
                   "scorer_details": {
-                    "init_seed_alice": {
+                    "init_seed_bob": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
                         "actual": 1,
                         "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1 AND name='Alice' AND age=30 AND active=true"
+                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=2 AND name='Bob'   AND age=22 AND active=false"
                       }
                     },
                     "init_seed_bob": {
@@ -1500,6 +1579,15 @@
                         "actual": 1,
                         "expected": 1,
                         "sql": "SELECT COUNT(*) AS n FROM user WHERE id=2 AND name='Bob'   AND age=22 AND active=false"
+                      }
+                    },
+                    "init_seed_alice": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1 AND name='Alice' AND age=30 AND active=true"
                       }
                     },
                     "schema_parity": {
@@ -1578,12 +1666,12 @@
                         "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     },
-                    "helper_func_sum_parity": {
+                    "schema_parity": {
                       "pass": false,
                       "partial": 0.0,
                       "notes": {
-                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-011-helper-function-golden`.\n",
-                        "phase": "call_reducer_golden"
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-011-helper-function-golden`.\n",
+                        "phase": "describe_golden"
                       }
                     },
                     "schema_parity": {
@@ -1707,6 +1795,14 @@
                   "work_dir_golden": "target/llm-runs/schema/t_014_elementary_columns/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/schema/t_014_elementary_columns/rust/server/gpt-5/llm",
                   "scorer_details": {
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-014-elementary-columns-golden`.\n",
+                        "phase": "describe_golden"
+                      }
+                    },
                     "elementary_columns_row_parity": {
                       "pass": false,
                       "partial": 0.0,
@@ -1777,6 +1873,14 @@
                         "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-015-product-type-columns-golden`.\n",
                         "phase": "call_reducer_golden"
                       }
+                    },
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-015-product-type-columns-golden`.\n",
+                        "phase": "describe_golden"
+                      }
                     }
                   },
                   "vendor": "openai",
@@ -1805,6 +1909,14 @@
                       "notes": {
                         "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-016-sum-type-columns-golden`.\n",
                         "phase": "describe_golden"
+                      }
+                    },
+                    "sum_type_columns_row_count": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `drawings`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:46385/v1/database/c200e332ee39012f68748e8e0058b1df01bfd4bd42fa50c7430f6e03a52a13d7/sql)\n",
+                        "phase": "sql"
                       }
                     },
                     "sum_type_columns_row_parity": {
@@ -1906,6 +2018,14 @@
                         "expected": 1,
                         "sql": "SELECT COUNT(*) AS n FROM account WHERE id=2"
                       }
+                    },
+                    "constraints_row_parity_after_seed": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-018-constraints-golden`.\n",
+                        "phase": "call_reducer_golden"
+                      }
                     }
                   },
                   "vendor": "openai",
@@ -1932,9 +2052,9 @@
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 3,
-                        "expected": 3,
-                        "sql": "SELECT COUNT(*) AS n FROM membership"
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM membership WHERE user_id=2 AND group_id=20"
                       }
                     },
                     "m2m_has_1_20": {
@@ -1958,9 +2078,17 @@
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM membership WHERE user_id=2 AND group_id=20"
+                        "actual": 3,
+                        "expected": 3,
+                        "sql": "SELECT COUNT(*) AS n FROM membership"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-019-many-to-many-golden`.\n",
+                        "phase": "describe_golden"
                       }
                     },
                     "m2m_has_1_10": {
@@ -1981,24 +2109,56 @@
                   "hash": "8c8baf7fa35a3b4cdccd079c8efdf96434bd3a22031b7840912b543226efb58b",
                   "task": "t_020_ecs",
                   "lang": "rust",
-                  "golden_published": false,
+                  "golden_published": true,
                   "model_name": "GPT-5",
-                  "total_tests": 1,
+                  "total_tests": 5,
                   "passed_tests": 0,
-                  "llm_output": null,
+                  "llm_output": "use spacetimedb::{ReducerContext, Table};\n\n#[spacetimedb::table(name = entity)]\npub struct Entity {\n    #[primary_key]\n    id: i32,\n}\n\n#[spacetimedb::table(name = position)]\npub struct Position {\n    #[primary_key]\n    entity_id: i32,\n    x: i32,\n    y: i32,\n}\n\n#[spacetimedb::table(name = velocity)]\npub struct Velocity {\n    #[primary_key]\n    entity_id: i32,\n    vx: i32,\n    vy: i32,\n}\n\n#[spacetimedb::table(name = next_position)]\npub struct NextPosition {\n    #[primary_key]\n    entity_id: i32,\n    x: i32,\n    y: i32,\n}\n\n#[spacetimedb::reducer]\npub fn seed(ctx: &ReducerContext) {\n    // Entity 1\n    let id1 = 1;\n    if ctx.db.entity().id().find(id1).is_none() {\n        ctx.db.entity().insert(Entity { id: id1 });\n    }\n    if let Some(mut p) = ctx.db.position().entity_id().find(id1) {\n        p.x = 0;\n        p.y = 0;\n        ctx.db.position().entity_id().update(p);\n    } else {\n        ctx.db.position().insert(Position { entity_id: id1, x: 0, y: 0 });\n    }\n    if let Some(mut v) = ctx.db.velocity().entity_id().find(id1) {\n        v.vx = 1;\n        v.vy = 0;\n        ctx.db.velocity().entity_id().update(v);\n    } else {\n        ctx.db.velocity().insert(Velocity { entity_id: id1, vx: 1, vy: 0 });\n    }\n\n    // Entity 2\n    let id2 = 2;\n    if ctx.db.entity().id().find(id2).is_none() {\n        ctx.db.entity().insert(Entity { id: id2 });\n    }\n    if let Some(mut p) = ctx.db.position().entity_id().find(id2) {\n        p.x = 10;\n        p.y = 0;\n        ctx.db.position().entity_id().update(p);\n    } else {\n        ctx.db.position().insert(Position { entity_id: id2, x: 10, y: 0 });\n    }\n    if let Some(mut v) = ctx.db.velocity().entity_id().find(id2) {\n        v.vx = -2;\n        v.vy = 3;\n        ctx.db.velocity().entity_id().update(v);\n    } else {\n        ctx.db.velocity().insert(Velocity { entity_id: id2, vx: -2, vy: 3 });\n    }\n}\n\n#[spacetimedb::reducer]\npub fn step(ctx: &ReducerContext) {\n    for pos in ctx.db.position().iter() {\n        if let Some(vel) = ctx.db.velocity().entity_id().find(pos.entity_id) {\n            let nx = pos.x + vel.vx;\n            let ny = pos.y + vel.vy;\n            if let Some(mut np) = ctx.db.next_position().entity_id().find(pos.entity_id) {\n                np.x = nx;\n                np.y = ny;\n                ctx.db.next_position().entity_id().update(np);\n            } else {\n                ctx.db.next_position().insert(NextPosition {\n                    entity_id: pos.entity_id,\n                    x: nx,\n                    y: ny,\n                });\n            }\n        }\n    }\n}",
                   "category": "schema",
                   "route_api_model": "gpt-5",
-                  "golden_db": null,
-                  "llm_db": null,
-                  "work_dir_golden": null,
-                  "work_dir_llm": null,
+                  "golden_db": "schema-t-020-ecs-golden",
+                  "llm_db": "schema-t-020-ecs-gpt-5-llm",
+                  "work_dir_golden": "target/llm-runs/schema/t_020_ecs/rust/server/golden",
+                  "work_dir_llm": "target/llm-runs/schema/t_020_ecs/rust/server/gpt-5/llm",
                   "scorer_details": {
-                    "publish_error": {
+                    "ecs_seed_positions_count": {
                       "pass": false,
                       "partial": 0.0,
                       "notes": {
-                        "error": "LLM call timed out",
-                        "phase": "build_or_publish"
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `positions`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:46385/v1/database/c20019f8f996e9e87f067a3b3fb3b441e459a573af67d60fda8d5cb14edf5876/sql)\n",
+                        "phase": "sql"
+                      }
+                    },
+                    "ecs_next_pos_entity1": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `next_positions`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:46385/v1/database/c20019f8f996e9e87f067a3b3fb3b441e459a573af67d60fda8d5cb14edf5876/sql)\n",
+                        "phase": "sql"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-020-ecs-golden`.\n",
+                        "phase": "describe_golden"
+                      }
+                    },
+                    "ecs_next_pos_entity2": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `next_positions`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:46385/v1/database/c20019f8f996e9e87f067a3b3fb3b441e459a573af67d60fda8d5cb14edf5876/sql)\n",
+                        "phase": "sql"
+                      }
+                    },
+                    "ecs_step_next_positions_count": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `next_positions`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:46385/v1/database/c20019f8f996e9e87f067a3b3fb3b441e459a573af67d60fda8d5cb14edf5876/sql)\n",
+                        "phase": "sql"
                       }
                     }
                   },
@@ -2014,7 +2174,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 4,
                   "passed_tests": 3,
-                  "llm_output": "use spacetimedb::{ReducerContext, Table};\n\n#[spacetimedb::table(name = log, index(name = by_user_day, btree(columns = [user_id, day])))]\npub struct Log {\n    #[primary_key]\n    id: i32,\n    user_id: i32,\n    day: i32,\n    message: String,\n}\n\n#[spacetimedb::reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.log().insert(Log { id: 1, user_id: 7, day: 1, message: \"a\".into() });\n    ctx.db.log().insert(Log { id: 2, user_id: 7, day: 2, message: \"b\".into() });\n    ctx.db.log().insert(Log { id: 3, user_id: 9, day: 1, message: \"c\".into() });\n}",
+                  "llm_output": "use spacetimedb::{ReducerContext, Table};\n\n#[spacetimedb::table(name = log, index(name = by_user_day, btree(columns = [user_id, day])))]\npub struct Log {\n    #[primary_key]\n    id: i32,\n    user_id: i32,\n    day: i32,\n    message: String,\n}\n\n#[spacetimedb::reducer]\npub fn seed(ctx: &ReducerContext) {\n    let t = ctx.db.log();\n    t.insert(Log { id: 1, user_id: 7, day: 1, message: \"a\".into() });\n    t.insert(Log { id: 2, user_id: 7, day: 2, message: \"b\".into() });\n    t.insert(Log { id: 3, user_id: 9, day: 1, message: \"c\".into() });\n}",
                   "category": "schema",
                   "route_api_model": "gpt-5",
                   "golden_db": "schema-t-021-multi-column-index-golden",
@@ -2022,13 +2182,12 @@
                   "work_dir_golden": "target/llm-runs/schema/t_021_multi_column_index/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/schema/t_021_multi_column_index/rust/server/gpt-5/llm",
                   "scorer_details": {
-                    "mcindex_lookup_u7_d2": {
-                      "pass": true,
-                      "partial": 1.0,
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
                       "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM log WHERE user_id=7 AND day=2"
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-021-multi-column-index-golden`.\n",
+                        "phase": "describe_golden"
                       }
                     },
                     "mcindex_seed_count": {
@@ -2049,12 +2208,13 @@
                         "sql": "SELECT COUNT(*) AS n FROM log WHERE user_id=7 AND day=1"
                       }
                     },
-                    "schema_parity": {
-                      "pass": false,
-                      "partial": 0.0,
+                    "mcindex_lookup_u7_d2": {
+                      "pass": true,
+                      "partial": 1.0,
                       "notes": {
-                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-021-multi-column-index-golden`.\n",
-                        "phase": "describe_golden"
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM log WHERE user_id=7 AND day=2"
                       }
                     }
                   },
@@ -2409,6 +2569,19 @@
                   "work_dir_golden": "target/llm-runs/basics/t_004_insert/csharp/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_004_insert/csharp/server/gpt-5/llm",
                   "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "golden_db": "basics-t-004-insert-golden",
+                        "llm_db": "basics-t-004-insert-gpt-5-llm",
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "server": "http://127.0.0.1:41793",
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "data_parity_insert_user": {
                       "pass": true,
                       "partial": 1.0,
@@ -2475,13 +2648,6 @@
                         "tables_equal": true
                       }
                     },
-                    "seed_users_row": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "sql": "INSERT INTO User(Id, Name, Age, Active) VALUES (1, 'Alice', 30, true)"
-                      }
-                    },
                     "data_parity_update_user": {
                       "pass": true,
                       "partial": 1.0,
@@ -2514,7 +2680,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 3,
                   "passed_tests": 3,
-                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"User\")]\n    public partial struct User\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void DeleteUser(ReducerContext ctx, int id)\n    {\n        ctx.Db.User.Id.Delete(id);\n    }\n}",
+                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"User\", Public = true)]\n    public partial struct User\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void DeleteUser(ReducerContext ctx, int id)\n    {\n        ctx.Db.User.Id.Delete(id);\n    }\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-006-delete-golden",
@@ -2712,9 +2878,9 @@
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM User WHERE Id=1 AND Name='Alice' AND Age=30 AND Active=true"
+                        "actual": 2,
+                        "expected": 2,
+                        "sql": "SELECT COUNT(*) AS n FROM User"
                       }
                     },
                     "init_seed_bob": {
@@ -2843,7 +3009,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 3,
                   "passed_tests": 3,
-                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Type]\n    public partial struct Score\n    {\n        public int Left;\n        public int Right;\n    }\n\n    [SpacetimeDB.Table(Name = \"Result\", Public = true)]\n    public partial struct Result\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        public Score Value;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void SetScore(ReducerContext ctx, int id, int left, int right)\n    {\n        ctx.Db.Result.Insert(new Result\n        {\n            Id = id,\n            Value = new Score { Left = left, Right = right }\n        });\n    }\n}",
+                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Type]\n    public partial struct Score\n    {\n        public int Left;\n        public int Right;\n    }\n\n    [SpacetimeDB.Table(Name = \"Result\", Public = true)]\n    public partial struct Result\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        public Score Value;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void SetScore(ReducerContext ctx, int id, int left, int right)\n    {\n        ctx.Db.Result.Insert(new Result\n        {\n            Id = id,\n            Value = new Score { Left = left, Right = right },\n        });\n    }\n}",
                   "category": "schema",
                   "route_api_model": "gpt-5",
                   "golden_db": "schema-t-012-spacetime-product-type-golden",
@@ -3142,7 +3308,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 3,
                   "passed_tests": 3,
-                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"Account\", Public = true)]\n    [SpacetimeDB.Index.BTree(Name = \"by_name\", Columns = new[] { \"Name\" })]\n    public partial struct Account\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        [SpacetimeDB.Unique]\n        public string Email;\n        public string Name;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.Account.Insert(new Account { Id = 1, Email = \"a@example.com\", Name = \"Alice\" });\n        ctx.Db.Account.Insert(new Account { Id = 2, Email = \"b@example.com\", Name = \"Bob\" });\n    }\n}",
+                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"Account\", Public = true)]\n    [SpacetimeDB.Index.BTree(Name = \"by_name\", Columns = new[] { \"Name\" })]\n    public partial struct Account\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        [SpacetimeDB.Unique]\n        public string Email;\n        public string Name;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        foreach (var row in ctx.Db.Account.Iter())\n        {\n            ctx.Db.Account.Id.Delete(row.Id);\n        }\n\n        ctx.Db.Account.Insert(new Account { Id = 1, Email = \"a@example.com\", Name = \"Alice\" });\n        ctx.Db.Account.Insert(new Account { Id = 2, Email = \"b@example.com\", Name = \"Bob\" });\n    }\n}",
                   "category": "schema",
                   "route_api_model": "gpt-5",
                   "golden_db": "schema-t-018-constraints-golden",
@@ -3290,7 +3456,7 @@
                   "hash": "a96f7f53940945bb938bc8ee4e931c2c2a88c31a961aab94f52f7d5b336acd88",
                   "task": "t_021_multi_column_index",
                   "lang": "csharp",
-                  "golden_published": true,
+                  "golden_published": false,
                   "model_name": "GPT-5",
                   "total_tests": 4,
                   "passed_tests": 4,
@@ -3302,9 +3468,9 @@
                   "work_dir_golden": "target/llm-runs/schema/t_021_multi_column_index/csharp/server/golden",
                   "work_dir_llm": "target/llm-runs/schema/t_021_multi_column_index/csharp/server/gpt-5/llm",
                   "scorer_details": {
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
                       "notes": {
                         "golden_db": "schema-t-021-multi-column-index-golden",
                         "llm_db": "schema-t-021-multi-column-index-gpt-5-llm",

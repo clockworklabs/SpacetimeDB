@@ -94,9 +94,15 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
-        // Our current configuration:
-        // - will pick a number of worker threads for background jobs based on the num CPUs.
-        // - does not allow idle tasks
+        // We don't want idle tasks nor background worker tasks,
+        // as we intend to run on a single core.
+        // Per the docs, `new_single_threaded_default_platform` requires
+        // that we pass `--single-threaded`.
+        let mut flags = "--single-threaded".to_owned();
+        if let Ok(env_flags) = std::env::var("STDB_V8_FLAGS") {
+            flags.extend([" ", &env_flags]);
+        }
+        v8::V8::set_flags_from_string(&flags);
         let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);
@@ -704,8 +710,6 @@ fn eval_module<'scope>(
         // the module value would never actually resolve. For now, reject this entirely.
         return Err(error::TypeError("module has top-level await and is pending").throw(scope));
     }
-
-    error::parse_and_insert_sourcemap(scope, module);
 
     Ok((module, value))
 }
