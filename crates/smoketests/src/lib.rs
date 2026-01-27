@@ -864,6 +864,45 @@ log = "0.4"
         self.spacetime_cmd(&cmd_args)
     }
 
+    /// Calls a reducer anonymously (without authentication).
+    pub fn call_anon(&self, name: &str, args: &[&str]) -> Result<String> {
+        let identity = self.database_identity.as_ref().context("No database published")?;
+
+        let mut cmd_args = vec![
+            "call",
+            "--anonymous",
+            "--server",
+            &self.server_url,
+            "--",
+            identity.as_str(),
+            name,
+        ];
+        cmd_args.extend(args);
+
+        self.spacetime(&cmd_args)
+    }
+
+    /// Describes the database schema.
+    pub fn describe(&self) -> Result<String> {
+        let identity = self.database_identity.as_ref().context("No database published")?;
+
+        self.spacetime(&["describe", "--server", &self.server_url, identity.as_str()])
+    }
+
+    /// Describes the database schema anonymously (requires --json).
+    pub fn describe_anon(&self) -> Result<String> {
+        let identity = self.database_identity.as_ref().context("No database published")?;
+
+        self.spacetime(&[
+            "describe",
+            "--anonymous",
+            "--json",
+            "--server",
+            &self.server_url,
+            identity.as_str(),
+        ])
+    }
+
     /// Executes a SQL query against the database.
     pub fn sql(&self, query: &str) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
@@ -983,7 +1022,12 @@ log = "0.4"
 
     /// Makes an HTTP API call with a JSON body.
     pub fn api_call_json(&self, method: &str, path: &str, json_body: &str) -> Result<ApiResponse> {
-        self.api_call_internal(method, path, Some(json_body.as_bytes()), "Content-Type: application/json\r\n")
+        self.api_call_internal(
+            method,
+            path,
+            Some(json_body.as_bytes()),
+            "Content-Type: application/json\r\n",
+        )
     }
 
     /// Internal HTTP API call implementation.
