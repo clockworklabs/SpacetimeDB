@@ -70,5 +70,5 @@ body {
 }
 
 .input:focus {
-  box-shadow: 0 0 0 2px var(--accent); // simplified focus
+  box-shadow: 0 0 0 2px var(--accent);
 }
