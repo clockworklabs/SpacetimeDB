@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-spacetimedb-sdk = "1.11.*"
+spacetimedb-sdk = "1.12.*"
