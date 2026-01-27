@@ -1138,7 +1138,7 @@ impl SubscriptionManager {
     /// However, in order to optimize for the common case of small updates,
     /// we removed rayon and switched to a single-threaded execution,
     /// which removed significant overhead associated with thread switching.
-    #[tracing::instrument(level = "trace", skip_all)]
+    //#[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_updates_sequential(
         &self,
         (tx, tx_offset): (&DeltaTx, TransactionOffset),
@@ -1146,7 +1146,7 @@ impl SubscriptionManager {
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> ExecutionMetrics {
-        let span = tracing::info_span!("eval_incr").entered();
+        //let span = tracing::info_span!("eval_incr").entered();
 
         let (updates, errs, metrics) = if self.queries.is_empty() {
             // We have no queries, so do nothing.
@@ -1171,7 +1171,7 @@ impl SubscriptionManager {
             .send(SendWorkerMessage::Broadcast { tx_offset, queries })
             .expect("send worker has panicked, or otherwise dropped its recv queue!");
 
-        drop(span);
+        //drop(span);
 
         metrics
     }

@@ -809,10 +809,11 @@ impl TxMetrics {
 
         // TODO(centril): simplify this by exposing `tx_data.for_table(table_id)`.
         if let Some(tx_data) = tx_data {
-            // Update table rows and table size gauges,
-            // and sets them to zero if no table is present.
-            for (table_id, table_name) in tx_data.table_ids_and_names() {
+            for (table_id, table_entry) in tx_data.iter_table_entries() {
+                let table_name = &table_entry.table_name;
+
                 if let Some(stats) = self.table_stats.get(&table_id).unwrap() {
+                    // Update table rows and table size gauges.
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(db, &table_id.0, table_name)
@@ -821,29 +822,15 @@ impl TxMetrics {
                         .rdb_table_size
                         .with_label_values(db, &table_id.0, table_name)
                         .set(stats.bytes_occupied_overestimate as i64);
-                } else {
-                    // Table was dropped, remove the metrics.
-                    let _ = DB_METRICS
-                        .rdb_num_table_rows
-                        .remove_label_values(db, &table_id.0, table_name);
-                    let _ = DB_METRICS
-                        .rdb_table_size
-                        .remove_label_values(db, &table_id.0, table_name);
-                }
-            }
 
-            // Record inserts.
-            for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
-                if let Some(stats) = self.table_stats.get(table_id).unwrap() {
-                    let num_inserts = inserts.len() as u64;
+                    // Record inserts.
+                    let num_inserts = table_entry.inserts.len() as u64;
                     let num_indices = stats.num_indices as u64;
-
                     // Increment rows inserted counter.
                     DB_METRICS
                         .rdb_num_rows_inserted
                         .with_label_values(workload, db, reducer, &table_id.0, table_name)
                         .inc_by(num_inserts);
-
                     // We don't have sparse indexes, so we can just multiply by the number of indexes.
                     if stats.num_indices > 0 {
                         // Increment index rows inserted counter
@@ -852,29 +839,9 @@ impl TxMetrics {
                             .with_label_values(workload, db, reducer, &table_id.0, table_name)
                             .inc_by(num_inserts * num_indices);
                     }
-                } else {
-                    // Table was dropped, remove the metrics.
-                    let _ = DB_METRICS.rdb_num_rows_inserted.remove_label_values(
-                        workload,
-                        db,
-                        reducer,
-                        &table_id.0,
-                        table_name,
-                    );
-                    let _ = DB_METRICS.rdb_num_index_entries_inserted.remove_label_values(
-                        workload,
-                        db,
-                        reducer,
-                        &table_id.0,
-                        table_name,
-                    );
-                }
-            }
 
-            // Record deletes.
-            for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
-                if let Some(stats) = self.table_stats.get(table_id).unwrap() {
-                    let num_deletes = deletes.len() as u64;
+                    // Record deletes.
+                    let num_deletes = table_entry.deletes.len() as u64;
                     let num_indices = stats.num_indices as u64;
 
                     // Increment rows deleted counter.
@@ -893,6 +860,26 @@ impl TxMetrics {
                     }
                 } else {
                     // Table was dropped, remove the metrics.
+                    let _ = DB_METRICS
+                        .rdb_num_table_rows
+                        .remove_label_values(db, &table_id.0, table_name);
+                    let _ = DB_METRICS
+                        .rdb_table_size
+                        .remove_label_values(db, &table_id.0, table_name);
+                    let _ = DB_METRICS.rdb_num_rows_inserted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
+                    let _ = DB_METRICS.rdb_num_index_entries_inserted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
                     let _ = DB_METRICS.rdb_num_rows_deleted.remove_label_values(
                         workload,
                         db,
@@ -2694,16 +2681,18 @@ mod tests {
 
         // In the first tx, the row is not deleted, but it is inserted, so we end up with the row committed.
         assert_eq!(deleted_1, false);
-        assert_eq!(tx_data_1.deletes().count(), 0);
-        assert_eq!(tx_data_1.inserts().collect_vec(), [(&table_id, &[row.clone()].into())]);
+        let entries_1 = tx_data_1.iter_table_entries().collect_vec();
+        assert_eq!(entries_1.len(), 1);
+        assert_eq!(entries_1[0].0, table_id);
+        assert_eq!(entries_1[0].1.deletes.len(), 0);
+        assert_eq!(entries_1[0].1.inserts, [row.clone()].into());
 
         // In the second tx, the row is deleted from the commit state,
         // by marking it in the delete tables.
         // Then, when inserting, it is un-deleted by un-marking.
         // This sequence results in an empty tx-data.
         assert_eq!(deleted_2, true);
-        assert_eq!(tx_data_2.deletes().count(), 0);
-        assert_eq!(tx_data_2.inserts().collect_vec(), []);
+        assert_eq!(tx_data_2.iter_table_entries().count(), 0);
         Ok(())
     }
 
@@ -2761,8 +2750,7 @@ mod tests {
         // Commit the transaction.
         // We expect the transaction to be a noop.
         let tx_data = commit(&datastore, tx)?;
-        assert_eq!(tx_data.inserts().count(), 0);
-        assert_eq!(tx_data.deletes().count(), 0);
+        assert_eq!(tx_data.iter_table_entries().count(), 0);
         Ok(())
     }
 
@@ -3003,14 +2991,19 @@ mod tests {
         let tx_data_2 = commit(&datastore, tx)?;
         // Ensure that none of the commits deleted rows in our table.
         for tx_data in [&tx_data_1, &tx_data_2] {
-            assert_eq!(tx_data.deletes().find(|(tid, ..)| **tid == table_id), None);
+            assert_eq!(
+                tx_data
+                    .iter_table_entries()
+                    .find(|(tid, e)| *tid == table_id && !e.deletes.is_empty()),
+                None
+            );
         }
         // Ensure that the first commit added the row but that the second didn't.
         for (tx_data, expected_rows) in [(&tx_data_1, vec![row.clone()]), (&tx_data_2, vec![])] {
             let inserted_rows = tx_data
-                .inserts()
-                .find(|(tid, _)| **tid == table_id)
-                .map(|(_, pvs)| pvs.to_vec())
+                .iter_table_entries()
+                .find(|(tid, _)| *tid == table_id)
+                .map(|(_, e)| e.inserts.to_vec())
                 .unwrap_or_default();
             assert_eq!(inserted_rows, expected_rows);
         }
@@ -3327,12 +3320,12 @@ mod tests {
         // Now drop the table again and commit.
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
         let tx_data = commit(&datastore, tx)?;
-        let (_, deleted_rows) = tx_data
-            .deletes()
-            .find(|(id, _)| **id == table_id)
-            .expect("should have deleted rows for `table_id`");
-        assert_eq!(&**deleted_rows, [row]);
-        assert!(tx_data.truncates().contains(&table_id), "table should be truncated");
+        let (_, entry) = tx_data
+            .iter_table_entries()
+            .find(|(id, _)| *id == table_id)
+            .expect("should have an entry for `table_id`");
+        assert_eq!(&*entry.deletes, [row]);
+        assert!(entry.truncated, "table should be truncated");
 
         // In the next transaction, the table doesn't exist.
         assert!(
@@ -3535,14 +3528,10 @@ mod tests {
         let tx_data = commit(&datastore, tx)?;
         // Ensure the change has been persisted in the commitlog.
         let to_product = |col: &ColumnSchema| value_serialize(&StColumnRow::from(col.clone())).into_product().unwrap();
-        let (_, inserts) = tx_data.inserts().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
-        assert_eq!(&**inserts, [to_product(&columns[1])].as_slice());
-        let (_, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
-        assert_eq!(&**deletes, [to_product(&columns_original[1])].as_slice());
-        assert!(
-            !tx_data.truncates().contains(&ST_COLUMN_ID),
-            "table should not be truncated"
-        );
+        let entry = tx_data.entry_for(ST_COLUMN_ID).unwrap();
+        assert_eq!(&*entry.inserts, [to_product(&columns[1])].as_slice());
+        assert_eq!(&*entry.deletes, [to_product(&columns_original[1])].as_slice());
+        assert!(!entry.truncated, "table should not be truncated");
 
         // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);
@@ -3650,13 +3639,12 @@ mod tests {
         );
 
         //  Validate Commitlog Changes
-        let (_, deletes) = tx_data
-            .deletes()
-            .find(|(id, _)| **id == table_id)
+        let entry = tx_data
+            .entry_for(table_id)
             .expect("Expected delete log for original table");
 
         assert_eq!(
-            &**deletes, &old_rows,
+            &*entry.deletes, &old_rows,
             "Unexpected delete entries after altering the table"
         );
 
@@ -3666,13 +3654,12 @@ mod tests {
             product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
-        let (_, inserts) = tx_data
-            .inserts()
-            .find(|(id, _)| **id == new_table_id)
+        let new_entry = tx_data
+            .entry_for(new_table_id)
             .expect("Expected insert log for new table");
 
         assert_eq!(
-            &**inserts, &inserted_rows,
+            &*new_entry.inserts, &inserted_rows,
             "Unexpected insert entries after altering the table"
         );
 
