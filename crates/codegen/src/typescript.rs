@@ -241,10 +241,7 @@ impl Lang for TypeScript {
         }
 
         writeln!(out);
-        writeln!(
-            out,
-            "/** Type-only namespace exports for generated type groups. */"
-        );
+        writeln!(out, "/** Type-only namespace exports for generated type groups. */");
         writeln!(out, "export type * as Rows from \"./rows\";");
         writeln!(out, "export type * as Reducers from \"./reducers\";");
         writeln!(out, "export type * as Procedures from \"./procedures\";");
