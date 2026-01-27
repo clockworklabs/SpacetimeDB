@@ -261,30 +261,3 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
         ])
     })
 }
-
-#[proc_macro_attribute]
-pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    ok_or_compile_error(|| {
-        if !args.is_empty() {
-            return Err(syn::Error::new_spanned(
-                TokenStream::from(args),
-                "The `client_visibility_filter` attribute does not accept arguments",
-            ));
-        }
-
-        let item: ItemConst = syn::parse(item)?;
-        let rls_ident = item.ident.clone();
-        let register_rls_symbol = format!("__preinit__20_register_row_level_security_{rls_ident}");
-
-        Ok(quote! {
-            #item
-
-            const _: () = {
-                #[export_name = #register_rls_symbol]
-                extern "C" fn __register_client_visibility_filter() {
-                    spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
-                }
-            };
-        })
-    })
-}

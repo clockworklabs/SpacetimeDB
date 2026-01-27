@@ -262,11 +262,6 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn test_rls_subscription() {
-                make_test("test-rls-subscription").run()
-            }
-
-            #[test]
             fn pk_simple_enum() {
                 make_test("pk-simple-enum").run();
             }
