@@ -62,6 +62,48 @@ use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::time::Instant;
 
+/// Returns the remote server URL if running against a remote server.
+///
+/// Set the `SPACETIME_REMOTE_SERVER` environment variable to run tests against
+/// a remote server instead of spawning local servers.
+pub fn remote_server_url() -> Option<String> {
+    std::env::var("SPACETIME_REMOTE_SERVER").ok()
+}
+
+/// Returns true if running against a remote server.
+pub fn is_remote_server() -> bool {
+    remote_server_url().is_some()
+}
+
+/// Skip this test if running against a remote server.
+///
+/// Use this macro at the start of tests that require a local server,
+/// such as tests that call `restart_server()` or access local data directories.
+///
+/// # Example
+///
+/// ```ignore
+/// #[test]
+/// fn test_restart() {
+///     skip_if_remote!();
+///     let mut test = Smoketest::builder().build();
+///     test.restart_server();
+///     // ...
+/// }
+/// ```
+#[macro_export]
+macro_rules! skip_if_remote {
+    () => {
+        if $crate::is_remote_server() {
+            #[allow(clippy::disallowed_macros)]
+            {
+                eprintln!("Skipping test: requires local server");
+            }
+            return;
+        }
+    };
+}
+
 /// Helper macro for timing operations and printing results
 macro_rules! timed {
     ($label:expr, $expr:expr) => {{
@@ -222,7 +264,8 @@ pub fn parse_quickstart(doc_content: &str, language: &str, module_name: &str, se
 /// A smoketest instance that manages a SpacetimeDB server and module project.
 pub struct Smoketest {
     /// The SpacetimeDB server guard (stops server on drop).
-    pub guard: SpacetimeDbGuard,
+    /// None when running against a remote server.
+    pub guard: Option<SpacetimeDbGuard>,
     /// Temporary directory containing the module project.
     pub project_dir: tempfile::TempDir,
     /// Database identity after publishing (if any).
@@ -347,8 +390,13 @@ impl SmoketestBuilder {
 
     /// Builds the `Smoketest` instance.
     ///
-    /// This spawns a SpacetimeDB server, creates a temporary project directory,
-    /// writes the module code, and optionally publishes the module.
+    /// This spawns a SpacetimeDB server (unless `SPACETIME_REMOTE_SERVER` is set),
+    /// creates a temporary project directory, writes the module code, and optionally
+    /// publishes the module.
+    ///
+    /// When `SPACETIME_REMOTE_SERVER` is set, tests run against the remote server
+    /// instead of spawning a local server. Tests that require local server control
+    /// (like restart tests) should use `skip_if_remote!()` at the start.
     ///
     /// # Panics
     ///
@@ -359,10 +407,19 @@ impl SmoketestBuilder {
         let _ = ensure_binaries_built();
         let build_start = Instant::now();
 
-        let guard = timed!(
-            "server spawn",
-            SpacetimeDbGuard::spawn_in_temp_data_dir_with_pg_port(self.pg_port)
-        );
+        // Check if we're running against a remote server
+        let (guard, server_url) = if let Some(remote_url) = remote_server_url() {
+            eprintln!("[REMOTE] Using remote server: {}", remote_url);
+            (None, remote_url)
+        } else {
+            let guard = timed!(
+                "server spawn",
+                SpacetimeDbGuard::spawn_in_temp_data_dir_with_pg_port(self.pg_port)
+            );
+            let url = guard.host_url.clone();
+            (Some(guard), url)
+        };
+
         let project_dir = tempfile::tempdir().expect("Failed to create temp project directory");
 
         // Check if we're using a pre-compiled module
@@ -435,7 +492,6 @@ pub fn noop(_ctx: &ReducerContext) {}
             eprintln!("[TIMING] project setup: {:?}", project_setup_start.elapsed());
         }
 
-        let server_url = guard.host_url.clone();
         let config_path = project_dir.path().join("config.toml");
         let mut smoketest = Smoketest {
             guard,
@@ -467,10 +523,18 @@ impl Smoketest {
     /// This stops the current server process and starts a new one with the
     /// same data directory. All data is preserved across the restart.
     /// The server URL may change since a new ephemeral port is allocated.
+    ///
+    /// # Panics
+    ///
+    /// Panics if running against a remote server (no local server to restart).
+    /// Tests that call this method should use `skip_if_remote!()` at the start.
     pub fn restart_server(&mut self) {
-        self.guard.restart();
+        let guard = self.guard.as_mut().expect(
+            "Cannot restart server: running against remote server. Use skip_if_remote!() at the start of this test.",
+        );
+        guard.restart();
         // Update server_url since the port may have changed
-        self.server_url = self.guard.host_url.clone();
+        self.server_url = guard.host_url.clone();
     }
 
     /// Returns the server host (without protocol), e.g., "127.0.0.1:3000".
@@ -482,8 +546,11 @@ impl Smoketest {
     }
 
     /// Returns the PostgreSQL wire protocol port, if enabled.
+    ///
+    /// Returns None if running against a remote server or if PostgreSQL
+    /// wire protocol wasn't enabled for the local server.
     pub fn pg_port(&self) -> Option<u16> {
-        self.guard.pg_port
+        self.guard.as_ref().and_then(|g| g.pg_port)
     }
 
     /// Reads the authentication token from the config file.

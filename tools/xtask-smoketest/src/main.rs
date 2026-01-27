@@ -24,6 +24,14 @@ enum XtaskCmd {
         #[command(subcommand)]
         cmd: Option<SmoketestCmd>,
 
+        /// Run tests against a remote server instead of spawning local servers.
+        ///
+        /// When specified, tests will connect to the given URL instead of starting
+        /// local server instances. Tests that require local server control (like
+        /// restart tests) will be skipped.
+        #[arg(long)]
+        server: Option<String>,
+
         /// Additional arguments to pass to the test runner
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
@@ -50,7 +58,11 @@ fn main() -> Result<()> {
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
             Ok(())
         }
-        XtaskCmd::Smoketest { cmd: None, args } => run_smoketest(args),
+        XtaskCmd::Smoketest {
+            cmd: None,
+            server,
+            args,
+        } => run_smoketest(server, args),
     }
 }
 
@@ -116,7 +128,7 @@ fn build_precompiled_modules() -> Result<()> {
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
 const DEFAULT_PARALLELISM: &str = "16";
 
-fn run_smoketest(args: Vec<String>) -> Result<()> {
+fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
     // 1. Build binaries first (single process, no race)
     build_binaries()?;
 
@@ -134,7 +146,11 @@ fn run_smoketest(args: Vec<String>) -> Result<()> {
 
     // 5. Run tests with appropriate runner (release mode for faster execution)
     let status = if use_nextest {
-        eprintln!("Running smoketests with cargo nextest (release)...\n");
+        if server.is_some() {
+            eprintln!("Running smoketests against remote server with cargo nextest (release)...\n");
+        } else {
+            eprintln!("Running smoketests with cargo nextest (release)...\n");
+        }
         let mut cmd = Command::new("cargo");
         cmd.args([
             "nextest",
@@ -153,13 +169,27 @@ fn run_smoketest(args: Vec<String>) -> Result<()> {
             cmd.args(["-j", DEFAULT_PARALLELISM]);
         }
 
+        // Set remote server environment variable if specified
+        if let Some(ref server_url) = server {
+            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
+        }
+
         cmd.args(&args).status()?
     } else {
-        eprintln!("Running smoketests with cargo test (release)...\n");
-        Command::new("cargo")
-            .args(["test", "--release", "-p", "spacetimedb-smoketests"])
-            .args(&args)
-            .status()?
+        if server.is_some() {
+            eprintln!("Running smoketests against remote server with cargo test (release)...\n");
+        } else {
+            eprintln!("Running smoketests with cargo test (release)...\n");
+        }
+        let mut cmd = Command::new("cargo");
+        cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
+
+        // Set remote server environment variable if specified
+        if let Some(ref server_url) = server {
+            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
+        }
+
+        cmd.args(&args).status()?
     };
 
     ensure!(status.success(), "Tests failed");

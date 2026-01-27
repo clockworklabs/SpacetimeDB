@@ -101,8 +101,6 @@ fn build_registry() -> HashMap<String, PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_module_name_derivation() {
         // Test the naming convention

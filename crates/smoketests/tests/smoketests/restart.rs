@@ -1,13 +1,14 @@
 //! Tests for server restart behavior.
 //! Translated from smoketests/tests/zz_docker.py
 
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{skip_if_remote, Smoketest};
 
 /// Test data persistence across server restart.
 ///
 /// This tests to see if SpacetimeDB can be queried after a restart.
 #[test]
 fn test_restart_module() {
+    skip_if_remote!();
     let mut test = Smoketest::builder().precompiled_module("restart-person").build();
 
     test.call("add", &["Robert"]).unwrap();
@@ -51,6 +52,7 @@ fn test_restart_module() {
 /// Test SQL queries work after restart.
 #[test]
 fn test_restart_sql() {
+    skip_if_remote!();
     let mut test = Smoketest::builder().precompiled_module("restart-person").build();
 
     test.call("add", &["Robert"]).unwrap();
@@ -81,6 +83,7 @@ fn test_restart_sql() {
 /// Test clients are auto-disconnected on restart.
 #[test]
 fn test_restart_auto_disconnect() {
+    skip_if_remote!();
     let mut test = Smoketest::builder()
         .precompiled_module("restart-connected-client")
         .build();
@@ -132,6 +135,7 @@ const JOIN_QUERY: &str = "select t1.* from t1 join t2 on t1.id = t2.id where t2.
 /// to re-use IDs.
 #[test]
 fn test_add_remove_index_after_restart() {
+    skip_if_remote!();
     let mut test = Smoketest::builder()
         .precompiled_module("add-remove-index")
         .autopublish(false)
