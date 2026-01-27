@@ -1,3 +1,4 @@
+use super::super::fast;
 use super::hooks::{get_hook_function, set_hook_slots};
 use super::{AbiVersion, ModuleHookKey};
 use crate::database_logger::{LogLevel, Record};
@@ -5,17 +6,16 @@ use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::v8::de::{deserialize_js, scratch_buf};
 use crate::host::v8::error::{
-    CodeError, CodeMessageError, ErrorOrException, ExcResult, ExceptionThrown, RangeError, TypeError,
+    CodeError, CodeMessageError, ErrorOrException, ExcResult, ExceptionThrown, IntoException, RangeError, TypeError,
 };
-use crate::host::v8::from_value::cast;
+use crate::host::v8::from_value::{cast, cast_noscope};
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
 use crate::host::v8::syscall::hooks::HookFunctions;
 use crate::host::v8::to_value::ToValue;
 use crate::host::v8::util::{make_dataview, make_uint8array};
 use crate::host::v8::{
-    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, JsInstanceEnv, JsStackTrace,
-    TerminationError, Throwable,
+    call_free_fun, env_on_isolate, exception_already_thrown, JsInstanceEnv, JsStackTrace, TerminationError, Throwable,
 };
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{
@@ -29,20 +29,23 @@ use core::ptr::NonNull;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::u256;
+use v8::fast_api::{CFunction, FastApiCallbackOptions};
 use v8::{
-    callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
+    callback_scope, ConstructorBehavior, FunctionCallbackArguments, FunctionTemplate, Isolate, Local, Module, Object,
     PinCallbackScope, PinScope, Value,
 };
 
 macro_rules! create_synthetic_module {
-    ($scope:expr, $module_name:expr $(, ($wrapper:ident, $abi_call:expr, $fun:ident))* $(,)?) => {{
+    ($scope:expr, $module_name:expr $(, ($wrapper:ident, $abi_call:expr, $fun:ident $(, $fast:expr)?))* $(,)?) => {{
         let export_names = &[$(str_from_ident!($fun).string($scope)),*];
         let eval_steps = |context, module| {
             callback_scope!(unsafe scope, context);
             $(
+                let _fast: [CFunction; 0] = [];
+                $(let _fast = $fast;)?
                 register_module_fun(scope, &module, str_from_ident!($fun), |s, a, rv| {
                     $wrapper($abi_call, s, a, rv, $fun)
-                })?;
+                }, &_fast)?;
             )*
 
             Some(v8::undefined(scope).into())
@@ -81,10 +84,20 @@ pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
             AbiCall::DatastoreIndexScanRangeBsatn,
             datastore_index_scan_range_bsatn
         ),
-        (with_sys_result, AbiCall::RowIterBsatnAdvance, row_iter_bsatn_advance),
+        (
+            with_sys_result,
+            AbiCall::RowIterBsatnAdvance,
+            row_iter_bsatn_advance,
+            [fast::into_cfunc(row_iter_bsatn_advance_fast)]
+        ),
         (with_sys_result, AbiCall::RowIterBsatnClose, row_iter_bsatn_close),
         (with_sys_result, AbiCall::DatastoreInsertBsatn, datastore_insert_bsatn),
-        (with_sys_result, AbiCall::DatastoreUpdateBsatn, datastore_update_bsatn),
+        (
+            with_sys_result,
+            AbiCall::DatastoreUpdateBsatn,
+            datastore_update_bsatn,
+            [fast::into_cfunc(datastore_update_bsatn_fast)]
+        ),
         (
             with_sys_result,
             AbiCall::DatastoreDeleteByIndexScanRangeBsatn,
@@ -124,7 +137,8 @@ pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         (
             with_sys_result,
             AbiCall::DatastoreIndexScanPointBsatn,
-            datastore_index_scan_point_bsatn
+            datastore_index_scan_point_bsatn,
+            [fast::into_cfunc(datastore_index_scan_point_bsatn_fast)]
         ),
         (
             with_sys_result,
@@ -141,13 +155,19 @@ fn register_module_fun(
     module: &Local<'_, Module>,
     name: &'static StringConst,
     body: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>),
+    fast: &[CFunction],
 ) -> Option<bool> {
     // Convert the name.
     let name = name.string(scope);
 
     // Convert the function.
-    let fun = Function::builder(adapt_fun(body)).constructor_behavior(ConstructorBehavior::Throw);
-    let fun = fun.build(scope)?.into();
+    let fun = FunctionTemplate::builder(adapt_fun(body)).constructor_behavior(ConstructorBehavior::Throw);
+    let fun = if fast.is_empty() {
+        fun.build(scope)
+    } else {
+        fun.build_fast(scope, fast)
+    };
+    let fun = fun.get_function(scope)?.into();
 
     // Set the export on the module.
     module.set_synthetic_module_export(scope, name, fun)
@@ -965,14 +985,6 @@ fn row_iter_bsatn_advance<'scope>(
 
     let next_buf_len = iter.as_slice().first().map(|v| v.len());
 
-    if written == 0 {
-        if let Some(min_len) = next_buf_len {
-            // Nothing was written and the iterator is not exhausted.
-            let min_len = min_len.try_into().unwrap();
-            let exc = BufferTooSmall::from_requirement(scope, min_len)?;
-            return Err(exc.throw(scope).into());
-        }
-    }
     let done = next_buf_len.is_none();
     if done {
         // The iterator is exhausted, destroy it, and tell the caller.
@@ -981,6 +993,94 @@ fn row_iter_bsatn_advance<'scope>(
     let written: i32 = written.try_into().unwrap();
     let out = if done { -written } else { written };
     Ok(out)
+}
+
+trait IntoFastException<M = ()> {
+    fn throw_exception(self, scope: &mut PinScope<'_, '_>, abi_call: AbiCall) -> ExceptionThrown;
+}
+
+impl IntoFastException for SysCallError {
+    fn throw_exception(self, scope: &mut PinScope<'_, '_>, abi_call: AbiCall) -> ExceptionThrown {
+        handle_sys_call_error(abi_call, scope, self)
+    }
+}
+
+impl IntoFastException for NodesError {
+    fn throw_exception(self, scope: &mut PinScope<'_, '_>, abi_call: AbiCall) -> ExceptionThrown {
+        SysCallError::from(self).throw_exception(scope, abi_call)
+    }
+}
+
+impl<T: for<'scope> IntoException<'scope>> IntoFastException for T {
+    fn throw_exception(self, scope: &mut PinScope<'_, '_>, _abi_call: AbiCall) -> ExceptionThrown {
+        T::into_exception(self, scope).throw(scope)
+    }
+}
+
+impl<F: FnOnce(&PinScope<'_, '_>) -> T, T: IntoFastException> IntoFastException<fn()> for F {
+    fn throw_exception(self, scope: &mut PinScope<'_, '_>, abi_call: AbiCall) -> ExceptionThrown {
+        self(scope).throw_exception(scope, abi_call)
+    }
+}
+
+fn fast_throw<E, M>(options: &mut FastApiCallbackOptions<'_>, abi_call: AbiCall, err: E) -> ExceptionThrown
+where
+    E: IntoFastException<M>,
+{
+    v8::callback_scope!(unsafe scope, &*options);
+    err.throw_exception(scope, abi_call)
+}
+
+macro_rules! fasttry {
+    ($options:expr, $abi_call:expr, $res:expr) => {
+        match $res {
+            Ok(x) => x,
+            Err(e) => {
+                let ExceptionThrown { .. } = fast_throw($options, $abi_call, e);
+                return Default::default();
+            }
+        }
+    };
+}
+use fasttry;
+
+fn row_iter_bsatn_advance_fast(
+    _recv: Local<'_, v8::Value>,
+    row_iter_idx: u32,
+    array_buffer: Local<'_, v8::Value>,
+    options: &mut FastApiCallbackOptions<'_>,
+) -> i32 {
+    let row_iter_idx = RowIterIdx(row_iter_idx);
+
+    macro_rules! fasttry {
+        ($res:expr) => {
+            self::fasttry!(options, AbiCall::RowIterBsatnAdvance, $res)
+        };
+    }
+
+    // Retrieve the iterator by `row_iter_idx`, or error.
+    let env = fasttry!(get_env(unsafe { options.isolate_unchecked_mut() }));
+    let iter = fasttry!(env.iters.get_mut(row_iter_idx).ok_or(no_such_iter));
+    let array_buffer = fasttry!(cast_noscope!(array_buffer, v8::ArrayBuffer, "`ArrayBuffer`"));
+
+    // Fill the buffer as much as possible.
+    let written = with_arraybuffer_mut(array_buffer, |buf| {
+        InstanceEnv::fill_buffer_from_iter(iter, buf, &mut env.chunk_pool)
+    });
+
+    let next_buf_len = iter.as_slice().first().map(|v| v.len());
+
+    let done = next_buf_len.is_none();
+    if done {
+        // The iterator is exhausted, destroy it, and tell the caller.
+        env.iters.take(row_iter_idx);
+    }
+    let written: i32 = written.try_into().unwrap();
+    if done {
+        -written
+    } else {
+        written
+    }
 }
 
 /// Module ABI that destroys the iterator registered under `iter`.
@@ -1215,6 +1315,35 @@ fn datastore_update_bsatn<'scope>(
     })?;
 
     Ok(row_len as u32)
+}
+
+fn datastore_update_bsatn_fast(
+    _recv: Local<'_, Value>,
+    table_id: u32,
+    index_id: u32,
+    row_arr: Local<'_, Value>,
+    row_len: u32,
+    options: &mut FastApiCallbackOptions<'_>,
+) -> u32 {
+    macro_rules! fasttry {
+        ($res:expr) => {
+            self::fasttry!(options, AbiCall::DatastoreUpdateBsatn, $res)
+        };
+    }
+
+    let table_id = TableId(table_id);
+    let index_id = IndexId(index_id);
+    let row_arr = fasttry!(cast_noscope!(row_arr, v8::ArrayBuffer, "buffer"));
+    let row_len = row_len as usize;
+
+    // Insert the row into the DB and write back the generated column values.
+    with_arraybuffer_mut(row_arr, |buf| {
+        let buf = fasttry!(buf.get_mut(..row_len).ok_or(OOB));
+        let env = fasttry!(get_env(unsafe { options.isolate_unchecked_mut() }));
+        // Insert the row into the DB and write back the generated column values.
+        let row_len = fasttry!(env.instance_env.update(table_id, index_id, buf));
+        row_len as u32
+    })
 }
 
 /// Module ABI that deletes all rows found in the index identified by `index_id`,
@@ -1695,6 +1824,39 @@ fn datastore_index_scan_point_bsatn(
 
         // Insert the encoded + concatenated rows into a new buffer and return its id.
         Ok(env.iters.insert(chunks.into_iter()).0)
+    })
+}
+
+fn datastore_index_scan_point_bsatn_fast(
+    _recv: Local<'_, Value>,
+    index_id: u32,
+    buf: Local<'_, v8::Value>,
+    point_len: u32,
+    options: &mut FastApiCallbackOptions<'_>,
+) -> u32 {
+    macro_rules! fasttry {
+        ($res:expr) => {
+            self::fasttry!(options, AbiCall::DatastoreIndexScanPointBsatn, $res)
+        };
+    }
+
+    let index_id = IndexId(index_id);
+    let buf = fasttry!(cast_noscope!(buf, v8::ArrayBuffer, "`ArrayBuffer`"));
+    let point_len = point_len as usize;
+
+    with_arraybuffer(buf, |buf| {
+        let point = fasttry!(buf.get(..point_len).ok_or(OOB));
+
+        let env = fasttry!(get_env(unsafe { options.isolate_unchecked_mut() }));
+
+        // Find the relevant rows.
+        let chunks =
+            fasttry!(env
+                .instance_env
+                .datastore_index_scan_point_bsatn_chunks(&mut env.chunk_pool, index_id, point));
+
+        // Insert the encoded + concatenated rows into a new buffer and return its id.
+        env.iters.insert(chunks.into_iter()).0
     })
 }
 
