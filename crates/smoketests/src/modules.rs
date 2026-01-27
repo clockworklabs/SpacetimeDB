@@ -59,7 +59,11 @@ pub fn precompiled_modules_available() -> bool {
 
 /// Returns the target directory where pre-compiled WASM modules are stored.
 fn modules_target_dir() -> PathBuf {
-    workspace_root().join("crates/smoketests/modules/target/wasm32-unknown-unknown/release")
+    // Respect CARGO_TARGET_DIR if set (e.g., in CI), otherwise use the modules workspace's target dir
+    let base = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace_root().join("crates/smoketests/modules/target"));
+    base.join("wasm32-unknown-unknown/release")
 }
 
 /// Builds the registry by scanning the target directory for WASM files.
