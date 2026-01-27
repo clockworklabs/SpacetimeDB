@@ -8,7 +8,7 @@ using namespace SpacetimeDb;
 
 
 // =============================================================================
-// C++ SDK Test Module - Full Equivalence with Rust and C# SDKs
+// C++ bindings Test Module - Full Equivalence with Rust and C# SDKs
 // =============================================================================
 //
 // This module provides complete equivalence with the Rust and C# SDK test modules:
@@ -23,7 +23,7 @@ using namespace SpacetimeDb;
 // ENUMS - Full Equivalence with C# and Rust
 // =============================================================================
 
-// SimpleEnum - C++ SDK supports basic C++ enums with U8 value!
+// SimpleEnum - C++ bindings supports basic C++ enums with U8 value!
 // Using unified SPACETIMEDB_ENUM with simple syntax (auto-detects non-parenthesized arguments)
 SPACETIMEDB_ENUM(SimpleEnum, Zero, One, Two)
 
@@ -654,7 +654,7 @@ struct IndexedTable2 {
 };
 SPACETIMEDB_STRUCT(IndexedTable2, player_id, player_snazz)
 SPACETIMEDB_TABLE(IndexedTable2, indexed_table_2, Private)  // Remove constraint from table macro
-FIELD_NamedMultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
+// FIELD_NamedMultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
 
 struct BTreeU32 {
     uint32_t n;

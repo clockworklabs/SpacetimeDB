@@ -6,7 +6,7 @@
 using namespace SpacetimeDb;
 
 // =============================================================================
-// C++ SDK View Test Module - Mirrors Rust sdk-test-view
+// C++ bindings View Test Module - Mirrors Rust sdk-test-view
 // =============================================================================
 //
 // This module provides a complete C++ implementation of the Rust sdk-test-view

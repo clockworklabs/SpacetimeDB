@@ -1,8 +1,8 @@
-# SpacetimeDB C++ SDK Architecture
+# SpacetimeDB C++ Bindings Architecture
 
 ## Overview
 
-The SpacetimeDB C++ SDK provides a sophisticated compile-time/runtime hybrid system for building database modules in C++ that compile to WebAssembly (WASM) and run inside the SpacetimeDB database. This document describes the architectural components, type registration flow, and key differences from other language SDKs.
+The SpacetimeDB C++ bindings provides a sophisticated compile-time/runtime hybrid system for building database modules in C++ that compile to WebAssembly (WASM) and run inside the SpacetimeDB database. This document describes the architectural components, type registration flow, and key differences from other language SDKs.
 
 ## Core Architecture Principles
 
@@ -40,7 +40,7 @@ __preinit__99_ - Type validation and error detection (last)
 
 ### Overview
 
-The C++ SDK uses `Outcome<T>` for type-safe, exception-free error handling that matches Rust's `Result<T, E>` pattern (where `E` is always `std::string`).
+The C++ bindings uses `Outcome<T>` for type-safe, exception-free error handling that matches Rust's `Result<T, E>` pattern (where `E` is always `std::string`).
 
 ### Type Aliases and Core Types
 
@@ -235,7 +235,7 @@ void __preinit__21_field_constraint_users_id_line_43() {
 ```
 
 **Auto-Increment Integration Registration** (__preinit__19_):
-Auto-increment fields require special handling during `insert()` operations. When SpacetimeDB processes an auto-increment insert, it returns only the generated column values (not the full row) in BSATN format. The C++ SDK uses a registry-based integration system to properly handle these generated values and update the user's row object.
+Auto-increment fields require special handling during `insert()` operations. When SpacetimeDB processes an auto-increment insert, it returns only the generated column values (not the full row) in BSATN format. The C++ bindings uses a registry-based integration system to properly handle these generated values and update the user's row object.
 
 ```cpp
 FIELD_PrimaryKeyAutoInc(users, id);
@@ -403,7 +403,7 @@ void __preinit__99_validate_types() {
 ## Namespace Qualification System
 
 ### Overview
-The C++ SDK provides a unique compile-time namespace qualification system for enum types, allowing better organization in generated client code without affecting server-side C++ usage.
+The C++ bindings provides a unique compile-time namespace qualification system for enum types, allowing better organization in generated client code without affecting server-side C++ usage.
 
 ### Architecture Components
 
@@ -498,19 +498,19 @@ When an enum with namespace qualification is registered:
 
 ### 1. Type Registration Approach
 
-**Rust SDK**:
+**Rust bindings**:
 - Derive macros automatically generate type registration code
 - Compile-time code generation using procedural macros
 - Direct integration with Rust's type system
 - Option types automatically inlined by macro system
 
-**C# SDK**:
+**C# bindings**:
 - Reflection-based runtime type discovery
 - Attribute-based configuration
 - Dynamic type registration during module initialization
 - .NET type system integration
 
-**C++ SDK**:
+**C++ bindings**:
 - Template-based compile-time validation with runtime registration
 - Macro-generated __preinit__ functions for ordered initialization
 - Manual type registration via SPACETIMEDB_STRUCT macros
@@ -518,17 +518,17 @@ When an enum with namespace qualification is registered:
 
 ### 2. Constraint Validation
 
-**Rust SDK**:
+**Rust bindings**:
 - Procedural macros generate compile-time validation
 - Type system automatically enforces valid constraints
 - No runtime constraint checking needed
 
-**C# SDK**:
+**C# bindings**:
 - Runtime validation using reflection
 - Attributes specify constraints, validated during registration
 - Dynamic error reporting
 
-**C++ SDK**:
+**C++ bindings**:
 - **Three-layer validation system**:
   1. **Compile-time**: C++20 concepts and static assertions
   2. **Registration-time**: Multiple primary key detection
@@ -537,18 +537,18 @@ When an enum with namespace qualification is registered:
 
 ### 3. Error Handling Strategy
 
-**Rust SDK**:
+**Rust bindings**:
 - Result<T, E> for operation errors with rich error types
 - Compile-time errors prevent building invalid modules
 - Type system prevents most runtime errors
 - Standard Rust error messages
 
-**C# SDK**:
+**C# bindings**:
 - Runtime exceptions with detailed error messages
 - Graceful error handling with exception propagation
 - .NET debugging tools integration
 
-**C++ SDK** - Two-Tier System:
+**C++ bindings** - Two-Tier System:
 1. **Reducer errors** (ReducerResult / Outcome<void>):
    - Return `Ok()` on success (transaction committed)
    - Return `Err(message)` on failure (transaction rolled back)
@@ -569,17 +569,17 @@ When an enum with namespace qualification is registered:
 
 ### 4. Type System Philosophy
 
-**Rust SDK**: 
+**Rust bindings**: 
 - "If it compiles, it works" - maximum compile-time validation
 - Leverages Rust's ownership and type system
 - Minimal runtime overhead
 
-**C# SDK**:
+**C# bindings**:
 - "Flexibility with safety" - runtime validation with rich error messages
 - Leverages .NET reflection and attributes
 - Dynamic type discovery
 
-**C++ SDK**:
+**C++ bindings**:
 - **"Validate early, validate often"** - multi-layer validation system
 - Combines C++20 compile-time features with runtime checks
 - Nominal type system with explicit registration

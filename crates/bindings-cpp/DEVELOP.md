@@ -1,6 +1,6 @@
-# C++ SDK Development Roadmap: Leveraging Modern C++ Standards
+# C++ Bindings Development Roadmap: Leveraging Modern C++ Standards
 
-This document explores how upgrading to C++23 and C++26 could fundamentally transform the SpacetimeDB C++ SDK, moving from runtime registration to compile-time type system integration and eliminating most macro usage.
+This document explores how upgrading to C++23 and C++26 could fundamentally transform the SpacetimeDB C++ bindings, moving from runtime registration to compile-time type system integration and eliminating most macro usage.
 
 ## Current Architecture: Why So Many Macros?
 
@@ -642,7 +642,7 @@ constexpr void serialize(Writer& w, const T& obj) {
 
 ## Conclusion
 
-C++26's static reflection will enable a significant paradigm shift from runtime registration to compile-time module generation. The SpacetimeDB C++ SDK could achieve **zero-overhead abstractions** with no macros and no runtime registration - just pure, standard C++.
+C++26's static reflection will enable a significant paradigm shift from runtime registration to compile-time module generation. The SpacetimeDB C++ bindings could achieve **zero-overhead abstractions** with no macros and no runtime registration - just pure, standard C++.
 
 The journey through C++23 provides valuable incremental improvements:
 - Cleaner APIs with `deducing this`
@@ -650,7 +650,7 @@ The journey through C++23 provides valuable incremental improvements:
 - Hybrid validation with `if consteval`
 - More efficient code generation
 
-C++26's reflection capabilities will allow us to achieve compile-time type safety and module generation with natural C++ syntax, making the C++ SDK substantially more ergonomic and performant than currently possible.
+C++26's reflection capabilities will allow us to achieve compile-time type safety and module generation with natural C++ syntax, making the C++ bindings substantially more ergonomic and performant than currently possible.
 
 **Important caveats:**
 - C++26 reflection is still in proposal stage; final syntax and capabilities may differ

@@ -149,7 +149,7 @@ struct Point {
 };
 SPACETIMEDB_STRUCT(Point, x, y)
 SPACETIMEDB_TABLE(Point, points, Private)
-FIELD_NamedMultiColumnIndex(points, multi_column_index, x, y)
+// FIELD_NamedMultiColumnIndex(points, multi_column_index, x, y)
 
 // PkMultiIdentity - table with multiple constraints
 struct PkMultiIdentity {
@@ -696,9 +696,9 @@ SPACETIMEDB_PROCEDURE(std::string, get_my_schema_via_http, ProcedureContext ctx)
     Identity module_identity = ctx.identity();
     std::string url = "http://localhost:3000/v1/database/" + module_identity.to_string() + "/schema?version=9";
     
-    auto result = ctx.http.Get(url);
+    auto result = ctx.http.get(url);
     if (result.is_ok()) {
-        return result.value().body.ToStringUtf8Lossy();
+        return result.value().body.to_string_utf8_lossy();
     } else {
         return result.error();
     }

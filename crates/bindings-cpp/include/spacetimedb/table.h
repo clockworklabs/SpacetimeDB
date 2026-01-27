@@ -3,7 +3,7 @@
 
 /**
  * @file table.h
- * @brief Core table operations for SpacetimeDB C++ SDK
+ * @brief Core table operations for SpacetimeDB C++ bindings
  * 
  * Provides type-safe Table<T> class and TableIterator<T> for CRUD operations
  * on SpacetimeDB tables with efficient batch iteration and STL compatibility.

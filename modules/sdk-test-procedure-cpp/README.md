@@ -1,6 +1,6 @@
 # SDK Test Procedure C++
 
-This module tests the procedure functionality in the SpacetimeDB C++ SDK.
+This module tests the procedure functionality in the SpacetimeDB C++ bindings.
 
 ## Tests Included
 

@@ -178,8 +178,8 @@ jobs:
           apt-get install -y cmake
           git clone https://github.com/emscripten-core/emsdk.git /opt/emsdk
           cd /opt/emsdk
-          ./emsdk install latest
-          ./emsdk activate latest
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
 
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript

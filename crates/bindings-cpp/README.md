@@ -4,7 +4,7 @@ The SpacetimeDB C++ Module Library provides a modern C++20 API for building Spac
 
 ## Current State
 
-This library provides a production-ready C++ SDK for SpacetimeDB with complete type system support:
+This library provides a production-ready C++ bindings for SpacetimeDB with complete type system support:
 
 ### ✅ Features
 - Module compilation and publishing to SpacetimeDB

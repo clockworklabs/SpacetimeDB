@@ -656,12 +656,13 @@ public:
     } \
     SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(typename std::remove_cv_t<decltype(table_name)>::type, field_name)
 
-#define FIELD_NamedMultiColumnIndex(table_name, index_name, field1, field2) \
-    extern "C" __attribute__((export_name("__preinit__21_field_multi_index_" #table_name "_" #index_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
-    void SPACETIMEDB_PASTE(__preinit__21_field_multi_index_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(index_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
-        SpacetimeDb::Internal::getV9Builder().AddMultiColumnIndex<typename std::remove_cv_t<decltype(table_name)>::type>( \
-            #table_name, #index_name, {#field1, #field2}); \
-    }
+// Multi-column index registration macro (currently disabled)
+// #define FIELD_NamedMultiColumnIndex(table_name, index_name, field1, field2) \
+//     extern "C" __attribute__((export_name("__preinit__21_field_multi_index_" #table_name "_" #index_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
+//     void SPACETIMEDB_PASTE(__preinit__21_field_multi_index_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(index_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
+//         SpacetimeDb::Internal::getV9Builder().AddMultiColumnIndex<typename std::remove_cv_t<decltype(table_name)>::type>( \
+//             #table_name, #index_name, {#field1, #field2}); \
+//    }
 
 #define FIELD_Default(table_name, field_name, default_value) \
     extern "C" __attribute__((export_name("__preinit__21_field_default_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \

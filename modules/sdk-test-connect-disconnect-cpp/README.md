@@ -4,7 +4,7 @@ C++ implementation of the SpacetimeDB view test module. This mirrors the Rust `s
 
 ## Overview
 
-This module tests the C++ SDK's view functionality including:
+This module tests the C++ bindings's view functionality including:
 
 - **ViewContext views** - Views with caller identity
 - **AnonymousViewContext views** - Views without caller identity  
