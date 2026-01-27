@@ -46,7 +46,7 @@ fn create_character(ctx: &ReducerContext, class: Class, nickname: String) {
         "Creating new level 1 {class:?} named {nickname}",
     );
     ctx.db.character().insert(Character {
-        player_id: ctx.sender,
+        player_id: ctx.sender(),
         nickname,
         level: 1,
         class,
@@ -57,7 +57,7 @@ fn find_character_for_player(ctx: &ReducerContext) -> Character {
     ctx.db
         .character()
         .player_id()
-        .find(ctx.sender)
+        .find(ctx.sender())
         .expect("Player has not created a character")
 }
 
@@ -154,7 +154,7 @@ fn choose_alliance(ctx: &ReducerContext, alliance: Alliance) {
         "Setting {}'s alliance to {:?} for player {}",
         character.nickname,
         alliance,
-        ctx.sender,
+        ctx.sender(),
     );
     update_character(
         ctx,
@@ -194,18 +194,18 @@ When a new player creates a character, we'll make rows in both tables for them. 
 fn create_character(ctx: &ReducerContext, class: Class, nickname: String) {
     log::info!(
         "Creating new level 1 {class:?} named {nickname} for player {}",
-        ctx.sender,
+        ctx.sender(),
     );
 
     ctx.db.character().insert(Character {
-        player_id: ctx.sender,
+        player_id: ctx.sender(),
         nickname: nickname.clone(),
         level: 1,
         class,
     });
 
     ctx.db.character_v2().insert(CharacterV2 {
-        player_id: ctx.sender,
+        player_id: ctx.sender(),
         nickname,
         level: 1,
         class,
@@ -218,7 +218,7 @@ We'll update our helper functions so that they operate on `character_v2` rows. I
 
 ```rust
 fn find_character_for_player(ctx: &ReducerContext) -> CharacterV2 {
-    if let Some(character) = ctx.db.character_v2().player_id().find(ctx.sender) {
+    if let Some(character) = ctx.db.character_v2().player_id().find(ctx.sender()) {
         // Already migrated; just return the new player.
         return character;
     }
@@ -228,7 +228,7 @@ fn find_character_for_player(ctx: &ReducerContext) -> CharacterV2 {
         .db
         .character()
         .player_id()
-        .find(ctx.sender)
+        .find(ctx.sender())
         .expect("Player has not created a character");
 
     ctx.db.character_v2().insert(CharacterV2 {

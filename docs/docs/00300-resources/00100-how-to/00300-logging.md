@@ -102,7 +102,7 @@ pub fn process_data(ctx: &ReducerContext, value: u32) -> Result<(), String> {
         return Err("Value cannot be zero".to_string());
     }
     
-    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender);
+    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender());
     
     Ok(())
 }
@@ -220,7 +220,7 @@ use spacetimedb::log;
 pub fn transfer_credits(ctx: &ReducerContext, to_user: u64, amount: u32) -> Result<(), String> {
     log::info!(
         "Credit transfer: from={:?}, to={}, amount={}", 
-        ctx.sender, 
+        ctx.sender(), 
         to_user, 
         amount
     );

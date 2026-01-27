@@ -131,7 +131,7 @@ public static void OnConnect(ReducerContext ctx)
 ```rust
 #[reducer(client_connected)]
 pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client connected: {}", ctx.sender);
+    log::info!("Client connected: {}", ctx.sender());
     
     // ctx.connection_id is guaranteed to be Some(...)
     let conn_id = ctx.connection_id.unwrap();
@@ -139,7 +139,7 @@ pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
     // Initialize client session
     ctx.db.sessions().try_insert(Session {
         connection_id: conn_id,
-        identity: ctx.sender,
+        identity: ctx.sender(),
         connected_at: ctx.timestamp,
     })?;
     
@@ -198,7 +198,7 @@ public static void OnDisconnect(ReducerContext ctx)
 ```rust
 #[reducer(client_disconnected)]
 pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client disconnected: {}", ctx.sender);
+    log::info!("Client disconnected: {}", ctx.sender());
     
     // ctx.connection_id is guaranteed to be Some(...)
     let conn_id = ctx.connection_id.unwrap();
@@ -230,6 +230,6 @@ Reducers can be triggered at specific times using schedule tables. See [Schedule
 
 :::info Scheduled Reducer Context
 Scheduled reducer calls originate from SpacetimeDB itself, not from a client. Therefore:
-- `ctx.sender` will be the module's own identity
+- `ctx.sender()` will be the module's own identity
 - `ctx.connection_id` will be `None`/`null`/`undefined`
 :::

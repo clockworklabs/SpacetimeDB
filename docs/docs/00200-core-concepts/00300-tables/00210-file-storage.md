@@ -263,7 +263,7 @@ pub fn register_document(
 ) {
     ctx.db.document().insert(Document {
         id: 0,  // auto-increment
-        owner_id: ctx.sender,
+        owner_id: ctx.sender(),
         filename,
         mime_type,
         size_bytes,

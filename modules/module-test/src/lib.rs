@@ -206,7 +206,7 @@ impl Foo<'_> {
 
 #[spacetimedb::view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ fn log_module_identity(ctx: &ReducerContext) {
 #[spacetimedb::reducer]
 pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
-    log::info!("sender: {:?}", ctx.sender);
+    log::info!("sender: {:?}", ctx.sender());
     log::info!("timestamp: {:?}", ctx.timestamp);
     log::info!("bar: {:?}", arg2.foo);
 
@@ -468,7 +468,7 @@ fn test_btree_index_args(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
-    let caller = ctx.sender;
+    let caller = ctx.sender();
     let owner = ctx.identity();
     if caller != owner {
         panic!("Caller {caller} is not the owner {owner}");

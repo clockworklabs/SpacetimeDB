@@ -451,7 +451,7 @@ A view can be written in Rust like so:
 ```rust
 #[spacetimedb::view(name = my_player, public)]
 fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 ```
 
