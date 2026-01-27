@@ -1,12 +1,11 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
+import { createApp, h } from 'vue';
+import App from './App.vue';
 import { Identity } from 'spacetimedb';
-import { SpacetimeDBProvider } from 'spacetimedb/react';
+import { SpacetimeDBProvider } from 'spacetimedb/vue';
 import { DbConnection, ErrorContext } from './module_bindings/index.ts';
 
 const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
-const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'basic-react';
+const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'vue-ts';
 
 const onConnect = (_conn: DbConnection, identity: Identity, token: string) => {
   localStorage.setItem('auth_token', token);
@@ -32,10 +31,6 @@ const connectionBuilder = DbConnection.builder()
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-      <App />
-    </SpacetimeDBProvider>
-  </StrictMode>
-);
+createApp({
+  render: () => h(SpacetimeDBProvider, { connectionBuilder }, () => h(App)),
+}).mount('#app');
