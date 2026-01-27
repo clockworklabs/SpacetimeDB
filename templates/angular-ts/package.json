@@ -1,0 +1,50 @@
+{
+  "name": "angular-ts",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local angular-ts -c",
+    "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud angular-ts"
+  },
+  "prettier": {
+    "printWidth": 100,
+    "singleQuote": true,
+    "overrides": [
+      {
+        "files": "*.html",
+        "options": {
+          "parser": "angular"
+        }
+      }
+    ]
+  },
+  "private": true,
+  "packageManager": "pnpm@9.7.0",
+  "dependencies": {
+    "@angular/common": "21.1.1",
+    "@angular/compiler": "21.1.1",
+    "@angular/core": "21.1.1",
+    "@angular/forms": "21.1.1",
+    "@angular/platform-browser": "21.1.1",
+    "@angular/router": "21.1.1",
+    "rxjs": "~7.8.0",
+    "spacetimedb": "file:../../crates/bindings-typescript",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.1.1",
+    "@angular/cli": "^21.1.1",
+    "@angular/compiler-cli": "^21.1.0",
+    "@tailwindcss/postcss": "^4.1.12",
+    "jsdom": "^27.1.0",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^4.1.12",
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.8"
+  }
+}
