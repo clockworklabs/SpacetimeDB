@@ -79,11 +79,6 @@ def add_source(doc: dict, *, key: str, path: str) -> None:
     sources = cfg.setdefault("packageSources", {})
     source_entries = sources.setdefault("add", [])
 
-    for source in source_entries:
-        if source.get("@key") == key:
-            source["@value"] = str(path)
-            return
-
     source_entries.append({"@key": key, "@value": str(path)})
 
 def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
