@@ -19,8 +19,9 @@ fn test_confirmed_reads_receive_updates() {
     // Insert via reducer
     test.call("add", &["Horst"]).unwrap();
 
-    // Insert via SQL
-    test.sql("INSERT INTO person (name) VALUES ('Egon')").unwrap();
+    // Insert via SQL (use sql_confirmed to ensure durability before continuing,
+    // since the confirmed subscription won't send updates until durable)
+    test.sql_confirmed("INSERT INTO person (name) VALUES ('Egon')").unwrap();
 
     // Collect updates
     let events = sub.collect().unwrap();
