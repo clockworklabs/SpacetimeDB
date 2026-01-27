@@ -171,8 +171,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected, ReducerContext ctx) {
 Build the module using the provided CMake configuration:
 
 ```bash
-emcmake cmake -B build .
-cmake --build build
+spacetime build -p ./spacetimedb
 ```
 
 This compiles your C++ code to WebAssembly, producing `build/lib.wasm`.
@@ -278,7 +277,7 @@ SPACETIMEDB_REDUCER(get_user_messages, ReducerContext ctx, Identity user_identit
 
 **Build errors**: Ensure you have the latest Emscripten SDK and are using `emcmake cmake`
 
-**Module not found**: Check that SpacetimeDB is running with `spacetime server status`
+**Module not found**: Check that SpacetimeDB is running
 
 **Type errors**: Remember that C++ types need exact matches - use `uint32_t`, not `int`
 
