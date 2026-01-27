@@ -124,10 +124,12 @@ jobs:
         runner: [spacetimedb-new-runner, windows-latest]
         include:
           - runner: spacetimedb-new-runner
+            smoketest_args: --docker
             container:
               image: localhost:5000/spacetimedb-ci:latest
               options: --privileged
           - runner: windows-latest
+            smoketest_args: --no-build-cli
             container: null
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
@@ -176,56 +178,52 @@ jobs:
         with:
           run_install: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r smoketests/requirements.txt
-
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
 
-      - name: Update dotnet workloads
+      - name: Build crates
+        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+
+      - name: Start Docker daemon
+        if: runner.os == 'Linux'
+        run: /usr/local/bin/start-docker.sh
+
+      - name: Build and start database (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
+          rm .dockerignore
+          docker compose -f .github/docker-compose.yml up -d
+
+      - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
           # Fail properly if any individual command fails
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
+          Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update
 
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
-          fi
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+        if: runner.os == 'Windows'
+
+      - name: Install python deps
+        run: python -m pip install -r smoketests/requirements.txt
 
       - name: Run Python smoketests
-        shell: bash
-        run: |
-          if command -v python3 &> /dev/null; then
-            python3 -m smoketests
-          else
-            python -m smoketests
-          fi
+        # Note: clear_database and replication only work in private
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
+
+      - name: Stop containers (Linux)
+        if: always() && runner.os == 'Linux'
+        run: docker compose -f .github/docker-compose.yml down
 
   test:
     needs: [lints]
