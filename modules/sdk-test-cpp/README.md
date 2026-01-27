@@ -11,8 +11,8 @@ Used to validate C++ bindings functionality and ensure parity with Rust/C# imple
 
 ```bash
 cd modules/sdk-test-cpp
-emcmake cmake -B build .
-cmake --build build
+
+spacetime build -p .
 ```
 
 The built WASM module will be at `build/lib.wasm`.

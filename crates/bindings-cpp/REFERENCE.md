@@ -59,9 +59,8 @@ spacetime init --lang cpp my-module
 cd my-module
 
 # Build and publish
-emcmake cmake -B build .
-cmake --build build
-spacetime publish . my-database
+spacetime build -p ./spacetimedb
+spacetime publish -p ./spacetimedb my-database
 ```
 
 ### Manual Setup
@@ -1088,22 +1087,17 @@ target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
 ### Build Commands
 
 ```bash
-# Standard build
+# With spacetime
+spacetime build -p .
+
+# Manual build
 emcmake cmake -B build .
 cmake --build build
 
-# Or spacetime
-spacetime build -p .
-
-# Custom module source
-emcmake cmake -B build -DMODULE_SOURCE=src/test.cpp -DOUTPUT_NAME=test .
-cmake --build build
-# Creates build/test.wasm
-
 # Publishing
-spacetime publish --bin-path build/lib.wasm my-database
-# Or auto-detect
 spacetime publish . my-database
+# or manual
+spacetime publish --bin-path build/lib.wasm my-database
 ```
 
 ### Emscripten Settings
