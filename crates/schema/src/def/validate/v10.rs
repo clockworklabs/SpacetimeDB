@@ -368,6 +368,8 @@ impl<'a> ModuleValidatorV10<'a> {
             source_name,
             params,
             visibility,
+            ok_return_type,
+            err_return_type,
         } = reducer_def;
 
         let params_for_generate =
@@ -378,9 +380,22 @@ impl<'a> ModuleValidatorV10<'a> {
                     arg_name,
                 });
 
-        let name_result = identifier(source_name);
+        let name_result = identifier(source_name.clone());
 
-        let (name_result, params_for_generate) = (name_result, params_for_generate).combine_errors()?;
+        let return_res: Result<_> = (ok_return_type.is_unit() && err_return_type.is_string())
+            .then_some((ok_return_type.clone(), err_return_type.clone()))
+            .ok_or_else(move || {
+                ValidationError::InvalidReducerReturnType {
+                    reducer_name: source_name.clone(),
+                    ok_type: ok_return_type.into(),
+                    err_type: err_return_type.into(),
+                }
+                .into()
+            });
+
+        let (name_result, params_for_generate, return_res) =
+            (name_result, params_for_generate, return_res).combine_errors()?;
+        let (ok_return_type, err_return_type) = return_res;
 
         Ok(ReducerDef {
             name: name_result,
@@ -391,6 +406,8 @@ impl<'a> ModuleValidatorV10<'a> {
             },
             lifecycle: None, // V10 handles lifecycle separately
             visibility: visibility.into(),
+            ok_return_type,
+            err_return_type,
         })
     }
 

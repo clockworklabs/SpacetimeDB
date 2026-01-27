@@ -5,6 +5,7 @@ use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
+use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer_default_ok_return_type};
 use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
@@ -363,6 +364,8 @@ impl ModuleValidatorV9<'_> {
             },
             lifecycle,
             visibility: FunctionVisibility::ClientCallable,
+            ok_return_type: reducer_default_ok_return_type(),
+            err_return_type: reducer_default_err_return_type(),
         })
     }
 

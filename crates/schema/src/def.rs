@@ -1332,6 +1332,12 @@ pub struct ReducerDef {
 
     /// The visibility of this reducer.
     pub visibility: FunctionVisibility,
+
+    /// The return type of the reducer on success.
+    pub ok_return_type: AlgebraicType,
+
+    /// The return type of the reducer on error.
+    pub err_return_type: AlgebraicType,
 }
 
 impl From<ReducerDef> for RawReducerDefV9 {

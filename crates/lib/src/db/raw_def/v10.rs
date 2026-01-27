@@ -167,6 +167,12 @@ pub struct RawReducerDefV10 {
 
     /// Whether this reducer is callable from clients or is internal-only.
     pub visibility: FunctionVisibility,
+
+    /// The type of the `Ok` return value.
+    pub ok_return_type: AlgebraicType,
+
+    /// The type of the `Err` return value.
+    pub err_return_type: AlgebraicType,
 }
 
 /// The visibility of a function (reducer or procedure).
@@ -768,6 +774,8 @@ impl RawModuleDefV10Builder {
             source_name: source_name.into(),
             params,
             visibility: FunctionVisibility::ClientCallable,
+            ok_return_type: reducer_default_ok_return_type(),
+            err_return_type: reducer_default_err_return_type(),
         });
     }
 
@@ -834,6 +842,8 @@ impl RawModuleDefV10Builder {
             source_name: function_name,
             params,
             visibility: FunctionVisibility::Internal,
+            ok_return_type: reducer_default_ok_return_type(),
+            err_return_type: reducer_default_err_return_type(),
         });
     }
 
@@ -941,6 +951,14 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
             AlgebraicType::Ref(slot_ref)
         }
     }
+}
+
+pub fn reducer_default_ok_return_type() -> AlgebraicType {
+    AlgebraicType::unit()
+}
+
+pub fn reducer_default_err_return_type() -> AlgebraicType {
+    AlgebraicType::String
 }
 
 /// Convert a string from a sats type-name annotation like `#[sats(name = "namespace.name")]` to a `RawScopedTypeNameV9`.
