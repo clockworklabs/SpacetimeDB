@@ -1,4 +1,4 @@
-//! CLI dev command tests moved from crates/cli/tests/dev.rs
+//! CLI dev command tests
 
 use predicates::prelude::*;
 use spacetimedb_guard::ensure_binaries_built;

@@ -1,4 +1,4 @@
-//! CLI server command tests moved from crates/cli/tests/server.rs
+//! CLI server command tests
 
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use std::process::Command;

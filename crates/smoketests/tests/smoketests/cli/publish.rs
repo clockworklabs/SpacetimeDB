@@ -1,4 +1,4 @@
-//! CLI publish command tests moved from crates/cli/tests/publish.rs
+//! CLI publish command tests
 
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use std::process::Command;
