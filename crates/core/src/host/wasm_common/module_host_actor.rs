@@ -51,6 +51,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValu
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
@@ -798,7 +799,7 @@ impl InstanceCommon {
         let stdb = &*replica_ctx.relational_db.clone();
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
-        let reducer_name = &*reducer_def.name;
+        let reducer_name = &reducer_def.name;
 
         // Do some `with_label_values`.
         // TODO(perf, centril): consider caching this.
@@ -905,7 +906,7 @@ impl InstanceCommon {
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_string(),
+                reducer: reducer_name.clone(),
                 reducer_id,
                 args,
             },
@@ -1620,7 +1621,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
 #[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
-    pub name: &'a str,
+    pub name: &'a ReducerName,
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
@@ -1652,7 +1653,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
         }: ReducerOp<'_>,
     ) -> Self {
         Self {
-            name: name.to_owned(),
+            name: name.clone(),
             caller_identity: *caller_identity,
             caller_connection_id: *caller_connection_id,
             timestamp,

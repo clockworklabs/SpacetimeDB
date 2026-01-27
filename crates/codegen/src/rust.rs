@@ -11,6 +11,7 @@ use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 use std::collections::BTreeSet;
@@ -1089,19 +1090,19 @@ fn table_access_trait_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Pascal) + "TableAccess"
 }
 
-fn function_args_type_name(function_name: &Identifier) -> String {
-    function_name.deref().to_case(Case::Pascal) + "Args"
+fn function_args_type_name(function_name: &str) -> String {
+    function_name.to_case(Case::Pascal) + "Args"
 }
 
-fn reducer_variant_name(reducer_name: &Identifier) -> String {
+fn reducer_variant_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Pascal)
 }
 
-fn reducer_callback_id_name(reducer_name: &Identifier) -> String {
+fn reducer_callback_id_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "CallbackId"
 }
 
-fn reducer_module_name(reducer_name: &Identifier) -> String {
+fn reducer_module_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Snake) + "_reducer"
 }
 
