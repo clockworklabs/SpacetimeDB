@@ -68,13 +68,9 @@ members = [
     # "fail-initial-publish-broken" - intentionally broken, uses runtime compilation
     "fail-initial-publish-fixed",
 
-    # Auto-increment tests (parameterized variants)
-    "autoinc-basic-u32",
-    "autoinc-basic-u64",
-    "autoinc-basic-i32",
-    "autoinc-basic-i64",
-    "autoinc-unique-u64",
-    "autoinc-unique-i64",
+    # Auto-increment tests (all 10 integer types in one module each)
+    "autoinc-basic",
+    "autoinc-unique",
 ]
 
 [workspace.dependencies]
