@@ -567,8 +567,8 @@ jobs:
 
       - name: Override NuGet packages
         run: |
-          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
-          dotnet pack -c Release crates/bindings-csharp/Runtime
+          dotnet pack crates/bindings-csharp/BSATN.Runtime
+          dotnet pack crates/bindings-csharp/Runtime
 
           # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
           # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
@@ -693,8 +693,8 @@ jobs:
 
       - name: Override NuGet packages
         run: |
-          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
-          dotnet pack -c Release crates/bindings-csharp/Runtime
+          dotnet pack crates/bindings-csharp/BSATN.Runtime
+          dotnet pack crates/bindings-csharp/Runtime
 
           # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
           # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
