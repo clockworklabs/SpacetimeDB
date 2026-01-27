@@ -978,6 +978,22 @@ log = "0.4"
 
     /// Makes an HTTP API call with an optional request body.
     pub fn api_call_with_body(&self, method: &str, path: &str, body: Option<&[u8]>) -> Result<ApiResponse> {
+        self.api_call_internal(method, path, body, "")
+    }
+
+    /// Makes an HTTP API call with a JSON body.
+    pub fn api_call_json(&self, method: &str, path: &str, json_body: &str) -> Result<ApiResponse> {
+        self.api_call_internal(method, path, Some(json_body.as_bytes()), "Content-Type: application/json\r\n")
+    }
+
+    /// Internal HTTP API call implementation.
+    fn api_call_internal(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        extra_headers: &str,
+    ) -> Result<ApiResponse> {
         use std::io::{Read, Write};
         use std::net::TcpStream;
 
@@ -991,11 +1007,14 @@ log = "0.4"
         let mut stream = TcpStream::connect(host_port).context("Failed to connect to server")?;
         stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
 
+        // Get auth token
+        let token = self.read_token()?;
+
         // Build HTTP request
         let content_length = body.map(|b| b.len()).unwrap_or(0);
         let request = format!(
-            "{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            method, path, host_port, content_length
+            "{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nAuthorization: Bearer {}\r\n{}Connection: close\r\n\r\n",
+            method, path, host_port, content_length, token, extra_headers
         );
 
         stream.write_all(request.as_bytes())?;

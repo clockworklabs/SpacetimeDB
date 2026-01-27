@@ -76,3 +76,41 @@ fn test_set_to_existing_name() {
         "Expected rename to fail when target name is already in use"
     );
 }
+
+/// Test that we can rename to a list of names via the API
+#[test]
+fn test_replace_names() {
+    let mut test = Smoketest::builder().autopublish(false).build();
+
+    let orig_name = format!("test-db-{}", std::process::id());
+    let alt_name1 = format!("test-db-{}-alt1", std::process::id());
+    let alt_name2 = format!("test-db-{}-alt2", std::process::id());
+    test.publish_module_named(&orig_name, false).unwrap();
+
+    // Use the API to replace names
+    let json_body = format!(r#"["{}","{}"]"#, alt_name1, alt_name2);
+    let response = test
+        .api_call_json("PUT", &format!("/v1/database/{}/names", orig_name), &json_body)
+        .unwrap();
+    assert!(
+        response.status_code == 200,
+        "Expected 200 status, got {}: {}",
+        response.status_code,
+        String::from_utf8_lossy(&response.body)
+    );
+
+    // Use logs to check that name resolution works
+    test.spacetime(&["logs", "--server", &test.server_url, &alt_name1])
+        .unwrap();
+    test.spacetime(&["logs", "--server", &test.server_url, &alt_name2])
+        .unwrap();
+
+    // Original name should no longer work
+    let result = test.spacetime(&["logs", "--server", &test.server_url, &orig_name]);
+    assert!(result.is_err(), "Expected logs to fail for original name after rename");
+
+    // Restore orig name so the database gets deleted on cleanup
+    let json_body = format!(r#"["{}"]"#, orig_name);
+    test.api_call_json("PUT", &format!("/v1/database/{}/names", alt_name1), &json_body)
+        .unwrap();
+}
