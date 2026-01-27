@@ -47,4 +47,12 @@ fn test_client_disconnected_error_still_deletes_st_client() {
         "Expected disconnect panic message in logs: {:?}",
         logs
     );
+
+    // Verify st_client table is empty (row was deleted despite the panic)
+    let sql_out = test.sql("SELECT * FROM st_client").unwrap();
+    assert!(
+        sql_out.contains("identity | connection_id") && !sql_out.contains("0x"),
+        "Expected st_client table to be empty, got: {}",
+        sql_out
+    );
 }
