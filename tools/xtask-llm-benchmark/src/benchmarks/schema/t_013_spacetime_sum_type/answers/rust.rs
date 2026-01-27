@@ -12,7 +12,7 @@ pub enum Shape {
     Rectangle(Rect),
 }
 
-#[table(name = results)]
+#[table(name = result)]
 pub struct ResultRow {
     #[primary_key]
     pub id: i32,
@@ -21,5 +21,5 @@ pub struct ResultRow {
 
 #[reducer]
 pub fn set_circle(ctx: &ReducerContext, id: i32, radius: i32) {
-    ctx.db.results().insert(ResultRow { id, value: Shape::Circle(radius) });
+    ctx.db.result().insert(ResultRow { id, value: Shape::Circle(radius) });
 }

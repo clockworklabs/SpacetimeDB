@@ -48,6 +48,7 @@ pub struct TaskPaths {
     pub root: PathBuf,
     pub answers_csharp: PathBuf,
     pub answers_rust: PathBuf,
+    pub answers_typescript: PathBuf,
 }
 
 pub struct RouteRun {

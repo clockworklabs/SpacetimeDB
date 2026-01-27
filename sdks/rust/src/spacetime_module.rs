@@ -23,6 +23,14 @@ pub trait InModule {
     type Module: SpacetimeModule;
 }
 
+#[derive(Default)]
+pub struct QueryBuilder {
+    pub from: QueryTableAccessor,
+}
+
+#[derive(Default)]
+pub struct QueryTableAccessor;
+
 /// Each module's codegen will define a unit struct which implements this trait,
 /// with associated type links to various other generated types.
 pub trait SpacetimeModule: Send + Sync + 'static {
@@ -64,6 +72,8 @@ pub trait SpacetimeModule: Send + Sync + 'static {
 
     /// Module-specific `SubscriptionHandle` type, representing an ongoing incremental subscription to a query.
     type SubscriptionHandle: SubscriptionHandle<Module = Self>;
+
+    type QueryBuilder: Default + Send + 'static;
 
     /// Called when constructing a [`Self::DbConnection`] on the new connection's [`ClientCache`]
     /// to pre-register tables defined by the module, including their indices.

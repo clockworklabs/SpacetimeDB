@@ -42,13 +42,14 @@ pub(super) fn with_timeout_and_cb_every<R>(
 }
 
 /// A callback passed to [`IsolateHandle::request_interrupt`].
-pub(super) type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
+pub(super) type InterruptCallback = extern "C" fn(v8::UnsafeRawIsolatePtr, *mut c_void);
 
 /// An [`InterruptCallback`] used by `call_reducer`,
 /// and called by a thread separate to V8 execution
 /// every [`EPOCH_TICKS_PER_SECOND`] ticks (~every 1 second)
 /// to log that the reducer is still running.
-pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_void) {
+pub(super) extern "C" fn cb_log_long_running(mut isolate: v8::UnsafeRawIsolatePtr, _: *mut c_void) {
+    let isolate = unsafe { Isolate::ref_from_raw_isolate_ptr_mut_unchecked(&mut isolate) };
     let Some(env) = env_on_isolate(isolate) else {
         // All we can do is log something.
         tracing::error!("`JsInstanceEnv` not set");
@@ -61,7 +62,7 @@ pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_vo
 }
 
 /// An [`InterruptCallback`] that does nothing.
-pub(super) extern "C" fn cb_noop(_: &mut Isolate, _: *mut c_void) {}
+pub(super) extern "C" fn cb_noop(_: v8::UnsafeRawIsolatePtr, _: *mut c_void) {}
 
 /// Spawns a thread that will terminate execution
 /// when `budget` has been used up.

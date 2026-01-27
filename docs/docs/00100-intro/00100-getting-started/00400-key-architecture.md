@@ -6,7 +6,6 @@ slug: /intro/key-architecture
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-
 ## Host
 
 A SpacetimeDB **host** is a server that hosts [databases](#database). You can run your own host, or use the SpacetimeDB maincloud. Many databases can run on a single host.
@@ -186,7 +185,7 @@ spacetimedb.reducer('hello', (ctx) => {
    }
 });
 
-spacetimedb.reducer('world', (ctx) => {
+const world = spacetimedb.reducer('world', (ctx) => {
    clearAllTables(ctx);
    // ...
 });
@@ -505,7 +504,7 @@ def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
    return identity_big_endian_bytes
 ```
 
-You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](/spacetimeauth), or you can get one from any OpenID Connect compliant identity provider.
+You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md), or you can get one from any OpenID Connect compliant identity provider.
 
 ## ConnectionId
 
@@ -518,4 +517,3 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.
 
 <!-- TODO(1.0): Rewrite this section after finalizing energy SKUs. -->
-

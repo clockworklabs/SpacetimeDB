@@ -14,3 +14,37 @@ pub struct UniqueUuid {
 impl __sdk::InModule for UniqueUuid {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `UniqueUuid`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueUuidCols {
+    pub u: __sdk::__query_builder::Col<UniqueUuid, __sdk::Uuid>,
+    pub data: __sdk::__query_builder::Col<UniqueUuid, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for UniqueUuid {
+    type Cols = UniqueUuidCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueUuidCols {
+            u: __sdk::__query_builder::Col::new(table_name, "u"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueUuid`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueUuidIxCols {
+    pub u: __sdk::__query_builder::IxCol<UniqueUuid, __sdk::Uuid>,
+}
+
+impl __sdk::__query_builder::HasIxCols for UniqueUuid {
+    type IxCols = UniqueUuidIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueUuidIxCols {
+            u: __sdk::__query_builder::IxCol::new(table_name, "u"),
+        }
+    }
+}
