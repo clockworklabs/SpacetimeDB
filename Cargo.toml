@@ -41,6 +41,7 @@ members = [
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
+  "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
   "modules/sdk-test",
   "modules/sdk-test-connect-disconnect",
