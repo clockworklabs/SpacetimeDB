@@ -3,6 +3,7 @@
 /// then in a separate terminal run `tools~/run-regression-tests.sh PATH_TO_SPACETIMEDB_REPO_CHECKOUT`.
 /// This is done on CI in .github/workflows/test.yml.
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -72,6 +73,15 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM my_log",
             "SELECT * FROM Admins",
             "SELECT * FROM nullable_vec_view",
+            "SELECT * FROM users_named_alice",
+            "SELECT * FROM users_age_18_65",
+            "SELECT * FROM users_age_18_plus",
+            "SELECT * FROM users_age_under_18",
+            "SELECT * FROM scores_player_123",
+            "SELECT * FROM scores_player_123_range",
+            "SELECT * FROM scores_player_123_level5",
+            "SELECT * FROM user",
+            "SELECT * FROM score",
         ]);
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -241,6 +251,32 @@ void ValidateReducerErrorDoesNotContainStackTrace(Exception exception)
     Debug.Assert(!exception.Message.Contains(" at "), "Reducer error message should not contain stack trace");
 }
 
+void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
+{
+    Log.Debug("Checking 'Querying with Indexes' documentation examples...");
+
+    var usersNamedAlice = conn.Db.UsersNamedAlice.Iter().Select(u => u.Name).ToList();
+    Debug.Assert(usersNamedAlice.Count == 1 && usersNamedAlice[0] == "Alice", "Expected exactly one Alice in users_named_alice view");
+
+    var ages18To65 = conn.Db.UsersAge1865.Iter().Select(u => u.Name).ToHashSet();
+    Debug.Assert(ages18To65.SetEquals(new[] { "Alice", "Charlie" }), "Expected Alice and Charlie in 18-65 age range");
+
+    var ages18OrOlder = conn.Db.UsersAge18Plus.Iter().Select(u => u.Name).ToHashSet();
+    Debug.Assert(ages18OrOlder.SetEquals(new[] { "Alice", "Charlie" }), "Expected Alice and Charlie to be >= 18");
+
+    var youngerThan18 = conn.Db.UsersAgeUnder18.Iter().Select(u => u.Name).ToHashSet();
+    Debug.Assert(youngerThan18.SetEquals(new[] { "Bob" }), "Expected Bob to be the only minor");
+
+    var player123Scores = conn.Db.ScoresPlayer123.Iter().ToList();
+    Debug.Assert(player123Scores.Count == 3, $"Expected 3 scores for player 123, got {player123Scores.Count}");
+
+    var player123LevelRange = conn.Db.ScoresPlayer123Range.Iter().ToList();
+    Debug.Assert(player123LevelRange.Count == 3, "Expected three scores for player 123 between levels 1 and 10 inclusive");
+
+    var player123Level5 = conn.Db.ScoresPlayer123Level5.Iter().ToList();
+    Debug.Assert(player123Level5.Count == 1 && player123Level5[0].Points == 5_000, "Expected a single level-5 score worth 5,000 points for player 123");
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     applied = true;
@@ -321,6 +357,8 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Debug.Assert(context.Db.Admins.Count > 0, $"context.Db.Admins.Count = {context.Db.Admins.Count}");
 
     ValidateNullableVecView(context, expectedHasPos: true, expectedX: 1, expectedY: 2);
+
+    ValidateQueryingWithIndexesExamples(context);
 
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();

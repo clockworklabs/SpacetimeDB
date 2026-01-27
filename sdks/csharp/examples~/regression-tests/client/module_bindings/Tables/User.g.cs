@@ -15,7 +15,16 @@ namespace SpacetimeDB.Types
     {
         public sealed class UserHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "User";
+            protected override string RemoteTableName => "user";
+
+            public sealed class AgeIndex : BTreeIndexBase<byte>
+            {
+                protected override byte GetKey(User row) => row.Age;
+
+                public AgeIndex(UserHandle table) : base(table) { }
+            }
+
+            public readonly AgeIndex Age;
 
             public sealed class IdUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
             {
@@ -35,10 +44,21 @@ namespace SpacetimeDB.Types
 
             public readonly IsAdminIndex IsAdmin;
 
+            public sealed class NameIndex : BTreeIndexBase<string>
+            {
+                protected override string GetKey(User row) => row.Name;
+
+                public NameIndex(UserHandle table) : base(table) { }
+            }
+
+            public readonly NameIndex Name;
+
             internal UserHandle(DbConnection conn) : base(conn)
             {
+                Age = new(this);
                 Id = new(this);
                 IsAdmin = new(this);
+                Name = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Id;
