@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Module 7: Special types (Identity, ConnectionId, Timestamp)
 // Testing if special SpacetimeDB types cause WASM issues

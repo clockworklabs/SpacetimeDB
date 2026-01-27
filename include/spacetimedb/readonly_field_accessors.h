@@ -11,7 +11,7 @@
 #include <optional>
 #include <type_traits>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Forward declare to avoid circular dependency
 namespace detail {
@@ -43,7 +43,7 @@ protected:
                 std::strlen(table_name_),
                 &id
             );
-            if (SpacetimeDb::is_error(status)) {
+            if (SpacetimeDB::is_error(status)) {
                 LOG_FATAL(std::string("Table not found: ") + table_name_);
             }
             table_id_ = id;
@@ -277,6 +277,6 @@ public:
     bool update(const TableType& new_row) const = delete;
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_READONLY_FIELD_ACCESSORS_H

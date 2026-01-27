@@ -16,7 +16,7 @@
 #include <concepts>
 #include <type_traits>
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 /**
  * @brief Concept for types that can be serialized to BSATN
@@ -143,6 +143,6 @@ consteval size_t static_bsatn_size() {
     return has_static_size<T>::value;
 }
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 #endif // SPACETIMEDB_BSATN_SERIALIZATION_H

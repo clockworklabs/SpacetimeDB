@@ -34,7 +34,7 @@
 #include <iomanip>    // For std::hex, std::setfill, std::setw
 
 // Forward declarations for BSATN
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace bsatn {
     class Writer;
     class Reader;
@@ -82,8 +82,8 @@ public:
     bool operator<(const Identity& other) const;
     
     // BSATN serialization (implemented below)
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const;
-    void bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const;
+    void bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader);
 };
 
 
@@ -353,8 +353,8 @@ struct u256 {
     }
     
     // BSATN methods (implemented in types_bsatn.h)
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const;
-    void bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const;
+    void bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader);
 };
 
 // 256-bit signed integer
@@ -423,8 +423,8 @@ struct i256 {
     }
     
     // BSATN methods (implemented in types_bsatn.h)
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const;
-    void bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const;
+    void bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader);
 };
 
 // Type aliases with uppercase names for compatibility
@@ -483,8 +483,8 @@ struct ConnectionId {
     }
     
     // BSATN serialization (implemented below)
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const;
-    void bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const;
+    void bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader);
 };
 
 // Placeholder type aliases for BSATN compatibility
@@ -562,8 +562,8 @@ struct TimeDuration {
     }
     
     // BSATN serialization methods are implemented via bsatn_traits in type_extensions.h
-    // void bsatn_serialize(SpacetimeDb::bsatn::Writer& writer) const;
-    // static TimeDuration bsatn_deserialize(SpacetimeDb::bsatn::Reader& reader);
+    // void bsatn_serialize(SpacetimeDB::bsatn::Writer& writer) const;
+    // static TimeDuration bsatn_deserialize(SpacetimeDB::bsatn::Reader& reader);
 };
 */
 
@@ -889,7 +889,7 @@ struct BsatnSerializer<std::vector<T>> {
 // TimeDuration BSATN methods will be provided as free functions in a separate header
 // that includes both types.h and bsatn.h
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // BSATN Implementation

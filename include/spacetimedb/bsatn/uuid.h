@@ -11,7 +11,7 @@
 #include "timestamp.h"
 
 // Forward declarations
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace bsatn {
     class Writer;
     class Reader;
@@ -339,8 +339,8 @@ public:
     // BSATN Serialization
     // =========================================================================
     
-    void bsatn_serialize(SpacetimeDb::bsatn::Writer& writer) const;
-    static Uuid bsatn_deserialize(SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(SpacetimeDB::bsatn::Writer& writer) const;
+    static Uuid bsatn_deserialize(SpacetimeDB::bsatn::Reader& reader);
 
 private:
     // =========================================================================
@@ -384,7 +384,7 @@ private:
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // BSATN Implementation
@@ -395,24 +395,24 @@ private:
 #include "traits.h"
 #include "algebraic_type.h"
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Uuid BSATN implementation
 // UUIDs are serialized as a product with a single __uuid__ field containing a u128
-inline void Uuid::bsatn_serialize(SpacetimeDb::bsatn::Writer& writer) const {
+inline void Uuid::bsatn_serialize(SpacetimeDB::bsatn::Writer& writer) const {
     // Serialize the u128 value directly (little-endian)
     writer.write_u64_le(__uuid__.low);
     writer.write_u64_le(__uuid__.high);
 }
 
-inline Uuid Uuid::bsatn_deserialize(SpacetimeDb::bsatn::Reader& reader) {
+inline Uuid Uuid::bsatn_deserialize(SpacetimeDB::bsatn::Reader& reader) {
     // Deserialize the u128 value directly (little-endian)
     uint64_t low = reader.read_u64_le();
     uint64_t high = reader.read_u64_le();
     return Uuid(high, low);
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Note: bsatn_traits specialization for Uuid is defined in type_extensions.h
 // to ensure consistent handling with other special types

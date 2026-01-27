@@ -16,7 +16,7 @@
 #include <type_traits>
 #include <memory>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Context for procedures
@@ -298,6 +298,6 @@ public:
 #endif
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_PROCEDURE_CONTEXT_H

@@ -24,7 +24,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Forward declarations
 template<typename T> class Table;
@@ -103,7 +103,7 @@ namespace detail {
     
     /** Function pointer type for auto-increment integration callbacks */
     template<typename T>
-    using AutoIncIntegratorFn = void(*)(T&, SpacetimeDb::bsatn::Reader&);
+    using AutoIncIntegratorFn = void(*)(T&, SpacetimeDB::bsatn::Reader&);
     
     /** Registry to store auto-increment integrators per type */
     template<typename T>
@@ -123,7 +123,7 @@ namespace detail {
      * @param reader BSATN reader containing the generated column values
      */
     template<typename T>
-    void integrate_autoinc(T& row, SpacetimeDb::bsatn::Reader& reader) {
+    void integrate_autoinc(T& row, SpacetimeDB::bsatn::Reader& reader) {
         auto integrator = get_autoinc_integrator<T>();
         if (integrator) {
             integrator(row, reader);
@@ -332,10 +332,10 @@ private:
         
         if (buffer_len == 0) return;
         
-        SpacetimeDb::bsatn::Reader reader(row_buffer_.data(), buffer_len);
+        SpacetimeDB::bsatn::Reader reader(row_buffer_.data(), buffer_len);
         while (!reader.is_eos()) {
             // Without exceptions, deserialization failures will abort
-            current_batch_.emplace_back(SpacetimeDb::bsatn::deserialize<T>(reader));
+            current_batch_.emplace_back(SpacetimeDB::bsatn::deserialize<T>(reader));
         }
     }
 };
@@ -414,8 +414,8 @@ public:
      * }
      */
     InsertResult<T> try_insert(const T& row_data) {
-        SpacetimeDb::bsatn::Writer writer;
-        SpacetimeDb::bsatn::serialize(writer, row_data);
+        SpacetimeDB::bsatn::Writer writer;
+        SpacetimeDB::bsatn::serialize(writer, row_data);
         auto buffer_vec = writer.get_buffer();
         
         // Prepare buffer with extra space for auto-increment writeback
@@ -456,7 +456,7 @@ public:
         
         // The buffer contains ONLY the generated column values in BSATN format
         T updated_row = row_data;
-        SpacetimeDb::bsatn::Reader reader(buffer.data(), buffer_len);
+        SpacetimeDB::bsatn::Reader reader(buffer.data(), buffer_len);
         detail::integrate_autoinc(updated_row, reader);
         
         return InsertResult<T>(std::move(updated_row));
@@ -469,10 +469,10 @@ public:
     uint32_t delete_all_by_eq(const std::vector<T>& rows) {
         if (rows.empty()) return 0;
         
-        SpacetimeDb::bsatn::Writer writer;
+        SpacetimeDB::bsatn::Writer writer;
         writer.write_u32_le(static_cast<uint32_t>(rows.size()));
         for (const auto& row : rows) {
-            SpacetimeDb::bsatn::serialize(writer, row);
+            SpacetimeDB::bsatn::serialize(writer, row);
         }
         
         auto buffer = writer.take_buffer();
@@ -496,8 +496,8 @@ public:
      * Update a row using a unique index
      */
     std::optional<T> update_by_index(IndexId index_id, const T& row) {
-        SpacetimeDb::bsatn::Writer writer;
-        SpacetimeDb::bsatn::serialize(writer, row);
+        SpacetimeDB::bsatn::Writer writer;
+        SpacetimeDB::bsatn::serialize(writer, row);
         auto buffer_vec = writer.get_buffer();
         
         // Prepare buffer with extra space for auto-increment writeback
@@ -533,8 +533,8 @@ public:
         
         // Return the updated row with any auto-generated fields
         buffer.resize(buffer_len);
-        SpacetimeDb::bsatn::Reader reader(buffer.data(), buffer_len);
-        return SpacetimeDb::bsatn::deserialize<T>(reader);
+        SpacetimeDB::bsatn::Reader reader(buffer.data(), buffer_len);
+        return SpacetimeDB::bsatn::deserialize<T>(reader);
     }
 
     // -------------------------------------------------------------------------
@@ -563,6 +563,6 @@ private:
     TableId table_id_;
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_LIBRARY_TABLE_H

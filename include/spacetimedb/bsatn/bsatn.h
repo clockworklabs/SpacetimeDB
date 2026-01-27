@@ -16,7 +16,7 @@
  */
 
 // Forward declarations
-namespace SpacetimeDb {
+namespace SpacetimeDB {
     namespace bsatn {
         class Reader;
         class Writer;
@@ -59,6 +59,6 @@ namespace SpacetimeDb {
 //   ✅ Type registry for metadata
 //   ✅ Cross-language compatibility
 //
-// Note: Legacy SpacetimeDb::bsatn namespace is available for backward compatibility.
+// Note: Legacy SpacetimeDB::bsatn namespace is available for backward compatibility.
 
 #endif // SPACETIMEDB_BSATN_MAIN_H

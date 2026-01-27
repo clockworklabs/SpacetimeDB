@@ -13,11 +13,11 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 enum class Lifecycle : uint8_t {
     Init = 0,
     OnConnect = 1,
     OnDisconnect = 2,
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

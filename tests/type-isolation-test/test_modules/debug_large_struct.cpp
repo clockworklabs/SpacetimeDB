@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 #include <optional>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // ISOLATION TEST: Large struct causing client codegen issues
 // Test if EveryPrimitiveStruct alone causes the "non-special product or sum type" error

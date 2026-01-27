@@ -7,7 +7,7 @@
 #include <memory>
 #include <optional>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Represents the claims from a JSON Web Token (JWT).
@@ -241,6 +241,6 @@ inline const std::vector<std::string>& JwtClaims::audience() const {
     return *audience_;
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_JWT_CLAIMS_H

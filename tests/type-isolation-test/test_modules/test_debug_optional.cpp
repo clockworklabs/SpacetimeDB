@@ -3,7 +3,7 @@
 #include <optional>
 #include <cstdio>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Global constructor to run before __preinit__
 struct DebugInit {

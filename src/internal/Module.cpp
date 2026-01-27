@@ -19,7 +19,7 @@
 #include <functional>
 #include <cctype>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Global V9 module structure - accessible from preinit functions
 namespace Internal {
@@ -423,7 +423,7 @@ Status Module::__call_reducer__(
     BytesSink error_sink
 ) {
     // Clear any previous error state
-    SpacetimeDb::Internal::clear_reducer_error();
+    SpacetimeDB::Internal::clear_reducer_error();
 
     // Check if reducer ID is valid
     if (id >= g_reducer_handlers.size()) {
@@ -462,8 +462,8 @@ Status Module::__call_reducer__(
     handler_info.handler(ctx, args_source);
     
     // Check if the reducer failed gracefully
-    if (SpacetimeDb::Internal::has_reducer_error()) {
-        std::string error_msg = SpacetimeDb::Internal::get_reducer_error();
+    if (SpacetimeDB::Internal::has_reducer_error()) {
+        std::string error_msg = SpacetimeDB::Internal::get_reducer_error();
         WriteBytes(error_sink, std::vector<uint8_t>(error_msg.begin(), error_msg.end()));
         return StatusCode::HOST_CALL_FAILURE;
     }

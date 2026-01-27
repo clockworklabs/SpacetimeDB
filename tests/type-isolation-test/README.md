@@ -125,7 +125,7 @@ pkill -f update_table_from_log  # Kill orphaned processes
 **Basic template:**
 ```cpp
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 struct TestTable { /* fields */ };
 SPACETIMEDB_STRUCT(TestTable, /* field list */)

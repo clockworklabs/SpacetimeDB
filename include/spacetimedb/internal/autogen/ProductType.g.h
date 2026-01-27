@@ -14,14 +14,14 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "ProductTypeElement.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(ProductType) {
-    std::vector<SpacetimeDb::Internal::ProductTypeElement> elements;
+    std::vector<SpacetimeDB::Internal::ProductTypeElement> elements;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, elements);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, elements);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(elements)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

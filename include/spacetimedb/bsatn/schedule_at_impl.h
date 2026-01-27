@@ -7,10 +7,10 @@
 #include "traits.h"
 #include "type_extensions.h"  // For special type constants
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // ScheduleAt BSATN implementation
-inline void ScheduleAt::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
+inline void ScheduleAt::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
     // Write variant tag (as u8)
     writer.write_u8(static_cast<uint8_t>(variant));
     
@@ -25,7 +25,7 @@ inline void ScheduleAt::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) co
     }
 }
 
-inline void ScheduleAt::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
+inline void ScheduleAt::bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader) {
     // Read variant tag
     uint8_t variant_tag = reader.read_u8();
     
@@ -51,19 +51,19 @@ inline void ScheduleAt::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) 
     }
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 // Explicit specialization for ScheduleAt to handle BSATN serialization
 template<>
-struct bsatn_traits<::SpacetimeDb::ScheduleAt> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::ScheduleAt& value) {
+struct bsatn_traits<::SpacetimeDB::ScheduleAt> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::ScheduleAt& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::ScheduleAt deserialize(Reader& reader) {
-        ::SpacetimeDb::ScheduleAt result; // Default constructor
+    static ::SpacetimeDB::ScheduleAt deserialize(Reader& reader) {
+        ::SpacetimeDB::ScheduleAt result; // Default constructor
         result.bsatn_deserialize(reader);
         return result;
     }
@@ -76,11 +76,11 @@ struct bsatn_traits<::SpacetimeDb::ScheduleAt> {
         std::vector<SumTypeVariant> variants;
         
         // Interval variant: Use TimeDuration's algebraic_type() for proper inlining
-        AlgebraicType interval_type = bsatn_traits<::SpacetimeDb::TimeDuration>::algebraic_type();
+        AlgebraicType interval_type = bsatn_traits<::SpacetimeDB::TimeDuration>::algebraic_type();
         variants.emplace_back("Interval", std::move(interval_type));
         
         // Time variant: Use Timestamp's algebraic_type() for proper inlining
-        AlgebraicType time_type = bsatn_traits<::SpacetimeDb::Timestamp>::algebraic_type();
+        AlgebraicType time_type = bsatn_traits<::SpacetimeDB::Timestamp>::algebraic_type();
         variants.emplace_back("Time", std::move(time_type));
         
         auto sum_type = std::make_unique<SumTypeSchema>(std::move(variants));
@@ -88,10 +88,10 @@ struct bsatn_traits<::SpacetimeDb::ScheduleAt> {
     }
 };
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 // BSATN serializer template specialization for ScheduleAt
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // ScheduleAt serialization - sum type with variant tag + payload
 template<>
@@ -130,6 +130,6 @@ struct BsatnSerializer<ScheduleAt> {
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_BSATN_SCHEDULE_AT_IMPL_H

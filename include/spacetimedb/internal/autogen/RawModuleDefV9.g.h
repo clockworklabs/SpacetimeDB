@@ -19,24 +19,24 @@
 #include "RawRowLevelSecurityDefV9.g.h"
 #include "RawTypeDefV9.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawModuleDefV9) {
-    SpacetimeDb::Internal::Typespace typespace;
-    std::vector<SpacetimeDb::Internal::RawTableDefV9> tables;
-    std::vector<SpacetimeDb::Internal::RawReducerDefV9> reducers;
-    std::vector<SpacetimeDb::Internal::RawTypeDefV9> types;
-    std::vector<SpacetimeDb::Internal::RawMiscModuleExportV9> misc_exports;
-    std::vector<SpacetimeDb::Internal::RawRowLevelSecurityDefV9> row_level_security;
+    SpacetimeDB::Internal::Typespace typespace;
+    std::vector<SpacetimeDB::Internal::RawTableDefV9> tables;
+    std::vector<SpacetimeDB::Internal::RawReducerDefV9> reducers;
+    std::vector<SpacetimeDB::Internal::RawTypeDefV9> types;
+    std::vector<SpacetimeDB::Internal::RawMiscModuleExportV9> misc_exports;
+    std::vector<SpacetimeDB::Internal::RawRowLevelSecurityDefV9> row_level_security;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, typespace);
-        ::SpacetimeDb::bsatn::serialize(writer, tables);
-        ::SpacetimeDb::bsatn::serialize(writer, reducers);
-        ::SpacetimeDb::bsatn::serialize(writer, types);
-        ::SpacetimeDb::bsatn::serialize(writer, misc_exports);
-        ::SpacetimeDb::bsatn::serialize(writer, row_level_security);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, typespace);
+        ::SpacetimeDB::bsatn::serialize(writer, tables);
+        ::SpacetimeDB::bsatn::serialize(writer, reducers);
+        ::SpacetimeDB::bsatn::serialize(writer, types);
+        ::SpacetimeDB::bsatn::serialize(writer, misc_exports);
+        ::SpacetimeDB::bsatn::serialize(writer, row_level_security);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(typespace, tables, reducers, types, misc_exports, row_level_security)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

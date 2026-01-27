@@ -13,18 +13,18 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawScheduleDefV9) {
     std::optional<std::string> name;
     std::string reducer_name;
     uint16_t scheduled_at_column;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, reducer_name);
-        ::SpacetimeDb::bsatn::serialize(writer, scheduled_at_column);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, reducer_name);
+        ::SpacetimeDB::bsatn::serialize(writer, scheduled_at_column);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, reducer_name, scheduled_at_column)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

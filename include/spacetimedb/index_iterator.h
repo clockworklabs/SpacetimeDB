@@ -66,7 +66,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // =============================================================================
 // IndexIterator - Efficient index-based iteration
@@ -117,9 +117,9 @@ public:
     template<typename FieldType>
     IndexIterator(IndexId index_id, const FieldType& value) {
         // Serialize the exact value for prefix matching
-        SpacetimeDb::bsatn::Writer bound_writer;
+        SpacetimeDB::bsatn::Writer bound_writer;
         bound_writer.write_u8(0);  // Bound::Included tag
-        SpacetimeDb::bsatn::serialize(bound_writer, value);
+        SpacetimeDB::bsatn::serialize(bound_writer, value);
         auto bound_buffer = bound_writer.take_buffer();
 
         // For exact match, use the value as both prefix and range bounds
@@ -181,19 +181,19 @@ public:
 
         // Serialize range bounds if present
         if (range.start.has_value()) {
-            SpacetimeDb::bsatn::Writer start_writer;
+            SpacetimeDB::bsatn::Writer start_writer;
             start_writer.write_u8(0);
-            SpacetimeDb::bsatn::serialize(start_writer, range.start.value());
+            SpacetimeDB::bsatn::serialize(start_writer, range.start.value());
             start_buffer = start_writer.take_buffer();
         } else {
             start_buffer.push_back(2); // Bound::Unbounded tag
         }
         
         if (range.end.has_value()) {
-            SpacetimeDb::bsatn::Writer end_writer;
+            SpacetimeDB::bsatn::Writer end_writer;
             uint8_t end_tag = (range.bound_type == RangeBound::Inclusive) ? 0 : 1;
             end_writer.write_u8(end_tag);
-            SpacetimeDb::bsatn::serialize(end_writer, range.end.value());
+            SpacetimeDB::bsatn::serialize(end_writer, range.end.value());
             end_buffer = end_writer.take_buffer();
         } else {
             end_buffer.push_back(2); // Bound::Unbounded tag
@@ -373,14 +373,14 @@ private:
         
         if (buffer_len == 0) return;
         
-        SpacetimeDb::bsatn::Reader reader(row_buffer_.data(), buffer_len);
+        SpacetimeDB::bsatn::Reader reader(row_buffer_.data(), buffer_len);
         while (!reader.is_eos()) {
             // Without exceptions, deserialization failures will abort
-            current_batch_.emplace_back(SpacetimeDb::bsatn::deserialize<T>(reader));
+            current_batch_.emplace_back(SpacetimeDB::bsatn::deserialize<T>(reader));
         }
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_INDEX_ITERATOR_H

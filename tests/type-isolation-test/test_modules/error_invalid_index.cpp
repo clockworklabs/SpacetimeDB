@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test FIELD_ macro validation for index constraints on non-filterable types
 
@@ -21,7 +21,7 @@ struct UniqueOnStruct {
 SPACETIMEDB_STRUCT(UniqueOnStruct, id, data, name)
 
 // Register table without any constraints
-SPACETIMEDB_TABLE(UniqueOnStruct, unique_struct_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(UniqueOnStruct, unique_struct_table, SpacetimeDB::Public)
 
 // Now add constraints using FIELD_ macros - this should fail at compile time!
 FIELD_PrimaryKey(unique_struct_table, id)           // OK: Any type can be primary key
@@ -35,7 +35,7 @@ struct UniqueOnVector {
     std::string name;
 };
 SPACETIMEDB_STRUCT(UniqueOnVector, id, items, name)
-SPACETIMEDB_TABLE(UniqueOnVector, unique_vector_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(UniqueOnVector, unique_vector_table, SpacetimeDB::Public)
 
 // Add field constraints
 FIELD_PrimaryKey(unique_vector_table, id)
@@ -48,7 +48,7 @@ struct UniqueOnOptional {
     std::string name;
 };
 SPACETIMEDB_STRUCT(UniqueOnOptional, id, maybe_value, name)
-SPACETIMEDB_TABLE(UniqueOnOptional, unique_optional_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(UniqueOnOptional, unique_optional_table, SpacetimeDB::Public)
 
 // Add field constraints
 FIELD_PrimaryKey(unique_optional_table, id)
@@ -61,7 +61,7 @@ struct UniqueOnFloat {
     std::string name;
 };
 SPACETIMEDB_STRUCT(UniqueOnFloat, id, value, name)
-SPACETIMEDB_TABLE(UniqueOnFloat, unique_float_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(UniqueOnFloat, unique_float_table, SpacetimeDB::Public)
 
 // Add field constraints
 FIELD_PrimaryKey(unique_float_table, id)
@@ -74,7 +74,7 @@ struct IndexOnDouble {
     std::string name;
 };
 SPACETIMEDB_STRUCT(IndexOnDouble, id, value, name)
-SPACETIMEDB_TABLE(IndexOnDouble, index_double_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(IndexOnDouble, index_double_table, SpacetimeDB::Public)
 
 // Add field constraints
 FIELD_PrimaryKey(index_double_table, id)
@@ -87,7 +87,7 @@ struct UniqueOnScheduleAt {
     std::string name;
 };
 SPACETIMEDB_STRUCT(UniqueOnScheduleAt, id, schedule, name)
-SPACETIMEDB_TABLE(UniqueOnScheduleAt, unique_schedule_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(UniqueOnScheduleAt, unique_schedule_table, SpacetimeDB::Public)
 
 // Add field constraints
 FIELD_PrimaryKey(unique_schedule_table, id)
@@ -100,7 +100,7 @@ struct ValidUniqueInt {
     std::string name;
 };
 SPACETIMEDB_STRUCT(ValidUniqueInt, id, unique_code, name)
-SPACETIMEDB_TABLE(ValidUniqueInt, valid_unique_int_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidUniqueInt, valid_unique_int_table, SpacetimeDB::Public)
 
 // These should all work fine
 FIELD_PrimaryKey(valid_unique_int_table, id)
@@ -112,7 +112,7 @@ struct ValidIndexString {
     std::string data;
 };
 SPACETIMEDB_STRUCT(ValidIndexString, id, indexed_name, data)
-SPACETIMEDB_TABLE(ValidIndexString, valid_index_string_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidIndexString, valid_index_string_table, SpacetimeDB::Public)
 
 FIELD_PrimaryKey(valid_index_string_table, id)
 FIELD_Index(valid_index_string_table, indexed_name) // OK: String is filterable
@@ -123,7 +123,7 @@ struct ValidUniqueIdentity {
     std::string name;
 };
 SPACETIMEDB_STRUCT(ValidUniqueIdentity, id, user_id, name)
-SPACETIMEDB_TABLE(ValidUniqueIdentity, valid_unique_identity_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidUniqueIdentity, valid_unique_identity_table, SpacetimeDB::Public)
 
 FIELD_PrimaryKey(valid_unique_identity_table, id)
 FIELD_Unique(valid_unique_identity_table, user_id)  // OK: Identity is filterable
@@ -134,7 +134,7 @@ struct ValidIndexTimestamp {
     std::string data;
 };
 SPACETIMEDB_STRUCT(ValidIndexTimestamp, id, created_at, data)
-SPACETIMEDB_TABLE(ValidIndexTimestamp, valid_index_timestamp_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidIndexTimestamp, valid_index_timestamp_table, SpacetimeDB::Public)
 
 FIELD_PrimaryKey(valid_index_timestamp_table, id)
 FIELD_Index(valid_index_timestamp_table, created_at) // OK: Timestamp is filterable
@@ -145,13 +145,13 @@ struct ValidUniqueBool {
     std::string data;
 };
 SPACETIMEDB_STRUCT(ValidUniqueBool, id, is_active, data)
-SPACETIMEDB_TABLE(ValidUniqueBool, valid_unique_bool_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(ValidUniqueBool, valid_unique_bool_table, SpacetimeDB::Public)
 
 FIELD_PrimaryKey(valid_unique_bool_table, id)
 FIELD_Unique(valid_unique_bool_table, is_active)    // OK: Bool is filterable (though unusual)
 
 // Test reducer
-SPACETIMEDB_REDUCER(test_field_macro_validation, SpacetimeDb::ReducerContext ctx)
+SPACETIMEDB_REDUCER(test_field_macro_validation, SpacetimeDB::ReducerContext ctx)
 {
     LOG_INFO("Testing FIELD_ macro validation");
     

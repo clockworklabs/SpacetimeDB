@@ -14,7 +14,7 @@
 // uint128_placeholder.h removed - types are in spacetimedb/types.h
 #include "types.h"
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
     class Reader;
     template<typename T> T deserialize(Reader& r);
@@ -67,14 +67,14 @@ namespace SpacetimeDb::bsatn {
         uint16_t read_u16_le() { return read_primitive_le<uint16_t>(); }
         uint32_t read_u32_le() { return read_primitive_le<uint32_t>(); }
         uint64_t read_u64_le() { return read_primitive_le<uint64_t>(); }
-        inline SpacetimeDb::u128 read_u128_le() {
+        inline SpacetimeDB::u128 read_u128_le() {
             uint64_t low = read_u64_le();
             uint64_t high = read_u64_le();
-            return SpacetimeDb::u128(high, low);
+            return SpacetimeDB::u128(high, low);
         }
-        inline SpacetimeDb::u256_placeholder read_u256_le() {
+        inline SpacetimeDB::u256_placeholder read_u256_le() {
             check_available(32);
-            SpacetimeDb::u256_placeholder val;
+            SpacetimeDB::u256_placeholder val;
             std::memcpy(val.data.data(), current_ptr, 32);
             advance(32);
             return val;
@@ -84,14 +84,14 @@ namespace SpacetimeDb::bsatn {
         int16_t read_i16_le() { return static_cast<int16_t>(read_u16_le()); }
         int32_t read_i32_le() { return static_cast<int32_t>(read_u32_le()); }
         int64_t read_i64_le() { return static_cast<int64_t>(read_u64_le()); }
-        inline SpacetimeDb::i128 read_i128_le() {
+        inline SpacetimeDB::i128 read_i128_le() {
             uint64_t low = read_u64_le();
             int64_t high = static_cast<int64_t>(read_u64_le());
-            return SpacetimeDb::i128(high, low);
+            return SpacetimeDB::i128(high, low);
         }
-        inline SpacetimeDb::i256_placeholder read_i256_le() {
+        inline SpacetimeDB::i256_placeholder read_i256_le() {
             check_available(32);
-            SpacetimeDb::i256_placeholder val;
+            SpacetimeDB::i256_placeholder val;
             std::memcpy(val.data.data(), current_ptr, 32);
             advance(32);
             return val;
@@ -127,7 +127,7 @@ namespace SpacetimeDb::bsatn {
             if (tag == 0) {
                 return std::nullopt;
             } else if (tag == 1) {
-                return SpacetimeDb::bsatn::deserialize<T>(*this);
+                return SpacetimeDB::bsatn::deserialize<T>(*this);
             } else {
                 std::abort(); // Invalid optional tag in BSATN deserialization
             }
@@ -139,7 +139,7 @@ namespace SpacetimeDb::bsatn {
             std::vector<T> result;
             result.reserve(size);
             for (uint32_t i = 0; i < size; ++i) {
-                result.push_back(SpacetimeDb::bsatn::deserialize<T>(*this));
+                result.push_back(SpacetimeDB::bsatn::deserialize<T>(*this));
             }
             return result;
         }
@@ -150,9 +150,9 @@ namespace SpacetimeDb::bsatn {
 
         // Deserialize a type using C++20 concepts for better error messages
         template<typename T>
-            requires requires(Reader& r) { SpacetimeDb::bsatn::deserialize<T>(r); }
+            requires requires(Reader& r) { SpacetimeDB::bsatn::deserialize<T>(r); }
         T deserialize_type() {
-            return SpacetimeDb::bsatn::deserialize<T>(*this);
+            return SpacetimeDB::bsatn::deserialize<T>(*this);
         }
 
         inline bool is_eos() const {
@@ -242,16 +242,16 @@ namespace SpacetimeDb::bsatn {
     };
     
     // Specializations for SpacetimeDB types
-    template<> struct deserializer<SpacetimeDb::Identity> {
-        static SpacetimeDb::Identity deserialize(Reader& r) {
-            SpacetimeDb::Identity id;
+    template<> struct deserializer<SpacetimeDB::Identity> {
+        static SpacetimeDB::Identity deserialize(Reader& r) {
+            SpacetimeDB::Identity id;
             id.bsatn_deserialize(r);
             return id;
         }
     };
-    template<> struct deserializer<SpacetimeDb::ConnectionId> {
-        static SpacetimeDb::ConnectionId deserialize(Reader& r) {
-            SpacetimeDb::ConnectionId conn;
+    template<> struct deserializer<SpacetimeDB::ConnectionId> {
+        static SpacetimeDB::ConnectionId deserialize(Reader& r) {
+            SpacetimeDB::ConnectionId conn;
             conn.bsatn_deserialize(r);
             return conn;
         }

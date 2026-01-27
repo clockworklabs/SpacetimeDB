@@ -13,7 +13,7 @@
 // Include database for DatabaseContext
 #include <spacetimedb/database.h>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Enhanced ReducerContext with database access - matches Rust pattern
 struct ReducerContext {

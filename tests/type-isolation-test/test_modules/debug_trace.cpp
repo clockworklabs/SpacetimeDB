@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 #include <optional>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Simple table with optional field
 struct DebugTable {

@@ -24,7 +24,7 @@
  * @ingroup sdk_internal
  */
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace convert {
 
 // ==================== HttpMethod Conversions ====================
@@ -269,6 +269,6 @@ inline HttpResponse from_wire(const wire::HttpResponse& response) {
 }
 
 } // namespace convert
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_HTTP_CONVERT_H

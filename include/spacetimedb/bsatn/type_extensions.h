@@ -12,7 +12,7 @@
  * - Support for large integers, container types, and SpacetimeDB core types
  */
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 // =============================================================================
 // SPECIAL TYPE CONSTANTS - Must be defined early for use in other headers
@@ -25,7 +25,7 @@ constexpr const char* TIMESTAMP_TAG = "__timestamp_micros_since_unix_epoch__";
 constexpr const char* TIME_DURATION_TAG = "__time_duration_micros__";
 constexpr const char* UUID_TAG = "__uuid__";
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 // Now include headers that may use these constants
 #include "algebraic_type.h"
@@ -38,7 +38,7 @@ constexpr const char* UUID_TAG = "__uuid__";
 #include <optional>
 #include <vector>
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 // Forward declarations
 class Reader;
@@ -345,17 +345,17 @@ namespace special_types {
  * BSATN serialization for 128-bit unsigned integer
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::u128> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::u128& value) {
+struct bsatn_traits<::SpacetimeDB::u128> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::u128& value) {
         // Serialize as 16 bytes in little-endian order
         writer.write_u64_le(value.low);
         writer.write_u64_le(value.high);
     }
     
-    static ::SpacetimeDb::u128 deserialize(Reader& reader) {
+    static ::SpacetimeDB::u128 deserialize(Reader& reader) {
         uint64_t low = reader.read_u64_le();
         uint64_t high = reader.read_u64_le();
-        return ::SpacetimeDb::u128(high, low);
+        return ::SpacetimeDB::u128(high, low);
     }
     
     static AlgebraicType algebraic_type() {
@@ -367,17 +367,17 @@ struct bsatn_traits<::SpacetimeDb::u128> {
  * BSATN serialization for 128-bit signed integer
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::i128> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::i128& value) {
+struct bsatn_traits<::SpacetimeDB::i128> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::i128& value) {
         // Serialize as 16 bytes in little-endian order
         writer.write_u64_le(value.low);
         writer.write_u64_le(static_cast<uint64_t>(value.high));
     }
     
-    static ::SpacetimeDb::i128 deserialize(Reader& reader) {
+    static ::SpacetimeDB::i128 deserialize(Reader& reader) {
         uint64_t low = reader.read_u64_le();
         uint64_t high = reader.read_u64_le();
-        return ::SpacetimeDb::i128(static_cast<int64_t>(high), low);
+        return ::SpacetimeDB::i128(static_cast<int64_t>(high), low);
     }
     
     static AlgebraicType algebraic_type() {
@@ -391,13 +391,13 @@ struct bsatn_traits<::SpacetimeDb::i128> {
  * BSATN serialization for 256-bit unsigned integer
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::u256> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::u256& value) {
+struct bsatn_traits<::SpacetimeDB::u256> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::u256& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::u256 deserialize(Reader& reader) {
-        ::SpacetimeDb::u256 result;
+    static ::SpacetimeDB::u256 deserialize(Reader& reader) {
+        ::SpacetimeDB::u256 result;
         result.bsatn_deserialize(reader);
         return result;
     }
@@ -411,13 +411,13 @@ struct bsatn_traits<::SpacetimeDb::u256> {
  * BSATN serialization for 256-bit signed integer
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::i256> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::i256& value) {
+struct bsatn_traits<::SpacetimeDB::i256> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::i256& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::i256 deserialize(Reader& reader) {
-        ::SpacetimeDb::i256 result;
+    static ::SpacetimeDB::i256 deserialize(Reader& reader) {
+        ::SpacetimeDB::i256 result;
         result.bsatn_deserialize(reader);
         return result;
     }
@@ -435,13 +435,13 @@ struct bsatn_traits<::SpacetimeDb::i256> {
  * BSATN serialization for Identity
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::Identity> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::Identity& value) {
+struct bsatn_traits<::SpacetimeDB::Identity> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::Identity& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::Identity deserialize(Reader& reader) {
-        ::SpacetimeDb::Identity result;
+    static ::SpacetimeDB::Identity deserialize(Reader& reader) {
+        ::SpacetimeDB::Identity result;
         result.bsatn_deserialize(reader);
         return result;
     }
@@ -455,13 +455,13 @@ struct bsatn_traits<::SpacetimeDb::Identity> {
  * BSATN serialization for ConnectionId
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::ConnectionId> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::ConnectionId& value) {
+struct bsatn_traits<::SpacetimeDB::ConnectionId> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::ConnectionId& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::ConnectionId deserialize(Reader& reader) {
-        ::SpacetimeDb::ConnectionId result;
+    static ::SpacetimeDB::ConnectionId deserialize(Reader& reader) {
+        ::SpacetimeDB::ConnectionId result;
         result.bsatn_deserialize(reader);
         return result;
     }
@@ -475,13 +475,13 @@ struct bsatn_traits<::SpacetimeDb::ConnectionId> {
  * BSATN serialization for Timestamp
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::Timestamp> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::Timestamp& value) {
+struct bsatn_traits<::SpacetimeDB::Timestamp> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::Timestamp& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::Timestamp deserialize(Reader& reader) {
-        return ::SpacetimeDb::Timestamp::bsatn_deserialize(reader);
+    static ::SpacetimeDB::Timestamp deserialize(Reader& reader) {
+        return ::SpacetimeDB::Timestamp::bsatn_deserialize(reader);
     }
     
     static AlgebraicType algebraic_type() {
@@ -493,13 +493,13 @@ struct bsatn_traits<::SpacetimeDb::Timestamp> {
  * BSATN serialization for Uuid
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::Uuid> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::Uuid& value) {
+struct bsatn_traits<::SpacetimeDB::Uuid> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::Uuid& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::Uuid deserialize(Reader& reader) {
-        return ::SpacetimeDb::Uuid::bsatn_deserialize(reader);
+    static ::SpacetimeDB::Uuid deserialize(Reader& reader) {
+        return ::SpacetimeDB::Uuid::bsatn_deserialize(reader);
     }
     
     static AlgebraicType algebraic_type() {
@@ -511,13 +511,13 @@ struct bsatn_traits<::SpacetimeDb::Uuid> {
  * BSATN serialization for TimeDuration
  */
 template<>
-struct bsatn_traits<::SpacetimeDb::TimeDuration> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::TimeDuration& value) {
+struct bsatn_traits<::SpacetimeDB::TimeDuration> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::TimeDuration& value) {
         value.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::TimeDuration deserialize(Reader& reader) {
-        return ::SpacetimeDb::TimeDuration::bsatn_deserialize(reader);
+    static ::SpacetimeDB::TimeDuration deserialize(Reader& reader) {
+        return ::SpacetimeDB::TimeDuration::bsatn_deserialize(reader);
     }
     
     static AlgebraicType algebraic_type() {
@@ -531,13 +531,13 @@ struct bsatn_traits<::SpacetimeDb::TimeDuration> {
 
 // BSATN serialization for Result<T, E>
 template<typename T, typename E>
-struct bsatn_traits<::SpacetimeDb::Result<T, E>> {
-    static void serialize(Writer& writer, const ::SpacetimeDb::Result<T, E>& result) {
+struct bsatn_traits<::SpacetimeDB::Result<T, E>> {
+    static void serialize(Writer& writer, const ::SpacetimeDB::Result<T, E>& result) {
         result.bsatn_serialize(writer);
     }
     
-    static ::SpacetimeDb::Result<T, E> deserialize(Reader& reader) {
-        return ::SpacetimeDb::Result<T, E>::bsatn_deserialize(reader);
+    static ::SpacetimeDB::Result<T, E> deserialize(Reader& reader) {
+        return ::SpacetimeDB::Result<T, E>::bsatn_deserialize(reader);
     }
     
     static AlgebraicType algebraic_type() {
@@ -558,8 +558,8 @@ struct bsatn_traits<::SpacetimeDb::Result<T, E>> {
 // This file contains the special type trait definitions and helpers.
 
 // Convenience type aliases for SpacetimeDB vectors
-using VecTimeDuration = std::vector<::SpacetimeDb::TimeDuration>;
+using VecTimeDuration = std::vector<::SpacetimeDB::TimeDuration>;
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 #endif // SPACETIMEDB_BSATN_TYPE_EXTENSIONS_H

@@ -10,7 +10,7 @@
 #include <array>
 #include "writer.h"  // For Writer
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 // Forward declaration
 template<typename T> struct bsatn_traits;
@@ -250,6 +250,6 @@ void SizeCalculator::add_value(const T& value) {
     }
 }
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 #endif // SPACETIMEDB_BSATN_SIZE_CALCULATOR_H

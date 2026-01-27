@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 
 // The problematic pattern: SimpleEnum used in multiple contexts using new unified syntax

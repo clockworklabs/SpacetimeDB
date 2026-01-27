@@ -15,18 +15,18 @@
 #include "ProductType.g.h"
 #include "Lifecycle.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawReducerDefV9) {
     std::string name;
-    SpacetimeDb::Internal::ProductType params;
-    std::optional<SpacetimeDb::Internal::Lifecycle> lifecycle;
+    SpacetimeDB::Internal::ProductType params;
+    std::optional<SpacetimeDB::Internal::Lifecycle> lifecycle;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, params);
-        ::SpacetimeDb::bsatn::serialize(writer, lifecycle);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, params);
+        ::SpacetimeDB::bsatn::serialize(writer, lifecycle);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, params, lifecycle)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

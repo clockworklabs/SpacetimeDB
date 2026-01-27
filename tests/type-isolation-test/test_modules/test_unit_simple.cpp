@@ -2,7 +2,7 @@
 #include "spacetimedb.h"
 #include <cstdint>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Define a single unit struct
 SPACETIMEDB_UNIT_STRUCT(BasicUnit)

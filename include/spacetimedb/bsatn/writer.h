@@ -14,7 +14,7 @@
 // uint128_placeholder.h removed - types are in spacetimedb/types.h
 #include "types.h"
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
     // Forward declarations
     template<typename T> struct bsatn_traits;
@@ -48,11 +48,11 @@ namespace SpacetimeDb::bsatn {
         void write_u16_le(uint16_t value) { write_primitive_le(value); }
         void write_u32_le(uint32_t value) { write_primitive_le(value); }
         void write_u64_le(uint64_t value) { write_primitive_le(value); }
-        inline void write_u128_le(const SpacetimeDb::u128& value) {
+        inline void write_u128_le(const SpacetimeDB::u128& value) {
             write_u64_le(value.low);
             write_u64_le(value.high);
         }
-        void write_u256_le(const SpacetimeDb::u256_placeholder& value) {
+        void write_u256_le(const SpacetimeDB::u256_placeholder& value) {
             write_bytes_raw(value.data.data(), value.data.size());
         }
 
@@ -60,11 +60,11 @@ namespace SpacetimeDb::bsatn {
         void write_i16_le(int16_t value) { write_u16_le(static_cast<uint16_t>(value)); }
         void write_i32_le(int32_t value) { write_u32_le(static_cast<uint32_t>(value)); }
         void write_i64_le(int64_t value) { write_u64_le(static_cast<uint64_t>(value)); }
-        inline void write_i128_le(const SpacetimeDb::i128& value) {
+        inline void write_i128_le(const SpacetimeDB::i128& value) {
             write_u64_le(value.low);
             write_u64_le(static_cast<uint64_t>(value.high));
         }
-        void write_i256_le(const SpacetimeDb::i256_placeholder& value) {
+        void write_i256_le(const SpacetimeDB::i256_placeholder& value) {
             write_bytes_raw(value.data.data(), value.data.size());
         }
 
@@ -184,11 +184,11 @@ namespace SpacetimeDb::bsatn {
         w.write_u64_le(value);
     }
 
-    inline void serialize(Writer& w, const SpacetimeDb::u128& value) {
+    inline void serialize(Writer& w, const SpacetimeDB::u128& value) {
         w.write_u128_le(value);
     }
 
-    inline void serialize(Writer& w, const SpacetimeDb::u256_placeholder& value) {
+    inline void serialize(Writer& w, const SpacetimeDB::u256_placeholder& value) {
         w.write_u256_le(value);
     }
 
@@ -208,11 +208,11 @@ namespace SpacetimeDb::bsatn {
         w.write_i64_le(value);
     }
 
-    inline void serialize(Writer& w, const SpacetimeDb::i128& value) {
+    inline void serialize(Writer& w, const SpacetimeDB::i128& value) {
         w.write_i128_le(value);
     }
 
-    inline void serialize(Writer& w, const SpacetimeDb::i256_placeholder& value) {
+    inline void serialize(Writer& w, const SpacetimeDB::i256_placeholder& value) {
         w.write_i256_le(value);
     }
 

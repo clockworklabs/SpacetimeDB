@@ -132,7 +132,7 @@ SPACETIMEDB_NAMESPACE(UserRole, "Auth")  // Separate macro for namespace
 
 **What it generates:**
 ```cpp
-namespace SpacetimeDb::detail {
+namespace SpacetimeDB::detail {
     template<> struct namespace_info<UserRole> {
         static constexpr const char* value = "Auth";
     };

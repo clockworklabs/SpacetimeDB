@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 #include <optional>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test: Optional in reducer only (no table fields)
 

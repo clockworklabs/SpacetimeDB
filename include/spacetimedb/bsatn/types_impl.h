@@ -11,7 +11,7 @@
 #include <sstream>    // For std::ostringstream
 #include <iomanip>    // For std::hex, std::setfill, std::setw
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Identity method implementations
 inline Identity::Identity() {
@@ -52,14 +52,14 @@ inline bool Identity::operator<(const Identity& other) const {
 }
 
 // Identity BSATN implementation
-inline void Identity::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
+inline void Identity::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
     // Write raw bytes without length prefix for fixed-size Identity
     for (size_t i = 0; i < this->value.size(); ++i) {
         writer.write_u8(this->value[i]);
     }
 }
 
-inline void Identity::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
+inline void Identity::bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader) {
     std::vector<uint8_t> bytes = reader.read_fixed_bytes(IDENTITY_SIZE);
     if (bytes.size() == IDENTITY_SIZE) {
         std::copy(bytes.begin(), bytes.end(), this->value.data());
@@ -69,20 +69,20 @@ inline void Identity::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
 }
 
 // ConnectionId BSATN implementation
-inline void ConnectionId::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
+inline void ConnectionId::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
     writer.write_u128_le(this->id);
 }
 
-inline void ConnectionId::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
+inline void ConnectionId::bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader) {
     this->id = reader.read_u128_le();
 }
 
 // u256 BSATN implementation
-inline void u256::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
+inline void u256::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
     writer.write_u256_le(*this);
 }
 
-inline void u256::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
+inline void u256::bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader) {
     std::vector<uint8_t> bytes = reader.read_fixed_bytes(sizeof(this->data));
     if (bytes.size() == sizeof(this->data)) {
         std::copy(bytes.begin(), bytes.end(), this->data.data());
@@ -92,11 +92,11 @@ inline void u256::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
 }
 
 // i256 BSATN implementation
-inline void i256::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
+inline void i256::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
     writer.write_i256_le(*this);
 }
 
-inline void i256::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
+inline void i256::bsatn_deserialize(::SpacetimeDB::bsatn::Reader& reader) {
     std::vector<uint8_t> bytes = reader.read_fixed_bytes(sizeof(this->data));
     if (bytes.size() == sizeof(this->data)) {
         std::copy(bytes.begin(), bytes.end(), this->data.data());
@@ -110,6 +110,6 @@ inline void i256::bsatn_deserialize(::SpacetimeDb::bsatn::Reader& reader) {
 // Note: u128 and i128 have their own serialize/deserialize static methods in types.h,
 // not bsatn_serialize/deserialize member functions
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_BSATN_TYPES_IMPL_H

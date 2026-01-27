@@ -9,7 +9,7 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "spacetimedb/internal/Module.h"
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 inline Outcome<HttpResponse> HttpClient::SendImpl(const HttpRequest& request) {
     // Convert user-facing request to wire format
@@ -78,6 +78,6 @@ inline Outcome<HttpResponse> HttpClient::SendImpl(const HttpRequest& request) {
     return Ok(std::move(response));
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_HTTP_CLIENT_IMPL_H
