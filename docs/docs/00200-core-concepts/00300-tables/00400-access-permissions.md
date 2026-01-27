@@ -88,6 +88,32 @@ pub struct Player {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Private table (default) - only accessible from server-side code
+struct InternalConfig {
+    std::string key;
+    std::string value;
+};
+SPACETIMEDB_STRUCT(InternalConfig, key, value)
+SPACETIMEDB_TABLE(InternalConfig, internal_config, Private)
+FIELD_PrimaryKey(internal_config, key)
+
+// Public table - clients can subscribe and query
+struct Player {
+    uint64_t id;
+    std::string name;
+    uint64_t score;
+};
+SPACETIMEDB_STRUCT(Player, id, name, score)
+SPACETIMEDB_TABLE(Player, player, Public)
+FIELD_PrimaryKeyAutoInc(player, id)
+```
+
+Use `Private` or `Public` as the third parameter to `SPACETIMEDB_TABLE` to control table visibility.
+
+</TabItem>
 </Tabs>
 
 Use private tables for:
@@ -191,6 +217,35 @@ fn example(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
+    // Insert
+    ctx.db[user].insert(User{.id = 0, .name = "Alice", .email = "alice@example.com"});
+
+    // Read: iterate all rows
+    for (const auto& user_row : ctx.db[user]) {
+        LOG_INFO("User: " + user_row.name);
+    }
+
+    // Read: find by unique column
+    auto found_user = ctx.db[user_id].find(123);
+    if (found_user.has_value()) {
+        // Update
+        auto updated = found_user.value();
+        updated.name = "Bob";
+        ctx.db[user_id].update(updated);
+    }
+
+    // Delete
+    ctx.db[user_id].delete_by_key(456);
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Procedures with Transactions - Read-Write Access
@@ -237,6 +292,26 @@ fn update_user_procedure(ctx: &mut ProcedureContext, user_id: u64, new_name: Str
         }
     });
     // Transaction is committed when the closure returns
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_PROCEDURE(Unit, update_user_procedure, ProcedureContext ctx, uint64_t userId, std::string newName) {
+    // Must explicitly open a transaction
+    ctx.with_tx([userId, newName](TxContext& tx) {
+        // Full read-write access within the transaction
+        auto user_opt = tx.db[user_id].find(userId);
+        if (user_opt.has_value()) {
+            User updated = user_opt.value();
+            updated.name = newName;
+            tx.db[user_id].update(updated);
+        }
+    });
+    // Transaction is committed when the lambda returns
+    return Unit{};
 }
 ```
 
@@ -291,6 +366,23 @@ fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
 
     // Cannot insert, update, or delete
     // ctx.db.user().insert(...) // ❌ Compile error
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_VIEW(std::vector<User>, find_users_by_name, Public, ViewContext ctx) {
+    // Can read and filter using indexed lookups
+    std::vector<User> results;
+    for (auto iter = ctx.db[user_name].filter("Alice"); iter != IndexIterator<User>(); ++iter) {
+        results.push_back(*iter);
+    }
+    return results;
+
+    // Cannot insert, update, or delete
+    // ctx.db[user].insert(...) // ❌ Methods not available in ViewContext
 }
 ```
 
@@ -408,6 +500,41 @@ fn my_messages(ctx: &ViewContext) -> Vec<Message> {
     let sent: Vec<_> = ctx.db.message().sender().filter(&ctx.sender).collect();
     let received: Vec<_> = ctx.db.message().recipient().filter(&ctx.sender).collect();
     sent.into_iter().chain(received).collect()
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Message {
+    uint64_t id;
+    Identity sender;
+    Identity recipient;
+    std::string content;
+};
+SPACETIMEDB_STRUCT(Message, id, sender, recipient, content)
+SPACETIMEDB_TABLE(Message, message, Private)  // Private by default
+FIELD_PrimaryKeyAutoInc(message, id)
+FIELD_Index(message, sender)
+FIELD_Index(message, recipient)
+
+// Public view that only returns messages the caller can see
+SPACETIMEDB_VIEW(std::vector<Message>, my_messages, Public, ViewContext ctx) {
+    // Look up messages by index where caller is sender or recipient
+    std::vector<Message> results;
+    
+    // Find messages where caller is sender
+    for (auto iter = ctx.db[message_sender].filter(ctx.sender); iter != IndexIterator<Message>(); ++iter) {
+        results.push_back(*iter);
+    }
+    
+    // Find messages where caller is recipient
+    for (auto iter = ctx.db[message_recipient].filter(ctx.sender); iter != IndexIterator<Message>(); ++iter) {
+        results.push_back(*iter);
+    }
+    
+    return results;
 }
 ```
 
@@ -560,6 +687,50 @@ fn my_profile(ctx: &ViewContext) -> Option<PublicUserProfile> {
         created_at: user.created_at,
         // email, password_hash, and api_key are not included
     })
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct UserAccount {
+    uint64_t id;
+    Identity identity;
+    std::string username;
+    std::string email;
+    std::string password_hash;  // Sensitive - not exposed in view
+    std::string api_key;        // Sensitive - not exposed in view
+    Timestamp created_at;
+};
+SPACETIMEDB_STRUCT(UserAccount, id, identity, username, email, password_hash, api_key, created_at)
+SPACETIMEDB_TABLE(UserAccount, user_account, Private)  // Private by default
+FIELD_PrimaryKeyAutoInc(user_account, id)
+FIELD_Unique(user_account, identity)
+
+// Public type without sensitive columns
+struct PublicUserProfile {
+    uint64_t id;
+    std::string username;
+    Timestamp created_at;
+};
+SPACETIMEDB_STRUCT(PublicUserProfile, id, username, created_at)
+
+// Public view that returns the caller's profile without sensitive data
+SPACETIMEDB_VIEW(std::optional<PublicUserProfile>, my_profile, Public, ViewContext ctx) {
+    // Look up the caller's account by their identity (unique index)
+    auto user_opt = ctx.db[user_account_identity].find(ctx.sender);
+    if (!user_opt.has_value()) {
+        return std::nullopt;
+    }
+    
+    UserAccount user = user_opt.value();
+    return PublicUserProfile{
+        user.id,
+        user.username,
+        user.created_at
+        // email, password_hash, and api_key are not included
+    };
 }
 ```
 
@@ -726,6 +897,60 @@ fn my_team(ctx: &ViewContext) -> Vec<TeamMember> {
             // salary is not included
         })
         .collect()
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Private table with all employee data
+struct Employee {
+    uint64_t id;
+    Identity identity;
+    std::string name;
+    std::string department;
+    uint64_t salary;           // Sensitive - not exposed in view
+    uint64_t manager_id;       // 0 means no manager
+};
+SPACETIMEDB_STRUCT(Employee, id, identity, name, department, salary, manager_id)
+SPACETIMEDB_TABLE(Employee, employee, Private)
+FIELD_PrimaryKey(employee, id)
+FIELD_Unique(employee, identity)
+FIELD_Index(employee, manager_id)
+
+// Public type for team members (no salary)
+struct TeamMember {
+    uint64_t id;
+    std::string name;
+    std::string department;
+};
+SPACETIMEDB_STRUCT(TeamMember, id, name, department)
+
+// View that returns only the caller's team members, without salary info
+SPACETIMEDB_VIEW(std::vector<TeamMember>, my_team, Public, ViewContext ctx) {
+    // Find the caller's employee record by identity (unique index)
+    auto me_opt = ctx.db[employee_identity].find(ctx.sender);
+    if (!me_opt.has_value()) {
+        return std::vector<TeamMember>();
+    }
+    
+    Employee me = me_opt.value();
+    std::vector<TeamMember> results;
+    
+    // Look up employees who report to the caller by manager_id index
+    for (auto iter = ctx.db[employee_manager_id].filter(me.id); 
+         iter != IndexIterator<Employee>(); ++iter) {
+        const Employee& emp = *iter;
+        results.push_back(TeamMember{
+            emp.id,
+            emp.name,
+            emp.department
+            // salary is not included
+        });
+    }
+    
+    return results;
 }
 ```
 
