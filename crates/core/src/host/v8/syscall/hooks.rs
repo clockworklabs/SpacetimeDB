@@ -11,6 +11,8 @@ use crate::host::v8::error::Throwable;
 use crate::host::v8::error::TypeError;
 use crate::host::v8::from_value::cast;
 use crate::host::v8::string::StringConst;
+use crate::host::wasm_common::DESCRIBE_MODULE_DUNDER;
+use crate::host::wasm_common::DESCRIBE_MODULE_DUNDER_V10;
 
 /// Returns the hook function `name` on `hooks_obj`.
 pub(super) fn get_hook_function<'scope>(
@@ -51,6 +53,7 @@ pub(in super::super) enum ModuleHookKey {
     CallView,
     CallAnonymousView,
     CallProcedure,
+    DescribeModuleV10,
 }
 
 impl ModuleHookKey {
@@ -65,6 +68,7 @@ impl ModuleHookKey {
             ModuleHookKey::CallView => 22,
             ModuleHookKey::CallAnonymousView => 23,
             ModuleHookKey::CallProcedure => 24,
+            ModuleHookKey::DescribeModuleV10 => 25,
         }
     }
 }
@@ -104,17 +108,38 @@ impl HooksInfo {
 }
 
 #[derive(Copy, Clone)]
+/// The describe_module hook function for different `RawModuleDef`s.
+pub enum DescribeModuleHook<'scope> {
+    Legacy(Local<'scope, Function>),
+    V10(Local<'scope, Function>),
+}
+
+#[derive(Copy, Clone)]
 /// The actual callable module hook functions and their abi version.
 pub(in super::super) struct HookFunctions<'scope> {
     pub abi: AbiVersion,
     /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
-    pub describe_module: Local<'scope, Function>,
+    pub describe_module: DescribeModuleHook<'scope>,
     pub call_reducer: Local<'scope, Function>,
     pub call_view: Option<Local<'scope, Function>>,
     pub call_view_anon: Option<Local<'scope, Function>>,
     pub call_procedure: Option<Local<'scope, Function>>,
 }
 
+impl HookFunctions<'_> {
+    pub(in super::super) fn describe_hook(&self) -> Local<'_, Function> {
+        match self.describe_module {
+            DescribeModuleHook::Legacy(f) | DescribeModuleHook::V10(f) => f,
+        }
+    }
+
+    pub(in super::super) fn describe_func_name(&self) -> &'static str {
+        match self.describe_module {
+            DescribeModuleHook::Legacy(_) => DESCRIBE_MODULE_DUNDER,
+            DescribeModuleHook::V10(_) => DESCRIBE_MODULE_DUNDER_V10,
+        }
+    }
+}
 /// Returns the hook function previously registered in [`register_hooks`].
 pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> Option<HookFunctions<'scope>> {
     let ctx = scope.get_current_context();
@@ -128,9 +153,17 @@ pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> O
         })
     };
 
+    let describe_module = if let Some(f) = get(ModuleHookKey::DescribeModule) {
+        DescribeModuleHook::Legacy(f)
+    } else if let Some(f) = get(ModuleHookKey::DescribeModuleV10) {
+        DescribeModuleHook::V10(f)
+    } else {
+        return None;
+    };
+
     Some(HookFunctions {
         abi: hooks.abi,
-        describe_module: get(ModuleHookKey::DescribeModule)?,
+        describe_module,
         call_reducer: get(ModuleHookKey::CallReducer)?,
         call_view: get(ModuleHookKey::CallView),
         call_view_anon: get(ModuleHookKey::CallAnonymousView),
