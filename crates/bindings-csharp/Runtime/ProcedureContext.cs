@@ -10,8 +10,11 @@ public abstract class ProcedureContextBase(
     Timestamp time
 ) : Internal.IInternalProcedureContext
 {
+    private readonly Identity _sender = sender;
+
+    public Identity Sender() => _sender;
+
     public static Identity Identity => Internal.IProcedureContext.GetIdentity();
-    public Identity Sender { get; } = sender;
     public ConnectionId? ConnectionId { get; } = connectionId;
     public Random Rng { get; } = random;
     public Timestamp Timestamp { get; private set; } = time;
@@ -47,7 +50,7 @@ public abstract class ProcedureContextBase(
             txContext?.WithTimestamp(timestamp)
             ?? new Internal.TxContext(
                 CreateLocal(),
-                Sender,
+                _sender,
                 ConnectionId,
                 timestamp,
                 SenderAuth,
@@ -229,8 +232,9 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner)
 
     internal void Refresh(Internal.TxContext inner) => Inner = inner;
 
+    public Identity Sender() => Inner.Sender();
+
     public LocalBase Db => (LocalBase)Inner.Db;
-    public Identity Sender => Inner.Sender;
     public ConnectionId? ConnectionId => Inner.ConnectionId;
     public Timestamp Timestamp => Inner.Timestamp;
     public AuthCtx SenderAuth => Inner.SenderAuth;

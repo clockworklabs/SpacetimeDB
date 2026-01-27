@@ -221,7 +221,7 @@ public static partial class Module
         ctx.Db.Document.Insert(new Document
         {
             Id = 0,  // auto-increment
-            OwnerId = ctx.Sender,
+            OwnerId = ctx.Sender(),
             Filename = filename,
             MimeType = mimeType,
             SizeBytes = sizeBytes,
