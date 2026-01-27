@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/modules.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Test publishing a module without the --delete-data option

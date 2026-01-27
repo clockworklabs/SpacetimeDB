@@ -1,5 +1,3 @@
-//! DML tests translated from smoketests/tests/dml.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Test that we receive subscription updates from DML

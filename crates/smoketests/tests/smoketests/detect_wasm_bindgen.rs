@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/detect_wasm_bindgen.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Module code that uses wasm_bindgen (should be rejected)

@@ -1,5 +1,3 @@
-//! Namespace tests translated from smoketests/tests/namespaces.py
-
 use spacetimedb_smoketests::Smoketest;
 use std::fs;
 use std::path::{Path, PathBuf};

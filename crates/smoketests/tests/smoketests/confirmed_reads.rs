@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/confirmed_reads.py
-//!
 //! TODO: We only test that we can pass a --confirmed flag and that things
 //! appear to work as if we hadn't. Without controlling the server, we can't
 //! test that there is any difference in behavior.

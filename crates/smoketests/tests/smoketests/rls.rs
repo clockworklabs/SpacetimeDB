@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/rls.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Tests for querying tables with RLS rules

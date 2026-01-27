@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/views.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Tests that views populate the st_view_* system tables

@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/permissions.py
-
 use spacetimedb_smoketests::Smoketest;
 use std::path::PathBuf;
 

@@ -1,5 +1,3 @@
-//! Nested table operation tests translated from smoketests/tests/module_nested_op.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// This tests uploading a basic module and calling some functions and checking logs afterwards.

@@ -1,6 +1,4 @@
 #![allow(clippy::disallowed_macros)]
-//! Tests translated from smoketests/tests/quickstart.py
-//!
 //! This test validates that the quickstart documentation is correct by extracting
 //! code from markdown docs and running it.
 

@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/domains.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Tests the functionality of the rename command

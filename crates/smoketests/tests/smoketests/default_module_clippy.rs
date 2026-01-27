@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/default_module_clippy.py
-//!
 //! These tests verify that the Rust module templates have no clippy warnings.
 
 use std::path::PathBuf;

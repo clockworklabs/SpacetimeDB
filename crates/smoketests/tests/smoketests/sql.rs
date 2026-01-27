@@ -1,5 +1,3 @@
-//! SQL format tests translated from smoketests/tests/sql.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// This test is designed to test the format of the output of sql queries

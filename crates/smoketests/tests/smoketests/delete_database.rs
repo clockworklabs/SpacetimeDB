@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/delete_database.py
-
 use spacetimedb_smoketests::Smoketest;
 use std::thread;
 use std::time::Duration;

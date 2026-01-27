@@ -1,5 +1,3 @@
-//! Scheduled reducer tests translated from smoketests/tests/schedule_reducer.py
-
 use spacetimedb_smoketests::Smoketest;
 use std::thread;
 use std::time::Duration;

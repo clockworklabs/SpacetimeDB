@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/fail_initial_publish.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Module code with a bug: `Person` is the wrong table name, should be `person`

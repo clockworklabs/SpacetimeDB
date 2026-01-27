@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/auto_migration.py
-
 use spacetimedb_smoketests::Smoketest;
 
 const MODULE_CODE_SIMPLE: &str = r#"

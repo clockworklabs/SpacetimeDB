@@ -1,5 +1,3 @@
-//! Add/remove index tests translated from smoketests/tests/add_remove_index.py
-
 use spacetimedb_smoketests::Smoketest;
 
 const JOIN_QUERY: &str = "select t1.* from t1 join t2 on t1.id = t2.id where t2.id = 1001";

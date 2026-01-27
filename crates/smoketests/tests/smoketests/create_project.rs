@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/create_project.py
-
 use spacetimedb_guard::ensure_binaries_built;
 use std::process::Command;
 use tempfile::tempdir;

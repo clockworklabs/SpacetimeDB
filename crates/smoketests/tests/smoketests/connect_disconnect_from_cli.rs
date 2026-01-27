@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/connect_disconnect_from_cli.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Ensure that the connect and disconnect functions are called when invoking a reducer from the CLI

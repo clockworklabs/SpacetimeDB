@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/client_connected_error_rejects_connection.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Test that client_connected returning an error rejects the connection

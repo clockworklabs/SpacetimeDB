@@ -1,5 +1,3 @@
-//! Filtering tests translated from smoketests/tests/filtering.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Test filtering reducers

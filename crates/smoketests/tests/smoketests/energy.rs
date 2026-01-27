@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/energy.py
-
 use regex::Regex;
 use spacetimedb_smoketests::Smoketest;
 

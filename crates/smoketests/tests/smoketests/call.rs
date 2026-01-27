@@ -1,5 +1,3 @@
-//! Reducer/procedure call tests translated from smoketests/tests/call.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Check calling a reducer (no return) and procedure (return)

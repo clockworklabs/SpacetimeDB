@@ -1,6 +1,4 @@
 #![allow(clippy::disallowed_macros)]
-//! Tests translated from smoketests/tests/csharp_module.py
-
 use spacetimedb_guard::ensure_binaries_built;
 use spacetimedb_smoketests::{have_dotnet, workspace_root};
 use std::fs;

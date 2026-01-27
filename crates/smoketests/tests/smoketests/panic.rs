@@ -1,5 +1,3 @@
-//! Panic and error handling tests translated from smoketests/tests/panic.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Tests to check if a SpacetimeDB module can handle a panic without corrupting

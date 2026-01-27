@@ -1,5 +1,3 @@
-//! Tests translated from smoketests/tests/new_user_flow.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Test the entirety of the new user flow.

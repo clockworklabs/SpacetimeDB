@@ -1,5 +1,3 @@
-//! Module description tests translated from smoketests/tests/describe.py
-
 use spacetimedb_smoketests::Smoketest;
 
 /// Check describing a module

@@ -1,5 +1,3 @@
-//! Auto-increment tests translated from smoketests/tests/auto_inc.py
-
 use spacetimedb_smoketests::Smoketest;
 
 const INT_TYPES: &[&str] = &["u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128"];
