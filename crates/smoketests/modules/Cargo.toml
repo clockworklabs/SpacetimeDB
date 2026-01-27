@@ -39,7 +39,7 @@ members = [
     # Module lifecycle tests
     "describe",
     "modules-basic",
-    # "modules-breaking" - intentionally has breaking schema change, uses runtime compilation
+    "modules-breaking",
     "modules-add-table",
 
     # Index tests

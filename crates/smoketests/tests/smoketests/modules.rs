@@ -2,18 +2,6 @@
 
 use spacetimedb_smoketests::Smoketest;
 
-/// Breaking change: adds a new column to Person
-const MODULE_CODE_BREAKING: &str = r#"
-#[spacetimedb::table(name = person)]
-pub struct Person {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    name: String,
-    age: u8,
-}
-"#;
-
 /// Test publishing a module without the --delete-data option
 #[test]
 fn test_module_update() {
@@ -41,8 +29,8 @@ fn test_module_update() {
     // Unchanged module is ok
     test.publish_module_named(&name, false).unwrap();
 
-    // Changing an existing table isn't
-    test.write_module_code(MODULE_CODE_BREAKING).unwrap();
+    // Changing an existing table isn't (adds age column to Person)
+    test.use_precompiled_module("modules-breaking");
     let result = test.publish_module_named(&name, false);
     assert!(result.is_err(), "Expected publish to fail with breaking change");
     let err = result.unwrap_err().to_string();
