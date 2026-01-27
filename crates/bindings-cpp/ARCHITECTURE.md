@@ -1,4 +1,4 @@
-# SpacetimeDB C++ SDK Architecture
+# SpacetimeDB C++ Bindings Architecture
 
 ## Overview
 
