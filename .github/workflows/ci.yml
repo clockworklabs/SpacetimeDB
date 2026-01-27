@@ -19,7 +19,6 @@ concurrency:
 
 jobs:
   smoketests:
-    needs: [lints]
     name: Smoketests
     strategy:
       fail-fast: false
