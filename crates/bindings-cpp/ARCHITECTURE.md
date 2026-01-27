@@ -260,7 +260,7 @@ void __preinit__19_autoinc_register_47() {
 
 **Runtime Integration Process**:
 When `insert()` is called on a table with auto-increment fields:
-1. SDK serializes and sends the row to SpacetimeDB
+1. The logic in the bindings serializes and sends the row to SpacetimeDB
 2. SpacetimeDB processes the insert and generates the auto-increment value(s)
 3. SpacetimeDB returns a buffer containing only the generated column values in BSATN format
 4. SDK calls the registered integrator function to update the original row with generated values
