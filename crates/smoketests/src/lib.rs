@@ -763,8 +763,18 @@ log = "0.4"
         self.publish_module_opts(Some(&identity), clear)
     }
 
+    /// Publishes the module with name, clear, and break_clients options.
+    pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
+        self.publish_module_internal(Some(name), clear, break_clients)
+    }
+
     /// Internal helper for publishing with options.
     fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
+        self.publish_module_internal(name, clear, false)
+    }
+
+    /// Internal helper for publishing with all options.
+    fn publish_module_internal(&mut self, name: Option<&str>, clear: bool, break_clients: bool) -> Result<String> {
         let start = Instant::now();
 
         // Determine the WASM path - either precompiled or build it
@@ -816,6 +826,10 @@ log = "0.4"
 
         if clear {
             args.push("--clear-database");
+        }
+
+        if break_clients {
+            args.push("--break-clients");
         }
 
         let name_owned;

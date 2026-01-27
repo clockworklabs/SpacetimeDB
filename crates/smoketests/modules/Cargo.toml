@@ -20,6 +20,8 @@ members = [
 
     # Security and permissions
     "rls",
+    "rls-no-filter",
+    "rls-with-filter",
     "permissions-private",
     "permissions-lifecycle",
 
