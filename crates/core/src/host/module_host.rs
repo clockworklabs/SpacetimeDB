@@ -37,13 +37,13 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
 use scopeguard::ScopeGuard;
+use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
 };
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
@@ -54,11 +54,10 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{AlgebraicType, ConnectionId};
+use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -73,7 +72,7 @@ use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
-    pub tables: Vec<DatabaseTableUpdate>,
+    pub tables: SmallVec<[DatabaseTableUpdate; 1]>,
 }
 
 impl FromIterator<DatabaseTableUpdate> for DatabaseUpdate {
@@ -93,26 +92,15 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(tx_data: &TxData) -> Self {
-        let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
-        let new_update = |table_id, table_name: &str| DatabaseTableUpdate {
+        let entries = tx_data.iter_table_entries();
+        let mut tables = SmallVec::with_capacity(entries.len());
+        tables.extend(entries.map(|(table_id, e)| DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
-            inserts: [].into(),
-            deletes: [].into(),
-        };
-        for (table_id, table_name, rows) in tx_data.inserts_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .inserts = rows.clone();
-        }
-        for (table_id, table_name, rows) in tx_data.deletes_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .deletes = rows.clone();
-        }
-        DatabaseUpdate {
-            tables: map.into_values().collect(),
-        }
+            table_name: e.table_name.clone(),
+            inserts: e.inserts.clone(),
+            deletes: e.deletes.clone(),
+        }));
+        DatabaseUpdate { tables }
     }
 
     /// The number of rows in the payload
