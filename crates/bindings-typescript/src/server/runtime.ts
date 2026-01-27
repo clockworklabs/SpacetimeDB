@@ -780,7 +780,7 @@ function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
 function advanceIterRaw(id: u32, buf: ResizableBuffer): number {
   while (true) {
     try {
-      return 0 | sys.row_iter_bsatn_advance(id, buf.buffer);
+      return 0 | (0, sys.row_iter_bsatn_advance)(id, buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
         buf.grow(e.__buffer_too_small__ as number);

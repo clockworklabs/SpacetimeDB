@@ -60,6 +60,7 @@ mod budget;
 mod builtins;
 mod de;
 mod error;
+mod fast;
 mod from_value;
 mod ser;
 mod string;

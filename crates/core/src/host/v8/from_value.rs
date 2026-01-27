@@ -22,24 +22,30 @@ macro_rules! impl_from_value {
 
 /// Tries to cast `Value` into `T` or raises a JS exception as a returned `Err` value.
 pub(super) fn try_cast<'scope_a, 'scope_b, T>(
-    scope: &PinScope<'scope_a, '_>,
     val: Local<'scope_b, Value>,
     on_err: impl FnOnce(&str) -> String,
-) -> ValueResult<'scope_a, Local<'scope_b, T>>
+) -> Result<Local<'scope_b, T>, TypeError<String>>
 where
     Local<'scope_b, T>: TryFrom<Local<'scope_b, Value>>,
 {
-    val.try_cast::<T>()
-        .map_err(|_| TypeError(on_err(val.type_repr())).into_exception(scope))
+    val.try_cast::<T>().map_err(|_| TypeError(on_err(val.type_repr())))
 }
 
 /// Tries to cast `Value` into `T` or raises a JS exception as a returned `Err` value.
 macro_rules! cast {
     ($scope:expr, $val:expr, $js_ty:ty, $expected:literal $(, $args:expr)* $(,)?) => {{
-        $crate::host::v8::from_value::try_cast::<$js_ty>($scope, $val, |got| format!(concat!("Expected ", $expected, ", got {__got}"), $($args,)* __got = got))
+        $crate::host::v8::from_value::cast_noscope!($val, $js_ty, $expected $(, $args)*)
+            .map_err(|e| $crate::host::v8::error::IntoException::into_exception(e, $scope))
     }};
 }
 pub(super) use cast;
+
+macro_rules! cast_noscope {
+    ($val:expr, $js_ty:ty, $expected:literal $(, $args:expr)* $(,)?) => {{
+        $crate::host::v8::from_value::try_cast::<$js_ty>($val, |got| format!(concat!("Expected ", $expected, ", got {__got}"), $($args,)* __got = got))
+    }};
+}
+pub(super) use cast_noscope;
 
 /// Returns a JS exception value indicating that a value overflowed
 /// when converting to the type `rust_ty`.
