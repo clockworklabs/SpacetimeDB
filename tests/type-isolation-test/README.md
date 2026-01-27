@@ -146,4 +146,4 @@ SUCCESS_RATE=$(grep "Success rate:" test_summary_live.txt | grep -o '[0-9]*%')
 [[ "${SUCCESS_RATE}" == "89%" ]] || exit 1  # Expected rate with intentional failures
 ```
 
-The test suite validates the C++ SDK type system by testing individual types in isolation, ensuring reliable constraint validation and error detection.
+The test suite validates the C++ bindings type system by testing individual types in isolation, ensuring reliable constraint validation and error detection.

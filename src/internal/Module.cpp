@@ -1,4 +1,4 @@
-// SpacetimeDB C++ SDK - V9 Serialization Implementation
+// SpacetimeDB C++ bindings - V9 Serialization Implementation
 // Clean implementation for simplified type registration and serialization
 
 #include "spacetimedb.h"

@@ -1,13 +1,13 @@
 #pragma once
 
 /**
- * SpacetimeDB C++ SDK - Extended Type System
+ * SpacetimeDB C++ bindings - Extended Type System
  * 
  * This header provides complete support for all SpacetimeDB types including:
- * - Special types: Identity, ConnectionId, Timestamp, TimeDuration, Uuid (✅ COMPLETE)
- * - Large integers: u128, i128, u256, i256 (✅ COMPLETE)
- * - Container types: Option<T>, Vec<T>, Result<T, E> (✅ COMPLETE)
- * - BSATN serialization for all types (✅ COMPLETE)
+ * - Special types: Identity, ConnectionId, Timestamp, TimeDuration, Uuid
+ * - Large integers: u128, i128, u256, i256
+ * - Container types: Option<T>, Vec<T>, Result<T, E>
+ * - BSATN serialization for all types
  * 
  * All five SpacetimeDB special types are fully implemented and tested:
  * - Identity: U256 with __identity__ tag

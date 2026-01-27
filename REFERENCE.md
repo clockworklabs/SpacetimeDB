@@ -296,7 +296,7 @@ SPACETIMEDB_REDUCER(update_user, ReducerContext ctx, uint32_t user_id, std::stri
 
 ## Random Number Generation
 
-The C++ SDK provides deterministic random number generation through the `ReducerContext`. The RNG is seeded with the reducer's timestamp, ensuring reproducible behavior across SpacetimeDB instances.
+The C++ bindings provides deterministic random number generation through the `ReducerContext`. The RNG is seeded with the reducer's timestamp, ensuring reproducible behavior across SpacetimeDB instances.
 
 ### Basic Usage
 
@@ -1059,7 +1059,7 @@ SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
 
 ### CMake Configuration
 
-The C++ SDK uses CMake with Emscripten for WebAssembly compilation (`spacetime init` will generate one for you):
+The C++ bindings uses CMake with Emscripten for WebAssembly compilation (`spacetime init` will generate one for you):
 
 ```cmake
 # Basic configuration

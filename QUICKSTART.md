@@ -6,10 +6,12 @@ This guide will walk you through creating your first SpacetimeDB module in C++. 
 
 A SpacetimeDB module is C++ code that gets compiled to WebAssembly and runs inside the database. Instead of the traditional architecture (database → app server → clients), SpacetimeDB lets you write your entire backend logic that runs **inside** the database itself, giving you microsecond latency and automatic real-time sync to clients.
 
-Modules consist of two main components:
+Modules consist of four main components:
 
 - **Tables**: Database tables defined as C++ structs
 - **Reducers**: Functions that modify data and can be called by clients
+- **Views**: Read-only query functions that return data (std::vector<T> or std::optional<T>) to clients
+- **Procedures**: Pure functions that return values and can optionally access the database via transactions 
 
 ## Prerequisites
 

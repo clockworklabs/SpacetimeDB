@@ -2,7 +2,7 @@
 #define SPACETIMEDB_MODULE_IMPL_H
 
 /**
- * SpacetimeDB C++ SDK - Module Implementation (Optimized)
+ * SpacetimeDB C++ bindings - Module Implementation
  * 
  * Core module system implementation with optimized type handling, 
  * table registration, and reducer management.
