@@ -22,6 +22,7 @@ fn next_spawn_id() -> u64 {
 }
 
 /// Returns the workspace root directory.
+// TODO: Should this use something like `git rev-parse --show-toplevel` to avoid being directory-relative?
 fn workspace_root() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
