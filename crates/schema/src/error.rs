@@ -147,6 +147,12 @@ pub enum ValidationError {
         table_name: Box<str>,
         schedule_name: Box<str>,
     },
+    #[error("reducer {reducer_name} has invalid return type: found Result<{ok_type}, {err_type}>")]
+    InvalidReducerReturnType {
+        reducer_name: RawIdentifier,
+        ok_type: PrettyAlgebraicType,
+        err_type: PrettyAlgebraicType,
+    },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

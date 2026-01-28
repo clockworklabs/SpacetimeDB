@@ -46,11 +46,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .into_iter()
         .flatten()
-        .map(|reducer| {
-            validator
-                .validate_reducer_def(reducer)
-                .map(|reducer_def| (reducer_def.name.clone(), reducer_def))
-        })
+        .map(|reducer| validator.validate_reducer_def(reducer))
         // Collect into a `Vec` first to preserve duplicate names.
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
@@ -100,7 +96,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .into_iter()
         .flatten()
         .map(|ty| {
-            validator.core.validate_type_def(ty).map(|type_def| {
+            validator.core.validate_type_def(ty.into()).map(|type_def| {
                 refmap.insert(type_def.ty, type_def.name.clone());
                 (type_def.name.clone(), type_def)
             })
@@ -131,7 +127,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .into_iter()
                 .flatten()
                 .map(|lifecycle_def| {
-                    let function_name = identifier(lifecycle_def.function_name.clone())?;
+                    let function_name = ReducerName::new_from_str(&identifier(lifecycle_def.function_name.clone())?);
 
                     let (pos, _) = reducers_vec
                         .iter()
@@ -212,7 +208,7 @@ struct ModuleValidatorV10<'a> {
 impl<'a> ModuleValidatorV10<'a> {
     fn validate_table_def(&mut self, table: RawTableDefV10) -> Result<TableDef> {
         let RawTableDefV10 {
-            name: raw_table_name,
+            source_name: raw_table_name,
             product_type_ref,
             primary_key,
             indexes,
@@ -247,7 +243,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|index| {
                 table_validator
-                    .validate_index_def(index)
+                    .validate_index_def(index.into())
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -256,7 +252,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|constraint| {
                 table_validator
-                    .validate_constraint_def(constraint)
+                    .validate_constraint_def(constraint.into())
                     .map(|constraint| (constraint.name.clone(), constraint))
             })
             .collect_all_errors()
@@ -288,7 +284,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|sequence| {
                 table_validator
-                    .validate_sequence_def(sequence)
+                    .validate_sequence_def(sequence.into())
                     .map(|sequence| (sequence.name.clone(), sequence))
             })
             .collect_all_errors();
@@ -363,27 +359,42 @@ impl<'a> ModuleValidatorV10<'a> {
         })
     }
 
-    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV10) -> Result<ReducerDef> {
+    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV10) -> Result<(Identifier, ReducerDef)> {
         let RawReducerDefV10 {
-            name,
+            source_name,
             params,
             visibility,
+            ok_return_type,
+            err_return_type,
         } = reducer_def;
 
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
-                    reducer_name: (&*name).into(),
+                    reducer_name: (&*source_name).into(),
                     position,
                     arg_name,
                 });
 
-        let name_result = identifier(name);
+        let name_result = identifier(source_name.clone());
 
-        let (name_result, params_for_generate) = (name_result, params_for_generate).combine_errors()?;
+        let return_res: Result<_> = (ok_return_type.is_unit() && err_return_type.is_string())
+            .then_some((ok_return_type.clone(), err_return_type.clone()))
+            .ok_or_else(move || {
+                ValidationError::InvalidReducerReturnType {
+                    reducer_name: source_name.clone(),
+                    ok_type: ok_return_type.into(),
+                    err_type: err_return_type.into(),
+                }
+                .into()
+            });
+
+        let (name_result, params_for_generate, return_res) =
+            (name_result, params_for_generate, return_res).combine_errors()?;
+        let (ok_return_type, err_return_type) = return_res;
 
         Ok(ReducerDef {
-            name: name_result,
+            name: ReducerName::new_from_str(&name_result),
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -391,7 +402,10 @@ impl<'a> ModuleValidatorV10<'a> {
             },
             lifecycle: None, // V10 handles lifecycle separately
             visibility: visibility.into(),
+            ok_return_type,
+            err_return_type,
         })
+        .map(|reducer_def| (name_result, reducer_def))
     }
 
     fn validate_schedule_def(
@@ -400,7 +414,7 @@ impl<'a> ModuleValidatorV10<'a> {
         tables: &HashMap<Identifier, TableDef>,
     ) -> Result<(ScheduleDef, Box<str>)> {
         let RawScheduleDefV10 {
-            name,
+            source_name,
             table_name,
             schedule_at_col,
             function_name,
@@ -423,11 +437,11 @@ impl<'a> ModuleValidatorV10<'a> {
                 ref_: table.product_type_ref,
             })?;
 
-        let name = name.unwrap_or_else(|| generate_schedule_name(&table_name));
+        let source_name = source_name.unwrap_or_else(|| generate_schedule_name(&table_name));
         self.core
             .validate_schedule_def(
                 table_name.clone(),
-                identifier(name)?,
+                identifier(source_name)?,
                 function_name,
                 product_type,
                 schedule_at_col,
@@ -452,7 +466,7 @@ impl<'a> ModuleValidatorV10<'a> {
 
     fn validate_procedure_def(&mut self, procedure_def: RawProcedureDefV10) -> Result<ProcedureDef> {
         let RawProcedureDefV10 {
-            name,
+            source_name,
             params,
             return_type,
             visibility,
@@ -461,19 +475,19 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
-                    procedure_name: Cow::Borrowed(&name),
+                    procedure_name: Cow::Borrowed(&source_name),
                     position,
                     arg_name,
                 });
 
         let return_type_for_generate = self.core.validate_for_type_use(
             &TypeLocation::ProcedureReturn {
-                procedure_name: Cow::Borrowed(&name),
+                procedure_name: Cow::Borrowed(&source_name),
             },
             &return_type,
         );
 
-        let name_result = identifier(name);
+        let name_result = identifier(source_name);
 
         let (name_result, params_for_generate, return_type_for_generate) =
             (name_result, params_for_generate, return_type_for_generate).combine_errors()?;
@@ -493,13 +507,14 @@ impl<'a> ModuleValidatorV10<'a> {
 
     fn validate_view_def(&mut self, view_def: RawViewDefV10) -> Result<ViewDef> {
         let RawViewDefV10 {
-            name,
+            source_name,
             is_public,
             is_anonymous,
             params,
             return_type,
             index,
         } = view_def;
+        let name = source_name;
 
         let invalid_return_type = || {
             ValidationErrors::from(ValidationError::InvalidViewReturnType {
@@ -893,22 +908,22 @@ mod tests {
         assert_eq!(def.types[&deliveries_type_name].ty, delivery_def.product_type_ref);
 
         let init_name = expect_identifier("init");
-        assert_eq!(def.reducers[&init_name].name, init_name);
+        assert_eq!(&*def.reducers[&init_name].name, &*init_name);
         assert_eq!(def.reducers[&init_name].lifecycle, Some(Lifecycle::Init));
 
         let on_connect_name = expect_identifier("on_connect");
-        assert_eq!(def.reducers[&on_connect_name].name, on_connect_name);
+        assert_eq!(&*def.reducers[&on_connect_name].name, &*on_connect_name);
         assert_eq!(def.reducers[&on_connect_name].lifecycle, Some(Lifecycle::OnConnect));
 
         let on_disconnect_name = expect_identifier("on_disconnect");
-        assert_eq!(def.reducers[&on_disconnect_name].name, on_disconnect_name);
+        assert_eq!(&*def.reducers[&on_disconnect_name].name, &*on_disconnect_name);
         assert_eq!(
             def.reducers[&on_disconnect_name].lifecycle,
             Some(Lifecycle::OnDisconnect)
         );
 
         let extra_reducer_name = expect_identifier("extra_reducer");
-        assert_eq!(def.reducers[&extra_reducer_name].name, extra_reducer_name);
+        assert_eq!(&*def.reducers[&extra_reducer_name].name, &*extra_reducer_name);
         assert_eq!(def.reducers[&extra_reducer_name].lifecycle, None);
         assert_eq!(
             def.reducers[&extra_reducer_name].params,
@@ -916,7 +931,7 @@ mod tests {
         );
 
         let check_deliveries_name = expect_identifier("check_deliveries");
-        assert_eq!(def.reducers[&check_deliveries_name].name, check_deliveries_name);
+        assert_eq!(&*def.reducers[&check_deliveries_name].name, &*check_deliveries_name);
         assert_eq!(def.reducers[&check_deliveries_name].lifecycle, None);
         assert_eq!(
             def.reducers[&check_deliveries_name].params,
@@ -1398,9 +1413,9 @@ mod tests {
         // Check if it works.
         let mut raw_def = builder.finish();
         let tables = raw_def.tables_mut_for_tests();
-        tables[0].constraints[0].name = Some("wacky.constraint()".into());
-        tables[0].indexes[0].name = Some("wacky.index()".into());
-        tables[0].sequences[0].name = Some("wacky.sequence()".into());
+        tables[0].constraints[0].source_name = Some("wacky.constraint()".into());
+        tables[0].indexes[0].source_name = Some("wacky.index()".into());
+        tables[0].sequences[0].source_name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
         assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());

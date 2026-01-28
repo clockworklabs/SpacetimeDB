@@ -21,6 +21,7 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
@@ -146,7 +147,7 @@ pub struct ModuleDef {
     raw_module_def_version: RawModuleDefVersion,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum RawModuleDefVersion {
     /// Represents [`RawModuleDefV9`] and earlier.
     V9OrEarlier,
@@ -183,6 +184,11 @@ impl ModuleDef {
     /// The reducers of the module definition.
     pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
         self.reducers.values()
+    }
+
+    /// Returns an iterator over all reducer ids and definitions.
+    pub fn reducer_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (ReducerId, &ReducerDef)> {
+        self.reducers.values().enumerate().map(|(idx, def)| (idx.into(), def))
     }
 
     /// The procedures of the module definition.
@@ -1315,7 +1321,7 @@ impl From<RawFunctionVisibility> for FunctionVisibility {
 #[non_exhaustive]
 pub struct ReducerDef {
     /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
-    pub name: Identifier,
+    pub name: ReducerName,
 
     /// The parameters of the reducer.
     ///
@@ -1332,12 +1338,18 @@ pub struct ReducerDef {
 
     /// The visibility of this reducer.
     pub visibility: FunctionVisibility,
+
+    /// The return type of the reducer on success.
+    pub ok_return_type: AlgebraicType,
+
+    /// The return type of the reducer on error.
+    pub err_return_type: AlgebraicType,
 }
 
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV9 {
-            name: val.name.into(),
+            name: val.name.to_string().into(),
             params: val.params,
             lifecycle: val.lifecycle,
         }
@@ -1536,13 +1548,14 @@ impl ModuleDefLookup for TypeDef {
 }
 
 impl ModuleDefLookup for ReducerDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a ReducerName;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        let key = &**key;
         module_def.reducers.get(key)
     }
 }
