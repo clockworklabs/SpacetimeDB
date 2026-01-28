@@ -121,7 +121,7 @@ Available log levels:
 Use the `LOG_*` macros to write logs from your reducers:
 
 ```cpp
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 SPACETIMEDB_REDUCER(process_data, ReducerContext ctx, uint32_t value) {
     LOG_INFO("Processing data with value: " + std::to_string(value));
@@ -270,7 +270,7 @@ pub fn transfer_credits(ctx: &ReducerContext, to_user: u64, amount: u32) -> Resu
 Include relevant context in your log messages:
 
 ```cpp
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 SPACETIMEDB_REDUCER(transfer_credits, ReducerContext ctx, uint64_t to_user, uint32_t amount) {
     LOG_INFO("Credit transfer: from=" + ctx.sender.to_string() + 

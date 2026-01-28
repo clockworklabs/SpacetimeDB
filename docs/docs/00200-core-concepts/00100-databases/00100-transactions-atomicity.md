@@ -156,7 +156,7 @@ pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
 <TabItem value="cpp" label="C++">
 
 ```cpp
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Forward declare child reducer to allow calling it before its definition
 ReducerResult child_reducer(ReducerContext&, bool some_condition);

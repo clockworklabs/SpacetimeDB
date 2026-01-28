@@ -72,7 +72,7 @@ In C++, if we return an error during the `client_connected` reducer, the client 
 Here is a simple example where the server module returns an error for all incoming client connections.
 
 ```cpp
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
     bool client_is_rejected = true;

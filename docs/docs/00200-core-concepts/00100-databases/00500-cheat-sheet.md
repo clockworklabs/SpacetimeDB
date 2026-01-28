@@ -169,7 +169,7 @@ pub enum Status {
 
 ```cpp
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Basic table
 struct Player {
@@ -295,7 +295,7 @@ ctx.db.player().id().delete(123);                      // Delete by primary key
 
 ```cpp
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Basic reducer
 SPACETIMEDB_REDUCER(create_player, ReducerContext ctx, std::string username) {
@@ -370,7 +370,7 @@ pub fn on_disconnect(ctx: &ReducerContext) { /* ... */ }
 <TabItem value="cpp" label="C++">
 
 ```cpp
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 SPACETIMEDB_INIT(init, ReducerContext ctx) { /* ... */ }
 
@@ -527,7 +527,7 @@ fn fetch_data(ctx: &mut ProcedureContext, url: String) -> String {
 // SPACETIMEDB_UNSTABLE_FEATURES is necessary to access Http + Transactions in C++ Procedures
 #define SPACETIMEDB_UNSTABLE_FEATURES
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Cache table for fetched data
 struct Cache {
@@ -621,7 +621,7 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 <TabItem value="cpp" label="C++">
 
 ```cpp
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Return single row using unique indexed field
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
@@ -830,8 +830,8 @@ int8_t, int16_t, int32_t, int64_t
 uint8_t, uint16_t, uint32_t, uint64_t
 
 // Large integers (SpacetimeDB types)
-SpacetimeDb::i128, SpacetimeDb::u128
-SpacetimeDb::i256, SpacetimeDb::u256
+SpacetimeDB::i128, SpacetimeDB::u128
+SpacetimeDB::i256, SpacetimeDB::u256
 
 // Collections
 std::optional<T>, std::vector<T>
