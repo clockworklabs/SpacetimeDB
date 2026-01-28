@@ -143,8 +143,8 @@ These optimizations apply across all supported languages.
 | Primitive | `double` | 64-bit floating point |
 | Primitive | `int8_t`, `int16_t`, `int32_t`, `int64_t` | Signed integers (8-bit to 64-bit) |
 | Primitive | `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t` | Unsigned integers (8-bit to 64-bit) |
-| Primitive | `SpacetimeDb::i128`, `SpacetimeDb::i256` | Signed 128-bit and 256-bit integers |
-| Primitive | `SpacetimeDb::u128`, `SpacetimeDb::u256` | Unsigned 128-bit and 256-bit integers |
+| Primitive | `SpacetimeDB::i128`, `SpacetimeDB::i256` | Signed 128-bit and 256-bit integers |
+| Primitive | `SpacetimeDB::u128`, `SpacetimeDB::u256` | Unsigned 128-bit and 256-bit integers |
 | Composite | `struct` with `SPACETIMEDB_STRUCT` | Product type for nested data |
 | Composite | `SPACETIMEDB_ENUM` | Sum type (tagged union) |
 | Composite | `std::vector<T>` | Vector of elements |
