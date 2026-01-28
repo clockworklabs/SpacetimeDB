@@ -107,32 +107,21 @@ impl<R: Repo, T> Generic<R, T> {
 
     /// Update the current epoch.
     ///
-    /// Calls [`Self::commit`] to flush all data of the previous epoch, and
-    /// returns the result.
-    ///
     /// Does nothing if the given `epoch` is equal to the current epoch.
     ///
     /// # Errors
     ///
     /// If `epoch` is smaller than the current epoch, an error of kind
     /// [`io::ErrorKind::InvalidInput`] is returned.
-    ///
-    /// Also see [`Self::commit`].
     pub fn set_epoch(&mut self, epoch: u64) -> io::Result<()> {
-        use std::cmp::Ordering::*;
-
-        match epoch.cmp(&self.head.epoch()) {
-            Less => Err(io::Error::new(
+        if epoch < self.head.epoch() {
+            return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "new epoch is smaller than current epoch",
-            )),
-            Equal => Ok(()),
-            Greater => {
-                self.flush()?;
-                self.head.set_epoch(epoch);
-                Ok(())
-            }
+            ));
         }
+        self.head.set_epoch(epoch);
+        Ok(())
     }
 
     /// Force the currently active segment to be flushed to storage.
