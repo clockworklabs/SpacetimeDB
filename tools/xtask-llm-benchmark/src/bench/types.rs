@@ -28,20 +28,56 @@ pub struct RunOutcome {
     pub total_tests: u32,
     pub passed_tests: u32,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_output: Option<String>,
     pub category: Option<String>,
     pub route_api_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub golden_db: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_db: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_dir_golden: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_dir_llm: Option<String>,
     pub scorer_details: Option<HashMap<String, ScoreDetails>>,
 
     #[serde(default)]
     pub vendor: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<DateTime<Utc>>,
+}
+
+impl RunOutcome {
+    /// Strip volatile fields that change every run (timestamps, ports, paths)
+    /// to reduce git diff noise when committing results.
+    pub fn sanitize_for_commit(&mut self) {
+        self.started_at = None;
+        self.finished_at = None;
+        self.work_dir_golden = None;
+        self.work_dir_llm = None;
+        self.golden_db = None;
+        self.llm_db = None;
+
+        // Clear llm_output for passing tests (keep for failures for debugging)
+        if self.passed_tests == self.total_tests && self.total_tests > 0 {
+            self.llm_output = None;
+        }
+
+        // Strip volatile fields from scorer_details notes
+        if let Some(ref mut details) = self.scorer_details {
+            for score in details.values_mut() {
+                if let Some(obj) = score.notes.as_object_mut() {
+                    obj.remove("server");
+                    obj.remove("golden_db");
+                    obj.remove("llm_db");
+                }
+            }
+        }
+    }
 }
 
 pub struct TaskPaths {
