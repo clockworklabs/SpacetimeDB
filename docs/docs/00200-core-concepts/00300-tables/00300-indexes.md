@@ -147,6 +147,24 @@ pub struct User {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct User {
+  uint32_t id;
+  std::string name;
+  uint8_t age;
+};
+SPACETIMEDB_STRUCT(User, id, name, age)
+SPACETIMEDB_TABLE(User, user, Public)
+FIELD_PrimaryKey(user, id)
+FIELD_Index(user, name)
+FIELD_Index(user, age)
+```
+
+Use `FIELD_Index(table, field)` to create a B-tree index on individual columns.
+
+</TabItem>
 </Tabs>
 
 ### Table-Level Syntax
@@ -269,6 +287,22 @@ pub struct Score {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Score {
+  uint32_t player_id;
+  uint32_t level;
+  int64_t points;
+};
+SPACETIMEDB_STRUCT(Score, player_id, level, points)
+SPACETIMEDB_TABLE(Score, score, Public)
+FIELD_NamedMultiColumnIndex(score, by_player_and_level, player_id, level)
+```
+
+Use `FIELD_NamedMultiColumnIndex(table, index_name, field1, field2, ...)` to create a named multi-column B-tree index.
+
+</TabItem>
 </Tabs>
 
 ## Querying with Indexes
@@ -309,6 +343,18 @@ for user in ctx.db.user().name().filter("Alice") {
     log::info!("Found user: {}", user.id);
 }
 ```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Find users with a specific name
+for (auto user : ctx.db[user_name].filter("Alice")) {
+    LOG_INFO("Found user: " + user.name);
+}
+```
+
+Use the index accessor `ctx.db[index_name]` created by `FIELD_Index` to perform filtered queries.
 
 </TabItem>
 </Tabs>
@@ -375,6 +421,28 @@ for user in ctx.db.user().age().filter(..18) {
     log::info!("{} is a minor", user.name);
 }
 ```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Find users aged 18 to 65 (inclusive)
+for (auto user : ctx.db[user_age].filter(range_inclusive(uint8_t(18), uint8_t(65)))) {
+    // Process user
+}
+
+// Find users aged 18 or older
+for (auto user : ctx.db[user_age].filter(range_from(uint8_t(18)))) {
+    // Process user
+}
+
+// Find users younger than 18
+for (auto user : ctx.db[user_age].filter(range_to(uint8_t(18)))) {
+    // Process user
+}
+```
+
+Use range query functions: `range_inclusive()`, `range_from()`, `range_to()`, and `range_to_inclusive()`. Include `<spacetimedb/range_queries.h>` for full range query support.
 
 </TabItem>
 </Tabs>
