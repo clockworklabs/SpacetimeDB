@@ -17,6 +17,7 @@ pub mod segment;
 mod varchar;
 mod varint;
 
+use crate::segment::Committed;
 pub use crate::{
     commit::{Commit, StoredCommit},
     payload::{Decoder, Encode},
@@ -370,6 +371,10 @@ impl<T> Commitlog<T> {
 
 impl<T: Encode> Commitlog<T> {
     pub fn commit<U: Into<Transaction<T>>>(&self, transactions: impl IntoIterator<Item = U>) -> io::Result<()> {
+    pub fn commit<U: Into<Transaction<T>>>(
+        &self,
+        transactions: impl IntoIterator<Item = U>,
+    ) -> io::Result<Option<Committed>> {
         let mut inner = self.inner.write().unwrap();
         inner.commit(transactions)
     }

@@ -323,17 +323,20 @@ impl<R: Repo, T: Encode> Generic<R, T> {
     ///   becomes invalid and thus a panic is raised.
     ///
     /// - [Self::sync] panics (called when rotating segments)
-    pub fn commit<U: Into<Transaction<T>>>(&mut self, transactions: impl IntoIterator<Item = U>) -> io::Result<()> {
+    pub fn commit<U: Into<Transaction<T>>>(
+        &mut self,
+        transactions: impl IntoIterator<Item = U>,
+    ) -> io::Result<Option<Committed>> {
         self.panicked = true;
         let writer = &mut self.head;
-        writer.commit(transactions)?;
+        let committed = writer.commit(transactions)?;
         if writer.len() >= self.opts.max_segment_size {
             self.flush_and_sync()?;
             self.start_new_segment()?;
         }
         self.panicked = false;
 
-        Ok(())
+        Ok(committed)
     }
 
     pub fn transactions_from<'a, D>(
