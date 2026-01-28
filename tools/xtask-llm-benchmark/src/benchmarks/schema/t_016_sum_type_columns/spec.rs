@@ -13,7 +13,7 @@ pub fn spec() -> BenchmarkSpec {
         let sb = SqlBuilder::new(casing);
         let reducer = ident("Seed", casing);
 
-        let select = sb.select_by_id("drawings", &["id","a","b"], "id", 1);
+        let select = sb.select_by_id("drawing", &["id","a","b"], "id", 1);
 
         v.push(make_reducer_data_parity_scorer(host_url, ReducerDataParityConfig {
             src_file: file!(),
@@ -26,7 +26,7 @@ pub fn spec() -> BenchmarkSpec {
             timeout: Duration::from_secs(10),
         }));
 
-        let count = sb.count_by_id("drawings", "id", 1);
+        let count = sb.count_by_id("drawing", "id", 1);
         v.push(make_sql_count_only_scorer(
             host_url,
             file!(),

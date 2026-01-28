@@ -15,7 +15,7 @@
 #include "reader.h"
 #include "writer.h"
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief A Result type that represents either success (ok) or failure (err).
@@ -204,4 +204,4 @@ public:
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB

@@ -18,7 +18,7 @@
 // #include "field_accessors.h" // Removed - field accessors are now in table_with_constraints.h
 
 // Forward declarations to avoid circular includes
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
     class Module;
     struct RawModuleDef;
@@ -67,6 +67,13 @@ class TypedIndexedAccessor;
 
 template<typename TableType, typename FieldType>
 class TypedRegularAccessor;
+
+// Forward declaration for multi-column index support
+template<typename TableType>
+struct MultiColumnIndexTag;
+
+template<typename TableType>
+class TypedMultiColumnIndexAccessor;
 
 // Constraint system definitions for primary key operations
 
@@ -117,7 +124,7 @@ protected:
                 &id
             );
             
-            if (SpacetimeDb::is_error(status)) {
+            if (SpacetimeDB::is_error(status)) {
                 LOG_FATAL("Table not found: " + name_to_use);
             }
             table_id_ = id;
@@ -160,12 +167,12 @@ public:
 
 public:
     // Get or create cached Table<T> instance
-    SpacetimeDb::Table<T> get_table() const {
-        return SpacetimeDb::Table<T>(resolve_table_id());
+    SpacetimeDB::Table<T> get_table() const {
+        return SpacetimeDB::Table<T>(resolve_table_id());
     }
     
     // Iterate over all rows in the table
-    SpacetimeDb::Table<T> table() const {
+    SpacetimeDB::Table<T> table() const {
         return get_table();
     }
     
@@ -249,15 +256,21 @@ public:
     TypedRegularAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::None>& field_tag) const {
         return TypedRegularAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
+    
+    // Multi-column index accessor - NEW: ctx.db[score.by_player_and_level] syntax
+    template<typename TableType>
+    TypedMultiColumnIndexAccessor<TableType> operator[](const MultiColumnIndexTag<TableType>& index_tag) const {
+        return TypedMultiColumnIndexAccessor<TableType>(index_tag.table_name, index_tag.index_name, index_tag.column_list);
+    }
 };
 
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Use spacetimedb namespace for consistency
 namespace spacetimedb {
     template<typename T>
-    using TableAccessor = SpacetimeDb::TableAccessor<T>;
+    using TableAccessor = SpacetimeDB::TableAccessor<T>;
 }
 
 #endif // SPACETIMEDB_DATABASE_H

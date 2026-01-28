@@ -18,7 +18,7 @@
  * This macro provides a clean, consistent syntax for defining reducers with
  * automatic registration in the SpacetimeDB module system.
  * 
- * Reducers now return SpacetimeDb::ReducerResult to support Result-based
+ * Reducers now return SpacetimeDB::ReducerResult to support Result-based
  * error handling matching Rust's Result<(), E> pattern.
  * 
  * @usage
@@ -57,7 +57,7 @@
 #undef SPACETIMEDB_REDUCER
 #define SPACETIMEDB_REDUCER(name, ctx_param, ...) \
     /* Forward declaration - returns ReducerResult */ \
-    SpacetimeDb::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__); \
+    SpacetimeDB::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__); \
     \
     /* Preinit registration function */ \
     /* This function is called during module initialization to register the reducer */ \
@@ -66,13 +66,13 @@
         /* Parse parameter names from the stringified parameter list */ \
         std::string param_list = #__VA_ARGS__; \
         std::vector<std::string> param_names = \
-            SpacetimeDb::Internal::parseParameterNames(param_list); \
+            SpacetimeDB::Internal::parseParameterNames(param_list); \
         /* Register the reducer with the unified V9Builder system */ \
-        SpacetimeDb::Internal::getV9Builder().RegisterReducer(#name, name, param_names); \
+        SpacetimeDB::Internal::getV9Builder().RegisterReducer(#name, name, param_names); \
     } \
     \
     /* The actual reducer function definition - returns ReducerResult */ \
-    SpacetimeDb::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__)
+    SpacetimeDB::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__)
 
 // -----------------------------------------------------------------------------
 // Lifecycle Reducer Macros
@@ -98,12 +98,12 @@
 #undef SPACETIMEDB_INIT
 #endif
 #define SPACETIMEDB_INIT(function_name, ctx_param) \
-    SpacetimeDb::ReducerResult function_name(ctx_param); \
+    SpacetimeDB::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_init"))) \
     extern "C" void CONCAT(_preinit_register_init_reducer_, function_name)() { \
-        ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::Init); \
+        ::SpacetimeDB::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::Init); \
     } \
-    SpacetimeDb::ReducerResult function_name(ctx_param)
+    SpacetimeDB::ReducerResult function_name(ctx_param)
 
 /**
  * @brief Macro for defining a client_connected reducer
@@ -122,12 +122,12 @@
 #undef SPACETIMEDB_CLIENT_CONNECTED
 #endif
 #define SPACETIMEDB_CLIENT_CONNECTED(function_name, ctx_param) \
-    SpacetimeDb::ReducerResult function_name(ctx_param); \
+    SpacetimeDB::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_client_connected"))) \
     extern "C" void CONCAT(_preinit_register_client_connected_, function_name)() { \
-        ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::OnConnect); \
+        ::SpacetimeDB::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::OnConnect); \
     } \
-    SpacetimeDb::ReducerResult function_name(ctx_param)
+    SpacetimeDB::ReducerResult function_name(ctx_param)
 
 /**
  * @brief Macro for defining a client_disconnected reducer
@@ -146,9 +146,9 @@
 #undef SPACETIMEDB_CLIENT_DISCONNECTED
 #endif
 #define SPACETIMEDB_CLIENT_DISCONNECTED(function_name, ctx_param) \
-    SpacetimeDb::ReducerResult function_name(ctx_param); \
+    SpacetimeDB::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_client_disconnected"))) \
     extern "C" void CONCAT(_preinit_register_client_disconnected_, function_name)() { \
-        ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::OnDisconnect); \
+        ::SpacetimeDB::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::OnDisconnect); \
     } \
-    SpacetimeDb::ReducerResult function_name(ctx_param)
+    SpacetimeDB::ReducerResult function_name(ctx_param)

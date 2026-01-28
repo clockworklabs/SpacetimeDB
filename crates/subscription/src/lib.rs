@@ -11,7 +11,7 @@ use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
-use std::sync::Arc;
+use spacetimedb_schema::table_name::TableName;
 use std::{collections::HashSet, ops::RangeBounds};
 
 /// A subscription is a view over a particular table.
@@ -249,49 +249,6 @@ impl Fragments {
             }),
             _ => bail!("Invalid number of tables in subscription: {}", tables.len()),
         }
-    }
-}
-
-/// Newtype wrapper for table names.
-///
-/// Uses an `Arc` internally, so `Clone` is cheap.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TableName(Arc<str>);
-
-impl From<Arc<str>> for TableName {
-    fn from(name: Arc<str>) -> Self {
-        TableName(name)
-    }
-}
-
-impl From<Box<str>> for TableName {
-    fn from(name: Box<str>) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl From<String> for TableName {
-    fn from(name: String) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl std::ops::Deref for TableName {
-    type Target = str;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl TableName {
-    pub fn table_name_from_str(name: &str) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl std::fmt::Display for TableName {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.0.fmt(f)
     }
 }
 
@@ -548,8 +505,6 @@ impl SubscriptionPlan {
         }
 
         let mut subscriptions = vec![];
-
-        let return_name = TableName::from(return_name);
 
         for plan in plans {
             let plan_opt = plan.clone().optimize(auth)?;

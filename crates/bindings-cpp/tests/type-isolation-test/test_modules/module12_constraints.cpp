@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Module 12: Constraint tables (Indexes, etc.)
 // Testing if constraint-based tables cause WASM issues

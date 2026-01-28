@@ -13,14 +13,14 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawUniqueConstraintDataV9) {
     std::vector<uint16_t> columns;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, columns);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, columns);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(columns)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

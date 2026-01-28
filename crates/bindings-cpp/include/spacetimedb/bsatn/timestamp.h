@@ -7,7 +7,7 @@
 #include "time_duration.h"
 
 // Forward declarations
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace bsatn {
     class Writer;
     class Reader;
@@ -140,8 +140,8 @@ public:
     }
     
     // BSATN serialization
-    void bsatn_serialize(SpacetimeDb::bsatn::Writer& writer) const;
-    static Timestamp bsatn_deserialize(SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(SpacetimeDB::bsatn::Writer& writer) const;
+    static Timestamp bsatn_deserialize(SpacetimeDB::bsatn::Reader& reader);
 };
 
 // Convenience operators
@@ -149,7 +149,7 @@ inline Timestamp operator+(const TimeDuration& duration, const Timestamp& timest
     return timestamp + duration;
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // BSATN Implementation
@@ -160,19 +160,19 @@ inline Timestamp operator+(const TimeDuration& duration, const Timestamp& timest
 #include "traits.h"
 #include "algebraic_type.h"
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Timestamp BSATN implementation
-inline void Timestamp::bsatn_serialize(SpacetimeDb::bsatn::Writer& writer) const {
+inline void Timestamp::bsatn_serialize(SpacetimeDB::bsatn::Writer& writer) const {
     writer.write_i64_le(micros_since_epoch_);
 }
 
-inline Timestamp Timestamp::bsatn_deserialize(SpacetimeDb::bsatn::Reader& reader) {
+inline Timestamp Timestamp::bsatn_deserialize(SpacetimeDB::bsatn::Reader& reader) {
     int64_t micros = reader.read_i64_le();
     return Timestamp(micros);
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Note: bsatn_traits specialization for Timestamp is defined in type_extensions.h
 // to ensure consistent handling with other special types like TimeDuration

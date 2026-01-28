@@ -18,7 +18,7 @@
 #include "autogen/RawTypeDefV9.g.h"  // For RawTypeDefV9
 #include "autogen/RawModuleDefV9.g.h"  // For RawModuleDefV9
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 struct FieldConstraintInfo;  // Forward declaration for constraint info
 
 namespace bsatn {
@@ -70,7 +70,7 @@ struct RawModuleDef {
         std::vector<IndexInfo> named_indexes;
         
         // Scheduled reducer metadata (pointer to avoid incomplete type issues)
-        SpacetimeDb::Internal::RawScheduleDefV9* schedule = nullptr;
+        SpacetimeDB::Internal::RawScheduleDefV9* schedule = nullptr;
         
         // Field type collection migrated to V9Builder system
     };
@@ -102,7 +102,7 @@ struct RawModuleDef {
                                   bool is_table_type = false) const;
     
     // Helper to convert bsatn types to Internal types with proper references
-    SpacetimeDb::Internal::AlgebraicType convertWithReferences(const bsatn::AlgebraicType& type) const;
+    SpacetimeDB::Internal::AlgebraicType convertWithReferences(const bsatn::AlgebraicType& type) const;
     
     void AddTable(Table table) {
         table_indices[table.type] = tables.size();
@@ -307,7 +307,7 @@ inline int16_t spacetimedb_call_reducer(uint32_t id, uint32_t args,
     return is_ok(status) ? 0 : -1;
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Include the template implementations
 #include "Module_impl.h"

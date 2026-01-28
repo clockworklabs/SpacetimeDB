@@ -156,7 +156,7 @@ impl From<ReducerCallResult> for Result<(), anyhow::Error> {
 #[derive(Clone, Debug)]
 pub enum ReducerOutcome {
     Committed,
-    Failed(String),
+    Failed(Box<Box<str>>),
     BudgetExceeded,
 }
 
@@ -178,7 +178,7 @@ impl From<&EventStatus> for ReducerOutcome {
     fn from(status: &EventStatus) -> Self {
         match &status {
             EventStatus::Committed(_) => ReducerOutcome::Committed,
-            EventStatus::Failed(e) => ReducerOutcome::Failed(e.clone()),
+            EventStatus::Failed(e) => ReducerOutcome::Failed(Box::new((&**e).into())),
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }

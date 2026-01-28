@@ -8,6 +8,7 @@ use rusqlite::Connection;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
 use spacetimedb_primitives::ColId;
+use spacetimedb_schema::table_name::TableName;
 use std::{
     fmt::Write,
     hint::black_box,
@@ -47,7 +48,7 @@ impl BenchDatabase for SQLite {
         })
     }
 
-    type TableId = String;
+    type TableId = TableName;
 
     /// We derive the SQLite schema from the AlgebraicType of the table.
     fn create_table<T: BenchTable>(

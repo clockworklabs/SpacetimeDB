@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
     generate(
         &module,
         &cpp::Cpp {
-            namespace: "SpacetimeDb::Internal",
+            namespace: "SpacetimeDB::Internal",
         },
     )
     .into_iter()

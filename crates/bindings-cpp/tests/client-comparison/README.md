@@ -1,6 +1,6 @@
 # SpacetimeDB SDK Client Comparison Tool
 
-Compares client code generated from Rust and C++ SDK modules to validate type system equivalence and catch regressions.
+Compares client code generated from Rust and C++ bindings modules to validate type system equivalence and catch regressions.
 
 ## Quick Start
 
@@ -83,4 +83,4 @@ spacetime generate --lang rust --out-dir . --project-path ../../../modules/sdk-t
 - **"Client generation failed"**: Check if lib.cpp publishes successfully
 - **"No differences"**: Normal if no changes were made
 
-The tool validates C++ SDK functionality by comparing generated client code and module schemas against the Rust SDK baseline.
+The tool validates C++ bindings functionality by comparing generated client code and module schemas against the Rust SDK baseline.

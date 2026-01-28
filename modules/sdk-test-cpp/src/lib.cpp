@@ -2,13 +2,13 @@
 #include <variant>
 #include <optional>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Field accessors will be declared directly under each table
 
 
 // =============================================================================
-// C++ SDK Test Module - Full Equivalence with Rust and C# SDKs
+// C++ bindings Test Module - Full Equivalence with Rust and C# SDKs
 // =============================================================================
 //
 // This module provides complete equivalence with the Rust and C# SDK test modules:
@@ -23,7 +23,7 @@ using namespace SpacetimeDb;
 // ENUMS - Full Equivalence with C# and Rust
 // =============================================================================
 
-// SimpleEnum - C++ SDK supports basic C++ enums with U8 value!
+// SimpleEnum - C++ bindings supports basic C++ enums with U8 value!
 // Using unified SPACETIMEDB_ENUM with simple syntax (auto-detects non-parenthesized arguments)
 SPACETIMEDB_ENUM(SimpleEnum, Zero, One, Two)
 
@@ -35,21 +35,21 @@ SPACETIMEDB_ENUM(EnumWithPayload,
     (U16, uint16_t),
     (U32, uint32_t),
     (U64, uint64_t),
-    (U128, SpacetimeDb::u128),
-    (U256, SpacetimeDb::u256),
+    (U128, SpacetimeDB::u128),
+    (U256, SpacetimeDB::u256),
     (I8, int8_t),
     (I16, int16_t),
     (I32, int32_t),
     (I64, int64_t),
-    (I128, SpacetimeDb::i128),
-    (I256, SpacetimeDb::i256),
+    (I128, SpacetimeDB::i128),
+    (I256, SpacetimeDB::i256),
     (Bool, bool),
     (F32, float),
     (F64, double),
     (Str, std::string),
-    (Identity, SpacetimeDb::Identity),
-    (ConnectionId, SpacetimeDb::ConnectionId),
-    (Timestamp, SpacetimeDb::Timestamp),
+    (Identity, SpacetimeDB::Identity),
+    (ConnectionId, SpacetimeDB::ConnectionId),
+    (Timestamp, SpacetimeDB::Timestamp),
     (Bytes, std::vector<uint8_t>),
     (Ints, std::vector<int32_t>),
     (Strings, std::vector<std::string>),
@@ -654,7 +654,7 @@ struct IndexedTable2 {
 };
 SPACETIMEDB_STRUCT(IndexedTable2, player_id, player_snazz)
 SPACETIMEDB_TABLE(IndexedTable2, indexed_table_2, Private)  // Remove constraint from table macro
-FIELD_NamedMultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
+// FIELD_NamedMultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
 
 struct BTreeU32 {
     uint32_t n;

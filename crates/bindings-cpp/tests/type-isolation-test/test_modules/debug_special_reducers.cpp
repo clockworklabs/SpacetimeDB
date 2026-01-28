@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // ISOLATION TEST: Test direct special type reducer parameters
 // Based on working debug_special_constraints, add direct special type parameters

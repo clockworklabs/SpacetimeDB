@@ -7,8 +7,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 struct ReturnPrimitiveArgs {
+    pub lhs: u32,
     pub rhs: u32,
-    pub arg_1: u32,
 }
 
 impl __sdk::InModule for ReturnPrimitiveArgs {
@@ -20,14 +20,14 @@ impl __sdk::InModule for ReturnPrimitiveArgs {
 ///
 /// Implemented for [`super::RemoteProcedures`].
 pub trait return_primitive {
-    fn return_primitive(&self, rhs: u32, arg_1: u32) {
-        self.return_primitive_then(rhs, arg_1, |_, _| {});
+    fn return_primitive(&self, lhs: u32, rhs: u32) {
+        self.return_primitive_then(lhs, rhs, |_, _| {});
     }
 
     fn return_primitive_then(
         &self,
+        lhs: u32,
         rhs: u32,
-        arg_1: u32,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<u32, __sdk::InternalError>) + Send + 'static,
     );
@@ -36,14 +36,14 @@ pub trait return_primitive {
 impl return_primitive for super::RemoteProcedures {
     fn return_primitive_then(
         &self,
+        lhs: u32,
         rhs: u32,
-        arg_1: u32,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<u32, __sdk::InternalError>) + Send + 'static,
     ) {
         self.imp.invoke_procedure_with_callback::<_, u32>(
             "return_primitive",
-            ReturnPrimitiveArgs { rhs, arg_1 },
+            ReturnPrimitiveArgs { lhs, rhs },
             __callback,
         );
     }

@@ -3,7 +3,7 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use core::ops::{Bound, RangeBounds};
+use core::ops::{Bound, Deref, RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::execution_context::ExecutionContext;
@@ -499,7 +499,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
 
         let table_access = query.source.table_access();
-        tracing::trace!(table = query.source.table_name());
+        tracing::trace!(table = query.source.table_name().deref());
 
         let head = query.head().clone();
         let rows = build_query(self.db, self.tx, query, &mut |id| {
@@ -656,6 +656,7 @@ pub(crate) mod tests {
     use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
     use spacetimedb_schema::relation::{FieldName, Header};
     use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema};
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_one_u64, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -685,7 +686,7 @@ pub(crate) mod tests {
             tx,
             TableSchema::new(
                 TableId::SENTINEL,
-                table_name.into(),
+                TableName::new_from_str(table_name),
                 None,
                 columns,
                 vec![],
@@ -798,7 +799,7 @@ pub(crate) mod tests {
             .unwrap();
         let st_table_row = StTableRow {
             table_id: ST_TABLE_ID,
-            table_name: ST_TABLE_NAME.into(),
+            table_name: TableName::new_from_str(ST_TABLE_NAME),
             table_type: StTableType::System,
             table_access: StAccess::Public,
             table_primary_key: Some(StTableFields::TableId.into()),

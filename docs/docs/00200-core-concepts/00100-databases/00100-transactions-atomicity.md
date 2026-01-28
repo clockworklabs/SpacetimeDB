@@ -194,7 +194,7 @@ SpacetimeDB does not support nested transactions. When one reducer calls another
 The `#[auto_inc]` sequence generator is not transactional:
 - Sequence numbers are allocated even if a transaction rolls back
 - This can create gaps in your sequence
-- See [SEQUENCE documentation](/reference/appendix#sequence) for details
+- See [Auto-Increment](/tables/auto-increment#crash-recovery) for details
 
 ## Related Topics
 

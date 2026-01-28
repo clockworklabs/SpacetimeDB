@@ -46,4 +46,34 @@ namespace SpacetimeDB.Types
 
         public readonly LoggedOutCircleHandle LoggedOutCircle;
     }
+
+    public sealed class LoggedOutCircleCols
+    {
+        public global::SpacetimeDB.Col<Circle, int> EntityId { get; }
+        public global::SpacetimeDB.Col<Circle, int> PlayerId { get; }
+        public global::SpacetimeDB.Col<Circle, DbVector2> Direction { get; }
+        public global::SpacetimeDB.Col<Circle, float> Speed { get; }
+        public global::SpacetimeDB.Col<Circle, SpacetimeDB.Timestamp> LastSplitTime { get; }
+
+        public LoggedOutCircleCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.Col<Circle, int>(tableName, "entity_id");
+            PlayerId = new global::SpacetimeDB.Col<Circle, int>(tableName, "player_id");
+            Direction = new global::SpacetimeDB.Col<Circle, DbVector2>(tableName, "direction");
+            Speed = new global::SpacetimeDB.Col<Circle, float>(tableName, "speed");
+            LastSplitTime = new global::SpacetimeDB.Col<Circle, SpacetimeDB.Timestamp>(tableName, "last_split_time");
+        }
+    }
+
+    public sealed class LoggedOutCircleIxCols
+    {
+        public global::SpacetimeDB.IxCol<Circle, int> EntityId { get; }
+        public global::SpacetimeDB.IxCol<Circle, int> PlayerId { get; }
+
+        public LoggedOutCircleIxCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.IxCol<Circle, int>(tableName, "entity_id");
+            PlayerId = new global::SpacetimeDB.IxCol<Circle, int>(tableName, "player_id");
+        }
+    }
 }

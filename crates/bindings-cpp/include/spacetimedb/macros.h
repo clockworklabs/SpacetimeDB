@@ -10,7 +10,7 @@
 #include <vector>
 #include <sstream>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 /**
@@ -76,7 +76,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 }
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // UNIFIED HELPER MACROS FOR SPACETIMEDB TYPE REGISTRATION
@@ -99,6 +99,37 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define SPACETIMEDB_STRINGIFY_IMPL(x) #x  
 #define SPACETIMEDB_STRINGIFY(x) SPACETIMEDB_STRINGIFY_IMPL(x)
 #endif
+
+/**
+ * @brief Helper for stringifying each argument in a variadic list
+ * 
+ * Converts each identifier to a string literal. Used by multi-column index macros.
+ * Example: SPACETIMEDB_STRINGIFY_EACH(x, y, z) -> "x", "y", "z"
+ */
+#define SPACETIMEDB_STRINGIFY_ARG(x) #x
+#define SPACETIMEDB_STRINGIFY_EACH(...) SPACETIMEDB_FOR_EACH_STRINGIFY(__VA_ARGS__)
+
+/**
+ * @brief FOR_EACH macro implementation for stringifying (up to 6 arguments)
+ * 
+ * Supports up to 6 arguments (matching multi-column index limit).
+ * Uses a different name than the existing SPACETIMEDB_FOR_EACH_ARG to avoid conflicts.
+ */
+#define SPACETIMEDB_GET_STRINGIFY_MACRO(_1,_2,_3,_4,_5,_6,NAME,...) NAME
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_1(a) SPACETIMEDB_STRINGIFY_ARG(a)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_2(a, b) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_3(a, b, c) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_4(a, b, c, d) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c), SPACETIMEDB_STRINGIFY_ARG(d)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_5(a, b, c, d, e) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c), SPACETIMEDB_STRINGIFY_ARG(d), SPACETIMEDB_STRINGIFY_ARG(e)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_6(a, b, c, d, e, f) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c), SPACETIMEDB_STRINGIFY_ARG(d), SPACETIMEDB_STRINGIFY_ARG(e), SPACETIMEDB_STRINGIFY_ARG(f)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY(...) \
+    SPACETIMEDB_GET_STRINGIFY_MACRO(__VA_ARGS__, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_6, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_5, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_4, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_3, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_2, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_1)(__VA_ARGS__)
 
 /**
  * @brief Compatibility aliases for files that use different macro names
@@ -133,7 +164,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
     namespace { \
         struct Type##_cpp_name_registrar { \
             Type##_cpp_name_registrar() { \
-                ::SpacetimeDb::TypeRegistry::global_instance().register_cpp_type_name<Type>(#Type); \
+                ::SpacetimeDB::TypeRegistry::global_instance().register_cpp_type_name<Type>(#Type); \
             } \
         }; \
         static Type##_cpp_name_registrar Type##_cpp_name_registrar_instance; \
@@ -148,7 +179,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
         if (!Type##_v9_registered) { \
             Type##_v9_registered = true; \
             std::string type_name = #Type; \
-            ::SpacetimeDb::Internal::getV9TypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
+            ::SpacetimeDB::Internal::getV9TypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
         } \
     } while(0)
 */
@@ -165,7 +196,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
             Type##_v9_registered = true; \
             std::string type_name = #Type; \
             /* Register immediately with name and structure */ \
-            ::SpacetimeDb::Internal::getV9TypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
+            ::SpacetimeDB::Internal::getV9TypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
         } \
     } while(0)
 
@@ -186,7 +217,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  */
 #define SPACETIMEDB_GENERATE_EMPTY_FIELD_REGISTRAR(Type) \
     template<> \
-    struct ::SpacetimeDb::field_registrar<Type> { \
+    struct ::SpacetimeDB::field_registrar<Type> { \
         static void register_fields() { \
             /* Default: no field registration needed */ \
         } \
@@ -200,7 +231,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  */
 #define SPACETIMEDB_GENERATE_FIELD_REGISTRAR_WITH_FIELDS(Type, ...) \
     template<> \
-    struct ::SpacetimeDb::field_registrar<Type> { \
+    struct ::SpacetimeDB::field_registrar<Type> { \
         static void register_fields() { \
             static bool registered = false; \
             if (registered) return; \
@@ -221,9 +252,9 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  */
 #define SPACETIMEDB_GENERATE_TYPE_REGISTRATION_BUNDLE(Type) \
     template<> \
-    struct ::SpacetimeDb::bsatn::algebraic_type_of<Type> { \
-        static ::SpacetimeDb::bsatn::AlgebraicType get() { \
-            return ::SpacetimeDb::bsatn::bsatn_traits<Type>::algebraic_type(); \
+    struct ::SpacetimeDB::bsatn::algebraic_type_of<Type> { \
+        static ::SpacetimeDB::bsatn::AlgebraicType get() { \
+            return ::SpacetimeDB::bsatn::bsatn_traits<Type>::algebraic_type(); \
         } \
     }; \
     SPACETIMEDB_GENERATE_EMPTY_FIELD_REGISTRAR(Type)
@@ -236,9 +267,9 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  */
 #define SPACETIMEDB_GENERATE_TYPE_REGISTRATION_BUNDLE_WITH_FIELDS(Type, ...) \
     template<> \
-    struct ::SpacetimeDb::bsatn::algebraic_type_of<Type> { \
-        static ::SpacetimeDb::bsatn::AlgebraicType get() { \
-            return ::SpacetimeDb::bsatn::bsatn_traits<Type>::algebraic_type(); \
+    struct ::SpacetimeDB::bsatn::algebraic_type_of<Type> { \
+        static ::SpacetimeDB::bsatn::AlgebraicType get() { \
+            return ::SpacetimeDB::bsatn::bsatn_traits<Type>::algebraic_type(); \
         } \
     }; \
     SPACETIMEDB_GENERATE_FIELD_REGISTRAR_WITH_FIELDS(Type, __VA_ARGS__)
@@ -304,7 +335,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define SPACETIMEDB_REGISTER_REDUCER_FUNCTION(function_name, function_signature) \
     void function_name function_signature; \
     SPACETIMEDB_GENERATE_PREINIT_FUNCTION(30, reducer, function_name, \
-        SpacetimeDb::Internal::register_reducer_func_with_params(std::string(#function_name), function_name, #function_signature); \
+        SpacetimeDB::Internal::register_reducer_func_with_params(std::string(#function_name), function_name, #function_signature); \
     ) \
     void function_name function_signature
 
@@ -525,7 +556,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define SPACETIMEDB_CLIENT_VISIBILITY_FILTER(filter_name, sql_query) \
     __attribute__((export_name("__preinit__25_register_row_level_security_" #filter_name))) \
     extern "C" void __register_client_visibility_filter_##filter_name() { \
-        SpacetimeDb::Internal::getV9Builder().RegisterRowLevelSecurity(sql_query); \
+        SpacetimeDB::Internal::getV9Builder().RegisterRowLevelSecurity(sql_query); \
     }
 
 // =============================================================================
@@ -550,18 +581,18 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
         operator std::monostate() const { return std::monostate{}; } \
     }; \
     template<> \
-    struct SpacetimeDb::bsatn::bsatn_traits<Type> { \
-        static void serialize(SpacetimeDb::bsatn::Writer& w, const Type& v) { \
+    struct SpacetimeDB::bsatn::bsatn_traits<Type> { \
+        static void serialize(SpacetimeDB::bsatn::Writer& w, const Type& v) { \
             /* Unit struct serializes as empty */ \
         } \
-        static Type deserialize(SpacetimeDb::bsatn::Reader& r) { \
+        static Type deserialize(SpacetimeDB::bsatn::Reader& r) { \
             return Type{}; \
         } \
-        static SpacetimeDb::bsatn::AlgebraicType algebraic_type() { \
-            return SpacetimeDb::Internal::LazyTypeRegistrar<Type>::getOrRegister( \
-                []() -> SpacetimeDb::bsatn::AlgebraicType { \
-                    return SpacetimeDb::bsatn::AlgebraicType::make_product( \
-                        std::make_unique<SpacetimeDb::bsatn::ProductType>(std::vector<SpacetimeDb::bsatn::ProductTypeElement>{}) \
+        static SpacetimeDB::bsatn::AlgebraicType algebraic_type() { \
+            return SpacetimeDB::Internal::LazyTypeRegistrar<Type>::getOrRegister( \
+                []() -> SpacetimeDB::bsatn::AlgebraicType { \
+                    return SpacetimeDB::bsatn::AlgebraicType::make_product( \
+                        std::make_unique<SpacetimeDB::bsatn::ProductType>(std::vector<SpacetimeDB::bsatn::ProductTypeElement>{}) \
                     ); \
                 }, \
                 #Type \
@@ -626,21 +657,21 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  */
 #define SPACETIMEDB_STRUCT(Type, ...) \
     template<> \
-    struct SpacetimeDb::bsatn::bsatn_traits<Type> { \
-        static void serialize(SpacetimeDb::bsatn::Writer& w, const Type& v) { \
+    struct SpacetimeDB::bsatn::bsatn_traits<Type> { \
+        static void serialize(SpacetimeDB::bsatn::Writer& w, const Type& v) { \
             SPACETIMEDB_SERIALIZE_FIELDS(v, w, __VA_ARGS__) \
         } \
-        static Type deserialize(SpacetimeDb::bsatn::Reader& r) { \
+        static Type deserialize(SpacetimeDB::bsatn::Reader& r) { \
             Type v; \
             SPACETIMEDB_DESERIALIZE_FIELDS(v, r, __VA_ARGS__) \
             return v; \
         } \
-        static SpacetimeDb::bsatn::AlgebraicType algebraic_type() { \
-            return SpacetimeDb::Internal::LazyTypeRegistrar<Type>::getOrRegister( \
-                []() -> SpacetimeDb::bsatn::AlgebraicType { \
-                    SpacetimeDb::bsatn::ProductTypeBuilder builder; \
+        static SpacetimeDB::bsatn::AlgebraicType algebraic_type() { \
+            return SpacetimeDB::Internal::LazyTypeRegistrar<Type>::getOrRegister( \
+                []() -> SpacetimeDB::bsatn::AlgebraicType { \
+                    SpacetimeDB::bsatn::ProductTypeBuilder builder; \
                     SPACETIMEDB_REGISTER_FIELDS(Type, builder, __VA_ARGS__) \
-                    return SpacetimeDb::bsatn::AlgebraicType::make_product(builder.build()); \
+                    return SpacetimeDB::bsatn::AlgebraicType::make_product(builder.build()); \
                 }, \
                 #Type \
             ); \
@@ -650,10 +681,10 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 
 // Field processing helper macros (used by SPACETIMEDB_STRUCT)
 #define SPACETIMEDB_SERIALIZE_FIELD(obj, writer, field) \
-    SpacetimeDb::bsatn::serialize(writer, obj.field);
+    SpacetimeDB::bsatn::serialize(writer, obj.field);
     
 #define SPACETIMEDB_DESERIALIZE_FIELD(obj, reader, field) \
-    obj.field = SpacetimeDb::bsatn::deserialize<decltype(obj.field)>(reader);
+    obj.field = SpacetimeDB::bsatn::deserialize<decltype(obj.field)>(reader);
     
 #define SPACETIMEDB_REGISTER_FIELD(Type, builder, field) \
     builder.with_field<decltype(Type::field)>(#field);
@@ -670,24 +701,24 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 // Field descriptor registration for runtime reflection
 #define SPACETIMEDB_REGISTER_FIELD_DESCRIPTOR(Type, dummy, field) \
     { \
-        ::SpacetimeDb::FieldDescriptor desc; \
+        ::SpacetimeDB::FieldDescriptor desc; \
         desc.name = #field; \
         desc.offset = offsetof(Type, field); \
         desc.size = sizeof(decltype(Type::field)); \
         desc.write_type = [](std::vector<uint8_t>& buf) { \
-            ::SpacetimeDb::write_field_type<decltype(Type::field)>(buf); \
+            ::SpacetimeDB::write_field_type<decltype(Type::field)>(buf); \
         }; \
         desc.get_algebraic_type = []() { \
-            return ::SpacetimeDb::bsatn::bsatn_traits<decltype(Type::field)>::algebraic_type(); \
+            return ::SpacetimeDB::bsatn::bsatn_traits<decltype(Type::field)>::algebraic_type(); \
         }; \
         desc.serialize = [](std::vector<uint8_t>& buf, const void* obj) { \
             const Type* typed_obj = static_cast<const Type*>(obj); \
-            ::SpacetimeDb::serialize_value(buf, typed_obj->field); \
+            ::SpacetimeDB::serialize_value(buf, typed_obj->field); \
         }; \
         desc.get_type_name = []() -> std::string { \
             return demangle_cpp_type_name(typeid(decltype(Type::field)).name()); \
         }; \
-        ::SpacetimeDb::get_table_descriptors()[&typeid(Type)].fields.push_back(desc); \
+        ::SpacetimeDB::get_table_descriptors()[&typeid(Type)].fields.push_back(desc); \
     }
 
 #define SPACETIMEDB_REGISTER_FIELD_DESCRIPTORS(Type, ...) \
@@ -721,7 +752,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define SPACETIMEDB_UNIT_TYPE(TypeName) \
     struct TypeName {}; \
     \
-    namespace SpacetimeDb::bsatn { \
+    namespace SpacetimeDB::bsatn { \
     template<> \
     struct bsatn_traits<TypeName> { \
         static void serialize(Writer& writer, const TypeName&) { \

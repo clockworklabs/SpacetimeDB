@@ -14,14 +14,14 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "AlgebraicType.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(Typespace) {
-    std::vector<SpacetimeDb::Internal::AlgebraicType> types;
+    std::vector<SpacetimeDB::Internal::AlgebraicType> types;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, types);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, types);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(types)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

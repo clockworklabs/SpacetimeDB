@@ -36,4 +36,26 @@ namespace SpacetimeDB.Types
 
         public readonly CircleDecayTimerHandle CircleDecayTimer;
     }
+
+    public sealed class CircleDecayTimerCols
+    {
+        public global::SpacetimeDB.Col<CircleDecayTimer, ulong> ScheduledId { get; }
+        public global::SpacetimeDB.Col<CircleDecayTimer, SpacetimeDB.ScheduleAt> ScheduledAt { get; }
+
+        public CircleDecayTimerCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.Col<CircleDecayTimer, ulong>(tableName, "scheduled_id");
+            ScheduledAt = new global::SpacetimeDB.Col<CircleDecayTimer, SpacetimeDB.ScheduleAt>(tableName, "scheduled_at");
+        }
+    }
+
+    public sealed class CircleDecayTimerIxCols
+    {
+        public global::SpacetimeDB.IxCol<CircleDecayTimer, ulong> ScheduledId { get; }
+
+        public CircleDecayTimerIxCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.IxCol<CircleDecayTimer, ulong>(tableName, "scheduled_id");
+        }
+    }
 }

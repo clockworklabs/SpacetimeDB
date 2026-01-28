@@ -24,4 +24,22 @@ namespace SpacetimeDB.Types
 
         public readonly MyTableHandle MyTable;
     }
+
+    public sealed class MyTableCols
+    {
+        public global::SpacetimeDB.Col<MyTable, ReturnStruct> Field { get; }
+
+        public MyTableCols(string tableName)
+        {
+            Field = new global::SpacetimeDB.Col<MyTable, ReturnStruct>(tableName, "field");
+        }
+    }
+
+    public sealed class MyTableIxCols
+    {
+
+        public MyTableIxCols(string tableName)
+        {
+        }
+    }
 }

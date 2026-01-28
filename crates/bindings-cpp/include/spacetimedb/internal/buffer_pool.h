@@ -3,7 +3,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 /**
@@ -181,4 +181,4 @@ private:
 };
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB

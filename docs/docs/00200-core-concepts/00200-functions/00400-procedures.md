@@ -45,9 +45,25 @@ a value corresponding to its return type. This return value will be sent to the 
 not be broadcast to any other clients.
 
 </TabItem>
-<TabItem value="csharp"label="C#">
+<TabItem value="csharp" label="C#">
 
-Support for procedures in C# modules is coming soon!
+:::warning Unstable Feature
+Procedures in C# are currently unstable. To use them, add `#pragma warning disable STDB_UNSTABLE` at the top of your file.
+:::
+
+Define a procedure by annotating a static method with `[SpacetimeDB.Procedure]`.
+
+The method's first argument must be of type `ProcedureContext`. A procedure may accept any number of additional arguments and may return a value.
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+
+[SpacetimeDB.Procedure]
+public static ulong AddTwoNumbers(ProcedureContext ctx, uint lhs, uint rhs)
+{
+    return (ulong)lhs + (ulong)rhs;
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -133,6 +149,58 @@ Avoid capturing mutable state within functions passed to `withTx`.
 :::
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+Unlike reducers, procedures don't automatically run in database transactions.
+This means there's no `ctx.Db` field to access the database.
+Instead, procedure code must manage transactions explicitly with `ProcedureContext.WithTx`.
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Table(Name = "MyTable")]
+    public partial struct MyTable
+    {
+        public uint A;
+        public string B;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void InsertAValue(ProcedureContext ctx, uint a, string b)
+    {
+        ctx.WithTx(txCtx =>
+        {
+            txCtx.Db.MyTable.Insert(new MyTable { A = a, B = b });
+            return 0;
+        });
+    }
+}
+```
+
+`ProcedureContext.WithTx` takes a function of type `Func<ProcedureTxContext, T>`.
+Within that function, the `TransactionContext` can be used to access the database
+[in all the same ways as a `ReducerContext`](/functions/reducers/reducer-context).
+When the function returns, the transaction will be committed,
+and its changes to the database state will become permanent and be broadcast to clients.
+If the function throws an exception, the transaction will be rolled back, and its changes will be discarded.
+
+:::warning
+The function passed to `ProcedureContext.WithTx` may be invoked multiple times,
+possibly seeing a different version of the database state each time.
+
+If invoked more than once with reference to the same database state,
+it must perform the same operations and return the same result each time.
+
+If invoked more than once with reference to different database states,
+values observed during prior runs must not influence the behavior of the function or the calling procedure.
+
+Avoid capturing mutable state within functions passed to `WithTx`.
+:::
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 Unlike reducers, procedures don't automatically run in database transactions.
@@ -198,6 +266,33 @@ spacetimedb.procedure("maybe_insert_a_value", { a: t.u32(), b: t.string() }, t.u
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+For fallible database operations, you can throw an exception inside the transaction function:
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Procedure]
+    public static void MaybeInsertAValue(ProcedureContext ctx, uint a, string b)
+    {
+        ctx.WithTx(txCtx =>
+        {
+            if (a < 10)
+            {
+                throw new Exception("a is less than 10!");
+            }
+            txCtx.Db.MyTable.Insert(new MyTable { A = a, B = b });
+            return 0;
+        });
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 For fallible database operations, instead use `ProcedureContext::try_with_tx`:
@@ -259,6 +354,56 @@ spacetimedb.procedure("find_highest_level_player", t.unit(), ctx => {
     }
     return {};
 });
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Functions passed to
+[`ProcedureContext.WithTx`](#accessing-the-database)
+may return a value, and that value will be returned to the calling procedure.
+
+Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Table(Name = "Player")]
+    public partial struct Player
+    {
+        public Identity Id;
+        public uint Level;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void FindHighestLevelPlayer(ProcedureContext ctx)
+    {
+        var highestLevelPlayer = ctx.WithTx(txCtx =>
+        {
+            Player? highest = null;
+            foreach (var player in txCtx.Db.Player.Iter())
+            {
+                if (highest == null || player.Level > highest.Value.Level)
+                {
+                    highest = player;
+                }
+            }
+            return highest;
+        });
+
+        if (highestLevelPlayer.HasValue)
+        {
+            Log.Info($"Congratulations to {highestLevelPlayer.Value.Id}");
+        }
+        else
+        {
+            Log.Warn("No players...");
+        }
+    }
+}
 ```
 
 </TabItem>
@@ -353,6 +498,75 @@ spacetimedb.procedure("get_request_with_short_timeout", t.unit(), ctx => {
 Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+Procedures can make HTTP requests to external services using methods on `ctx.Http`.
+
+`ctx.Http.Get` performs simple `GET` requests with no headers:
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Procedure]
+    public static void GetRequest(ProcedureContext ctx)
+    {
+        var result = ctx.Http.Get("https://example.invalid");
+        switch (result)
+        {
+            case Result<HttpResponse, HttpError>.OkR(var response):
+                var body = response.Body.ToStringUtf8Lossy();
+                Log.Info($"Got response with status {response.StatusCode} and body {body}");
+                break;
+            case Result<HttpResponse, HttpError>.ErrR(var e):
+                Log.Error($"Request failed: {e.Message}");
+                break;
+        }
+    }
+}
+```
+
+`ctx.Http.Send` sends an `HttpRequest` with custom method, headers, and body:
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Procedure]
+    public static void PostRequest(ProcedureContext ctx)
+    {
+        var request = new HttpRequest
+        {
+            Method = SpacetimeDB.HttpMethod.Post,
+            Uri = "https://example.invalid/upload",
+            Headers = new List<HttpHeader>
+            {
+                new HttpHeader("Content-Type", "text/plain")
+            },
+            Body = HttpBody.FromString("This is the body of the HTTP request")
+        };
+        var result = ctx.Http.Send(request);
+        switch (result)
+        {
+            case Result<HttpResponse, HttpError>.OkR(var response):
+                var body = response.Body.ToStringUtf8Lossy();
+                Log.Info($"Got response with status {response.StatusCode} and body {body}");
+                break;
+            case Result<HttpResponse, HttpError>.ErrR(var e):
+                Log.Error($"Request failed: {e.Message}");
+                break;
+        }
+    }
+}
+```
+
+Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 Procedures can make HTTP requests to external services using methods contained in `ctx.http`.
@@ -427,6 +641,112 @@ Procedures can't send requests at the same time as holding open a [transaction](
 
 </TabItem>
 </Tabs>
+
+## Calling Reducers from Procedures
+
+Procedures can call reducers by invoking them within a transaction block. The reducer function runs within the transaction context:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// Define a reducer and save the reference
+const processItem = spacetimedb.reducer('process_item', { itemId: t.u64() }, (ctx, { itemId }) => {
+  // ... reducer logic
+});
+
+// Call it from a procedure using the saved reference
+spacetimedb.procedure('fetch_and_process', { url: t.string() }, t.unit(), (ctx, { url }) => {
+  // Fetch external data
+  const response = ctx.http.fetch(url);
+  const data = response.json();
+
+  // Call the reducer within a transaction
+  ctx.withTx(txCtx => {
+    processItem(txCtx, { itemId: data.id });
+  });
+
+  return {};
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    // Note: In C#, you can define helper methods that work with the transaction context
+    // rather than calling reducers directly.
+    private static void ProcessItemLogic(ulong itemId)
+    {
+        // ... item processing logic
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void FetchAndProcess(ProcedureContext ctx, string url)
+    {
+        // Fetch external data
+        var result = ctx.Http.Get(url);
+        var response = result.UnwrapOrThrow();
+        var body = response.Body.ToStringUtf8Lossy();
+        var itemId = ParseId(body);
+
+        // Process within a transaction
+        ctx.WithTx(txCtx =>
+        {
+            ProcessItemLogic(itemId);
+            return 0;
+        });
+    }
+
+    private static ulong ParseId(string body)
+    {
+        // Parse the ID from the response body
+        return ulong.Parse(body);
+    }
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::reducer]
+fn process_item(ctx: &ReducerContext, item_id: u64) {
+    // ... reducer logic
+}
+
+#[spacetimedb::procedure]
+fn fetch_and_process(ctx: &mut ProcedureContext, url: String) -> Result<(), String> {
+    // Fetch external data
+    let response = ctx.http.get(&url).map_err(|e| format!("{e:?}"))?;
+    let (_, body) = response.into_parts();
+    let item_id: u64 = parse_id(&body.into_string_lossy());
+
+    // Call the reducer within a transaction
+    ctx.with_tx(|tx_ctx| {
+        process_item(tx_ctx, item_id);
+    });
+
+    Ok(())
+}
+```
+
+</TabItem>
+</Tabs>
+
+:::note
+When you call a reducer function inside `withTx`, it executes as part of the same transaction, not as a subtransaction. The reducer's logic runs inline within your anonymous transaction block, just like calling any other helper function.
+:::
+
+This pattern is useful when you need to:
+- Fetch external data and then process it transactionally
+- Reuse existing reducer logic from a procedure
+- Combine side effects (HTTP) with database operations
 
 ## Calling procedures
 
@@ -636,6 +956,90 @@ spacetimedb.procedure(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+using System.Text.Json;
+
+public static partial class Module
+{
+    [SpacetimeDB.Table(Name = "AiMessage", Public = true)]
+    public partial struct AiMessage
+    {
+        public Identity User;
+        public string Prompt;
+        public string Response;
+        public Timestamp CreatedAt;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static string AskAi(ProcedureContext ctx, string prompt, string apiKey)
+    {
+        // Build the request to OpenAI's API
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            model = "gpt-4",
+            messages = new[] { new { role = "user", content = prompt } }
+        });
+
+        var request = new HttpRequest
+        {
+            Method = SpacetimeDB.HttpMethod.Post,
+            Uri = "https://api.openai.com/v1/chat/completions",
+            Headers = new List<HttpHeader>
+            {
+                new HttpHeader("Content-Type", "application/json"),
+                new HttpHeader("Authorization", $"Bearer {apiKey}")
+            },
+            Body = HttpBody.FromString(requestBody)
+        };
+
+        // Make the HTTP request
+        var response = ctx.Http.Send(request).UnwrapOrThrow();
+
+        if (response.StatusCode != 200)
+        {
+            throw new Exception($"API returned status {response.StatusCode}");
+        }
+
+        var bodyStr = response.Body.ToStringUtf8Lossy();
+
+        // Parse the response
+        var aiResponse = ExtractContent(bodyStr)
+            ?? throw new Exception("Failed to parse AI response");
+
+        // Store the conversation in the database
+        ctx.WithTx(txCtx =>
+        {
+            txCtx.Db.AiMessage.Insert(new AiMessage
+            {
+                User = txCtx.Sender,
+                Prompt = prompt,
+                Response = aiResponse,
+                CreatedAt = txCtx.Timestamp
+            });
+            return 0;
+        });
+
+        return aiResponse;
+    }
+
+    private static string? ExtractContent(string json)
+    {
+        // Simple extraction - in production, use proper JSON parsing
+        var doc = JsonDocument.Parse(json);
+        return doc.RootElement
+            .GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -718,6 +1122,23 @@ const response = await ctx.procedures.askAi({
 });
 
 console.log("AI says:", response);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+ctx.Procedures.AskAi("What is SpacetimeDB?", apiKey, (ctx, result) =>
+{
+    if (result.IsSuccess)
+    {
+        Console.WriteLine($"AI says: {result.Value}");
+    }
+    else
+    {
+        Console.WriteLine($"Error: {result.Error}");
+    }
+});
 ```
 
 </TabItem>

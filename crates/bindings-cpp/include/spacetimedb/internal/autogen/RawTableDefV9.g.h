@@ -19,30 +19,30 @@
 #include "RawSequenceDefV9.g.h"
 #include "RawIndexDefV9.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawTableDefV9) {
     std::string name;
     uint32_t product_type_ref;
     std::vector<uint16_t> primary_key;
-    std::vector<SpacetimeDb::Internal::RawIndexDefV9> indexes;
-    std::vector<SpacetimeDb::Internal::RawConstraintDefV9> constraints;
-    std::vector<SpacetimeDb::Internal::RawSequenceDefV9> sequences;
-    std::optional<SpacetimeDb::Internal::RawScheduleDefV9> schedule;
-    SpacetimeDb::Internal::TableType table_type;
-    SpacetimeDb::Internal::TableAccess table_access;
+    std::vector<SpacetimeDB::Internal::RawIndexDefV9> indexes;
+    std::vector<SpacetimeDB::Internal::RawConstraintDefV9> constraints;
+    std::vector<SpacetimeDB::Internal::RawSequenceDefV9> sequences;
+    std::optional<SpacetimeDB::Internal::RawScheduleDefV9> schedule;
+    SpacetimeDB::Internal::TableType table_type;
+    SpacetimeDB::Internal::TableAccess table_access;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, product_type_ref);
-        ::SpacetimeDb::bsatn::serialize(writer, primary_key);
-        ::SpacetimeDb::bsatn::serialize(writer, indexes);
-        ::SpacetimeDb::bsatn::serialize(writer, constraints);
-        ::SpacetimeDb::bsatn::serialize(writer, sequences);
-        ::SpacetimeDb::bsatn::serialize(writer, schedule);
-        ::SpacetimeDb::bsatn::serialize(writer, table_type);
-        ::SpacetimeDb::bsatn::serialize(writer, table_access);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, product_type_ref);
+        ::SpacetimeDB::bsatn::serialize(writer, primary_key);
+        ::SpacetimeDB::bsatn::serialize(writer, indexes);
+        ::SpacetimeDB::bsatn::serialize(writer, constraints);
+        ::SpacetimeDB::bsatn::serialize(writer, sequences);
+        ::SpacetimeDB::bsatn::serialize(writer, schedule);
+        ::SpacetimeDB::bsatn::serialize(writer, table_type);
+        ::SpacetimeDB::bsatn::serialize(writer, table_access);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, product_type_ref, primary_key, indexes, constraints, sequences, schedule, table_type, table_access)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

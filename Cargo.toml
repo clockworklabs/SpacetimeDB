@@ -179,6 +179,7 @@ derive_more = "0.99"
 dialoguer = { version = "0.11", default-features = false }
 dirs = "5.0.1"
 duct = "0.13.5"
+ecow = "0.2.6"
 either = "1.9"
 email_address = "0.2.4"
 enum-as-inner = "0.6"

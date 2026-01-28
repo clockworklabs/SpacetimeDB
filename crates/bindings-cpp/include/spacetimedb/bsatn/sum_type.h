@@ -9,7 +9,7 @@
 #include "writer.h"
 #include "algebraic_type.h"
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace bsatn {
 
 /**
@@ -160,6 +160,6 @@ SumType<Ts...> deserialize(Reader& reader, std::type_identity<SumType<Ts...>>) {
 }
 
 } // namespace bsatn
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_BSATN_SUM_TYPE_H

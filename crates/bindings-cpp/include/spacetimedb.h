@@ -139,7 +139,7 @@
 // =============================================================================
 
 // Convenience aliases for table access levels
-namespace SpacetimeDb {
+namespace SpacetimeDB {
     // Re-export table access constants for convenience
     constexpr auto Public = Internal::TableAccess::Public;
     constexpr auto Private = Internal::TableAccess::Private;
@@ -168,7 +168,7 @@ namespace spacetimedb {
          * @return Serialized module definition
          */
         inline std::vector<uint8_t> serialize_module_def() {
-            auto& module_def = SpacetimeDb::Internal::Module::GetModuleDef();
+            auto& module_def = SpacetimeDB::Internal::Module::GetModuleDef();
             return module_def.serialize();
         }
     }
@@ -178,7 +178,7 @@ namespace spacetimedb {
     // =============================================================================
     
     // Vector type aliases for SpacetimeDB types
-    using VecTimeDuration = std::vector<::SpacetimeDb::TimeDuration>;
+    using VecTimeDuration = std::vector<::SpacetimeDB::TimeDuration>;
 }
 
 // =============================================================================

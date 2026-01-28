@@ -32,7 +32,7 @@
 #include <algorithm>
 #include <set>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 // Forward declaration of the global V9 module accessor
@@ -353,4 +353,4 @@ RawConstraintDefV9 V9Builder::createUniqueConstraint(const std::string& table_na
 
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB

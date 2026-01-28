@@ -18,7 +18,7 @@
 #include "spacetimedb/bsatn/writer.h"
 #include "spacetimedb/bsatn/traits.h"
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Helper templates for type detection
 template<typename T>
@@ -123,19 +123,19 @@ template<> struct bsatn_type_id<Timestamp> {
     static constexpr bool is_primitive = true;
     static constexpr uint8_t value = static_cast<uint8_t>(bsatn::AlgebraicTypeTag::U64); 
 };
-template<> struct bsatn_type_id<SpacetimeDb::u128> { 
+template<> struct bsatn_type_id<SpacetimeDB::u128> { 
     static constexpr bool is_primitive = true;
     static constexpr uint8_t value = static_cast<uint8_t>(bsatn::AlgebraicTypeTag::U128); 
 };
-template<> struct bsatn_type_id<SpacetimeDb::i128> { 
+template<> struct bsatn_type_id<SpacetimeDB::i128> { 
     static constexpr bool is_primitive = true;
     static constexpr uint8_t value = static_cast<uint8_t>(bsatn::AlgebraicTypeTag::I128); 
 };
-template<> struct bsatn_type_id<SpacetimeDb::u256> { 
+template<> struct bsatn_type_id<SpacetimeDB::u256> { 
     static constexpr bool is_primitive = true;
     static constexpr uint8_t value = static_cast<uint8_t>(bsatn::AlgebraicTypeTag::U256); 
 };
-template<> struct bsatn_type_id<SpacetimeDb::i256> { 
+template<> struct bsatn_type_id<SpacetimeDB::i256> { 
     static constexpr bool is_primitive = true;
     static constexpr uint8_t value = static_cast<uint8_t>(bsatn::AlgebraicTypeTag::I256); 
 };
@@ -339,25 +339,25 @@ constexpr size_t calculate_bsatn_size() {
 #define REGISTER_FIELD(struct_type, field_name, field_type) \
     __attribute__((export_name("__preinit__10_field_" #struct_type "_" #field_name))) \
     extern "C" void CONCAT(_preinit_register_field_, CONCAT(struct_type, field_name))() { \
-        SpacetimeDb::FieldDescriptor desc; \
+        SpacetimeDB::FieldDescriptor desc; \
         desc.name = #field_name; \
         desc.offset = offsetof(struct_type, field_name); \
-        desc.size = SpacetimeDb::get_field_size<field_type>(); \
+        desc.size = SpacetimeDB::get_field_size<field_type>(); \
         desc.write_type = [](std::vector<uint8_t>& buf) { \
-            SpacetimeDb::write_field_type<field_type>(buf); \
+            SpacetimeDB::write_field_type<field_type>(buf); \
         }; \
         desc.get_algebraic_type = []() { \
-            return SpacetimeDb::bsatn::bsatn_traits<field_type>::algebraic_type(); \
+            return SpacetimeDB::bsatn::bsatn_traits<field_type>::algebraic_type(); \
         }; \
         desc.serialize = [](std::vector<uint8_t>& buf, const void* obj) { \
             const struct_type* typed_obj = static_cast<const struct_type*>(obj); \
-            SpacetimeDb::serialize_value(buf, typed_obj->field_name); \
+            SpacetimeDB::serialize_value(buf, typed_obj->field_name); \
         }; \
         desc.get_type_name = []() -> std::string { \
             /* UNIFIED REGISTRY: Type names handled by demangling */ \
             return demangle_cpp_type_name(typeid(field_type).name()); \
         }; \
-        SpacetimeDb::get_table_descriptors()[&typeid(struct_type)].fields.push_back(desc); \
+        SpacetimeDB::get_table_descriptors()[&typeid(struct_type)].fields.push_back(desc); \
     }
 
 // -----------------------------------------------------------------------------
@@ -395,6 +395,6 @@ struct field_registrar<std::variant<Ts...>> {
 
 // Use unified macro system from macros.h
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_FIELD_REGISTRATION_H

@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test multiple primary keys in a single table
 // SpacetimeDB should only allow ONE primary key per table
@@ -12,7 +12,7 @@ struct DoublePrimaryKey {
     std::string data;
 };
 SPACETIMEDB_STRUCT(DoublePrimaryKey, id1, id2, data)
-SPACETIMEDB_TABLE(DoublePrimaryKey, double_pk_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(DoublePrimaryKey, double_pk_table, SpacetimeDB::Public)
 FIELD_PrimaryKey(double_pk_table, id1);
 FIELD_PrimaryKey(double_pk_table, id2);  // ERROR: Two primary keys!
 
@@ -23,7 +23,7 @@ struct MixedPrimaryKey {
     std::string data;
 };
 SPACETIMEDB_STRUCT(MixedPrimaryKey, manual_id, auto_id, data)
-SPACETIMEDB_TABLE(MixedPrimaryKey, mixed_pk_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(MixedPrimaryKey, mixed_pk_table, SpacetimeDB::Public)
 FIELD_PrimaryKey(mixed_pk_table, manual_id);
 FIELD_PrimaryKeyAutoInc(mixed_pk_table, auto_id);  // ERROR: Two primary keys of different types!
 
@@ -34,7 +34,7 @@ struct DoubleAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(DoubleAutoInc, id1, id2, data)
-SPACETIMEDB_TABLE(DoubleAutoInc, double_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(DoubleAutoInc, double_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(double_autoinc_table, id1);
 FIELD_PrimaryKeyAutoInc(double_autoinc_table, id2);  // ERROR: Two auto-increment primary keys!
 
@@ -46,7 +46,7 @@ struct TriplePrimaryKey {
     std::string data;
 };
 SPACETIMEDB_STRUCT(TriplePrimaryKey, id1, id2, id3, data)
-SPACETIMEDB_TABLE(TriplePrimaryKey, triple_pk_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(TriplePrimaryKey, triple_pk_table, SpacetimeDB::Public)
 FIELD_PrimaryKey(triple_pk_table, id1);
 FIELD_PrimaryKey(triple_pk_table, id2);
 FIELD_PrimaryKey(triple_pk_table, id3);  // ERROR: Three primary keys!
@@ -57,7 +57,7 @@ struct SinglePrimaryKey {
     std::string data;
 };
 SPACETIMEDB_STRUCT(SinglePrimaryKey, id, data)
-SPACETIMEDB_TABLE(SinglePrimaryKey, single_pk_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(SinglePrimaryKey, single_pk_table, SpacetimeDB::Public)
 FIELD_PrimaryKey(single_pk_table, id);  // Correct: Single primary key
 
 // Valid table with auto-increment
@@ -66,11 +66,11 @@ struct SingleAutoInc {
     std::string data;
 };
 SPACETIMEDB_STRUCT(SingleAutoInc, id, data)
-SPACETIMEDB_TABLE(SingleAutoInc, single_autoinc_table, SpacetimeDb::Public)
+SPACETIMEDB_TABLE(SingleAutoInc, single_autoinc_table, SpacetimeDB::Public)
 FIELD_PrimaryKeyAutoInc(single_autoinc_table, id);  // Correct: Single auto-increment primary key
 
 // Test reducer
-SPACETIMEDB_REDUCER(test_multiple_pks, SpacetimeDb::ReducerContext ctx)
+SPACETIMEDB_REDUCER(test_multiple_pks, SpacetimeDB::ReducerContext ctx)
 {
     LOG_INFO("Testing multiple primary keys - should fail validation");
     

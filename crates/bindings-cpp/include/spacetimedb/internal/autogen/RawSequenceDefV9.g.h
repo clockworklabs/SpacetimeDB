@@ -13,24 +13,24 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawSequenceDefV9) {
     std::optional<std::string> name;
     uint16_t column;
-    std::optional<SpacetimeDb::I128> start;
-    std::optional<SpacetimeDb::I128> min_value;
-    std::optional<SpacetimeDb::I128> max_value;
-    SpacetimeDb::I128 increment;
+    std::optional<SpacetimeDB::I128> start;
+    std::optional<SpacetimeDB::I128> min_value;
+    std::optional<SpacetimeDB::I128> max_value;
+    SpacetimeDB::I128 increment;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, column);
-        ::SpacetimeDb::bsatn::serialize(writer, start);
-        ::SpacetimeDb::bsatn::serialize(writer, min_value);
-        ::SpacetimeDb::bsatn::serialize(writer, max_value);
-        ::SpacetimeDb::bsatn::serialize(writer, increment);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, column);
+        ::SpacetimeDB::bsatn::serialize(writer, start);
+        ::SpacetimeDB::bsatn::serialize(writer, min_value);
+        ::SpacetimeDB::bsatn::serialize(writer, max_value);
+        ::SpacetimeDB::bsatn::serialize(writer, increment);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, column, start, min_value, max_value, increment)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal
