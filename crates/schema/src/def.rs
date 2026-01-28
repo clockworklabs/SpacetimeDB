@@ -21,6 +21,7 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
@@ -1277,7 +1278,7 @@ impl From<ViewDef> for RawMiscModuleExportV9 {
 #[non_exhaustive]
 pub struct ReducerDef {
     /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
-    pub name: Identifier,
+    pub name: ReducerName,
 
     /// The parameters of the reducer.
     ///
@@ -1296,7 +1297,7 @@ pub struct ReducerDef {
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV9 {
-            name: val.name.into(),
+            name: val.name.to_string().into(),
             params: val.params,
             lifecycle: val.lifecycle,
         }
@@ -1492,13 +1493,14 @@ impl ModuleDefLookup for TypeDef {
 }
 
 impl ModuleDefLookup for ReducerDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a ReducerName;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        let key = &**key;
         module_def.reducers.get(key)
     }
 }

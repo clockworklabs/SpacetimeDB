@@ -14,7 +14,9 @@ use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
 
@@ -169,9 +171,6 @@ pub enum IsolationLevel {
 
 pub type EphemeralTables = IntSet<TableId>;
 
-type TableName = Box<str>;
-type TableNameRef<'a> = &'a str;
-
 /// The [`TxData`] entry for one table.
 ///
 /// All information about a table is stored in one place
@@ -255,30 +254,20 @@ impl TxData {
 
     /// Ensures that an entry for `table_id` exists
     /// or initializes it with `table_name`.
-    fn init_entry(&mut self, table_id: TableId, table_name: TableNameRef<'_>) -> &mut TxDataTableEntry {
+    fn init_entry(&mut self, table_id: TableId, table_name: &TableName) -> &mut TxDataTableEntry {
         self.entries
-            .get_or_insert(table_id, || TxDataTableEntry::new(table_name.into()))
+            .get_or_insert(table_id, || TxDataTableEntry::new(table_name.clone()))
     }
 
     /// Set `rows` as the inserted rows for `(table_id, table_name)`.
-    pub fn set_inserts_for_table(
-        &mut self,
-        table_id: TableId,
-        table_name: TableNameRef<'_>,
-        rows: Arc<[ProductValue]>,
-    ) {
+    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &TableName, rows: Arc<[ProductValue]>) {
         self.init_entry(table_id, table_name).inserts = rows;
     }
 
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
     ///
     /// When `truncated` is set, the table has been emptied in this transaction.
-    pub fn set_deletes_for_table(
-        &mut self,
-        table_id: TableId,
-        table_name: TableNameRef<'_>,
-        rows: Arc<[ProductValue]>,
-    ) {
+    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &TableName, rows: Arc<[ProductValue]>) {
         self.init_entry(table_id, table_name).deletes = rows;
     }
 
@@ -462,8 +451,8 @@ pub trait Tx {
     ///   observed transactions.
     ///
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String);
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, ReducerName);
 }
 
 pub trait MutTx {
@@ -487,15 +476,15 @@ pub trait MutTx {
     ///
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran during this transaction.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>>;
+    /// - `ReducerName`, the name of the reducer which ran during this transaction.
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, ReducerName)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String);
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, ReducerName);
 }
 
 /// Standard metadata associated with a database.
