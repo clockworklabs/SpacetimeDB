@@ -35,6 +35,7 @@ use anyhow::Context as _;
 use core::any::type_name;
 use core::str;
 use enum_as_inner::EnumAsInner;
+use fibre::spsc;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
@@ -283,8 +284,8 @@ impl JsInstanceEnv {
 /// which will cause the worker's loop to terminate
 /// and cleanup the isolate and friends.
 pub struct JsInstance {
-    request_tx: flume::Sender<JsWorkerRequest>,
-    reply_rx: flume::Receiver<(JsWorkerReply, bool)>,
+    request_tx: spsc::AsyncBoundedSpscSender<JsWorkerRequest>,
+    reply_rx: spsc::AsyncBoundedSpscReceiver<(JsWorkerReply, bool)>,
     trapped: bool,
 }
 
@@ -301,14 +302,14 @@ impl JsInstance {
     ) -> T {
         // Send the request.
         self.request_tx
-            .send_async(request)
+            .send(request)
             .await
             .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
 
         // Wait for the response.
         let (reply, trapped) = self
             .reply_rx
-            .recv_async()
+            .recv()
             .await
             .expect("worker's `reply_tx` should be live as `JsInstance::drop` hasn't happened");
 
@@ -339,7 +340,7 @@ impl JsInstance {
         }));
 
         self.request_tx
-            .send_async(request)
+            .send(request)
             .await
             .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
 
@@ -556,9 +557,11 @@ async fn spawn_instance_worker(
     // The use-case is SPSC and all channels are rendezvous channels
     // where each `.send` blocks until it's received.
     // The Instance --Request-> Worker channel:
-    let (request_tx, request_rx) = flume::bounded(0);
+    let (request_tx, request_rx) = spsc::bounded_sync(1);
+    let request_tx = request_tx.to_async();
     // The Worker --Reply-> Instance channel:
-    let (reply_tx, reply_rx) = flume::bounded(0);
+    let (reply_tx, reply_rx) = spsc::bounded_sync(1);
+    let reply_rx = reply_rx.to_async();
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
@@ -631,7 +634,7 @@ async fn spawn_instance_worker(
                 unreachable!("should have receiver for `{ctx}` response, {e}");
             }
         };
-        for request in request_rx.iter() {
+        while let Ok(request) = request_rx.recv() {
             let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
 
             core_pinner.pin_now();

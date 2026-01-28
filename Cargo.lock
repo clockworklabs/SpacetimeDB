@@ -2173,6 +2173,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fibre"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a058061e5774eb00bffc6d7adeed073f8ff14f6cb75dd24eb2e044e7370a2a0"
+dependencies = [
+ "futures-core",
+ "futures-intrusive",
+ "futures-util",
+ "lazy_static",
+ "papaya",
+ "parking_lot 0.12.5",
+]
+
+[[package]]
 name = "file-id"
 version = "0.2.3"
 source = "git+https://github.com/sapphi-red/notify?rev=refs%2Fheads%2Fpatches#cf2f71ff72bab5a94084001f6a776af81afebaac"
@@ -2227,17 +2241,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "flume"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
-dependencies = [
- "futures-core",
- "futures-sink",
- "spin",
 ]
 
 [[package]]
@@ -2378,6 +2381,17 @@ dependencies = [
  "futures-core",
  "futures-task",
  "futures-util",
+]
+
+[[package]]
+name = "futures-intrusive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d930c203dd0b6ff06e0201a4a2fe9149b43c684fd4420555b26d21b1a02956f"
+dependencies = [
+ "futures-core",
+ "lock_api",
+ "parking_lot 0.12.5",
 ]
 
 [[package]]
@@ -7670,8 +7684,8 @@ dependencies = [
  "enum-map",
  "env_logger 0.10.2",
  "faststr",
+ "fibre",
  "flate2",
- "flume",
  "fs2",
  "fs_extra",
  "futures",
@@ -8431,9 +8445,6 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-dependencies = [
- "lock_api",
-]
 
 [[package]]
 name = "sqllogictest"
