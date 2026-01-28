@@ -107,44 +107,55 @@ impl<W: io::Write> Writer<W> {
     pub fn commit<T: Into<Transaction<U>>, U: Encode>(
         &mut self,
         transactions: impl IntoIterator<Item = T>,
-    ) -> io::Result<()> {
-        let mut txs = transactions.into_iter().peekable();
-        while txs.peek().is_some() {
-            for tx in txs.by_ref().take(u16::MAX as usize) {
-                let tx = tx.into();
-                let expected_offset = self.commit.min_tx_offset + self.commit.n as u64;
-                if tx.offset != expected_offset {
-                    self.commit.n = 0;
-                    self.commit.records.clear();
+    ) -> io::Result<Option<Committed>> {
+        for tx in transactions {
+            let tx = tx.into();
+            let expected_offset = self.commit.min_tx_offset + self.commit.n as u64;
+            if tx.offset != expected_offset {
+                self.commit.n = 0;
+                self.commit.records.clear();
 
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("invalid transaction offset {}, expected {}", tx.offset, expected_offset),
-                    ));
-                }
-                self.commit.n += 1;
-                tx.txdata.encode_record(&mut self.commit.records);
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("invalid transaction offset {}, expected {}", tx.offset, expected_offset),
+                ));
             }
-
-            let _checksum = self
+            // Increment `n` using checked add for error context.
+            self.commit.n = self
                 .commit
-                .write(&mut self.inner)
-                .unwrap_or_else(|e| panic!("failed to write commit {}: {:#}", self.commit.min_tx_offset, e));
-            let commit_len = self.commit.encoded_len() as u64;
-
-            if let Some(index) = self.offset_index_head.as_mut() {
-                let _ = index
-                    .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
-                    .inspect_err(|e| debug!("failed to append to offset index: {e}"));
-            }
-
-            self.bytes_written += commit_len;
-            self.commit.min_tx_offset += self.commit.n as u64;
-            self.commit.n = 0;
-            self.commit.records.clear();
+                .n
+                .checked_add(1)
+                .expect("maximum number of transactions in single commit exceeded");
+            tx.txdata.encode_record(&mut self.commit.records);
         }
 
-        Ok(())
+        if self.commit.n == 0 {
+            return Ok(None);
+        }
+
+        let checksum = self
+            .commit
+            .write(&mut self.inner)
+            .unwrap_or_else(|e| panic!("failed to write commit {}: {:#}", self.commit.min_tx_offset, e));
+        let commit_len = self.commit.encoded_len() as u64;
+
+        if let Some(index) = self.offset_index_head.as_mut() {
+            let _ = index
+                .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
+                .inspect_err(|e| debug!("failed to append to offset index: {e}"));
+        }
+
+        let tx_range_start = self.commit.min_tx_offset;
+
+        self.bytes_written += commit_len;
+        self.commit.min_tx_offset += self.commit.n as u64;
+        self.commit.n = 0;
+        self.commit.records.clear();
+
+        Ok(Some(Committed {
+            tx_range: tx_range_start..self.commit.min_tx_offset,
+            checksum,
+        }))
     }
 
     pub fn flush(&mut self) -> io::Result<()> {

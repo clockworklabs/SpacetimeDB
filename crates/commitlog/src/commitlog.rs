@@ -272,12 +272,10 @@ impl<R: Repo, T> Generic<R, T> {
 impl<R: Repo, T: Encode> Generic<R, T> {
     /// Write `transactions` to the log.
     ///
-    /// This will store all transactions as a single [Commit] if possible
-    /// (if the iterator contains more than `u16::MAX` elements, additional
-    /// commits are created).
+    /// This will store all transactions as a single [Commit]
+    /// (note that `transactions` must not yield more than [u16::MAX] elements).
     ///
-    /// Data is buffered by the underlying segment [Writer], so not all data
-    /// submitted here may have been written to disk when this method returns.
+    /// Data is buffered by the underlying segment [Writer].
     /// Call [Self::flush] to force flushing to the OS.
     ///
     /// If, after writing the transactions, the writer's total written bytes
@@ -291,12 +289,18 @@ impl<R: Repo, T: Encode> Generic<R, T> {
     /// - if the transaction sequence is invalid, e.g. because the transaction
     ///   offsets are not contiguous.
     ///
-    ///   In this case, the current commit will **not** be written.
-    ///   If the input does not fit in a single commit, _some_ commits may have
-    ///   been written when the invalid input is encountered.
+    ///   In this case, **none** of the `transactions` will be written.
     ///
     /// - if the current segment needs to be rotated, and an I/O error occurs
     ///   flushing it to storage.
+    ///
+    ///   In this case, unwritten data remains buffered, and the current segment
+    ///   remains open. Calling [Self::flush] afterwards may (or may not)
+    ///   succeed, and calling [Self::commit] again with new data could grow
+    ///   the segment further beyond [Options::max_segment_size] if successful.
+    ///
+    ///   It is advisable to close and reopen the commitlog handle before
+    ///   attempting further writes.
     ///
     /// - if creating the new segment fails due to an I/O error.
     ///
@@ -304,13 +308,15 @@ impl<R: Repo, T: Encode> Generic<R, T> {
     ///
     /// The method panics if:
     ///
+    /// - `transactions` exceeds [u16::MAX] elements
+    ///
     /// - writing to the underlying [Writer] fails
     ///
     ///   This is likely caused by some storage issue. As we cannot tell with
     ///   certainty how much data (if any) has been written, the internal state
     ///   becomes invalid and thus a panic is raised.
     ///
-    /// - if [Self::sync] panics (called when rotating segments)
+    /// - [Self::sync] panics (called when rotating segments)
     pub fn commit<U: Into<Transaction<T>>>(&mut self, transactions: impl IntoIterator<Item = U>) -> io::Result<()> {
         self.panicked = true;
         let writer = &mut self.head;
