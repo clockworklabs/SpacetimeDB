@@ -8,9 +8,9 @@ using System;
 namespace SpacetimeDB.Internal
 {
     [SpacetimeDB.Type]
-    public partial record RawModuleDef : SpacetimeDB.TaggedEnum<(
-        RawModuleDefV8 V8BackCompat,
-        RawModuleDefV9 V9,
-        RawModuleDefV10 V10
-    )>;
+    public enum FunctionVisibility
+    {
+        Internal,
+        ClientCallable,
+    }
 }
