@@ -390,17 +390,6 @@ impl<T: Encode> Commitlog<T> {
     ///
     ///   In this case, **none** of the `transactions` will be written.
     ///
-    /// - if the current segment needs to be rotated, and an I/O error occurs
-    ///   flushing it to storage.
-    ///
-    ///   In this case, unwritten data remains buffered, and the current segment
-    ///   remains open. Calling [Self::flush] afterwards may (or may not)
-    ///   succeed, and calling [Self::commit] again with new data could grow
-    ///   the segment further beyond [Options::max_segment_size] if successful.
-    ///
-    ///   It is advisable to close and reopen the commitlog handle before
-    ///   attempting further writes.
-    ///
     /// - if creating the new segment fails due to an I/O error.
     ///
     /// # Panics
@@ -409,7 +398,7 @@ impl<T: Encode> Commitlog<T> {
     ///
     /// - `transactions` exceeds [u16::MAX] elements
     ///
-    /// - writing to the underlying buffered writer fails
+    /// - [Self::flush] or writing to the underlying buffered writer fails
     ///
     ///   This is likely caused by some storage issue. As we cannot tell with
     ///   certainty how much data (if any) has been written, the internal state

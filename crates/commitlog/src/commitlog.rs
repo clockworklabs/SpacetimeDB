@@ -297,17 +297,6 @@ impl<R: Repo, T: Encode> Generic<R, T> {
     ///
     ///   In this case, **none** of the `transactions` will be written.
     ///
-    /// - if the current segment needs to be rotated, and an I/O error occurs
-    ///   flushing it to storage.
-    ///
-    ///   In this case, unwritten data remains buffered, and the current segment
-    ///   remains open. Calling [Self::flush] afterwards may (or may not)
-    ///   succeed, and calling [Self::commit] again with new data could grow
-    ///   the segment further beyond [Options::max_segment_size] if successful.
-    ///
-    ///   It is advisable to close and reopen the commitlog handle before
-    ///   attempting further writes.
-    ///
     /// - if creating the new segment fails due to an I/O error.
     ///
     /// # Panics
@@ -316,7 +305,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
     ///
     /// - `transactions` exceeds [u16::MAX] elements
     ///
-    /// - writing to the underlying [Writer] fails
+    /// - [Self::flush] or writing to the underlying [Writer] fails
     ///
     ///   This is likely caused by some storage issue. As we cannot tell with
     ///   certainty how much data (if any) has been written, the internal state
@@ -331,7 +320,8 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         let writer = &mut self.head;
         let committed = writer.commit(transactions)?;
         if writer.len() >= self.opts.max_segment_size {
-            self.flush_and_sync()?;
+            self.flush().expect("failed to flush segment");
+            self.sync();
             self.start_new_segment()?;
         }
         self.panicked = false;
