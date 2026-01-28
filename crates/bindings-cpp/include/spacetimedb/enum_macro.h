@@ -226,11 +226,11 @@
         SPACETIMEDB_ENUM_ASSIGN_VALUES(__VA_ARGS__) \
     }; \
     \
-    namespace SpacetimeDb::bsatn { \
+    namespace SpacetimeDB::bsatn { \
     template<> \
     struct bsatn_traits<EnumName> { \
         static AlgebraicType algebraic_type() { \
-            return SpacetimeDb::Internal::LazyTypeRegistrar<EnumName>::getOrRegister( \
+            return SpacetimeDB::Internal::LazyTypeRegistrar<EnumName>::getOrRegister( \
                 []() -> AlgebraicType { \
                     SumTypeBuilder builder; \
                     SPACETIMEDB_ENUM_ADD_VARIANTS(__VA_ARGS__) \
@@ -318,14 +318,14 @@
         } \
     }; \
     \
-    namespace SpacetimeDb::bsatn { \
+    namespace SpacetimeDB::bsatn { \
     template<> \
     struct bsatn_traits<EnumName> { \
         static AlgebraicType algebraic_type() { \
-            return SpacetimeDb::Internal::LazyTypeRegistrar<EnumName>::getOrRegister( \
+            return SpacetimeDB::Internal::LazyTypeRegistrar<EnumName>::getOrRegister( \
                 []() -> AlgebraicType { \
                     std::vector<SumTypeVariant> variants; \
-                    SpacetimeDb::named_variant_helper<0, SPACETIMEDB_ENUM_VARIANT_TYPES(__VA_ARGS__)>::add_variants( \
+                    SpacetimeDB::named_variant_helper<0, SPACETIMEDB_ENUM_VARIANT_TYPES(__VA_ARGS__)>::add_variants( \
                         variants, EnumName::variant_names); \
                     auto sum_type = std::make_unique<SumTypeSchema>(std::move(variants)); \
                     return AlgebraicType::make_sum(std::move(sum_type)); \
@@ -337,13 +337,13 @@
         static void serialize(Writer& writer, const EnumName& enum_value) { \
             writer.write_u8(static_cast<uint8_t>(enum_value.value.index())); \
             std::visit([&](const auto& v) { \
-                SpacetimeDb::bsatn::serialize(writer, v); \
+                SpacetimeDB::bsatn::serialize(writer, v); \
             }, enum_value.value); \
         } \
         \
         static EnumName deserialize(Reader& reader) { \
             uint8_t tag = reader.read_u8(); \
-            return EnumName{SpacetimeDb::named_variant_helper<0, SPACETIMEDB_ENUM_VARIANT_TYPES(__VA_ARGS__)>:: \
+            return EnumName{SpacetimeDB::named_variant_helper<0, SPACETIMEDB_ENUM_VARIANT_TYPES(__VA_ARGS__)>:: \
                 template deserialize_variant<typename EnumName::variant_type>(tag, reader)}; \
         } \
     }; \
@@ -367,7 +367,7 @@ using Unit = std::monostate;
 // VARIANT HELPER TEMPLATES
 // =============================================================================
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Recursive helper for variant type processing
@@ -420,13 +420,13 @@ struct named_variant_helper<I, T, Rest...> {
     }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // COMPILE-TIME NAMESPACE STORAGE
 // =============================================================================
 
-namespace SpacetimeDb::detail {
+namespace SpacetimeDB::detail {
     // Template to store namespace information for types
     template<typename T>
     struct namespace_info {
@@ -480,7 +480,7 @@ namespace SpacetimeDb::detail {
  * @warning Changing the namespace after data is stored will break schema compatibility
  */
 #define SPACETIMEDB_NAMESPACE(EnumType, NamespacePrefix) \
-    namespace SpacetimeDb::detail { \
+    namespace SpacetimeDB::detail { \
         template<> \
         struct namespace_info<EnumType> { \
             static constexpr const char* value = NamespacePrefix; \

@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 #include <optional>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // MINIMAL TEST: Just optional in table field, NO reducer parameters
 // This isolates whether issue is in table registration vs reducer parameter processing

@@ -32,16 +32,16 @@
     __attribute__((import_module("spacetime_10.3"), import_name(#name))) extern
 
 // Import opaque types into global namespace for C compatibility
-using SpacetimeDb::Status;
-using SpacetimeDb::TableId;
-using SpacetimeDb::IndexId;
-using SpacetimeDb::ColId;
-using SpacetimeDb::IndexType;
-using SpacetimeDb::LogLevel;
-using SpacetimeDb::BytesSink;
-using SpacetimeDb::BytesSource;
-using SpacetimeDb::RowIter;
-using SpacetimeDb::ConsoleTimerId;
+using SpacetimeDB::Status;
+using SpacetimeDB::TableId;
+using SpacetimeDB::IndexId;
+using SpacetimeDB::ColId;
+using SpacetimeDB::IndexType;
+using SpacetimeDB::LogLevel;
+using SpacetimeDB::BytesSink;
+using SpacetimeDB::BytesSource;
+using SpacetimeDB::RowIter;
+using SpacetimeDB::ConsoleTimerId;
 
 // Disable warnings about C-linkage with user-defined types
 // This is safe because our opaque types are single-field structs

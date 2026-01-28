@@ -27,7 +27,7 @@ A SpacetimeDB C++ module consists of:
 
 ```cpp
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // 1. Data structures (structs/enums)
 struct MyData { 
@@ -59,9 +59,8 @@ spacetime init --lang cpp my-module
 cd my-module
 
 # Build and publish
-emcmake cmake -B build .
-cmake --build build
-spacetime publish . my-database
+spacetime build -p ./spacetimedb
+spacetime publish -p ./spacetimedb my-database
 ```
 
 ### Manual Setup
@@ -296,7 +295,7 @@ SPACETIMEDB_REDUCER(update_user, ReducerContext ctx, uint32_t user_id, std::stri
 
 ## Random Number Generation
 
-The C++ SDK provides deterministic random number generation through the `ReducerContext`. The RNG is seeded with the reducer's timestamp, ensuring reproducible behavior across SpacetimeDB instances.
+The C++ bindings provides deterministic random number generation through the `ReducerContext`. The RNG is seeded with the reducer's timestamp, ensuring reproducible behavior across SpacetimeDB instances.
 
 ### Basic Usage
 
@@ -443,10 +442,10 @@ struct AllTypes {
     int64_t i64_field;
     
     // Large integers (SpacetimeDB types)
-    SpacetimeDb::u128 u128_field;
-    SpacetimeDb::u256 u256_field;
-    SpacetimeDb::i128 i128_field;
-    SpacetimeDb::i256 i256_field;
+    SpacetimeDB::u128 u128_field;
+    SpacetimeDB::u256 u256_field;
+    SpacetimeDB::i128 i128_field;
+    SpacetimeDB::i256 i256_field;
     
     // Floating point
     float f32_field;
@@ -482,7 +481,7 @@ SPACETIMEDB_ENUM(StatusType, Pending, Active, Inactive)
 // Manual implementation for complex cases
 enum class Priority : uint8_t { Low = 0, Medium = 1, High = 2 };
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 template<>
 struct bsatn_traits<Priority> {
     static AlgebraicType algebraic_type() {
@@ -1059,7 +1058,7 @@ SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
 
 ### CMake Configuration
 
-The C++ SDK uses CMake with Emscripten for WebAssembly compilation (`spacetime init` will generate one for you):
+The C++ bindings uses CMake with Emscripten for WebAssembly compilation (`spacetime init` will generate one for you):
 
 ```cmake
 # Basic configuration
@@ -1088,22 +1087,17 @@ target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
 ### Build Commands
 
 ```bash
-# Standard build
+# With spacetime
+spacetime build -p .
+
+# Manual build
 emcmake cmake -B build .
 cmake --build build
 
-# Or spacetime
-spacetime build -p .
-
-# Custom module source
-emcmake cmake -B build -DMODULE_SOURCE=src/test.cpp -DOUTPUT_NAME=test .
-cmake --build build
-# Creates build/test.wasm
-
 # Publishing
-spacetime publish --bin-path build/lib.wasm my-database
-# Or auto-detect
 spacetime publish . my-database
+# or manual
+spacetime publish --bin-path build/lib.wasm my-database
 ```
 
 ### Emscripten Settings
@@ -1120,7 +1114,7 @@ The build system automatically configures:
 
 ```cpp
 #include <spacetimedb.h>
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // User data structure
 struct User {

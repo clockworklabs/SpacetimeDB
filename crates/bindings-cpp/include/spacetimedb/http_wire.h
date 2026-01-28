@@ -29,7 +29,7 @@
  * @ingroup sdk_internal
  */
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace wire {
 
 /**
@@ -156,11 +156,11 @@ struct HttpResponse {
 };
 
 } // namespace wire
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // ==================== BSATN Serialization Traits ====================
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 // Forward declarations for recursive types
 template<> struct bsatn_traits<wire::HttpMethod>;
@@ -341,6 +341,6 @@ struct bsatn_traits<wire::HttpResponse> {
     }
 };
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 #endif // SPACETIMEDB_HTTP_WIRE_H

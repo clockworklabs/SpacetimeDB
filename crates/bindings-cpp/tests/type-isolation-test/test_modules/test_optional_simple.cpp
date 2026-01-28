@@ -2,7 +2,7 @@
 // Removed: enhanced_database.h (unused functionality)
 #include <optional>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 
 // Simple table with optional field

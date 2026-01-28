@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Module 1: Basic unsigned integers (U8, U16, U32)
 // Testing if basic unsigned integer types cause WASM issues

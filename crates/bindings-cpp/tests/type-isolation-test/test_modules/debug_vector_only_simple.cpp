@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 
 // SimpleEnum defined but ONLY used in vector context using new unified syntax

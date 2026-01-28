@@ -13,13 +13,13 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 // BTree algorithm data
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawIndexAlgorithmBTreeData) {
     std::vector<uint16_t> columns;
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, columns);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, columns);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(columns)
 };
@@ -27,8 +27,8 @@ SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawIndexAlgorithmBTreeData) {
 // Hash algorithm data (not currently used)
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawIndexAlgorithmHashData) {
     std::vector<uint16_t> columns;
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, columns);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, columns);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(columns)
 };
@@ -36,16 +36,16 @@ SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawIndexAlgorithmHashData) {
 // Direct algorithm data (not currently used)
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawIndexAlgorithmDirectData) {
     uint16_t column;
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, column);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, column);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(column)
 };
 
 // RawIndexAlgorithm tagged enum with data variants
 SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawIndexAlgorithm, 
-    SpacetimeDb::Internal::RawIndexAlgorithmBTreeData,
-    SpacetimeDb::Internal::RawIndexAlgorithmHashData,
-    SpacetimeDb::Internal::RawIndexAlgorithmDirectData
+    SpacetimeDB::Internal::RawIndexAlgorithmBTreeData,
+    SpacetimeDB::Internal::RawIndexAlgorithmHashData,
+    SpacetimeDB::Internal::RawIndexAlgorithmDirectData
 )
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

@@ -57,10 +57,10 @@ impl<'opts> Cpp<'opts> {
             PrimitiveType::U32 => "uint32_t",
             PrimitiveType::I64 => "int64_t",
             PrimitiveType::U64 => "uint64_t",
-            PrimitiveType::I128 => "SpacetimeDb::I128",
-            PrimitiveType::U128 => "SpacetimeDb::U128",
-            PrimitiveType::I256 => "SpacetimeDb::I256",
-            PrimitiveType::U256 => "SpacetimeDb::U256",
+            PrimitiveType::I128 => "SpacetimeDB::I128",
+            PrimitiveType::U128 => "SpacetimeDB::U128",
+            PrimitiveType::I256 => "SpacetimeDB::I256",
+            PrimitiveType::U256 => "SpacetimeDB::U256",
             PrimitiveType::F32 => "float",
             PrimitiveType::F64 => "double",
         }
@@ -137,7 +137,7 @@ impl<'opts> Cpp<'opts> {
     // Generate minimal product type (struct with fields only)
     fn write_product_type(&self, output: &mut String, module: &ModuleDef, type_name: &str, product: &ProductTypeDef) {
         // Use INTERNAL macro for Internal namespace
-        let macro_name = if self.namespace == "SpacetimeDb::Internal" {
+        let macro_name = if self.namespace == "SpacetimeDB::Internal" {
             "SPACETIMEDB_INTERNAL_PRODUCT_TYPE"
         } else {
             "SPACETIMEDB_PRODUCT_TYPE"
@@ -156,13 +156,13 @@ impl<'opts> Cpp<'opts> {
         // Only generate serialization for Internal types (no deserialization needed)
         writeln!(
             output,
-            "    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {{"
+            "    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {{"
         )
         .unwrap();
         for (field_name, _) in &product.elements {
             writeln!(
                 output,
-                "        ::SpacetimeDb::bsatn::serialize(writer, {});",
+                "        ::SpacetimeDB::bsatn::serialize(writer, {});",
                 field_name
             )
             .unwrap();
@@ -198,10 +198,10 @@ impl<'opts> Cpp<'opts> {
             writeln!(output, "    std::vector<uint16_t> columns;").unwrap();
             writeln!(
                 output,
-                "    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {{"
+                "    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {{"
             )
             .unwrap();
-            writeln!(output, "        ::SpacetimeDb::bsatn::serialize(writer, columns);").unwrap();
+            writeln!(output, "        ::SpacetimeDB::bsatn::serialize(writer, columns);").unwrap();
             writeln!(output, "    }}").unwrap();
             writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(columns)").unwrap();
             writeln!(output, "}};").unwrap();
@@ -217,10 +217,10 @@ impl<'opts> Cpp<'opts> {
             writeln!(output, "    std::vector<uint16_t> columns;").unwrap();
             writeln!(
                 output,
-                "    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {{"
+                "    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {{"
             )
             .unwrap();
-            writeln!(output, "        ::SpacetimeDb::bsatn::serialize(writer, columns);").unwrap();
+            writeln!(output, "        ::SpacetimeDB::bsatn::serialize(writer, columns);").unwrap();
             writeln!(output, "    }}").unwrap();
             writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(columns)").unwrap();
             writeln!(output, "}};").unwrap();
@@ -236,10 +236,10 @@ impl<'opts> Cpp<'opts> {
             writeln!(output, "    uint16_t column;").unwrap();
             writeln!(
                 output,
-                "    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {{"
+                "    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {{"
             )
             .unwrap();
-            writeln!(output, "        ::SpacetimeDb::bsatn::serialize(writer, column);").unwrap();
+            writeln!(output, "        ::SpacetimeDB::bsatn::serialize(writer, column);").unwrap();
             writeln!(output, "    }}").unwrap();
             writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(column)").unwrap();
             writeln!(output, "}};").unwrap();
@@ -248,15 +248,15 @@ impl<'opts> Cpp<'opts> {
             // Generate the tagged enum
             writeln!(output, "// RawIndexAlgorithm tagged enum with data variants").unwrap();
             writeln!(output, "SPACETIMEDB_INTERNAL_TAGGED_ENUM({}, ", type_name).unwrap();
-            writeln!(output, "    SpacetimeDb::Internal::RawIndexAlgorithmBTreeData,").unwrap();
-            writeln!(output, "    SpacetimeDb::Internal::RawIndexAlgorithmHashData,").unwrap();
-            writeln!(output, "    SpacetimeDb::Internal::RawIndexAlgorithmDirectData").unwrap();
+            writeln!(output, "    SpacetimeDB::Internal::RawIndexAlgorithmBTreeData,").unwrap();
+            writeln!(output, "    SpacetimeDB::Internal::RawIndexAlgorithmHashData,").unwrap();
+            writeln!(output, "    SpacetimeDB::Internal::RawIndexAlgorithmDirectData").unwrap();
             writeln!(output, ")").unwrap();
             return;
         }
 
         // Use INTERNAL macro for Internal namespace
-        let macro_name = if self.namespace == "SpacetimeDb::Internal" {
+        let macro_name = if self.namespace == "SpacetimeDB::Internal" {
             "SPACETIMEDB_INTERNAL_TAGGED_ENUM"
         } else {
             "SPACETIMEDB_TAGGED_ENUM"
@@ -330,7 +330,7 @@ impl<'opts> Cpp<'opts> {
 #include "spacetimedb/bsatn/bsatn.h"
 #include "../forward_declarations.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 // AlgebraicType is special - it uses pointers to break circular dependencies
 // This is a custom implementation due to circular references between:
@@ -363,9 +363,9 @@ public:
 
     using DataType = std::variant<
         uint32_t,                                          // Ref
-        std::unique_ptr<SpacetimeDb::Internal::SumType>,   // Sum
-        std::unique_ptr<SpacetimeDb::Internal::ProductType>, // Product 
-        std::unique_ptr<SpacetimeDb::Internal::AlgebraicType>, // Array element type
+        std::unique_ptr<SpacetimeDB::Internal::SumType>,   // Sum
+        std::unique_ptr<SpacetimeDB::Internal::ProductType>, // Product 
+        std::unique_ptr<SpacetimeDB::Internal::AlgebraicType>, // Array element type
         std::monostate  // All primitive types (String, Bool, I8, U8, etc.)
     >;
 
@@ -403,13 +403,13 @@ public:
         return std::visit(std::forward<Visitor>(visitor), data_);
     }
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const;
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const;
 
     bool operator==(const AlgebraicType& other) const;
     bool operator!=(const AlgebraicType& other) const { return !(*this == other); }
 };
 
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal
 "#
         .to_string()
     }

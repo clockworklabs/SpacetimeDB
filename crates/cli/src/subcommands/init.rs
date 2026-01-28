@@ -75,7 +75,7 @@ impl ServerLanguage {
             "rust" => Ok(Some(ServerLanguage::Rust)),
             "csharp" | "c#" => Ok(Some(ServerLanguage::Csharp)),
             "typescript" => Ok(Some(ServerLanguage::TypeScript)),
-            "cpp" | "c++" => Ok(Some(ServerLanguage::Cpp)),
+            "cpp" | "c++" | "cxx" => Ok(Some(ServerLanguage::Cpp)),
             _ => Err(anyhow!("Unknown server language: {}", s)),
         }
     }
@@ -1580,7 +1580,7 @@ pub fn init_cpp_project(project_path: &Path) -> anyhow::Result<()> {
             "CMakeLists.txt",
         ),
         (
-            include_str!("../../../../templates/basic-cpp/spacetimedb/lib.cpp"),
+            include_str!("../../../../templates/basic-cpp/spacetimedb/src/lib.cpp"),
             "src/lib.cpp",
         ),
         (
@@ -1595,7 +1595,7 @@ pub fn init_cpp_project(project_path: &Path) -> anyhow::Result<()> {
         std::fs::write(path, data_file.0)?;
     }
 
-    check_for_emscripten();
+    check_for_emscripten_and_cmake();
     check_for_git();
 
     Ok(())
@@ -1797,7 +1797,7 @@ fn strip_mdc_frontmatter(content: &str) -> &str {
 /// On Unix-like systems, looks for emcc and cmake.
 ///
 /// Returns true if both tools are found, false otherwise with helpful warnings.
-fn check_for_emscripten() -> bool {
+fn check_for_emscripten_and_cmake() -> bool {
     // Check for emcc with platform-specific extension
     #[cfg(windows)]
     let emcc_ok = find_executable("emcc.bat").is_some();

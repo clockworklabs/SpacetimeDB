@@ -6,10 +6,12 @@ This guide will walk you through creating your first SpacetimeDB module in C++. 
 
 A SpacetimeDB module is C++ code that gets compiled to WebAssembly and runs inside the database. Instead of the traditional architecture (database → app server → clients), SpacetimeDB lets you write your entire backend logic that runs **inside** the database itself, giving you microsecond latency and automatic real-time sync to clients.
 
-Modules consist of two main components:
+Modules consist of four main components:
 
 - **Tables**: Database tables defined as C++ structs
 - **Reducers**: Functions that modify data and can be called by clients
+- **Views**: Read-only query functions that return data (std::vector<T> or std::optional<T>) to clients
+- **Procedures**: Pure functions that return values and can optionally access the database via transactions 
 
 ## Prerequisites
 
@@ -47,7 +49,7 @@ Open `lib.cpp` and replace the generated code with our chat server implementatio
 ```cpp
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Define a User table to store connected users
 struct User {
@@ -169,8 +171,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected, ReducerContext ctx) {
 Build the module using the provided CMake configuration:
 
 ```bash
-emcmake cmake -B build .
-cmake --build build
+spacetime build -p ./spacetimedb
 ```
 
 This compiles your C++ code to WebAssembly, producing `build/lib.wasm`.
@@ -218,8 +219,8 @@ spacetime sql my-chat-db "SELECT * FROM message"
 ### Database Access Pattern
 
 SpacetimeDB C++ uses a unique accessor pattern:
-- `ctx.db[table_name]` - Access table for iteration and basic operations
-- `ctx.db[table_field]` - Access indexed fields for optimized operations (generated symbol named `tableName_fieldName`)
+- `ctx.db[table]` - Access table for iteration and basic operations, eg. ctx.db[user]
+- `ctx.db[table_field]` - Access indexed fields for optimized operations, eg. ctx.db[user_id]
 
 ```cpp
 // Table access
@@ -276,7 +277,7 @@ SPACETIMEDB_REDUCER(get_user_messages, ReducerContext ctx, Identity user_identit
 
 **Build errors**: Ensure you have the latest Emscripten SDK and are using `emcmake cmake`
 
-**Module not found**: Check that SpacetimeDB is running with `spacetime server status`
+**Module not found**: Check that SpacetimeDB is running
 
 **Type errors**: Remember that C++ types need exact matches - use `uint32_t`, not `int`
 

@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 
 // Test 1: Simple enum (should route to SPACETIMEDB_ENUM_SIMPLE)

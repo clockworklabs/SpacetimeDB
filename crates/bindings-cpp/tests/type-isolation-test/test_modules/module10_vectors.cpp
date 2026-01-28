@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Module 10: Vector/array types (already covered in other modules, adding nested)
 // Testing if nested vector types cause WASM issues

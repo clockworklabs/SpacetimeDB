@@ -2,7 +2,7 @@
 // Removed: enhanced_database.h (unused functionality)
 #include <variant>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test: EnumWithPayload in table but NOT as reducer parameter
 // This isolates whether the issue is with table storage or reducer params
@@ -17,21 +17,21 @@ SPACETIMEDB_ENUM(EnumWithPayload,
     (U16, uint16_t),
     (U32, uint32_t),
     (U64, uint64_t),
-    (U128, SpacetimeDb::u128),
-    (U256, SpacetimeDb::u256),
+    (U128, SpacetimeDB::u128),
+    (U256, SpacetimeDB::u256),
     (I8, int8_t),
     (I16, int16_t),
     (I32, int32_t),
     (I64, int64_t),
-    (I128, SpacetimeDb::i128),
-    (I256, SpacetimeDb::i256),
+    (I128, SpacetimeDB::i128),
+    (I256, SpacetimeDB::i256),
     (Bool, bool),
     (F32, float),
     (F64, double),
     (Str, std::string),
-    (Identity, SpacetimeDb::Identity),
-    (ConnectionId, SpacetimeDb::ConnectionId),
-    (Timestamp, SpacetimeDb::Timestamp),
+    (Identity, SpacetimeDB::Identity),
+    (ConnectionId, SpacetimeDB::ConnectionId),
+    (Timestamp, SpacetimeDB::Timestamp),
     (Bytes, std::vector<uint8_t>),
     (Ints, std::vector<int32_t>),
     (Strings, std::vector<std::string>),

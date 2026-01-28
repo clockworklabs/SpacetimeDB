@@ -14,18 +14,18 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "RawIndexAlgorithm.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawIndexDefV9) {
     std::optional<std::string> name;
     std::optional<std::string> accessor_name;
-    SpacetimeDb::Internal::RawIndexAlgorithm algorithm;
+    SpacetimeDB::Internal::RawIndexAlgorithm algorithm;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, accessor_name);
-        ::SpacetimeDb::bsatn::serialize(writer, algorithm);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, accessor_name);
+        ::SpacetimeDB::bsatn::serialize(writer, algorithm);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, accessor_name, algorithm)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

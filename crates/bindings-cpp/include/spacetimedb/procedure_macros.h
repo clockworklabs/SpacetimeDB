@@ -9,7 +9,7 @@
 #include <vector>
 #include <type_traits>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 /**
@@ -24,7 +24,7 @@ template<typename T>
 struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Serializable<T>> {};
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 /**
  * @brief Macro for defining SpacetimeDB procedures
@@ -83,7 +83,7 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
  */
 #define SPACETIMEDB_PROCEDURE(return_type, procedure_name, ctx_param, ...) \
     /* Validate return type at compile-time */ \
-    static_assert(::SpacetimeDb::Internal::is_valid_procedure_return_type<return_type>::value, \
+    static_assert(::SpacetimeDB::Internal::is_valid_procedure_return_type<return_type>::value, \
         "Procedure return type must be a SpacetimeType (implement Serializable trait)"); \
     \
     /* Forward declaration with optional parameters */ \
@@ -96,11 +96,11 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
         /* Parse parameter names from the stringified parameter list */ \
         std::string param_list = #__VA_ARGS__; \
         std::vector<std::string> param_names = \
-            SpacetimeDb::Internal::parseParameterNames(param_list); \
+            SpacetimeDB::Internal::parseParameterNames(param_list); \
         \
         /* Register the procedure with the V9Builder system */ \
         /* Note: Procedures are always public (no is_public parameter) */ \
-        ::SpacetimeDb::Internal::getV9Builder().RegisterProcedure( \
+        ::SpacetimeDB::Internal::getV9Builder().RegisterProcedure( \
             #procedure_name, procedure_name, param_names); \
     } \
     \
