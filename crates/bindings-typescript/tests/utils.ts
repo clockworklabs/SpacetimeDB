@@ -2,7 +2,10 @@ import { AlgebraicType } from '../src/lib/algebraic_type';
 import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
-import { Player, Point, User } from '../test-app/src/module_bindings';
+import { type Rows } from '../test-app/src/module_bindings';
+import PlayerRow from '../test-app/src/module_bindings/player_table';
+import UserRow from '../test-app/src/module_bindings/user_table';
+import Point from '../test-app/src/module_bindings/point_type';
 
 export const anIdentity = Identity.fromString(
   '0000000000000000000000000000000000000000000000000000000000000069'
@@ -14,15 +17,15 @@ export const sallyIdentity = Identity.fromString(
   '000000000000000000000000000000000000000000000000000000000006a111'
 );
 
-export function encodePlayer(value: Infer<typeof Player>): Uint8Array {
+export function encodePlayer(value: Rows.Player): Uint8Array {
   const writer = new BinaryWriter(1024);
-  Player.serialize(writer, value);
+  PlayerRow.serialize(writer, value);
   return writer.getBuffer();
 }
 
-export function encodeUser(value: Infer<typeof User>): Uint8Array {
+export function encodeUser(value: Rows.User): Uint8Array {
   const writer = new BinaryWriter(1024);
-  User.serialize(writer, value);
+  UserRow.serialize(writer, value);
   return writer.getBuffer();
 }
 
