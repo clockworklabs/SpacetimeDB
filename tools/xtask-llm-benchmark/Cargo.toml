@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 spacetimedb.workspace = true
 spacetimedb-guard.workspace = true
+spacetimedb-data-structures.workspace = true
 
 anyhow.workspace = true
 serde.workspace = true

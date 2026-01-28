@@ -43,6 +43,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_table::static_assert_size;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -457,6 +458,10 @@ enum JsWorkerRequest {
     /// See [`JsInstance::call_scheduled_function`].
     CallScheduledFunction(ScheduledFunctionParams, tokio::runtime::Handle),
 }
+
+// These two should be the same size (once core pinning PR lands).
+static_assert_size!(JsWorkerRequest, 208);
+static_assert_size!(CallReducerParams, 192);
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
 ///
