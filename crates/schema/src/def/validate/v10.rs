@@ -46,10 +46,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .into_iter()
         .flatten()
-        .map(|reducer| {
-            validator
-                .validate_reducer_def(reducer)
-        })
+        .map(|reducer| validator.validate_reducer_def(reducer))
         // Collect into a `Vec` first to preserve duplicate names.
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
@@ -407,7 +404,8 @@ impl<'a> ModuleValidatorV10<'a> {
             visibility: visibility.into(),
             ok_return_type,
             err_return_type,
-        }).map(|reducer_def| (name_result, reducer_def))
+        })
+        .map(|reducer_def| (name_result, reducer_def))
     }
 
     fn validate_schedule_def(
@@ -910,22 +908,22 @@ mod tests {
         assert_eq!(def.types[&deliveries_type_name].ty, delivery_def.product_type_ref);
 
         let init_name = expect_identifier("init");
-        assert_eq!(def.reducers[&init_name].name, init_name);
+        assert_eq!(&*def.reducers[&init_name].name, &*init_name);
         assert_eq!(def.reducers[&init_name].lifecycle, Some(Lifecycle::Init));
 
         let on_connect_name = expect_identifier("on_connect");
-        assert_eq!(def.reducers[&on_connect_name].name, on_connect_name);
+        assert_eq!(&*def.reducers[&on_connect_name].name, &*on_connect_name);
         assert_eq!(def.reducers[&on_connect_name].lifecycle, Some(Lifecycle::OnConnect));
 
         let on_disconnect_name = expect_identifier("on_disconnect");
-        assert_eq!(def.reducers[&on_disconnect_name].name, on_disconnect_name);
+        assert_eq!(&*def.reducers[&on_disconnect_name].name, &*on_disconnect_name);
         assert_eq!(
             def.reducers[&on_disconnect_name].lifecycle,
             Some(Lifecycle::OnDisconnect)
         );
 
         let extra_reducer_name = expect_identifier("extra_reducer");
-        assert_eq!(def.reducers[&extra_reducer_name].name, extra_reducer_name);
+        assert_eq!(&*def.reducers[&extra_reducer_name].name, &*extra_reducer_name);
         assert_eq!(def.reducers[&extra_reducer_name].lifecycle, None);
         assert_eq!(
             def.reducers[&extra_reducer_name].params,
@@ -933,7 +931,7 @@ mod tests {
         );
 
         let check_deliveries_name = expect_identifier("check_deliveries");
-        assert_eq!(def.reducers[&check_deliveries_name].name, check_deliveries_name);
+        assert_eq!(&*def.reducers[&check_deliveries_name].name, &*check_deliveries_name);
         assert_eq!(def.reducers[&check_deliveries_name].lifecycle, None);
         assert_eq!(
             def.reducers[&check_deliveries_name].params,
