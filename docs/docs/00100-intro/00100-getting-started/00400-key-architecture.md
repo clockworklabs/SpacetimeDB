@@ -439,7 +439,7 @@ A view can be written in C# like so:
 [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
-    return ctx.Db.Player.Identity.Find(ctx.Sender) as Player;
+    return ctx.Db.Player.Identity.Find(ctx.Sender()) as Player;
 }
 ```
 
