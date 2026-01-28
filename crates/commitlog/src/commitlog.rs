@@ -270,6 +270,47 @@ impl<R: Repo, T> Generic<R, T> {
 }
 
 impl<R: Repo, T: Encode> Generic<R, T> {
+    /// Write `transactions` to the log.
+    ///
+    /// This will store all transactions as a single [Commit] if possible
+    /// (if the iterator contains more than `u16::MAX` elements, additional
+    /// commits are created).
+    ///
+    /// Data is buffered by the underlying segment [Writer], so not all data
+    /// submitted here may have been written to disk when this method returns.
+    /// Call [Self::flush] to force flushing to the OS.
+    ///
+    /// If, after writing the transactions, the writer's total written bytes
+    /// exceed [Options::max_segment_size], the current segment is flushed,
+    /// `fsync`ed and closed, and a new segment is created.
+    ///
+    /// # Errors
+    ///
+    /// An `Err` value is returned in the following cases:
+    ///
+    /// - if the transaction sequence is invalid, e.g. because the transaction
+    ///   offsets are not contiguous.
+    ///
+    ///   In this case, the current commit will **not** be written.
+    ///   If the input does not fit in a single commit, _some_ commits may have
+    ///   been written when the invalid input is encountered.
+    ///
+    /// - if the current segment needs to be rotated, and an I/O error occurs
+    ///   flushing it to storage.
+    ///
+    /// - if creating the new segment fails due to an I/O error.
+    ///
+    /// # Panics
+    ///
+    /// The method panics if:
+    ///
+    /// - writing to the underlying [Writer] fails
+    ///
+    ///   This is likely caused by some storage issue. As we cannot tell with
+    ///   certainty how much data (if any) has been written, the internal state
+    ///   becomes invalid and thus a panic is raised.
+    ///
+    /// - if [Self::sync] panics (called when rotating segments)
     pub fn commit<U: Into<Transaction<T>>>(&mut self, transactions: impl IntoIterator<Item = U>) -> io::Result<()> {
         self.panicked = true;
         let writer = &mut self.head;
