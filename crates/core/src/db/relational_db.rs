@@ -46,6 +46,7 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
@@ -769,7 +770,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxOffset, TxMetrics, String) {
+    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxOffset, TxMetrics, ReducerName) {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx(tx)
     }
@@ -781,14 +782,14 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, String) {
+    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, ReducerName) {
         log::trace!("RELEASE TX");
         self.inner.release_tx(tx)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
     #[allow(clippy::type_complexity)]
-    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, String)>, DBError> {
+    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, ReducerName)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
@@ -1002,7 +1003,7 @@ impl RelationalDB {
     /// Should only be called after the tx lock has been fully released.
     pub(crate) fn report_tx_metrics(
         &self,
-        reducer: String,
+        reducer: ReducerName,
         tx_data: Option<Arc<TxData>>,
         metrics_for_writer: Option<TxMetrics>,
         metrics_for_reader: Option<TxMetrics>,
@@ -1469,12 +1470,12 @@ impl RelationalDB {
     }
 
     /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub fn report_mut_tx_metrics(&self, reducer: String, metrics: TxMetrics, tx_data: Option<Arc<TxData>>) {
+    pub fn report_mut_tx_metrics(&self, reducer: ReducerName, metrics: TxMetrics, tx_data: Option<Arc<TxData>>) {
         self.report_tx_metrics(reducer, tx_data, Some(metrics), None);
     }
 
     /// Reports subscription metrics for `reducer`, using counters provided by `db`.
-    pub fn report_read_tx_metrics(&self, reducer: String, metrics: TxMetrics) {
+    pub fn report_read_tx_metrics(&self, reducer: ReducerName, metrics: TxMetrics) {
         self.report_tx_metrics(reducer, None, None, Some(metrics));
     }
 
@@ -3277,7 +3278,7 @@ mod tests {
         let timestamp = Timestamp::now();
         let workload = |name: &str| {
             Workload::Reducer(ReducerContext {
-                name: name.into(),
+                name: ReducerName::new_from_str(name),
                 caller_identity: Identity::__dummy(),
                 caller_connection_id: ConnectionId::ZERO,
                 timestamp,
@@ -3468,9 +3469,9 @@ mod tests {
                 arg_bsatn,
             } = ReducerContext::try_from(&input).unwrap();
             if i == 0 {
-                assert_eq!(reducer_name, "__identity_connected__");
+                assert_eq!(&*reducer_name, "__identity_connected__");
             } else {
-                assert_eq!(reducer_name, "abstract_concrete_proxy_factory_impl");
+                assert_eq!(&*reducer_name, "abstract_concrete_proxy_factory_impl");
             }
             assert!(
                 arg_bsatn.is_empty(),

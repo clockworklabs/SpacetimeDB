@@ -1066,7 +1066,7 @@ impl CommittedState {
         );
 
         // Record any truncated tables in the `TxData`.
-        tx_data.add_truncates(truncates);
+        tx_data.set_truncates(truncates);
 
         // Merge read sets from the `MutTxId` into the `CommittedState`.
         // It's important that this happens after applying the changes to `tx_data`,
@@ -1126,7 +1126,7 @@ impl CommittedState {
             }
 
             if !deletes.is_empty() {
-                let table_name = &*table.get_schema().table_name;
+                let table_name = &table.get_schema().table_name;
                 tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 let truncated = table.row_count == 0;
                 if truncated {
@@ -1203,7 +1203,7 @@ impl CommittedState {
 
             // Add the table to `TxData` if there were insertions.
             if !inserts.is_empty() {
-                let table_name = &*commit_table.get_schema().table_name;
+                let table_name = &commit_table.get_schema().table_name;
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
 
                 // if table has inserted rows, it cannot be truncated

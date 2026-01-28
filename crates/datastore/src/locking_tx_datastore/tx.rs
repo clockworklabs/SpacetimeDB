@@ -10,7 +10,7 @@ use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::{reducer_name::ReducerName, schema::TableSchema};
 use spacetimedb_table::{
     table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter},
     table_index::IndexCannotSeekRange,
@@ -149,7 +149,7 @@ impl TxId {
     /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    pub(super) fn release(self) -> (TxOffset, TxMetrics, String) {
+    pub(super) fn release(self) -> (TxOffset, TxMetrics, ReducerName) {
         // A read tx doesn't consume `next_tx_offset`, so subtract one to obtain
         // the offset that was visible to the transaction.
         //
