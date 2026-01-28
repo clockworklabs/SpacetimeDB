@@ -102,12 +102,12 @@ Install the Emscripten SDK:
 ```bash
 git clone https://github.com/emscripten-core/emsdk.git
 cd emsdk
-./emsdk install latest
-./emsdk activate latest
+./emsdk install 4.0.21
+./emsdk activate 4.0.21
 source ./emsdk_env.sh
 ```
 
-On Windows, use `emsdk_env.bat` instead of `source ./emsdk_env.sh`.
+On Windows, use `emsdk_env.bat` or `emsdk_env.ps1` instead of `source ./emsdk_env.sh`.
 
 You'll also need CMake installed on your system. On macOS: `brew install cmake`. On Ubuntu/Debian: `sudo apt install cmake`. On Windows, download from [cmake.org](https://cmake.org/download/).
 
