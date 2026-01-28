@@ -44,6 +44,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_table::static_assert_size;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
@@ -494,6 +495,10 @@ enum JsWorkerRequest {
     /// See [`JsInstance::call_scheduled_function`].
     CallScheduledFunction(ScheduledFunctionParams),
 }
+
+// These two should be the same size.
+static_assert_size!(JsWorkerRequest, 192);
+static_assert_size!(CallReducerParams, 192);
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
 ///

@@ -43,6 +43,7 @@ use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
 };
 use spacetimedb_data_structures::error_stream::ErrorStream;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
@@ -63,7 +64,7 @@ use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::relation::RelValue;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
