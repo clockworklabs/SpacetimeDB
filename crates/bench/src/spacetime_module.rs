@@ -7,6 +7,7 @@ use spacetimedb_lib::{
 };
 use spacetimedb_paths::RootDir;
 use spacetimedb_primitives::ColId;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_testing::modules::{start_runtime, LoggerRecord, ModuleHandle, ModuleLanguage};
 use tokio::runtime::Runtime;
 
@@ -192,6 +193,6 @@ impl<L: ModuleLanguage> BenchDatabase for SpacetimeModule<L> {
 
 #[derive(Debug, Clone)]
 pub struct TableId {
-    pascal_case: String,
-    snake_case: String,
+    pascal_case: TableName,
+    snake_case: TableName,
 }

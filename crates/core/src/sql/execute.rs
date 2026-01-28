@@ -17,6 +17,7 @@ use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
+use smallvec::SmallVec;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::traits::IsolationLevel;
@@ -42,7 +43,7 @@ pub struct StmtResult {
 
 pub(crate) fn collect_result(
     result: &mut Vec<MemTable>,
-    updates: &mut Vec<DatabaseTableUpdate>,
+    updates: &mut SmallVec<[DatabaseTableUpdate; 1]>,
     r: CodeResult,
 ) -> Result<(), DBError> {
     match r {
@@ -74,7 +75,7 @@ fn execute(
     p: &mut DbProgram<'_, '_>,
     ast: Vec<CrudExpr>,
     sql: &str,
-    updates: &mut Vec<DatabaseTableUpdate>,
+    updates: &mut SmallVec<[DatabaseTableUpdate; 1]>,
 ) -> Result<Vec<MemTable>, DBError> {
     let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
         p.db.query_limit(tx)?.map(Duration::from_millis)
@@ -102,7 +103,7 @@ pub fn execute_sql(
     subs: Option<&ModuleSubscriptions>,
 ) -> Result<Vec<MemTable>, DBError> {
     if CrudExpr::is_reads(&ast) {
-        let mut updates = Vec::new();
+        let mut updates = SmallVec::new();
         db.with_read_only(Workload::Sql, |tx| {
             execute(
                 &mut DbProgram::new(db, &mut TxMode::Tx(tx), auth),
@@ -112,7 +113,7 @@ pub fn execute_sql(
             )
         })
     } else if subs.is_none() {
-        let mut updates = Vec::new();
+        let mut updates = SmallVec::new();
         db.with_auto_commit(Workload::Sql, |mut_tx| {
             execute(
                 &mut DbProgram::new(db, &mut mut_tx.into(), auth),
@@ -123,7 +124,7 @@ pub fn execute_sql(
         })
     } else {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
-        let mut updates = Vec::with_capacity(ast.len());
+        let mut updates = SmallVec::with_capacity(ast.len());
         let res = execute(
             &mut DbProgram::new(db, &mut (&mut tx).into(), auth.clone()),
             ast,
@@ -136,7 +137,7 @@ pub fn execute_sql(
                 caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: <_>::default(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
@@ -170,7 +171,7 @@ pub fn execute_sql_tx<'a>(
         return Ok(None);
     }
 
-    let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
+    let mut updates = SmallVec::new(); // No subscription updates in this path, because it requires owning the tx.
     execute(&mut DbProgram::new(db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
@@ -341,7 +342,7 @@ fn run_inner<I: WasmInstance>(
                 caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: <_>::default(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },

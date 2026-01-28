@@ -160,6 +160,10 @@ pub struct Person {
 }
 ```
 
+:::note Rust Visibility vs SpacetimeDB Visibility
+The `pub` modifier on the struct follows normal Rust visibility rules and has no meaning to SpacetimeDB. It controls whether the struct is accessible from other Rust modules in your crate, not whether the table is public to clients. Use the `public` attribute in `#[spacetimedb::table]` to control client visibility.
+:::
+
 </TabItem>
 </Tabs>
 
