@@ -5,6 +5,7 @@ use derive_more::Display;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_sats::bsatn;
+use spacetimedb_schema::reducer_name::ReducerName;
 
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
@@ -25,7 +26,7 @@ pub struct ExecutionContext {
 #[derive(Clone)]
 pub struct ReducerContext {
     /// The name of the reducer.
-    pub name: String,
+    pub name: ReducerName,
     /// The [`Identity`] of the caller.
     pub caller_identity: Identity,
     /// The [`ConnectionId`] of the caller.
@@ -49,7 +50,7 @@ impl From<ReducerContext> for txdata::Inputs {
             arg_bsatn,
         }: ReducerContext,
     ) -> Self {
-        let reducer_name = Arc::new(Varchar::from_string_truncate(name));
+        let reducer_name = Arc::new(Varchar::from_str_truncate(&name));
         let cap = arg_bsatn.len()
         /* caller_identity */
         + 32
@@ -80,7 +81,7 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
         let timestamp = bsatn::from_reader(args)?;
 
         Ok(Self {
-            name: inputs.reducer_name.to_string(),
+            name: ReducerName::new_from_str(&inputs.reducer_name),
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -109,7 +110,7 @@ impl Workload {
     /// and the current timestamp.
     pub fn reducer_no_args(name: &str, id: Identity, conn_id: ConnectionId) -> Self {
         Self::Reducer(ReducerContext {
-            name: name.into(),
+            name: ReducerName::new_from_str(name),
             caller_identity: id,
             caller_connection_id: conn_id,
             timestamp: Timestamp::now(),
@@ -186,13 +187,7 @@ impl ExecutionContext {
 
     /// If this is a reducer context, returns the name of the reducer.
     #[inline]
-    pub fn reducer_name(&self) -> &str {
-        self.reducer.as_ref().map(|ctx| ctx.name.as_str()).unwrap_or_default()
-    }
-
-    /// If this is a reducer context, returns the name of the reducer.
-    #[inline]
-    pub fn into_reducer_name(self) -> String {
+    pub fn into_reducer_name(self) -> ReducerName {
         self.reducer.map(|ctx| ctx.name).unwrap_or_default()
     }
 

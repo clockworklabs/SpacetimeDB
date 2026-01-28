@@ -13,3 +13,31 @@ pub struct OneI128 {
 impl __sdk::InModule for OneI128 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OneI128`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneI128Cols {
+    pub n: __sdk::__query_builder::Col<OneI128, i128>,
+}
+
+impl __sdk::__query_builder::HasCols for OneI128 {
+    type Cols = OneI128Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneI128Cols {
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneI128`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneI128IxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OneI128 {
+    type IxCols = OneI128IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneI128IxCols {}
+    }
+}

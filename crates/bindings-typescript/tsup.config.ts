@@ -76,6 +76,38 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
+  // Vue subpath (SSR-friendly): dist/vue/index.{mjs,cjs}
+  {
+    entry: { index: 'src/vue/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/vue',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['vue'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Vue subpath (browser ESM): dist/browser/vue/index.mjs
+  {
+    entry: { index: 'src/vue/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/browser/vue',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'browser',
+    treeshake: 'smallest',
+    external: ['vue'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
   // SDK subpath (SSR-friendly): dist/sdk/index.{mjs,cjs}
   {
     entry: { index: 'src/sdk/index.ts' },
@@ -131,7 +163,7 @@ export default defineConfig([
       ],
     },
     external: ['undici', /^spacetime:sys.*$/],
-    noExternal: ['base64-js', 'fast-text-encoding', 'statuses'],
+    noExternal: ['base64-js', 'fast-text-encoding', 'statuses', 'pure-rand'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
