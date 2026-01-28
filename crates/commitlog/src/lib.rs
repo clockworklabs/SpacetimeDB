@@ -370,7 +370,52 @@ impl<T> Commitlog<T> {
 }
 
 impl<T: Encode> Commitlog<T> {
-    pub fn commit<U: Into<Transaction<T>>>(&self, transactions: impl IntoIterator<Item = U>) -> io::Result<()> {
+    /// Write `transactions` to the log.
+    ///
+    /// This will store all `transactions` as a single [Commit]
+    /// (note that `transactions` must not yield more than [u16::MAX] elements).
+    ///
+    /// Data is buffered internally, call [Self::flush] to force flushing to
+    /// the underlying storage.
+    ///
+    /// Returns `Ok(None)` if `transactions` was empty, otherwise [Committed],
+    /// which contains the offset range and checksum of the commit.
+    ///
+    /// # Errors
+    ///
+    /// An `Err` value is returned in the following cases:
+    ///
+    /// - if the transaction sequence is invalid, e.g. because the transaction
+    ///   offsets are not contiguous.
+    ///
+    ///   In this case, **none** of the `transactions` will be written.
+    ///
+    /// - if the current segment needs to be rotated, and an I/O error occurs
+    ///   flushing it to storage.
+    ///
+    ///   In this case, unwritten data remains buffered, and the current segment
+    ///   remains open. Calling [Self::flush] afterwards may (or may not)
+    ///   succeed, and calling [Self::commit] again with new data could grow
+    ///   the segment further beyond [Options::max_segment_size] if successful.
+    ///
+    ///   It is advisable to close and reopen the commitlog handle before
+    ///   attempting further writes.
+    ///
+    /// - if creating the new segment fails due to an I/O error.
+    ///
+    /// # Panics
+    ///
+    /// The method panics if:
+    ///
+    /// - `transactions` exceeds [u16::MAX] elements
+    ///
+    /// - writing to the underlying buffered writer fails
+    ///
+    ///   This is likely caused by some storage issue. As we cannot tell with
+    ///   certainty how much data (if any) has been written, the internal state
+    ///   becomes invalid and thus a panic is raised.
+    ///
+    /// - [Self::sync] panics (called when rotating segments)
     pub fn commit<U: Into<Transaction<T>>>(
         &self,
         transactions: impl IntoIterator<Item = U>,
