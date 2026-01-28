@@ -865,7 +865,9 @@ impl CommittedState {
             let is_unique = unique_constraints.contains(&(table_id, columns));
 
             let index = table.new_index(&algo, is_unique)?;
-            // SAFETY: `index` was derived from `table`.
+            // SAFETY:
+            // 1. `index` was derived from `table`.
+            // 2. `index` was just created, so it is empty.
             unsafe { table.insert_index(blob_store, index_id, index) };
             index_id_map.insert(index_id, table_id);
         }

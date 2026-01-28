@@ -1,5 +1,5 @@
 use super::{
-    key_size::KeyBytesStorage,
+    multimap::MultiMapStatistics,
     same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter},
     Index, KeySize,
 };
@@ -22,55 +22,72 @@ pub struct HashIndex<K: Eq + Hash> {
     /// as we allow a single element to be stored inline
     /// to improve performance for the common case of one element.
     map: HashMap<K, SameKeyEntry, RandomState>,
-    /// The memoized number of rows indexed in `self.map`.
-    num_rows: usize,
-    /// Storage for [`Index::num_key_bytes`].
-    num_key_bytes: u64,
+    /// Stats for `num_rows` and `num_key_bytes`.
+    stats: MultiMapStatistics,
 }
 
 impl<K: Eq + Hash> Default for HashIndex<K> {
     fn default() -> Self {
         Self {
             map: <_>::default(),
-            num_rows: <_>::default(),
-            num_key_bytes: <_>::default(),
+            stats: <_>::default(),
         }
     }
 }
 
 impl<K: MemoryUsage + Eq + Hash> MemoryUsage for HashIndex<K> {
     fn heap_usage(&self) -> usize {
-        let Self {
-            map,
-            num_rows,
-            num_key_bytes,
-        } = self;
-        map.heap_usage() + num_rows.heap_usage() + num_key_bytes.heap_usage()
+        let Self { map, stats } = self;
+        map.heap_usage() + stats.heap_usage()
     }
 }
 
-impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
+// SAFETY: The implementations of all constructing
+// and mutating methods uphold the invariant,
+// assuming the caller requirements of the `unsafe` methods are upheld,
+// that every `key -> ptr` pair only ever occurs once.
+unsafe impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     type Key = K;
+
+    // =========================================================================
+    // Construction
+    // =========================================================================
 
     fn clone_structure(&self) -> Self {
         <_>::default()
     }
 
-    /// Inserts the relation `key -> ptr` to this multimap.
-    ///
-    /// The map does not check whether `key -> ptr` was already in the map.
-    /// It's assumed that the same `ptr` is never added twice,
-    /// and multimaps do not bind one `key` to the same `ptr`.
-    fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
-        self.num_rows += 1;
-        self.num_key_bytes.add_to_key_bytes::<Self>(&key);
-        self.map.entry(key).or_default().push(ptr);
+    // =========================================================================
+    // Mutation
+    // =========================================================================
+
+    unsafe fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
+        self.debug_ensure_key_ptr_not_included(&key, ptr);
+
+        self.stats.add::<Self>(&key);
+        let entry = self.map.entry(key).or_default();
+        // SAFETY: caller promised that `(key, ptr)` does not exist in the index
+        // so it also does not exist in `entry`.
+        unsafe { entry.push(ptr) };
         Ok(())
     }
 
-    /// Deletes `key -> ptr` from this multimap.
-    ///
-    /// Returns whether `key -> ptr` was present.
+    unsafe fn merge_from(&mut self, src_index: Self, mut translate: impl FnMut(RowPointer) -> RowPointer) {
+        // Merge `stats`.
+        self.stats.merge_from(src_index.stats);
+
+        // Move over the `key -> ptr` pairs
+        // and translate `ptr`s from `src_index` to fit `self`.
+        for (key, src) in src_index.map {
+            let dst = self.map.entry(key).or_default();
+
+            // SAFETY: Given `(key, ptr)` in `src_index`,
+            // `(key, translate(ptr))` does not exist in `self`.
+            // It follows that the `dst ∩ translate(src) = ∅`.
+            unsafe { dst.merge_from(src, &mut translate) };
+        }
+    }
+
     fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
         let EntryRef::Occupied(mut entry) = self.map.entry_ref(key) else {
             return false;
@@ -79,8 +96,7 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
         let (deleted, is_empty) = entry.get_mut().delete(ptr);
 
         if deleted {
-            self.num_rows -= 1;
-            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
+            self.stats.delete::<Self>(key);
         }
 
         if is_empty {
@@ -89,6 +105,16 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
 
         deleted
     }
+
+    fn clear(&mut self) {
+        // This will not deallocate the outer map.
+        self.map.clear();
+        self.stats.clear();
+    }
+
+    // =========================================================================
+    // Querying
+    // =========================================================================
 
     type PointIter<'a>
         = SameKeyEntryIter<'a>
@@ -103,16 +129,12 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
         self.map.len()
     }
 
-    fn num_rows(&self) -> usize {
-        self.num_rows
+    fn num_key_bytes(&self) -> u64 {
+        self.stats.num_key_bytes
     }
 
-    /// Deletes all entries from the multimap, leaving it empty.
-    /// This will not deallocate the outer map.
-    fn clear(&mut self) {
-        self.map.clear();
-        self.num_rows = 0;
-        self.num_key_bytes.reset_to_zero();
+    fn num_rows(&self) -> usize {
+        self.stats.num_rows
     }
 
     fn can_merge(&self, _: &Self, _: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
