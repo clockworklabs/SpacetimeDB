@@ -90,7 +90,10 @@ pub(crate) fn build_cpp(project_path: &Path, build_debug: bool) -> anyhow::Resul
         .filter_map(|e| {
             let p = e.path();
             if p.extension().and_then(|s| s.to_str()) == Some("wasm") {
-                e.metadata().ok().and_then(|m| m.modified().ok()).map(|mtime| (p.to_path_buf(), mtime))
+                e.metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|mtime| (p.to_path_buf(), mtime))
             } else {
                 None
             }
