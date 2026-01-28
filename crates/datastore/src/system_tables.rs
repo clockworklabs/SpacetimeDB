@@ -31,6 +31,7 @@ use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
 };
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -830,7 +831,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
 #[sats(crate = spacetimedb_lib)]
 pub struct StTableRow {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_type: StTableType,
     pub table_access: StAccess,
     /// The primary key of the table.
@@ -863,7 +864,7 @@ pub struct StViewRow {
     /// An auto-inc id for each view
     pub view_id: ViewId,
     /// The name of the view function as defined in the module
-    pub view_name: Box<str>,
+    pub view_name: TableName,
     /// The [`TableId`] for this view if materialized.
     /// Currently all views are materialized and therefore are assigned a [`TableId`] by default.
     pub table_id: Option<TableId>,
