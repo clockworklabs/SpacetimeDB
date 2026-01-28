@@ -139,6 +139,11 @@ impl<R: Repo, T> Generic<R, T> {
     ///
     /// Using a filesystem backend, this means to call `fsync(2)`.
     ///
+    /// **Note** that this does not flush the buffered data from calls to
+    /// [Self::commit], it only instructs the underlying storage to flush its
+    /// buffers. Call [Self::flush] prior to this method to ensure data from
+    /// all previous [Self::commit] calls is flushed to the underlying storage.
+    ///
     /// # Panics
     ///
     /// As an `fsync` failure leaves a file in a more of less undefined state,
@@ -152,10 +157,16 @@ impl<R: Repo, T> Generic<R, T> {
         self.panicked = false;
     }
 
+    /// Flush the buffered data from previous calls to [Self::commit] to the
+    /// underlying storage.
+    ///
+    /// Call [Self::sync] to instruct the underlying storage to flush its
+    /// buffers as well.
     pub fn flush(&mut self) -> io::Result<()> {
         self.head.flush()
     }
 
+    /// Calls [Self::flush] and then [Self::sync].
     fn flush_and_sync(&mut self) -> io::Result<()> {
         self.flush()?;
         self.sync();
@@ -272,15 +283,21 @@ impl<R: Repo, T> Generic<R, T> {
 impl<R: Repo, T: Encode> Generic<R, T> {
     /// Write `transactions` to the log.
     ///
-    /// This will store all transactions as a single [Commit]
+    /// This will store all `transactions` as a single [Commit]
     /// (note that `transactions` must not yield more than [u16::MAX] elements).
     ///
     /// Data is buffered by the underlying segment [Writer].
-    /// Call [Self::flush] to force flushing to the OS.
+    /// Call [Self::flush] to force flushing to the underlying storage.
     ///
     /// If, after writing the transactions, the writer's total written bytes
     /// exceed [Options::max_segment_size], the current segment is flushed,
     /// `fsync`ed and closed, and a new segment is created.
+    ///
+    /// Returns `Ok(None)` if `transactions` was empty, otherwise [Committed],
+    /// which contains the offset range and checksum of the commit.
+    ///
+    /// Note that supplying empty `transactions` may cause the current segment
+    /// to be rotated.
     ///
     /// # Errors
     ///
