@@ -588,7 +588,7 @@ pub fn call_identity_connected(
 
             // If the reducer returned an error or couldn't run due to insufficient energy,
             // abort the connection: the module code has decided it doesn't want this client.
-            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(message)),
+            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(*message)),
             ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
         }
     } else {
@@ -980,7 +980,7 @@ pub enum ClientConnectedError {
     #[error("Failed to insert `st_client` row for module without client_connected reducer: {0}")]
     DBError(#[from] Box<DBError>),
     #[error("Connection rejected by `client_connected` reducer: {0}")]
-    Rejected(String),
+    Rejected(Box<str>),
     #[error("Insufficient energy balance to run `client_connected` reducer")]
     OutOfEnergy,
 }

@@ -414,11 +414,12 @@ impl JsInstance {
     }
 
     pub async fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        self.send_recv(
-            JsWorkerReply::into_init_database,
-            JsWorkerRequest::InitDatabase(program),
-        )
-        .await
+        *self
+            .send_recv(
+                JsWorkerReply::into_init_database,
+                JsWorkerRequest::InitDatabase(program),
+            )
+            .await
     }
 
     pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
@@ -459,9 +460,11 @@ enum JsWorkerReply {
     CallIdentityConnected(Result<(), ClientConnectedError>),
     CallIdentityDisconnected(Result<(), ReducerCallError>),
     DisconnectClient(Result<(), ReducerCallError>),
-    InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
+    InitDatabase(Box<anyhow::Result<Option<ReducerCallResult>>>),
     CallScheduledFunction(CallScheduledFunctionResult),
 }
+
+static_assert_size!(JsWorkerReply, 48);
 
 /// A request for the worker in [`spawn_instance_worker`].
 // We care about optimizing for `CallReducer` as it happens frequently,
@@ -706,7 +709,7 @@ async fn spawn_instance_worker(
                 JsWorkerRequest::InitDatabase(program) => {
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
-                    reply("init_database", InitDatabase(res), trapped);
+                    reply("init_database", InitDatabase(Box::new(res)), trapped);
                 }
                 JsWorkerRequest::CallScheduledFunction(params) => {
                     let (res, trapped) = instance_common
