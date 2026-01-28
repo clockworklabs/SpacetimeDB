@@ -16,6 +16,7 @@ use spacetimedb_physical_plan::{
     plan::{ProjectListPlan, ProjectPlan},
 };
 use spacetimedb_primitives::TableId;
+use spacetimedb_schema::table_name::TableName;
 
 /// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
 /// Any query longer than this will be rejected.
@@ -26,7 +27,7 @@ pub fn compile_subscription(
     sql: &str,
     tx: &impl SchemaView,
     auth: &AuthCtx,
-) -> Result<(Vec<ProjectPlan>, TableId, Box<str>, bool)> {
+) -> Result<(Vec<ProjectPlan>, TableId, TableName, bool)> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }

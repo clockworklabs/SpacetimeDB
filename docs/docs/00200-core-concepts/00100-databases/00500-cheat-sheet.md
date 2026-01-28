@@ -383,7 +383,24 @@ spacetimedb.procedure(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-// C# procedure support coming soon
+// Add #pragma warning disable STDB_UNSTABLE at file top
+
+[SpacetimeDB.Procedure]
+public static string FetchData(ProcedureContext ctx, string url)
+{
+    var result = ctx.Http.Get(url);
+    if (result is Result<HttpResponse, HttpError>.OkR(var response))
+    {
+        var data = response.Body.ToStringUtf8Lossy();
+        ctx.WithTx(txCtx =>
+        {
+            txCtx.Db.Cache.Insert(new Cache { Data = data });
+            return 0;
+        });
+        return data;
+    }
+    return "";
+}
 ```
 
 </TabItem>

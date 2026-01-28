@@ -70,6 +70,14 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Override NuGet packages
+        shell: bash
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
       # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -584,6 +592,10 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
+
       # Now, setup the Unity tests.
       - name: Patch spacetimedb dependency in Cargo.toml
         working-directory: demo/Blackholio/server-rust
@@ -621,6 +633,9 @@ jobs:
               exit 1
           }
 
+      - name: Hydrate Unity SDK DLLs
+        run: cargo ci dlls
+
       - name: Check Unity meta files
         uses: DeNA/unity-meta-check@v3
         with:
@@ -643,10 +658,7 @@ jobs:
       - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
         working-directory: demo/Blackholio/client-unity/Packages
         run: |
-          # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
-          # Note: Pointing to a local directory does not work, because our earlier steps nuke our meta files, which then causes Unity to not properly respect the DLLs (e.g.
-          # codegen does not work properly).
-          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/SpacetimeDB.git?path=sdks/csharp#${{ github.head_ref }}"' manifest.json
+          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "file:../../../../sdks/csharp"' manifest.json
           cat manifest.json
 
       - uses: actions/cache@v3
@@ -706,9 +718,13 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
+
       - name: Run .NET tests
         working-directory: sdks/csharp
-        run: dotnet test -warnaserror
+        run: dotnet test -warnaserror --no-restore
 
       - name: Verify C# formatting
         working-directory: sdks/csharp

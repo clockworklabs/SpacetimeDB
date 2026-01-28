@@ -4,6 +4,7 @@ packages:
   - 'templates/chat-react-ts'
   - 'templates/react-ts'
   - 'templates/basic-ts'
+  - 'templates/vue-ts'
   - 'modules/benchmarks-ts'
   - 'modules/module-test-ts'
   - 'templates/chat-react-ts/spacetimedb'

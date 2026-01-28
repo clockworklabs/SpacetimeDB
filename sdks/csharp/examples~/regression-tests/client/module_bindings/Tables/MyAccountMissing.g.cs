@@ -24,4 +24,26 @@ namespace SpacetimeDB.Types
 
         public readonly MyAccountMissingHandle MyAccountMissing;
     }
+
+    public sealed class MyAccountMissingCols
+    {
+        public global::SpacetimeDB.Col<Account, ulong> Id { get; }
+        public global::SpacetimeDB.Col<Account, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Account, string> Name { get; }
+
+        public MyAccountMissingCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<Account, ulong>(tableName, "Id");
+            Identity = new global::SpacetimeDB.Col<Account, SpacetimeDB.Identity>(tableName, "Identity");
+            Name = new global::SpacetimeDB.Col<Account, string>(tableName, "Name");
+        }
+    }
+
+    public sealed class MyAccountMissingIxCols
+    {
+
+        public MyAccountMissingIxCols(string tableName)
+        {
+        }
+    }
 }

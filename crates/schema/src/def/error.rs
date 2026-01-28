@@ -1,4 +1,5 @@
 use crate::relation::{FieldName, Header};
+use crate::table_name::TableName;
 use derive_more::Display;
 use spacetimedb_lib::db::raw_def::IndexType;
 use spacetimedb_primitives::{ColId, ColList, TableId};
@@ -114,12 +115,12 @@ pub enum SchemaError {
     #[error("{ty} {name} columns `{columns:?}` not found  in table `{table}`")]
     ColumnsNotFound {
         name: Box<str>,
-        table: Box<str>,
+        table: TableName,
         columns: Vec<ColId>,
         ty: DefType,
     },
     #[error("table `{table}` {ty} should have name. {ty} id: {id}")]
-    EmptyName { table: Box<str>, ty: DefType, id: u32 },
+    EmptyName { table: TableName, ty: DefType, id: u32 },
     #[error("table `{table}` have `Constraints::unset()` for columns: {columns:?}")]
     ConstraintUnset {
         table: Box<str>,
@@ -127,7 +128,7 @@ pub enum SchemaError {
         columns: ColList,
     },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
-    OneAutoInc { table: Box<str>, field: Box<str> },
+    OneAutoInc { table: TableName, field: Box<str> },
     #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
     OnlyBtree {
         table: Box<str>,

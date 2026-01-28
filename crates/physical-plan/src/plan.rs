@@ -1427,6 +1427,7 @@ mod tests {
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
+        table_name::TableName,
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
@@ -1468,7 +1469,7 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            table_name.to_owned().into_boxed_str(),
+            TableName::new_from_str(table_name),
             None,
             columns
                 .iter()

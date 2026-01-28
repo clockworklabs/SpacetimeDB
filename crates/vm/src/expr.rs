@@ -15,6 +15,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::def::error::{AuthError, RelationError};
 use spacetimedb_schema::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
@@ -566,7 +567,7 @@ impl SourceExpr {
         }
     }
 
-    pub fn table_name(&self) -> &str {
+    pub fn table_name(&self) -> &TableName {
         &self.head().table_name
     }
 
@@ -2049,7 +2050,7 @@ impl AuthAccess for CrudExpr {
 #[derive(Debug, PartialEq)]
 pub struct Update {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub inserts: Vec<ProductValue>,
     pub deletes: Vec<ProductValue>,
 }
@@ -2128,7 +2129,7 @@ mod tests {
                 source_id: SourceId(0),
                 header: Arc::new(Header {
                     table_id: 42.into(),
-                    table_name: "foo".into(),
+                    table_name: TableName::new_from_str("foo"),
                     fields: vec![],
                     constraints: Default::default(),
                 }),
@@ -2138,7 +2139,7 @@ mod tests {
             SourceExpr::DbTable(DbTable {
                 head: Arc::new(Header {
                     table_id: 42.into(),
-                    table_name: "foo".into(),
+                    table_name: TableName::new_from_str("foo"),
                     fields: vec![],
                     constraints: [(ColId(42).into(), Constraints::indexed())].into_iter().collect(),
                 }),
@@ -2165,7 +2166,7 @@ mod tests {
                 index_side: SourceExpr::DbTable(DbTable {
                     head: Arc::new(Header {
                         table_id: db_table.head().table_id,
-                        table_name: db_table.table_name().into(),
+                        table_name: db_table.table_name().clone(),
                         fields: vec![],
                         constraints: Default::default(),
                     }),
@@ -2214,7 +2215,7 @@ mod tests {
         let table_access = StAccess::Public;
         let head = Header::new(
             id,
-            name.into(),
+            TableName::new_from_str(name),
             fields
                 .iter()
                 .map(|(col, ty, _)| Column::new(FieldName::new(id, (*col).into()), ty.clone()))
@@ -2289,7 +2290,7 @@ mod tests {
 
         let head1 = Header::new(
             table_id,
-            "t1".into(),
+            TableName::new_from_str("t1"),
             columns.to_vec(),
             vec![
                 // Index a

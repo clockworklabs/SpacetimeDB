@@ -36,4 +36,26 @@ namespace SpacetimeDB.Types
 
         public readonly SpawnFoodTimerHandle SpawnFoodTimer;
     }
+
+    public sealed class SpawnFoodTimerCols
+    {
+        public global::SpacetimeDB.Col<SpawnFoodTimer, ulong> ScheduledId { get; }
+        public global::SpacetimeDB.Col<SpawnFoodTimer, SpacetimeDB.ScheduleAt> ScheduledAt { get; }
+
+        public SpawnFoodTimerCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.Col<SpawnFoodTimer, ulong>(tableName, "scheduled_id");
+            ScheduledAt = new global::SpacetimeDB.Col<SpawnFoodTimer, SpacetimeDB.ScheduleAt>(tableName, "scheduled_at");
+        }
+    }
+
+    public sealed class SpawnFoodTimerIxCols
+    {
+        public global::SpacetimeDB.IxCol<SpawnFoodTimer, ulong> ScheduledId { get; }
+
+        public SpawnFoodTimerIxCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.IxCol<SpawnFoodTimer, ulong>(tableName, "scheduled_id");
+        }
+    }
 }

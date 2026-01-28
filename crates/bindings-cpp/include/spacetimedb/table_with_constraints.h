@@ -45,6 +45,7 @@ namespace detail {
         // Check for indexed (with or without auto-increment)
         else if (has_constraint(constraint_type, FieldConstraint::Indexed)) {
             return {
+                table_name + "_" + field_name + "_idx_btree",  // Database-generated pattern (most likely)
                 table_name + "_" + field_name + "_idx",
                 "idx_" + table_name + "_" + field_name
             };
@@ -146,6 +147,20 @@ using UniqueFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstrai
 
 template<typename TableType, typename FieldType>
 using IndexedFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstraint::Indexed>;
+
+// =============================================================================
+// Multi-Column Index Tag System
+// =============================================================================
+
+template<typename TableType>
+struct MultiColumnIndexTag {
+    const char* table_name;
+    const char* index_name;
+    const char* column_list;  // List of column names like "player_id_level"
+    
+    constexpr MultiColumnIndexTag(const char* table, const char* index, const char* columns)
+        : table_name(table), index_name(index), column_list(columns) {}
+};
 
 // =============================================================================
 // Constraint Concepts
@@ -514,6 +529,99 @@ public:
 };
 
 // =============================================================================
+// Multi-Column Index Accessor
+// =============================================================================
+
+template<typename TableType>
+class TypedMultiColumnIndexAccessor : public TableAccessor<TableType> {
+private:
+    std::string table_name_;
+    std::string index_name_;  // This is the accessor name like "by_player_and_level"
+    std::string column_list_;  // This is the column list like "player_id_level"
+    mutable std::optional<IndexId> cached_index_id_;
+    
+    IndexId resolve_index_id() const {
+        if (cached_index_id_) {
+            return *cached_index_id_;
+        }
+        
+        // Try to resolve index with multiple name patterns
+        auto try_pattern = [this](const std::string& pattern) -> IndexId {
+            IndexId id;
+            if (is_ok(::index_id_from_name(
+                reinterpret_cast<const uint8_t*>(pattern.data()),
+                pattern.length(),
+                &id))) {
+                return id;
+            }
+            return IndexId{0};
+        };
+        
+        // Try patterns in order of likelihood
+        IndexId id = try_pattern(index_name_);  // User accessor name
+        if (id.inner == 0) {
+            id = try_pattern(table_name_ + "_" + column_list_ + "_idx_btree");  // Database-generated
+        }
+        if (id.inner == 0) {
+            id = try_pattern(table_name_ + "_" + index_name_ + "_idx_btree");  // Accessor-based
+        }
+        
+        cached_index_id_ = id;
+        return id;
+    }
+    
+public:
+    TypedMultiColumnIndexAccessor(const char* table_name, const char* index_name, const char* column_list)
+        : TableAccessor<TableType>(table_name), 
+          table_name_(table_name),
+          index_name_(index_name),
+          column_list_(column_list) {}
+    
+    // Exact match on all columns (template method - types deduced from call)
+    template<typename... FieldTypes>
+    std::vector<TableType> filter(const std::tuple<FieldTypes...>& values) const 
+        requires (sizeof...(FieldTypes) > 0 && sizeof...(FieldTypes) <= 6)
+    {
+        IndexId id = resolve_index_id();
+        
+        if (id.inner == 0) {
+            return std::vector<TableType>{};
+        }
+        
+        return IndexIterator<TableType>(id, values).collect();
+    }
+    
+    // Prefix-only match: find all rows where first N-1 columns match
+    template<typename FirstColType>
+    std::vector<TableType> filter(const FirstColType& prefix_value) const 
+        requires (!is_tuple_v<FirstColType>)
+    {
+        IndexId id = resolve_index_id();
+        
+        if (id.inner == 0) {
+            return std::vector<TableType>{};
+        }
+        
+        // Use prefix_match_tag to disambiguate constructor
+        return IndexIterator<TableType>(prefix_match_tag{}, id, prefix_value).collect();
+    }
+    
+    // Prefix + range match: find rows where first N-1 columns match and last is in range
+    template<typename FirstColType, typename RangeType>
+    std::vector<TableType> filter(const std::tuple<FirstColType, RangeType>& values) const 
+        requires (is_range_v<RangeType>)
+    {
+        IndexId id = resolve_index_id();
+        
+        if (id.inner == 0) {
+            return std::vector<TableType>{};
+        }
+        
+        return IndexIterator<TableType>(id, values).collect();
+    }
+};
+
+// =============================================================================
 // Auto-Increment Integration Helper
 // =============================================================================
 
@@ -656,13 +764,29 @@ public:
     } \
     SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(typename std::remove_cv_t<decltype(table_name)>::type, field_name)
 
-// Multi-column index registration macro (currently disabled)
-// #define FIELD_NamedMultiColumnIndex(table_name, index_name, field1, field2) \
-//     extern "C" __attribute__((export_name("__preinit__21_field_multi_index_" #table_name "_" #index_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
-//     void SPACETIMEDB_PASTE(__preinit__21_field_multi_index_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(index_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
-//         SpacetimeDB::Internal::getV9Builder().AddMultiColumnIndex<typename std::remove_cv_t<decltype(table_name)>::type>( \
-//             #table_name, #index_name, {#field1, #field2}); \
-//    }
+// Helper to join field names with underscores at compile time
+#define SPACETIMEDB_JOIN_FIELDS(...) SPACETIMEDB_JOIN_FIELDS_IMPL(__VA_ARGS__)
+#define SPACETIMEDB_JOIN_FIELDS_IMPL(...) SPACETIMEDB_GET_JOIN_MACRO(__VA_ARGS__, \
+    SPACETIMEDB_JOIN_6, SPACETIMEDB_JOIN_5, SPACETIMEDB_JOIN_4, \
+    SPACETIMEDB_JOIN_3, SPACETIMEDB_JOIN_2, SPACETIMEDB_JOIN_1)(__VA_ARGS__)
+#define SPACETIMEDB_GET_JOIN_MACRO(_1,_2,_3,_4,_5,_6,NAME,...) NAME
+#define SPACETIMEDB_JOIN_1(a) #a
+#define SPACETIMEDB_JOIN_2(a,b) #a "_" #b
+#define SPACETIMEDB_JOIN_3(a,b,c) #a "_" #b "_" #c
+#define SPACETIMEDB_JOIN_4(a,b,c,d) #a "_" #b "_" #c "_" #d
+#define SPACETIMEDB_JOIN_5(a,b,c,d,e) #a "_" #b "_" #c "_" #d "_" #e
+#define SPACETIMEDB_JOIN_6(a,b,c,d,e,f) #a "_" #b "_" #c "_" #d "_" #e "_" #f
+
+// Multi-column index registration macro
+#define FIELD_NamedMultiColumnIndex(table_name, index_name, ...) \
+    static constexpr auto table_name##_##index_name = SpacetimeDB::MultiColumnIndexTag< \
+        typename std::remove_cv_t<decltype(table_name)>::type \
+    >{#table_name, #index_name, SPACETIMEDB_JOIN_FIELDS(__VA_ARGS__)}; \
+    extern "C" __attribute__((export_name("__preinit__21_field_multi_index_" #table_name "_" #index_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
+    void SPACETIMEDB_PASTE(__preinit__21_field_multi_index_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(index_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
+        SpacetimeDB::Internal::getV9Builder().AddMultiColumnIndex<typename std::remove_cv_t<decltype(table_name)>::type>( \
+            #table_name, #index_name, {SPACETIMEDB_STRINGIFY_EACH(__VA_ARGS__)}); \
+    }
 
 #define FIELD_Default(table_name, field_name, default_value) \
     extern "C" __attribute__((export_name("__preinit__21_field_default_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \

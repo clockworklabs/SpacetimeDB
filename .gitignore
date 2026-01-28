@@ -2,6 +2,9 @@
 # Created by https://www.toptal.com/developers/gitignore/api/rust,node,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=rust,node,visualstudiocode
 
+perf.data
+perf.data.old
+flamegraph.html
 flamegraphs/*.svg
 flamegraphs/flamegraph.folded
 

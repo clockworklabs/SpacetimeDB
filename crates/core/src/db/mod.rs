@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use enum_map::EnumMap;
+use spacetimedb_schema::reducer_name::ReducerName;
 use tokio::sync::mpsc;
 
 use crate::subscription::ExecutionCounters;
@@ -37,7 +38,7 @@ pub struct Config {
 /// We use a separate task to record metrics to avoid blocking transactions.
 pub struct MetricsMessage {
     /// The reducer the produced these metrics.
-    reducer: String,
+    reducer: ReducerName,
     /// Metrics from a mutable transaction.
     metrics_for_writer: Option<TxMetrics>,
     /// Metrics from a read-only transaction.
@@ -60,7 +61,7 @@ pub struct MetricsRecorderQueue {
 impl MetricsRecorderQueue {
     pub fn send_metrics(
         &self,
-        reducer: String,
+        reducer: ReducerName,
         metrics_for_writer: Option<TxMetrics>,
         metrics_for_reader: Option<TxMetrics>,
         tx_data: Option<Arc<TxData>>,

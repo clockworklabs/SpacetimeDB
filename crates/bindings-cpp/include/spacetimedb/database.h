@@ -68,6 +68,13 @@ class TypedIndexedAccessor;
 template<typename TableType, typename FieldType>
 class TypedRegularAccessor;
 
+// Forward declaration for multi-column index support
+template<typename TableType>
+struct MultiColumnIndexTag;
+
+template<typename TableType>
+class TypedMultiColumnIndexAccessor;
+
 // Constraint system definitions for primary key operations
 
 // Field constraint info structure
@@ -248,6 +255,12 @@ public:
     template<typename TableType, typename FieldType>
     TypedRegularAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::None>& field_tag) const {
         return TypedRegularAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
+    }
+    
+    // Multi-column index accessor - NEW: ctx.db[score.by_player_and_level] syntax
+    template<typename TableType>
+    TypedMultiColumnIndexAccessor<TableType> operator[](const MultiColumnIndexTag<TableType>& index_tag) const {
+        return TypedMultiColumnIndexAccessor<TableType>(index_tag.table_name, index_tag.index_name, index_tag.column_list);
     }
 };
 

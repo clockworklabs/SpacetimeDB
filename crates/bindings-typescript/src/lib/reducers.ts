@@ -24,6 +24,7 @@ import type { ReducerSchema } from './reducer_schema';
 import { toCamelCase, toPascalCase } from './util';
 import type { CamelCase } from './type_util';
 import { Uuid } from './uuid.ts';
+import type { Random } from '../server/rng';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -123,6 +124,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   senderAuth: AuthCtx;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
+  random: Random;
 }>;
 
 /**
