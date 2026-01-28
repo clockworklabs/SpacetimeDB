@@ -803,13 +803,6 @@ where
     })
 }
 
-/// Registers a row-level security policy.
-pub fn register_row_level_security(sql: &'static str) {
-    register_describer(|module| {
-        module.inner.add_row_level_security(sql);
-    })
-}
-
 /// A builder for a module.
 #[derive(Default)]
 pub struct ModuleBuilder {

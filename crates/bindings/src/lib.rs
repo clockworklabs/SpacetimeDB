@@ -7,8 +7,6 @@ use spacetimedb_lib::bsatn;
 use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
-mod client_visibility_filter;
-#[cfg(feature = "unstable")]
 pub mod http;
 pub mod log_stopwatch;
 mod logger;
@@ -22,8 +20,6 @@ pub mod table;
 #[doc(hidden)]
 pub use spacetimedb_query_builder as query_builder;
 
-#[cfg(feature = "unstable")]
-pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
@@ -60,44 +56,6 @@ pub type ReducerResult = core::result::Result<(), Box<str>>;
 pub type ProcedureResult = Vec<u8>;
 
 pub use spacetimedb_bindings_macro::duration;
-
-/// Generates code for registering a row-level security rule.
-///
-/// This attribute must be applied to a `const` binding of type [`Filter`].
-/// It will be interpreted as a filter on the table to which it applies, for all client queries.
-/// If a module contains multiple `client_visibility_filter`s for the same table,
-/// they will be unioned together as if by SQL `OR`,
-/// so that any row permitted by at least one filter is visible.
-///
-/// The `const` binding's identifier must be unique within the module.
-///
-/// The query follows the same syntax as a subscription query.
-///
-/// ## Example:
-///
-/// ```no_run
-/// # #[cfg(target_arch = "wasm32")] mod demo {
-/// use spacetimedb::{client_visibility_filter, Filter};
-///
-/// /// Players can only see what's in their chunk
-/// #[client_visibility_filter]
-/// const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
-///     SELECT * FROM LocationState WHERE chunk_index IN (
-///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
-///             SELECT entity_id FROM UserState WHERE identity = :sender
-///         )
-///     )
-/// ");
-/// # }
-/// ```
-///
-/// Queries are not checked for syntactic or semantic validity
-/// until they are processed by the SpacetimeDB host.
-/// This means that errors in queries, such as syntax errors, type errors or unknown tables,
-/// will be reported during `spacetime publish`, not at compile time.
-#[cfg(feature = "unstable")]
-#[doc(inline, hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
-pub use spacetimedb_bindings_macro::client_visibility_filter;
 
 /// Declares a table with a particular row type.
 ///
