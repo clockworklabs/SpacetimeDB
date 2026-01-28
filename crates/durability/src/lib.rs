@@ -115,6 +115,9 @@ pub trait Durability: Send + Sync {
     /// cannot be made durable immediately.
     ///
     /// Errors may be signalled by panicking.
+    //
+    // TODO(perf): Can we avoid allocating a new `Box<[_]>` for every commit,
+    // or at least reuse boxes?
     fn commit(&self, txs: Box<[Transaction<Self::TxData>]>);
 
     /// Obtain a handle to the [DurableOffset].
