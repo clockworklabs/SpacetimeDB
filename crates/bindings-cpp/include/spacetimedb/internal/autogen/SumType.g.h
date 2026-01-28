@@ -14,14 +14,14 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "SumTypeVariant.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(SumType) {
-    std::vector<SpacetimeDb::Internal::SumTypeVariant> variants;
+    std::vector<SpacetimeDB::Internal::SumTypeVariant> variants;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, variants);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, variants);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(variants)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

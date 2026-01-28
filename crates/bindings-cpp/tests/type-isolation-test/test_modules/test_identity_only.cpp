@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 
 // Simple table with just Identity

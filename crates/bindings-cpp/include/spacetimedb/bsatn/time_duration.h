@@ -4,14 +4,14 @@
 #include <chrono>
 
 // Forward declarations for BSATN
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace bsatn {
     class Writer;
     class Reader;
 }
 }
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * Represents a duration of time with microsecond precision.
@@ -99,8 +99,8 @@ public:
     }
     
     // BSATN serialization (implemented in time_duration_bsatn.h)
-    void bsatn_serialize(SpacetimeDb::bsatn::Writer& writer) const;
-    static TimeDuration bsatn_deserialize(SpacetimeDb::bsatn::Reader& reader);
+    void bsatn_serialize(SpacetimeDB::bsatn::Writer& writer) const;
+    static TimeDuration bsatn_deserialize(SpacetimeDB::bsatn::Reader& reader);
 };
 
 // Convenience functions
@@ -108,7 +108,7 @@ inline TimeDuration operator*(int64_t scalar, const TimeDuration& duration) {
     return duration * scalar;
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // BSATN Implementation
@@ -117,7 +117,7 @@ inline TimeDuration operator*(int64_t scalar, const TimeDuration& duration) {
 #include "writer.h"
 #include "reader.h"
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // TimeDuration BSATN implementation
 inline void TimeDuration::bsatn_serialize(bsatn::Writer& writer) const {
@@ -129,6 +129,6 @@ inline TimeDuration TimeDuration::bsatn_deserialize(bsatn::Reader& reader) {
     return TimeDuration(static_cast<int64_t>(micros));
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 

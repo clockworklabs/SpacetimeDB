@@ -6,7 +6,6 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-pub mod insert_if_authenticated_procedure;
 pub mod insert_with_tx_commit_procedure;
 pub mod insert_with_tx_rollback_procedure;
 pub mod invalid_request_procedure;
@@ -14,6 +13,8 @@ pub mod my_table_table;
 pub mod my_table_type;
 pub mod pk_uuid_table;
 pub mod pk_uuid_type;
+pub mod proc_inserts_into_table;
+pub mod proc_inserts_into_type;
 pub mod read_my_schema_procedure;
 pub mod return_enum_a_procedure;
 pub mod return_enum_b_procedure;
@@ -21,14 +22,11 @@ pub mod return_enum_type;
 pub mod return_primitive_procedure;
 pub mod return_struct_procedure;
 pub mod return_struct_type;
+pub mod schedule_proc_reducer;
+pub mod scheduled_proc_procedure;
+pub mod scheduled_proc_table_table;
+pub mod scheduled_proc_table_type;
 pub mod sorted_uuids_insert_procedure;
-pub mod test_jwt_in_tx_procedure;
-pub mod test_result_bsatn_roundtrip_procedure;
-pub mod test_result_err_variant_procedure;
-pub mod test_result_ok_variant_procedure;
-pub mod test_result_safe_accessors_procedure;
-pub mod test_result_unwrap_or_procedure;
-pub mod test_simple_http_procedure;
 pub mod test_uuid_counter_procedure;
 pub mod test_uuid_ordering_procedure;
 pub mod test_uuid_round_trip_procedure;
@@ -37,7 +35,6 @@ pub mod test_uuid_v_7_procedure;
 pub mod test_uuid_versions_procedure;
 pub mod will_panic_procedure;
 
-pub use insert_if_authenticated_procedure::insert_if_authenticated;
 pub use insert_with_tx_commit_procedure::insert_with_tx_commit;
 pub use insert_with_tx_rollback_procedure::insert_with_tx_rollback;
 pub use invalid_request_procedure::invalid_request;
@@ -45,6 +42,8 @@ pub use my_table_table::*;
 pub use my_table_type::MyTable;
 pub use pk_uuid_table::*;
 pub use pk_uuid_type::PkUuid;
+pub use proc_inserts_into_table::*;
+pub use proc_inserts_into_type::ProcInsertsInto;
 pub use read_my_schema_procedure::read_my_schema;
 pub use return_enum_a_procedure::return_enum_a;
 pub use return_enum_b_procedure::return_enum_b;
@@ -52,14 +51,11 @@ pub use return_enum_type::ReturnEnum;
 pub use return_primitive_procedure::return_primitive;
 pub use return_struct_procedure::return_struct;
 pub use return_struct_type::ReturnStruct;
+pub use schedule_proc_reducer::{schedule_proc, set_flags_for_schedule_proc, ScheduleProcCallbackId};
+pub use scheduled_proc_procedure::scheduled_proc;
+pub use scheduled_proc_table_table::*;
+pub use scheduled_proc_table_type::ScheduledProcTable;
 pub use sorted_uuids_insert_procedure::sorted_uuids_insert;
-pub use test_jwt_in_tx_procedure::test_jwt_in_tx;
-pub use test_result_bsatn_roundtrip_procedure::test_result_bsatn_roundtrip;
-pub use test_result_err_variant_procedure::test_result_err_variant;
-pub use test_result_ok_variant_procedure::test_result_ok_variant;
-pub use test_result_safe_accessors_procedure::test_result_safe_accessors;
-pub use test_result_unwrap_or_procedure::test_result_unwrap_or;
-pub use test_simple_http_procedure::test_simple_http;
 pub use test_uuid_counter_procedure::test_uuid_counter;
 pub use test_uuid_ordering_procedure::test_uuid_ordering;
 pub use test_uuid_round_trip_procedure::test_uuid_round_trip;
@@ -75,7 +71,9 @@ pub use will_panic_procedure::will_panic;
 /// Contained within a [`__sdk::ReducerEvent`] in [`EventContext`]s for reducer events
 /// to indicate which reducer caused the event.
 
-pub enum Reducer {}
+pub enum Reducer {
+    ScheduleProc,
+}
 
 impl __sdk::InModule for Reducer {
     type Module = RemoteModule;
@@ -84,6 +82,7 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::ScheduleProc => "schedule_proc",
             _ => unreachable!(),
         }
     }
@@ -92,6 +91,11 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __sdk::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
         match &value.reducer_name[..] {
+            "schedule_proc" => Ok(__sdk::parse_reducer_args::<schedule_proc_reducer::ScheduleProcArgs>(
+                "schedule_proc",
+                &value.args,
+            )?
+            .into()),
             unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
         }
     }
@@ -103,6 +107,8 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 pub struct DbUpdate {
     my_table: __sdk::TableUpdate<MyTable>,
     pk_uuid: __sdk::TableUpdate<PkUuid>,
+    proc_inserts_into: __sdk::TableUpdate<ProcInsertsInto>,
+    scheduled_proc_table: __sdk::TableUpdate<ScheduledProcTable>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -117,6 +123,12 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "pk_uuid" => db_update
                     .pk_uuid
                     .append(pk_uuid_table::parse_table_update(table_update)?),
+                "proc_inserts_into" => db_update
+                    .proc_inserts_into
+                    .append(proc_inserts_into_table::parse_table_update(table_update)?),
+                "scheduled_proc_table" => db_update
+                    .scheduled_proc_table
+                    .append(scheduled_proc_table_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
@@ -137,6 +149,11 @@ impl __sdk::DbUpdate for DbUpdate {
 
         diff.my_table = cache.apply_diff_to_table::<MyTable>("my_table", &self.my_table);
         diff.pk_uuid = cache.apply_diff_to_table::<PkUuid>("pk_uuid", &self.pk_uuid);
+        diff.proc_inserts_into =
+            cache.apply_diff_to_table::<ProcInsertsInto>("proc_inserts_into", &self.proc_inserts_into);
+        diff.scheduled_proc_table = cache
+            .apply_diff_to_table::<ScheduledProcTable>("scheduled_proc_table", &self.scheduled_proc_table)
+            .with_updates_by_pk(|row| &row.scheduled_id);
 
         diff
     }
@@ -148,6 +165,8 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     my_table: __sdk::TableAppliedDiff<'r, MyTable>,
     pk_uuid: __sdk::TableAppliedDiff<'r, PkUuid>,
+    proc_inserts_into: __sdk::TableAppliedDiff<'r, ProcInsertsInto>,
+    scheduled_proc_table: __sdk::TableAppliedDiff<'r, ScheduledProcTable>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -159,6 +178,12 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
         callbacks.invoke_table_row_callbacks::<MyTable>("my_table", &self.my_table, event);
         callbacks.invoke_table_row_callbacks::<PkUuid>("pk_uuid", &self.pk_uuid, event);
+        callbacks.invoke_table_row_callbacks::<ProcInsertsInto>("proc_inserts_into", &self.proc_inserts_into, event);
+        callbacks.invoke_table_row_callbacks::<ScheduledProcTable>(
+            "scheduled_proc_table",
+            &self.scheduled_proc_table,
+            event,
+        );
     }
 }
 
@@ -876,9 +901,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type DbUpdate = DbUpdate;
     type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
+    type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         my_table_table::register_table(client_cache);
         pk_uuid_table::register_table(client_cache);
+        proc_inserts_into_table::register_table(client_cache);
+        scheduled_proc_table_table::register_table(client_cache);
     }
 }

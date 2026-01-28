@@ -9,8 +9,8 @@ use super::return_struct_type::ReturnStruct;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 struct ReturnStructArgs {
-    pub b: u32,
-    pub arg_1: String,
+    pub a: u32,
+    pub b: String,
 }
 
 impl __sdk::InModule for ReturnStructArgs {
@@ -22,14 +22,14 @@ impl __sdk::InModule for ReturnStructArgs {
 ///
 /// Implemented for [`super::RemoteProcedures`].
 pub trait return_struct {
-    fn return_struct(&self, b: u32, arg_1: String) {
-        self.return_struct_then(b, arg_1, |_, _| {});
+    fn return_struct(&self, a: u32, b: String) {
+        self.return_struct_then(a, b, |_, _| {});
     }
 
     fn return_struct_then(
         &self,
-        b: u32,
-        arg_1: String,
+        a: u32,
+        b: String,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<ReturnStruct, __sdk::InternalError>) + Send + 'static,
     );
@@ -38,14 +38,14 @@ pub trait return_struct {
 impl return_struct for super::RemoteProcedures {
     fn return_struct_then(
         &self,
-        b: u32,
-        arg_1: String,
+        a: u32,
+        b: String,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<ReturnStruct, __sdk::InternalError>) + Send + 'static,
     ) {
         self.imp.invoke_procedure_with_callback::<_, ReturnStruct>(
             "return_struct",
-            ReturnStructArgs { b, arg_1 },
+            ReturnStructArgs { a, b },
             __callback,
         );
     }

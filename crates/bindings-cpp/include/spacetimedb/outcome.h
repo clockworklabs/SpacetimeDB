@@ -7,7 +7,7 @@
 #include <utility>
 #include <variant>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Internal distinct error type to avoid std::variant<T, std::string> when T == std::string.
 struct OutcomeError {
@@ -136,6 +136,6 @@ inline Outcome<T> Err(const char* msg) {
     return Outcome<T>::Err(msg);
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_OUTCOME_H

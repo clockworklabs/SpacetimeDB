@@ -10,7 +10,7 @@
 #include "../bsatn/bsatn.h"
 
 // Forward declarations
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
     class AlgebraicType;
 }
@@ -31,7 +31,7 @@ inline std::string demangle_cpp_type_name(const char* name) {
     return (status == 0 && demangled) ? std::string(demangled.get()) : std::string(name);
 }
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
 
 /**
@@ -73,7 +73,7 @@ public:
      * @param cpp_type Optional C++ type info for name extraction
      * @return AlgebraicType - either inline (primitives/arrays/special) or Ref to registered type
      */
-    ::SpacetimeDb::Internal::AlgebraicType registerType(const bsatn::AlgebraicType& bsatn_type,
+    ::SpacetimeDB::Internal::AlgebraicType registerType(const bsatn::AlgebraicType& bsatn_type,
                                                         const std::string& explicit_name = "",
                                                         const std::type_info* cpp_type = nullptr);
     
@@ -192,43 +192,43 @@ private:
     /**
      * Convert a primitive BSATN type to internal AlgebraicType
      */
-    ::SpacetimeDb::Internal::AlgebraicType convertPrimitive(const bsatn::AlgebraicType& type) const;
+    ::SpacetimeDB::Internal::AlgebraicType convertPrimitive(const bsatn::AlgebraicType& type) const;
     
     /**
      * Convert an array type, recursively processing the element
      */
-    ::SpacetimeDb::Internal::AlgebraicType convertArray(const bsatn::AlgebraicType& type);
+    ::SpacetimeDB::Internal::AlgebraicType convertArray(const bsatn::AlgebraicType& type);
     
     /**
      * Convert a special type to its inline Product structure
      */
-    ::SpacetimeDb::Internal::AlgebraicType convertSpecialType(const bsatn::AlgebraicType& type);
+    ::SpacetimeDB::Internal::AlgebraicType convertSpecialType(const bsatn::AlgebraicType& type);
     
     /**
      * Convert an Option or ScheduleAt to its inline Sum structure
      */
-    ::SpacetimeDb::Internal::AlgebraicType convertInlineSum(const bsatn::AlgebraicType& type);
+    ::SpacetimeDB::Internal::AlgebraicType convertInlineSum(const bsatn::AlgebraicType& type);
     
     /**
      * Convert a Unit type to its inline Product structure
      */
-    ::SpacetimeDb::Internal::AlgebraicType convertUnitType() const;
+    ::SpacetimeDB::Internal::AlgebraicType convertUnitType() const;
     
     /**
      * Register a complex user-defined type (struct or enum)
      */
-    ::SpacetimeDb::Internal::AlgebraicType registerComplexType(const bsatn::AlgebraicType& type,
+    ::SpacetimeDB::Internal::AlgebraicType registerComplexType(const bsatn::AlgebraicType& type,
                                                                const std::string& type_name);
     
     /**
      * Process a Product type, recursively registering field types
      */
-    ::SpacetimeDb::Internal::AlgebraicType processProduct(const bsatn::AlgebraicType& type);
+    ::SpacetimeDB::Internal::AlgebraicType processProduct(const bsatn::AlgebraicType& type);
     
     /**
      * Process a Sum type, recursively registering variant types
      */
-    ::SpacetimeDb::Internal::AlgebraicType processSum(const bsatn::AlgebraicType& type);
+    ::SpacetimeDB::Internal::AlgebraicType processSum(const bsatn::AlgebraicType& type);
     
     /**
      * Describe a type structure for error messages
@@ -317,8 +317,8 @@ public:
         
         // Check if this type has namespace information and build qualified name
         std::string qualified_name = type_name;
-        if constexpr (requires { SpacetimeDb::detail::namespace_info<T>::value; }) {
-            constexpr const char* namespace_prefix = SpacetimeDb::detail::namespace_info<T>::value;
+        if constexpr (requires { SpacetimeDB::detail::namespace_info<T>::value; }) {
+            constexpr const char* namespace_prefix = SpacetimeDB::detail::namespace_info<T>::value;
             if (namespace_prefix != nullptr) {
                 qualified_name = std::string(namespace_prefix) + "." + type_name;
             }
@@ -403,6 +403,6 @@ public:
 
 
 } // namespace Internal
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_V9_TYPE_REGISTRATION_H

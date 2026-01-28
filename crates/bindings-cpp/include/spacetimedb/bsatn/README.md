@@ -33,12 +33,12 @@ SPACETIMEDB_STRUCT(MyData, id, name)
 // Serialize
 MyData data{42, "example"};
 std::vector<uint8_t> buffer;
-SpacetimeDb::bsatn::Writer writer(buffer);
-SpacetimeDb::bsatn::serialize(writer, data);
+SpacetimeDB::bsatn::Writer writer(buffer);
+SpacetimeDB::bsatn::serialize(writer, data);
 
 // Deserialize
-SpacetimeDb::bsatn::Reader reader(buffer);
-auto result = SpacetimeDb::bsatn::deserialize<MyData>(reader);
+SpacetimeDB::bsatn::Reader reader(buffer);
+auto result = SpacetimeDB::bsatn::deserialize<MyData>(reader);
 ```
 
 ## Architecture Notes

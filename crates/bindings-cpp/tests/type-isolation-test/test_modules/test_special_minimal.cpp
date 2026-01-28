@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Minimal test: Just the three basic special types together
 // Testing if combination of Identity + ConnectionId + Timestamp causes issues

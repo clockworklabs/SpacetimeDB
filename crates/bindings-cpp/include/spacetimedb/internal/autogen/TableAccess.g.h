@@ -13,10 +13,10 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 enum class TableAccess : uint8_t {
     Public = 0,
     Private = 1,
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

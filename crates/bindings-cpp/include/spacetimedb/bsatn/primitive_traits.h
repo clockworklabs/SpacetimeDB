@@ -17,7 +17,7 @@
 #include <string>
 #include <type_traits>
 
-namespace SpacetimeDb::bsatn {
+namespace SpacetimeDB::bsatn {
 
 // Forward declarations of serialize functions from writer.h
 inline void serialize(Writer& w, bool value);
@@ -270,6 +270,6 @@ struct bsatn_traits<T> {
     }
 };
 
-} // namespace SpacetimeDb::bsatn
+} // namespace SpacetimeDB::bsatn
 
 #endif // SPACETIMEDB_BSATN_PRIMITIVE_TRAITS_H

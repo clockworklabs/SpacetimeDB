@@ -4,7 +4,7 @@ The SpacetimeDB C++ Module Library provides a modern C++20 API for building Spac
 
 ## Current State
 
-This library provides a production-ready C++ SDK for SpacetimeDB with complete type system support:
+This library provides a production-ready C++ bindings for SpacetimeDB with complete type system support:
 
 ### ✅ Features
 - Module compilation and publishing to SpacetimeDB
@@ -66,9 +66,8 @@ spacetime init --lang cpp my-project
 cd my-project
 
 # Build and publish
-emcmake cmake -B build .
-cmake --build build
-spacetime publish . my-database
+spacetime build -p ./spacetimedb
+spacetime publish -p ./spacetimedb my-database
 ```
 
 ### Option 2: Manual Setup
@@ -78,7 +77,7 @@ For existing projects, add the following to your C++ module:
 ```cpp
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Define a table structure
 struct User {
@@ -151,17 +150,13 @@ SPACETIMEDB_PROCEDURE(uint32_t, add_numbers, ProcedureContext ctx, uint32_t a, u
 # Navigate to your module directory
 cd modules/your-module
 
-# Configure with CMake (uses src/lib.cpp by default)
-emcmake cmake -B build .
-# Build the module
-cmake --build build
-# Or use spacetime build
-spacetime build -p .
+# Build the project
+spacetime build -p ./spacetimedb
 
 # Publish to SpacetimeDB
-spacetime publish --bin-path build/lib.wasm your-database-name
+spacetime publish --bin-path ./spacetimedb/build/lib.wasm your-database-name
 # Or use the directory (auto-detects build/lib.wasm)
-spacetime publish . your-database-name
+spacetime publish ./spacetimedb your-database-name
 ```
 
 #### Custom Module Source
@@ -279,7 +274,3 @@ See the `modules/*-cpp/src/` directory for example modules:
 ## Contributing
 
 This library is part of the SpacetimeDB project. Please see the main repository for contribution guidelines.
-
-## License
-
-Apache License 2.0 - See LICENSE file in the root directory.

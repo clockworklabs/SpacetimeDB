@@ -14,18 +14,18 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "RawScopedTypeNameV9.g.h"
 
-namespace SpacetimeDb::Internal {
+namespace SpacetimeDB::Internal {
 
 SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawTypeDefV9) {
-    SpacetimeDb::Internal::RawScopedTypeNameV9 name;
+    SpacetimeDB::Internal::RawScopedTypeNameV9 name;
     uint32_t ty;
     bool custom_ordering;
 
-    void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
-        ::SpacetimeDb::bsatn::serialize(writer, name);
-        ::SpacetimeDb::bsatn::serialize(writer, ty);
-        ::SpacetimeDb::bsatn::serialize(writer, custom_ordering);
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, name);
+        ::SpacetimeDB::bsatn::serialize(writer, ty);
+        ::SpacetimeDB::bsatn::serialize(writer, custom_ordering);
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, ty, custom_ordering)
 };
-} // namespace SpacetimeDb::Internal
+} // namespace SpacetimeDB::Internal

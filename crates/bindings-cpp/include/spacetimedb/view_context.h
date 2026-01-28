@@ -6,7 +6,7 @@
 #include <spacetimedb/readonly_database_context.h> // For ReadOnlyDatabaseContext
 #include <array>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Context for views with caller identity
@@ -75,6 +75,6 @@ struct AnonymousViewContext {
     AnonymousViewContext() = default;
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_VIEW_CONTEXT_H

@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Minimal test - just one table with Identity and one reducer with Identity parameter
 

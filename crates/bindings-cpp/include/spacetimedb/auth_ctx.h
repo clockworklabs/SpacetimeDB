@@ -11,7 +11,7 @@
 #include <vector>
 #include <array>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // Forward declarations
 struct ConnectionId;
@@ -229,6 +229,6 @@ inline Identity AuthCtx::get_caller_identity() const {
     return Identity(identity_bytes);
 }
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_AUTH_CTX_H

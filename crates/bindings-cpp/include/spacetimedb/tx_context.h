@@ -3,7 +3,7 @@
 
 #include <spacetimedb/reducer_context.h>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Transaction context for procedures
@@ -112,6 +112,6 @@ public:
     Uuid new_uuid_v7() const { return ctx_.new_uuid_v7(); }
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_TX_CONTEXT_H

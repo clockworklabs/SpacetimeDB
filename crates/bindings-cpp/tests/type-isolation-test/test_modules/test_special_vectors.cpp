@@ -1,6 +1,6 @@
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Test: Vectors of special types
 // Testing if std::vector<Identity>, std::vector<ConnectionId>, std::vector<Timestamp> cause issues

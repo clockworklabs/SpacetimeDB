@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <source_location>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 // =============================================================================
 // Phase 3: C++20 Error Handling System - Closing the Gap with Rust
@@ -210,7 +210,7 @@ protected:
         } \
     } while(0)
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // =============================================================================
 // Usage Examples (for documentation) 

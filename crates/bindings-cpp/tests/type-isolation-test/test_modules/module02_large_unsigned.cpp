@@ -1,7 +1,7 @@
 #include <spacetimedb.h>
 // Removed: enhanced_database.h (unused functionality)
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Module 2: Large unsigned integers (U64, U128, U256)
 // Testing if large unsigned integer types cause WASM issues

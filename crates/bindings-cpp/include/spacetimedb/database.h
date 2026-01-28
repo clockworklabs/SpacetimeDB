@@ -18,7 +18,7 @@
 // #include "field_accessors.h" // Removed - field accessors are now in table_with_constraints.h
 
 // Forward declarations to avoid circular includes
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 namespace Internal {
     class Module;
     struct RawModuleDef;
@@ -117,7 +117,7 @@ protected:
                 &id
             );
             
-            if (SpacetimeDb::is_error(status)) {
+            if (SpacetimeDB::is_error(status)) {
                 LOG_FATAL("Table not found: " + name_to_use);
             }
             table_id_ = id;
@@ -160,12 +160,12 @@ public:
 
 public:
     // Get or create cached Table<T> instance
-    SpacetimeDb::Table<T> get_table() const {
-        return SpacetimeDb::Table<T>(resolve_table_id());
+    SpacetimeDB::Table<T> get_table() const {
+        return SpacetimeDB::Table<T>(resolve_table_id());
     }
     
     // Iterate over all rows in the table
-    SpacetimeDb::Table<T> table() const {
+    SpacetimeDB::Table<T> table() const {
         return get_table();
     }
     
@@ -252,12 +252,12 @@ public:
 };
 
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Use spacetimedb namespace for consistency
 namespace spacetimedb {
     template<typename T>
-    using TableAccessor = SpacetimeDb::TableAccessor<T>;
+    using TableAccessor = SpacetimeDB::TableAccessor<T>;
 }
 
 #endif // SPACETIMEDB_DATABASE_H

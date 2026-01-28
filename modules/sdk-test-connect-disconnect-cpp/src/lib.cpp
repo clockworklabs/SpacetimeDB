@@ -3,7 +3,7 @@
 #include <vector>
 #include <cmath>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 
 // Tables matching Rust `sdk-test-connect-disconnect`
 

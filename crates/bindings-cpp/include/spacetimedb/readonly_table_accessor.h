@@ -8,7 +8,7 @@
 #include <optional>
 #include <type_traits>
 
-namespace SpacetimeDb {
+namespace SpacetimeDB {
 
 /**
  * @brief Read-only table accessor for views
@@ -69,7 +69,7 @@ protected:
                 &id
             );
             
-            if (SpacetimeDb::is_error(status)) {
+            if (SpacetimeDB::is_error(status)) {
                 LOG_FATAL("Table not found: " + name_to_use);
             }
             table_id_ = id;
@@ -87,7 +87,7 @@ public:
         TableId table_id = resolve_table_id();
         uint64_t out_count;
         Status status = ::datastore_table_row_count(table_id, &out_count);
-        if (SpacetimeDb::is_error(status)) {
+        if (SpacetimeDB::is_error(status)) {
             LOG_FATAL("Failed to count rows in table: " + table_name_);
         }
         return out_count;
@@ -103,8 +103,8 @@ public:
     std::vector<T> collect() const = delete;
     
     // ❌ DELETED: No table() method - would bypass read-only protection
-    SpacetimeDb::Table<T> table() const = delete;
-    SpacetimeDb::Table<T> get_table() const = delete;
+    SpacetimeDB::Table<T> table() const = delete;
+    SpacetimeDB::Table<T> get_table() const = delete;
     
     // ❌ DELETED: No mutations allowed in views
     T insert(const T& row) const = delete;
@@ -112,12 +112,12 @@ public:
     uint32_t update_by_value(const T& old_value, const T& new_value) const = delete;
 };
 
-} // namespace SpacetimeDb
+} // namespace SpacetimeDB
 
 // Use spacetimedb namespace for consistency
 namespace spacetimedb {
     template<typename T>
-    using ReadOnlyTableAccessor = SpacetimeDb::ReadOnlyTableAccessor<T>;
+    using ReadOnlyTableAccessor = SpacetimeDB::ReadOnlyTableAccessor<T>;
 }
 
 #endif // SPACETIMEDB_READONLY_TABLE_ACCESSOR_H
