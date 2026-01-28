@@ -81,14 +81,22 @@ pub(crate) fn build_cpp(project_path: &Path, build_debug: bool) -> anyhow::Resul
     let build_args = ["--build", "build", "--config", build_type, "--parallel"];
     run_command("cmake", &build_args, project_path).context("Failed to build C++ project")?;
 
-    // Find the first .wasm under build/ (covers Debug/Release or target subdirs)
+    // Find the most recently modified .wasm under build/ directory
+    // This ensures we get the latest build output when rebuilding, instead of potentially
+    // picking up an older cached wasm file from a previous build
     let wasm = WalkDir::new(&build_dir)
         .into_iter()
         .filter_map(Result::ok)
-        .find_map(|e| {
+        .filter_map(|e| {
             let p = e.path();
-            (p.extension().and_then(|s| s.to_str()) == Some("wasm")).then(|| p.to_path_buf())
+            if p.extension().and_then(|s| s.to_str()) == Some("wasm") {
+                e.metadata().ok().and_then(|m| m.modified().ok()).map(|mtime| (p.to_path_buf(), mtime))
+            } else {
+                None
+            }
         })
+        .max_by_key(|(_, mtime)| *mtime)
+        .map(|(path, _)| path)
         .ok_or_else(|| {
             anyhow!(
                 "Built successfully but couldn't find a .wasm under {}",
