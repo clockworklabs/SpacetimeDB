@@ -121,15 +121,8 @@ impl SpacetimeDbGuard {
     pub fn spawn_in_temp_data_dir_with_pg_port(pg_port: Option<u16>) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir_path = temp_dir.path().to_path_buf();
-        let data_dir_str = data_dir_path.display().to_string();
 
-        Self::spawn_spacetime_start_with_data_dir(
-            false,
-            &["start", "--data-dir", &data_dir_str],
-            pg_port,
-            data_dir_path,
-            Some(temp_dir),
-        )
+        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir_path, Some(temp_dir))
     }
 
     /// Start `spacetimedb` in a temporary data directory via:
@@ -137,15 +130,8 @@ impl SpacetimeDbGuard {
     pub fn spawn_in_temp_data_dir_use_cli() -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir_path = temp_dir.path().to_path_buf();
-        let data_dir_str = data_dir_path.display().to_string();
 
-        Self::spawn_spacetime_start_with_data_dir(
-            true,
-            &["start", "--data-dir", &data_dir_str],
-            None,
-            data_dir_path,
-            Some(temp_dir),
-        )
+        Self::spawn_spacetime_start_with_data_dir(true, None, data_dir_path, Some(temp_dir))
     }
 
     /// Start `spacetimedb` with an explicit data directory (for restart scenarios).
@@ -153,19 +139,11 @@ impl SpacetimeDbGuard {
     /// Unlike `spawn_in_temp_data_dir`, this method does not create a temporary directory.
     /// The caller is responsible for managing the data directory lifetime.
     pub fn spawn_with_data_dir(data_dir: PathBuf, pg_port: Option<u16>) -> Self {
-        let data_dir_str = data_dir.display().to_string();
-        Self::spawn_spacetime_start_with_data_dir(
-            false,
-            &["start", "--data-dir", &data_dir_str],
-            pg_port,
-            data_dir,
-            None,
-        )
+        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir, None)
     }
 
     fn spawn_spacetime_start_with_data_dir(
         use_installed_cli: bool,
-        _extra_args: &[&str],
         pg_port: Option<u16>,
         data_dir: PathBuf,
         _data_dir_handle: Option<tempfile::TempDir>,
