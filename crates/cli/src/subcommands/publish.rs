@@ -85,6 +85,18 @@ A parent can only be set when a database is created, not when it is updated."
             )
         )
         .arg(
+            Arg::new("organization")
+            .help("Name or identity of an organization for this database")
+            .long("organization")
+            .alias("org")
+            .long_help(
+"The name or identity of an existing organization this database should be created under.
+
+If an organization is given, the organization member's permissions apply to the new database.
+An organization can only be set when a database is created, not when it is updated."
+            )
+        )
+        .arg(
             Arg::new("name|identity")
                 .help("A valid domain or identity for this database")
                 .long_help(
@@ -139,6 +151,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let num_replicas = args.get_one::<u8>("num_replicas");
     let force_break_clients = args.get_flag("break_clients");
     let parent = args.get_one::<String>("parent");
+    let org = args.get_one::<String>("organization");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -226,6 +239,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     if let Some(parent) = parent {
         builder = builder.query(&[("parent", parent)]);
+    }
+    if let Some(org) = org {
+        builder = builder.query(&[("org", org)]);
     }
 
     println!("Publishing module...");
