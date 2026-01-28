@@ -36,4 +36,30 @@ namespace SpacetimeDB.Types
 
         public readonly ConsumeEntityTimerHandle ConsumeEntityTimer;
     }
+
+    public sealed class ConsumeEntityTimerCols
+    {
+        public global::SpacetimeDB.Col<ConsumeEntityTimer, ulong> ScheduledId { get; }
+        public global::SpacetimeDB.Col<ConsumeEntityTimer, SpacetimeDB.ScheduleAt> ScheduledAt { get; }
+        public global::SpacetimeDB.Col<ConsumeEntityTimer, int> ConsumedEntityId { get; }
+        public global::SpacetimeDB.Col<ConsumeEntityTimer, int> ConsumerEntityId { get; }
+
+        public ConsumeEntityTimerCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.Col<ConsumeEntityTimer, ulong>(tableName, "scheduled_id");
+            ScheduledAt = new global::SpacetimeDB.Col<ConsumeEntityTimer, SpacetimeDB.ScheduleAt>(tableName, "scheduled_at");
+            ConsumedEntityId = new global::SpacetimeDB.Col<ConsumeEntityTimer, int>(tableName, "consumed_entity_id");
+            ConsumerEntityId = new global::SpacetimeDB.Col<ConsumeEntityTimer, int>(tableName, "consumer_entity_id");
+        }
+    }
+
+    public sealed class ConsumeEntityTimerIxCols
+    {
+        public global::SpacetimeDB.IxCol<ConsumeEntityTimer, ulong> ScheduledId { get; }
+
+        public ConsumeEntityTimerIxCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.IxCol<ConsumeEntityTimer, ulong>(tableName, "scheduled_id");
+        }
+    }
 }

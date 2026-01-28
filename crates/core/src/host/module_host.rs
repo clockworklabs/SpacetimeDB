@@ -60,7 +60,9 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::relation::RelValue;
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
@@ -112,7 +114,7 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     // Note: `Arc<[ProductValue]>` allows to cheaply
     // use the values from `TxData` without cloning the
     // contained `ProductValue`s.
@@ -128,7 +130,7 @@ pub struct DatabaseUpdateRelValue<'a> {
 #[derive(PartialEq, Debug)]
 pub struct DatabaseTableUpdateRelValue<'a> {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub updates: UpdatesRelValue<'a>,
 }
 
@@ -180,7 +182,7 @@ impl EventStatus {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleFunctionCall {
-    pub reducer: String,
+    pub reducer: ReducerName,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
@@ -188,7 +190,7 @@ pub struct ModuleFunctionCall {
 impl ModuleFunctionCall {
     pub fn update() -> Self {
         Self {
-            reducer: String::from("update"),
+            reducer: ReducerName::new_from_str("update"),
             reducer_id: u32::MAX.into(),
             args: ArgsTuple::nullary(),
         }
@@ -576,7 +578,7 @@ pub fn call_identity_connected(
 
             // If the reducer returned an error or couldn't run due to insufficient energy,
             // abort the connection: the module code has decided it doesn't want this client.
-            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(message)),
+            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(*message)),
             ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
         }
     } else {
@@ -964,7 +966,7 @@ pub enum ClientConnectedError {
     #[error("Failed to insert `st_client` row for module without client_connected reducer: {0}")]
     DBError(#[from] Box<DBError>),
     #[error("Connection rejected by `client_connected` reducer: {0}")]
-    Rejected(String),
+    Rejected(Box<str>),
     #[error("Insufficient energy balance to run `client_connected` reducer")]
     OutOfEnergy,
 }
@@ -2073,6 +2075,8 @@ impl ModuleHost {
                         // Convert into something we can execute
                         .map(PipelinedProject::from)
                         .collect::<Vec<_>>();
+
+                    let table_name = table_name.to_boxed_str();
 
                     if returns_view_table && num_private_cols > 0 {
                         let optimized = optimized
