@@ -7,6 +7,7 @@ use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
+use core::ops::Deref;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
@@ -18,6 +19,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -281,7 +283,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 status,
                 caller_identity: event.caller_identity,
                 reducer_call: ws::ReducerCallInfo {
-                    reducer_name: event.function_call.reducer.to_owned().into(),
+                    reducer_name: event.function_call.reducer.deref().into(),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id,
@@ -378,7 +380,7 @@ pub struct SubscriptionData {
 #[derive(Debug, Clone)]
 pub struct SubscriptionRows {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_rows: FormatSwitch<ws::TableUpdate<BsatnFormat>, ws::TableUpdate<JsonFormat>>,
 }
 
@@ -449,7 +451,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -462,7 +464,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -480,7 +482,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -493,7 +495,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }

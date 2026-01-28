@@ -3,6 +3,7 @@
 use serde::Deserialize;
 use spacetimedb_lib::de::Deserialize as SatsDeserializer;
 use spacetimedb_lib::sats;
+use spacetimedb_schema::table_name::TableName;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -159,11 +160,11 @@ impl IndexStrategy {
     }
 }
 
-pub fn table_name<T: BenchTable>(style: IndexStrategy) -> String {
+pub fn table_name<T: BenchTable>(style: IndexStrategy) -> TableName {
     let prefix = style.name();
     let name = T::name();
 
-    format!("{prefix}_{name}")
+    TableName::new_from_str(&format!("{prefix}_{name}"))
 }
 
 // ---------- data synthesis ----------

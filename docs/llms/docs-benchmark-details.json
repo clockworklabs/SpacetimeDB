@@ -53,7 +53,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 1,
                   "passed_tests": 1,
-                  "llm_output": "use spacetimedb::table;\n\n#[table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[table(name = product)]\npub struct Product {\n    #[primary_key]\n    id: i32,\n    title: String,\n    price: f32,\n    in_stock: bool,\n}\n\n#[table(name = note)]\npub struct Note {\n    #[primary_key]\n    id: i32,\n    body: String,\n    rating: i64,\n    pinned: bool,\n}",
+                  "llm_output": "#[spacetimedb::table(name = user)]\npub struct User {\n    #[primary_key]\n    id: i32,\n    name: String,\n    age: i32,\n    active: bool,\n}\n\n#[spacetimedb::table(name = product)]\npub struct Product {\n    #[primary_key]\n    id: i32,\n    title: String,\n    price: f32,\n    in_stock: bool,\n}\n\n#[spacetimedb::table(name = note)]\npub struct Note {\n    #[primary_key]\n    id: i32,\n    body: String,\n    rating: i64,\n    pinned: bool,\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-001-basic-tables-golden",
@@ -125,8 +125,8 @@
                   "work_dir_llm": "target/llm-runs/basics/t_003_struct_in_table/rust/server/gpt-5/llm",
                   "scorer_details": {
                     "schema_parity": {
-                      "pass": false,
-                      "partial": 0.0,
+                      "pass": true,
+                      "partial": 1.0,
                       "notes": {
                         "golden_db": "basics-t-003-struct-in-table-golden",
                         "llm_db": "basics-t-003-struct-in-table-gpt-5-llm",
@@ -163,6 +163,19 @@
                   "work_dir_golden": "target/llm-runs/basics/t_004_insert/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_004_insert/rust/server/gpt-5/llm",
                   "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "golden_db": "basics-t-004-insert-golden",
+                        "llm_db": "basics-t-004-insert-gpt-5-llm",
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "server": "http://127.0.0.1:33615",
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "data_parity_insert_user": {
                       "pass": true,
                       "partial": 1.0,
@@ -276,13 +289,11 @@
                   "work_dir_golden": "target/llm-runs/basics/t_006_delete/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_006_delete/rust/server/gpt-5/llm",
                   "scorer_details": {
-                    "delete_user_count_zero": {
+                    "seed_users_row": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 0,
-                        "expected": 0,
-                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1"
+                        "sql": "INSERT INTO user(id, name, age, active) VALUES (1, 'Alice', 30, true)"
                       }
                     },
                     "schema_parity": {
@@ -298,11 +309,13 @@
                         "tables_equal": true
                       }
                     },
-                    "seed_users_row": {
+                    "delete_user_count_zero": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "sql": "INSERT INTO user(id, name, age, active) VALUES (1, 'Alice', 30, true)"
+                        "actual": 0,
+                        "expected": 0,
+                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1"
                       }
                     }
                   },
@@ -502,7 +515,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 1,
                   "passed_tests": 1,
-                  "llm_output": "use spacetimedb::{ReducerContext, Table};\n\n#[spacetimedb::table(name = event)]\npub struct Event {\n    #[primary_key]\n    #[auto_inc]\n    id: i32,\n    kind: String,\n}\n\n#[spacetimedb::reducer(client_connected)]\npub fn client_connected(ctx: &ReducerContext) {\n    ctx.db.event().insert(Event { id: 0, kind: \"connected\".to_string() });\n}\n\n#[spacetimedb::reducer(client_disconnected)]\npub fn client_disconnected(ctx: &ReducerContext) {\n    ctx.db.event().insert(Event { id: 0, kind: \"disconnected\".to_string() });\n}",
+                  "llm_output": "use spacetimedb::{ReducerContext, Table};\n\n#[spacetimedb::table(name = event)]\npub struct Event {\n    #[primary_key]\n    #[auto_inc]\n    id: i32,\n    kind: String,\n}\n\n#[spacetimedb::reducer(client_connected)]\npub fn client_connected(ctx: &ReducerContext) {\n    let _ = ctx.db.event().insert(Event { id: 0, kind: \"connected\".to_string() });\n}\n\n#[spacetimedb::reducer(client_disconnected)]\npub fn client_disconnected(ctx: &ReducerContext) {\n    let _ = ctx.db.event().insert(Event { id: 0, kind: \"disconnected\".to_string() });\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-010-connect-golden",
@@ -536,7 +549,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 3,
                   "passed_tests": 3,
-                  "llm_output": "use spacetimedb::{table, reducer, ReducerContext, Table};\n\n#[table(name = result)]\npub struct ResultRow {\n    #[primary_key]\n    id: i32,\n    sum: i32,\n}\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\n#[reducer]\nfn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {\n    let sum = add(a, b);\n    ctx.db.result().insert(ResultRow { id, sum });\n}",
+                  "llm_output": "use spacetimedb::{table, reducer, ReducerContext, Table};\n\n#[table(name = result)]\npub struct ResultRow {\n    #[primary_key]\n    id: i32,\n    sum: i32,\n}\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\n#[reducer]\npub fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {\n    let sum = add(a, b);\n    ctx.db.result().insert(ResultRow { id, sum });\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-011-helper-function-golden",
@@ -634,6 +647,24 @@
                         "tables_diff": null,
                         "tables_equal": true
                       }
+                    },
+                    "product_type_row_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "args": [
+                          1,
+                          2,
+                          3
+                        ],
+                        "golden_db": "schema-t-012-spacetime-product-type-golden",
+                        "golden_out": "id | value ----+----------------------- 1 | (left = 2, right = 3)",
+                        "llm_db": "schema-t-012-spacetime-product-type-gpt-5-llm",
+                        "llm_out": "id | value ----+----------------------- 1 | (left = 2, right = 3)",
+                        "query": "SELECT id, value FROM result WHERE id=1",
+                        "reducer": "set_score",
+                        "server": "http://127.0.0.1:33615"
+                      }
                     }
                   },
                   "vendor": "openai",
@@ -656,6 +687,14 @@
                   "work_dir_golden": "target/llm-runs/schema/t_013_spacetime_sum_type/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/schema/t_013_spacetime_sum_type/rust/server/gpt-5/llm",
                   "scorer_details": {
+                    "sum_type_row_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `result`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:33615/v1/database/c200ef5026b116b67d90edbd0acaca12a273f2a7e6e888cc7265a5d4a4fe7173/sql)\n",
+                        "phase": "sql_golden"
+                      }
+                    },
                     "schema_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -1307,20 +1346,20 @@
                   "work_dir_golden": "target/llm-runs/basics/t_005_update/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_005_update/rust/server/gpt-5/llm",
                   "scorer_details": {
-                    "schema_parity": {
-                      "pass": false,
-                      "partial": 0.0,
-                      "notes": {
-                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-005-update-golden`.\n",
-                        "phase": "describe_golden"
-                      }
-                    },
                     "data_parity_update_user": {
                       "pass": false,
                       "partial": 0.0,
                       "notes": {
                         "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-005-update-golden`.\n",
                         "phase": "call_reducer_golden"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-005-update-golden`.\n",
+                        "phase": "describe_golden"
                       }
                     },
                     "seed_users_row": {
@@ -1353,6 +1392,14 @@
                   "work_dir_golden": "target/llm-runs/basics/t_006_delete/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_006_delete/rust/server/gpt-5/llm",
                   "scorer_details": {
+                    "schema_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-006-delete-golden`.\n",
+                        "phase": "describe_golden"
+                      }
+                    },
                     "seed_users_row": {
                       "pass": false,
                       "partial": 0.0,
@@ -1360,14 +1407,6 @@
                         "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-006-delete-golden`.\n",
                         "phase": "sql_golden",
                         "sql": "INSERT INTO user(id, name, age, active) VALUES (1, 'Alice', 30, true)"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": false,
-                      "partial": 0.0,
-                      "notes": {
-                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-006-delete-golden`.\n",
-                        "phase": "describe_golden"
                       }
                     },
                     "delete_user_count_zero": {
@@ -1400,6 +1439,14 @@
                   "work_dir_golden": "target/llm-runs/basics/t_007_crud/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_007_crud/rust/server/gpt-5/llm",
                   "scorer_details": {
+                    "crud_row_id1_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-007-crud-golden`.\n",
+                        "phase": "call_reducer_golden"
+                      }
+                    },
                     "crud_total_count_one": {
                       "pass": false,
                       "partial": 0.0,
@@ -1463,6 +1510,14 @@
                         "phase": "describe_golden"
                       }
                     },
+                    "index_lookup_projection_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-008-index-lookup-golden`.\n",
+                        "phase": "call_reducer_golden"
+                      }
+                    },
                     "seed_user_row": {
                       "pass": false,
                       "partial": 0.0,
@@ -1470,14 +1525,6 @@
                         "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-008-index-lookup-golden`.\n",
                         "phase": "sql_golden",
                         "sql": "INSERT INTO user(id, name, age, active) VALUES (1, 'Alice', 30, true)"
-                      }
-                    },
-                    "index_lookup_projection_parity": {
-                      "pass": false,
-                      "partial": 0.0,
-                      "notes": {
-                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-008-index-lookup-golden`.\n",
-                        "phase": "call_reducer_golden"
                       }
                     }
                   },
@@ -1505,9 +1552,8 @@
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1 AND name='Alice' AND age=30 AND active=true"
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-009-init-golden`.\n",
+                        "phase": "describe_golden"
                       }
                     },
                     "init_total_two": {
@@ -1532,8 +1578,9 @@
                       "pass": false,
                       "partial": 0.0,
                       "notes": {
-                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-009-init-golden`.\n",
-                        "phase": "describe_golden"
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM user WHERE id=1 AND name='Alice' AND age=30 AND active=true"
                       }
                     }
                   },
@@ -1586,14 +1633,6 @@
                   "work_dir_golden": "target/llm-runs/basics/t_011_helper_function/rust/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_011_helper_function/rust/server/gpt-5/llm",
                   "scorer_details": {
-                    "helper_func_sum_parity": {
-                      "pass": false,
-                      "partial": 0.0,
-                      "notes": {
-                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-011-helper-function-golden`.\n",
-                        "phase": "call_reducer_golden"
-                      }
-                    },
                     "helper_func_sum_abs": {
                       "pass": false,
                       "partial": 0.0,
@@ -1601,6 +1640,14 @@
                         "actual": 0,
                         "expected": 1,
                         "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "helper_func_sum_parity": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `basics-t-011-helper-function-golden`.\n",
+                        "phase": "call_reducer_golden"
                       }
                     },
                     "schema_parity": {
@@ -1656,6 +1703,15 @@
                         "expected": 1,
                         "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1"
                       }
+                    },
+                    "product_type_row_count": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "actual": 0,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1"
+                      }
                     }
                   },
                   "vendor": "openai",
@@ -1690,8 +1746,8 @@
                       "pass": false,
                       "partial": 0.0,
                       "notes": {
-                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-013-spacetime-sum-type-golden`.\n",
-                        "phase": "call_reducer_golden"
+                        "error": "describe failed: WARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-013-spacetime-sum-type-golden`.\n",
+                        "phase": "describe_golden"
                       }
                     },
                     "sum_type_row_count": {
@@ -1758,17 +1814,17 @@
                   "hash": "d86518d2ac099e60eb25705cd317e30df95f4d6a4787a2fe5aae12753b8ab4f7",
                   "task": "t_015_product_type_columns",
                   "lang": "rust",
-                  "golden_published": true,
+                  "golden_published": false,
                   "model_name": "GPT-5",
-                  "total_tests": 3,
+                  "total_tests": 1,
                   "passed_tests": 0,
                   "llm_output": "use spacetimedb::{ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone)]\npub struct Address {\n    street: String,\n    zip: i32,\n}\n\n#[derive(SpacetimeType, Clone)]\npub struct Position {\n    x: i32,\n    y: i32,\n}\n\n#[spacetimedb::table(name = profile)]\npub struct Profile {\n    #[primary_key]\n    id: i32,\n    home: Address,\n    work: Address,\n    pos: Position,\n}\n\n#[spacetimedb::reducer]\npub fn seed(ctx: &ReducerContext) {\n    if ctx.db.profile().id().find(1).is_none() {\n        ctx.db.profile().insert(Profile {\n            id: 1,\n            home: Address {\n                street: \"1 Main\".to_string(),\n                zip: 11111,\n            },\n            work: Address {\n                street: \"2 Broad\".to_string(),\n                zip: 22222,\n            },\n            pos: Position { x: 7, y: 9 },\n        });\n    }\n}",
                   "category": "schema",
                   "route_api_model": "gpt-5",
-                  "golden_db": "schema-t-015-product-type-columns-golden",
-                  "llm_db": "schema-t-015-product-type-columns-gpt-5-llm",
-                  "work_dir_golden": "target/llm-runs/schema/t_015_product_type_columns/rust/server/golden",
-                  "work_dir_llm": "target/llm-runs/schema/t_015_product_type_columns/rust/server/gpt-5/llm",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
                   "scorer_details": {
                     "schema_parity": {
                       "pass": false,
@@ -1911,17 +1967,17 @@
                       "pass": false,
                       "partial": 0.0,
                       "notes": {
-                        "actual": 0,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM account WHERE id=2"
+                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-018-constraints-golden`.\n",
+                        "phase": "call_reducer_golden"
                       }
                     },
                     "constraints_row_parity_after_seed": {
                       "pass": false,
                       "partial": 0.0,
                       "notes": {
-                        "error": "spacetime call failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: failed to find database `schema-t-018-constraints-golden`.\n",
-                        "phase": "call_reducer_golden"
+                        "actual": 0,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM account WHERE id=2"
                       }
                     }
                   },
@@ -2450,7 +2506,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 2,
                   "passed_tests": 2,
-                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"User\", Public = true)]\n    public partial struct User\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void InsertUser(ReducerContext ctx, int id, string name, int age, bool active)\n    {\n        ctx.Db.User.Insert(new User\n        {\n            Id = id,\n            Name = name,\n            Age = age,\n            Active = active\n        });\n    }\n}",
+                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"User\")]\n    public partial struct User\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void InsertUser(ReducerContext ctx, int id, string name, int age, bool active)\n    {\n        ctx.Db.User.Insert(new User\n        {\n            Id = id,\n            Name = name,\n            Age = age,\n            Active = active\n        });\n    }\n}",
                   "category": "basics",
                   "route_api_model": "gpt-5",
                   "golden_db": "basics-t-004-insert-golden",
@@ -2634,6 +2690,15 @@
                         "tables_equal": true
                       }
                     },
+                    "crud_row_id2_deleted": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 0,
+                        "expected": 0,
+                        "sql": "SELECT COUNT(*) AS n FROM User WHERE Id=2"
+                      }
+                    },
                     "crud_row_id1_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -2722,6 +2787,13 @@
                         "reducer": "LookupUserName",
                         "server": "http://127.0.0.1:42031"
                       }
+                    },
+                    "seed_user_row": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "sql": "INSERT INTO User(Id, Name, Age, Active) VALUES (1, 'Alice', 30, true)"
+                      }
                     }
                   },
                   "vendor": "openai",
@@ -2753,13 +2825,13 @@
                         "sql": "SELECT COUNT(*) AS n FROM User WHERE Id=1 AND Name='Alice' AND Age=30 AND Active=true"
                       }
                     },
-                    "init_seed_bob": {
+                    "init_total_two": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM User WHERE Id=2 AND Name='Bob'   AND Age=22 AND Active=false"
+                        "actual": 2,
+                        "expected": 2,
+                        "sql": "SELECT COUNT(*) AS n FROM User"
                       }
                     },
                     "init_total_two": {
@@ -2839,7 +2911,7 @@
                   "work_dir_golden": "target/llm-runs/basics/t_011_helper_function/csharp/server/golden",
                   "work_dir_llm": "target/llm-runs/basics/t_011_helper_function/csharp/server/gpt-5/llm",
                   "scorer_details": {
-                    "schema_parity": {
+                    "helper_func_sum_abs": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
@@ -2870,13 +2942,17 @@
                         "server": "http://127.0.0.1:42031"
                       }
                     },
-                    "helper_func_sum_abs": {
+                    "schema_parity": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                        "golden_db": "basics-t-011-helper-function-golden",
+                        "llm_db": "basics-t-011-helper-function-gpt-5-llm",
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "server": "http://127.0.0.1:34379",
+                        "tables_diff": null,
+                        "tables_equal": true
                       }
                     }
                   },
@@ -2938,6 +3014,15 @@
                         "server": "http://127.0.0.1:42031",
                         "tables_diff": null,
                         "tables_equal": true
+                      }
+                    },
+                    "product_type_row_count": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1"
                       }
                     }
                   },
@@ -3085,7 +3170,7 @@
                         "server": "http://127.0.0.1:42031"
                       }
                     },
-                    "schema_parity": {
+                    "product_type_columns_row_count": {
                       "pass": true,
                       "partial": 1.0,
                       "notes": {
@@ -3178,6 +3263,14 @@
                   "work_dir_golden": "target/llm-runs/schema/t_017_scheduled_columns/csharp/server/golden",
                   "work_dir_llm": "target/llm-runs/schema/t_017_scheduled_columns/csharp/server/gpt-5/llm",
                   "scorer_details": {
+                    "scheduled_seeded_one_row": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "spacetime sql failed:\nWARNING: This command is UNSTABLE and subject to breaking changes.\n\nError: no such table: `tick_timer`. If the table exists, it may be marked private.\n\nCaused by:\n    HTTP status client error (400 Bad Request) for url (http://127.0.0.1:34379/v1/database/c200bf2221f01a62dfa1acb5a397b4271a57cfc2f171562204bb3bcee2259214/sql)\n",
+                        "phase": "sql"
+                      }
+                    },
                     "schema_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -3212,7 +3305,7 @@
                   "model_name": "GPT-5",
                   "total_tests": 3,
                   "passed_tests": 3,
-                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"Account\", Public = true)]\n    [SpacetimeDB.Index.BTree(Name = \"by_name\", Columns = new[] { \"Name\" })]\n    public partial struct Account\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n        [SpacetimeDB.Unique]\n        public string Email;\n        public string Name;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.Account.Insert(new Account { Id = 1, Email = \"a@example.com\", Name = \"Alice\" });\n        ctx.Db.Account.Insert(new Account { Id = 2, Email = \"b@example.com\", Name = \"Bob\" });\n    }\n}",
+                  "llm_output": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"Account\", Public = true)]\n    public partial struct Account\n    {\n        [SpacetimeDB.PrimaryKey]\n        public int Id;\n\n        [SpacetimeDB.Unique]\n        public string Email;\n\n        [SpacetimeDB.Index.BTree(Name = \"by_name\")]\n        public string Name;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.Account.Insert(new Account { Id = 1, Email = \"a@example.com\", Name = \"Alice\" });\n        ctx.Db.Account.Insert(new Account { Id = 2, Email = \"b@example.com\", Name = \"Bob\" });\n    }\n}",
                   "category": "schema",
                   "route_api_model": "gpt-5",
                   "golden_db": "schema-t-018-constraints-golden",
