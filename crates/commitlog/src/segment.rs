@@ -114,6 +114,9 @@ impl<W: io::Write> Writer<W> {
                 let tx = tx.into();
                 let expected_offset = self.commit.min_tx_offset + self.commit.n as u64;
                 if tx.offset != expected_offset {
+                    self.commit.n = 0;
+                    self.commit.records.clear();
+
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
                         format!("invalid transaction offset {}, expected {}", tx.offset, expected_offset),
