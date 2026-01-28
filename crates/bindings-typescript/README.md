@@ -66,7 +66,9 @@ connection.reducers.createPlayer();
 
 #### React Usage
 
-This module also include React hooks to subscribe to tables under the `spacetimedb/react` subpath. In order to use SpacetimeDB React hooks in your project, first add a `SpacetimeDBProvider` at the top of your component hierarchy:
+This module also includes React hooks to subscribe to tables under the `spacetimedb/react` subpath. The React integration is fully compatible with React StrictMode and handles the double-mount behavior correctly (only one WebSocket connection is created).
+
+In order to use SpacetimeDB React hooks in your project, first add a `SpacetimeDBProvider` at the top of your component hierarchy:
 
 ```tsx
 const connectionBuilder = DbConnection.builder()
