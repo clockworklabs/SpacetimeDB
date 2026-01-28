@@ -49,7 +49,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|reducer| {
             validator
                 .validate_reducer_def(reducer)
-                .map(|reducer_def| (reducer_def.name.clone(), reducer_def))
         })
         // Collect into a `Vec` first to preserve duplicate names.
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
@@ -131,7 +130,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .into_iter()
                 .flatten()
                 .map(|lifecycle_def| {
-                    let function_name = identifier(lifecycle_def.function_name.clone())?;
+                    let function_name = ReducerName::new_from_str(&identifier(lifecycle_def.function_name.clone())?);
 
                     let (pos, _) = reducers_vec
                         .iter()
@@ -363,7 +362,7 @@ impl<'a> ModuleValidatorV10<'a> {
         })
     }
 
-    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV10) -> Result<ReducerDef> {
+    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV10) -> Result<(Identifier, ReducerDef)> {
         let RawReducerDefV10 {
             source_name,
             params,
@@ -398,7 +397,7 @@ impl<'a> ModuleValidatorV10<'a> {
         let (ok_return_type, err_return_type) = return_res;
 
         Ok(ReducerDef {
-            name: name_result,
+            name: ReducerName::new_from_str(&name_result),
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -408,7 +407,7 @@ impl<'a> ModuleValidatorV10<'a> {
             visibility: visibility.into(),
             ok_return_type,
             err_return_type,
-        })
+        }).map(|reducer_def| (name_result, reducer_def))
     }
 
     fn validate_schedule_def(

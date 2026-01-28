@@ -76,3 +76,8 @@ obj~
 /nuget.config
 /nuget.config.meta
 .idea/
+
+# Hydrated SDK DLLs (produced by `cargo ci dlls`)
+/packages/
+/packages.meta
+!/packages/.gitignore
