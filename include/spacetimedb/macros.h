@@ -101,6 +101,37 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #endif
 
 /**
+ * @brief Helper for stringifying each argument in a variadic list
+ * 
+ * Converts each identifier to a string literal. Used by multi-column index macros.
+ * Example: SPACETIMEDB_STRINGIFY_EACH(x, y, z) -> "x", "y", "z"
+ */
+#define SPACETIMEDB_STRINGIFY_ARG(x) #x
+#define SPACETIMEDB_STRINGIFY_EACH(...) SPACETIMEDB_FOR_EACH_STRINGIFY(__VA_ARGS__)
+
+/**
+ * @brief FOR_EACH macro implementation for stringifying (up to 6 arguments)
+ * 
+ * Supports up to 6 arguments (matching multi-column index limit).
+ * Uses a different name than the existing SPACETIMEDB_FOR_EACH_ARG to avoid conflicts.
+ */
+#define SPACETIMEDB_GET_STRINGIFY_MACRO(_1,_2,_3,_4,_5,_6,NAME,...) NAME
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_1(a) SPACETIMEDB_STRINGIFY_ARG(a)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_2(a, b) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_3(a, b, c) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_4(a, b, c, d) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c), SPACETIMEDB_STRINGIFY_ARG(d)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_5(a, b, c, d, e) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c), SPACETIMEDB_STRINGIFY_ARG(d), SPACETIMEDB_STRINGIFY_ARG(e)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY_6(a, b, c, d, e, f) SPACETIMEDB_STRINGIFY_ARG(a), SPACETIMEDB_STRINGIFY_ARG(b), SPACETIMEDB_STRINGIFY_ARG(c), SPACETIMEDB_STRINGIFY_ARG(d), SPACETIMEDB_STRINGIFY_ARG(e), SPACETIMEDB_STRINGIFY_ARG(f)
+#define SPACETIMEDB_FOR_EACH_STRINGIFY(...) \
+    SPACETIMEDB_GET_STRINGIFY_MACRO(__VA_ARGS__, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_6, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_5, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_4, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_3, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_2, \
+        SPACETIMEDB_FOR_EACH_STRINGIFY_1)(__VA_ARGS__)
+
+/**
  * @brief Compatibility aliases for files that use different macro names
  * 
  * This provides backward compatibility while centralizing macro definitions.
