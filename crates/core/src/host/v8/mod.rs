@@ -25,7 +25,7 @@ use crate::host::wasm_common::module_host_actor::{
     InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
     WasmInstance,
 };
-use crate::host::wasm_common::{RowIters, TimingSpanSet, DESCRIBE_MODULE_DUNDER};
+use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
@@ -43,6 +43,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_table::static_assert_size;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -94,9 +95,15 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
-        // Our current configuration:
-        // - will pick a number of worker threads for background jobs based on the num CPUs.
-        // - does not allow idle tasks
+        // We don't want idle tasks nor background worker tasks,
+        // as we intend to run on a single core.
+        // Per the docs, `new_single_threaded_default_platform` requires
+        // that we pass `--single-threaded`.
+        let mut flags = "--single-threaded".to_owned();
+        if let Ok(env_flags) = std::env::var("STDB_V8_FLAGS") {
+            flags.extend([" ", &env_flags]);
+        }
+        v8::V8::set_flags_from_string(&flags);
         let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);
@@ -362,11 +369,13 @@ impl JsInstance {
         self: Box<Self>,
         program: Program,
     ) -> (anyhow::Result<Option<ReducerCallResult>>, Box<Self>) {
-        self.send_recv(
-            JsWorkerReply::into_init_database,
-            JsWorkerRequest::InitDatabase(program),
-        )
-        .await
+        let (ret, inst) = self
+            .send_recv(
+                JsWorkerReply::into_init_database,
+                JsWorkerRequest::InitDatabase(program),
+            )
+            .await;
+        (*ret, inst)
     }
 
     pub async fn call_procedure(self: Box<Self>, params: CallProcedureParams) -> (CallProcedureReturn, Box<Self>) {
@@ -415,9 +424,11 @@ enum JsWorkerReply {
     CallIdentityConnected(Result<(), ClientConnectedError>),
     CallIdentityDisconnected(Result<(), ReducerCallError>),
     DisconnectClient(Result<(), ReducerCallError>),
-    InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
+    InitDatabase(Box<anyhow::Result<Option<ReducerCallResult>>>),
     CallScheduledFunction(CallScheduledFunctionResult),
 }
+
+static_assert_size!(JsWorkerReply, 48);
 
 /// A request for the worker in [`spawn_instance_worker`].
 // We care about optimizing for `CallReducer` as it happens frequently,
@@ -640,7 +651,7 @@ fn spawn_instance_worker(
                 JsWorkerRequest::InitDatabase(program) => {
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
-                    reply("init_database", InitDatabase(res), trapped);
+                    reply("init_database", InitDatabase(Box::new(res)), trapped);
                 }
                 JsWorkerRequest::CallScheduledFunction(params, rt) => {
                     let _guard = rt.enter();
@@ -704,8 +715,6 @@ fn eval_module<'scope>(
         // the module value would never actually resolve. For now, reject this entirely.
         return Err(error::TypeError("module has top-level await and is pending").throw(scope));
     }
-
-    error::parse_and_insert_sourcemap(scope, module);
 
     Ok((module, value))
 }
@@ -883,6 +892,7 @@ mod test {
     use crate::host::ArgsTuple;
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::ReducerId;
+    use spacetimedb_schema::reducer_name::ReducerName;
 
     fn with_module_catch<T>(
         code: &str,
@@ -906,7 +916,7 @@ mod test {
                 let hooks = get_hooks(scope).unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
-                    name: "foobar",
+                    name: &ReducerName::new_from_str("foobar"),
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),

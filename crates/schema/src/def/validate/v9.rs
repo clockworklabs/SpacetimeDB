@@ -5,6 +5,7 @@ use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
+use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer_default_ok_return_type};
 use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
@@ -48,11 +49,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     let reducers = reducers
         .into_iter()
         .enumerate()
-        .map(|(idx, reducer)| {
-            validator
-                .validate_reducer_def(reducer, ReducerId(idx as u32))
-                .map(|reducer_def| (reducer_def.name.clone(), reducer_def))
-        })
+        .map(|(idx, reducer)| validator.validate_reducer_def(reducer, ReducerId(idx as u32)))
         // Collect into a `Vec` first to preserve duplicate names.
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
@@ -325,7 +322,11 @@ impl ModuleValidatorV9<'_> {
     }
 
     /// Validate a reducer definition.
-    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9, reducer_id: ReducerId) -> Result<ReducerDef> {
+    fn validate_reducer_def(
+        &mut self,
+        reducer_def: RawReducerDefV9,
+        reducer_id: ReducerId,
+    ) -> Result<(Identifier, ReducerDef)> {
         let RawReducerDefV9 {
             name,
             params,
@@ -353,8 +354,9 @@ impl ModuleValidatorV9<'_> {
                 Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
             })
             .transpose();
-        let (name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
-        Ok(ReducerDef {
+        let (reducer_name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
+        let name = ReducerName::new_from_str(&reducer_name);
+        let def = ReducerDef {
             name,
             params: params.clone(),
             params_for_generate: ProductTypeDef {
@@ -363,7 +365,10 @@ impl ModuleValidatorV9<'_> {
             },
             lifecycle,
             visibility: FunctionVisibility::ClientCallable,
-        })
+            ok_return_type: reducer_default_ok_return_type(),
+            err_return_type: reducer_default_err_return_type(),
+        };
+        Ok((reducer_name, def))
     }
 
     fn validate_procedure_def(&mut self, procedure_def: RawProcedureDefV9) -> Result<ProcedureDef> {
@@ -1321,7 +1326,7 @@ pub(crate) fn check_scheduled_functions_exist(
 /// then re-organize the reducers and procedures into [`IndexMap`]s
 /// for storage in the [`ModuleDef`].
 #[allow(clippy::type_complexity)]
-pub(crate) fn check_function_names_are_unique(
+pub fn check_function_names_are_unique(
     reducers: Vec<(Identifier, ReducerDef)>,
     procedures: Vec<(Identifier, ProcedureDef)>,
     views: Vec<(Identifier, ViewDef)>,
@@ -1675,22 +1680,22 @@ mod tests {
         assert_eq!(def.types[&deliveries_type_name].ty, delivery_def.product_type_ref);
 
         let init_name = expect_identifier("init");
-        assert_eq!(def.reducers[&init_name].name, init_name);
+        assert_eq!(&*def.reducers[&init_name].name, &*init_name);
         assert_eq!(def.reducers[&init_name].lifecycle, Some(Lifecycle::Init));
 
         let on_connect_name = expect_identifier("on_connect");
-        assert_eq!(def.reducers[&on_connect_name].name, on_connect_name);
+        assert_eq!(&*def.reducers[&on_connect_name].name, &*on_connect_name);
         assert_eq!(def.reducers[&on_connect_name].lifecycle, Some(Lifecycle::OnConnect));
 
         let on_disconnect_name = expect_identifier("on_disconnect");
-        assert_eq!(def.reducers[&on_disconnect_name].name, on_disconnect_name);
+        assert_eq!(&*def.reducers[&on_disconnect_name].name, &*on_disconnect_name);
         assert_eq!(
             def.reducers[&on_disconnect_name].lifecycle,
             Some(Lifecycle::OnDisconnect)
         );
 
         let extra_reducer_name = expect_identifier("extra_reducer");
-        assert_eq!(def.reducers[&extra_reducer_name].name, extra_reducer_name);
+        assert_eq!(&*def.reducers[&extra_reducer_name].name, &*extra_reducer_name);
         assert_eq!(def.reducers[&extra_reducer_name].lifecycle, None);
         assert_eq!(
             def.reducers[&extra_reducer_name].params,
@@ -1698,7 +1703,7 @@ mod tests {
         );
 
         let check_deliveries_name = expect_identifier("check_deliveries");
-        assert_eq!(def.reducers[&check_deliveries_name].name, check_deliveries_name);
+        assert_eq!(&*def.reducers[&check_deliveries_name].name, &*check_deliveries_name);
         assert_eq!(def.reducers[&check_deliveries_name].lifecycle, None);
         assert_eq!(
             def.reducers[&check_deliveries_name].params,

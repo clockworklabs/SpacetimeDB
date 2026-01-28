@@ -433,11 +433,11 @@ pub(super) async fn call_scheduled_function(
                 // Background: Scheduled reducers start with Workload::Internal, but
                 // call_reducer_with_tx only sets ReducerContext when tx is None.
                 // Since we pass Some(tx), we must set it here.
-                let reducer_name = &*module_info.module_def.reducer_by_id(params.reducer_id).name;
+                let reducer_name = &module_info.module_def.reducer_by_id(params.reducer_id).name;
                 tx.ctx = ExecutionContext::with_workload(
                     tx.ctx.database_identity(),
                     Workload::Reducer(ReducerContext {
-                        name: reducer_name.into(),
+                        name: reducer_name.clone(),
                         caller_identity: params.caller_identity,
                         caller_connection_id: params.caller_connection_id,
                         timestamp: params.timestamp,

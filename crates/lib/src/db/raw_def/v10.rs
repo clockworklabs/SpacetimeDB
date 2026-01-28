@@ -5,25 +5,16 @@
 //! into dedicated sections for cleaner organization.
 //! It allows easier future extensibility to add new kinds of definitions.
 
+use core::fmt;
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
+use itertools::Itertools as _;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SpacetimeType, Typespace};
 
-use crate::db::raw_def::v9::{
-    sats_name_to_scoped_name, Lifecycle, RawIdentifier, RawIndexAlgorithm, TableAccess, TableType,
-};
-
-// Type aliases for consistency with V9
-pub type RawIndexDefV10 = super::v9::RawIndexDefV9;
-pub type RawViewDefV10 = super::v9::RawViewDefV9;
-pub type RawConstraintDefV10 = super::v9::RawConstraintDefV9;
-pub type RawConstraintDataV10 = super::v9::RawConstraintDataV9;
-pub type RawSequenceDefV10 = super::v9::RawSequenceDefV9;
-pub type RawTypeDefV10 = super::v9::RawTypeDefV9;
-pub type RawScopedTypeNameV10 = super::v9::RawScopedTypeNameV9;
+use crate::db::raw_def::v9::{Lifecycle, RawIdentifier, RawIndexAlgorithm, TableAccess, TableType};
 
 /// A possibly-invalid raw module definition.
 ///
@@ -110,7 +101,7 @@ pub struct RawTableDefV10 {
     /// The name of the table.
     /// Unique within a module, acts as the table's identifier.
     /// Must be a valid `spacetimedb_schema::identifier::Identifier`.
-    pub name: RawIdentifier,
+    pub source_name: RawIdentifier,
 
     /// A reference to a `ProductType` containing the columns of this table.
     /// This is the single source of truth for the table's columns.
@@ -168,7 +159,7 @@ pub struct RawColumnDefaultValueV10 {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawReducerDefV10 {
     /// The name of the reducer.
-    pub name: RawIdentifier,
+    pub source_name: RawIdentifier,
 
     /// The types and optional names of the parameters, in order.
     /// This `ProductType` need not be registered in the typespace.
@@ -176,6 +167,12 @@ pub struct RawReducerDefV10 {
 
     /// Whether this reducer is callable from clients or is internal-only.
     pub visibility: FunctionVisibility,
+
+    /// The type of the `Ok` return value.
+    pub ok_return_type: AlgebraicType,
+
+    /// The type of the `Err` return value.
+    pub err_return_type: AlgebraicType,
 }
 
 /// The visibility of a function (reducer or procedure).
@@ -199,7 +196,7 @@ pub struct RawScheduleDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub name: Option<Box<str>>,
+    pub source_name: Option<Box<str>>,
 
     /// The name of the table containing the schedule.
     pub table_name: RawIdentifier,
@@ -229,7 +226,7 @@ pub struct RawLifeCycleReducerDefV10 {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawProcedureDefV10 {
     /// The name of the procedure.
-    pub name: RawIdentifier,
+    pub source_name: RawIdentifier,
 
     /// The types and optional names of the parameters, in order.
     /// This `ProductType` need not be registered in the typespace.
@@ -243,6 +240,166 @@ pub struct RawProcedureDefV10 {
 
     /// Whether this procedure is callable from clients or is internal-only.
     pub visibility: FunctionVisibility,
+}
+
+/// A sequence definition for a database table column.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawSequenceDefV10 {
+    /// In the future, the user may FOR SOME REASON want to override this.
+    /// Even though there is ABSOLUTELY NO REASON TO.
+    /// If `None`, a nicely-formatted unique default will be chosen.
+    pub source_name: Option<Box<str>>,
+
+    /// The position of the column associated with this sequence.
+    /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
+    /// The column must have integral type.
+    /// This must be the unique `RawSequenceDef` for this column.
+    pub column: ColId,
+
+    /// The value to start assigning to this column.
+    /// Will be incremented by 1 for each new row.
+    /// If not present, an arbitrary start point may be selected.
+    pub start: Option<i128>,
+
+    /// The minimum allowed value in this column.
+    /// If not present, no minimum.
+    pub min_value: Option<i128>,
+
+    /// The maximum allowed value in this column.
+    /// If not present, no maximum.
+    pub max_value: Option<i128>,
+
+    /// The increment used when updating the SequenceDef.
+    pub increment: i128,
+}
+
+/// The definition of a database index.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawIndexDefV10 {
+    /// In the future, the user may FOR SOME REASON want to override this.
+    /// Even though there is ABSOLUTELY NO REASON TO.
+    pub source_name: Option<Box<str>>,
+
+    /// Accessor name for the index used in client codegen.
+    ///
+    /// This is set the user and should not be assumed to follow
+    /// any particular format.
+    ///
+    /// May be set to `None` if this is an auto-generated index for which the user
+    /// has not supplied a name. In this case, no client code generation for this index
+    /// will be performed.
+    ///
+    /// This name is not visible in the system tables, it is only used for client codegen.
+    pub accessor_name: Option<RawIdentifier>,
+
+    /// The algorithm parameters for the index.
+    pub algorithm: RawIndexAlgorithm,
+}
+
+/// A constraint definition attached to a table.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawConstraintDefV10 {
+    /// In the future, the user may FOR SOME REASON want to override this.
+    /// Even though there is ABSOLUTELY NO REASON TO.
+    pub source_name: Option<Box<str>>,
+
+    /// The data for the constraint.
+    pub data: RawConstraintDataV10,
+}
+
+type RawConstraintDataV10 = crate::db::raw_def::v9::RawConstraintDataV9;
+type RawUniqueConstraintDataV10 = crate::db::raw_def::v9::RawUniqueConstraintDataV9;
+
+/// A type declaration.
+///
+/// Exactly of these must be attached to every `Product` and `Sum` type used by a module.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawTypeDefV10 {
+    /// The name of the type declaration.
+    pub source_name: RawScopedTypeNameV10,
+
+    /// The type to which the declaration refers.
+    /// This must point to an `AlgebraicType::Product` or an `AlgebraicType::Sum` in the module's typespace.
+    pub ty: AlgebraicTypeRef,
+
+    /// Whether this type has a custom ordering.
+    pub custom_ordering: bool,
+}
+
+/// A scoped type name, in the form `scope0::scope1::...::scopeN::name`.
+///
+/// These are the names that will be used *in client code generation*, NOT the names used for types
+/// in the module source code.
+#[derive(Clone, SpacetimeType, PartialEq, Eq, PartialOrd, Ord)]
+#[sats(crate = crate)]
+pub struct RawScopedTypeNameV10 {
+    /// The scope for this type.
+    ///
+    /// Empty unless a sats `name` attribute is used, e.g.
+    /// `#[sats(name = "namespace.name")]` in Rust.
+    pub scope: Box<[RawIdentifier]>,
+
+    /// The name of the type. This must be unique within the module.
+    ///
+    /// Eventually, we may add more information to this, such as generic arguments.
+    pub source_name: RawIdentifier,
+}
+
+impl fmt::Debug for RawScopedTypeNameV10 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for module in self.scope.iter() {
+            fmt::Debug::fmt(module, f)?;
+            f.write_str("::")?;
+        }
+        fmt::Debug::fmt(&self.source_name, f)?;
+        Ok(())
+    }
+}
+
+/// A view definition.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawViewDefV10 {
+    /// The name of the view function as defined in the module
+    pub source_name: RawIdentifier,
+
+    /// The index of the view in the module's list of views.
+    pub index: u32,
+
+    /// Is this a public or a private view?
+    /// Currently only public views are supported.
+    /// Private views may be supported in the future.
+    pub is_public: bool,
+
+    /// Is this view anonymous?
+    /// An anonymous view does not know who called it.
+    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
+    /// This type does not have access to the `Identity` of the caller.
+    pub is_anonymous: bool,
+
+    /// The types and optional names of the parameters, in order.
+    /// This `ProductType` need not be registered in the typespace.
+    pub params: ProductType,
+
+    /// The return type of the view.
+    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a `SpacetimeType`.
+    ///
+    /// More strictly `T` must be a SATS `ProductType`,
+    /// however this will be validated by the server on publish.
+    ///
+    /// This is the single source of truth for the views's columns.
+    /// All elements of the inner `ProductType` must have names.
+    /// This again will be validated by the server on publish.
+    pub return_type: AlgebraicType,
 }
 
 impl RawModuleDefV10 {
@@ -481,14 +638,14 @@ impl RawModuleDefV10Builder {
     /// Does not validate that the product_type_ref is valid; this is left to the module validation code.
     pub fn build_table(
         &mut self,
-        name: impl Into<RawIdentifier>,
+        source_name: impl Into<RawIdentifier>,
         product_type_ref: AlgebraicTypeRef,
     ) -> RawTableDefBuilderV10<'_> {
-        let name = name.into();
+        let source_name = source_name.into();
         RawTableDefBuilderV10 {
             module: &mut self.module,
             table: RawTableDefV10 {
-                name,
+                source_name,
                 product_type_ref,
                 indexes: vec![],
                 constraints: vec![],
@@ -581,15 +738,15 @@ impl RawModuleDefV10Builder {
     pub fn add_algebraic_type(
         &mut self,
         scope: impl IntoIterator<Item = RawIdentifier>,
-        name: impl Into<RawIdentifier>,
+        source_name: impl Into<RawIdentifier>,
         ty: AlgebraicType,
         custom_ordering: bool,
     ) -> AlgebraicTypeRef {
         let ty_ref = self.typespace_mut().add(ty);
         let scope = scope.into_iter().collect();
-        let name = name.into();
+        let source_name = source_name.into();
         self.types_mut().push(RawTypeDefV10 {
-            name: RawScopedTypeNameV10 { name, scope },
+            source_name: RawScopedTypeNameV10 { source_name, scope },
             ty: ty_ref,
             custom_ordering,
         });
@@ -612,11 +769,13 @@ impl RawModuleDefV10Builder {
     /// have more than one `ReducerContext` argument, at least in Rust.
     /// This is because `SpacetimeType` is not implemented for `ReducerContext`,
     /// so it can never act like an ordinary argument.)
-    pub fn add_reducer(&mut self, name: impl Into<RawIdentifier>, params: ProductType) {
+    pub fn add_reducer(&mut self, source_name: impl Into<RawIdentifier>, params: ProductType) {
         self.reducers_mut().push(RawReducerDefV10 {
-            name: name.into(),
+            source_name: source_name.into(),
             params,
             visibility: FunctionVisibility::ClientCallable,
+            ok_return_type: reducer_default_ok_return_type(),
+            err_return_type: reducer_default_err_return_type(),
         });
     }
 
@@ -630,9 +789,14 @@ impl RawModuleDefV10Builder {
     /// it should be registered in the typespace and indirected through an `AlgebraicType::Ref`.
     ///
     /// The `&mut ProcedureContext` first argument to the procedure should not be included in the `params`.
-    pub fn add_procedure(&mut self, name: impl Into<RawIdentifier>, params: ProductType, return_type: AlgebraicType) {
+    pub fn add_procedure(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        return_type: AlgebraicType,
+    ) {
         self.procedures_mut().push(RawProcedureDefV10 {
-            name: name.into(),
+            source_name: source_name.into(),
             params,
             return_type,
             visibility: FunctionVisibility::ClientCallable,
@@ -642,7 +806,7 @@ impl RawModuleDefV10Builder {
     /// Add a view to the in-progress module.
     pub fn add_view(
         &mut self,
-        name: impl Into<RawIdentifier>,
+        source_name: impl Into<RawIdentifier>,
         index: usize,
         is_public: bool,
         is_anonymous: bool,
@@ -650,7 +814,7 @@ impl RawModuleDefV10Builder {
         return_type: AlgebraicType,
     ) {
         self.views_mut().push(RawViewDefV10 {
-            name: name.into(),
+            source_name: source_name.into(),
             index: index as u32,
             is_public,
             is_anonymous,
@@ -675,9 +839,11 @@ impl RawModuleDefV10Builder {
         });
 
         self.reducers_mut().push(RawReducerDefV10 {
-            name: function_name,
+            source_name: function_name,
             params,
             visibility: FunctionVisibility::Internal,
+            ok_return_type: reducer_default_ok_return_type(),
+            err_return_type: reducer_default_err_return_type(),
         });
     }
 
@@ -694,7 +860,7 @@ impl RawModuleDefV10Builder {
         function: impl Into<RawIdentifier>,
     ) {
         self.schedules_mut().push(RawScheduleDefV10 {
-            name: None,
+            source_name: None,
             table_name: table.into(),
             schedule_at_col: column.into(),
             function_name: function.into(),
@@ -724,11 +890,19 @@ impl RawModuleDefV10Builder {
             );
 
         for internal_function in internal_functions {
-            if let Some(r) = self.reducers_mut().iter_mut().find(|r| r.name == internal_function) {
+            if let Some(r) = self
+                .reducers_mut()
+                .iter_mut()
+                .find(|r| r.source_name == internal_function)
+            {
                 r.visibility = FunctionVisibility::Internal;
             }
 
-            if let Some(p) = self.procedures_mut().iter_mut().find(|p| p.name == internal_function) {
+            if let Some(p) = self
+                .procedures_mut()
+                .iter_mut()
+                .find(|p| p.source_name == internal_function)
+            {
                 p.visibility = FunctionVisibility::Internal;
             }
         }
@@ -741,7 +915,7 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
     fn add(
         &mut self,
         typeid: TypeId,
-        name: Option<&'static str>,
+        source_name: Option<&'static str>,
         make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
     ) -> AlgebraicType {
         if let btree_map::Entry::Occupied(o) = self.type_map.entry(typeid) {
@@ -755,11 +929,11 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
                 self.type_map.insert(typeid, slot_ref);
 
                 // Alias provided? Relate `name -> slot_ref`.
-                if let Some(sats_name) = name {
-                    let name = sats_name_to_scoped_name(sats_name);
+                if let Some(sats_name) = source_name {
+                    let source_name = sats_name_to_scoped_name_v10(sats_name);
 
                     self.types_mut().push(RawTypeDefV10 {
-                        name,
+                        source_name,
                         ty: slot_ref,
                         // TODO(1.0): we need to update the `TypespaceBuilder` trait to include
                         // a `custom_ordering` parameter.
@@ -776,6 +950,28 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
             self.typespace_mut()[slot_ref] = ty;
             AlgebraicType::Ref(slot_ref)
         }
+    }
+}
+
+pub fn reducer_default_ok_return_type() -> AlgebraicType {
+    AlgebraicType::unit()
+}
+
+pub fn reducer_default_err_return_type() -> AlgebraicType {
+    AlgebraicType::String
+}
+
+/// Convert a string from a sats type-name annotation like `#[sats(name = "namespace.name")]` to a `RawScopedTypeNameV9`.
+/// We split the input on the strings `"::"` and `"."` to split up module paths.
+///
+pub fn sats_name_to_scoped_name_v10(sats_name: &str) -> RawScopedTypeNameV10 {
+    // We can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
+    let mut scope: Vec<RawIdentifier> = sats_name.split("::").flat_map(|s| s.split('.')).map_into().collect();
+    // Unwrapping to "" will result in a validation error down the line, which is exactly what we want.
+    let source_name = scope.pop().unwrap_or_default();
+    RawScopedTypeNameV10 {
+        scope: scope.into(),
+        source_name,
     }
 }
 
@@ -805,8 +1001,8 @@ impl RawTableDefBuilderV10<'_> {
     pub fn with_unique_constraint(mut self, columns: impl Into<ColList>) -> Self {
         let columns = columns.into();
         self.table.constraints.push(RawConstraintDefV10 {
-            name: None,
-            data: RawConstraintDataV10::Unique(super::v9::RawUniqueConstraintDataV9 { columns }),
+            source_name: None,
+            data: RawConstraintDataV10::Unique(RawUniqueConstraintDataV10 { columns }),
         });
 
         self
@@ -833,7 +1029,7 @@ impl RawTableDefBuilderV10<'_> {
         let accessor_name = accessor_name.into();
 
         self.table.indexes.push(RawIndexDefV10 {
-            name: None,
+            source_name: None,
             accessor_name: Some(accessor_name),
             algorithm,
         });
@@ -843,7 +1039,7 @@ impl RawTableDefBuilderV10<'_> {
     /// Generates a [RawIndexDefV10] using the supplied `columns` but with no `accessor_name`.
     pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
-            name: None,
+            source_name: None,
             accessor_name: None,
             algorithm,
         });
@@ -854,7 +1050,7 @@ impl RawTableDefBuilderV10<'_> {
     pub fn with_column_sequence(mut self, column: impl Into<ColId>) -> Self {
         let column = column.into();
         self.table.sequences.push(RawSequenceDefV10 {
-            name: None,
+            source_name: None,
             column,
             start: None,
             min_value: None,
