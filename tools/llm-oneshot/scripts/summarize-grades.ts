@@ -5,7 +5,9 @@
  * Aggregates all GRADING_RESULTS.md files and generates:
  * - GRADE_SUMMARY.md (executive summary)
  * - grades.json (structured data for websites)
- * - Per-app summaries in apps/{app}/
+ * - Per-app summaries in {app}/
+ *
+ * Output is written to: docs/llms/oneshots/
  *
  * Usage:
  *   pnpm run summarize
@@ -594,7 +596,12 @@ function main() {
   const baseDir = path.resolve(normalizedScriptDir, '..');
   const appsDir = path.join(baseDir, 'apps');
 
+  // Output directory: docs/llms/oneshots (relative to repo root)
+  const repoRoot = path.resolve(baseDir, '../..');
+  const outputDir = path.join(repoRoot, 'docs', 'llms', 'oneshots');
+
   console.log(`Scanning for grading files in: ${appsDir}`);
+  console.log(`Output directory: ${outputDir}`);
 
   const gradingFiles = findGradingFiles(appsDir);
   console.log(`Found ${gradingFiles.length} grading files`);
@@ -626,6 +633,9 @@ function main() {
     return;
   }
 
+  // Ensure output directory exists
+  fs.mkdirSync(outputDir, { recursive: true });
+
   // Aggregate
   const summary = aggregateResults(results);
 
@@ -638,38 +648,38 @@ function main() {
 
   // Write executive summary
   const execSummaryMd = generateExecutiveSummary(summary, results);
-  const execSummaryPath = path.join(baseDir, 'GRADE_SUMMARY.md');
+  const execSummaryPath = path.join(outputDir, 'GRADE_SUMMARY.md');
   fs.writeFileSync(execSummaryPath, execSummaryMd);
   console.log(`Wrote: ${execSummaryPath}`);
 
   // Write JSON
-  const jsonPath = path.join(baseDir, 'grades.json');
+  const jsonPath = path.join(outputDir, 'grades.json');
   fs.writeFileSync(jsonPath, JSON.stringify(gradesJson, null, 2));
   console.log(`Wrote: ${jsonPath}`);
 
   // Write per-app summaries
   const apps = [...new Set(results.map(r => r.app))];
   for (const app of apps) {
-    const appDir = path.join(appsDir, app);
-    if (fs.existsSync(appDir)) {
-      // App markdown
-      const appSummaryMd = generateAppSummary(app, results);
-      const appSummaryPath = path.join(appDir, 'GRADE_SUMMARY.md');
-      fs.writeFileSync(appSummaryPath, appSummaryMd);
-      console.log(`Wrote: ${appSummaryPath}`);
+    const appOutputDir = path.join(outputDir, app);
+    fs.mkdirSync(appOutputDir, { recursive: true });
 
-      // App JSON
-      const appResults = results.filter(r => r.app === app);
-      const appSummary = aggregateResults(appResults);
-      const appJson: GradesJson = {
-        generated: new Date().toISOString(),
-        summary: appSummary,
-        runs: appResults,
-      };
-      const appJsonPath = path.join(appDir, 'grades.json');
-      fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2));
-      console.log(`Wrote: ${appJsonPath}`);
-    }
+    // App markdown
+    const appSummaryMd = generateAppSummary(app, results);
+    const appSummaryPath = path.join(appOutputDir, 'GRADE_SUMMARY.md');
+    fs.writeFileSync(appSummaryPath, appSummaryMd);
+    console.log(`Wrote: ${appSummaryPath}`);
+
+    // App JSON
+    const appResults = results.filter(r => r.app === app);
+    const appSummary = aggregateResults(appResults);
+    const appJson: GradesJson = {
+      generated: new Date().toISOString(),
+      summary: appSummary,
+      runs: appResults,
+    };
+    const appJsonPath = path.join(appOutputDir, 'grades.json');
+    fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2));
+    console.log(`Wrote: ${appJsonPath}`);
   }
 
   console.log('\nDone!');

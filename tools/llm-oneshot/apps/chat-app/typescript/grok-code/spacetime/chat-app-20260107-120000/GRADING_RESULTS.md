@@ -1,9 +1,8 @@
 # Chat App Grading Results
 
-**Model:** Grok
+**Model:** Grok Code
 **Date:** 2026-01-07
 **Prompt:** `05_spacetime_edit_history.md`
-**Graded By:** Claude Opus 4.5
 
 ---
 

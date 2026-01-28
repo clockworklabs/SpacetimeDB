@@ -1,5 +1,5 @@
 {
-  "generated": "2026-01-27T14:28:59.741Z",
+  "generated": "2026-01-28T18:03:13.902Z",
   "summary": {
     "byBackend": {
       "spacetime": {
@@ -11,12 +11,12 @@
         "maxScore": 216
       },
       "postgres": {
-        "runs": 5,
-        "avgPercent": 65.9,
+        "runs": 6,
+        "avgPercent": 62.7,
         "best": 76.4,
         "worst": 41.7,
-        "totalScore": 105,
-        "maxScore": 156
+        "totalScore": 116.25,
+        "maxScore": 180
       }
     },
     "byLlm": {
@@ -64,6 +64,14 @@
           "worst": 76,
           "totalScore": 18.25,
           "maxScore": 24
+        },
+        "postgres": {
+          "runs": 1,
+          "avgPercent": 46.9,
+          "best": 46.9,
+          "worst": 46.9,
+          "totalScore": 11.25,
+          "maxScore": 24
         }
       },
       "opus-4-5": {
@@ -96,12 +104,12 @@
           "maxScore": 216
         },
         "postgres": {
-          "runs": 5,
-          "avgPercent": 65.9,
+          "runs": 6,
+          "avgPercent": 62.7,
           "best": 76.4,
           "worst": 41.7,
-          "totalScore": 105,
-          "maxScore": 156
+          "totalScore": 116.25,
+          "maxScore": 180
         }
       }
     }
@@ -371,6 +379,73 @@
           "feature": 8,
           "name": "Message Editing with History",
           "score": 3,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "grok-code",
+      "backend": "postgres",
+      "runId": "chat-app-20260128-112222",
+      "date": "2026-01-28",
+      "promptLevel": 5,
+      "totalScore": 11.25,
+      "maxScore": 24,
+      "percentage": 46.875,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 731,
+      "locFrontend": 1,
+      "numFiles": 27,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 0.75,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 2,
           "max": 3
         }
       ]
