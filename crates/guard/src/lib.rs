@@ -157,7 +157,10 @@ impl SpacetimeDbGuard {
             let address = "127.0.0.1:0".to_string();
             let data_dir_str = data_dir.display().to_string();
 
-            let args = ["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
+            let args = vec!["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
+            if let Some(ref port) = pg_port_str {
+                args.extend(["--pg-port", port]);
+            }
             let cmd = Command::new("spacetime");
             let (child, logs, reader_threads) = Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args, spawn_id);
 
