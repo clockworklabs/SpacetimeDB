@@ -168,6 +168,22 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
+  // TanStack subpath (SSR-friendly): dist/tanstack/index.{mjs,cjs}
+  {
+    entry: { index: 'src/tanstack/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/tanstack',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['react', '@tanstack/react-query'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
   // The below minified builds are not referenced in package.json and are
   // just included in the build for measuring the size impact of minification.
   // It is expected that consumers of the library will run their own

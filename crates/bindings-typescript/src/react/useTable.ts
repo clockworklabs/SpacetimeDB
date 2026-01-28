@@ -196,7 +196,7 @@ function classifyMembership<
  * Extracts the column names from a RowType whose values are of type Value.
  * Note that this will exclude columns that are of type object, array, etc.
  */
-type ColumnsFromRow<R> = {
+export type ColumnsFromRow<R> = {
   [K in keyof R]-?: R[K] extends Value | undefined ? K : never;
 }[keyof R] &
   string;
