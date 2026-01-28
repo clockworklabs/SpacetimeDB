@@ -8,6 +8,7 @@
 #include "Async/Async.h"
 #include "HAL/CriticalSection.h"
 #include "Misc/ScopeLock.h"
+#include "LogCategory.h"
 
 
 #include "Websocket.generated.h" 
@@ -135,12 +136,12 @@ static void LogAsJson(const StructType& InStruct, const TCHAR* TagName)
 	FString Json;
 	if (!FJsonObjectConverter::UStructToJsonObjectString(InStruct, Json))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to serialize to JSON"), TagName);
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("[%s] Failed to serialize to JSON"), TagName);
 		return;
 	}
 
 	// Print original JSON
-	UE_LOG(LogTemp, Log, TEXT("[%s] %s"), TagName, *Json);
+	UE_LOG(LogSpacetimeDb_Connection, Log, TEXT("[%s] %s"), TagName, *Json);
 
 	// Extract object paths like /Script/SpacetimeDbSdk.CompressableQueryUpdateType'/Engine/Transient.CompressableQueryUpdateType_0'
 	const FRegexPattern Pattern(TEXT(R"((\/Script\/SpacetimeDbSdk\.\w+)'\/Engine\/Transient\.(\w+))"));
@@ -155,7 +156,7 @@ static void LogAsJson(const StructType& InStruct, const TCHAR* TagName)
 		UObject* FoundObj = StaticFindObject(UObject::StaticClass(), GetTransientPackage(), *ObjectName);
 		if (FoundObj == nullptr)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] Could not find object: %s"), TagName, *ObjectName);
+			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("[%s] Could not find object: %s"), TagName, *ObjectName);
 			continue;
 		}
 
@@ -164,11 +165,11 @@ static void LogAsJson(const StructType& InStruct, const TCHAR* TagName)
 		if (FJsonObjectConverter::UStructToJsonObjectString(
 			static_cast<const UStruct*>(FoundObj->GetClass()), FoundObj, SubJson))
 		{
-			UE_LOG(LogTemp, Log, TEXT("[%s] %s: %s"), TagName, *ObjectName, *SubJson);
+			UE_LOG(LogSpacetimeDb_Connection, Log, TEXT("[%s] %s: %s"), TagName, *ObjectName, *SubJson);
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to serialize object: %s"), TagName, *ObjectName);
+			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("[%s] Failed to serialize object: %s"), TagName, *ObjectName);
 		}
 	}
 }
