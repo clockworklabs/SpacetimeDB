@@ -120,12 +120,11 @@ impl<W: io::Write> Writer<W> {
                     format!("invalid transaction offset {}, expected {}", tx.offset, expected_offset),
                 ));
             }
-            // Increment `n` using checked add for error context.
-            self.commit.n = self
-                .commit
-                .n
-                .checked_add(1)
-                .expect("maximum number of transactions in single commit exceeded");
+            assert!(
+                self.commit.n < u16::MAX,
+                "maximum number of transactions in a single commit exceeded"
+            );
+            self.commit.n += 1;
             tx.txdata.encode_record(&mut self.commit.records);
         }
 
@@ -136,6 +135,9 @@ impl<W: io::Write> Writer<W> {
         let checksum = self
             .commit
             .write(&mut self.inner)
+            // Panic here as we don't know how much of the commit has been
+            // written (if anything). Further commits would leave corrupted data
+            // in the log.
             .unwrap_or_else(|e| panic!("failed to write commit {}: {:#}", self.commit.min_tx_offset, e));
         let commit_len = self.commit.encoded_len() as u64;
 
