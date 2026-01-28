@@ -404,13 +404,22 @@ Reducers run in an isolated environment and **cannot** interact with the outside
 
 If you need to interact with external systems, use [Procedures](/functions/procedures) instead. Procedures can make network calls and perform other side effects, but they have different execution semantics and limitations.
 
-:::warning Global and Static Variables Do Not Persist
-Global variables, static variables, and module-level state do **not** persist across reducer calls. Each reducer invocation runs in a fresh execution environment. Any data stored in global or static variables will be lost when the reducer completes.
+:::warning Global and Static Variables Are Undefined Behavior
+Relying on global variables, static variables, or module-level state to persist across reducer calls is **undefined behavior**. SpacetimeDB does not guarantee that values stored in these locations will be available in subsequent reducer invocations.
 
-Always store persistent state in tables. If you need to cache computed values or maintain state across invocations, use a table to store that data.
+This is undefined for several reasons:
+
+1. **Fresh execution environments.** SpacetimeDB may run each reducer in a fresh WASM or JS instance.
+2. **Module updates.** Publishing a new module creates a fresh execution environment. This is necessary for hot-swapping modules while transactions are in flight.
+3. **Concurrent execution.** SpacetimeDB reserves the right to execute multiple reducers concurrently in separate execution environments (e.g., with MVCC).
+4. **Crash recovery.** Instance memory is not persisted across restarts.
+5. **Non-transactional updates.** If you modify global state and then roll back the transaction, the modified value may remain for subsequent transactions.
+6. **Replay safety.** If a serializability anomaly is detected, SpacetimeDB may re-execute your reducer with the same arguments, causing modifications to global state to occur multiple times.
+
+Reducers are designed to be free of side effects. They should only modify tables. Always store state in tables to ensure correctness and durability.
 
 ```rust
-// ❌ This will NOT persist across reducer calls
+// ❌ Undefined behavior: may or may not persist or correctly update across reducer calls
 static mut COUNTER: u64 = 0;
 
 // ✅ Store state in a table instead
@@ -422,6 +431,132 @@ pub struct Counter {
 }
 ```
 :::
+
+## Scheduling Procedures
+
+Reducers cannot call procedures directly (procedures may have side effects incompatible with transactional execution). Instead, schedule a procedure to run by inserting into a [schedule table](/tables/schedule-tables):
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+
+// Define a schedule table for the procedure
+const fetchSchedule = table(
+  { name: 'fetch_schedule', scheduled: 'fetch_external_data' },
+  {
+    scheduled_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
+    url: t.string(),
+  }
+);
+
+const spacetimedb = schema(fetchSchedule);
+
+// The procedure to be scheduled
+const fetchExternalData = spacetimedb.procedure(
+  'fetch_external_data',
+  { arg: fetchSchedule.rowType },
+  t.unit(),
+  (ctx, { arg }) => {
+    const response = ctx.http.fetch(arg.url);
+    // Process response...
+    return {};
+  }
+);
+
+// From a reducer, schedule the procedure by inserting into the schedule table
+const queueFetch = spacetimedb.reducer('queue_fetch', { url: t.string() }, (ctx, { url }) => {
+  ctx.db.fetchSchedule.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(0n), // Run immediately
+    url,
+  });
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public partial class Module
+{
+    [SpacetimeDB.Table(Name = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
+    public partial struct FetchSchedule
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong ScheduledId;
+        public ScheduleAt ScheduledAt;
+        public string Url;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void FetchExternalData(ProcedureContext ctx, FetchSchedule schedule)
+    {
+        var result = ctx.Http.Get(schedule.Url);
+        if (result is Result<HttpResponse, HttpError>.OkR(var response))
+        {
+            // Process response...
+        }
+    }
+
+    // From a reducer, schedule the procedure
+    [SpacetimeDB.Reducer]
+    public static void QueueFetch(ReducerContext ctx, string url)
+    {
+        ctx.Db.FetchSchedule.Insert(new FetchSchedule
+        {
+            ScheduledId = 0,
+            ScheduledAt = new ScheduleAt.Interval(TimeSpan.Zero),
+            Url = url,
+        });
+    }
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::{ScheduleAt, ReducerContext, ProcedureContext, Table};
+use std::time::Duration;
+
+#[spacetimedb::table(name = fetch_schedule, scheduled(fetch_external_data))]
+pub struct FetchSchedule {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+    url: String,
+}
+
+#[spacetimedb::procedure]
+fn fetch_external_data(ctx: &mut ProcedureContext, schedule: FetchSchedule) {
+    if let Ok(response) = ctx.http.get(&schedule.url) {
+        // Process response...
+    }
+}
+
+// From a reducer, schedule the procedure
+#[spacetimedb::reducer]
+fn queue_fetch(ctx: &ReducerContext, url: String) {
+    ctx.db.fetch_schedule().insert(FetchSchedule {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::ZERO.into()),
+        url,
+    });
+}
+```
+
+</TabItem>
+</Tabs>
+
+See [Schedule Tables](/tables/schedule-tables) for more scheduling options.
 
 ## Next Steps
 

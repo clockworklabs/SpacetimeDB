@@ -352,16 +352,27 @@ pub struct WasmtimeInstance {
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
-        let describer_func_name = DESCRIBE_MODULE_DUNDER;
+        let mut describer_res = None;
+        for &describe_func_name in describe_dunders() {
+            match self
+                .instance
+                .get_typed_func::<u32, ()>(&mut self.store, describe_func_name)
+            {
+                Ok(describer) => {
+                    describer_res = Some(Ok((describe_func_name, describer)));
+                    break;
+                }
+                Err(e) => describer_res = Some(Err(DescribeError::Signature(e))),
+            }
+        }
 
-        let describer = self
-            .instance
-            .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
-            .map_err(DescribeError::Signature)?;
+        let (describer_func_name, describer) = describer_res
+            .transpose()?
+            .ok_or_else(|| DescribeError::Signature(anyhow::anyhow!("no describer function found")))?;
 
         let sink = self.store.data_mut().setup_standard_bytes_sink();
 
-        run_describer(log_traceback, || {
+        run_describer(describer_func_name, log_traceback, || {
             call_sync_typed_func(&describer, &mut self.store, sink)
         })?;
 

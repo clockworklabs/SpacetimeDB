@@ -222,7 +222,7 @@ spacetimedb.reducer('hello', (ctx) => {
    }
 });
 
-spacetimedb.reducer('world', (ctx) => {
+const world = spacetimedb.reducer('world', (ctx) => {
    clearAllTables(ctx);
    // ...
 });

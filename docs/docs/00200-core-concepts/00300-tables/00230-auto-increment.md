@@ -130,25 +130,104 @@ Sequences with negative increments wrap in the opposite direction. A sequence wi
 
 ### Crash Recovery
 
-Sequences implement a crash recovery mechanism to ensure values are never reused after a database restart. Rather than persisting the current value after every increment, sequences allocate values in batches.
+Sequences implement a crash recovery mechanism to ensure values are never reused after a database restart. Rather than persisting the current value after every increment, sequences allocate values in batches of **4096**.
 
 When a sequence needs a new value and has exhausted its current allocation, it:
 
-1. Calculates the next batch of values
+1. Calculates the next batch of 4096 values
 2. Persists the allocation boundary to disk
 3. Returns values from the allocated range
 
-If the database crashes, it restarts from the persisted allocation boundary. This may skip some values that were allocated but never used, but guarantees that no value is ever assigned twice.
+If the database crashes or restarts, it resumes from the next allocation boundary. This may skip values that were allocated but never used, but guarantees that no value is ever assigned twice.
 
-For example, if a sequence allocates values in batches of 10:
+**Example:**
 
-1. First insert triggers allocation of values 1-10
-2. Values 1, 2, 3 are used
-3. Database crashes
-4. On restart, the sequence resumes from value 1 (the allocation boundary)
-5. The sequence allocates values 1-10 again, but now starts fresh
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
 
-This design trades potential gaps in the sequence for durability and performance. The batch size balances the cost of persistence against the size of potential gaps.
+```typescript
+const user = table(
+  { name: 'user', public: true },
+  {
+    user_id: t.u64().autoInc(),
+    name: t.string(),
+  }
+);
+
+spacetimedb.reducer('insert_user', { name: t.string() }, (ctx, { name }) => {
+  ctx.db.user.insert({ user_id: 0n, name });
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+public partial class Module
+{
+    [SpacetimeDB.Table(Name = "user", Public = true)]
+    public partial struct User
+    {
+        [SpacetimeDB.AutoInc]
+        public ulong UserId;
+        public string Name;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertUser(ReducerContext ctx, string name)
+    {
+        ctx.Db.User.Insert(new User { UserId = 0, Name = name });
+    }
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::table(name = user, public)]
+pub struct User {
+    #[auto_inc]
+    user_id: u64,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn insert_user(ctx: &ReducerContext, name: String) {
+    ctx.db.user().insert(User { user_id: 0, name });
+}
+```
+
+</TabItem>
+</Tabs>
+
+```bash
+# Insert 3 users
+$ spacetime call mydb insert_user Alice
+$ spacetime call mydb insert_user Bob
+$ spacetime call mydb insert_user Carol
+
+$ spacetime sql mydb "SELECT * FROM user"
+ user_id | name
+---------+-------
+ 1       | Alice
+ 2       | Bob
+ 3       | Carol
+
+# Database restarts...
+
+# Insert another user
+$ spacetime call mydb insert_user Dave
+
+$ spacetime sql mydb "SELECT * FROM user"
+ user_id | name
+---------+-------
+ 1       | Alice
+ 2       | Bob
+ 3       | Carol
+ 4097    | Dave    # Jumped to next allocation boundary
+```
+
+This design trades potential gaps in the sequence for durability and performance. Internally, sequences use a 128-bit integer counter to track allocations across all column types.
 
 ### Uniqueness Considerations
 

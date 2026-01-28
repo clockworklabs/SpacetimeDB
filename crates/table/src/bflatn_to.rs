@@ -80,7 +80,13 @@ pub unsafe fn write_row_to_pages(
     val: &ProductValue,
     squashed_offset: SquashedOffset,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
-    let num_granules = required_var_len_granules_for_row(val);
+    let num_granules = if ty.layout().fixed {
+        // Fast-path: The row type doesn't contain var-len members,
+        // so 0 granules are needed.
+        0
+    } else {
+        required_var_len_granules_for_row(val)
+    };
 
     match pages.with_page_to_insert_row(pool, ty.size(), num_granules, |page| {
         // SAFETY:
@@ -146,8 +152,14 @@ pub unsafe fn write_row_to_page(
         return Err(e);
     }
 
-    // Haven't stored large blobs or init those granules with blob hashes yet, so do it now.
-    let blob_store_inserted_bytes = serialized.write_large_blobs(blob_store);
+    let blob_store_inserted_bytes = if ty.layout.fixed {
+        // The layout is fixed, so there are no large blobs to write.
+        <_>::default()
+    } else {
+        // Haven't stored large blobs or init those granules with blob hashes yet,
+        // so do it now.
+        serialized.write_large_blobs(blob_store)
+    };
 
     Ok((fixed_offset, blob_store_inserted_bytes))
 }
@@ -197,6 +209,8 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
+    #[cold]
+    #[inline(never)]
     fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
         let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (vlr, value) in self.large_blob_insertions {

@@ -24,4 +24,26 @@ namespace SpacetimeDB.Types
 
         public readonly MessageHandle Message;
     }
+
+    public sealed class MessageCols
+    {
+        public global::SpacetimeDB.Col<Message, SpacetimeDB.Identity> Sender { get; }
+        public global::SpacetimeDB.Col<Message, SpacetimeDB.Timestamp> Sent { get; }
+        public global::SpacetimeDB.Col<Message, string> Text { get; }
+
+        public MessageCols(string tableName)
+        {
+            Sender = new global::SpacetimeDB.Col<Message, SpacetimeDB.Identity>(tableName, "Sender");
+            Sent = new global::SpacetimeDB.Col<Message, SpacetimeDB.Timestamp>(tableName, "Sent");
+            Text = new global::SpacetimeDB.Col<Message, string>(tableName, "Text");
+        }
+    }
+
+    public sealed class MessageIxCols
+    {
+
+        public MessageIxCols(string tableName)
+        {
+        }
+    }
 }

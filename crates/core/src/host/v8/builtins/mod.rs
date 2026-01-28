@@ -16,6 +16,7 @@ pub(super) fn evalute_builtins(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
         };
     }
     eval_builtin!("text_encoding.js")?;
+    eval_builtin!("delete_math_random.js")?;
     Ok(())
 }
 

@@ -46,4 +46,30 @@ namespace SpacetimeDB.Types
 
         public readonly AccountHandle Account;
     }
+
+    public sealed class AccountCols
+    {
+        public global::SpacetimeDB.Col<Account, ulong> Id { get; }
+        public global::SpacetimeDB.Col<Account, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Account, string> Name { get; }
+
+        public AccountCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<Account, ulong>(tableName, "Id");
+            Identity = new global::SpacetimeDB.Col<Account, SpacetimeDB.Identity>(tableName, "Identity");
+            Name = new global::SpacetimeDB.Col<Account, string>(tableName, "Name");
+        }
+    }
+
+    public sealed class AccountIxCols
+    {
+        public global::SpacetimeDB.IxCol<Account, ulong> Id { get; }
+        public global::SpacetimeDB.IxCol<Account, SpacetimeDB.Identity> Identity { get; }
+
+        public AccountIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<Account, ulong>(tableName, "Id");
+            Identity = new global::SpacetimeDB.IxCol<Account, SpacetimeDB.Identity>(tableName, "Identity");
+        }
+    }
 }

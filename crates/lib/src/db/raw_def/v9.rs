@@ -22,6 +22,11 @@ use spacetimedb_sats::Typespace;
 
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
+use crate::db::raw_def::v10::RawConstraintDefV10;
+use crate::db::raw_def::v10::RawIndexDefV10;
+use crate::db::raw_def::v10::RawScopedTypeNameV10;
+use crate::db::raw_def::v10::RawSequenceDefV10;
+use crate::db::raw_def::v10::RawTypeDefV10;
 
 /// A not-yet-validated identifier.
 pub type RawIdentifier = Box<str>;
@@ -1043,5 +1048,56 @@ impl RawTableDefBuilder<'_> {
 impl Drop for RawTableDefBuilder<'_> {
     fn drop(&mut self) {
         self.module_def.tables.push(self.table.clone());
+    }
+}
+
+impl From<RawTypeDefV10> for RawTypeDefV9 {
+    fn from(raw: RawTypeDefV10) -> Self {
+        RawTypeDefV9 {
+            name: raw.source_name.into(),
+            ty: raw.ty,
+            custom_ordering: raw.custom_ordering,
+        }
+    }
+}
+
+impl From<RawScopedTypeNameV10> for RawScopedTypeNameV9 {
+    fn from(raw: RawScopedTypeNameV10) -> Self {
+        RawScopedTypeNameV9 {
+            scope: raw.scope,
+            name: raw.source_name,
+        }
+    }
+}
+
+impl From<RawIndexDefV10> for RawIndexDefV9 {
+    fn from(raw: RawIndexDefV10) -> Self {
+        RawIndexDefV9 {
+            name: raw.source_name,
+            accessor_name: raw.accessor_name,
+            algorithm: raw.algorithm,
+        }
+    }
+}
+
+impl From<RawConstraintDefV10> for RawConstraintDefV9 {
+    fn from(raw: RawConstraintDefV10) -> Self {
+        RawConstraintDefV9 {
+            name: raw.source_name,
+            data: raw.data,
+        }
+    }
+}
+
+impl From<RawSequenceDefV10> for RawSequenceDefV9 {
+    fn from(raw: RawSequenceDefV10) -> Self {
+        RawSequenceDefV9 {
+            name: raw.source_name,
+            column: raw.column,
+            start: raw.start,
+            min_value: raw.min_value,
+            max_value: raw.max_value,
+            increment: raw.increment,
+        }
     }
 }
