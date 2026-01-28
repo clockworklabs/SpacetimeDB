@@ -445,6 +445,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "basic-rs-template-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb 1.11.3",
+]
+
+[[package]]
 name = "benchmarks-module"
 version = "0.1.0"
 dependencies = [
@@ -7442,7 +7450,6 @@ name = "spacetimedb-cli"
 version = "1.11.3"
 dependencies = [
  "anyhow",
- "assert_cmd",
  "base64 0.21.7",
  "bytes",
  "cargo_metadata",
@@ -7468,7 +7475,6 @@ dependencies = [
  "names",
  "notify 7.0.0",
  "percent-encoding",
- "predicates",
  "pretty_assertions",
  "quick-xml 0.31.0",
  "regex",
@@ -7485,7 +7491,6 @@ dependencies = [
  "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
- "spacetimedb-guard",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 1.11.3",
  "spacetimedb-paths",
@@ -8215,6 +8220,21 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",
+]
+
+[[package]]
+name = "spacetimedb-smoketests"
+version = "1.11.3"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "cargo_metadata",
+ "predicates",
+ "regex",
+ "serde_json",
+ "spacetimedb-guard",
+ "tempfile",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -11031,6 +11051,14 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",
+]
+
+[[package]]
+name = "xtask-smoketest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
 ]
 
 [[package]]
