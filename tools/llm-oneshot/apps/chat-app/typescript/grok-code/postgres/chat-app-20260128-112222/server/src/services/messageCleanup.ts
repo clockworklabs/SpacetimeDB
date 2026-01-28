@@ -13,28 +13,29 @@ export async function cleanupExpiredMessages() {
     const now = new Date();
 
     // Find expired messages that haven't been deleted yet
-    const expiredMessages = await db.select({ id: messages.id, roomId: messages.roomId })
+    const expiredMessages = await db
+      .select({ id: messages.id, roomId: messages.roomId })
       .from(messages)
-      .where(and(
-        lte(messages.expiresAt, now),
-        eq(messages.isDeleted, false)
-      ));
+      .where(and(lte(messages.expiresAt, now), eq(messages.isDeleted, false)));
 
     if (expiredMessages.length > 0) {
       // Mark as deleted (soft delete)
-      await db.update(messages)
+      await db
+        .update(messages)
         .set({ isDeleted: true })
-        .where(and(
-          lte(messages.expiresAt, now),
-          eq(messages.isDeleted, false)
-        ));
+        .where(
+          and(lte(messages.expiresAt, now), eq(messages.isDeleted, false))
+        );
 
       console.log(`Cleaned up ${expiredMessages.length} expired messages`);
 
       // Broadcast to clients that these messages have been deleted
       if (io) {
         for (const msg of expiredMessages) {
-          io.to(msg.roomId).emit('message_deleted', { messageId: msg.id, roomId: msg.roomId });
+          io.to(msg.roomId).emit('message_deleted', {
+            messageId: msg.id,
+            roomId: msg.roomId,
+          });
         }
       }
     }

@@ -13,23 +13,26 @@ export async function processScheduledMessages() {
     const now = new Date();
 
     // Find messages that should be sent now
-    const messagesToSend = await db.select({
-      id: messages.id,
-      roomId: messages.roomId,
-      userId: messages.userId,
-      content: messages.content,
-      createdAt: messages.createdAt,
-      expiresAt: messages.expiresAt,
-      scheduledId: scheduledMessages.id,
-      displayName: users.displayName,
-    })
-    .from(scheduledMessages)
-    .innerJoin(messages, eq(scheduledMessages.messageId, messages.id))
-    .leftJoin(users, eq(messages.userId, users.id))
-    .where(and(
-      lte(scheduledMessages.scheduledFor, now),
-      eq(scheduledMessages.status, 'pending')
-    ));
+    const messagesToSend = await db
+      .select({
+        id: messages.id,
+        roomId: messages.roomId,
+        userId: messages.userId,
+        content: messages.content,
+        createdAt: messages.createdAt,
+        expiresAt: messages.expiresAt,
+        scheduledId: scheduledMessages.id,
+        displayName: users.displayName,
+      })
+      .from(scheduledMessages)
+      .innerJoin(messages, eq(scheduledMessages.messageId, messages.id))
+      .leftJoin(users, eq(messages.userId, users.id))
+      .where(
+        and(
+          lte(scheduledMessages.scheduledFor, now),
+          eq(scheduledMessages.status, 'pending')
+        )
+      );
 
     for (const message of messagesToSend) {
       // Send the message to the room
@@ -50,13 +53,13 @@ export async function processScheduledMessages() {
       }
 
       // Mark as sent
-      await db.update(scheduledMessages)
+      await db
+        .update(scheduledMessages)
         .set({ status: 'sent' })
         .where(eq(scheduledMessages.id, message.scheduledId));
 
       console.log(`Sent scheduled message: ${message.id}`);
     }
-
   } catch (error) {
     console.error('Error processing scheduled messages:', error);
   }

@@ -6,8 +6,14 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { db } from './db';
 import { setupSocketHandlers } from './socket';
-import { cleanupExpiredMessages, setCleanupSocketServer } from './services/messageCleanup';
-import { processScheduledMessages, setSocketServer } from './services/scheduledMessages';
+import {
+  cleanupExpiredMessages,
+  setCleanupSocketServer,
+} from './services/messageCleanup';
+import {
+  processScheduledMessages,
+  setSocketServer,
+} from './services/scheduledMessages';
 
 // Load environment variables
 dotenv.config();
@@ -16,9 +22,9 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
+    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+  },
 });
 
 // Middleware

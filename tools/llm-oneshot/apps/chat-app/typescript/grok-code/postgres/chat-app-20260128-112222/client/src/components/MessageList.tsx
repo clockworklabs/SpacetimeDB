@@ -10,7 +10,13 @@ interface MessageListProps {
   onRemoveReaction: (messageId: string, emoji: string) => void;
 }
 
-function MessageList({ messages, currentUser, onEditMessage, onAddReaction, onRemoveReaction }: MessageListProps) {
+function MessageList({
+  messages,
+  currentUser,
+  onEditMessage,
+  onAddReaction,
+  onRemoveReaction,
+}: MessageListProps) {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
 
@@ -32,7 +38,11 @@ function MessageList({ messages, currentUser, onEditMessage, onAddReaction, onRe
     setEditContent('');
   };
 
-  const handleReactionClick = (messageId: string, emoji: string, hasReacted: boolean) => {
+  const handleReactionClick = (
+    messageId: string,
+    emoji: string,
+    hasReacted: boolean
+  ) => {
     if (hasReacted) {
       onRemoveReaction(messageId, emoji);
     } else {
@@ -49,8 +59,11 @@ function MessageList({ messages, currentUser, onEditMessage, onAddReaction, onRe
 
         const isOwnMessage = message.userId === currentUser.id;
         const isEditing = editingMessageId === message.id;
-        const timeAgo = formatDistanceToNow(new Date(message.createdAt), { addSuffix: true });
-        const isEdited = new Date(message.updatedAt) > new Date(message.createdAt);
+        const timeAgo = formatDistanceToNow(new Date(message.createdAt), {
+          addSuffix: true,
+        });
+        const isEdited =
+          new Date(message.updatedAt) > new Date(message.createdAt);
 
         return (
           <div
@@ -58,32 +71,42 @@ function MessageList({ messages, currentUser, onEditMessage, onAddReaction, onRe
             style={{
               marginBottom: '1rem',
               padding: '0.75rem',
-              background: isOwnMessage ? 'var(--bg-hover)' : 'var(--bg-secondary)',
+              background: isOwnMessage
+                ? 'var(--bg-hover)'
+                : 'var(--bg-secondary)',
               borderRadius: '8px',
               border: '1px solid var(--border)',
             }}
           >
             {/* Message header */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '0.5rem',
-            }}>
-              <div style={{
-                fontWeight: 'bold',
-                color: isOwnMessage ? 'var(--accent)' : 'var(--text-primary)',
-              }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '0.5rem',
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 'bold',
+                  color: isOwnMessage ? 'var(--accent)' : 'var(--text-primary)',
+                }}
+              >
                 {message.displayName}
               </div>
-              <div style={{
-                fontSize: '0.8rem',
-                color: 'var(--text-secondary)',
-              }}>
+              <div
+                style={{
+                  fontSize: '0.8rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
                 {timeAgo}
                 {isEdited && ' (edited)'}
                 {message.expiresAt && (
-                  <span style={{ color: 'var(--warning)', marginLeft: '0.5rem' }}>
+                  <span
+                    style={{ color: 'var(--warning)', marginLeft: '0.5rem' }}
+                  >
                     expires {formatDistanceToNow(new Date(message.expiresAt))}
                   </span>
                 )}
@@ -95,7 +118,7 @@ function MessageList({ messages, currentUser, onEditMessage, onAddReaction, onRe
               <div style={{ marginBottom: '0.5rem' }}>
                 <textarea
                   value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
+                  onChange={e => setEditContent(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '0.5rem',
@@ -141,30 +164,44 @@ function MessageList({ messages, currentUser, onEditMessage, onAddReaction, onRe
                 </div>
               </div>
             ) : (
-              <div style={{
-                marginBottom: '0.5rem',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}>
+              <div
+                style={{
+                  marginBottom: '0.5rem',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
                 {message.content}
               </div>
             )}
 
             {/* Reactions */}
             {message.reactions && message.reactions.length > 0 && (
-              <div style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '0.25rem',
-                marginBottom: '0.5rem',
-              }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '0.25rem',
+                  marginBottom: '0.5rem',
+                }}
+              >
                 {message.reactions.map(reaction => (
                   <button
                     key={reaction.emoji}
-                    onClick={() => handleReactionClick(message.id, reaction.emoji, reaction.users.includes(currentUser.displayName))}
+                    onClick={() =>
+                      handleReactionClick(
+                        message.id,
+                        reaction.emoji,
+                        reaction.users.includes(currentUser.displayName)
+                      )
+                    }
                     style={{
                       padding: '0.25rem 0.5rem',
-                      background: reaction.users.includes(currentUser.displayName) ? 'var(--accent)' : 'var(--bg-tertiary)',
+                      background: reaction.users.includes(
+                        currentUser.displayName
+                      )
+                        ? 'var(--accent)'
+                        : 'var(--bg-tertiary)',
                       border: '1px solid var(--border)',
                       borderRadius: '12px',
                       cursor: 'pointer',
@@ -184,11 +221,13 @@ function MessageList({ messages, currentUser, onEditMessage, onAddReaction, onRe
 
             {/* Message actions */}
             {!isEditing && (
-              <div style={{
-                display: 'flex',
-                gap: '0.5rem',
-                alignItems: 'center',
-              }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '0.5rem',
+                  alignItems: 'center',
+                }}
+              >
                 {/* Add reaction buttons */}
                 {availableEmojis.map(emoji => (
                   <button

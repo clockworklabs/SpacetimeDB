@@ -2,12 +2,22 @@ import React, { useState, useRef, useEffect } from 'react';
 
 interface MessageInputProps {
   roomId: string;
-  onSendMessage: (roomId: string, content: string, scheduledFor?: Date, expiresAt?: Date) => void;
+  onSendMessage: (
+    roomId: string,
+    content: string,
+    scheduledFor?: Date,
+    expiresAt?: Date
+  ) => void;
   onStartTyping: (roomId: string) => void;
   onStopTyping: (roomId: string) => void;
 }
 
-function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: MessageInputProps) {
+function MessageInput({
+  roomId,
+  onSendMessage,
+  onStartTyping,
+  onStopTyping,
+}: MessageInputProps) {
   const [content, setContent] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
@@ -86,11 +96,13 @@ function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: Me
   }, []);
 
   return (
-    <div style={{
-      padding: '1rem',
-      borderTop: '1px solid var(--border)',
-      background: 'var(--bg-secondary)',
-    }}>
+    <div
+      style={{
+        padding: '1rem',
+        borderTop: '1px solid var(--border)',
+        background: 'var(--bg-secondary)',
+      }}
+    >
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '0.5rem' }}>
           <textarea
@@ -115,12 +127,14 @@ function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: Me
         </div>
 
         {/* Advanced options toggle */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '0.5rem',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '0.5rem',
+          }}
+        >
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
@@ -142,7 +156,9 @@ function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: Me
             disabled={!content.trim()}
             style={{
               padding: '0.75rem 1.5rem',
-              background: content.trim() ? 'var(--accent)' : 'var(--border-light)',
+              background: content.trim()
+                ? 'var(--accent)'
+                : 'var(--border-light)',
               border: 'none',
               borderRadius: '4px',
               color: 'var(--bg-primary)',
@@ -157,18 +173,22 @@ function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: Me
 
         {/* Advanced options */}
         {showAdvanced && (
-          <div style={{
-            background: 'var(--bg-tertiary)',
-            padding: '1rem',
-            borderRadius: '4px',
-            border: '1px solid var(--border)',
-            marginBottom: '0.5rem',
-          }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '1rem',
-            }}>
+          <div
+            style={{
+              background: 'var(--bg-tertiary)',
+              padding: '1rem',
+              borderRadius: '4px',
+              border: '1px solid var(--border)',
+              marginBottom: '0.5rem',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '1rem',
+              }}
+            >
               <div>
                 <label
                   htmlFor="scheduledFor"
@@ -185,7 +205,7 @@ function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: Me
                   id="scheduledFor"
                   type="datetime-local"
                   value={scheduledFor}
-                  onChange={(e) => setScheduledFor(e.target.value)}
+                  onChange={e => setScheduledFor(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '0.5rem',
@@ -213,7 +233,7 @@ function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: Me
                   id="expiresIn"
                   type="number"
                   value={expiresIn}
-                  onChange={(e) => setExpiresIn(e.target.value)}
+                  onChange={e => setExpiresIn(e.target.value)}
                   placeholder="e.g., 5"
                   min="1"
                   max="1440"
@@ -229,13 +249,16 @@ function MessageInput({ roomId, onSendMessage, onStartTyping, onStopTyping }: Me
               </div>
             </div>
 
-            <div style={{
-              marginTop: '0.5rem',
-              fontSize: '0.8rem',
-              color: 'var(--text-muted)',
-            }}>
-              • Scheduled messages will be sent at the specified time<br/>
-              • Ephemeral messages will auto-delete after the specified duration
+            <div
+              style={{
+                marginTop: '0.5rem',
+                fontSize: '0.8rem',
+                color: 'var(--text-muted)',
+              }}
+            >
+              • Scheduled messages will be sent at the specified time
+              <br />• Ephemeral messages will auto-delete after the specified
+              duration
             </div>
           </div>
         )}

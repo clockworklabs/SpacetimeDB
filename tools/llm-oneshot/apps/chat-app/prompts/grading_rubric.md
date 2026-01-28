@@ -114,8 +114,8 @@ A reprompt is any follow-up message you send to fix issues, including:
 | 5   |          |               | Yes/No |
 | ... |          |               |        |
 
-**Total Reprompts:** **_  
-**Categories Breakdown:** Compilation: _** | Runtime: **_ | Feature: _** | Integration: **_ | Data: _**
+**Total Reprompts:** **\_  
+**Categories Breakdown:** Compilation: \_** | Runtime: **_ | Feature: _** | Integration: **_ | Data: _**
 
 ---
 

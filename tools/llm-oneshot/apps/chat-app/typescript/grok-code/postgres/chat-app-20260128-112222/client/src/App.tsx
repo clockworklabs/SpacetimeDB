@@ -13,7 +13,9 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<UnreadCount[]>([]);
-  const [typingUsers, setTypingUsers] = useState<{[roomId: string]: {userId: string, displayName: string}[]}>({});
+  const [typingUsers, setTypingUsers] = useState<{
+    [roomId: string]: { userId: string; displayName: string }[];
+  }>({});
 
   useEffect(() => {
     const newSocket = io('http://localhost:3001');
@@ -27,18 +29,28 @@ function App() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('authenticated', (data: { userId: string; displayName: string }) => {
-      setCurrentUser({ id: data.userId, displayName: data.displayName });
-      setIsAuthenticated(true);
-      // Request all available rooms after authentication
-      socket.emit('get_all_rooms');
-    });
+    socket.on(
+      'authenticated',
+      (data: { userId: string; displayName: string }) => {
+        setCurrentUser({ id: data.userId, displayName: data.displayName });
+        setIsAuthenticated(true);
+        // Request all available rooms after authentication
+        socket.emit('get_all_rooms');
+      }
+    );
 
-    socket.on('initial_data', (data: { rooms: Room[]; onlineUsers: OnlineUser[]; unreadCounts: UnreadCount[] }) => {
-      setRooms(data.rooms);
-      setOnlineUsers(data.onlineUsers);
-      setUnreadCounts(data.unreadCounts);
-    });
+    socket.on(
+      'initial_data',
+      (data: {
+        rooms: Room[];
+        onlineUsers: OnlineUser[];
+        unreadCounts: UnreadCount[];
+      }) => {
+        setRooms(data.rooms);
+        setOnlineUsers(data.onlineUsers);
+        setUnreadCounts(data.unreadCounts);
+      }
+    );
 
     socket.on('all_rooms', (data: { rooms: Room[] }) => {
       setRooms(data.rooms);
@@ -54,67 +66,105 @@ function App() {
       });
     });
 
-    socket.on('message_deleted', (data: { messageId: string; roomId: string }) => {
-      // Remove deleted message from the list
-      setMessages(prev => prev.filter(msg => msg.id !== data.messageId));
-    });
+    socket.on(
+      'message_deleted',
+      (data: { messageId: string; roomId: string }) => {
+        // Remove deleted message from the list
+        setMessages(prev => prev.filter(msg => msg.id !== data.messageId));
+      }
+    );
 
-    socket.on('room_joined', (data: { roomId: string; messages: Message[] }) => {
-      setCurrentRoomId(data.roomId);
-      setMessages(data.messages);
-    });
+    socket.on(
+      'room_joined',
+      (data: { roomId: string; messages: Message[] }) => {
+        setCurrentRoomId(data.roomId);
+        setMessages(data.messages);
+      }
+    );
 
     socket.on('new_message', (message: Message) => {
       setMessages(prev => [...prev, message]);
     });
 
-    socket.on('message_edited', (data: { messageId: string; content: string; updatedAt: Date }) => {
-      setMessages(prev => prev.map(msg =>
-        msg.id === data.messageId
-          ? { ...msg, content: data.content, updatedAt: data.updatedAt }
-          : msg
-      ));
-    });
+    socket.on(
+      'message_edited',
+      (data: { messageId: string; content: string; updatedAt: Date }) => {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === data.messageId
+              ? { ...msg, content: data.content, updatedAt: data.updatedAt }
+              : msg
+          )
+        );
+      }
+    );
 
     socket.on('user_online', (user: OnlineUser) => {
-      setOnlineUsers(prev => [...prev.filter(u => u.userId !== user.userId), user]);
+      setOnlineUsers(prev => [
+        ...prev.filter(u => u.userId !== user.userId),
+        user,
+      ]);
     });
 
     socket.on('user_offline', (data: { userId: string }) => {
       setOnlineUsers(prev => prev.filter(u => u.userId !== data.userId));
     });
 
-    socket.on('user_typing', (data: { userId: string; displayName: string; roomId: string }) => {
-      setTypingUsers(prev => ({
-        ...prev,
-        [data.roomId]: [...(prev[data.roomId] || []).filter(u => u.userId !== data.userId), { userId: data.userId, displayName: data.displayName }]
-      }));
-    });
+    socket.on(
+      'user_typing',
+      (data: { userId: string; displayName: string; roomId: string }) => {
+        setTypingUsers(prev => ({
+          ...prev,
+          [data.roomId]: [
+            ...(prev[data.roomId] || []).filter(u => u.userId !== data.userId),
+            { userId: data.userId, displayName: data.displayName },
+          ],
+        }));
+      }
+    );
 
-    socket.on('user_stopped_typing', (data: { userId: string; roomId: string }) => {
-      setTypingUsers(prev => ({
-        ...prev,
-        [data.roomId]: (prev[data.roomId] || []).filter(u => u.userId !== data.userId)
-      }));
-    });
+    socket.on(
+      'user_stopped_typing',
+      (data: { userId: string; roomId: string }) => {
+        setTypingUsers(prev => ({
+          ...prev,
+          [data.roomId]: (prev[data.roomId] || []).filter(
+            u => u.userId !== data.userId
+          ),
+        }));
+      }
+    );
 
-    socket.on('message_read', (data: { messageId: string; userId: string; displayName: string }) => {
-      // Could update read receipts display here
-    });
+    socket.on(
+      'message_read',
+      (data: { messageId: string; userId: string; displayName: string }) => {
+        // Could update read receipts display here
+      }
+    );
 
-    socket.on('reaction_updated', (data: { messageId: string; reactions: any[] }) => {
-      setMessages(prev => prev.map(msg =>
-        msg.id === data.messageId
-          ? { ...msg, reactions: data.reactions }
-          : msg
-      ));
-    });
+    socket.on(
+      'reaction_updated',
+      (data: { messageId: string; reactions: any[] }) => {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === data.messageId
+              ? { ...msg, reactions: data.reactions }
+              : msg
+          )
+        );
+      }
+    );
 
-    socket.on('unread_count_updated', (data: { roomId: string; count: number }) => {
-      setUnreadCounts(prev => prev.map(uc =>
-        uc.roomId === data.roomId ? { ...uc, count: data.count } : uc
-      ));
-    });
+    socket.on(
+      'unread_count_updated',
+      (data: { roomId: string; count: number }) => {
+        setUnreadCounts(prev =>
+          prev.map(uc =>
+            uc.roomId === data.roomId ? { ...uc, count: data.count } : uc
+          )
+        );
+      }
+    );
 
     socket.on('error', (error: { message: string }) => {
       alert(error.message);
@@ -158,7 +208,12 @@ function App() {
     }
   };
 
-  const sendMessage = (roomId: string, content: string, scheduledFor?: Date, expiresAt?: Date) => {
+  const sendMessage = (
+    roomId: string,
+    content: string,
+    scheduledFor?: Date,
+    expiresAt?: Date
+  ) => {
     if (socket) {
       socket.emit('send_message', { roomId, content, scheduledFor, expiresAt });
     }

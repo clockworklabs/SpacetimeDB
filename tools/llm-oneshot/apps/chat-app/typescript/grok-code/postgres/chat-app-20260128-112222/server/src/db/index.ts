@@ -7,7 +7,9 @@ import * as schema from './schema';
 dotenv.config();
 
 // Database connection
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/chat-app';
+const connectionString =
+  process.env.DATABASE_URL ||
+  'postgresql://postgres:postgres@localhost:5432/chat-app';
 const client = postgres(connectionString, { prepare: false });
 export const db = drizzle(client, { schema });
 

@@ -8,22 +8,22 @@
 
 ## Overall Metrics
 
-| Metric                  | Value                      |
-| ----------------------- | -------------------------- |
-| **Prompt Level Used**   | 5 (05_edit_history.md)     |
-| **Features Evaluated**  | 1-8 (max 15)               |
-| **Total Feature Score** | 11.25 / 24                 |
-| **Percentage**          | 46.9%                      |
+| Metric                  | Value                  |
+| ----------------------- | ---------------------- |
+| **Prompt Level Used**   | 5 (05_edit_history.md) |
+| **Features Evaluated**  | 1-8 (max 15)           |
+| **Total Feature Score** | 11.25 / 24             |
+| **Percentage**          | 46.9%                  |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
 - [ ] First-try success
 
-| Metric                   | Value                                                                   |
-| ------------------------ | ----------------------------------------------------------------------- |
-| Lines of code (backend)  | 731                                                                     |
-| Lines of code (frontend) | 1,252                                                                   |
-| Number of files created  | 27                                                                      |
+| Metric                   | Value                                                                    |
+| ------------------------ | ------------------------------------------------------------------------ |
+| Lines of code (backend)  | 731                                                                      |
+| Lines of code (frontend) | 1,252                                                                    |
+| Number of files created  | 27                                                                       |
 | External dependencies    | drizzle-orm, postgres, express, socket.io, react, vite, socket.io-client |
 
 ---
@@ -117,17 +117,17 @@ _Not included in prompt level 5_
 
 ## Summary Score Sheet
 
-| Feature                  | Max    | Score   | Reprompts |
-| ------------------------ | ------ | ------- | --------- |
-| 1. Basic Chat            | 3      | 0.75    | 2         |
-| 2. Typing Indicators     | 3      | 3       | 0         |
-| 3. Read Receipts         | 3      | 0       | 0         |
-| 4. Unread Counts         | 3      | 0       | 0         |
-| 5. Scheduled Messages    | 3      | 0       | 1         |
-| 6. Ephemeral Messages    | 3      | 2.5     | 1         |
-| 7. Message Reactions     | 3      | 3       | 0         |
-| 8. Message Editing       | 3      | 2       | 0         |
-| **TOTAL**                | **24** | **11.25** | **4**   |
+| Feature               | Max    | Score     | Reprompts |
+| --------------------- | ------ | --------- | --------- |
+| 1. Basic Chat         | 3      | 0.75      | 2         |
+| 2. Typing Indicators  | 3      | 3         | 0         |
+| 3. Read Receipts      | 3      | 0         | 0         |
+| 4. Unread Counts      | 3      | 0         | 0         |
+| 5. Scheduled Messages | 3      | 0         | 1         |
+| 6. Ephemeral Messages | 3      | 2.5       | 1         |
+| 7. Message Reactions  | 3      | 3         | 0         |
+| 8. Message Editing    | 3      | 2         | 0         |
+| **TOTAL**             | **24** | **11.25** | **4**     |
 
 ---
 

@@ -49,11 +49,13 @@ function CreateRoomModal({ onCreateRoom, onClose }: CreateRoomModalProps) {
           maxWidth: '400px',
         }}
       >
-        <h3 style={{
-          color: 'var(--accent)',
-          marginBottom: '1.5rem',
-          textAlign: 'center',
-        }}>
+        <h3
+          style={{
+            color: 'var(--accent)',
+            marginBottom: '1.5rem',
+            textAlign: 'center',
+          }}
+        >
           Create New Room
         </h3>
 
@@ -74,7 +76,7 @@ function CreateRoomModal({ onCreateRoom, onClose }: CreateRoomModalProps) {
               id="roomName"
               type="text"
               value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
+              onChange={e => setRoomName(e.target.value)}
               placeholder="Enter room name"
               style={{
                 width: '100%',
@@ -90,11 +92,13 @@ function CreateRoomModal({ onCreateRoom, onClose }: CreateRoomModalProps) {
             />
           </div>
 
-          <div style={{
-            display: 'flex',
-            gap: '1rem',
-            justifyContent: 'flex-end',
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '1rem',
+              justifyContent: 'flex-end',
+            }}
+          >
             <button
               type="button"
               onClick={onClose}
@@ -115,7 +119,9 @@ function CreateRoomModal({ onCreateRoom, onClose }: CreateRoomModalProps) {
               disabled={!roomName.trim()}
               style={{
                 padding: '0.75rem 1.5rem',
-                background: roomName.trim() ? 'var(--accent)' : 'var(--border-light)',
+                background: roomName.trim()
+                  ? 'var(--accent)'
+                  : 'var(--border-light)',
                 border: 'none',
                 borderRadius: '4px',
                 color: 'var(--bg-primary)',

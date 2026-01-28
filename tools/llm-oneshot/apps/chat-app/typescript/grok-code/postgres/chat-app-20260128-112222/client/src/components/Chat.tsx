@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Room, Message, OnlineUser, UnreadCount, TypingUser } from '../types';
+import {
+  User,
+  Room,
+  Message,
+  OnlineUser,
+  UnreadCount,
+  TypingUser,
+} from '../types';
 import RoomList from './RoomList';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
@@ -13,10 +20,15 @@ interface ChatProps {
   messages: Message[];
   onlineUsers: OnlineUser[];
   unreadCounts: UnreadCount[];
-  typingUsers: {[roomId: string]: TypingUser[]};
+  typingUsers: { [roomId: string]: TypingUser[] };
   onCreateRoom: (name: string) => void;
   onJoinRoom: (roomId: string) => void;
-  onSendMessage: (roomId: string, content: string, scheduledFor?: Date, expiresAt?: Date) => void;
+  onSendMessage: (
+    roomId: string,
+    content: string,
+    scheduledFor?: Date,
+    expiresAt?: Date
+  ) => void;
   onEditMessage: (messageId: string, content: string) => void;
   onStartTyping: (roomId: string) => void;
   onStopTyping: (roomId: string) => void;
@@ -60,27 +72,35 @@ function Chat({
   }, [currentRoomId, messages, onMarkAsRead]);
 
   const currentRoom = rooms.find(room => room.id === currentRoomId);
-  const currentTypingUsers = currentRoomId ? typingUsers[currentRoomId] || [] : [];
+  const currentTypingUsers = currentRoomId
+    ? typingUsers[currentRoomId] || []
+    : [];
 
   return (
-    <div style={{
-      display: 'flex',
-      height: '100vh',
-      background: 'var(--bg-primary)',
-    }}>
-      {/* Sidebar */}
-      <div style={{
-        width: '300px',
-        borderRight: '1px solid var(--border)',
+    <div
+      style={{
         display: 'flex',
-        flexDirection: 'column',
-      }}>
+        height: '100vh',
+        background: 'var(--bg-primary)',
+      }}
+    >
+      {/* Sidebar */}
+      <div
+        style={{
+          width: '300px',
+          borderRight: '1px solid var(--border)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {/* User info */}
-        <div style={{
-          padding: '1rem',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-secondary)',
-        }}>
+        <div
+          style={{
+            padding: '1rem',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--bg-secondary)',
+          }}
+        >
           <h3 style={{ color: 'var(--accent)', marginBottom: '0.5rem' }}>
             {currentUser.displayName}
           </h3>
@@ -113,33 +133,40 @@ function Chat({
       </div>
 
       {/* Main chat area */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {/* Room header */}
         {currentRoom && (
-          <div style={{
-            padding: '1rem',
-            borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-secondary)',
-          }}>
+          <div
+            style={{
+              padding: '1rem',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--bg-secondary)',
+            }}
+          >
             <h2 style={{ color: 'var(--accent)', margin: 0 }}>
               {currentRoom.name}
             </h2>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              {currentRoom.memberCount} member{currentRoom.memberCount !== 1 ? 's' : ''}
+              {currentRoom.memberCount} member
+              {currentRoom.memberCount !== 1 ? 's' : ''}
             </div>
           </div>
         )}
 
         {/* Messages */}
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '1rem',
-        }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '1rem',
+          }}
+        >
           {currentRoomId ? (
             <>
               <MessageList
@@ -153,27 +180,30 @@ function Chat({
 
               {/* Typing indicators */}
               {currentTypingUsers.length > 0 && (
-                <div style={{
-                  marginTop: '1rem',
-                  color: 'var(--text-secondary)',
-                  fontSize: '0.9rem',
-                  fontStyle: 'italic',
-                }}>
+                <div
+                  style={{
+                    marginTop: '1rem',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.9rem',
+                    fontStyle: 'italic',
+                  }}
+                >
                   {currentTypingUsers.length === 1
                     ? `${currentTypingUsers[0].displayName} is typing...`
-                    : `${currentTypingUsers.length} users are typing...`
-                  }
+                    : `${currentTypingUsers.length} users are typing...`}
                 </div>
               )}
             </>
           ) : (
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              height: '100%',
-              color: 'var(--text-secondary)',
-            }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100%',
+                color: 'var(--text-secondary)',
+              }}
+            >
               Select a room to start chatting
             </div>
           )}
