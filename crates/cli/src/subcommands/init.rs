@@ -9,7 +9,7 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 use toml_edit::{value, DocumentMut, Item};
@@ -18,6 +18,7 @@ use xmltree::{Element, XMLNode};
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 mod embedded {
+    use spacetimedb_data_structures::map::HashCollectionExt as _;
     include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
 }
 

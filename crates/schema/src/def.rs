@@ -685,7 +685,7 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
-    /// Implemented using a rust `std::collections::HashMap`.
+    /// Implemented using a rust `HashMap`.
     Hash(HashAlgorithm),
     /// Implemented using `DirectUniqueIndex`.
     Direct(DirectAlgorithm),

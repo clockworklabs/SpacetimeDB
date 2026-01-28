@@ -59,7 +59,7 @@ pub struct Plan {
 }
 
 impl CollectViews for Plan {
-    fn collect_views(&self, views: &mut std::collections::HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         for plan in &self.plans {
             plan.collect_views(views);
         }
