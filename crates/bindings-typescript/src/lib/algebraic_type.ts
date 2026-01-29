@@ -80,10 +80,10 @@ export type Deserializer<T> = (reader: BinaryReader) => T;
 // Caches to prevent `makeSerializer`/`makeDeserializer` from recursing
 // infinitely when called on recursive types.
 //
-// We check for recursion in `{Product,Sum}Type.make{Deser,Ser}ializer` because
-// `ProductType` and `SumType` are the cases where recursive types are possible.
-// Additionally, if the check was in `AlgebraicType`, calling
-// `ProductType.makeSerializer` directly wouldn't cache anything.
+// We check for recursion in `{Product,Sum}Type.make{Deser,Ser}ializer` rather
+// than in `AlgebraciType.make{Deser,Ser}ializer` because we need to store the
+// [de]serializer in the cache before recursing into its fields/variants, and
+// we wouldn't be able to do that in the `AlgebraicType` functions.
 const SERIALIZERS = new Map<ProductType | SumType, Serializer<any>>();
 const DESERIALIZERS = new Map<ProductType | SumType, Deserializer<any>>();
 
