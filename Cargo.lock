@@ -1907,6 +1907,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "ecow"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78e4f79b296fbaab6ce2e22d52cb4c7f010fe0ebe7a32e34fa25885fd797bd02"
+
+[[package]]
 name = "educe"
 version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7336,6 +7342,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "spacetimedb-data-structures",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 1.12.0",
 ]
@@ -7768,8 +7775,10 @@ version = "1.12.0"
 dependencies = [
  "ahash 0.8.12",
  "crossbeam-queue",
+ "either",
  "hashbrown 0.16.1",
  "nohash-hasher",
+ "proptest",
  "serde",
  "smallvec",
  "spacetimedb-memory-usage",
@@ -7856,6 +7865,7 @@ dependencies = [
  "ethnum",
  "pretty_assertions",
  "spacetimedb 1.12.0",
+ "spacetimedb-data-structures",
  "spacetimedb-lib 1.12.0",
  "spacetimedb-primitives 1.12.0",
  "spacetimedb-sats 1.12.0",
@@ -8027,6 +8037,7 @@ dependencies = [
  "derive_more 0.99.20",
  "either",
  "pretty_assertions",
+ "spacetimedb-data-structures",
  "spacetimedb-expr",
  "spacetimedb-lib 1.12.0",
  "spacetimedb-primitives 1.12.0",
@@ -8073,6 +8084,7 @@ dependencies = [
  "spacetimedb-lib 1.12.0",
  "spacetimedb-physical-plan",
  "spacetimedb-primitives 1.12.0",
+ "spacetimedb-schema",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
 ]
@@ -8151,6 +8163,7 @@ version = "1.12.0"
 dependencies = [
  "anyhow",
  "derive_more 0.99.20",
+ "ecow",
  "enum-as-inner",
  "enum-map",
  "indexmap 2.12.0",
@@ -8200,6 +8213,7 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-query-builder",
  "spacetimedb-sats 1.12.0",
+ "spacetimedb-schema",
  "spacetimedb-testing",
  "thiserror 1.0.69",
  "tokio",
@@ -8222,6 +8236,7 @@ dependencies = [
  "rand 0.9.2",
  "scopeguard",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
@@ -8296,12 +8311,14 @@ name = "spacetimedb-subscription"
 version = "1.12.0"
 dependencies = [
  "anyhow",
+ "spacetimedb-data-structures",
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib 1.12.0",
  "spacetimedb-physical-plan",
  "spacetimedb-primitives 1.12.0",
  "spacetimedb-query",
+ "spacetimedb-schema",
 ]
 
 [[package]]
@@ -11014,6 +11031,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb 1.12.0",
+ "spacetimedb-data-structures",
  "spacetimedb-guard",
  "tempfile",
  "thiserror 2.0.17",

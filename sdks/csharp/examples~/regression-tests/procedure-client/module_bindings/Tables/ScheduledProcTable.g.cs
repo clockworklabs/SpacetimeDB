@@ -36,4 +36,32 @@ namespace SpacetimeDB.Types
 
         public readonly ScheduledProcTableHandle ScheduledProcTable;
     }
+
+    public sealed class ScheduledProcTableCols
+    {
+        public global::SpacetimeDB.Col<ScheduledProcTable, ulong> ScheduledId { get; }
+        public global::SpacetimeDB.Col<ScheduledProcTable, SpacetimeDB.ScheduleAt> ScheduledAt { get; }
+        public global::SpacetimeDB.Col<ScheduledProcTable, SpacetimeDB.Timestamp> ReducerTs { get; }
+        public global::SpacetimeDB.Col<ScheduledProcTable, byte> X { get; }
+        public global::SpacetimeDB.Col<ScheduledProcTable, byte> Y { get; }
+
+        public ScheduledProcTableCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.Col<ScheduledProcTable, ulong>(tableName, "scheduled_id");
+            ScheduledAt = new global::SpacetimeDB.Col<ScheduledProcTable, SpacetimeDB.ScheduleAt>(tableName, "scheduled_at");
+            ReducerTs = new global::SpacetimeDB.Col<ScheduledProcTable, SpacetimeDB.Timestamp>(tableName, "reducer_ts");
+            X = new global::SpacetimeDB.Col<ScheduledProcTable, byte>(tableName, "x");
+            Y = new global::SpacetimeDB.Col<ScheduledProcTable, byte>(tableName, "y");
+        }
+    }
+
+    public sealed class ScheduledProcTableIxCols
+    {
+        public global::SpacetimeDB.IxCol<ScheduledProcTable, ulong> ScheduledId { get; }
+
+        public ScheduledProcTableIxCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.IxCol<ScheduledProcTable, ulong>(tableName, "scheduled_id");
+        }
+    }
 }
