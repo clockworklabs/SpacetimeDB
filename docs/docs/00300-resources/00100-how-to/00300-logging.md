@@ -31,7 +31,7 @@ spacetimedb.reducer('process_data', { value: t.u32() }, (ctx, { value }) => {
     throw new Error('Value cannot be zero');
   }
   
-  console.debug(`Debug information: ctx.sender = ${ctx.sender}`);
+  console.debug(`Debug information: ctx.sender() = ${ctx.sender()}`);
 });
 ```
 
@@ -102,7 +102,7 @@ pub fn process_data(ctx: &ReducerContext, value: u32) -> Result<(), String> {
         return Err("Value cannot be zero".to_string());
     }
     
-    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender());
+    log::debug!("Debug information: ctx.sender() = {:?}", ctx.sender());
     
     Ok(())
 }
@@ -186,7 +186,7 @@ Include relevant context in your log messages:
 spacetimedb.reducer('transfer_credits', 
   { to_user: t.u64(), amount: t.u32() },
   (ctx, { to_user, amount }) => {
-    console.log(`Credit transfer: from=${ctx.sender}, to=${to_user}, amount=${amount}`);
+    console.log(`Credit transfer: from=${ctx.sender()}, to=${to_user}, amount=${amount}`);
     
     // ... transfer logic
   }

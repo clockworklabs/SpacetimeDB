@@ -303,7 +303,7 @@ function validateName(name: string) {
 
 spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
   validateName(name);
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (!user) {
     throw new SenderError('Cannot set name for unknown user');
   }
@@ -388,9 +388,9 @@ function validateMessage(text: string) {
 
 spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
   validateMessage(text);
-  console.info(`User ${ctx.sender}: ${text}`);
+  console.info(`User ${ctx.sender()}: ${text}`);
   ctx.db.message.insert({
-    sender: ctx.sender,
+    sender: ctx.sender(),
     text,
     sent: ctx.timestamp,
   });
@@ -471,12 +471,12 @@ Add:
 spacetimedb.init(_ctx => {});
 
 spacetimedb.clientConnected(ctx => {
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (user) {
     ctx.db.user.identity.update({ ...user, online: true });
   } else {
     ctx.db.user.insert({
-      identity: ctx.sender,
+      identity: ctx.sender(),
       name: undefined,
       online: true,
     });
@@ -484,12 +484,12 @@ spacetimedb.clientConnected(ctx => {
 });
 
 spacetimedb.clientDisconnected(ctx => {
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
   } else {
     console.warn(
-      `Disconnect event for unknown user with identity ${ctx.sender}`
+      `Disconnect event for unknown user with identity ${ctx.sender()}`
     );
   }
 });

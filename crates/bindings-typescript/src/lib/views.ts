@@ -24,7 +24,7 @@ import { bsatnBaseSize, toPascalCase } from './util';
 import { type QueryBuilder, type RowTypedQuery } from './query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
-  sender: Identity;
+  sender: () => Identity;
   db: ReadonlyDbView<S>;
   from: QueryBuilder<S>;
 }>;

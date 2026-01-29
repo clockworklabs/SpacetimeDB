@@ -196,8 +196,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
-  #random: Random | undefined;
-  sender: Identity;
+  sender: () => Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
@@ -208,7 +207,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     connectionId: ConnectionId | null
   ) {
     Object.seal(this);
-    this.sender = sender;
+    this.sender = () => sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
     this.db = getDbView();
@@ -221,7 +220,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   get senderAuth() {
     return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
       this.connectionId,
-      this.sender
+      this.sender()
     ));
   }
 
@@ -299,8 +298,9 @@ export const hooks: ModuleHooks = {
 export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
   __call_view__(id, sender, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = VIEWS[id];
+    const senderIdentity = new Identity(sender);
     const ctx: ViewCtx<any> = freeze({
-      sender: new Identity(sender),
+      sender: () => senderIdentity,
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime

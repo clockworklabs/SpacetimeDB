@@ -89,7 +89,7 @@ Runs when a client establishes a connection.
 
 ```typescript
 spacetimedb.clientConnected((ctx) => {
-  console.log(`Client connected: ${ctx.sender}`);
+  console.log(`Client connected: ${ctx.sender()}`);
   
   // ctx.connectionId is guaranteed to be defined
   const connId = ctx.connectionId!;
@@ -97,7 +97,7 @@ spacetimedb.clientConnected((ctx) => {
   // Initialize client session
   ctx.db.sessions.insert({
     connection_id: connId,
-    identity: ctx.sender,
+    identity: ctx.sender(),
     connected_at: ctx.timestamp
   });
 });
@@ -165,7 +165,7 @@ Runs when a client connection terminates.
 
 ```typescript
 spacetimedb.clientDisconnected((ctx) => {
-  console.log(`Client disconnected: ${ctx.sender}`);
+  console.log(`Client disconnected: ${ctx.sender()}`);
   
   // ctx.connectionId is guaranteed to be defined
   const connId = ctx.connectionId!;

@@ -438,7 +438,7 @@ fn fetch_data(ctx: &mut ProcedureContext, url: String) -> String {
 ```typescript
 // Return single row
 spacetimedb.view('my_player', {}, t.option(player.rowType), ctx => {
-  return ctx.db.player.identity.find(ctx.sender);
+  return ctx.db.player.identity.find(ctx.sender());
 });
 
 // Return multiple rows
@@ -499,7 +499,7 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 
 ```typescript
 ctx.db                  // Database access
-ctx.sender              // Identity of caller
+ctx.sender()            // Identity of caller
 ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
 ctx.identity            // Module's identity

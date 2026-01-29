@@ -31,7 +31,7 @@ export function callProcedure(
   );
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = {
-    sender,
+    sender: () => sender,
     timestamp,
     connectionId,
     http: httpClient,

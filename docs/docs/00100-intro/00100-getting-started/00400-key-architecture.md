@@ -424,7 +424,7 @@ spacetimedb.view(
   { name: 'my_player', public: true },
   t.option(players.row()),
   (ctx) => {
-    const row = ctx.db.players.identity.find(ctx.sender);
+    const row = ctx.db.players.identity.find(ctx.sender());
     return row ?? null;
   }
 );

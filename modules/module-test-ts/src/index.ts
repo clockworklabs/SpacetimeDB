@@ -224,7 +224,7 @@ spacetimedb.view(
   { name: 'my_player', public: true },
   playerLikeRow.optional(),
   // FIXME: this should not be necessary; change `OptionBuilder` to accept `null|undefined` for `none`
-  ctx => ctx.db.player.identity.find(ctx.sender) ?? undefined
+  ctx => ctx.db.player.identity.find(ctx.sender()) ?? undefined
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,7 +288,7 @@ spacetimedb.reducer(
   { arg: testA, arg2: testB, arg3: testC, arg4: testF },
   (ctx, { arg, arg2, arg3, arg4 }) => {
     console.info('BEGIN');
-    console.info(`sender: ${ctx.sender}`);
+    console.info(`sender: ${ctx.sender()}`);
     console.info(`timestamp: ${ctx.timestamp}`);
     console.info(`bar: ${arg2.foo}`);
 
@@ -433,7 +433,7 @@ spacetimedb.reducer('test_btree_index_args', {}, ctx => {
 
 // assert_caller_identity_is_module_identity
 spacetimedb.reducer('assert_caller_identity_is_module_identity', {}, ctx => {
-  const caller = ctx.sender;
+  const caller = ctx.sender();
   const owner = ctx.identity;
   if (String(caller) !== String(owner)) {
     throw new Error(`Caller ${caller} is not the owner ${owner}`);

@@ -358,8 +358,8 @@ spacetimedb.view(
   t.array(message.rowType),
   (ctx) => {
     // Look up messages by index where caller is sender or recipient
-    const sent = Array.from(ctx.db.message.sender.filter(ctx.sender));
-    const received = Array.from(ctx.db.message.recipient.filter(ctx.sender));
+    const sent = Array.from(ctx.db.message.sender.filter(ctx.sender()));
+    const received = Array.from(ctx.db.message.recipient.filter(ctx.sender()));
     return [...sent, ...received];
   }
 );
@@ -476,7 +476,7 @@ spacetimedb.view(
   t.option(publicUserProfile),
   (ctx) => {
     // Look up the caller's account by their identity (unique index)
-    const user = ctx.db.userAccount.identity.find(ctx.sender);
+    const user = ctx.db.userAccount.identity.find(ctx.sender());
     if (!user) return null;
     return {
       id: user.id,
@@ -626,7 +626,7 @@ spacetimedb.view(
   t.array(colleague),
   (ctx) => {
     // Find the caller's employee record by identity (unique index)
-    const me = ctx.db.employee.identity.find(ctx.sender);
+    const me = ctx.db.employee.identity.find(ctx.sender());
     if (!me) return [];
 
     // Look up employees in the same department

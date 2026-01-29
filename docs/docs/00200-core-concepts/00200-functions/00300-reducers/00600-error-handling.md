@@ -26,7 +26,7 @@ import { SenderError } from 'spacetimedb/server';
 spacetimedb.reducer('transfer_credits', 
   { to_user: t.u64(), amount: t.u32() },
   (ctx, { to_user, amount }) => {
-    const fromUser = ctx.db.users.id.find(ctx.sender);
+    const fromUser = ctx.db.users.id.find(ctx.sender());
     if (!fromUser) {
       throw new SenderError('User not found');
     }
@@ -88,7 +88,7 @@ pub fn transfer_credits(
     to_user: u64,
     amount: u32
 ) -> Result<(), String> {
-    let from_balance = ctx.db.users().id().find(ctx.sender.identity)
+    let from_balance = ctx.db.users().id().find(ctx.sender())
         .ok_or("User not found");
     
     if from_balance.credits < amount {

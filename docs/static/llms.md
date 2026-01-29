@@ -434,7 +434,7 @@ pub struct PlayerSessionData {
 fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     // Reducers interact with the specific table handles:
     let session = PlayerSessionData {
-        player_id: ctx.sender, // Example: Use sender identity
+        player_id: ctx.sender(), // Example: Use sender identity
         session_id: 0, // Assuming auto_inc
         last_activity: ctx.timestamp,
     };
@@ -446,12 +446,12 @@ fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     }
 
     // Find a player in the 'players_in_lobby' table by primary key
-    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender) {
+    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender()) {
         spacetimedb::log::info!("Player {} found in lobby.", lobby_player.player_id);
     }
 
     // Delete from the 'logged_in_players' table using the PK index
-    ctx.db.logged_in_players().player_id().delete(&ctx.sender);
+    ctx.db.logged_in_players().player_id().delete(&ctx.sender());
 }
 ```
 
@@ -499,7 +499,7 @@ use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 // Example: Basic reducer to set a user's name
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let sender_id = ctx.sender;
+    let sender_id = ctx.sender();
     let name = validate_name(name)?; // Use helper for validation
 
     // Find the user row by primary key
@@ -519,13 +519,13 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 #[reducer]
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?; // Use helper for validation
-    log::info!("User {} sent message: {}", ctx.sender, text);
+    log::info!("User {} sent message: {}", ctx.sender(), text);
 
     // Insert a new row into the Message table
     // Note: id is auto_inc, so we provide 0. insert() panics on constraint violation.
     let new_message = Message {
         id: 0,
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     };
@@ -611,15 +611,15 @@ pub fn initialize_database(ctx: &ReducerContext) {
 // Example client_connected reducer
 #[reducer(client_connected)]
 pub fn handle_connect(ctx: &ReducerContext) {
-    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
-    // ... setup initial state for ctx.sender ...
+    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id);
+    // ... setup initial state for ctx.sender() ...
 }
 
 // Example client_disconnected reducer
 #[reducer(client_disconnected)]
 pub fn handle_disconnect(ctx: &ReducerContext) {
-    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
-    // ... cleanup state for ctx.sender ...
+    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id);
+    // ... cleanup state for ctx.sender() ...
 }
 ```
 
@@ -800,7 +800,7 @@ struct SendMessageSchedule {
 #[reducer]
 fn send_message(ctx: &ReducerContext, args: SendMessageSchedule) -> Result<(), String> {
     // Security check is important!
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         return Err("Reducer `send_message` may not be invoked by clients, only via scheduling.".into());
     }
 
@@ -860,7 +860,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
   #[reducer]
   fn my_scheduled_reducer(ctx: &ReducerContext, args: MyScheduleArgs) -> Result<(), String> {
-      if ctx.sender != ctx.identity() {
+      if ctx.sender() != ctx.identity() {
           return Err("Reducer `my_scheduled_reducer` may not be invoked by clients, only via scheduling.".into());
       }
       // ... Reducer body proceeds only if called by scheduler ...
@@ -869,7 +869,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
   ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will be `None`.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender()` will be the module's own identity, and `ctx.connection_id` will be `None`.
 :::
 
 #### View Functions
@@ -922,7 +922,7 @@ pub struct PlayerAndLevel {
 // Returns Option<T> for at-most-one row
 #[view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // View that returns all players at a specific level (same for all callers)
@@ -953,7 +953,7 @@ fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
 
 Views use one of two context types:
 
-- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender()`. Use this when the view depends on who is querying it (e.g., "get my player").
 - **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
 Both contexts provide read-only access to tables and indexes through `ctx.db`.
@@ -984,7 +984,7 @@ use spacetimedb::{view, ViewContext, Query};
 fn my_messages(ctx: &ViewContext) -> Query<Message> {
     // Build a typed query using the query builder
     ctx.db.message()
-        .filter(|cols| cols.sender.eq(ctx.sender))
+        .filter(|cols| cols.sender.eq(ctx.sender()))
         .build()
 }
 
@@ -1633,13 +1633,13 @@ These reducers cannot take arguments beyond `&ReducerContext`.
 [Reducer(ReducerKind.ClientConnected)]
 public static void HandleConnect(ReducerContext ctx) {
     Log.Info($"Client connected: {ctx.Sender()}");
-    // ... setup initial state for ctx.sender ...
+    // ... setup initial state for ctx.sender() ...
 }
 
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void HandleDisconnect(ReducerContext ctx) {
     Log.Info($"Client disconnected: {ctx.Sender()}");
-    // ... cleanup state for ctx.sender ...
+    // ... cleanup state for ctx.sender() ...
 }
 ```
 
@@ -2355,7 +2355,7 @@ function validateName(name: string) {
 // Arguments: reducer name, argument types object, callback
 spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
   validateName(name);
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (!user) {
     throw new SenderError('Cannot set name for unknown user');
   }
@@ -2368,7 +2368,7 @@ spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
     throw new SenderError('Messages must not be empty');
   }
   ctx.db.message.insert({
-    sender: ctx.sender,
+    sender: ctx.sender(),
     text,
     sent: ctx.timestamp,
   });
@@ -2399,12 +2399,12 @@ spacetimedb.init(ctx => {
 
 // Called when a client connects
 spacetimedb.clientConnected(ctx => {
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (user) {
     ctx.db.user.identity.update({ ...user, online: true });
   } else {
     ctx.db.user.insert({
-      identity: ctx.sender,
+      identity: ctx.sender(),
       name: undefined,
       online: true,
     });
@@ -2413,7 +2413,7 @@ spacetimedb.clientConnected(ctx => {
 
 // Called when a client disconnects
 spacetimedb.clientDisconnected(ctx => {
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
   }
@@ -2426,13 +2426,13 @@ Views are read-only functions that return computed data from tables. Define view
 
 ```typescript
 // View that returns the caller's user (user-specific)
-// Uses spacetimedb.view() which provides ctx.sender
+// Uses spacetimedb.view() which provides ctx.sender()
 spacetimedb.view('my_user', ctx => {
-  return ctx.db.user.identity.find(ctx.sender);
+  return ctx.db.user.identity.find(ctx.sender());
 });
 
 // View that returns all online users (same for all callers)
-// Uses spacetimedb.anonymousView() - no access to ctx.sender
+// Uses spacetimedb.anonymousView() - no access to ctx.sender()
 spacetimedb.anonymousView('online_users', ctx => {
   return ctx.db.user.filter(u => u.online);
 });
@@ -2440,7 +2440,7 @@ spacetimedb.anonymousView('online_users', ctx => {
 
 **view() vs anonymousView()**
 
-- **`spacetimedb.view()`**: Provides access to the caller's `Identity` through `ctx.sender`. Use when results depend on who is querying.
+- **`spacetimedb.view()`**: Provides access to the caller's `Identity` through `ctx.sender()`. Use when results depend on who is querying.
 - **`spacetimedb.anonymousView()`**: Does not provide caller information. Use when results are the same for all callers.
 
 **Performance Note**: Because anonymous views are guaranteed not to access the caller's identity, SpacetimeDB can share the computed view results across multiple connected clients. This provides significant performance benefits. Prefer `anonymousView()` when possible.
@@ -2451,12 +2451,12 @@ All table operations are performed via `ctx.db`:
 
 **Insert**
 ```typescript
-ctx.db.user.insert({ identity: ctx.sender, name: 'Alice', online: true });
+ctx.db.user.insert({ identity: ctx.sender(), name: 'Alice', online: true });
 ```
 
 **Find by unique/primary key**
 ```typescript
-const user = ctx.db.user.identity.find(ctx.sender);  // Returns row or undefined
+const user = ctx.db.user.identity.find(ctx.sender());  // Returns row or undefined
 ```
 
 **Filter by indexed column**
@@ -2466,7 +2466,7 @@ const onlineUsers = ctx.db.user.filter(u => u.online === true);
 
 **Update (for tables with primary key)**
 ```typescript
-const user = ctx.db.user.identity.find(ctx.sender);
+const user = ctx.db.user.identity.find(ctx.sender());
 if (user) {
   ctx.db.user.identity.update({ ...user, online: false });
 }
@@ -2474,7 +2474,7 @@ if (user) {
 
 **Delete**
 ```typescript
-ctx.db.user.identity.delete(ctx.sender);
+ctx.db.user.identity.delete(ctx.sender());
 ```
 
 #### 7. Building and Publishing

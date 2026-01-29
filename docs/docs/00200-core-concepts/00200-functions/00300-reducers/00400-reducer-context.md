@@ -111,7 +111,7 @@ const spacetimedb = schema(player);
 
 spacetimedb.reducer('update_score', { newScore: t.u32() }, (ctx, { newScore }) => {
   // Get the caller's identity
-  const caller = ctx.sender;
+  const caller = ctx.sender();
   
   // Find and update their player record
   const existingPlayer = ctx.db.player.identity.find(caller);
@@ -232,7 +232,7 @@ const spacetimedb = schema(scheduledTask);
 
 spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg }) => {
   // Only allow the scheduler (module identity) to call this
-  if (ctx.sender != ctx.identity) {
+  if (ctx.sender() != ctx.identity) {
     throw new SenderError('This reducer can only be called by the scheduler');
   }
   
@@ -309,7 +309,6 @@ fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
 | Property       | Type                       | Description                                     |
 | -------------- | -------------------------- | ----------------------------------------------- |
 | `db`           | `DbView`                   | Access to the module's database tables          |
-| `sender`       | `Identity`                 | Identity of the caller                          |
 | `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
 | `connectionId` | `ConnectionId \| undefined`| Connection ID of the caller, if available       |
 | `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
@@ -323,7 +322,6 @@ TypeScript uses `Math.random()` for random number generation, which is automatic
 | Property       | Type                  | Description                                     |
 | -------------- | --------------------- | ----------------------------------------------- |
 | `Db`           | `DbView`              | Access to the module's database tables          |
-| `Sender`       | `Identity`            | Identity of the caller                          |
 | `SenderAuth`   | `AuthCtx`             | Authorization context for the caller (includes JWT claims and internal call detection) |
 | `ConnectionId` | `ConnectionId?`       | Connection ID of the caller, if available       |
 | `Timestamp`    | `Timestamp`           | Time when the reducer was invoked               |
@@ -335,13 +333,13 @@ TypeScript uses `Math.random()` for random number generation, which is automatic
 | Property        | Type                  | Description                                     |
 | --------------- | --------------------- | ----------------------------------------------- |
 | `db`            | `Local`               | Access to the module's database tables          |
-| `sender`        | `Identity`            | Identity of the caller                          |
 | `connection_id` | `Option<ConnectionId>`| Connection ID of the caller, if available       |
 | `timestamp`     | `Timestamp`           | Time when the reducer was invoked               |
 
 **Methods:**
 
 - `identity() -> Identity` - Get the module's identity
+- `sender() -> Identity` - Get the identity of the caller
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
 - `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)

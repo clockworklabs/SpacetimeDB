@@ -943,7 +943,7 @@ spacetimedb.procedure(
     // Store the conversation in the database
     ctx.withTx(txCtx => {
       txCtx.db.aiMessage.insert({
-        user: txCtx.sender,
+        user: txCtx.sender(),
         prompt,
         response: aiResponse,
         createdAt: txCtx.timestamp,
@@ -1088,7 +1088,7 @@ pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Re
     // Store the conversation in the database
     ctx.with_tx(|tx_ctx| {
         tx_ctx.db.ai_message().insert(AiMessage {
-            user: tx_ctx.sender,
+            user: tx_ctx.sender(),
             prompt: prompt.clone(),
             response: ai_response.clone(),
             created_at: tx_ctx.timestamp,

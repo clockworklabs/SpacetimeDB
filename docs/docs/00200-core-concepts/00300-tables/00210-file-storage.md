@@ -176,7 +176,7 @@ spacetimedb.reducer('register_document', {
 }, (ctx, { filename, mimeType, sizeBytes, storageUrl }) => {
   ctx.db.document.insert({
     id: 0,  // auto-increment
-    ownerId: ctx.sender,
+    ownerId: ctx.sender(),
     filename,
     mimeType,
     sizeBytes,

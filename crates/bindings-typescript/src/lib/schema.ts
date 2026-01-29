@@ -310,7 +310,7 @@ export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
  *   {  username: t.string(), email: t.string() },
  *   (ctx, { username, email }) => {
  *     ctx.db.user.insert({ username, email, created_at: ctx.timestamp });
- *     console.log(`User ${username} created by ${ctx.sender.identityId}`);
+ *     console.log(`User ${username} created by ${ctx.sender().identityId}`);
  *   }
  * );
  * ```
@@ -364,7 +364,7 @@ class Schema<S extends UntypedSchemaDef> {
    *   (ctx, { username, email }) => {
    *     // Access the 'user' table from the database view in the context
    *     ctx.db.user.insert({ username, email, created_at: ctx.timestamp });
-   *     console.log(`User ${username} created by ${ctx.sender.identityId}`);
+   *     console.log(`User ${username} created by ${ctx.sender().identityId}`);
    *   }
    * );
    * ```
