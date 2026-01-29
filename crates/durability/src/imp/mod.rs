@@ -41,7 +41,7 @@ mod testing {
     impl<T: Send + Sync> Durability for NoDurability<T> {
         type TxData = T;
 
-        fn commit(&self, _: Box<[Transaction<Self::TxData>]>) {
+        fn append_tx(&self, _: Transaction<Self::TxData>) {
             if self.closed.load(Ordering::Relaxed) {
                 panic!("`close` was called on this `NoDurability` instance");
             }

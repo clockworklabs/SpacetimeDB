@@ -109,16 +109,13 @@ pub trait Durability: Send + Sync {
     /// The payload representing a single transaction.
     type TxData;
 
-    /// Submit a batch of [Transaction]s to be made durable.
+    /// Submit a [Transaction] to be made durable.
     ///
     /// This method must never block, and accept new transactions even if they
     /// cannot be made durable immediately.
     ///
     /// Errors may be signalled by panicking.
-    //
-    // TODO(perf): Can we avoid allocating a new `Box<[_]>` for every commit,
-    // or at least reuse boxes?
-    fn commit(&self, txs: Box<[Transaction<Self::TxData>]>);
+    fn append_tx(&self, tx: Transaction<Self::TxData>);
 
     /// Obtain a handle to the [DurableOffset].
     fn durable_tx_offset(&self) -> DurableOffset;

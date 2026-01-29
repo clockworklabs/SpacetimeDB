@@ -78,7 +78,7 @@ pub struct Local<T> {
     /// [`PersisterTask`].
     ///
     /// Note that this is unbounded!
-    queue: mpsc::UnboundedSender<Box<[Transaction<Txdata<T>>]>>,
+    queue: mpsc::UnboundedSender<Transaction<Txdata<T>>>,
     /// How many transactions are sitting in the `queue`.
     ///
     /// This is mainly for observability purposes, and can thus be updated with
@@ -197,7 +197,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
         self,
-        mut commits_rx: mpsc::UnboundedReceiver<Box<[Transaction<Txdata<T>>]>>,
+        mut transactions_rx: mpsc::UnboundedReceiver<Transaction<Txdata<T>>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
@@ -220,7 +220,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                 biased;
 
                 Some(reply) = shutdown_rx.recv() => {
-                    commits_rx.close();
+                    transactions_rx.close();
                     let _ = reply.send(self.lock.notified());
                 },
 
@@ -231,13 +231,13 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     }
                 },
 
-                commit = commits_rx.recv() => {
-                    let Some(commit) = commit else {
+                tx = transactions_rx.recv() => {
+                    let Some(tx) = tx else {
                         break;
                     };
                     self.queue_depth.fetch_sub(1, Relaxed);
                     let clog = self.clog.clone();
-                    spawn_blocking(move || clog.commit(commit))
+                    spawn_blocking(move || clog.commit([tx]))
                         .await
                         .expect("commitlog write panicked")
                         .expect("commitlog write failed");
@@ -312,8 +312,8 @@ impl Drop for Lock {
 impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
-    fn commit(&self, txs: Box<[Transaction<Self::TxData>]>) {
-        self.queue.send(txs).expect("durability actor crashed");
+    fn append_tx(&self, tx: Transaction<Self::TxData>) {
+        self.queue.send(tx).expect("durability actor crashed");
         self.queue_depth.fetch_add(1, Relaxed);
     }
 

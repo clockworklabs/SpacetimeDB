@@ -253,13 +253,10 @@ impl DurabilityWorkerActor {
         };
 
         // This does not block, as per trait docs.
-        durability.commit(
-            [Transaction {
-                offset: tx_offset,
-                txdata,
-            }]
-            .into(),
-        );
+        durability.append_tx(Transaction {
+            offset: tx_offset,
+            txdata,
+        });
     }
 }
 
@@ -297,12 +294,9 @@ mod tests {
     impl spacetimedb_durability::Durability for CountingDurability {
         type TxData = Txdata;
 
-        fn commit(&self, txs: Box<[Transaction<Self::TxData>]>) {
-            let Some(max_offset) = txs.iter().map(|x| x.offset).max() else {
-                return;
-            };
+        fn append_tx(&self, tx: Transaction<Self::TxData>) {
             self.appended.send_modify(|offset| {
-                offset.replace(max_offset);
+                offset.replace(tx.offset);
             });
         }
 

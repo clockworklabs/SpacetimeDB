@@ -1551,9 +1551,9 @@ mod tests {
     impl Durability for ManualDurability {
         type TxData = Txdata;
 
-        fn commit(&self, txs: Box<[Transaction<Self::TxData>]>) {
+        fn append_tx(&self, tx: Transaction<Self::TxData>) {
             let mut commitlog = self.commitlog.write().unwrap();
-            commitlog.commit(txs).expect("commit failed");
+            commitlog.commit([tx]).expect("commit failed");
             commitlog.flush().expect("error flushing commitlog");
         }
 
