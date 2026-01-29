@@ -48,6 +48,7 @@ import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
+import { makeRandom, type Random } from './rng';
 
 const { freeze } = Object;
 
@@ -195,6 +196,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
+  #random: Random | undefined;
   sender: Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
@@ -223,26 +225,25 @@ export const ReducerCtxImpl = class ReducerCtx<
     ));
   }
 
+  get random() {
+    return (this.#random ??= makeRandom(this.timestamp));
+  }
+
   /**
-   * Create a new random {@link Uuid} `v4` using the {@link crypto} RNG.
-   *
-   * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+   * Create a new random {@link Uuid} `v4` using this `ReducerCtx`'s RNG.
    */
   newUuidV4(): Uuid {
     // TODO: Use a spacetime RNG when available
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const bytes = this.random.fill(new Uint8Array(16));
     return Uuid.fromRandomBytesV4(bytes);
   }
 
   /**
-   * Create a new sortable {@link Uuid} `v7` using the {@link crypto} RNG, counter,
-   * and the timestamp.
-   *
-   * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+   * Create a new sortable {@link Uuid} `v7` using this `ReducerCtx`'s RNG, counter,
+   * and timestamp.
    */
   newUuidV7(): Uuid {
-    // TODO: Use a spacetime RNG when available
-    const bytes = crypto.getRandomValues(new Uint8Array(4));
+    const bytes = this.random.fill(new Uint8Array(4));
     const counter = (this.#uuidCounter ??= { value: 0 });
     return Uuid.fromCounterV7(counter, this.timestamp, bytes);
   }

@@ -11,6 +11,7 @@ use spacetimedb_expr::errors::TypingError;
 use spacetimedb_fs_utils::lockfile::advisory::LockError;
 use spacetimedb_lib::Identity;
 use spacetimedb_schema::error::ValidationErrors;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::table::ReadViaBsatnError;
 use thiserror::Error;
@@ -59,11 +60,14 @@ pub enum PlanError {
     #[error("Qualified Table `{expect}` not found")]
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownField { field: String, tables: Vec<Box<str>> },
+    UnknownField { field: String, tables: Vec<TableName> },
     #[error("Unknown field name: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownFieldName { field: FieldName, tables: Vec<Box<str>> },
+    UnknownFieldName { field: FieldName, tables: Vec<TableName> },
     #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
-    UnknownFields { fields: Vec<String>, tables: Vec<Box<str>> },
+    UnknownFields {
+        fields: Vec<String>,
+        tables: Vec<TableName>,
+    },
     #[error("Ambiguous field: `{field}`. Also found in {found:?}")]
     AmbiguousField { field: String, found: Vec<String> },
     #[error("Plan error: `{0}`")]
