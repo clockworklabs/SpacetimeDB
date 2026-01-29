@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpacetimeDB Script Tag App</title>
+  </head>
+  <body
+    style="
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+      padding: 2rem;
+      max-width: 600px;
+      margin: 0 auto;
+    "
+  >
+    <h1>SpacetimeDB Script Tag App</h1>
+
+    <div style="margin-bottom: 1rem">
+      Status: <strong id="status" style="color: red">Disconnected</strong>
+    </div>
+
+    <form id="add-form" style="margin-bottom: 2rem">
+      <input
+        type="text"
+        id="name-input"
+        placeholder="Enter name"
+        style="padding: 0.5rem; margin-right: 0.5rem"
+        disabled
+      />
+      <button type="submit" id="add-btn" style="padding: 0.5rem 1rem" disabled>
+        Add Person
+      </button>
+    </form>
+
+    <div>
+      <h2>People (<span id="count">0</span>)</h2>
+      <ul id="people-list">
+        <li style="color: #888">No people yet. Add someone above!</li>
+      </ul>
+    </div>
+
+    <script src="https://unpkg.com/spacetimedb@latest/dist/browser.bundle.js"></script>
+
+    <script>
+      const HOST = 'ws://localhost:3000';
+      const DB_NAME = 'browser-ts';
+
+      const statusEl = document.getElementById('status');
+      const nameInput = document.getElementById('name-input');
+      const addBtn = document.getElementById('add-btn');
+      const addForm = document.getElementById('add-form');
+      const peopleList = document.getElementById('people-list');
+      const countEl = document.getElementById('count');
+
+      let people = [];
+
+      const client = SpacetimeDB.Client.builder()
+        .withUri(HOST)
+        .withModuleName(DB_NAME)
+        .withToken(localStorage.getItem('auth_token') || undefined)
+        .onConnect((identityHex, token) => {
+          localStorage.setItem('auth_token', token);
+          console.log('Connected to SpacetimeDB with identity:', identityHex);
+
+          statusEl.textContent = 'Connected';
+          statusEl.style.color = 'green';
+          nameInput.disabled = false;
+          addBtn.disabled = false;
+
+          client.subscribe('SELECT * FROM person', rows => {
+            people = rows;
+            renderPeople();
+          });
+        })
+        .onDisconnect(() => {
+          console.log('Disconnected from SpacetimeDB');
+          statusEl.textContent = 'Disconnected';
+          statusEl.style.color = 'red';
+          nameInput.disabled = true;
+          addBtn.disabled = true;
+        })
+        .onError(error => {
+          console.log('Error connecting to SpacetimeDB:', error);
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = 'red';
+        })
+        .build();
+
+      function renderPeople() {
+        countEl.textContent = people.length;
+        if (people.length === 0) {
+          peopleList.innerHTML =
+            '<li style="color: #888;">No people yet. Add someone above!</li>';
+          return;
+        }
+        peopleList.innerHTML = people
+          .map(p => '<li>' + escapeHtml(p.name || '') + '</li>')
+          .join('');
+      }
+
+      function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      addForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const name = nameInput.value.trim();
+        if (name) {
+          try {
+            await client.call('add', { name });
+            nameInput.value = '';
+          } catch (err) {
+            console.error('Failed to add person:', err);
+          }
+        }
+      });
+
+      client.connect().catch(err => {
+        console.log('Error connecting to SpacetimeDB:', err);
+        statusEl.textContent = 'Error: ' + err.message;
+        statusEl.style.color = 'red';
+      });
+    </script>
+  </body>
+</html>
