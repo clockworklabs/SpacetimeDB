@@ -912,6 +912,8 @@ jobs:
   global_json_policy:
     name: Verify global.json files are symlinks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Find Git ref
         env:
