@@ -9,6 +9,9 @@ fn test_timestamp_route() {
 
     let name = random_string();
 
+    // Since we didn't publish, we're not logged in yet, so `api_call` will fail to get a token.
+    test.new_identity().unwrap();
+
     // A request for the timestamp at a non-existent database is an error with code 404
     let resp = test
         .api_call("GET", &format!("/v1/database/{}/unstable/timestamp", name))
