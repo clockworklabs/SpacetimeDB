@@ -196,6 +196,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
+  #random: Random | undefined;
   sender: () => Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
