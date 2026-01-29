@@ -30,7 +30,7 @@ export type ProcedureFn<
 > = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
-  readonly sender: Identity;
+  readonly sender: () => Identity;
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;

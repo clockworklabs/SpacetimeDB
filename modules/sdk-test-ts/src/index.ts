@@ -949,18 +949,18 @@ spacetimedb.reducer(
 );
 
 spacetimedb.reducer('insert_caller_one_identity', ctx => {
-  ctx.db.oneIdentity.insert({ i: ctx.sender });
+  ctx.db.oneIdentity.insert({ i: ctx.sender() });
 });
 
 spacetimedb.reducer('insert_caller_vec_identity', ctx => {
-  ctx.db.vecIdentity.insert({ i: [ctx.sender] });
+  ctx.db.vecIdentity.insert({ i: [ctx.sender()] });
 });
 
 spacetimedb.reducer(
   'insert_caller_unique_identity',
   { data: t.i32() },
   (ctx, { data }) => {
-    ctx.db.uniqueIdentity.insert({ i: ctx.sender, data });
+    ctx.db.uniqueIdentity.insert({ i: ctx.sender(), data });
   }
 );
 
@@ -968,7 +968,7 @@ spacetimedb.reducer(
   'insert_caller_pk_identity',
   { data: t.i32() },
   (ctx, { data }) => {
-    ctx.db.pkIdentity.insert({ i: ctx.sender, data });
+    ctx.db.pkIdentity.insert({ i: ctx.sender(), data });
   }
 );
 
