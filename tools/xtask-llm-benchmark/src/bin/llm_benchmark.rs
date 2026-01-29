@@ -3,8 +3,8 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use futures::{StreamExt, TryStreamExt};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use spacetimedb_guard::SpacetimeDbGuard;
-use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -462,6 +462,23 @@ fn cmd_ci_quickfix() -> Result<()> {
     };
     run_benchmarks(csharp_args, &details_path, &summary_path)?;
 
+    // Run TypeScript benchmarks with docs mode
+    let typescript_args = RunArgs {
+        modes: Some(vec!["docs".to_string()]),
+        lang: Lang::TypeScript,
+        hash_only: false,
+        goldens_only: false,
+        force: true,
+        categories: None,
+        tasks: None,
+        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
+        models: Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-5".to_string()],
+        }]),
+    };
+    run_benchmarks(typescript_args, &details_path, &summary_path)?;
+
     println!("CI quickfix complete. Results written to:");
     println!("  Details: {}", details_path.display());
     println!("  Summary: {}", summary_path.display());
@@ -551,6 +568,12 @@ fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> S
         .get("csharp")
         .and_then(|l| l.modes.get("docs"))
         .and_then(|m| m.models.get("GPT-5"));
+    // TypeScript with docs mode
+    let typescript_results = summary
+        .by_language
+        .get("typescript")
+        .and_then(|l| l.modes.get("docs"))
+        .and_then(|m| m.models.get("GPT-5"));
 
     let rust_rustdoc_baseline = baseline
         .and_then(|b| b.by_language.get("rust"))
@@ -562,6 +585,10 @@ fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> S
         .and_then(|m| m.models.get("GPT-5"));
     let csharp_baseline = baseline
         .and_then(|b| b.by_language.get("csharp"))
+        .and_then(|l| l.modes.get("docs"))
+        .and_then(|m| m.models.get("GPT-5"));
+    let typescript_baseline = baseline
+        .and_then(|b| b.by_language.get("typescript"))
         .and_then(|l| l.modes.get("docs"))
         .and_then(|m| m.models.get("GPT-5"));
 
@@ -700,6 +727,45 @@ fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> S
         );
         md.push_str(&format!(
             "| C# | docs | **total** | {}/{} | **{}**{} |\n",
+            results.totals.passed_tests,
+            results.totals.total_tests,
+            format_pct(results.totals.task_pass_pct),
+            diff
+        ));
+    }
+
+    // TypeScript with docs mode
+    if let Some(results) = typescript_results {
+        let base_cats = typescript_baseline.map(|b| &b.categories);
+
+        if let Some(c) = results.categories.get("basics") {
+            let b = base_cats.and_then(|cats| cats.get("basics"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| TypeScript | docs | basics | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        if let Some(c) = results.categories.get("schema") {
+            let b = base_cats.and_then(|cats| cats.get("schema"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| TypeScript | docs | schema | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        let diff = format_diff(
+            results.totals.task_pass_pct,
+            typescript_baseline.map(|b| b.totals.task_pass_pct),
+        );
+        md.push_str(&format!(
+            "| TypeScript | docs | **total** | {}/{} | **{}**{} |\n",
             results.totals.passed_tests,
             results.totals.total_tests,
             format_pct(results.totals.task_pass_pct),
@@ -1162,6 +1228,7 @@ fn build_mode_section(lang: &str, mode: &str, failures: &[&FailureInfo], prompt:
     let lang_display = match lang {
         "rust" => "Rust",
         "csharp" => "C#",
+        "typescript" => "TypeScript",
         _ => lang,
     };
 
@@ -1333,8 +1400,13 @@ fn build_analysis_prompt(failures: &[FailureInfo]) -> String {
         .iter()
         .filter(|f| f.lang == "csharp" && f.mode == "docs")
         .collect();
+    let typescript_failures: Vec<_> = failures
+        .iter()
+        .filter(|f| f.lang == "typescript" && f.mode == "docs")
+        .collect();
 
     // Build sections for each language/mode combination
+    // Note: Rust rustdoc_json and Rust docs are separate sections because they use different context sources
     if !rust_rustdoc_failures.is_empty() {
         build_mode_section("rust", "rustdoc_json", &rust_rustdoc_failures, &mut prompt);
     }
@@ -1347,6 +1419,10 @@ fn build_analysis_prompt(failures: &[FailureInfo]) -> String {
         build_mode_section("csharp", "docs", &csharp_failures, &mut prompt);
     }
 
+    if !typescript_failures.is_empty() {
+        build_mode_section("typescript", "docs", &typescript_failures, &mut prompt);
+    }
+
     prompt.push_str(
         "\n---\n\n## Instructions for your analysis:\n\n\
         For EACH failure or group of similar failures:\n\n\
@@ -1357,7 +1433,7 @@ fn build_analysis_prompt(failures: &[FailureInfo]) -> String {
         5. **Root cause**: What's missing or unclear in the documentation?\n\
         6. **Recommendation**: Specific fix\n\n\
         Group similar failures together (e.g., if multiple tests fail due to the same issue).\n\
-        Use code blocks with syntax highlighting (```rust or ```csharp).\n",
+        Use code blocks with syntax highlighting (```rust, ```csharp, or ```typescript).\n",
     );
 
     prompt

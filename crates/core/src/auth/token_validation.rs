@@ -1,6 +1,7 @@
 use anyhow;
 use async_cache;
 use async_trait::async_trait;
+use core::ops::Deref;
 use faststr::FastStr;
 use jsonwebtoken::decode_header;
 pub use jsonwebtoken::errors::Error as JwtError;
@@ -86,7 +87,7 @@ impl TokenValidator for UnimplementedTokenValidator {
 // We do this because we sign short lived tokens with different issuers.
 pub struct FullTokenValidator<T: TokenValidator + Send + Sync> {
     pub local_key: DecodingKey,
-    pub local_issuer: String,
+    pub local_issuer: Box<str>,
     pub oidc_validator: T,
 }
 
@@ -120,7 +121,7 @@ where
 
 pub type DefaultValidator = FullTokenValidator<CachingOidcTokenValidator>;
 
-pub fn new_validator(local_key: DecodingKey, local_issuer: String) -> FullTokenValidator<CachingOidcTokenValidator> {
+pub fn new_validator(local_key: DecodingKey, local_issuer: Box<str>) -> FullTokenValidator<CachingOidcTokenValidator> {
     FullTokenValidator {
         local_key,
         local_issuer,
@@ -133,7 +134,7 @@ pub fn new_validator(local_key: DecodingKey, local_issuer: String) -> FullTokenV
 // We do that because we signed short-lived keys with different issuers.
 struct BasicTokenValidator {
     pub public_key: DecodingKey,
-    pub issuer: Option<String>,
+    pub issuer: Option<Box<str>>,
 }
 
 lazy_static! {
@@ -167,7 +168,7 @@ impl TokenValidator for BasicTokenValidator {
         // This validates everything but the issuer.
         let claims = self.public_key.validate_token(token).await?;
         if let Some(expected_issuer) = &self.issuer {
-            if claims.issuer != *expected_issuer {
+            if *claims.issuer != **expected_issuer {
                 return Err(TokenValidationError::Other(anyhow::anyhow!(
                     "Issuer mismatch: got {:?}, expected {:?}",
                     claims.issuer,
@@ -205,8 +206,8 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
 
     async fn fetch(&self, key: FastStr) -> Result<Arc<JwksValidator>, Self::Error> {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
-        let raw_issuer = key.to_string();
-        log::info!("Fetching key for issuer {}", raw_issuer.clone());
+        let raw_issuer = key.deref();
+        log::info!("Fetching key for issuer {}", raw_issuer);
         let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer.trim_end_matches('/'));
         let key_or_error = Jwks::from_oidc_url(oidc_url).await;
         // TODO: We should probably add debouncing to avoid spamming the logs.
@@ -216,7 +217,7 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
         }
         let keys = key_or_error?;
         let validator = JwksValidator {
-            issuer: raw_issuer.clone(),
+            issuer: raw_issuer.into(),
             keyset: keys,
         };
         Ok(Arc::new(validator))
@@ -230,7 +231,7 @@ impl TokenValidator for CachingOidcTokenValidator {
         log::debug!("Getting validator for issuer {}", raw_issuer.clone());
         let validator = self
             .cache
-            .get(raw_issuer.clone().into())
+            .get(String::from(raw_issuer.clone()).into())
             .await
             .ok_or_else(|| anyhow::anyhow!("Error fetching public key for issuer {raw_issuer}"))?;
         validator.validate_token(token).await
@@ -243,7 +244,7 @@ impl TokenValidator for CachingOidcTokenValidator {
 pub struct OidcTokenValidator;
 
 // Get the issuer out of a token without validating the signature.
-fn get_raw_issuer(token: &str) -> Result<String, TokenValidationError> {
+fn get_raw_issuer(token: &str) -> Result<Box<str>, TokenValidationError> {
     let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
     validation.set_required_spec_claims(&REQUIRED_CLAIMS);
     validation.validate_aud = false;
@@ -276,7 +277,7 @@ impl TokenValidator for OidcTokenValidator {
 }
 
 struct JwksValidator {
-    pub issuer: String,
+    pub issuer: Box<str>,
     pub keyset: Jwks,
 }
 
@@ -344,9 +345,9 @@ mod tests {
 
         let orig_claims = IncomingClaims {
             identity: None,
-            subject: subject.to_string(),
-            issuer: issuer.to_string(),
-            audience: vec![],
+            subject: subject.into(),
+            issuer: issuer.into(),
+            audience: [].into(),
             iat: std::time::SystemTime::now(),
             exp: None,
             extra: None,
@@ -357,19 +358,19 @@ mod tests {
             // Test that we can validate it.
             let validator = BasicTokenValidator {
                 public_key: kp.public.clone(),
-                issuer: Some(issuer.to_string()),
+                issuer: Some(issuer.into()),
             };
 
             let parsed_claims: SpacetimeIdentityClaims = validator.validate_token(&token).await?;
-            assert_eq!(parsed_claims.issuer, issuer);
-            assert_eq!(parsed_claims.subject, subject);
+            assert_eq!(&*parsed_claims.issuer, issuer);
+            assert_eq!(&*parsed_claims.subject, subject);
             assert_eq!(parsed_claims.identity, Identity::from_claims(issuer, subject));
         }
         {
             // Now try with the wrong expected issuer.
             let validator = BasicTokenValidator {
                 public_key: kp.public.clone(),
-                issuer: Some("otherissuer".to_string()),
+                issuer: Some("otherissuer".into()),
             };
 
             assert!(validator.validate_token(&token).await.is_err());
@@ -387,9 +388,9 @@ mod tests {
 
         let orig_claims = IncomingClaims {
             identity: None,
-            subject: subject.to_string(),
-            issuer: issuer.to_string(),
-            audience: vec![],
+            subject: subject.into(),
+            issuer: issuer.into(),
+            audience: [].into(),
             iat: std::time::SystemTime::now(),
             exp: None,
             extra: None,
@@ -400,12 +401,12 @@ mod tests {
             // Test that we can validate it.
             let validator = BasicTokenValidator {
                 public_key: kp.public.clone(),
-                issuer: Some(issuer.to_string()),
+                issuer: Some(issuer.into()),
             };
 
             let parsed_claims: SpacetimeIdentityClaims = validator.validate_token(&token).await?;
-            assert_eq!(parsed_claims.issuer, issuer);
-            assert_eq!(parsed_claims.subject, subject);
+            assert_eq!(&*parsed_claims.issuer, issuer);
+            assert_eq!(&*parsed_claims.subject, subject);
             assert_eq!(parsed_claims.identity, Identity::from_claims(issuer, subject));
         }
         {
@@ -414,7 +415,7 @@ mod tests {
             // Now try with the wrong expected issuer.
             let validator = BasicTokenValidator {
                 public_key: other_kp.public.clone(),
-                issuer: Some("otherissuer".to_string()),
+                issuer: Some("otherissuer".into()),
             };
 
             assert!(validator.validate_token(&token).await.is_err());
@@ -441,9 +442,9 @@ mod tests {
 
         let orig_claims = IncomingClaims {
             identity: None,
-            subject: subject.to_string(),
-            issuer: external_issuer.to_string(),
-            audience: vec![],
+            subject: subject.into(),
+            issuer: external_issuer.into(),
+            audience: [].into(),
             iat: std::time::SystemTime::now(),
             exp: None,
             extra: None,
@@ -454,13 +455,13 @@ mod tests {
         {
             let validator = FullTokenValidator {
                 local_key: kp.public.clone(),
-                local_issuer: local_issuer.to_string(),
+                local_issuer: local_issuer.into(),
                 oidc_validator: OidcTokenValidator,
             };
 
             let parsed_claims: SpacetimeIdentityClaims = validator.validate_token(&token).await?;
-            assert_eq!(parsed_claims.issuer, external_issuer);
-            assert_eq!(parsed_claims.subject, subject);
+            assert_eq!(&*parsed_claims.issuer, external_issuer);
+            assert_eq!(&*parsed_claims.subject, subject);
             assert_eq!(parsed_claims.identity, Identity::from_claims(external_issuer, subject));
         }
         // Double check that this token would fail with an OidcTokenValidator.
@@ -469,7 +470,7 @@ mod tests {
         assert_validation_fails(
             &BasicTokenValidator {
                 public_key: kp.public.clone(),
-                issuer: Some(local_issuer.to_string()),
+                issuer: Some(local_issuer.into()),
             },
             &token,
         )
@@ -607,9 +608,9 @@ mod tests {
 
         let orig_claims = IncomingClaims {
             identity: None,
-            subject: subject.to_string(),
-            issuer: issuer.clone(),
-            audience: vec![],
+            subject: subject.into(),
+            issuer: issuer.clone().into(),
+            audience: [].into(),
             iat: std::time::SystemTime::now(),
             exp: None,
             extra: None,
@@ -620,8 +621,8 @@ mod tests {
             let token = kp.private.sign(&orig_claims)?;
 
             let validated_claims = validator.validate_token(&token).await?;
-            assert_eq!(validated_claims.issuer, issuer);
-            assert_eq!(validated_claims.subject, subject);
+            assert_eq!(&*validated_claims.issuer, &*issuer);
+            assert_eq!(&*validated_claims.subject, subject);
             assert_eq!(validated_claims.identity, Identity::from_claims(&issuer, subject));
         }
 
@@ -664,7 +665,7 @@ mod tests {
         let kp = JwtKeys::generate()?;
         let v = FullTokenValidator {
             local_key: kp.public,
-            local_issuer: "local_issuer".to_string(),
+            local_issuer: "local_issuer".into(),
             oidc_validator: OidcTokenValidator,
         };
         run_oidc_test(v, &Default::default()).await

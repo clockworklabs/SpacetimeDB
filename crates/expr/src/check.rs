@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-
 use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
@@ -13,6 +10,8 @@ use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
 };
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use super::{
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},

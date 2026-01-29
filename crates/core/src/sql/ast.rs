@@ -12,6 +12,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::RelationError;
 use spacetimedb_schema::relation::{ColExpr, FieldName};
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{Expr, FieldExpr, FieldOp};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -170,7 +171,7 @@ impl From {
     }
 
     /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<Box<str>> {
+    pub fn table_names(&self) -> Vec<TableName> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 
