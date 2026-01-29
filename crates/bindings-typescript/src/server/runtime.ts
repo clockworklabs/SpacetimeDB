@@ -438,9 +438,9 @@ function makeTableView(
       const buf = LEAF_BUF;
       const writer = new BinaryWriter(buf);
       serializeRow(writer, row);
-      const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
+      sys.datastore_insert_bsatn(table_id, buf.buffer, writer.offset);
       const ret = { ...row };
-      integrateGeneratedColumns?.(ret, ret_buf);
+      integrateGeneratedColumns?.(ret, new Uint8Array(buf.buffer));
 
       return ret;
     },
@@ -451,7 +451,8 @@ function makeTableView(
       serializeRow(writer, row);
       const count = sys.datastore_delete_all_by_eq_bsatn(
         table_id,
-        writer.getBuffer()
+        buf.buffer,
+        writer.offset
       );
       return count > 0;
     },
@@ -490,15 +491,12 @@ function makeTableView(
       )
     );
 
-    const serializePoint = (
-      buffer: ResizableBuffer,
-      colVal: any[]
-    ): Uint8Array => {
+    const serializePoint = (buffer: ResizableBuffer, colVal: any[]): number => {
       const writer = new BinaryWriter(buffer);
       for (let i = 0; i < numColumns; i++) {
         indexSerializers[i](writer, colVal[i]);
       }
-      return writer.getBuffer();
+      return writer.offset;
     };
 
     const serializeSingleElement =
@@ -506,17 +504,17 @@ function makeTableView(
 
     const serializeSinglePoint =
       serializeSingleElement &&
-      ((buffer: ResizableBuffer, colVal: any): Uint8Array => {
+      ((buffer: ResizableBuffer, colVal: any): number => {
         const writer = new BinaryWriter(buffer);
         serializeSingleElement(writer, colVal);
-        return writer.getBuffer();
+        return writer.offset;
       });
 
     type IndexScanArgs = [
-      prefix: Uint8Array,
+      prefix_len: u32,
       prefix_elems: u16,
-      rstart: Uint8Array,
-      rend: Uint8Array,
+      rstart_len: u32,
+      rend_len: u32,
     ];
 
     let index: Index<any, any>;
@@ -525,8 +523,12 @@ function makeTableView(
       index = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           const buf = LEAF_BUF;
-          const point = serializeSinglePoint(buf, colVal);
-          const iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+          const point_len = serializeSinglePoint(buf, colVal);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
           const iter = tableIterator(iter_id, deserializeRow);
           const { value, done } = iter.next();
           if (done) return null;
@@ -538,10 +540,11 @@ function makeTableView(
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           const buf = LEAF_BUF;
-          const point = serializeSinglePoint(buf, colVal);
+          const point_len = serializeSinglePoint(buf, colVal);
           const num = sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
-            point
+            buf.buffer,
+            point_len
           );
           return num > 0;
         },
@@ -549,12 +552,13 @@ function makeTableView(
           const buf = LEAF_BUF;
           const writer = new BinaryWriter(buf);
           serializeRow(writer, row);
-          const ret_buf = sys.datastore_update_bsatn(
+          sys.datastore_update_bsatn(
             table_id,
             index_id,
-            writer.getBuffer()
+            buf.buffer,
+            writer.offset
           );
-          integrateGeneratedColumns?.(row, ret_buf);
+          integrateGeneratedColumns?.(row, new Uint8Array(buf.buffer));
           return row;
         },
       } as UniqueIndex<any, any>;
@@ -566,8 +570,12 @@ function makeTableView(
             throw new TypeError('wrong number of elements');
           }
           const buf = LEAF_BUF;
-          const point = serializePoint(buf, colVal);
-          const iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+          const point_len = serializePoint(buf, colVal);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
           const iter = tableIterator(iter_id, deserializeRow);
           const { value, done } = iter.next();
           if (done) return null;
@@ -582,10 +590,11 @@ function makeTableView(
             throw new TypeError('wrong number of elements');
 
           const buf = LEAF_BUF;
-          const point = serializePoint(buf, colVal);
+          const point_len = serializePoint(buf, colVal);
           const num = sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
-            point
+            buf.buffer,
+            point_len
           );
           return num > 0;
         },
@@ -593,12 +602,13 @@ function makeTableView(
           const buf = LEAF_BUF;
           const writer = new BinaryWriter(buf);
           serializeRow(writer, row);
-          const ret_buf = sys.datastore_update_bsatn(
+          sys.datastore_update_bsatn(
             table_id,
             index_id,
-            writer.getBuffer()
+            buf.buffer,
+            writer.offset
           );
-          integrateGeneratedColumns?.(row, ret_buf);
+          integrateGeneratedColumns?.(row, new Uint8Array(buf.buffer));
           return row;
         },
       } as UniqueIndex<any, any>;
@@ -607,16 +617,21 @@ function makeTableView(
       index = {
         filter: (range: any): IteratorObject<RowType<any>> => {
           const buf = LEAF_BUF;
-          const point = serializeSinglePoint(buf, range);
-          const iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+          const point_len = serializeSinglePoint(buf, range);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
           return tableIterator(iter_id, deserializeRow);
         },
         delete: (range: any): u32 => {
           const buf = LEAF_BUF;
-          const point = serializeSinglePoint(buf, range);
+          const point_len = serializeSinglePoint(buf, range);
           return sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
-            point
+            buf.buffer,
+            point_len
           );
         },
       } as RangedIndex<any, any>;
@@ -636,7 +651,6 @@ function makeTableView(
         const rstartOffset = writer.offset;
         const term = range[range.length - 1];
         const serializeTerm = indexSerializers[range.length - 1];
-        let rstart: Uint8Array, rend: Uint8Array;
         if (term instanceof Range) {
           const writeBound = (bound: Bound<any>) => {
             const tags = { included: 0, excluded: 1, unbounded: 2 };
@@ -644,27 +658,27 @@ function makeTableView(
             if (bound.tag !== 'unbounded') serializeTerm(writer, bound.value);
           };
           writeBound(term.from);
-          const rendOffset = writer.offset;
+          const rstartLen = writer.offset - rstartOffset;
           writeBound(term.to);
-          rstart = writer.getBuffer().slice(rstartOffset, rendOffset);
-          rend = writer.getBuffer().slice(rendOffset);
+          const rendLen = writer.offset - rstartLen;
+          return [rstartOffset, prefix_elems, rstartLen, rendLen];
         } else {
           writer.writeU8(0);
           serializeTerm(writer, term);
-          rstart = rend = writer.getBuffer().slice(rstartOffset);
+          const rstartLen = writer.offset;
+          const rendLen = 0;
+          return [rstartOffset, prefix_elems, rstartLen, rendLen];
         }
-        const buf = writer.getBuffer();
-        const prefix = buf.slice(0, rstartOffset);
-        return [prefix, prefix_elems, rstart, rend];
       };
       index = {
         filter: (range: any[]): IteratorObject<RowType<any>> => {
           if (range.length === numColumns) {
             const buf = LEAF_BUF;
-            const point = serializePoint(buf, range);
+            const point_len = serializePoint(buf, range);
             const iter_id = sys.datastore_index_scan_point_bsatn(
               index_id,
-              point
+              buf.buffer,
+              point_len
             );
             return tableIterator(iter_id, deserializeRow);
           } else {
@@ -672,6 +686,7 @@ function makeTableView(
             const args = serializeRange(buf, range);
             const iter_id = sys.datastore_index_scan_range_bsatn(
               index_id,
+              buf.buffer,
               ...args
             );
             return tableIterator(iter_id, deserializeRow);
@@ -680,16 +695,18 @@ function makeTableView(
         delete: (range: any[]): u32 => {
           if (range.length === numColumns) {
             const buf = LEAF_BUF;
-            const point = serializePoint(buf, range);
+            const point_len = serializePoint(buf, range);
             return sys.datastore_delete_by_index_scan_point_bsatn(
               index_id,
-              point
+              buf.buffer,
+              point_len
             );
           } else {
             const buf = LEAF_BUF;
             const args = serializeRange(buf, range);
             return sys.datastore_delete_by_index_scan_range_bsatn(
               index_id,
+              buf.buffer,
               ...args
             );
           }
@@ -727,10 +744,7 @@ function* tableIterator<T>(
   }
 }
 
-function advanceIter(
-  iter: IteratorHandle,
-  buf: ResizableBuffer
-): Uint8Array | null {
+function advanceIter(iter: IteratorHandle, buf: ResizableBuffer): Uint8Array | null {
   while (true) {
     try {
       return iter.advance(buf.buffer);
