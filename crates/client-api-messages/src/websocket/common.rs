@@ -26,3 +26,15 @@ impl_deserialize!([] CallProcedureFlags, de => match de.deserialize_u8()? {
     0 => Ok(Self::Default),
     x => Err(D::Error::custom(format_args!("invalid call procedure flag {x}"))),
 });
+
+/// A specification of either a desired or decided compression algorithm.
+#[derive(serde::Deserialize, Default, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub enum Compression {
+    /// No compression ever.
+    None,
+    /// Compress using brotli if a certain size threshold was met.
+    #[default]
+    Brotli,
+    /// Compress using gzip if a certain size threshold was met.
+    Gzip,
+}

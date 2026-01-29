@@ -1,4 +1,4 @@
-pub use super::common::{CallProcedureFlags, QuerySetId as QueryId};
+pub use super::common::{CallProcedureFlags, Compression, QuerySetId as QueryId};
 use crate::energy::EnergyQuanta;
 use bytes::Bytes;
 use bytestring::ByteString;
@@ -790,18 +790,6 @@ impl WebsocketFormat for BsatnFormat {
     type Single = Box<[u8]>;
     type List = BsatnRowList;
     type QueryUpdate = CompressableQueryUpdate<Self>;
-}
-
-/// A specification of either a desired or decided compression algorithm.
-#[derive(serde::Deserialize, Default, PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub enum Compression {
-    /// No compression ever.
-    None,
-    /// Compress using brotli if a certain size threshold was met.
-    #[default]
-    Brotli,
-    /// Compress using gzip if a certain size threshold was met.
-    Gzip,
 }
 
 pub type RowSize = u16;

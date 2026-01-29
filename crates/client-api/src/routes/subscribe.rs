@@ -37,6 +37,7 @@ use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use tokio::sync::{mpsc, watch};
@@ -59,6 +60,8 @@ use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::TEXT_PROTOCOL);
 #[allow(clippy::declare_interior_mutable_const)]
 pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::BIN_PROTOCOL);
+#[allow(clippy::declare_interior_mutable_const)]
+pub const V2_BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v2::BIN_PROTOCOL);
 
 pub trait HasWebSocketOptions {
     fn websocket_options(&self) -> WebSocketOptions;
@@ -131,8 +134,11 @@ where
     let db_identity = name_or_identity.resolve(&ctx).await?;
     let sql_auth = ctx.authorize_sql(auth.claims.identity, db_identity).await?;
 
-    let (res, ws_upgrade, protocol) =
-        ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
+    let (res, ws_upgrade, protocol) = ws.select_protocol([
+        (V2_BIN_PROTOCOL, Protocol::Binary),
+        (BIN_PROTOCOL, Protocol::Binary),
+        (TEXT_PROTOCOL, Protocol::Text),
+    ]);
 
     let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
     let client_config = ClientConfig {
