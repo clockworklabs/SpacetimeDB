@@ -59,7 +59,7 @@ type ParamsAsObject<ParamDef extends ParamsObj> = InferTypeOfRow<ParamDef>;
  *   (ctx, { username, email }) => {
  *     // Access the 'user' table from the database view in the context
  *     ctx.db.user.insert({ username, email, created_at: ctx.timestamp });
- *     console.log(`User ${username} created by ${ctx.sender.identityId}`);
+ *     console.log(`User ${username} created by ${ctx.sender().identityId}`);
  *   }
  * );
  * ```
@@ -115,7 +115,7 @@ export interface JwtClaims {
  * Reducer context parametrized by the inferred Schema
  */
 export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
-  sender: Identity;
+  sender: () => Identity;
   identity: Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
@@ -203,7 +203,7 @@ export const REDUCERS: Reducer<any, any>[] = [];
  *   (ctx, { username, email }) => {
  *     // Access the 'user' table from the database view in the context
  *     ctx.db.user.insert({ username, email, created_at: ctx.timestamp });
- *     console.log(`User ${username} created by ${ctx.sender.identityId}`);
+ *     console.log(`User ${username} created by ${ctx.sender().identityId}`);
  *   }
  * );
  * ```

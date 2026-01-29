@@ -25,9 +25,9 @@ function validateName(name: string) {
 
 spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
   validateName(name);
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (!user) throw new SenderError('Cannot set name for unknown user');
-  console.info(`User ${ctx.sender} sets name to ${name}`);
+  console.info(`User ${ctx.sender()} sets name to ${name}`);
   ctx.db.user.identity.update({ ...user, name });
 });
 
@@ -40,9 +40,9 @@ spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
   // - Rate-limit messages per-user.
   // - Reject messages from unnamed user.
   validateMessage(text);
-  console.info(`User ${ctx.sender}: ${text}`);
+  console.info(`User ${ctx.sender()}: ${text}`);
   ctx.db.message.insert({
-    sender: ctx.sender,
+    sender: ctx.sender(),
     text,
     sent: ctx.timestamp,
   });
@@ -52,7 +52,7 @@ spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
 spacetimedb.init(_ctx => {});
 
 spacetimedb.clientConnected(ctx => {
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (user) {
     // If this is a returning user, i.e. we already have a `User` with this `Identity`,
     // set `online: true`, but leave `name` and `identity` unchanged.
@@ -62,21 +62,21 @@ spacetimedb.clientConnected(ctx => {
     // which is online, but hasn't set a name.
     ctx.db.user.insert({
       name: undefined,
-      identity: ctx.sender,
+      identity: ctx.sender(),
       online: true,
     });
   }
 });
 
 spacetimedb.clientDisconnected(ctx => {
-  const user = ctx.db.user.identity.find(ctx.sender);
+  const user = ctx.db.user.identity.find(ctx.sender());
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
   } else {
     // This branch should be unreachable,
     // as it doesn't make sense for a client to disconnect without connecting first.
     console.warn(
-      `Disconnect event for unknown user with identity ${ctx.sender}`
+      `Disconnect event for unknown user with identity ${ctx.sender()}`
     );
   }
 });
