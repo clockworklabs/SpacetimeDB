@@ -6,6 +6,41 @@ use serde_json::Value;
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use thiserror::Error;
+
+/// Errors that can occur when building or using CommandConfig
+#[derive(Debug, Error)]
+pub enum CommandConfigError {
+    #[error("The option `--{arg_name}` is defined in Clap, but not in the config. If this is intentional and the option shouldn't be available in the config, you can exclude it with the `CommandConfigBuilder::exclude` function")]
+    ClapArgNotDefined { arg_name: String },
+
+    #[error("Key '{config_name}' references clap argument '{clap_name}' which doesn't exist in the Command. If the config key should be different than the clap argument, use from_clap()")]
+    InvalidClapReference { config_name: String, clap_name: String },
+
+    #[error("Key '{config_name}' has alias '{alias}' which doesn't exist in the Command")]
+    InvalidAliasReference { config_name: String, alias: String },
+
+    #[error("Excluded key '{key}' doesn't exist in the clap Command")]
+    InvalidExclusion { key: String },
+
+    #[error("Config key '{config_key}' is not supported in the config file. Available keys: {available_keys}")]
+    UnsupportedConfigKey { config_key: String, available_keys: String },
+
+    #[error("Mismatch between definition and access of `{key}`. Could not downcast to {requested_type}, need to downcast to {expected_type}")]
+    TypeMismatch {
+        key: String,
+        requested_type: String,
+        expected_type: String,
+    },
+
+    #[error("Failed to convert config value for key '{key}' to type {target_type}")]
+    ConversionError {
+        key: String,
+        target_type: String,
+        #[source]
+        source: anyhow::Error,
+    },
+}
 
 /// Project configuration loaded from spacetime.json.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -28,15 +63,11 @@ pub struct SpacetimeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct PublishConfig {
-    /// Database name/identity
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub database: Option<String>,
-
     /// Child databases
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<PublishConfig>>,
 
-    /// All other fields
+    /// Configuration fields
     #[serde(flatten)]
     pub additional_fields: HashMap<String, Value>,
 }
@@ -50,10 +81,12 @@ pub struct CommandConfig<'a> {
     matches: &'a ArgMatches,
     /// Config file values
     config_values: HashMap<String, Value>,
-    /// Type information for validation
-    arguments: HashMap<String, TypeId>,
-    /// Map from clap arg name to its alias (if any)
-    aliases: HashMap<String, String>,
+    /// Type information for validation (keyed by config name)
+    type_map: HashMap<String, TypeId>,
+    /// Map from config name to clap arg name (for from_clap mapping)
+    config_to_clap: HashMap<String, String>,
+    /// Map from config name to alias (for alias mapping)
+    config_to_alias: HashMap<String, String>,
 }
 
 /// Configuration for a single key in the CommandConfig.
@@ -64,7 +97,7 @@ pub struct Key {
     /// The corresponding clap argument name (e.g., "project-path"), if different
     clap_name: Option<String>,
     /// Alias for a clap argument, useful for example if we have to deprecate a clap
-    /// argument, but still allow to use it in the CLI args, but not in the config file
+    /// argument and still allow to use it in the CLI args, but not in the config file
     clap_alias: Option<String>,
     /// Whether this key is module-specific
     module_specific: bool,
@@ -73,6 +106,7 @@ pub struct Key {
 }
 
 impl Key {
+    /// Returns a new Key instance
     pub fn new<T: 'static>(name: impl Into<String>) -> Self {
         Self {
             config_name: name.into(),
@@ -83,8 +117,11 @@ impl Key {
         }
     }
 
-    /// Map this config key to a different clap argument name.
+    /// Map this config key to a different clap argument name. When fetching values
+    /// the key that is defined should be used.
     /// Example: Key::new::<String>("module-path").from_clap("project-path")
+    ///          - in this case the value for either project-path in clap or
+    ///            for module-path in the config file will be fetched
     pub fn from_clap(mut self, clap_arg_name: impl Into<String>) -> Self {
         self.clap_name = Some(clap_arg_name.into());
         self
@@ -95,9 +132,10 @@ impl Key {
     /// Example: Key::new::<String>("module-path").alias("project-path")
     ///
     /// This allows both --module-path and --project-path to map to the same config key.
+    /// The value should then be accessed by using `module-path`
     ///
     /// The difference between from_clap and alias is that from_clap will work by mapping
-    /// a single value from clap, whereas alias will map both of them.
+    /// a single value from clap, whereas alias will check both of them in the CLI args
     pub fn alias(mut self, alias_name: impl Into<String>) -> Self {
         self.clap_alias = Some(alias_name.into());
         self
@@ -161,44 +199,84 @@ impl CommandConfigBuilder {
     ///
     /// # Arguments
     /// * `matches` - Parsed clap arguments (takes precedence)
-    /// * `config_values` - Values from the config file (can be empty HashMap if no config)
+    /// * `config_values` - Values from the config file
     /// * `command` - The clap Command to validate against
     pub fn build<'a>(
         self,
         matches: &'a ArgMatches,
         config_values: HashMap<String, Value>,
         command: &Command,
-    ) -> anyhow::Result<CommandConfig<'a>> {
-        let mut processed_config_values = HashMap::new();
-        let mut type_map = HashMap::new();
+    ) -> Result<CommandConfig<'a>, CommandConfigError> {
+        // Collect all clap argument names for validation
+        let clap_arg_names: HashSet<String> = command
+            .get_arguments()
+            .map(|arg| arg.get_id().as_str().to_string())
+            .collect();
 
-        let mut defined_clap_args = HashSet::new();
-        let mut alias_map = HashMap::new();
-
+        // Check that all the defined keys exist in clap
         for key in &self.keys {
-            defined_clap_args.insert(key.clap_arg_name().to_string());
-            type_map.insert(key.clap_arg_name().to_string(), key.type_id());
-
-            // Register the alias if present
-            if let Some(alias) = &key.clap_alias {
-                defined_clap_args.insert(alias.clone());
-                type_map.insert(alias.clone(), key.type_id());
-                // Map primary name -> alias for lookup in get_one()
-                alias_map.insert(key.clap_arg_name().to_string(), alias.clone());
+            if !clap_arg_names.contains(key.clap_arg_name()) {
+                return Err(CommandConfigError::InvalidClapReference {
+                    config_name: key.config_name().to_string(),
+                    clap_name: key.clap_arg_name().to_string(),
+                });
             }
 
-            // If config values has a value for this key, map it to the clap name
-            if let Some(value) = config_values.get(key.config_name()) {
-                // Skip excluded keys
-                if self.excluded_keys.contains(key.config_name()) {
-                    continue;
+            // Also validate alias if present
+            if let Some(alias) = &key.clap_alias {
+                if !clap_arg_names.contains(alias) {
+                    return Err(CommandConfigError::InvalidAliasReference {
+                        config_name: key.config_name().to_string(),
+                        alias: alias.clone(),
+                    });
                 }
-                processed_config_values.insert(key.clap_arg_name().to_string(), value.clone());
             }
         }
 
-        // Validate: Check that all clap arguments are either defined or excluded
-        // Skip clap's built-in arguments (help, version)
+        // Validate exclusions reference valid clap arguments
+        for excluded_key in &self.excluded_keys {
+            if !clap_arg_names.contains(excluded_key) {
+                return Err(CommandConfigError::InvalidExclusion {
+                    key: excluded_key.clone(),
+                });
+            }
+        }
+
+        let mut type_map = HashMap::new();
+        // A list of clap args that are referenced by the config keys, either by a direct
+        // mapping, a from_clap() mapping, or an alias. This is only used to validate that
+        // all of the clap args have been referenced
+        let mut referenced_clap_args = HashSet::new();
+        // Map from config name to clap arg name (for from_clap mapping)
+        let mut config_to_clap_map = HashMap::new();
+        // Map from config name to alias (for alias mapping)
+        let mut config_to_alias_map = HashMap::new();
+        let mut valid_config_keys = HashSet::new();
+
+        for key in &self.keys {
+            let config_name = key.config_name().to_string();
+            let clap_name = key.clap_arg_name().to_string();
+
+            referenced_clap_args.insert(clap_name.clone());
+            type_map.insert(config_name.clone(), key.type_id());
+
+            // Track the mapping from config name to clap arg name (if using from_clap)
+            if key.clap_name.is_some() {
+                config_to_clap_map.insert(config_name.clone(), clap_name.clone());
+            }
+
+            // Track valid config key names
+            valid_config_keys.insert(config_name.clone());
+
+            // Register the alias if present
+            if let Some(alias) = &key.clap_alias {
+                referenced_clap_args.insert(alias.clone());
+                // Map config name -> alias for lookup in get_one()
+                config_to_alias_map.insert(config_name.clone(), alias.clone());
+            }
+        }
+
+        // Check that all clap arguments are either referenced or excluded
         for arg in command.get_arguments() {
             let arg_name = arg.get_id().as_str();
 
@@ -207,61 +285,33 @@ impl CommandConfigBuilder {
                 continue;
             }
 
-            if !defined_clap_args.contains(arg_name) && !self.excluded_keys.contains(arg_name) {
-                anyhow::bail!(
-                    "The option `--{}` is defined in Clap, but not in CommandConfig. \
-                    If this is intentional and the option shouldn't be available in the config, \
-                    you can exclude it with the `CommandConfigBuilder::exclude` function",
-                    arg_name
-                );
+            if !referenced_clap_args.contains(arg_name) && !self.excluded_keys.contains(arg_name) {
+                return Err(CommandConfigError::ClapArgNotDefined {
+                    arg_name: arg_name.to_string(),
+                });
             }
         }
 
-        // Validate: Check that all keys and exclusions reference valid clap arguments
-        let clap_arg_names: HashSet<String> = command
-            .get_arguments()
-            .map(|arg| arg.get_id().as_str().to_string())
-            .collect();
-
-        for key in &self.keys {
-            if !clap_arg_names.contains(key.clap_arg_name()) {
-                anyhow::bail!(
-                    "Key '{}' references clap argument '{}' which doesn't exist in the Command",
-                    key.config_name(),
-                    key.clap_arg_name()
-                );
-            }
-
-            // Also validate alias if present
-            if let Some(alias) = &key.clap_alias {
-                if !clap_arg_names.contains(alias) {
-                    anyhow::bail!(
-                        "Key '{}' has alias '{}' which doesn't exist in the Command",
-                        key.config_name(),
-                        alias
-                    );
-                }
-            }
-        }
-
-        for excluded_key in &self.excluded_keys {
-            if !clap_arg_names.contains(excluded_key) {
-                anyhow::bail!("Excluded key '{}' doesn't exist in the clap Command", excluded_key);
-            }
-        }
-
-        // Also add any config values that weren't explicitly defined as keys
-        for (key, value) in config_values {
-            if !processed_config_values.contains_key(&key) && !self.excluded_keys.contains(&key) {
-                processed_config_values.insert(key, value);
+        // Check that all keys that are present in the config file are defined as Keys
+        for config_key in config_values.keys() {
+            if !valid_config_keys.contains(config_key) {
+                return Err(CommandConfigError::UnsupportedConfigKey {
+                    config_key: config_key.clone(),
+                    available_keys: valid_config_keys
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                });
             }
         }
 
         Ok(CommandConfig {
             matches,
-            config_values: processed_config_values,
-            arguments: type_map,
-            aliases: alias_map,
+            config_values,
+            type_map,
+            config_to_clap: config_to_clap_map,
+            config_to_alias: config_to_alias_map,
         })
     }
 }
@@ -281,61 +331,68 @@ impl<'a> CommandConfig<'a> {
     /// - Ok(Some(T)) if the value exists and can be converted
     /// - Ok(None) if the value doesn't exist in either clap or config
     /// - Err if the type doesn't match or conversion fails
-    pub fn get_one<T: Clone + Send + Sync + 'static>(&self, key: &str) -> anyhow::Result<Option<T>> {
+    pub fn get_one<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Result<Option<T>, CommandConfigError> {
         let requested_type_id = TypeId::of::<T>();
 
         // Validate type if we have type information
-        if let Some(&expected_type_id) = self.arguments.get(key) {
+        if let Some(&expected_type_id) = self.type_map.get(key) {
             if requested_type_id != expected_type_id {
                 let expected_type_name = type_name_from_id(expected_type_id);
                 let requested_type_name = std::any::type_name::<T>();
 
-                anyhow::bail!(
-                    "Mismatch between definition and access of `{}`. Could not downcast to {}, need to downcast to {}",
-                    key,
-                    requested_type_name,
-                    expected_type_name
-                );
+                return Err(CommandConfigError::TypeMismatch {
+                    key: key.to_string(),
+                    requested_type: requested_type_name.to_string(),
+                    expected_type: expected_type_name.to_string(),
+                });
             }
         }
 
-        // First try clap with the primary key name (takes precedence)
-        if let Some(value) = self.matches.get_one::<T>(key) {
+        // Try clap arguments first (CLI takes precedence)
+        // If from_clap() was used, use the mapped clap arg name, otherwise use the config name
+        let clap_name = self.config_to_clap.get(key).map(|s| s.as_str()).unwrap_or(key);
+        if let Some(value) = self.matches.get_one::<T>(clap_name) {
             return Ok(Some(value.clone()));
         }
 
         // Try clap with the alias if it exists
-        if let Some(alias) = self.aliases.get(key) {
+        if let Some(alias) = self.config_to_alias.get(key) {
             if let Some(value) = self.matches.get_one::<T>(alias) {
                 return Ok(Some(value.clone()));
             }
         }
 
-        // Fall back to config values
+        // Fall back to config values using the config name
         if let Some(value) = self.config_values.get(key) {
             from_json_value::<T>(value)
-                .with_context(|| {
-                    format!(
-                        "Failed to convert config value for key '{}' to type {}",
-                        key,
-                        std::any::type_name::<T>()
-                    )
+                .map_err(|source| CommandConfigError::ConversionError {
+                    key: key.to_string(),
+                    target_type: std::any::type_name::<T>().to_string(),
+                    source,
                 })
                 .map(Some)
         } else {
-            // Key doesn't exist - this is fine, most options are optional
             Ok(None)
         }
     }
 
     /// Check if a key exists in either clap or config.
     pub fn contains(&self, key: &str) -> bool {
-        self.matches.contains_id(key)
-            || self
-                .aliases
-                .get(key)
-                .map_or(false, |alias| self.matches.contains_id(alias))
-            || self.config_values.contains_key(key)
+        // Check clap with mapped name (if from_clap was used, use that name, otherwise use config name)
+        let clap_name = self.config_to_clap.get(key).map(|s| s.as_str()).unwrap_or(key);
+        if self.matches.contains_id(clap_name) {
+            return true;
+        }
+
+        // Check clap with alias
+        if let Some(alias) = self.config_to_alias.get(key) {
+            if self.matches.contains_id(alias) {
+                return true;
+            }
+        }
+
+        // Check config key
+        self.config_values.contains_key(key)
     }
 }
 
@@ -362,78 +419,22 @@ fn type_name_from_id(type_id: TypeId) -> &'static str {
 fn from_json_value<T: Clone + Send + Sync + 'static>(value: &Value) -> anyhow::Result<T> {
     let type_id = TypeId::of::<T>();
 
-    // We use a trick here: we create a Box<dyn Any> and then downcast it
-    let any: Box<dyn std::any::Any> = if type_id == TypeId::of::<String>() {
-        Box::new(value.as_str().context("Expected string value")?.to_string())
-    } else if type_id == TypeId::of::<PathBuf>() {
-        Box::new(PathBuf::from(
+    let any: Box<dyn std::any::Any> = match type_id {
+        t if t == TypeId::of::<String>() => Box::new(value.as_str().context("Expected string value")?.to_string()),
+        t if t == TypeId::of::<PathBuf>() => Box::new(PathBuf::from(
             value.as_str().context("Expected string value for PathBuf")?,
-        ))
-    } else if type_id == TypeId::of::<bool>() {
-        Box::new(value.as_bool().context("Expected boolean value")?)
-    } else if type_id == TypeId::of::<i64>() {
-        Box::new(value.as_i64().context("Expected i64 value")?)
-    } else if type_id == TypeId::of::<u64>() {
-        Box::new(value.as_u64().context("Expected u64 value")?)
-    } else if type_id == TypeId::of::<f64>() {
-        Box::new(value.as_f64().context("Expected f64 value")?)
-    } else {
-        anyhow::bail!("Unsupported type for conversion from JSON")
+        )),
+        t if t == TypeId::of::<bool>() => Box::new(value.as_bool().context("Expected boolean value")?),
+        t if t == TypeId::of::<i64>() => Box::new(value.as_i64().context("Expected i64 value")?),
+        t if t == TypeId::of::<u64>() => Box::new(value.as_u64().context("Expected u64 value")?),
+        t if t == TypeId::of::<f64>() => Box::new(value.as_f64().context("Expected f64 value")?),
+        _ => anyhow::bail!("Unsupported type for conversion from JSON"),
     };
 
     // Now downcast to T
     any.downcast::<T>()
         .map(|boxed| *boxed)
         .map_err(|_| anyhow::anyhow!("Failed to downcast value"))
-}
-
-/// Trait for types that can be extracted from a JSON config value.
-pub trait FromConfigValue: Sized {
-    fn from_value(value: &Value) -> Option<Self>;
-}
-
-impl FromConfigValue for String {
-    fn from_value(value: &Value) -> Option<Self> {
-        value.as_str().map(|s| s.to_string())
-    }
-}
-
-impl FromConfigValue for PathBuf {
-    fn from_value(value: &Value) -> Option<Self> {
-        value.as_str().map(PathBuf::from)
-    }
-}
-
-impl FromConfigValue for bool {
-    fn from_value(value: &Value) -> Option<Self> {
-        value.as_bool()
-    }
-}
-
-impl FromConfigValue for i64 {
-    fn from_value(value: &Value) -> Option<Self> {
-        value.as_i64()
-    }
-}
-
-impl FromConfigValue for u64 {
-    fn from_value(value: &Value) -> Option<Self> {
-        value.as_u64()
-    }
-}
-
-impl FromConfigValue for f64 {
-    fn from_value(value: &Value) -> Option<Self> {
-        value.as_f64()
-    }
-}
-
-impl<T: FromConfigValue> FromConfigValue for Vec<T> {
-    fn from_value(value: &Value) -> Option<Self> {
-        value
-            .as_array()
-            .and_then(|arr| arr.iter().map(|v| T::from_value(v)).collect())
-    }
 }
 
 impl SpacetimeConfig {
@@ -551,7 +552,10 @@ mod tests {
         assert_eq!(generate[0].get("language").and_then(|v| v.as_str()), Some("csharp"));
 
         let publish = config.publish.as_ref().unwrap();
-        assert_eq!(publish.database.as_deref(), Some("bitcraft"));
+        assert_eq!(
+            publish.additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("bitcraft")
+        );
         assert_eq!(
             publish.additional_fields.get("module-path").and_then(|v| v.as_str()),
             Some("spacetimedb")
@@ -559,8 +563,14 @@ mod tests {
 
         let children = publish.children.as_ref().unwrap();
         assert_eq!(children.len(), 2);
-        assert_eq!(children[0].database.as_deref(), Some("region-1"));
-        assert_eq!(children[1].database.as_deref(), Some("region-2"));
+        assert_eq!(
+            children[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("region-1")
+        );
+        assert_eq!(
+            children[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("region-2")
+        );
     }
 
     #[test]
@@ -634,38 +644,6 @@ mod tests {
     }
 
     #[test]
-    fn test_project_config_exclusions() {
-        use clap::{Arg, Command};
-
-        let cmd = Command::new("test")
-            .arg(Arg::new("yes").long("yes").action(clap::ArgAction::SetTrue))
-            .arg(Arg::new("server").long("server").value_name("SERVER"));
-
-        let matches = cmd
-            .clone()
-            .get_matches_from(vec!["test", "--yes", "--server", "maincloud"]);
-
-        // Config has yes, but we exclude it (yes should be CLI-only)
-        let mut config_values = HashMap::new();
-        config_values.insert("yes".to_string(), Value::Bool(false));
-        config_values.insert("server".to_string(), Value::String("local".to_string()));
-
-        let command_config = CommandConfigBuilder::new()
-            .key(Key::new::<String>("server"))
-            .exclude("yes")
-            .build(&matches, config_values, &cmd)
-            .unwrap();
-
-        // yes should come from CLI only (config value was excluded)
-        assert_eq!(command_config.get_one::<bool>("yes").unwrap(), Some(true));
-        // server should come from CLI (overrides config)
-        assert_eq!(
-            command_config.get_one::<String>("server").unwrap(),
-            Some("maincloud".to_string())
-        );
-    }
-
-    #[test]
     fn test_publish_config_extraction() {
         use clap::{Arg, Command};
 
@@ -681,11 +659,17 @@ mod tests {
 
         let publish_config: PublishConfig = json5::from_str(json).unwrap();
 
-        // Verify structured fields
-        assert_eq!(publish_config.database.as_deref(), Some("my-database"));
+        // Verify children field
         assert!(publish_config.children.is_none());
 
-        // Verify additional_fields captured the other options
+        // Verify all fields are in additional_fields
+        assert_eq!(
+            publish_config
+                .additional_fields
+                .get("database")
+                .and_then(|v| v.as_str()),
+            Some("my-database")
+        );
         assert_eq!(
             publish_config.additional_fields.get("server").and_then(|v| v.as_str()),
             Some("local")
@@ -723,9 +707,18 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test", "--server", "maincloud"]);
 
         // Convert PublishConfig to HashMap for CommandConfig
-        let mut config_values = publish_config.additional_fields.clone();
-        if let Some(db) = publish_config.database.as_ref() {
-            config_values.insert("database".to_string(), Value::String(db.clone()));
+        let mut config_values = HashMap::new();
+        if let Some(database) = publish_config.additional_fields.get("database") {
+            config_values.insert("database".to_string(), database.clone());
+        }
+        if let Some(server) = publish_config.additional_fields.get("server") {
+            config_values.insert("server".to_string(), server.clone());
+        }
+        if let Some(module_path) = publish_config.additional_fields.get("module-path") {
+            config_values.insert("module-path".to_string(), module_path.clone());
+        }
+        if let Some(build_options) = publish_config.additional_fields.get("build-options") {
+            config_values.insert("build-options".to_string(), build_options.clone());
         }
 
         let command_config = CommandConfigBuilder::new()
@@ -777,12 +770,11 @@ mod tests {
 
         // Trying to get as i64 when it's defined as String should error
         let result = command_config.get_one::<i64>("server");
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Mismatch between definition and access"));
-        assert!(err_msg.contains("server"));
-        assert!(err_msg.contains("i64"));
-        assert!(err_msg.contains("alloc::string::String"));
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::TypeMismatch { key, requested_type, expected_type }
+                if key == "server" && requested_type.contains("i64") && expected_type.contains("String")
+        ));
     }
 
     #[test]
@@ -808,10 +800,10 @@ mod tests {
 
         // This should error because "server" is in clap but not defined in the builder
         // and not excluded
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("server"));
-        assert!(err_msg.contains("not in CommandConfig"));
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::ClapArgNotDefined { arg_name } if arg_name == "server"
+        ));
     }
 
     #[test]
@@ -838,9 +830,9 @@ mod tests {
             .build(&matches, config_values, &cmd)
             .unwrap();
 
-        // CLI should override config, accessed via clap name "project-path"
+        // CLI should override config, accessed via config name "module-path"
         assert_eq!(
-            command_config.get_one::<String>("project-path").unwrap(),
+            command_config.get_one::<String>("module-path").unwrap(),
             Some("./my-project".to_string())
         );
     }
@@ -1021,10 +1013,11 @@ mod tests {
             .exclude("server") // Exclude the server arg we're not using
             .build(&matches, HashMap::new(), &cmd);
 
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("module-path") || err_msg.contains("non-existent"));
-        assert!(err_msg.contains("doesn't exist in the Command"));
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::InvalidClapReference { config_name, clap_name }
+                if config_name == "module-path" && clap_name == "non-existent"
+        ));
     }
 
     #[test]
@@ -1044,11 +1037,89 @@ mod tests {
             .key(Key::new::<String>("module-path").alias("non-existent-alias"))
             .build(&matches, HashMap::new(), &cmd);
 
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("module-path"));
-        assert!(err_msg.contains("non-existent-alias"));
-        assert!(err_msg.contains("doesn't exist in the Command"));
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::InvalidAliasReference { config_name, alias }
+                if config_name == "module-path" && alias == "non-existent-alias"
+        ));
+    }
+
+    #[test]
+    fn test_undefined_config_key_error() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test").arg(
+            Arg::new("server")
+                .long("server")
+                .value_parser(clap::value_parser!(String)),
+        );
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        // Config has a key that's not defined in CommandConfig
+        let mut config_values = HashMap::new();
+        config_values.insert("server".to_string(), Value::String("local".to_string()));
+        config_values.insert("undefined-key".to_string(), Value::String("value".to_string()));
+
+        let result = CommandConfigBuilder::new()
+            .key(Key::new::<String>("server"))
+            .build(&matches, config_values, &cmd);
+
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::UnsupportedConfigKey { config_key, .. }
+                if config_key == "undefined-key"
+        ));
+    }
+
+    #[test]
+    fn test_from_clap_with_wrong_arg_name() {
+        use clap::{Arg, Command};
+
+        // Command has "lang" argument
+        let cmd = Command::new("test").arg(Arg::new("lang").long("lang").value_parser(clap::value_parser!(String)));
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        // Try to create a key that references "language" via from_clap, but clap has "lang"
+        let result = CommandConfigBuilder::new()
+            .key(Key::new::<String>("lang").from_clap("language"))
+            .build(&matches, HashMap::new(), &cmd);
+
+        // Should fail because "language" doesn't exist in the Command
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::InvalidClapReference { config_name, clap_name }
+                if config_name == "lang" && clap_name == "language"
+        ));
+    }
+
+    #[test]
+    fn test_excluded_key_in_config_should_error() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test")
+            .arg(Arg::new("yes").long("yes").action(clap::ArgAction::SetTrue))
+            .arg(Arg::new("server").long("server").value_name("SERVER"));
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        // Config has yes, which is excluded
+        let mut config_values = HashMap::new();
+        config_values.insert("yes".to_string(), Value::Bool(true));
+        config_values.insert("server".to_string(), Value::String("local".to_string()));
+
+        let result = CommandConfigBuilder::new()
+            .key(Key::new::<String>("server"))
+            .exclude("yes")
+            .build(&matches, config_values, &cmd);
+
+        // Should error because "yes" is excluded and shouldn't be in config
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::UnsupportedConfigKey { config_key, .. }
+                if config_key == "yes"
+        ));
     }
 
     #[test]
@@ -1070,10 +1141,10 @@ mod tests {
 
         // Should error when trying to convert invalid value
         let result = command_config.get_one::<i64>("port");
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Failed to convert config value"));
-        assert!(err_msg.contains("port"));
-        assert!(err_msg.contains("i64"));
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::ConversionError { key, target_type, .. }
+                if key == "port" && target_type.contains("i64")
+        ));
     }
 }
