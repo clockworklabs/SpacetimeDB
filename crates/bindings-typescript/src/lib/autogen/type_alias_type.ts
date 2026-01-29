@@ -8,9 +8,11 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
-export default __t.object('TypeAlias', {
+export default __t.object("TypeAlias", {
   name: __t.string(),
   ty: __t.u32(),
 });
+
+

@@ -9,10 +9,14 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "../../lib/type_builders";
+import Lifecycle from "./lifecycle_type";
 
-export default __t.object("RawScopedTypeNameV9", {
-  scope: __t.array(__t.string()),
-  name: __t.string(),
+
+export default __t.object("RawLifeCycleReducerDefV10", {
+  get lifecycleSpec() {
+    return Lifecycle;
+  },
+  functionName: __t.string(),
 });
 
 

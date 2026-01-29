@@ -8,12 +8,13 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
 // The tagged union or sum type for the algebraic type `IndexType`.
-const IndexType = __t.enum('IndexType', {
-  BTree: __t.unit(),
+const IndexType = __t.enum("IndexType", {BTree: __t.unit(),
   Hash: __t.unit(),
 });
 
 export default IndexType;
+
+

@@ -8,12 +8,13 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
 // The tagged union or sum type for the algebraic type `ViewResultHeader`.
-const ViewResultHeader = __t.enum('ViewResultHeader', {
-  RowData: __t.unit(),
+const ViewResultHeader = __t.enum("ViewResultHeader", {RowData: __t.unit(),
   RawSql: __t.string(),
 });
 
 export default ViewResultHeader;
+
+

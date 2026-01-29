@@ -9,35 +9,35 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "../../lib/type_builders";
-import RawIndexDefV9 from "./raw_index_def_v_9_type";
-import RawConstraintDefV9 from "./raw_constraint_def_v_9_type";
-import RawSequenceDefV9 from "./raw_sequence_def_v_9_type";
-import RawScheduleDefV9 from "./raw_schedule_def_v_9_type";
 import TableType from "./table_type_type";
 import TableAccess from "./table_access_type";
+import RawIndexDefV10 from "./raw_index_def_v_10_type";
+import RawConstraintDefV10 from "./raw_constraint_def_v_10_type";
+import RawSequenceDefV10 from "./raw_sequence_def_v_10_type";
+import RawColumnDefaultValueV10 from "./raw_column_default_value_v_10_type";
 
 
-export default __t.object("RawTableDefV9", {
-  name: __t.string(),
+export default __t.object("RawTableDefV10", {
+  sourceName: __t.string(),
   productTypeRef: __t.u32(),
   primaryKey: __t.array(__t.u16()),
   get indexes() {
-    return __t.array(RawIndexDefV9);
+    return __t.array(RawIndexDefV10);
   },
   get constraints() {
-    return __t.array(RawConstraintDefV9);
+    return __t.array(RawConstraintDefV10);
   },
   get sequences() {
-    return __t.array(RawSequenceDefV9);
-  },
-  get schedule() {
-    return __t.option(RawScheduleDefV9);
+    return __t.array(RawSequenceDefV10);
   },
   get tableType() {
     return TableType;
   },
   get tableAccess() {
     return TableAccess;
+  },
+  get defaultValues() {
+    return __t.array(RawColumnDefaultValueV10);
   },
 });
 

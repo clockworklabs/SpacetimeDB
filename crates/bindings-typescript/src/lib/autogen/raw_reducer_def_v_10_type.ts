@@ -10,11 +10,22 @@ import {
   type Infer as __Infer,
 } from "../../lib/type_builders";
 import AlgebraicType from "./algebraic_type_type";
+import ProductType from "./product_type_type";
+import FunctionVisibility from "./function_visibility_type";
 
 
-export default __t.object("ProductTypeElement", {
-  name: __t.option(__t.string()),
-  get algebraicType() {
+export default __t.object("RawReducerDefV10", {
+  sourceName: __t.string(),
+  get params() {
+    return ProductType;
+  },
+  get visibility() {
+    return FunctionVisibility;
+  },
+  get okReturnType() {
+    return AlgebraicType;
+  },
+  get errReturnType() {
     return AlgebraicType;
   },
 });

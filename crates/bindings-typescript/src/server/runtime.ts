@@ -263,12 +263,12 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
 };
 
 export const hooks: ModuleHooks = {
-  __describe_module__() {
+  __describe_module_v10__() {
     const writer = new BinaryWriter(128);
     AlgebraicType.serializeValue(
       writer,
       RawModuleDef.algebraicType,
-      RawModuleDef.V9(MODULE_DEF)
+      RawModuleDef.V10(MODULE_DEF)
     );
     return writer.getBuffer();
   },

@@ -8,11 +8,10 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
 // The tagged union or sum type for the algebraic type `HttpVersion`.
-const HttpVersion = __t.enum('HttpVersion', {
-  Http09: __t.unit(),
+const HttpVersion = __t.enum("HttpVersion", {Http09: __t.unit(),
   Http10: __t.unit(),
   Http11: __t.unit(),
   Http2: __t.unit(),
@@ -20,3 +19,5 @@ const HttpVersion = __t.enum('HttpVersion', {
 });
 
 export default HttpVersion;
+
+

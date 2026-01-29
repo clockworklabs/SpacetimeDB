@@ -9,10 +9,14 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "../../lib/type_builders";
+import RawConstraintDataV9 from "./raw_constraint_data_v_9_type";
 
-export default __t.object("RawScopedTypeNameV9", {
-  scope: __t.array(__t.string()),
-  name: __t.string(),
+
+export default __t.object("RawConstraintDefV10", {
+  sourceName: __t.option(__t.string()),
+  get data() {
+    return RawConstraintDataV9;
+  },
 });
 
 

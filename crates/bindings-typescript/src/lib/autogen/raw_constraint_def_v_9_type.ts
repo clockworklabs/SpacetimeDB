@@ -8,12 +8,15 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
-import RawConstraintDataV9 from './raw_constraint_data_v_9_type';
+} from "../../lib/type_builders";
+import RawConstraintDataV9 from "./raw_constraint_data_v_9_type";
 
-export default __t.object('RawConstraintDefV9', {
+
+export default __t.object("RawConstraintDefV9", {
   name: __t.option(__t.string()),
   get data() {
     return RawConstraintDataV9;
   },
 });
+
+

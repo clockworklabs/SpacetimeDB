@@ -10,9 +10,11 @@ import {
   type Infer as __Infer,
 } from "../../lib/type_builders";
 
-export default __t.object("RawScopedTypeNameV9", {
-  scope: __t.array(__t.string()),
-  name: __t.string(),
+export default __t.object("RawScheduleDefV10", {
+  sourceName: __t.option(__t.string()),
+  tableName: __t.string(),
+  scheduleAtCol: __t.u16(),
+  functionName: __t.string(),
 });
 
 

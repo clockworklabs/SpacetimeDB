@@ -8,11 +8,10 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
 // The tagged union or sum type for the algebraic type `HttpMethod`.
-const HttpMethod = __t.enum('HttpMethod', {
-  Get: __t.unit(),
+const HttpMethod = __t.enum("HttpMethod", {Get: __t.unit(),
   Head: __t.unit(),
   Post: __t.unit(),
   Put: __t.unit(),
@@ -25,3 +24,5 @@ const HttpMethod = __t.enum('HttpMethod', {
 });
 
 export default HttpMethod;
+
+

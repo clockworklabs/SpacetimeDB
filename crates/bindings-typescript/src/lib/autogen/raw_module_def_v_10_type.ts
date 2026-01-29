@@ -9,10 +9,13 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "../../lib/type_builders";
+import RawModuleDefV10Section from "./raw_module_def_v_10_section_type";
 
-export default __t.object("RawScopedTypeNameV9", {
-  scope: __t.array(__t.string()),
-  name: __t.string(),
+
+export default __t.object("RawModuleDefV10", {
+  get sections() {
+    return __t.array(RawModuleDefV10Section);
+  },
 });
 
 

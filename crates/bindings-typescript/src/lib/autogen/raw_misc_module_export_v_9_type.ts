@@ -8,14 +8,14 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
-import RawColumnDefaultValueV9 from './raw_column_default_value_v_9_type';
-import RawProcedureDefV9 from './raw_procedure_def_v_9_type';
-import RawViewDefV9 from './raw_view_def_v_9_type';
+} from "../../lib/type_builders";
+import RawColumnDefaultValueV9 from "./raw_column_default_value_v_9_type";
+import RawProcedureDefV9 from "./raw_procedure_def_v_9_type";
+import RawViewDefV9 from "./raw_view_def_v_9_type";
+
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
-const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
-  get ColumnDefaultValue() {
+const RawMiscModuleExportV9 = __t.enum("RawMiscModuleExportV9", {get ColumnDefaultValue() {
     return RawColumnDefaultValueV9;
   },
   get Procedure() {
@@ -27,3 +27,5 @@ const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
 });
 
 export default RawMiscModuleExportV9;
+
+

@@ -8,9 +8,9 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
-export default __t.object('RawSequenceDefV8', {
+export default __t.object("RawSequenceDefV8", {
   sequenceName: __t.string(),
   colPos: __t.u16(),
   increment: __t.i128(),
@@ -19,3 +19,5 @@ export default __t.object('RawSequenceDefV8', {
   maxValue: __t.option(__t.i128()),
   allocated: __t.i128(),
 });
+
+

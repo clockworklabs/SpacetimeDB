@@ -10,9 +10,11 @@ import {
   type Infer as __Infer,
 } from "../../lib/type_builders";
 
-export default __t.object("RawScopedTypeNameV9", {
-  scope: __t.array(__t.string()),
-  name: __t.string(),
+// The tagged union or sum type for the algebraic type `FunctionVisibility`.
+const FunctionVisibility = __t.enum("FunctionVisibility", {Internal: __t.unit(),
+  ClientCallable: __t.unit(),
 });
+
+export default FunctionVisibility;
 
 

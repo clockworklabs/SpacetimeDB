@@ -9,10 +9,15 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "../../lib/type_builders";
+import RawScopedTypeNameV10 from "./raw_scoped_type_name_v_10_type";
 
-export default __t.object("RawScopedTypeNameV9", {
-  scope: __t.array(__t.string()),
-  name: __t.string(),
+
+export default __t.object("RawTypeDefV10", {
+  get sourceName() {
+    return RawScopedTypeNameV10;
+  },
+  ty: __t.u32(),
+  customOrdering: __t.bool(),
 });
 
 
