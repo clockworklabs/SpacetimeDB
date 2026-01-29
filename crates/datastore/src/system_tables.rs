@@ -11,6 +11,7 @@
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
@@ -35,7 +36,6 @@ use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::str::FromStr;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
@@ -1665,10 +1665,11 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_data_structures::map::HashSet;
 
     #[test]
     fn test_index_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for index in table.indexes.iter() {
                 assert!(
@@ -1723,7 +1724,7 @@ mod tests {
 
     #[test]
     fn test_constraint_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for constraint in table.constraints.iter() {
                 assert!(
@@ -1758,7 +1759,7 @@ mod tests {
 
     #[test]
     fn test_sequence_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for sequence in table.sequences.iter() {
                 assert!(
