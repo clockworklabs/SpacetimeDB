@@ -169,7 +169,10 @@ impl SpacetimeDbGuard {
             guard
         } else {
             // Use the built CLI (common case)
-            let (child, logs, host_url, reader_threads) = Self::spawn_server(&data_dir, pg_port, spawn_id);
+            let cli_path = ensure_binaries_built();
+            let cmd = Command::new(&cli_path);
+            let (child, logs, host_url, reader_threads) =
+                Self::spawn_server_with_command(data_dir, pg_port, spawn_id, cmd);
             SpacetimeDbGuard {
                 child,
                 host_url,
@@ -206,7 +209,11 @@ impl SpacetimeDbGuard {
         sleep(Duration::from_millis(100));
 
         eprintln!("[RESTART-{:03}] Spawning new server", spawn_id);
-        let (child, logs, host_url, reader_threads) = Self::spawn_server(&self.data_dir, self.pg_port, spawn_id);
+        // Use the built CLI (common case)
+        let cli_path = ensure_binaries_built();
+        let cmd = Command::new(&cli_path);
+        let (child, logs, host_url, reader_threads) =
+            Self::spawn_server_with_command(self.data_dir.clone(), self.pg_port, spawn_id, cmd);
         eprintln!(
             "[RESTART-{:03}] New server ready, pid={}, url={}",
             spawn_id,
@@ -258,27 +265,17 @@ impl SpacetimeDbGuard {
 
     /// Spawns a new server process with the given data directory.
     /// Returns (child, logs, host_url, reader_threads).
-    fn spawn_server(
-        data_dir: &Path,
-        pg_port: Option<u16>,
-        spawn_id: u64,
-    ) -> (Child, Arc<Mutex<String>>, String, Vec<thread::JoinHandle<()>>) {
-        eprintln!(
-            "[SPAWN-{:03}] START data_dir={:?}, pg_port={:?}",
-            spawn_id, data_dir, pg_port
-        );
-
-        let cli_path = ensure_binaries_built();
-        let cmd = Command::new(&cli_path);
-        Self::spawn_server_with_command(data_dir, pg_port, spawn_id, cmd)
-    }
-
     fn spawn_server_with_command(
         data_dir: &Path,
         pg_port: Option<u16>,
         spawn_id: u64,
         cmd: Command,
     ) -> (Child, Arc<Mutex<String>>, String, Vec<thread::JoinHandle<()>>) {
+        eprintln!(
+            "[SPAWN-{:03}] START data_dir={:?}, pg_port={:?}",
+            spawn_id, data_dir, pg_port
+        );
+
         let data_dir_str = data_dir.display().to_string();
         let pg_port_str = pg_port.map(|p| p.to_string());
 
