@@ -47,9 +47,6 @@ The C++ bindings uses `Outcome<T>` for type-safe, exception-free error handling 
 ```cpp
 // For reducers - cannot fail with a value, only with an error message
 using ReducerResult = Outcome<void>;
-
-// For procedures - return a value on success, error message on failure
-template<typename T> class Outcome<T>;
 ```
 
 ### Reducer Error Handling (ReducerResult / Outcome<void>)
