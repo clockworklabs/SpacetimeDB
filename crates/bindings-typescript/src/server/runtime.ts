@@ -27,7 +27,6 @@ import {
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
-  type ReducerCtx,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
@@ -178,6 +177,8 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
+let REDUCER_CTX: InstanceType<typeof ReducerCtxImpl> | undefined;
+
 // Using a class expression rather than declaration keeps the class out of the
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
@@ -203,6 +204,19 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.timestamp = timestamp;
     this.connectionId = connectionId;
     this.db = getDbView();
+  }
+
+  static reset(
+    me: InstanceType<typeof this>,
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    me.sender = sender;
+    me.timestamp = timestamp;
+    me.connectionId = connectionId;
+    me.#uuidCounter = undefined;
+    me.#senderAuth = undefined;
   }
 
   get identity() {
@@ -276,17 +290,24 @@ export const hooks: ModuleHooks = {
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = new ReducerCtxImpl(
-      senderIdentity,
-      new Timestamp(timestamp),
-      ConnectionId.nullIfZero(new ConnectionId(connId))
-    );
-    try {
-      return (
-        callUserFunction(moduleCtx.reducers[reducerId], ctx, args) ?? {
-          tag: 'ok',
-        }
+    let ctx;
+    if (REDUCER_CTX == null) {
+      ctx = REDUCER_CTX = new ReducerCtxImpl(
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
       );
+    } else {
+      ctx = REDUCER_CTX;
+      ReducerCtxImpl.reset(
+        REDUCER_CTX,
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      );
+    }
+    try {
+      callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
