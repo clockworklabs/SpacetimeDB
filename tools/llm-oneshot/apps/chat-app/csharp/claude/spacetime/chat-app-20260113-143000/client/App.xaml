@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ChatApp.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- SpacetimeDB Brand Colors -->
+            <Color x:Key="StdbGreen">#4cf490</Color>
+            <Color x:Key="StdbGreenDark">#2ef27d</Color>
+            <Color x:Key="StdbGreenLight">#6af6a3</Color>
+            <Color x:Key="StdbPurple">#a880ff</Color>
+            <Color x:Key="StdbBlue">#02befa</Color>
+            <Color x:Key="StdbYellow">#fbdc8e</Color>
+            <Color x:Key="StdbPink">#ff80fb</Color>
+            <Color x:Key="StdbRed">#ff4c4c</Color>
+            
+            <!-- Background Colors -->
+            <Color x:Key="BgDarkest">#060606</Color>
+            <Color x:Key="BgDark">#0d0d0e</Color>
+            <Color x:Key="BgSurface">#141416</Color>
+            <Color x:Key="BgHover">#363840</Color>
+            <Color x:Key="BorderColor">#202126</Color>
+            
+            <!-- Text Colors -->
+            <Color x:Key="TextPrimary">#f4f6fc</Color>
+            <Color x:Key="TextStrong">#ced3e0</Color>
+            <Color x:Key="TextBody">#b6c0cf</Color>
+            <Color x:Key="TextMuted">#6f7987</Color>
+
+            <!-- Styles -->
+            <Style TargetType="Page" ApplyToDerivedTypes="True">
+                <Setter Property="BackgroundColor" Value="{StaticResource BgDarkest}"/>
+            </Style>
+            
+            <Style TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextBody}"/>
+                <Setter Property="FontSize" Value="14"/>
+            </Style>
+            
+            <Style x:Key="HeadingLabel" TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="FontSize" Value="20"/>
+                <Setter Property="FontAttributes" Value="Bold"/>
+            </Style>
+            
+            <Style x:Key="SubheadingLabel" TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextStrong}"/>
+                <Setter Property="FontSize" Value="16"/>
+            </Style>
+            
+            <Style x:Key="MutedLabel" TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextMuted}"/>
+                <Setter Property="FontSize" Value="12"/>
+            </Style>
+            
+            <Style TargetType="Entry">
+                <Setter Property="BackgroundColor" Value="{StaticResource BgSurface}"/>
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="PlaceholderColor" Value="{StaticResource TextMuted}"/>
+            </Style>
+            
+            <Style TargetType="Editor">
+                <Setter Property="BackgroundColor" Value="{StaticResource BgSurface}"/>
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="PlaceholderColor" Value="{StaticResource TextMuted}"/>
+            </Style>
+            
+            <Style x:Key="PrimaryButton" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="{StaticResource StdbGreen}"/>
+                <Setter Property="TextColor" Value="{StaticResource BgDarkest}"/>
+                <Setter Property="FontAttributes" Value="Bold"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Padding" Value="16,12"/>
+            </Style>
+            
+            <Style x:Key="SecondaryButton" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="{StaticResource BgSurface}"/>
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="BorderColor" Value="{StaticResource BorderColor}"/>
+                <Setter Property="BorderWidth" Value="1"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Padding" Value="16,12"/>
+            </Style>
+            
+            <Style x:Key="DangerButton" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="{StaticResource StdbRed}"/>
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Padding" Value="16,12"/>
+            </Style>
+            
+            <Style x:Key="CardFrame" TargetType="Frame">
+                <Setter Property="BackgroundColor" Value="{StaticResource BgSurface}"/>
+                <Setter Property="BorderColor" Value="{StaticResource BorderColor}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Padding" Value="12"/>
+                <Setter Property="HasShadow" Value="False"/>
+            </Style>
+            
+            <Style x:Key="EmojiButton" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="Transparent"/>
+                <Setter Property="FontSize" Value="18"/>
+                <Setter Property="Padding" Value="4"/>
+                <Setter Property="HeightRequest" Value="36"/>
+                <Setter Property="WidthRequest" Value="36"/>
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

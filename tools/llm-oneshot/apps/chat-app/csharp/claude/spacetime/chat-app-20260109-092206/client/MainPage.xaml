@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ChatApp.MainPage"
+             BackgroundColor="#0F0A1A">
+
+    <Grid ColumnDefinitions="240,*,200">
+        
+        <!-- ROOMS SIDEBAR -->
+        <Grid Grid.Column="0" BackgroundColor="#0A0612" RowDefinitions="Auto,Auto,*,Auto">
+            
+            <!-- App Header with Gradient -->
+            <Border Grid.Row="0" Padding="16,12" StrokeThickness="0">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#8B5CF6" Offset="0"/>
+                        <GradientStop Color="#3B82F6" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid ColumnDefinitions="*,Auto">
+                    <VerticalStackLayout>
+                        <Label Text="SpacetimeDB Chat" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                        <Label x:Name="RoomCountLabel" Text="0 channels" FontSize="10" TextColor="#E0D4FF" Margin="0,2,0,0"/>
+                    </VerticalStackLayout>
+                    <!-- Sync Indicator -->
+                    <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                        <BoxView x:Name="SyncDot" WidthRequest="6" HeightRequest="6" CornerRadius="3" Color="#2DD4BF"/>
+                        <Label x:Name="SyncLabel" Text="LIVE" FontSize="9" FontAttributes="Bold" TextColor="#2DD4BF"/>
+                    </HorizontalStackLayout>
+                </Grid>
+            </Border>
+
+            <!-- Create Room -->
+            <Grid Grid.Row="1" Padding="10,8" ColumnDefinitions="*,Auto" BackgroundColor="#0A0612">
+                <Border BackgroundColor="#1A1425" Padding="8,6" StrokeThickness="0">
+                    <Border.StrokeShape><RoundRectangle CornerRadius="6"/></Border.StrokeShape>
+                    <Entry x:Name="NewRoomEntry" Placeholder="New room..." 
+                           BackgroundColor="Transparent" TextColor="#F8FAFC" PlaceholderColor="#64748B"
+                           FontSize="13"/>
+                </Border>
+                <Button Grid.Column="1" Text="+" BackgroundColor="#8B5CF6" TextColor="White"
+                        WidthRequest="34" HeightRequest="34" CornerRadius="6" Margin="6,0,0,0"
+                        FontSize="16" FontAttributes="Bold" Padding="0"
+                        Clicked="CreateRoom_Clicked"/>
+            </Grid>
+
+            <!-- Rooms List -->
+            <ScrollView Grid.Row="2">
+                <VerticalStackLayout Padding="6,4">
+                    <Label Text="CHANNELS" FontSize="10" FontAttributes="Bold" TextColor="#64748B" Margin="8,6,0,6"/>
+                    <CollectionView x:Name="RoomsCollection" SelectionMode="Single"
+                                    SelectionChanged="RoomsCollection_SelectionChanged">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Frame BackgroundColor="#1A1425" Margin="0,1" Padding="10,8" CornerRadius="6" BorderColor="Transparent">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <Label Text="#" FontSize="14" TextColor="#8B5CF6" FontAttributes="Bold"/>
+                                        <Label Grid.Column="1" Text="{Binding Name}" FontSize="13" TextColor="#CBD5E1"
+                                               Margin="6,0,0,0" VerticalOptions="Center"/>
+                                        <Frame Grid.Column="2" BackgroundColor="#8B5CF6" Padding="5,2" CornerRadius="8"
+                                               BorderColor="Transparent" IsVisible="{Binding HasUnread}">
+                                            <Label Text="{Binding UnreadCount}" FontSize="9" TextColor="White" FontAttributes="Bold"/>
+                                        </Frame>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- User Info -->
+            <Border Grid.Row="3" BackgroundColor="#0A0612" Padding="10" StrokeThickness="0,1,0,0" Stroke="#1A1425">
+                <Grid ColumnDefinitions="Auto,*">
+                    <Grid>
+                        <BoxView WidthRequest="36" HeightRequest="36" CornerRadius="18" Color="#8B5CF6"/>
+                        <BoxView WidthRequest="10" HeightRequest="10" CornerRadius="5" Color="#14B8A6"
+                                 HorizontalOptions="End" VerticalOptions="End" Margin="0,0,-2,-2"/>
+                    </Grid>
+                    <VerticalStackLayout Grid.Column="1" Margin="10,0,0,0" VerticalOptions="Center">
+                        <Entry x:Name="DisplayNameEntry" Text="Anonymous" FontSize="12" FontAttributes="Bold"
+                               BackgroundColor="Transparent" TextColor="#F8FAFC"
+                               Completed="DisplayName_Completed"/>
+                        <Label x:Name="ConnectionStatusLabel" Text="Connecting..." FontSize="10" TextColor="#64748B"/>
+                    </VerticalStackLayout>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- MAIN CHAT AREA -->
+        <Grid Grid.Column="1" BackgroundColor="#0F0A1A" RowDefinitions="Auto,*,Auto,Auto">
+            
+            <!-- Channel Header -->
+            <Border Grid.Row="0" Padding="16,12" BackgroundColor="#1A1425" StrokeThickness="0">
+                <HorizontalStackLayout Spacing="6">
+                    <Label Text="#" FontSize="18" TextColor="#8B5CF6" FontAttributes="Bold"/>
+                    <Label x:Name="CurrentRoomLabel" Text="Select a channel" FontSize="16" FontAttributes="Bold" TextColor="#F8FAFC"/>
+                </HorizontalStackLayout>
+            </Border>
+
+            <!-- Messages -->
+            <ScrollView Grid.Row="1" x:Name="MessagesScrollView" BackgroundColor="#0F0A1A">
+                <CollectionView x:Name="MessagesCollection" Margin="16,8">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Frame BackgroundColor="#1A1425" Margin="0,3" Padding="12,10" CornerRadius="8" BorderColor="Transparent">
+                                <Grid ColumnDefinitions="36,*,Auto">
+                                    <!-- Avatar -->
+                                    <BoxView WidthRequest="32" HeightRequest="32" CornerRadius="16" Color="#8B5CF6" VerticalOptions="Start"/>
+                                    
+                                    <!-- Content -->
+                                    <VerticalStackLayout Grid.Column="1" Margin="10,0,0,0">
+                                        <HorizontalStackLayout Spacing="6">
+                                            <Label Text="{Binding SenderName}" FontAttributes="Bold" FontSize="13" TextColor="#A78BFA"/>
+                                            <Label Text="{Binding Timestamp}" FontSize="10" TextColor="#64748B" VerticalOptions="Center"/>
+                                            <Label Text="{Binding EditedIndicator}" FontSize="9" TextColor="#64748B" VerticalOptions="Center"/>
+                                            <Label Text="{Binding EphemeralIndicator}" FontSize="9" TextColor="#F59E0B" VerticalOptions="Center"/>
+                                        </HorizontalStackLayout>
+                                        <Label Text="{Binding Content}" FontSize="13" TextColor="#CBD5E1" Margin="0,4,0,0" LineBreakMode="WordWrap"/>
+                                        
+                                        <!-- Reactions -->
+                                        <FlexLayout BindableLayout.ItemsSource="{Binding Reactions}" Margin="0,6,0,0" Wrap="Wrap">
+                                            <BindableLayout.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Frame BackgroundColor="#251D35" Padding="6,3" Margin="0,0,4,2" CornerRadius="10" BorderColor="Transparent">
+                                                        <HorizontalStackLayout Spacing="3">
+                                                            <Label Text="{Binding Emoji}" FontSize="12"/>
+                                                            <Label Text="{Binding Count}" FontSize="11" TextColor="#A78BFA"/>
+                                                        </HorizontalStackLayout>
+                                                    </Frame>
+                                                </DataTemplate>
+                                            </BindableLayout.ItemTemplate>
+                                        </FlexLayout>
+                                        
+                                        <!-- Read Receipt -->
+                                        <Label Text="{Binding ReadReceipt}" FontSize="9" TextColor="#14B8A6" Margin="0,3,0,0"
+                                               IsVisible="{Binding HasReadReceipt}"/>
+                                    </VerticalStackLayout>
+
+                                    <!-- Actions -->
+                                    <HorizontalStackLayout Grid.Column="2" VerticalOptions="Start" Spacing="0">
+                                        <Button Text="+" BackgroundColor="Transparent" TextColor="#64748B" Padding="6"
+                                                FontSize="12" CommandParameter="{Binding Id}" Clicked="Reaction_Clicked"/>
+                                        <Button Text="E" BackgroundColor="Transparent" TextColor="#64748B" Padding="6"
+                                                FontSize="11" CommandParameter="{Binding Id}" Clicked="Edit_Clicked"
+                                                IsVisible="{Binding CanEdit}"/>
+                                        <Button Text="H" BackgroundColor="Transparent" TextColor="#64748B" Padding="6"
+                                                FontSize="11" CommandParameter="{Binding Id}" Clicked="History_Clicked"
+                                                IsVisible="{Binding HasHistory}"/>
+                                    </HorizontalStackLayout>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </ScrollView>
+
+            <!-- Typing Indicator -->
+            <Border Grid.Row="2" BackgroundColor="#1A142580" Padding="16,6" IsVisible="False" x:Name="TypingBorder" StrokeThickness="0">
+                <Label x:Name="TypingLabel" FontSize="11" FontAttributes="Italic" TextColor="#64748B"/>
+            </Border>
+
+            <!-- Message Input -->
+            <Border Grid.Row="3" BackgroundColor="#1A1425" Padding="12,10" StrokeThickness="0">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <HorizontalStackLayout Grid.Column="0" Spacing="4">
+                        <Button Text="⏰" BackgroundColor="#251D35" TextColor="#8B5CF6" 
+                                WidthRequest="32" HeightRequest="32" CornerRadius="6" Padding="0"
+                                FontSize="14" Clicked="Schedule_Clicked"/>
+                        <Button Text="💨" BackgroundColor="#251D35" TextColor="#8B5CF6"
+                                WidthRequest="32" HeightRequest="32" CornerRadius="6" Padding="0"
+                                FontSize="14" Clicked="Ephemeral_Clicked"/>
+                    </HorizontalStackLayout>
+
+                    <Frame Grid.Column="1" BackgroundColor="#0A0612" Margin="10,0" Padding="10,6" CornerRadius="6" BorderColor="Transparent">
+                        <Entry x:Name="MessageEntry" Placeholder="Send a message..."
+                               Completed="MessageEntry_Completed" TextChanged="MessageEntry_TextChanged"
+                               BackgroundColor="Transparent" TextColor="#F8FAFC" PlaceholderColor="#64748B" FontSize="13"/>
+                    </Frame>
+
+                    <Button Grid.Column="2" Text="Send" BackgroundColor="#8B5CF6" TextColor="White"
+                            CornerRadius="6" Padding="16,8" FontSize="13"
+                            Clicked="Send_Clicked"/>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- MEMBERS SIDEBAR -->
+        <Grid Grid.Column="2" BackgroundColor="#0A0612" RowDefinitions="Auto,*">
+            
+            <Border Grid.Row="0" Padding="14,12" BackgroundColor="#0A0612" StrokeThickness="0,0,0,1" Stroke="#1A1425">
+                <Label Text="MEMBERS" FontSize="10" FontAttributes="Bold" TextColor="#64748B"/>
+            </Border>
+
+            <ScrollView Grid.Row="1">
+                <CollectionView x:Name="MembersCollection" Margin="6,4">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Padding="6,4" ColumnDefinitions="Auto,*">
+                                <Grid>
+                                    <BoxView WidthRequest="28" HeightRequest="28" CornerRadius="14" Color="#8B5CF6"/>
+                                    <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4"
+                                             HorizontalOptions="End" VerticalOptions="End" Margin="0,0,-1,-1"
+                                             Color="{Binding OnlineColor}"/>
+                                </Grid>
+                                <Label Grid.Column="1" Text="{Binding DisplayName}" FontSize="12"
+                                       Margin="8,0,0,0" VerticalOptions="Center" TextColor="{Binding OnlineTextColor}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </ScrollView>
+        </Grid>
+    </Grid>
+</ContentPage>

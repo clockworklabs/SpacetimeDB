@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="PaintApp.Client.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- SpacetimeDB Cosmic Theme Colors -->
+            <Color x:Key="BackgroundDark">#0a0a0f</Color>
+            <Color x:Key="BackgroundMedium">#13131a</Color>
+            <Color x:Key="BackgroundLight">#1c1c26</Color>
+            <Color x:Key="PrimaryPurple">#6366f1</Color>
+            <Color x:Key="PrimaryPurpleLight">#818cf8</Color>
+            <Color x:Key="AccentCyan">#22d3ee</Color>
+            <Color x:Key="AccentCyanLight">#67e8f9</Color>
+            <Color x:Key="TextPrimary">#f8fafc</Color>
+            <Color x:Key="TextSecondary">#94a3b8</Color>
+            <Color x:Key="TextMuted">#64748b</Color>
+            <Color x:Key="BorderColor">#334155</Color>
+            <Color x:Key="SuccessGreen">#22c55e</Color>
+            <Color x:Key="WarningYellow">#eab308</Color>
+            <Color x:Key="ErrorRed">#ef4444</Color>
+
+            <!-- Styles -->
+            <Style TargetType="Page" ApplyToDerivedTypes="True">
+                <Setter Property="BackgroundColor" Value="{StaticResource BackgroundDark}" />
+            </Style>
+            
+            <Style TargetType="Button" x:Key="PrimaryButton">
+                <Setter Property="BackgroundColor" Value="{StaticResource PrimaryPurple}" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="Padding" Value="16,10" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+            
+            <Style TargetType="Button" x:Key="SecondaryButton">
+                <Setter Property="BackgroundColor" Value="{StaticResource BackgroundLight}" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
+                <Setter Property="BorderWidth" Value="1" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="Padding" Value="16,10" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+            
+            <Style TargetType="Button" x:Key="ToolButton">
+                <Setter Property="BackgroundColor" Value="Transparent" />
+                <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+                <Setter Property="FontSize" Value="18" />
+                <Setter Property="WidthRequest" Value="44" />
+                <Setter Property="HeightRequest" Value="44" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+            
+            <Style TargetType="Entry">
+                <Setter Property="BackgroundColor" Value="{StaticResource BackgroundLight}" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="PlaceholderColor" Value="{StaticResource TextMuted}" />
+            </Style>
+            
+            <Style TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
