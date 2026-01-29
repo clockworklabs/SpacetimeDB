@@ -682,7 +682,7 @@ pub(super) fn call_describe_module(
     hooks: &HookFunctions<'_>,
 ) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     // Call the function.
-    let raw_mod_js = call_free_fun(scope, hooks.describe_module, &[])?;
+    let raw_mod_js = call_free_fun(scope, hooks.describe_hook(), &[])?;
 
     // Deserialize the raw module.
     let raw_mod = cast!(
