@@ -168,6 +168,37 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
+  // Browser bundle (IIFE for script tags): dist/browser.bundle.js
+  {
+    entry: { 'browser.bundle': 'src/browser/index.ts' },
+    format: ['iife'],
+    globalName: 'SpacetimeDB',
+    target: 'es2022',
+    outDir: 'dist',
+    dts: false,
+    sourcemap: true,
+    platform: 'browser',
+    treeshake: 'smallest',
+    noExternal: [/.*/],
+    outExtension: () => ({ js: '.js' }),
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Browser bundle ESM: dist/browser/index.mjs
+  {
+    entry: { index: 'src/browser/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/browser',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'browser',
+    treeshake: 'smallest',
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
   // The below minified builds are not referenced in package.json and are
   // just included in the build for measuring the size impact of minification.
   // It is expected that consumers of the library will run their own

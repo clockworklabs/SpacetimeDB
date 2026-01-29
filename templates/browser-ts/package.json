@@ -1,0 +1,9 @@
+{
+  "name": "@clockworklabs/browser-ts",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud"
+  }
+}
