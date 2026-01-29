@@ -735,10 +735,10 @@ function* tableIterator<T>(
 
   const iterBuf = takeBuf();
   try {
-    let buf;
-    while ((buf = advanceIter(iter, iterBuf)) != null) {
-      const reader = new BinaryReader(buf);
-      while (reader.remaining > 0) {
+    let amt;
+    while ((amt = advanceIter(iter, iterBuf))) {
+      const reader = new BinaryReader(new Uint8Array(iterBuf.buffer, amt));
+      while (reader.offset < amt) {
         yield deserialize(reader);
       }
     }
@@ -747,7 +747,7 @@ function* tableIterator<T>(
   }
 }
 
-function advanceIter(iter: IteratorHandle, buf: ResizableBuffer): Uint8Array | null {
+function advanceIter(iter: IteratorHandle, buf: ResizableBuffer): number {
   while (true) {
     try {
       return iter.advance(buf.buffer);
@@ -808,12 +808,14 @@ class IteratorHandle implements Disposable {
     return id;
   }
 
-  /** Call `row_iter_bsatn_advance`, returning null if this iterator was already exhausted. */
-  advance(buf: ArrayBuffer): Uint8Array | null {
-    if (this.#id === -1) return null;
-    const [done, ret] = sys.row_iter_bsatn_advance(this.#id, buf);
-    if (done) this.#detach();
-    return ret;
+  /** Call `row_iter_bsatn_advance`, returning 0 if this iterator has been exhausted. */
+  advance(buf: ArrayBuffer): number {
+    if (this.#id === -1) return 0;
+    // coerce to int32
+    const ret = 0 | sys.row_iter_bsatn_advance(this.#id, buf);
+    // ret <= 0 means the iterator is exhausted
+    if (ret <= 0) this.#detach();
+    return ret < 0 ? -ret : ret;
   }
 
   [Symbol.dispose]() {
