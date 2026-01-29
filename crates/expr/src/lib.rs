@@ -1,5 +1,3 @@
-use std::{collections::HashSet, ops::Deref, str::FromStr};
-
 use crate::statement::Statement;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -12,6 +10,8 @@ use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
+use spacetimedb_data_structures::map::HashCollectionExt as _;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
@@ -21,6 +21,7 @@ use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 use spacetimedb_sql_parser::parser::recursion;
+use std::{ops::Deref, str::FromStr};
 
 pub mod check;
 pub mod errors;

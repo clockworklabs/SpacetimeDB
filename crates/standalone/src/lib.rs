@@ -84,7 +84,7 @@ impl StandaloneEnv {
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
-        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.to_owned());
+        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.into());
 
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();

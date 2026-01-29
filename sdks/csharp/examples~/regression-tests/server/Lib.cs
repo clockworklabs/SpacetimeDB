@@ -44,6 +44,19 @@ public static partial class Module
     {
         public ReturnStruct Field;
     }
+
+    [SpacetimeDB.Table(Name = "where_test", Public = true)]
+    public partial struct WhereTest
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+
+        [SpacetimeDB.Index.BTree]
+        public uint Value;
+
+        public string Name;
+    }
+
     [SpacetimeDB.Table(Name = "example_data", Public = true)]
     public partial struct ExampleData
     {
@@ -367,6 +380,12 @@ public static partial class Module
         ctx.Db.null_string_nullable.Insert(new NullStringNullable { Name = null });
     }
 
+    [SpacetimeDB.Reducer]
+    public static void InsertWhereTest(ReducerContext ctx, uint id, uint value, string name)
+    {
+        ctx.Db.where_test.Insert(new WhereTest { Id = id, Value = value, Name = name });
+    }
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
@@ -429,6 +448,19 @@ public static partial class Module
             {
                 ctx.Db.score.Insert(new Score { PlayerId = PlayerId, Level = Level, Points = Points });
             }
+        }
+
+        if (ctx.Db.where_test.Id.Find(1) is null)
+        {
+            ctx.Db.where_test.Insert(new WhereTest { Id = 1, Value = 5, Name = "low" });
+        }
+        if (ctx.Db.where_test.Id.Find(2) is null)
+        {
+            ctx.Db.where_test.Insert(new WhereTest { Id = 2, Value = 15, Name = "high" });
+        }
+        if (ctx.Db.where_test.Id.Find(3) is null)
+        {
+            ctx.Db.where_test.Insert(new WhereTest { Id = 3, Value = 15, Name = "alsohigh" });
         }
     }
 
