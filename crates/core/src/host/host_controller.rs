@@ -28,7 +28,7 @@ use parking_lot::Mutex;
 use scopeguard::defer;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
@@ -94,7 +94,7 @@ pub type ProgramStorage = Arc<dyn ExternalStorage>;
 #[derive(Clone)]
 pub struct HostController {
     /// Map of all hosts managed by this controller,
-    /// keyed by database instance id.
+    /// keyed by replica id.
     hosts: Hosts,
     /// The root directory for database data.
     pub data_dir: Arc<ServerDataDir>,
@@ -603,6 +603,12 @@ impl HostController {
         };
 
         maybe_host.is_some()
+    }
+
+    /// Obtain a snapshot of the replica ids of all hosts currently registered
+    /// with the controller.
+    pub fn managed_replicas(&self) -> IntSet<u64> {
+        self.hosts.lock().keys().copied().collect()
     }
 
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
