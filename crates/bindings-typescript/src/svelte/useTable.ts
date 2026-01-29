@@ -1,14 +1,6 @@
-import {
-  onUnmounted,
-  readonly,
-  ref,
-  shallowRef,
-  watch,
-  type DeepReadonly,
-  type Ref,
-} from 'vue';
+import { onDestroy } from 'svelte';
+import { writable, get, type Readable } from 'svelte/store';
 import { useSpacetimeDB } from './useSpacetimeDB';
-
 import type { EventContextInterface } from '../sdk/db_connection_impl';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDef } from '../lib/table';
@@ -42,18 +34,12 @@ export function useTable<TableDef extends UntypedTableDef>(
   tableDef: TableDef,
   where: Expr<ColumnsFromRow<RowType<TableDef>>>,
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [
-  DeepReadonly<Ref<readonly Prettify<RowType<TableDef>>[]>>,
-  DeepReadonly<Ref<boolean>>,
-];
+): [Readable<readonly Prettify<RowType<TableDef>>[]>, Readable<boolean>];
 
 export function useTable<TableDef extends UntypedTableDef>(
   tableDef: TableDef,
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [
-  DeepReadonly<Ref<readonly Prettify<RowType<TableDef>>[]>>,
-  DeepReadonly<Ref<boolean>>,
-];
+): [Readable<readonly Prettify<RowType<TableDef>>[]>, Readable<boolean>];
 
 export function useTable<TableDef extends UntypedTableDef>(
   tableDef: TableDef,
@@ -61,10 +47,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     | Expr<ColumnsFromRow<RowType<TableDef>>>
     | UseTableCallbacks<RowType<TableDef>>,
   callbacks?: UseTableCallbacks<RowType<TableDef>>
-): [
-  DeepReadonly<Ref<readonly Prettify<RowType<TableDef>>[]>>,
-  DeepReadonly<Ref<boolean>>,
-] {
+): [Readable<readonly Prettify<RowType<TableDef>>[]>, Readable<boolean>] {
   type Row = RowType<TableDef>;
   const tableName = tableDef.name;
   const accessorName = tableDef.accessorName;
@@ -80,19 +63,19 @@ export function useTable<TableDef extends UntypedTableDef>(
     callbacks = whereClauseOrCallbacks as UseTableCallbacks<Row> | undefined;
   }
 
-  let conn;
+  let connectionStore;
   try {
-    conn = useSpacetimeDB();
+    connectionStore = useSpacetimeDB();
   } catch {
     throw new Error(
-      'Could not find SpacetimeDB client! Did you forget to add a ' +
-        '`SpacetimeDBProvider`? `useTable` must be used in a Vue component tree ' +
-        'under a `SpacetimeDBProvider` component.'
+      'Could not find SpacetimeDB client! Did you forget to call ' +
+        '`createSpacetimeDBProvider`? `useTable` must be used in a Svelte component tree ' +
+        'under a component that called `createSpacetimeDBProvider`.'
     );
   }
 
-  const rows = shallowRef<readonly Prettify<Row>[]>([]);
-  const isReady = ref(false);
+  const rows = writable<readonly Prettify<Row>[]>([]);
+  const isReady = writable(false);
 
   const query =
     `SELECT * FROM ${tableName}` +
@@ -103,7 +86,8 @@ export function useTable<TableDef extends UntypedTableDef>(
   let subscriptionHandle: { unsubscribe: () => void } | null = null;
 
   const computeFilteredRows = (): readonly Prettify<Row>[] => {
-    const connection = conn.getConnection();
+    const state = get(connectionStore);
+    const connection = state.getConnection();
     if (!connection) return [];
 
     const table = connection.db[accessorName];
@@ -119,7 +103,8 @@ export function useTable<TableDef extends UntypedTableDef>(
   };
 
   const setupTableListeners = () => {
-    const connection = conn.getConnection();
+    const state = get(connectionStore);
+    const connection = state.getConnection();
     if (!connection) return;
 
     const table = connection.db[accessorName];
@@ -137,7 +122,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         !latestTransactionEvent
       ) {
         latestTransactionEvent = eventCtx.event;
-        rows.value = computeFilteredRows();
+        rows.set(computeFilteredRows());
       }
     };
 
@@ -153,7 +138,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         !latestTransactionEvent
       ) {
         latestTransactionEvent = eventCtx.event;
-        rows.value = computeFilteredRows();
+        rows.set(computeFilteredRows());
       }
     };
 
@@ -183,7 +168,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         !latestTransactionEvent
       ) {
         latestTransactionEvent = eventCtx.event;
-        rows.value = computeFilteredRows();
+        rows.set(computeFilteredRows());
       }
     };
 
@@ -199,48 +184,46 @@ export function useTable<TableDef extends UntypedTableDef>(
   };
 
   const setupSubscription = () => {
-    const connection = conn.getConnection();
+    const state = get(connectionStore);
+    const connection = state.getConnection();
     if (!connection) return;
 
     subscriptionHandle = connection
       .subscriptionBuilder()
       .onApplied(() => {
-        isReady.value = true;
-        rows.value = computeFilteredRows();
+        isReady.set(true);
+        rows.set(computeFilteredRows());
       })
       .subscribe(query);
   };
 
-  watch(
-    () => conn.isActive,
-    isActive => {
-      // Clean up existing listeners and subscriptions first
-      if (unsubscribeFromTable) {
-        unsubscribeFromTable();
-        unsubscribeFromTable = null;
-      }
-      if (subscriptionHandle) {
-        subscriptionHandle.unsubscribe();
-        subscriptionHandle = null;
-      }
+  const unsubscribeConnection = connectionStore.subscribe(state => {
+    // clean up existing listeners and subscriptions first
+    if (unsubscribeFromTable) {
+      unsubscribeFromTable();
+      unsubscribeFromTable = null;
+    }
+    if (subscriptionHandle) {
+      subscriptionHandle.unsubscribe();
+      subscriptionHandle = null;
+    }
 
-      if (isActive) {
-        unsubscribeFromTable = setupTableListeners() || null;
-        setupSubscription();
-        rows.value = computeFilteredRows();
-      } else {
-        isReady.value = false;
-        rows.value = [];
-      }
-    },
-    { immediate: true }
-  );
+    if (state.isActive) {
+      unsubscribeFromTable = setupTableListeners() || null;
+      setupSubscription();
+      rows.set(computeFilteredRows());
+    } else {
+      isReady.set(false);
+      rows.set([]);
+    }
+  });
 
-  onUnmounted(() => {
+  onDestroy(() => {
+    unsubscribeConnection();
     unsubscribeFromTable?.();
     subscriptionHandle?.unsubscribe();
     latestTransactionEvent = null;
   });
 
-  return [readonly(rows), readonly(isReady)];
+  return [{ subscribe: rows.subscribe }, { subscribe: isReady.subscribe }];
 }
