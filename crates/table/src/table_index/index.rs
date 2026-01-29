@@ -1,7 +1,22 @@
 use crate::{indexes::RowPointer, table_index::KeySize};
 use core::{mem, ops::RangeBounds};
 
-pub trait Index {
+/// An index relating `key -> ptr` pairs for quick lookup from `key`s.
+///
+/// Indices may relate `key`s to `ptr`s injectively.
+/// In other words, uniquely / with a 1-1 mapping.
+/// They may also not, relating a `key` to several `ptr`s.
+///
+/// # Safety
+///
+/// An invariant and safety requirement
+/// of all indices is that `key -> ptr` only occurs once.
+/// This can be exploited by implementations for better performance
+/// and is satisfied by the caller requirements of
+/// [`Index::insert`] and [`Index::merge_from`],
+/// the implementation of those methods,
+/// and by the remaining implementation of the index not doing anything weird.
+pub unsafe trait Index {
     /// The type of keys indexed.
     type Key: KeySize;
 
@@ -27,22 +42,61 @@ pub trait Index {
     /// if inserting `key` is not compatible with the index
     /// or if it would be profitable to replace the index with a B-Tree.
     /// The provided default implementation does not return `Despecialize`.
+    ///
+    /// # Safety
+    ///
+    /// The relation `key -> ptr` must not exist in the index.
+    /// Note that inserting `key -> ptr_other`,
+    /// where `ptr != ptr_other`, is legal.
     fn insert_maybe_despecialize(
         &mut self,
         key: Self::Key,
         ptr: RowPointer,
     ) -> Result<Result<(), RowPointer>, Despecialize> {
-        Ok(self.insert(key, ptr))
+        // SAFETY: forward caller requirements.
+        Ok(unsafe { self.insert(key, ptr) })
     }
 
     /// Inserts the relation `key -> ptr` to this map.
     ///
     /// If `key` was already present in the index,
-    /// does not add an association with val.
-    /// Returns the existing associated pointer instead.
-    fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
-        self.insert_maybe_despecialize(key, ptr).unwrap()
+    /// and the index is unique,
+    /// does not add the relation `key -> ptr`
+    /// and returns the existing associated pointer instead.
+    ///
+    /// # Safety
+    ///
+    /// The relation `key -> ptr` must not exist in the index.
+    /// Note that inserting `key -> ptr_other`,
+    /// where `ptr != ptr_other`, is legal.
+    unsafe fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
+        // SAFETY: forward caller requirements.
+        #[allow(unused_unsafe)]
+        unsafe { self.insert_maybe_despecialize(key, ptr) }.unwrap()
     }
+
+    #[cfg(test)]
+    fn insert_for_test(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
+        // SAFETY: proof obligation checked inside the method for debug builds.
+        unsafe { self.insert(key, ptr) }
+    }
+
+    /// Merge `src` into `self`.
+    ///
+    /// The closure `translate` is called
+    /// to convert row pointers from ones that fit the tx state
+    /// to ones that fit the committed state,
+    /// typically by using a translation table.
+    ///
+    /// This method does not return a result,
+    /// as it's only used when merging,
+    /// when we already know that there will be no uniqueness constraint conflicts.
+    ///
+    /// # Safety
+    ///
+    /// For every `(key, ptr)` in `src`,
+    /// `(key, translate(ptr))` does not exist in `self`.
+    unsafe fn merge_from(&mut self, src: Self, translate: impl Fn(RowPointer) -> RowPointer);
 
     /// Deletes `key -> ptr` from this index.
     ///
@@ -123,6 +177,19 @@ pub trait Index {
     ///
     /// If the index is unique, this will at most return one element.
     fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_>;
+
+    /// Verifies the type invariant that each `(key, ptr)` only occurs once.
+    ///
+    /// This is intended to be used inside implementations of [`Index::insert`].
+    #[inline(always)] // We don't want a call to this in release builds!
+    fn debug_ensure_key_ptr_not_included(&self, key: &Self::Key, ptr: RowPointer) {
+        #[cfg(debug_assertions)]
+        {
+            for existing_ptr in self.seek_point(key) {
+                assert_ne!(existing_ptr, ptr);
+            }
+        }
+    }
 }
 
 pub trait RangedIndex: Index {
@@ -141,7 +208,7 @@ pub trait RangedIndex: Index {
 }
 
 /// An error indicating that the index should be despecialized to a B-Tree.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Despecialize;
 
 /// An error indicating that the [`Index`] is not a [`RangedIndex`].

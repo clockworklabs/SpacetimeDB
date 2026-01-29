@@ -419,7 +419,7 @@ fn as_sum_tag(av: &AlgebraicValue) -> Option<&SumTag> {
     as_tag(av).map(|s| s.into())
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum IndexKind {
     BTree,
@@ -668,6 +668,7 @@ impl TypedIndex {
     ///
     /// 1. Caller promises that `cols` matches what was given at construction (`Self::new`).
     /// 2. Caller promises that the projection of `row_ref`'s type's equals the index's key type.
+    /// 3. Caller promises that `row_ref` doesn't already exist in `self`.
     unsafe fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), RowPointer> {
         fn project_to_singleton_key<T: ReadColumn>(cols: &ColList, row_ref: RowRef<'_>) -> T {
             // Extract the column.
@@ -703,7 +704,10 @@ impl TypedIndex {
             row_ref: RowRef<'_>,
         ) -> (Result<(), RowPointer>, Option<TypedIndex>) {
             let key = project_to_singleton_key(cols, row_ref);
-            let res = this.insert(key, row_ref.pointer());
+            let ptr = row_ref.pointer();
+            // SAFETY: Caller promised that `row_ref` doesn't already exist in `self`.
+            // This implies that `ptr` is not already in the index.
+            let res = unsafe { this.insert(key, ptr) };
             (res, None)
         }
 
@@ -728,7 +732,9 @@ impl TypedIndex {
                 Ok(res) => (res, None),
                 Err(Despecialize) => outlined_call(|| {
                     let mut index = this.into_btree();
-                    let res = index.insert(key, ptr);
+                    // SAFETY: Caller promised that `row_ref` doesn't already exist in `self`.
+                    // This implies that `ptr` is not already in the index.
+                    let res = unsafe { index.insert(key, ptr) };
                     (res, Some(index.into()))
                 }),
             }
@@ -741,7 +747,10 @@ impl TypedIndex {
         ) -> (Result<(), RowPointer>, Option<TypedIndex>) {
             // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
             let key = unsafe { row_ref.project_unchecked(cols) };
-            let res = this.insert(key, row_ref.pointer());
+            let ptr = row_ref.pointer();
+            // SAFETY: Caller promised that `row_ref` doesn't already exist in `self`.
+            // This implies that `ptr` is not already in the index.
+            let res = unsafe { this.insert(key, ptr) };
             (res, None)
         }
 
@@ -831,6 +840,107 @@ impl TypedIndex {
         }
 
         res
+    }
+
+    /// Merge `src` into `self`.
+    ///
+    /// The closure `translate` is called
+    /// to convert row pointers from ones that fit the tx state
+    /// to ones that fit the committed state,
+    /// typically by using a translation table.
+    ///
+    /// This method does not return a result,
+    /// as it's only used when merging,
+    /// when we already know that there will be no uniqueness constraint conflicts.
+    ///
+    /// # Safety
+    ///
+    /// For every `(key, ptr)` in `src`,
+    /// `(key, translate(ptr))` does not exist in `self`.
+    unsafe fn merge_from(&mut self, src: Self, translate: impl Fn(RowPointer) -> RowPointer) {
+        use TypedIndex::*;
+
+        // SAFETY: forward caller requirements.
+        match (self, src) {
+            (BtreeBool(lhs), BtreeBool(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeU8(lhs), BtreeU8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeSumTag(lhs), BtreeSumTag(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeI8(lhs), BtreeI8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeU16(lhs), BtreeU16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeI16(lhs), BtreeI16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeU32(lhs), BtreeU32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeI32(lhs), BtreeI32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeU64(lhs), BtreeU64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeI64(lhs), BtreeI64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeU128(lhs), BtreeU128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeI128(lhs), BtreeI128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeU256(lhs), BtreeU256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeI256(lhs), BtreeI256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeF32(lhs), BtreeF32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeF64(lhs), BtreeF64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeString(lhs), BtreeString(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (BtreeAV(lhs), BtreeAV(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashBool(lhs), HashBool(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashU8(lhs), HashU8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashSumTag(lhs), HashSumTag(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashI8(lhs), HashI8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashU16(lhs), HashU16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashI16(lhs), HashI16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashU32(lhs), HashU32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashI32(lhs), HashI32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashU64(lhs), HashU64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashI64(lhs), HashI64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashU128(lhs), HashU128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashI128(lhs), HashI128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashU256(lhs), HashU256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashI256(lhs), HashI256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashF32(lhs), HashF32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashF64(lhs), HashF64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashString(lhs), HashString(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (HashAV(lhs), HashAV(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeBool(lhs), UniqueBtreeBool(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeU8(lhs), UniqueBtreeU8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeSumTag(lhs), UniqueBtreeSumTag(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeI8(lhs), UniqueBtreeI8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeU16(lhs), UniqueBtreeU16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeI16(lhs), UniqueBtreeI16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeU32(lhs), UniqueBtreeU32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeI32(lhs), UniqueBtreeI32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeU64(lhs), UniqueBtreeU64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeI64(lhs), UniqueBtreeI64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeU128(lhs), UniqueBtreeU128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeI128(lhs), UniqueBtreeI128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeU256(lhs), UniqueBtreeU256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeI256(lhs), UniqueBtreeI256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeF32(lhs), UniqueBtreeF32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeF64(lhs), UniqueBtreeF64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeString(lhs), UniqueBtreeString(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueBtreeAV(lhs), UniqueBtreeAV(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashBool(lhs), UniqueHashBool(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashU8(lhs), UniqueHashU8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashSumTag(lhs), UniqueHashSumTag(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashI8(lhs), UniqueHashI8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashU16(lhs), UniqueHashU16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashI16(lhs), UniqueHashI16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashU32(lhs), UniqueHashU32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashI32(lhs), UniqueHashI32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashU64(lhs), UniqueHashU64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashI64(lhs), UniqueHashI64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashU128(lhs), UniqueHashU128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashI128(lhs), UniqueHashI128(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashU256(lhs), UniqueHashU256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashI256(lhs), UniqueHashI256(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashF32(lhs), UniqueHashF32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashF64(lhs), UniqueHashF64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashString(lhs), UniqueHashString(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueHashAV(lhs), UniqueHashAV(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueDirectU8(lhs), UniqueDirectU8(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueDirectSumTag(lhs), UniqueDirectSumTag(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueDirectU16(lhs), UniqueDirectU16(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueDirectU32(lhs), UniqueDirectU32(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            (UniqueDirectU64(lhs), UniqueDirectU64(rhs)) => unsafe { lhs.merge_from(rhs, translate) },
+            _ => unreachable!("non-matching index kinds"),
+        }
     }
 
     /// Remove the row referred to by `row_ref` from the index `self`,
@@ -1161,7 +1271,6 @@ impl TypedIndex {
         same_for_all_types!(self, this => this.clear())
     }
 
-    #[allow(unused)] // used only by tests
     fn is_empty(&self) -> bool {
         self.num_rows() == 0
     }
@@ -1187,7 +1296,7 @@ impl TypedIndex {
     /// This method runs in constant time.
     ///
     /// See the [`KeySize`] trait for more details on how this method computes its result.
-    pub fn num_key_bytes(&self) -> u64 {
+    fn num_key_bytes(&self) -> u64 {
         same_for_all_types!(self, this => this.num_key_bytes())
     }
 }
@@ -1263,16 +1372,44 @@ impl TableIndex {
     ///
     /// # Safety
     ///
-    /// Caller promises that projecting the `row_ref`'s type
-    /// to the index's columns equals the index's key type.
-    /// This is entailed by an index belonging to the table's schema.
-    /// It also follows from `row_ref`'s type/layout
-    /// being the same as passed in on `self`'s construction.
+    /// 1. Caller promises that projecting the `row_ref`'s type
+    ///    to the index's columns equals the index's key type.
+    ///    This is entailed by an index belonging to the table's schema.
+    ///    It also follows from `row_ref`'s type/layout
+    ///    being the same as passed in on `self`'s construction.
+    ///
+    /// 2. Caller promises that `row_ref` doesn't already exist in `self`.
     pub unsafe fn check_and_insert(&mut self, row_ref: RowRef<'_>) -> Result<(), RowPointer> {
         // SAFETY:
         // 1. We're passing the same `ColList` that was provided during construction.
         // 2. Forward the caller's proof obligation.
+        // 3. Forward the caller's proof obligation.
         unsafe { self.idx.insert(&self.indexed_columns, row_ref) }
+    }
+
+    /// Merge `src_index` into `self`.
+    ///
+    /// The closure `translate` is called
+    /// to convert row pointers from ones that fit the tx state
+    /// to ones that fit the committed state,
+    /// typically by using a translation table.
+    ///
+    /// This method does not return a result,
+    /// as it's only used when merging,
+    /// when we already know that there will be no uniqueness constraint conflicts.
+    ///
+    /// # Safety
+    ///
+    /// 1. Caller promises that `self.key_type == src.key_type`.
+    /// 2. Caller promises that `self.indexed_columns == src.indexed_columns`.
+    /// 3. For every `(key, ptr)` in `src`,
+    ///    `(key, translate(ptr))` does not exist in `self`.
+    pub unsafe fn merge_from(&mut self, src: Self, translate: impl Fn(RowPointer) -> RowPointer) {
+        debug_assert_eq!(self.key_type, src.key_type);
+        debug_assert_eq!(self.indexed_columns, src.indexed_columns);
+
+        // SAFETY: Forward caller proof obligation 3.
+        unsafe { self.idx.merge_from(src.idx, translate) };
     }
 
     /// Deletes `row_ref` with its indexed value `row_ref.project(&self.indexed_columns)` from this index.
@@ -1323,17 +1460,19 @@ impl TableIndex {
     ///
     /// # Safety
     ///
-    /// Caller promises that projecting any of the `row_ref`'s type
-    /// to the index's columns equals the index's key type.
-    /// This is entailed by an index belonging to the table's schema.
-    /// It also follows from `row_ref`'s type/layout
-    /// being the same as passed in on `self`'s construction.
+    /// 1. Caller promises that projecting any of the `row_ref`'s type
+    ///    to the index's columns equals the index's key type.
+    ///    This is entailed by an index belonging to the table's schema.
+    ///    It also follows from `row_ref`'s type/layout
+    ///    being the same as passed in on `self`'s construction.
+    ///
+    /// 2. Caller promises that none of the `rows`s already exist in `self`.
     pub unsafe fn build_from_rows<'table>(
         &mut self,
         rows: impl IntoIterator<Item = RowRef<'table>>,
     ) -> Result<(), RowPointer> {
         rows.into_iter()
-            // SAFETY: Forward caller proof obligation.
+            // SAFETY: Forward caller proof obligations 1. and 2.
             .try_for_each(|row_ref| unsafe { self.check_and_insert(row_ref) })
     }
 
@@ -1437,6 +1576,12 @@ impl TableIndex {
         self.idx.clear();
     }
 
+    /// Returns whether this index is empty.
+    #[allow(unused)] // used only by tests
+    fn is_empty(&self) -> bool {
+        self.idx.is_empty()
+    }
+
     /// The number of unique keys in this index.
     pub fn num_keys(&self) -> usize {
         self.idx.num_keys()
@@ -1470,6 +1615,7 @@ mod test {
     use crate::page_pool::PagePool;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::ops::Bound::*;
+    use core::panic::AssertUnwindSafe;
     use decorum::Total;
     use proptest::prelude::*;
     use proptest::{
@@ -1479,12 +1625,14 @@ mod test {
     use spacetimedb_data_structures::map::HashMap;
     use spacetimedb_lib::ProductTypeElement;
     use spacetimedb_primitives::ColId;
-    use spacetimedb_sats::proptest::{generate_algebraic_value, generate_primitive_algebraic_type};
+    use spacetimedb_sats::proptest::{gen_with, generate_algebraic_value, generate_primitive_algebraic_type};
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
+    use std::collections::HashSet;
+    use std::panic;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
@@ -1492,13 +1640,17 @@ mod test {
     }
 
     fn gen_row_and_cols() -> impl Strategy<Value = (ProductType, ColList, ProductValue)> {
-        generate_row_type(1..16).prop_flat_map(|ty| {
-            (
-                Just(ty.clone()),
-                gen_cols(ty.elements.len()),
-                generate_product_value(ty),
-            )
+        gen_with(generate_row_type(1..16), |ty| {
+            (gen_cols(ty.elements.len()), generate_product_value(ty))
         })
+        .prop_map(|(a, (b, c))| (a, b, c))
+    }
+
+    fn gen_distinct_rows_and_cols() -> impl Strategy<Value = (ProductType, ColList, HashSet<ProductValue>)> {
+        gen_with(generate_row_type(1..16), |ty| {
+            (gen_cols(ty.elements.len()), hash_set(generate_product_value(ty), 0..16))
+        })
+        .prop_map(|(a, (b, c))| (a, b, c))
     }
 
     impl IndexKind {
@@ -1579,7 +1731,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(index.delete(row_ref).unwrap(), false);
-            prop_assert!(index.idx.is_empty());
+            prop_assert!(index.is_empty());
             prop_assert_eq!(index.num_keys(), 0);
             prop_assert_eq!(index.num_key_bytes(), 0);
             prop_assert_eq!(index.num_rows(), 0);
@@ -1809,6 +1961,95 @@ mod test {
             assert_eq!(rows, []);
             let rows = index.seek_range(&(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
+        }
+
+        #[test]
+        fn insert_twice_will_panic((ty, cols, pv) in gen_row_and_cols(), is_unique: bool, kind: IndexKind) {
+            let mut index = new_index(&ty, &cols, is_unique, kind);
+            let mut table = table(ty);
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
+
+            // First insertion of `row_ref` works.
+            unsafe { index.check_and_insert(row_ref) }.unwrap();
+
+            // Second insertion panics.
+            let hook = panic::take_hook();
+            panic::set_hook(Box::new(|_| {}));
+            let result = std::panic::catch_unwind(AssertUnwindSafe(|| unsafe { index.check_and_insert(row_ref) }));
+            panic::set_hook(hook);
+            prop_assert!(result.is_err());
+        }
+
+        #[test]
+        fn merge_from_is_union((ty, cols, pvs) in gen_distinct_rows_and_cols(), kind: IndexKind, is_unique: bool) {
+            // Make the table and stuff.
+            let mut table = table(ty.clone());
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+
+            if is_unique {
+                // Ensure all rows are distinct on the indexed columns.
+                let mut seen = HashSet::new();
+                for pv in &pvs {
+                    let key = get_fields(&cols, pv);
+                    prop_assume!(seen.insert(key));
+                }
+            }
+
+            // Make two indices.
+            let mut index_lhs = new_index(&ty, &cols, is_unique, kind);
+            let mut index_rhs = new_index(&ty, &cols, is_unique, kind);
+
+            // Insert all rows into the table.
+            for pv in pvs {
+                let _ = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
+            }
+
+            // Insert half of the rows into each index.
+            let row_refs = table.scan_rows(&blob_store).collect::<Vec<_>>();
+            let (left, right) = row_refs.split_at(row_refs.len() / 2);
+            for row_ref in left {
+                unsafe { index_lhs.check_and_insert(*row_ref) }.unwrap();
+            }
+            for row_ref in right {
+                unsafe { index_rhs.check_and_insert(*row_ref) }.unwrap();
+            }
+
+            // First ensure that `can_merge` says they can be merged.
+            prop_assert_eq!(index_lhs.can_merge(&index_rhs, |_| false), Ok(()));
+            // Ignoring all rows allows merging.
+            prop_assert_eq!(index_lhs.can_merge(&index_lhs, |_| true), Ok(()));
+            prop_assert_eq!(index_rhs.can_merge(&index_rhs, |_| true), Ok(()));
+            // For unique indices,
+            // either side cannot be merged with themselves,
+            // unless they are empty.
+            if is_unique {
+                if !index_lhs.is_empty() {
+                    prop_assert!(index_lhs.can_merge(&index_lhs, |_| false).is_err());
+                }
+                if !index_rhs.is_empty() {
+                    prop_assert!(index_rhs.can_merge(&index_rhs, |_| false).is_err());
+                }
+            }
+
+            // Merge `index_rhs` into `index_lhs`.
+            let num_keys_lhs = index_lhs.num_keys();
+            let num_keys_rhs = index_rhs.num_keys();
+            let num_key_bytes_lhs = index_lhs.num_key_bytes();
+            let num_key_bytes_rhs = index_rhs.num_key_bytes();
+            let num_rows_lhs = index_lhs.num_rows();
+            let num_rows_rhs = index_rhs.num_rows();
+            unsafe { index_lhs.merge_from(index_rhs, |x| x) };
+
+            // Witness the union of `index_lhs` and `index_rhs` in `index_lhs`.
+            prop_assert_eq!(index_lhs.num_rows(), table.num_rows());
+            prop_assert_eq!(index_lhs.num_rows(), num_rows_lhs + num_rows_rhs);
+            prop_assert_eq!(index_lhs.num_key_bytes(), num_key_bytes_lhs + num_key_bytes_rhs);
+            if is_unique {
+                prop_assert_eq!(index_lhs.num_keys(), num_keys_lhs + num_keys_rhs);
+            }
         }
     }
 }
