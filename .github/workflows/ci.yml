@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   smoketests:
-    needs: [lints]
     name: Smoketests
     strategy:
+      fail-fast: false
       matrix:
         runner: [spacetimedb-new-runner, windows-latest]
         include:
