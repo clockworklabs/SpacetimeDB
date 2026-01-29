@@ -39,6 +39,61 @@ fn ensure_repo_root() -> Result<()> {
     Ok(())
 }
 
+fn check_global_json_policy() -> Result<()> {
+    ensure_repo_root()?;
+
+    let root_json = Path::new("global.json");
+    let root_real = fs::canonicalize(root_json)?;
+
+    fn find_all(dir: &Path) -> Result<Vec<PathBuf>> {
+        let mut out = Vec::new();
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let ft = entry.file_type()?;
+            out.push(path.clone());
+            if ft.is_dir() {
+                out.extend(find_all(&path)?);
+            }
+        }
+        Ok(out)
+    }
+
+    let globals = find_all(Path::new("."))?
+        .into_iter()
+        .filter(|p| p.file_name() == Some(OsStr::new("global.json")))
+        .collect::<Vec<_>>();
+
+    let mut ok = true;
+    for p in globals {
+        let resolved = fs::canonicalize(&p)?;
+
+        // The root global.json itself is allowed.
+        if resolved == root_real {
+            println!("OK: {}", p.display());
+            continue;
+        }
+
+        let meta = fs::symlink_metadata(&p)?;
+        if !meta.file_type().is_symlink() {
+            eprintln!("Error: {} is not a symlink to root global.json", p.display());
+            ok = false;
+            continue;
+        }
+
+        eprintln!("Error: {} does not resolve to root global.json", p.display());
+        eprintln!("  resolved: {}", resolved.display());
+        eprintln!("  expected: {}", root_real.display());
+        ok = false;
+    }
+
+    if !ok {
+        bail!("global.json policy check failed");
+    }
+
+    Ok(())
+}
+
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
     let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
     if !skeleton_root.exists() {
@@ -200,6 +255,9 @@ enum CiCmd {
         )]
         check: bool,
     },
+
+    /// Verify that any non-root global.json files are symlinks to the root global.json.
+    GlobalJsonPolicy,
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -488,6 +546,10 @@ fn main() -> Result<()> {
                 fs::write(path, readme_content)?;
                 log::info!("Wrote CLI docs to {}", path.display());
             }
+        }
+
+        Some(CiCmd::GlobalJsonPolicy) => {
+            check_global_json_policy()?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,
