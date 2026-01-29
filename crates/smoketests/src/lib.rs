@@ -62,6 +62,15 @@ use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::time::Instant;
 
+fn init_env_logger() {
+    static INIT: OnceLock<()> = OnceLock::new();
+    INIT.get_or_init(|| {
+        let mut builder = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+        builder.is_test(true);
+        let _ = builder.try_init();
+    });
+}
+
 /// Returns the remote server URL if running against a remote server.
 ///
 /// Set the `SPACETIME_REMOTE_SERVER` environment variable to run tests against
@@ -267,7 +276,7 @@ pub struct Smoketest {
     /// None when running against a remote server.
     pub guard: Option<SpacetimeDbGuard>,
     /// Temporary directory containing the module project.
-    pub project_dir: tempfile::TempDir,
+    pub project_dir: Option<tempfile::TempDir>,
     /// Database identity after publishing (if any).
     pub database_identity: Option<String>,
     /// The server URL (e.g., "http://127.0.0.1:3000").
@@ -279,6 +288,13 @@ pub struct Smoketest {
     module_name: String,
     /// Path to pre-compiled WASM file (if using precompiled_module).
     precompiled_wasm_path: Option<PathBuf>,
+}
+
+impl Drop for Smoketest {
+    fn drop(&mut self) {
+        drop(self.guard.take());
+        let _ = self.project_dir.take().unwrap().keep();
+    }
 }
 
 /// Response from an HTTP API call.
@@ -403,6 +419,8 @@ impl SmoketestBuilder {
     /// Panics if the CLI/standalone binaries haven't been built or are stale.
     /// Run `cargo smoketest prepare` to build binaries before running tests.
     pub fn build(self) -> Smoketest {
+        init_env_logger();
+
         // Check binaries first - this will panic with a helpful message if missing/stale
         let _ = ensure_binaries_built();
         let build_start = Instant::now();
@@ -495,7 +513,7 @@ pub fn noop(_ctx: &ReducerContext) {}
         let config_path = project_dir.path().join("config.toml");
         let mut smoketest = Smoketest {
             guard,
-            project_dir,
+            project_dir: Some(project_dir),
             database_identity: None,
             server_url,
             config_path,
@@ -623,11 +641,19 @@ impl Smoketest {
     pub fn spacetime_cmd(&self, args: &[&str]) -> Output {
         let start = Instant::now();
         let cli_path = ensure_binaries_built();
+        let config_path = self.config_path.display().to_string();
+        let mut all_args = vec!["--config-path", &config_path];
+        all_args.extend(args);
+        let args = all_args;
+        let arg_string = args
+            .iter()
+            .map(|arg| shell_escape::escape(std::borrow::Cow::Borrowed(arg)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        log::debug!("Running {cli_path:?} {arg_string}");
         let output = Command::new(&cli_path)
-            .arg("--config-path")
-            .arg(&self.config_path)
-            .args(args)
-            .current_dir(self.project_dir.path())
+            .args(args.iter().map(|x| x).collect::<Vec<_>>())
+            .current_dir(self.project_dir.as_ref().unwrap().path())
             .output()
             .expect("Failed to execute spacetime command");
 
@@ -664,7 +690,7 @@ impl Smoketest {
 
         // Create project structure on demand if it doesn't exist
         // (happens when test started with precompiled_module)
-        let src_dir = self.project_dir.path().join("src");
+        let src_dir = self.project_dir.as_ref().unwrap().path().join("src");
         if !src_dir.exists() {
             fs::create_dir_all(&src_dir).context("Failed to create src directory")?;
 
@@ -688,17 +714,22 @@ log = "0.4"
 "#,
                 self.module_name, bindings_path_str
             );
-            fs::write(self.project_dir.path().join("Cargo.toml"), cargo_toml).context("Failed to write Cargo.toml")?;
+            fs::write(self.project_dir.as_ref().unwrap().path().join("Cargo.toml"), cargo_toml)
+                .context("Failed to write Cargo.toml")?;
 
             // Copy rust-toolchain.toml
             let toolchain_src = workspace_root.join("rust-toolchain.toml");
             if toolchain_src.exists() {
-                fs::copy(&toolchain_src, self.project_dir.path().join("rust-toolchain.toml"))
-                    .context("Failed to copy rust-toolchain.toml")?;
+                fs::copy(
+                    &toolchain_src,
+                    self.project_dir.as_ref().unwrap().path().join("rust-toolchain.toml"),
+                )
+                .context("Failed to copy rust-toolchain.toml")?;
             }
         }
 
-        fs::write(self.project_dir.path().join("src/lib.rs"), code).context("Failed to write module code")?;
+        fs::write(self.project_dir.as_ref().unwrap().path().join("src/lib.rs"), code)
+            .context("Failed to write module code")?;
         Ok(())
     }
 
@@ -724,12 +755,12 @@ log = "0.4"
     /// Use this when you need to check for build failures (e.g., wasm_bindgen detection).
     pub fn spacetime_build(&self) -> Output {
         let start = Instant::now();
-        let project_path = self.project_dir.path().to_str().unwrap();
+        let project_path = self.project_dir.as_ref().unwrap().path().to_str().unwrap();
         let cli_path = ensure_binaries_built();
 
         let mut cmd = Command::new(&cli_path);
         cmd.args(["build", "--project-path", project_path])
-            .current_dir(self.project_dir.path())
+            .current_dir(self.project_dir.as_ref().unwrap().path())
             .env("CARGO_TARGET_DIR", shared_target_dir());
 
         let output = cmd.output().expect("Failed to execute spacetime build");
@@ -784,7 +815,7 @@ log = "0.4"
             precompiled_path.to_str().unwrap().to_string()
         } else {
             // Build the WASM module from source
-            let project_path = self.project_dir.path().to_str().unwrap().to_string();
+            let project_path = self.project_dir.as_ref().unwrap().path().to_str().unwrap().to_string();
             let build_start = Instant::now();
             let cli_path = ensure_binaries_built();
             let target_dir = shared_target_dir();
@@ -792,7 +823,7 @@ log = "0.4"
             let mut build_cmd = Command::new(&cli_path);
             build_cmd
                 .args(["build", "--project-path", &project_path])
-                .current_dir(self.project_dir.path())
+                .current_dir(self.project_dir.as_ref().unwrap().path())
                 .env("CARGO_TARGET_DIR", &target_dir);
 
             let build_output = build_cmd.output().expect("Failed to execute spacetime build");

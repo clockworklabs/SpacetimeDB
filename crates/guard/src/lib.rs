@@ -532,7 +532,7 @@ fn parse_listen_addr_from_line(line: &str) -> Option<SocketAddr> {
 
 impl Drop for SpacetimeDbGuard {
     fn drop(&mut self) {
-        self.kill_process();
+        //self.kill_process();
 
         // Only print logs if the test is currently panicking
         if std::thread::panicking() {
@@ -543,5 +543,7 @@ impl Drop for SpacetimeDbGuard {
                 );
             }
         }
+
+        let _ = self._data_dir_handle.take().map(|h| h.keep());
     }
 }
