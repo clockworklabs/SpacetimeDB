@@ -82,6 +82,27 @@ fn create_user(ctx: &ReducerContext, name: String) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct User {
+    uint64_t id;
+    std::string name;
+};
+SPACETIMEDB_STRUCT(User, id, name);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKeyAutoInc(user, id);
+
+SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
+    ctx.db[user].insert(User{0, name});
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Caller Information
@@ -181,6 +202,35 @@ fn update_score(ctx: &ReducerContext, new_score: u32) {
         player.score = new_score;
         ctx.db.player().identity().update(player);
     }
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Player {
+    Identity identity;
+    std::string name;
+    uint32_t score;
+};
+SPACETIMEDB_STRUCT(Player, identity, name, score);
+SPACETIMEDB_TABLE(Player, player, Public);
+FIELD_PrimaryKey(player, identity);
+
+SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint32_t new_score) {
+    // Get the caller's identity
+    auto caller = ctx.sender;
+    
+    // Find and update their player record
+    if (auto player = ctx.db[player_identity].find(caller)) {
+        player->score = new_score;
+        ctx.db[player_identity].update(*player);
+    }
+    return Ok();
 }
 ```
 
@@ -299,6 +349,36 @@ fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct ScheduledTask {
+    uint64_t task_id;
+    ScheduleAt scheduled_at;
+    std::string message;
+};
+SPACETIMEDB_STRUCT(ScheduledTask, task_id, scheduled_at, message);
+SPACETIMEDB_TABLE(ScheduledTask, scheduled_task, Private);
+FIELD_PrimaryKeyAutoInc(scheduled_task, task_id);
+
+// Register the table for scheduling (column 1 = scheduled_at field, 0-based index)
+SPACETIMEDB_SCHEDULE(scheduled_task, 1, send_reminder);
+
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
+    // Only allow the scheduler (module identity) to call this
+    if (ctx.sender != ctx.identity()) {
+        return Err("This reducer can only be called by the scheduler");
+    }
+    
+    LOG_INFO("Reminder: " + task.message);
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Context Properties Reference
@@ -345,5 +425,24 @@ TypeScript uses `Math.random()` for random number generation, which is automatic
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
 - `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+| Property        | Type                           | Description                                     |
+| --------------- | ------------------------------ | ----------------------------------------------- |
+| `db[table]`     | `Table<T>`                     | Access to a specific table's operations         |
+| `sender`        | `Identity`                     | Identity of the caller                          |
+| `timestamp`     | `Timestamp`                    | Time when the reducer was invoked               |
+| `connection_id` | `std::optional<ConnectionId>`  | Connection ID of the caller, if available       |
+
+**Methods:**
+
+- `identity() -> Identity` - Get the module's identity
+- `rng() -> StdbRng&` - Get the random number generator (deterministic and reproducible)
+- `sender_auth() -> const AuthCtx&` - Get authorization context for the caller (includes JWT claims and internal call detection)
+
+:::note
+C++ uses the `std::optional` type for the `connection_id` to represent values that may not be present. The `rng()` method returns a deterministic random number generator that is seeded consistently across all nodes.
+:::
 </TabItem>
 </Tabs>

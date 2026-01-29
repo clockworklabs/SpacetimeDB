@@ -101,6 +101,36 @@ pub fn transfer_credits(
 ```
 
 </TabItem>
+  <TabItem value="cpp" label="C++">
+
+  ```cpp
+  #include <spacetimedb.h>
+  using namespace SpacetimeDB;
+
+  struct User {
+    Identity identity;
+    uint32_t credits;
+  };
+  SPACETIMEDB_STRUCT(User, identity, credits);
+  SPACETIMEDB_TABLE(User, users, Private);
+  FIELD_PrimaryKey(users, identity);
+
+  SPACETIMEDB_REDUCER(transfer_credits, ReducerContext ctx, Identity to_user, uint32_t amount) {
+    auto from_user = ctx.db[users_identity].find(ctx.sender);
+    if (!from_user) {
+      return Err("User not found");
+    }
+    
+    if (from_user->credits < amount) {
+      return Err("Insufficient credits");
+    }
+    
+    // ... perform transfer
+    return Ok();
+  }
+  ```
+
+  </TabItem>
 </Tabs>
 
 ### Programmer Errors
@@ -165,6 +195,28 @@ pub fn process_data(ctx: &ReducerContext, data: Vec<u8>) -> Result<(), String> {
 ```
 
 </TabItem>
+  <TabItem value="cpp" label="C++">
+
+  ```cpp
+  #include <spacetimedb.h>
+  #include <cassert>
+  using namespace SpacetimeDB;
+
+  SPACETIMEDB_REDUCER(process_data, ReducerContext ctx, Vec<uint8_t> data) {
+    // This indicates a bug
+    assert(!data.empty() && "Unexpected empty data");
+  
+    auto parsed = parse_data(data);
+    if (!parsed) {
+      LOG_PANIC("Failed to parse data");
+    }
+  
+    // ...
+    return Ok();
+  }
+  ```
+
+  </TabItem>
 </Tabs>
 
 Programmer errors are logged and visible in your project dashboard. Consider setting up alerting to be notified when these occur.
