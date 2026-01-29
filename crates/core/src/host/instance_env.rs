@@ -10,6 +10,7 @@ use crate::subscription::module_subscription_manager::{from_tx_offset, Transacti
 use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
+use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -865,7 +866,8 @@ impl InstanceEnv {
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
         let execute_fut = reqwest::Client::new().execute(reqwest);
 
-        let response_fut = async {
+        // Run the future that does IO work on a tokio worker thread, where it's more efficent.
+        let response_fut = tokio::spawn(async {
             // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
             // We'll strip those with `strip_query_params_from_eqwest_error`
             // after `await`ing `response_fut` below.
@@ -880,7 +882,8 @@ impl InstanceEnv {
             let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
 
             Ok((response, body))
-        };
+        })
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
 
         let database_identity = *self.database_identity();
 
