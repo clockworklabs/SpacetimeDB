@@ -154,37 +154,9 @@ impl SpacetimeDbGuard {
             // Use the installed CLI (rare case, mainly for spawn_in_temp_data_dir_use_cli)
             eprintln!("[SPAWN-{:03}] START (installed CLI) data_dir={:?}", spawn_id, data_dir);
 
-            let address = "127.0.0.1:0".to_string();
-            let data_dir_str = data_dir.display().to_string();
-            let pg_port_str = pg_port.map(|p| p.to_string());
-
-            let mut args = vec!["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
-            if let Some(ref port) = pg_port_str {
-                args.extend(["--pg-port", port]);
-            }
             let cmd = Command::new("spacetime");
-            let (child, logs, reader_threads) = Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args, spawn_id);
-
-            eprintln!("[SPAWN-{:03}] Waiting for listen address", spawn_id);
-            let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10), spawn_id).unwrap_or_else(|| {
-                let buf = logs.lock().unwrap();
-                eprintln!("[SPAWN-{:03}] TIMEOUT after 10s", spawn_id);
-                eprintln!(
-                    "[SPAWN-{:03}] Captured {} bytes, {} lines",
-                    spawn_id,
-                    buf.len(),
-                    buf.lines().count()
-                );
-                eprintln!(
-                    "[SPAWN-{:03}] Contains 'Starting SpacetimeDB': {}",
-                    spawn_id,
-                    buf.contains("Starting SpacetimeDB")
-                );
-                panic!("Timed out waiting for SpacetimeDB to report listen address")
-            });
-            eprintln!("[SPAWN-{:03}] Got listen_addr={}", spawn_id, listen_addr);
-
-            let host_url = format!("http://{}", listen_addr);
+            let (child, logs, host_url, reader_threads) =
+                Self::spawn_server_with_command(&data_dir, pg_port, spawn_id, cmd);
             let guard = SpacetimeDbGuard {
                 child,
                 host_url,
@@ -194,8 +166,6 @@ impl SpacetimeDbGuard {
                 _data_dir_handle,
                 reader_threads,
             };
-            guard.wait_until_http_ready(Duration::from_secs(10));
-            eprintln!("[SPAWN-{:03}] HTTP ready", spawn_id);
             guard
         } else {
             // Use the built CLI (common case)
@@ -298,26 +268,29 @@ impl SpacetimeDbGuard {
             spawn_id, data_dir, pg_port
         );
 
+        let cli_path = ensure_binaries_built();
+        let cmd = Command::new(&cli_path);
+        Self::spawn_server_with_command(data_dir, pg_port, spawn_id, cmd)
+    }
+
+    fn spawn_server_with_command(
+        data_dir: &Path,
+        pg_port: Option<u16>,
+        spawn_id: u64,
+        cmd: Command,
+    ) -> (Child, Arc<Mutex<String>>, String, Vec<thread::JoinHandle<()>>) {
         let data_dir_str = data_dir.display().to_string();
         let pg_port_str = pg_port.map(|p| p.to_string());
 
         let address = "127.0.0.1:0".to_string();
-        let cli_path = ensure_binaries_built();
 
         let mut args = vec!["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
         if let Some(ref port) = pg_port_str {
             args.extend(["--pg-port", port]);
         }
 
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("Failed to find workspace root");
-
         eprintln!("[SPAWN-{:03}] Spawning child process", spawn_id);
-        let cmd = Command::new(&cli_path);
-        let (child, logs, reader_threads) = Self::spawn_child(cmd, workspace_root.to_str().unwrap(), &args, spawn_id);
+        let (child, logs, reader_threads) = Self::spawn_child(cmd, &args, spawn_id);
         eprintln!("[SPAWN-{:03}] Child spawned pid={}", spawn_id, child.id());
 
         // Wait for the server to be ready
@@ -364,7 +337,6 @@ impl SpacetimeDbGuard {
 
     fn spawn_child(
         mut cmd: Command,
-        workspace_dir: &str,
         args: &[&str],
         spawn_id: u64,
     ) -> (Child, Arc<Mutex<String>>, Vec<thread::JoinHandle<()>>) {
@@ -372,7 +344,6 @@ impl SpacetimeDbGuard {
 
         let mut child = cmd
             .args(args)
-            .current_dir(workspace_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -438,24 +409,6 @@ impl SpacetimeDbGuard {
 
         eprintln!("[SPAWN-{:03}] spawn_child: readers attached", spawn_id);
         (child, logs, reader_threads)
-    }
-
-    fn wait_until_http_ready(&self, timeout: Duration) {
-        let client = Client::new();
-        let deadline = Instant::now() + timeout;
-
-        while Instant::now() < deadline {
-            let url = format!("{}/v1/ping", self.host_url);
-
-            if let Ok(resp) = client.get(&url).send() {
-                if resp.status().is_success() {
-                    return; // Fully ready!
-                }
-            }
-
-            sleep(Duration::from_millis(50));
-        }
-        panic!("Timed out waiting for SpacetimeDB HTTP /v1/ping at {}", self.host_url);
     }
 }
 
