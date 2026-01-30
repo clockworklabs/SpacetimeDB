@@ -16,6 +16,13 @@ fn test_build_csharp_module() {
     // CLI is pre-built by artifact dependencies during compilation
     let cli_path = ensure_binaries_built();
 
+    let status = Command::new("dotnet")
+        .args(["nuget", "locals", "all", "--clear"])
+        .current_dir(&bindings)
+        .status()
+        .expect("Failed to clear nuget locals");
+    assert!(status.success(), "Failed to clear nuget locals");
+
     // Install wasi-experimental workload
     let _status = Command::new("dotnet")
         .args(["workload", "install", "wasi-experimental", "--skip-manifest-update"])
