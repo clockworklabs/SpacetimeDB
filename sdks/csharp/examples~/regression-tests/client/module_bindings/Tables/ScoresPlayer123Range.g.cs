@@ -24,4 +24,26 @@ namespace SpacetimeDB.Types
 
         public readonly ScoresPlayer123RangeHandle ScoresPlayer123Range;
     }
+
+    public sealed class ScoresPlayer123RangeCols
+    {
+        public global::SpacetimeDB.Col<Score, uint> PlayerId { get; }
+        public global::SpacetimeDB.Col<Score, uint> Level { get; }
+        public global::SpacetimeDB.Col<Score, long> Points { get; }
+
+        public ScoresPlayer123RangeCols(string tableName)
+        {
+            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "PlayerId");
+            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "Level");
+            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "Points");
+        }
+    }
+
+    public sealed class ScoresPlayer123RangeIxCols
+    {
+
+        public ScoresPlayer123RangeIxCols(string tableName)
+        {
+        }
+    }
 }

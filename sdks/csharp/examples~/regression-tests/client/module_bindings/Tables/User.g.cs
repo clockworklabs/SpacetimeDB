@@ -72,24 +72,30 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Col<User, SpacetimeDB.Uuid> Id { get; }
         public global::SpacetimeDB.Col<User, string> Name { get; }
         public global::SpacetimeDB.Col<User, bool> IsAdmin { get; }
+        public global::SpacetimeDB.Col<User, byte> Age { get; }
 
         public UserCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "Id");
             Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
             IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "IsAdmin");
+            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "Age");
         }
     }
 
     public sealed class UserIxCols
     {
         public global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid> Id { get; }
+        public global::SpacetimeDB.IxCol<User, string> Name { get; }
         public global::SpacetimeDB.IxCol<User, bool> IsAdmin { get; }
+        public global::SpacetimeDB.IxCol<User, byte> Age { get; }
 
         public UserIxCols(string tableName)
         {
             Id = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid>(tableName, "Id");
+            Name = new global::SpacetimeDB.IxCol<User, string>(tableName, "Name");
             IsAdmin = new global::SpacetimeDB.IxCol<User, bool>(tableName, "IsAdmin");
+            Age = new global::SpacetimeDB.IxCol<User, byte>(tableName, "Age");
         }
     }
 }
