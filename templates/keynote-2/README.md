@@ -129,7 +129,7 @@ This architectural difference means SpacetimeDB can execute transactions in micr
 
 ### Client Pipelining
 
-SpacetimeDB clients support **pipelining** - sending multiple requests without waiting for responses. This maximizes throughput by keeping the connection saturated.
+The benchmark supports **pipelining** for all clients - sending multiple requests without waiting for responses. This maximizes throughput by keeping connections saturated.
 
 ### Confirmed Reads (`withConfirmedReads`)
 
