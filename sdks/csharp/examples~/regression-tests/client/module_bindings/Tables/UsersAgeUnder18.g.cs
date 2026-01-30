@@ -13,26 +13,26 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteTables
     {
-        public sealed class AdminsHandle : RemoteTableHandle<EventContext, User>
+        public sealed class UsersAgeUnder18Handle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "Admins";
+            protected override string RemoteTableName => "users_age_under_18";
 
-            internal AdminsHandle(DbConnection conn) : base(conn)
+            internal UsersAgeUnder18Handle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly AdminsHandle Admins;
+        public readonly UsersAgeUnder18Handle UsersAgeUnder18;
     }
 
-    public sealed class AdminsCols
+    public sealed class UsersAgeUnder18Cols
     {
         public global::SpacetimeDB.Col<User, SpacetimeDB.Uuid> Id { get; }
         public global::SpacetimeDB.Col<User, string> Name { get; }
         public global::SpacetimeDB.Col<User, bool> IsAdmin { get; }
         public global::SpacetimeDB.Col<User, byte> Age { get; }
 
-        public AdminsCols(string tableName)
+        public UsersAgeUnder18Cols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "Id");
             Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
@@ -41,10 +41,10 @@ namespace SpacetimeDB.Types
         }
     }
 
-    public sealed class AdminsIxCols
+    public sealed class UsersAgeUnder18IxCols
     {
 
-        public AdminsIxCols(string tableName)
+        public UsersAgeUnder18IxCols(string tableName)
         {
         }
     }
