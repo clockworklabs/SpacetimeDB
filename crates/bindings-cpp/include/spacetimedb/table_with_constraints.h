@@ -472,59 +472,88 @@ private:
 public:
     using TypedFieldAccessor<TableType, FieldType>::TypedFieldAccessor;
     
-    // Override filter to use index-based iteration for efficiency
-    std::vector<TableType> filter(const FieldType& value) const {
+    /**
+     * @brief Filter rows by exact field value using index
+     * 
+     * Returns lazy IndexIterator - results are evaluated incrementally during iteration
+     * without materializing all matches in memory.
+     * 
+     * @param value The field value to match exactly
+     * @return IndexIterator supporting range-based for loops
+     * 
+     * @example Clean range-based for loop (no materialization):
+     * @code
+     * for (const auto& row : ctx.db[table_field].filter(value)) {
+     *     // Process matching rows one at a time
+     * }
+     * @endcode
+     * 
+     * @example Materialize all results when needed:
+     * @code
+     * auto all_matches = ctx.db[table_field].filter(value).collect();
+     * @endcode
+     */
+    IndexIteratorRange<TableType> filter(const FieldType& value) const {
         IndexId index_id = get_index_id();
         
         if (index_id.inner != 0) {
             // Use efficient index-based iteration
-            std::vector<TableType> results;
-            for (IndexIterator<TableType> iter(index_id, value); iter != IndexIterator<TableType>(); ++iter) {
-                results.push_back(*iter);
-            }
-            return results;
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>(index_id, value));
         }
 
-        return std::vector<TableType>{};
-        // // Fallback to base implementation if index not found
-        // return TypedFieldAccessor<TableType, FieldType>::filter(value);
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>());
     }
     
-    // Filter by range using index (new functionality!)
+    /**
+     * @brief Filter rows by range using index
+     * 
+     * Returns lazy IndexIterator - results are evaluated incrementally during iteration
+     * without materializing all matches in memory.
+     * 
+     * @tparam RangeType Range type (range_from, range_to, range_inclusive, etc.)
+     * @param range The range bounds to match
+     * @return IndexIterator supporting range-based for loops
+     * 
+     * @example Query rows in a range:
+     * @code
+     * auto age_range = range_from(uint8_t(18));
+     * for (const auto& row : ctx.db[person_age].filter(age_range)) {
+     *     // Process persons aged 18+
+     * }
+     * @endcode
+     */
     template<typename RangeType>
-    std::enable_if_t<is_range_v<RangeType>, std::vector<TableType>>
+    std::enable_if_t<is_range_v<RangeType>, IndexIteratorRange<TableType>>
     filter(const RangeType& range) const {
         IndexId index_id = get_index_id();
         
         if (index_id.inner != 0) {
             // Use efficient index-based iteration with range
-            std::vector<TableType> results;
-            for (IndexIterator<TableType> iter(index_id, range); iter != IndexIterator<TableType>(); ++iter) {
-                results.push_back(*iter);
-            }
-            return results;
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>(index_id, range));
         }
 
-        return std::vector<TableType>{};
-        // // Fallback to manual filtering if index not found
-        // return this->get_table().filter([this, &range](const TableType& row) {
-        //     return range.contains(this->get_field_value(row));
-        // });
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>());
     }
     
     uint32_t delete_all(const FieldType& value) const {
-        uint32_t count = this->delete_by_index_scan(value, false);
-        if (count > 0) return count;
-        
-        // Fallback
-        auto matches = this->filter(value);
-        uint32_t deleted_count = 0;
-        for (const auto& row : matches) {
-            if (this->delete_by_value(row) > 0) {
-                deleted_count++;
-            }
+        IndexId index_id = get_index_id();
+        if (index_id.inner == 0) {
+            return 0; // No index available
         }
-        return deleted_count;
+        
+        // Serialize the value to search for
+        SpacetimeDB::bsatn::Writer writer;
+        SpacetimeDB::bsatn::serialize(writer, value);
+        auto buffer = writer.get_buffer();
+        
+        uint32_t deleted_count = 0;
+        Status status = ::datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            buffer.data(), buffer.size(),
+            &deleted_count
+        );
+        
+        return is_ok(status) ? deleted_count : 0;
     }
 };
 
@@ -579,45 +608,45 @@ public:
     
     // Exact match on all columns (template method - types deduced from call)
     template<typename... FieldTypes>
-    std::vector<TableType> filter(const std::tuple<FieldTypes...>& values) const 
+    IndexIteratorRange<TableType> filter(const std::tuple<FieldTypes...>& values) const 
         requires (sizeof...(FieldTypes) > 0 && sizeof...(FieldTypes) <= 6)
     {
         IndexId id = resolve_index_id();
         
         if (id.inner == 0) {
-            return std::vector<TableType>{};
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>());
         }
         
-        return IndexIterator<TableType>(id, values).collect();
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, values));
     }
     
     // Prefix-only match: find all rows where first N-1 columns match
     template<typename FirstColType>
-    std::vector<TableType> filter(const FirstColType& prefix_value) const 
+    IndexIteratorRange<TableType> filter(const FirstColType& prefix_value) const 
         requires (!is_tuple_v<FirstColType>)
     {
         IndexId id = resolve_index_id();
         
         if (id.inner == 0) {
-            return std::vector<TableType>{};
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>());
         }
         
         // Use prefix_match_tag to disambiguate constructor
-        return IndexIterator<TableType>(prefix_match_tag{}, id, prefix_value).collect();
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>(prefix_match_tag{}, id, prefix_value));
     }
     
     // Prefix + range match: find rows where first N-1 columns match and last is in range
     template<typename FirstColType, typename RangeType>
-    std::vector<TableType> filter(const std::tuple<FirstColType, RangeType>& values) const 
+    IndexIteratorRange<TableType> filter(const std::tuple<FirstColType, RangeType>& values) const 
         requires (is_range_v<RangeType>)
     {
         IndexId id = resolve_index_id();
         
         if (id.inner == 0) {
-            return std::vector<TableType>{};
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>());
         }
         
-        return IndexIterator<TableType>(id, values).collect();
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, values));
     }
 };
 
