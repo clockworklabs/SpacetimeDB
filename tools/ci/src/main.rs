@@ -47,24 +47,22 @@ fn check_global_json_policy() -> Result<()> {
     let root_json = Path::new("global.json");
     let root_real = fs::canonicalize(root_json)?;
 
-    fn find_all(dir: &Path) -> Result<Vec<PathBuf>> {
+    fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut out = Vec::new();
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             let ft = entry.file_type()?;
-            out.push(path.clone());
             if ft.is_dir() {
-                out.extend(find_all(&path)?);
+                out.extend(find_all_global_json(&path)?);
+            } else if path.file_name() == Some(OsStr::new("global.json")) {
+                out.push(path);
             }
         }
         Ok(out)
     }
 
-    let globals = find_all(Path::new("."))?
-        .into_iter()
-        .filter(|p| p.file_name() == Some(OsStr::new("global.json")))
-        .collect::<Vec<_>>();
+    let globals = find_all_global_json(Path::new("."))?;
 
     let mut ok = true;
     for p in globals {
