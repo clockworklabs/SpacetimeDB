@@ -153,29 +153,27 @@ fn test_private_table() {
         .unwrap();
     test.call("do_thing", &["godmorgon"]).unwrap();
     let events = sub.collect().unwrap();
-    assert_eq!(events.len(), 1, "Expected 1 update, got {:?}", events);
 
-    let expected = serde_json::json!({
+    let expected = serde_json::json!([{
         "common_knowledge": {
             "deletes": [],
             "inserts": [{"thing": "godmorgon"}]
         }
-    });
-    assert_eq!(events[0], expected);
+    }]);
+    assert_eq!(serde_json::json!(events), expected);
 
     // Subscribing to both tables returns updates for the public one only
     let sub = test.subscribe_background(&["SELECT * FROM *"], 1).unwrap();
     test.call("do_thing", &["howdy"]).unwrap();
     let events = sub.collect().unwrap();
-    assert_eq!(events.len(), 1, "Expected 1 update, got {:?}", events);
 
-    let expected = serde_json::json!({
+    let expected = serde_json::json!([{
         "common_knowledge": {
             "deletes": [],
             "inserts": [{"thing": "howdy"}]
         }
-    });
-    assert_eq!(events[0], expected);
+    }]);
+    assert_eq!(serde_json::json!(events), expected);
 }
 
 /// Ensure that you cannot delete a database that you do not own

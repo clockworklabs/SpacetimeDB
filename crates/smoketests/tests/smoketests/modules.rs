@@ -123,33 +123,11 @@ fn test_hotswap_module() {
     let updates = sub.collect().unwrap();
 
     // Check that we got updates for both person inserts
-    assert_eq!(updates.len(), 2, "Expected 2 updates, got {:?}", updates);
-
-    // First update should be Horst
-    let first = &updates[0];
-    assert!(
-        first.get("person").is_some(),
-        "Expected person table in first update: {:?}",
-        first
-    );
-    let inserts = &first["person"]["inserts"];
-    assert!(
-        inserts.as_array().unwrap().iter().any(|r| r["name"] == "Horst"),
-        "Expected Horst in first update: {:?}",
-        first
-    );
-
-    // Second update should be Cindy
-    let second = &updates[1];
-    assert!(
-        second.get("person").is_some(),
-        "Expected person table in second update: {:?}",
-        second
-    );
-    let inserts = &second["person"]["inserts"];
-    assert!(
-        inserts.as_array().unwrap().iter().any(|r| r["name"] == "Cindy"),
-        "Expected Cindy in second update: {:?}",
-        second
+    assert_eq!(
+        serde_json::json!(updates),
+        serde_json::json!([
+            {"person": {"deletes": [], "inserts": [{"id": 1, "name": "Horst"}]}},
+            {"person": {"deletes": [], "inserts": [{"id": 2, "name": "Cindy"}]}}
+        ])
     );
 }

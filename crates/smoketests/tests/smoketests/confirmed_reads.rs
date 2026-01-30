@@ -24,24 +24,21 @@ fn test_confirmed_reads_receive_updates() {
     // Collect updates
     let events = sub.collect().unwrap();
 
-    assert_eq!(events.len(), 2, "Expected 2 updates, got {:?}", events);
-
-    // Check that we got the expected inserts
-    let horst_insert = serde_json::json!({
-        "person": {
-            "deletes": [],
-            "inserts": [{"name": "Horst"}]
-        }
-    });
-    let egon_insert = serde_json::json!({
-        "person": {
-            "deletes": [],
-            "inserts": [{"name": "Egon"}]
-        }
-    });
-
-    assert_eq!(events[0], horst_insert);
-    assert_eq!(events[1], egon_insert);
+    assert_eq!(
+        serde_json::json!(events),
+        serde_json::json!([{
+            "person": {
+                "deletes": [],
+                "inserts": [{"name": "Horst"}]
+            }
+        },
+        {
+            "person": {
+                "deletes": [],
+                "inserts": [{"name": "Egon"}]
+            }
+        }])
+    );
 }
 
 /// Tests that an SQL operation with confirmed=true returns a result
