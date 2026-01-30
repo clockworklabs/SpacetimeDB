@@ -27,7 +27,7 @@ use std::io::Read;
 /// Build the CommandSchema for generate command
 fn build_generate_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
     CommandSchemaBuilder::new()
-        .key(Key::new::<Language>("lang").required())
+        .key(Key::new::<Language>("language").from_clap("lang").required())
         .key(Key::new::<PathBuf>("out_dir"))
         .key(Key::new::<PathBuf>("uproject_dir"))
         .key(Key::new::<PathBuf>("module_path").from_clap("project_path"))
@@ -201,8 +201,8 @@ pub async fn exec_ex(
         let js_file = command_config.get_one::<PathBuf>(args, "js_file")?;
         let json_module = args.get_many::<PathBuf>("json_module");
         let lang = command_config
-            .get_one::<Language>(args, "lang")?
-            .ok_or_else(|| anyhow::anyhow!("Language is required"))?;
+            .get_one::<Language>(args, "language")?
+            .ok_or_else(|| anyhow::anyhow!("Language is required (use --lang or add to config)"))?;
         let namespace = command_config
             .get_one::<String>(args, "namespace")?
             .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
@@ -212,14 +212,43 @@ pub async fn exec_ex(
             .get_one::<String>(args, "build_options")?
             .unwrap_or_else(|| String::new());
 
+        // Validate namespace is only used with csharp
         if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
             return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
         }
 
+        // Get output directory (either out_dir or uproject_dir)
         let out_dir = command_config
             .get_one::<PathBuf>(args, "out_dir")?
             .or_else(|| command_config.get_one::<PathBuf>(args, "uproject_dir").ok().flatten())
-            .ok_or_else(|| anyhow::anyhow!("Either out-dir or uproject-dir is required"))?;
+            .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
+
+        // Validate language-specific requirements
+        match lang {
+            Language::Rust | Language::Csharp | Language::TypeScript => {
+                // These languages require out_dir (not uproject_dir)
+                if command_config.get_one::<PathBuf>(args, "out_dir")?.is_none() {
+                    return Err(anyhow::anyhow!(
+                        "--out-dir is required for --lang {}",
+                        match lang {
+                            Language::Rust => "rust",
+                            Language::Csharp => "csharp",
+                            Language::TypeScript => "typescript",
+                            _ => unreachable!(),
+                        }
+                    ));
+                }
+            }
+            Language::UnrealCpp => {
+                // UnrealCpp requires uproject_dir and module_name
+                if command_config.get_one::<PathBuf>(args, "uproject_dir")?.is_none() {
+                    return Err(anyhow::anyhow!("--uproject-dir is required for --lang unrealcpp"));
+                }
+                if module_name.is_none() {
+                    return Err(anyhow::anyhow!("--module-name is required for --lang unrealcpp"));
+                }
+            }
+        }
 
         let module: ModuleDef = if let Some(mut json_module) = json_module {
             let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = json_module.next() {
