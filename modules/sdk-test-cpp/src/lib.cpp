@@ -29,7 +29,6 @@ SPACETIMEDB_ENUM(SimpleEnum, Zero, One, Two)
 
 // EnumWithPayload - Using unified SPACETIMEDB_ENUM with complex syntax!
 // Auto-detects parenthesized pairs for variant enums
-// Full 23 variants - now supported!
 SPACETIMEDB_ENUM(EnumWithPayload,
     (U8, uint8_t),
     (U16, uint16_t),
@@ -50,6 +49,7 @@ SPACETIMEDB_ENUM(EnumWithPayload,
     (Identity, SpacetimeDB::Identity),
     (ConnectionId, SpacetimeDB::ConnectionId),
     (Timestamp, SpacetimeDB::Timestamp),
+    (Uuid, SpacetimeDB::Uuid),
     (Bytes, std::vector<uint8_t>),
     (Ints, std::vector<int32_t>),
     (Strings, std::vector<std::string>),
