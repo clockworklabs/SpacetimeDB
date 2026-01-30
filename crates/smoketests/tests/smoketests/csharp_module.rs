@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use spacetimedb_guard::ensure_binaries_built;
-use spacetimedb_smoketests::{have_dotnet, workspace_root};
+use spacetimedb_smoketests::{requires_dotnet, workspace_root};
 use std::fs;
 use std::process::Command;
 
@@ -9,10 +9,7 @@ use std::process::Command;
 /// Skips if dotnet 8.0+ is not available.
 #[test]
 fn test_build_csharp_module() {
-    if !have_dotnet() {
-        eprintln!("Skipping test_build_csharp_module: dotnet 8.0+ not available");
-        return;
-    }
+    requires_dotnet!();
 
     let workspace = workspace_root();
     let bindings = workspace.join("crates/bindings-csharp");

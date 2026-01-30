@@ -3,7 +3,7 @@
 //! code from markdown docs and running it.
 
 use anyhow::{bail, Context, Result};
-use spacetimedb_smoketests::{have_dotnet, have_pnpm, parse_quickstart, workspace_root, Smoketest};
+use spacetimedb_smoketests::{have_pnpm, parse_quickstart, requires_dotnet, workspace_root, Smoketest};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -648,10 +648,7 @@ fn test_quickstart_rust() {
 /// Run the C# quickstart guides for server and client.
 #[test]
 fn test_quickstart_csharp() {
-    if !have_dotnet() {
-        eprintln!("Skipping test_quickstart_csharp: dotnet 8.0+ not available");
-        return;
-    }
+    requires_dotnet!();
 
     let mut qt = QuickstartTest::new(QuickstartConfig::csharp());
     qt.run_quickstart().expect("C# quickstart test failed");

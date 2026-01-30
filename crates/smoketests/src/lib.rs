@@ -104,6 +104,22 @@ macro_rules! skip_if_remote {
     };
 }
 
+#[macro_export]
+macro_rules! requires_dotnet {
+    () => {
+        if !$crate::allow_dotnet() {
+            #[allow(clippy::disallowed_macros)]
+            {
+                eprintln!("Skipping dotnet test");
+            }
+            return;
+        }
+        if !$crate::have_dotnet() {
+            panic!("Skipping dotnet test: dotnet not found");
+        }
+    };
+}
+
 /// Helper macro for timing operations and printing results
 macro_rules! timed {
     ($label:expr, $expr:expr) => {{
@@ -176,6 +192,17 @@ pub fn have_dotnet() -> bool {
             })
             .unwrap_or(false)
     })
+}
+
+/// Returns true if tests are configured to allow dotnet
+pub fn allow_dotnet() -> bool {
+    let Ok(s) = std::env::var("SMOKETESTS_DOTNET") else {
+        return true;
+    };
+    match s.as_str() {
+        "" | "0" => false,
+        s => s.to_lowercase() != "false",
+    }
 }
 
 /// Returns true if psql (PostgreSQL client) is available on the system.

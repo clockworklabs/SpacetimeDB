@@ -32,6 +32,9 @@ enum XtaskCmd {
         #[arg(long)]
         server: Option<String>,
 
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        dotnet: bool,
+
         /// Additional arguments to pass to the test runner
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
@@ -62,7 +65,8 @@ fn main() -> Result<()> {
             cmd: None,
             server,
             args,
-        } => run_smoketest(server, args),
+            dotnet: use_dotnet,
+        } => run_smoketest(server, use_dotnet, args),
     }
 }
 
@@ -131,7 +135,7 @@ fn build_precompiled_modules() -> Result<()> {
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
 const DEFAULT_PARALLELISM: &str = "16";
 
-fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
+fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Result<()> {
     // 1. Build binaries first (single process, no race)
     build_binaries()?;
 
@@ -152,9 +156,10 @@ fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
     }
 
     // 5. Run tests with appropriate runner (release mode for faster execution)
-    let status = if use_nextest {
+    let mut cmd = if use_nextest {
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
+        set_env(&mut cmd, server, dotnet);
         cmd.args([
             "nextest",
             "run",
@@ -165,30 +170,27 @@ fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
         ]);
 
         // Set default parallelism if user didn't specify -j
-        if !args
-            .iter()
-            .any(|a| a == "-j" || a.starts_with("-j") || a.starts_with("--jobs"))
-        {
+        if !args.iter().any(|a| a.starts_with("-j") || a.starts_with("--jobs")) {
             cmd.args(["-j", DEFAULT_PARALLELISM]);
         }
 
-        if let Some(ref server_url) = server {
-            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
-        }
-
-        cmd.args(&args).status()?
+        cmd
     } else {
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
+        set_env(&mut cmd, server, dotnet);
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
-
-        if let Some(ref server_url) = server {
-            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
-        }
-
-        cmd.args(&args).status()?
+        cmd
     };
+    let status = cmd.arg("--").args(&args).status()?;
 
     ensure!(status.success(), "Tests failed");
     Ok(())
+}
+
+fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool) {
+    if let Some(ref server_url) = server {
+        cmd.env("SPACETIME_REMOTE_SERVER", server_url);
+    }
+    cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
 }
