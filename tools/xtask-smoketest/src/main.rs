@@ -167,12 +167,9 @@ fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Res
             "-p",
             "spacetimedb-smoketests",
             "--no-fail-fast",
+            "-j1",
+            "--test-threads=1",
         ]);
-
-        // Set default parallelism if user didn't specify -j
-        if !args.iter().any(|a| a.starts_with("-j") || a.starts_with("--jobs")) {
-            cmd.args(["-j", DEFAULT_PARALLELISM]);
-        }
 
         cmd
     } else {
