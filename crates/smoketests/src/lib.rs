@@ -115,7 +115,25 @@ macro_rules! requires_dotnet {
             return;
         }
         if !$crate::have_dotnet() {
-            panic!("Skipping dotnet test: dotnet not found");
+            panic!("dotnet 8.0+ not found");
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! requires_psql {
+    () => {
+        if !$crate::have_psql() {
+            panic!("psql not found");
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! requires_pnpm {
+    () => {
+        if !$crate::have_pnpm() {
+            panic!("pnpm not found");
         }
     };
 }

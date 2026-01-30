@@ -3,7 +3,7 @@
 //! code from markdown docs and running it.
 
 use anyhow::{bail, Context, Result};
-use spacetimedb_smoketests::{have_pnpm, parse_quickstart, requires_dotnet, workspace_root, Smoketest};
+use spacetimedb_smoketests::{parse_quickstart, requires_dotnet, requires_pnpm, workspace_root, Smoketest};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -657,10 +657,7 @@ fn test_quickstart_csharp() {
 /// Run the TypeScript quickstart for server (with Rust client).
 #[test]
 fn test_quickstart_typescript() {
-    if !have_pnpm() {
-        eprintln!("Skipping test_quickstart_typescript: pnpm not available");
-        return;
-    }
+    requires_pnpm!();
 
     let mut qt = QuickstartTest::new(QuickstartConfig::typescript());
     qt.run_quickstart().expect("TypeScript quickstart test failed");
