@@ -201,6 +201,8 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
 fn test_add_table_auto_migration() {
     let mut test = Smoketest::builder().module_code(MODULE_CODE_INIT).build();
 
+    let sub = test.subscribe_background(&["select * from person"], 4).unwrap();
+
     // Add initial data
     test.call("add_person", &["Robert", "Student"]).unwrap();
     test.call("add_person", &["Julie", "Student"]).unwrap();
@@ -230,6 +232,15 @@ fn test_add_table_auto_migration() {
 
     // Add new data with updated schema
     test.call("add_person", &["Husserl", "Student"]).unwrap();
+
+    let sub_updates = sub.collect().unwrap();
+    assert_eq!(
+        sub_updates.len(),
+        4,
+        "Expected 4 subscription updates, got {}: {:?}",
+        sub_updates.len(),
+        sub_updates
+    );
     test.call("add_person", &["Husserl", "Professor"]).unwrap();
     test.call("add_book", &["1234567890"]).unwrap();
     test.call("print_persons", &["AFTER_PERSON"]).unwrap();
