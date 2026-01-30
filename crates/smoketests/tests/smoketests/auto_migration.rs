@@ -338,7 +338,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 fn test_add_table_columns() {
     const NUM_SUBSCRIBERS: usize = 20;
 
-    let mut test = Smoketest::builder().module_code(MODULE_CODE_BASIC).build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE_SIMPLE).build();
 
     // Subscribe to person table changes multiple times to simulate active clients
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
