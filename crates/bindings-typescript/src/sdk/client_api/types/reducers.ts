@@ -3,9 +3,6 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from 'spacetimedb';
+import { type Infer as __Infer } from '../../../lib/type_builders';
 
-// Import all table schema definitions
-import PersonRow from './person_table';
-
-export type Person = __Infer<typeof PersonRow>;
+// Import all reducer arg schemas

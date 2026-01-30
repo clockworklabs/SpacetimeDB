@@ -242,10 +242,6 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** Type-only namespace exports for generated type groups. */");
-        writeln!(out, "export type * as Rows from \"./rows\";");
-        writeln!(out, "export type * as Reducers from \"./reducers\";");
-        writeln!(out, "export type * as Procedures from \"./procedures\";");
-        writeln!(out, "export type * as Types from \"./types\";");
 
         writeln!(out);
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
@@ -449,51 +445,11 @@ impl Lang for TypeScript {
             code: output.into_inner(),
         };
 
-        let rows_file = generate_rows_file(module);
         let reducers_file = generate_reducers_file(module);
         let procedures_file = generate_procedures_file(module);
         let types_file = generate_types_file(module);
 
-        vec![index_file, rows_file, reducers_file, procedures_file, types_file]
-    }
-}
-
-fn generate_rows_file(module: &ModuleDef) -> OutputFile {
-    let mut output = CodeIndenter::new(String::new(), INDENT);
-    let out = &mut output;
-
-    print_auto_generated_file_comment(out);
-    print_lint_suppression(out);
-    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
-
-    writeln!(out);
-    writeln!(out, "// Import all table schema definitions");
-    for (table_name, _) in iter_table_names_and_types(module) {
-        let table_module_name = table_module_name(table_name);
-        let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
-        writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
-    }
-
-    writeln!(out);
-    for table in iter_tables(module) {
-        let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-        writeln!(
-            out,
-            "export type {table_name_pascalcase} = __Infer<typeof {table_name_pascalcase}Row>;"
-        );
-    }
-    for view in iter_views(module) {
-        let view_name_pascalcase = view.name.deref().to_case(Case::Pascal);
-        writeln!(
-            out,
-            "export type {view_name_pascalcase} = __Infer<typeof {view_name_pascalcase}Row>;"
-        );
-    }
-    out.newline();
-
-    OutputFile {
-        filename: "rows.ts".to_string(),
-        code: output.into_inner(),
+        vec![index_file, reducers_file, procedures_file, types_file]
     }
 }
 
@@ -511,7 +467,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
         let reducer_name = &reducer.name;
         let reducer_module_name = reducer_module_name(reducer_name);
         let args_type = reducer_args_type_name(&reducer.name);
-        writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
+        writeln!(out, "import {args_type} from \"../{reducer_module_name}\";");
     }
 
     writeln!(out);
@@ -526,7 +482,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
     out.newline();
 
     OutputFile {
-        filename: "reducers.ts".to_string(),
+        filename: "types/reducers.ts".to_string(),
         code: output.into_inner(),
     }
 }
@@ -545,7 +501,7 @@ fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
         let procedure_name = &procedure.name;
         let procedure_module_name = procedure_module_name(procedure_name);
         let args_type = procedure_args_type_name(&procedure.name);
-        writeln!(out, "import * as {args_type} from \"./{procedure_module_name}\";");
+        writeln!(out, "import * as {args_type} from \"../{procedure_module_name}\";");
     }
 
     writeln!(out);
@@ -564,7 +520,7 @@ fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
     out.newline();
 
     OutputFile {
-        filename: "procedures.ts".to_string(),
+        filename: "types/procedures.ts".to_string(),
         code: output.into_inner(),
     }
 }
@@ -590,7 +546,7 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
             continue;
         }
         let type_module_name = type_module_name(&ty.name);
-        writeln!(out, "import {type_name} from \"./{type_module_name}\";");
+        writeln!(out, "import {type_name} from \"../{type_module_name}\";");
     }
 
     writeln!(out);
@@ -604,7 +560,7 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
     out.newline();
 
     OutputFile {
-        filename: "types.ts".to_string(),
+        filename: "types/index.ts".to_string(),
         code: output.into_inner(),
     }
 }

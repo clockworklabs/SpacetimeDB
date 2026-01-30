@@ -5,9 +5,7 @@
 /* tslint:disable */
 import { type Infer as __Infer } from 'spacetimedb';
 
-// Import all table schema definitions
-import MessageRow from './message_table';
-import UserRow from './user_table';
+// Import all non-reducer types
+import Person from '../person_type';
 
-export type Message = __Infer<typeof MessageRow>;
-export type User = __Infer<typeof UserRow>;
+export type Person = __Infer<typeof Person>;

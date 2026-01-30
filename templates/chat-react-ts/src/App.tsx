@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
-import { tables, reducers, type Types } from './module_bindings';
+import { tables, reducers } from './module_bindings';
+import type * as Types from './module_bindings/types';
 import {
   useSpacetimeDB,
   useTable,

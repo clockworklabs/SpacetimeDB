@@ -1,4 +1,4 @@
-import { DbConnection, type Rows } from '../test-app/src/module_bindings';
+import { DbConnection } from '../test-app/src/module_bindings';
 import CreatePlayerReducer from '../test-app/src/module_bindings/create_player_reducer';
 import Player from '../test-app/src/module_bindings/player_table';
 import User from '../test-app/src/module_bindings/user_table';
@@ -153,7 +153,7 @@ describe('DbConnection', () => {
             args: Infer<typeof CreatePlayerReducer>;
           }>
         | undefined;
-      player: Rows.Player;
+      player: Infer<typeof Player>;
     }[] = [];
 
     const insert1Promise = new Deferred<void>();
@@ -474,11 +474,11 @@ describe('DbConnection', () => {
       '41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008'
     );
 
-    const initialUser: Rows.User = {
+    const initialUser: Infer<typeof User> = {
       identity: userIdentity,
       username: 'originalName',
     };
-    const updatedUser: Rows.User = {
+    const updatedUser: Infer<typeof User> = {
       identity: userIdentity,
       username: 'newName',
     };
