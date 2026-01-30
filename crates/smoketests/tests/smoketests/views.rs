@@ -25,7 +25,8 @@ fn test_st_view_tables() {
 #[test]
 fn test_fail_publish_namespace_collision() {
     let mut test = Smoketest::builder()
-        .precompiled_module("views-broken-namespace")
+        // Can't be precompiled because the code is intentionally broken
+        .module_code(include_str!("../../modules/views-broken-namespace/src/lib.rs"))
         .autopublish(false)
         .build();
 
@@ -40,7 +41,8 @@ fn test_fail_publish_namespace_collision() {
 #[test]
 fn test_fail_publish_wrong_return_type() {
     let mut test = Smoketest::builder()
-        .precompiled_module("views-broken-return-type")
+        // Can't be precompiled because the code is intentionally broken
+        .module_code(include_str!("../../modules/views-broken-return-type/src/lib.rs"))
         .autopublish(false)
         .build();
 
