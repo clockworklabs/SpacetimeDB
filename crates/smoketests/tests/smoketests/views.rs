@@ -25,7 +25,7 @@ fn test_st_view_tables() {
 #[test]
 fn test_fail_publish_namespace_collision() {
     let mut test = Smoketest::builder()
-        .use_precompiled_module("views-broken-namespace")
+        .precompiled_module("views-broken-namespace")
         .autopublish(false)
         .build();
 
@@ -40,7 +40,7 @@ fn test_fail_publish_namespace_collision() {
 #[test]
 fn test_fail_publish_wrong_return_type() {
     let mut test = Smoketest::builder()
-        .use_precompiled_module("views-broken-return-type")
+        .precompiled_module("views-broken-return-type")
         .autopublish(false)
         .build();
 
