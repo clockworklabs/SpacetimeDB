@@ -144,13 +144,15 @@ fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
         .map(|s| s.success())
         .unwrap_or(false);
 
+    // Set remote server environment variable if specified
+    if let Some(ref server_url) = server {
+        cmd.env("SPACETIME_REMOTE_SERVER", server_url);
+        eprintln!("Running smoketests against remote server {server_url}...\n");
+    }
+
     // 5. Run tests with appropriate runner (release mode for faster execution)
     let status = if use_nextest {
-        if server.is_some() {
-            eprintln!("Running smoketests against remote server with cargo nextest (release)...\n");
-        } else {
-            eprintln!("Running smoketests with cargo nextest (release)...\n");
-        }
+        eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
         cmd.args([
             "nextest",
@@ -169,25 +171,11 @@ fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
             cmd.args(["-j", DEFAULT_PARALLELISM]);
         }
 
-        // Set remote server environment variable if specified
-        if let Some(ref server_url) = server {
-            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
-        }
-
         cmd.args(&args).status()?
     } else {
-        if server.is_some() {
-            eprintln!("Running smoketests against remote server with cargo test (release)...\n");
-        } else {
-            eprintln!("Running smoketests with cargo test (release)...\n");
-        }
+        eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
-
-        // Set remote server environment variable if specified
-        if let Some(ref server_url) = server {
-            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
-        }
 
         cmd.args(&args).status()?
     };
