@@ -247,65 +247,6 @@ pub fn have_pnpm() -> bool {
     })
 }
 
-/// Parse code blocks from quickstart markdown documentation.
-/// Extracts code blocks with the specified language tag.
-///
-/// - `language`: "rust", "csharp", or "typescript"
-/// - `module_name`: The name to replace "quickstart-chat" with
-/// - `server`: If true, look for server code blocks (e.g. "rust server"), else client blocks
-pub fn parse_quickstart(doc_content: &str, language: &str, module_name: &str, server: bool) -> String {
-    // Normalize line endings to Unix style (LF) for consistent regex matching
-    let doc_content = doc_content.replace("\r\n", "\n");
-
-    // Determine the codeblock language tag to search for
-    let codeblock_lang = if server {
-        if language == "typescript" {
-            "ts server".to_string()
-        } else {
-            format!("{} server", language)
-        }
-    } else if language == "typescript" {
-        "ts".to_string()
-    } else {
-        language.to_string()
-    };
-
-    // Extract code blocks with the specified language
-    let pattern = format!(r"```{}\n([\s\S]*?)\n```", regex::escape(&codeblock_lang));
-    let re = Regex::new(&pattern).unwrap();
-    let mut blocks: Vec<String> = re
-        .captures_iter(&doc_content)
-        .map(|cap| cap.get(1).unwrap().as_str().to_string())
-        .collect();
-
-    let mut end = String::new();
-
-    // C# specific fixups
-    if language == "csharp" {
-        let mut found_on_connected = false;
-        let mut filtered_blocks = Vec::new();
-
-        for mut block in blocks {
-            // The doc first creates an empty class Module, so we need to fixup the closing brace
-            if block.contains("partial class Module") {
-                block = block.replace("}", "");
-                end = "\n}".to_string();
-            }
-            // Remove the first `OnConnected` block, which body is later updated
-            if block.contains("OnConnected(DbConnection conn") && !found_on_connected {
-                found_on_connected = true;
-                continue;
-            }
-            filtered_blocks.push(block);
-        }
-        blocks = filtered_blocks;
-    }
-
-    // Join blocks and replace module name
-    let result = blocks.join("\n").replace("quickstart-chat", module_name);
-    result + &end
-}
-
 /// A smoketest instance that manages a SpacetimeDB server and module project.
 pub struct Smoketest {
     /// The SpacetimeDB server guard (stops server on drop).
