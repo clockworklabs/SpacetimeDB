@@ -83,7 +83,6 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 **Server Machine (Variant A - PhoenixNAP):**
 - s3.c3.medium (8 cores, 32 GB Memory)
-- Used for SpacetimeDB headline results (107,850 TPS)
 
 **Server Machine (Variant B - Google Cloud):**
 - c4-standard-32-lssd (32 vCPUs, 120 GB Memory)
