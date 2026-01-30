@@ -642,17 +642,12 @@ using namespace SpacetimeDB;
 
 // Return single row using unique indexed field
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-    return ctx.db[player_username].find(std::string("alice"));
+    return ctx.db[player_identity].find(ctx.sender);
 }
 
 // Return multiple rows using indexed field
 SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
-    std::vector<Player> result;
-    for (IndexIterator<Player> iter = ctx.db[player_score].filter(range_from(int32_t(1000))); 
-         iter != IndexIterator<Player>(); ++iter) {
-        result.push_back(*iter);
-    }
-    return result;
+    return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
 }
 ```
 
