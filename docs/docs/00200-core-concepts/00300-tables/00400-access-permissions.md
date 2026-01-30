@@ -395,13 +395,7 @@ fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
 
 ```cpp
 SPACETIMEDB_VIEW(std::vector<User>, find_users_by_name, Public, ViewContext ctx) {
-    // Can read and filter using indexed lookups
-    std::vector<User> results;
-    for (auto iter = ctx.db[user_name].filter("Alice"); iter != IndexIterator<User>(); ++iter) {
-        results.push_back(*iter);
-    }
-    return results;
-
+    return ctx.db[user_name].filter("Alice").collect();
     // Cannot insert, update, or delete
     // ctx.db[user].insert(...) // ❌ Methods not available in ViewContext
 }
@@ -543,19 +537,12 @@ FIELD_Index(message, recipient)
 // Public view that only returns messages the caller can see
 SPACETIMEDB_VIEW(std::vector<Message>, my_messages, Public, ViewContext ctx) {
     // Look up messages by index where caller is sender or recipient
-    std::vector<Message> results;
+    auto sent = ctx.db[message_sender].filter(ctx.sender).collect();
+    auto received = ctx.db[message_recipient].filter(ctx.sender).collect();
     
-    // Find messages where caller is sender
-    for (auto iter = ctx.db[message_sender].filter(ctx.sender); iter != IndexIterator<Message>(); ++iter) {
-        results.push_back(*iter);
-    }
-    
-    // Find messages where caller is recipient
-    for (auto iter = ctx.db[message_recipient].filter(ctx.sender); iter != IndexIterator<Message>(); ++iter) {
-        results.push_back(*iter);
-    }
-    
-    return results;
+    // Combine both vectors
+    sent.insert(sent.end(), received.begin(), received.end());
+    return sent;
 }
 ```
 
@@ -924,43 +911,35 @@ struct Employee {
     std::string name;
     std::string department;
     uint64_t salary;           // Sensitive - not exposed in view
-    uint64_t manager_id;       // 0 means no manager
 };
-SPACETIMEDB_STRUCT(Employee, id, identity, name, department, salary, manager_id)
+SPACETIMEDB_STRUCT(Employee, id, identity, name, department, salary)
 SPACETIMEDB_TABLE(Employee, employee, Private)
 FIELD_PrimaryKey(employee, id)
 FIELD_Unique(employee, identity)
-FIELD_Index(employee, manager_id)
+FIELD_Index(employee, department)
 
-// Public type for team members (no salary)
-struct TeamMember {
+// Public type for colleagues (no salary)
+struct Colleague {
     uint64_t id;
     std::string name;
     std::string department;
 };
-SPACETIMEDB_STRUCT(TeamMember, id, name, department)
+SPACETIMEDB_STRUCT(Colleague, id, name, department)
 
-// View that returns only the caller's team members, without salary info
-SPACETIMEDB_VIEW(std::vector<TeamMember>, my_team, Public, ViewContext ctx) {
+// View that returns colleagues in the caller's department, without salary info
+SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx) {
     // Find the caller's employee record by identity (unique index)
     auto me_opt = ctx.db[employee_identity].find(ctx.sender);
     if (!me_opt.has_value()) {
-        return std::vector<TeamMember>();
+        return std::vector<Colleague>();
     }
     
     Employee me = me_opt.value();
-    std::vector<TeamMember> results;
+    std::vector<Colleague> results;
     
-    // Look up employees who report to the caller by manager_id index
-    for (auto iter = ctx.db[employee_manager_id].filter(me.id); 
-         iter != IndexIterator<Employee>(); ++iter) {
-        const Employee& emp = *iter;
-        results.push_back(TeamMember{
-            emp.id,
-            emp.name,
-            emp.department
-            // salary is not included
-        });
+    // Look up employees in the same department
+    for (auto row : ctx.db[employee_department].filter(me.department)) {
+        results.push_back(Colleague{row.id, row.name, row.department});
     }
     
     return results;
