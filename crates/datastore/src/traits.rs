@@ -353,7 +353,7 @@ impl TxData {
     /// the method returns `false`.
     ///
     /// This is used to determine if a transaction should be written to disk.
-    pub fn has_rows_or_connect_disconnect(&self, reducer_name: Option<&str>) -> bool {
+    pub fn has_rows_or_connect_disconnect(&self, reducer_name: Option<&ReducerName>) -> bool {
         // Persist if the table is non-emphemeral and had any inserts or deletes.
         self.entries.values().any(|e|
             !e.ephemeral
@@ -452,7 +452,7 @@ pub trait Tx {
     ///
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `ReducerName`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, ReducerName);
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, Option<ReducerName>);
 }
 
 pub trait MutTx {
@@ -477,14 +477,15 @@ pub trait MutTx {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `ReducerName`, the name of the reducer which ran during this transaction.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, ReducerName)>>;
+    #[allow(clippy::type_complexity)]
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, Option<ReducerName>)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `ReducerName`, the name of the reducer which ran within this transaction.
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, ReducerName);
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, Option<ReducerName>);
 }
 
 /// Standard metadata associated with a database.

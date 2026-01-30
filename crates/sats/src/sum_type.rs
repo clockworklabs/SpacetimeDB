@@ -246,7 +246,9 @@ impl<const N: usize> From<[SumTypeVariant; N]> for SumType {
 }
 impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for SumType {
     fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
-        fields.map(|(s, t)| SumTypeVariant::new(t, s.map(RawIdentifier::new))).into()
+        fields
+            .map(|(s, t)| SumTypeVariant::new(t, s.map(RawIdentifier::new)))
+            .into()
     }
 }
 impl<const N: usize> From<[(&str, AlgebraicType); N]> for SumType {

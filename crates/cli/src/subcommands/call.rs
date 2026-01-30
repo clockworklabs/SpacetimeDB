@@ -6,11 +6,11 @@ use crate::util::UNSTABLE_WARNING;
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use convert_case::{Case, Casing};
+use core::ops::Deref;
 use itertools::Itertools;
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
 use spacetimedb_lib::{Identity, ProductTypeElement};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef};
-use core::ops::Deref;
 use std::fmt::Write;
 
 use super::sql::parse_req;

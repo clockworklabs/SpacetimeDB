@@ -2526,7 +2526,7 @@ mod tests {
             caller_identity: id0,
             caller_connection_id: Some(client0.id.connection_id),
             function_call: ModuleFunctionCall {
-                reducer: ReducerName::for_test("DummyReducer"),
+                reducer: Some(ReducerName::for_test("DummyReducer")),
                 reducer_id: u32::MAX.into(),
                 args: ArgsTuple::nullary(),
             },
