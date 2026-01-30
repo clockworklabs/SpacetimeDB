@@ -7,6 +7,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::{env, fs};
 
+/// Pinned nightly version for rustdoc JSON generation.
+/// This ensures consistent output across CI runs regardless of when they execute.
+/// Update this when intentionally upgrading to a newer nightly.
+const PINNED_NIGHTLY: &str = "nightly-2026-01-15";
+
 pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
@@ -84,20 +89,26 @@ fn find_target_doc_json(crate_name: &str) -> Option<PathBuf> {
 }
 
 fn generate_rustdoc_json() -> Result<()> {
-    // Best-effort ensure nightly exists
+    // Install the pinned nightly toolchain if not present
     let _ = Command::new("rustup")
-        .args(["toolchain", "install", "nightly"])
+        .args(["toolchain", "install", PINNED_NIGHTLY])
         .status();
 
     let (_target_dir, workspace_root) = workspace_target_dir()?;
 
     // Run from the *workspace root* so output lands in the shared target/
+    let toolchain_arg = format!("+{}", PINNED_NIGHTLY);
     let status = Command::new("cargo")
         .current_dir(&workspace_root)
-        .args(["+nightly", "rustdoc", "-p", "spacetimedb", "--"])
+        .args([&toolchain_arg, "rustdoc", "-p", "spacetimedb", "--"])
         .args(["-Z", "unstable-options", "--output-format", "json"])
         .status()
-        .context("running cargo +nightly rustdoc -p spacetimedb -- -Z unstable-options --output-format json")?;
+        .with_context(|| {
+            format!(
+                "running cargo {} rustdoc -p spacetimedb -- -Z unstable-options --output-format json",
+                toolchain_arg
+            )
+        })?;
 
     if !status.success() {
         bail!("cargo rustdoc failed with status {:?}", status.code());

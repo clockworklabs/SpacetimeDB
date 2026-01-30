@@ -50,6 +50,7 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
     table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
+    table_index::IndexSeekRangeResult,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -140,6 +141,11 @@ pub struct CommittedState {
 }
 
 impl CommittedState {
+    /// Returns whether there are no views.
+    pub(super) fn has_no_views_for_table_scans(&self) -> bool {
+        self.read_sets.is_empty()
+    }
+
     /// Returns the views that perform a full scan of this table
     pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.read_sets.views_for_table_scan(table_id)
@@ -213,8 +219,8 @@ impl StateView for CommittedState {
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
         match self.index_seek_range(table_id, &cols, &range) {
-            Some(iter) => Ok(ScanOrIndex::Index(iter)),
-            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+            Some(Ok(iter)) => Ok(ScanOrIndex::Index(iter)),
+            None | Some(Err(_)) => Ok(ScanOrIndex::Scan(ApplyFilter::new(
                 RangeOnColumn { cols, range },
                 self.iter(table_id)?,
             ))),
@@ -948,7 +954,7 @@ impl CommittedState {
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanRangeIter<'a>> {
+    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
@@ -1060,7 +1066,7 @@ impl CommittedState {
         );
 
         // Record any truncated tables in the `TxData`.
-        tx_data.add_truncates(truncates);
+        tx_data.set_truncates(truncates);
 
         // Merge read sets from the `MutTxId` into the `CommittedState`.
         // It's important that this happens after applying the changes to `tx_data`,
@@ -1120,7 +1126,7 @@ impl CommittedState {
             }
 
             if !deletes.is_empty() {
-                let table_name = &*table.get_schema().table_name;
+                let table_name = &table.get_schema().table_name;
                 tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 let truncated = table.row_count == 0;
                 if truncated {
@@ -1197,7 +1203,7 @@ impl CommittedState {
 
             // Add the table to `TxData` if there were insertions.
             if !inserts.is_empty() {
-                let table_name = &*commit_table.get_schema().table_name;
+                let table_name = &commit_table.get_schema().table_name;
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
 
                 // if table has inserted rows, it cannot be truncated

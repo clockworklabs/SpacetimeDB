@@ -11,13 +11,15 @@ test = []
 
 [dependencies]
 spacetimedb-lib = { workspace = true, features = ["enum-map"] }
-spacetimedb-primitives.workspace = true
-spacetimedb-sats.workspace = true
+spacetimedb-primitives = { workspace = true, features = ["memory-usage"] }
+spacetimedb-sats = { workspace = true, features = ["memory-usage"] }
 spacetimedb-data-structures.workspace = true
+spacetimedb-memory-usage.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 anyhow.workspace = true
 derive_more.workspace = true
+ecow.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true

@@ -12,10 +12,6 @@ use std::{
 
 use reqwest::blocking::Client;
 
-fn find_free_port() -> u16 {
-    portpicker::pick_unused_port().expect("no free ports available")
-}
-
 pub struct SpacetimeDbGuard {
     pub child: Child,
     pub host_url: String,
@@ -45,10 +41,9 @@ impl SpacetimeDbGuard {
     }
 
     fn spawn_spacetime_start(use_installed_cli: bool, extra_args: &[&str]) -> Self {
-        let port = find_free_port();
-        let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-        let address = addr.to_string();
-        let host_url = format!("http://{}", addr);
+        // Ask SpacetimeDB/OS to allocate an ephemeral port.
+        // Using loopback avoids needing to "connect to 0.0.0.0".
+        let address = "127.0.0.1:0".to_string();
 
         // Workspace root for `cargo run -p ...`
         let workspace_dir = env!("CARGO_MANIFEST_DIR");
@@ -71,6 +66,10 @@ impl SpacetimeDbGuard {
             Self::spawn_child(cmd, workspace_dir, &args)
         };
 
+        // Parse the actual bound address from logs.
+        let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10))
+            .unwrap_or_else(|| panic!("Timed out waiting for SpacetimeDB to report listen address"));
+        let host_url = format!("http://{}", listen_addr);
         let guard = SpacetimeDbGuard { child, host_url, logs };
         guard.wait_until_http_ready(Duration::from_secs(10));
         guard
@@ -154,6 +153,46 @@ impl SpacetimeDbGuard {
     }
 }
 
+/// Wait for a line like:
+/// "... Starting SpacetimeDB listening on 0.0.0.0:24326"
+fn wait_for_listen_addr(logs: &Arc<Mutex<String>>, timeout: Duration) -> Option<SocketAddr> {
+    let deadline = Instant::now() + timeout;
+    let mut cursor = 0usize;
+
+    while Instant::now() < deadline {
+        let (new_text, new_len) = {
+            let buf = logs.lock().unwrap();
+            if cursor >= buf.len() {
+                (String::new(), buf.len())
+            } else {
+                (buf[cursor..].to_string(), buf.len())
+            }
+        };
+        cursor = new_len;
+
+        for line in new_text.lines() {
+            if let Some(addr) = parse_listen_addr_from_line(line) {
+                return Some(addr);
+            }
+        }
+
+        sleep(Duration::from_millis(25));
+    }
+
+    None
+}
+
+fn parse_listen_addr_from_line(line: &str) -> Option<SocketAddr> {
+    const PREFIX: &str = "Starting SpacetimeDB listening on ";
+
+    let i = line.find(PREFIX)?;
+    let rest = line[i + PREFIX.len()..].trim();
+
+    // Next token should be the socket address (e.g. "0.0.0.0:24326" or "[::]:24326")
+    let token = rest.split_whitespace().next()?;
+    token.parse::<SocketAddr>().ok()
+}
+
 impl Drop for SpacetimeDbGuard {
     fn drop(&mut self) {
         // Best-effort cleanup.
@@ -163,7 +202,10 @@ impl Drop for SpacetimeDbGuard {
         // Only print logs if the test is currently panicking
         if std::thread::panicking() {
             if let Ok(logs) = self.logs.lock() {
-                eprintln!("\n===== SpacetimeDB child logs (only on failure) =====\n{}\n====================================================", *logs);
+                eprintln!(
+                    "\n===== SpacetimeDB child logs (only on failure) =====\n{}\n====================================================",
+                    *logs
+                );
             }
         }
     }

@@ -15,6 +15,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::page_pool::PagePool;
@@ -460,7 +461,7 @@ fn copy_filter_fixed_len(c: &mut Criterion) {
             group.bench_function(keep_ratio.to_string(), |b| {
                 b.iter_with_large_drop(|| unsafe {
                     let mut keep_iter = keep_seq.iter().copied();
-                    black_box(&pages).copy_filter(visitor, row_size, &mut NullBlobStore, |_, _| {
+                    black_box(&pages).copy_filter(visitor, row_size, None::<&mut Box<dyn FnMut(_)>>, |_, _| {
                         black_box(keep_iter.next().unwrap_or_default())
                     })
                 });
@@ -490,7 +491,7 @@ criterion_group!(
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
     let mut result = TableSchema::from_product_type(ty);
-    result.table_name = name.into();
+    result.table_name = TableName::new_from_str(name);
     result
 }
 
@@ -917,7 +918,7 @@ fn index_seek(c: &mut Criterion) {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
                         let (row, none) = time(&mut elapsed, || {
-                            let mut iter = index.seek_range(&col_to_seek);
+                            let mut iter = index.seek_range(&col_to_seek).unwrap();
                             (iter.next(), iter.next())
                         });
                         assert!(

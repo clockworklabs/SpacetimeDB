@@ -327,7 +327,7 @@ impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
 
 impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
     fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
-        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql))
+        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql().to_string()))
     }
 }
 
@@ -735,6 +735,9 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
     fn from(algo: IndexAlgo<'_>) -> RawIndexAlgorithm {
         match algo {
             IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
+                columns: columns.iter().copied().collect(),
+            },
+            IndexAlgo::Hash { columns } => RawIndexAlgorithm::Hash {
                 columns: columns.iter().copied().collect(),
             },
             IndexAlgo::Direct { column } => RawIndexAlgorithm::Direct { column: column.into() },

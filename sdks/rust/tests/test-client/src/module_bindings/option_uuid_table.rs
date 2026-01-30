@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionUuid`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_uuidQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionUuid`.
+    fn option_uuid(&self) -> __sdk::__query_builder::Table<OptionUuid>;
+}
+
+impl option_uuidQueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_uuid(&self) -> __sdk::__query_builder::Table<OptionUuid> {
+        __sdk::__query_builder::Table::new("option_uuid")
+    }
+}

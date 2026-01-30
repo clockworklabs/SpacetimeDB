@@ -96,3 +96,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecEveryPrimitiveStruct`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_every_primitive_structQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecEveryPrimitiveStruct`.
+    fn vec_every_primitive_struct(&self) -> __sdk::__query_builder::Table<VecEveryPrimitiveStruct>;
+}
+
+impl vec_every_primitive_structQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_every_primitive_struct(&self) -> __sdk::__query_builder::Table<VecEveryPrimitiveStruct> {
+        __sdk::__query_builder::Table::new("vec_every_primitive_struct")
+    }
+}

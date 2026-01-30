@@ -28,7 +28,12 @@ use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
 #[primary_key]
 pub struct User { ... }
 
-// ✅ CORRECT — use #[table(...)] macro with options
+// ❌ WRONG — SpacetimeType on tables (causes conflicts!)
+#[derive(SpacetimeType)]
+#[table(name = my_table)]
+pub struct MyTable { ... }
+
+// ✅ CORRECT — use #[table(...)] macro with options, NO SpacetimeType
 #[table(name = user, public)]
 pub struct User {
     #[primary_key]
@@ -40,13 +45,15 @@ pub struct User {
 ### 3. Wrong Table Access Pattern
 
 ```rust
-// ❌ WRONG — using ctx.Db or ctx.db() method
+// ❌ WRONG — using ctx.Db or ctx.db() method or field access
 ctx.Db.user.Insert(...);
 ctx.db().user().insert(...);
+ctx.db.player;  // Field access
 
-// ✅ CORRECT — ctx.db is a field, table names are methods
+// ✅ CORRECT — ctx.db is a field, table names are methods with parentheses
 ctx.db.user().insert(User { ... });
 ctx.db.user().identity().find(ctx.sender);
+ctx.db.player().id().find(&player_id);
 ```
 
 ### 4. Wrong Update Pattern
@@ -68,13 +75,15 @@ if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
 #[reducer]
 pub fn get_user(ctx: &ReducerContext, id: Identity) -> Option<User> { ... }
 
-// ✅ CORRECT — reducers return Result<(), String> or nothing
+// ❌ WRONG — mutable context
+pub fn my_reducer(ctx: &mut ReducerContext, ...) { }
+
+// ✅ CORRECT — reducers return Result<(), String> or nothing, immutable context
 #[reducer]
 pub fn do_something(ctx: &ReducerContext, value: String) -> Result<(), String> {
     if value.is_empty() {
         return Err("Value cannot be empty".to_string());
     }
-    // ... do work ...
     Ok(())
 }
 ```
@@ -174,15 +183,40 @@ The SpacetimeDB Rust client SDK uses blocking I/O. If mixing with async runtimes
 
 ---
 
-## 1) Server Module — Table Definition
+## 1) Common Mistakes Table
 
-**Tables use `#[table(...)]` macro on `pub struct`:**
+### Server-side errors
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| `#[derive(SpacetimeType)]` on `#[table]` | Remove it — macro handles this | Conflicting derive macros |
+| `ctx.db.player` (field access) | `ctx.db.player()` (method) | "no field `player` on type" |
+| `ctx.db.player().find(id)` | `ctx.db.player().id().find(&id)` | Must access via index |
+| `&mut ReducerContext` | `&ReducerContext` | Wrong context type |
+| Missing `use spacetimedb::Table;` | Add import | "no method named `insert`" |
+| `#[table(name = "my_table")]` | `#[table(name = my_table)]` | String literals not allowed |
+| Missing `public` on table | Add `public` flag | Clients can't subscribe |
+| `#[spacetimedb::reducer]` | `#[reducer]` after import | Wrong attribute path |
+| Network/filesystem in reducer | Use procedures instead | Sandbox violation |
+| Panic for expected errors | Return `Result<(), String>` | WASM instance destroyed |
+
+---
+
+## 2) Table Definition (CRITICAL)
+
+**Tables use `#[table(...)]` macro on `pub struct`. DO NOT derive `SpacetimeType` on tables!**
 
 > ⚠️ **CRITICAL:** Always import `Table` trait — required for `.insert()`, `.iter()`, `.find()`, etc.
 
 ```rust
 use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
 
+// ❌ WRONG — DO NOT derive SpacetimeType on tables!
+#[derive(SpacetimeType)]  // REMOVE THIS!
+#[table(name = task)]
+pub struct Task { ... }
+
+// ✅ CORRECT — just the #[table] attribute
 #[table(name = user, public)]
 pub struct User {
     #[primary_key]
@@ -204,6 +238,16 @@ pub struct Message {
     text: String,
     sent: Timestamp,
 }
+
+// With multi-column index
+#[table(name = task, public, index(name = by_owner, btree(columns = [owner_id])))]
+pub struct Task {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub owner_id: Identity,
+    pub title: String,
+}
 ```
 
 ### Table Options
@@ -222,47 +266,26 @@ pub struct Message {
 #[index(btree)]          // B-Tree index for queries
 ```
 
-### Scheduled Tables
+### Insert returns ROW, not ID
 
 ```rust
-use spacetimedb::{table, reducer, ReducerContext, ScheduleAt, Timestamp};
-
-#[table(name = cleanup_job, scheduled(cleanup_expired))]
-pub struct CleanupJob {
-    #[primary_key]
-    #[auto_inc]
-    scheduled_id: u64,
-    
-    scheduled_at: ScheduleAt,
-    target_id: u64,
-}
-
-#[reducer]
-pub fn cleanup_expired(ctx: &ReducerContext, job: CleanupJob) {
-    // Job row is auto-deleted after reducer completes
-    log::info!("Cleaning up: {}", job.target_id);
-}
-
-// Schedule a job
-#[reducer]
-pub fn schedule_cleanup(ctx: &ReducerContext, target_id: u64, delay_ms: u64) {
-    let future_time = ctx.timestamp + std::time::Duration::from_millis(delay_ms);
-    ctx.db.cleanup_job().insert(CleanupJob {
-        scheduled_id: 0,  // auto-inc placeholder
-        scheduled_at: ScheduleAt::Time(future_time),
-        target_id,
-    });
-}
+let row = ctx.db.task().insert(Task {
+    id: 0,  // auto-inc placeholder
+    owner_id: ctx.sender,
+    title: "New task".to_string(),
+    created_at: ctx.timestamp,
+});
+let new_id = row.id;  // Get the actual ID
 ```
 
 ---
 
-## 2) Server Module — Reducers
+## 3) Reducers
 
 ### Definition Syntax
 
 ```rust
-use spacetimedb::{reducer, ReducerContext};
+use spacetimedb::{reducer, ReducerContext, Table};
 
 #[reducer]
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
@@ -311,8 +334,7 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 ```rust
 #[reducer]
 pub fn delete_message(ctx: &ReducerContext, message_id: u64) -> Result<(), String> {
-    // Delete by primary key value
-    ctx.db.message().id().delete(message_id);
+    ctx.db.message().id().delete(&message_id);
     Ok(())
 }
 ```
@@ -320,14 +342,17 @@ pub fn delete_message(ctx: &ReducerContext, message_id: u64) -> Result<(), Strin
 ### Lifecycle Hooks
 
 ```rust
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    // Called when module is first published
+}
+
 #[reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
     // ctx.sender is the connecting identity
     if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        // Returning user - set online
         ctx.db.user().identity().update(User { online: true, ..user });
     } else {
-        // New user - create record
         ctx.db.user().insert(User {
             identity: ctx.sender,
             username: None,
@@ -344,9 +369,18 @@ pub fn client_disconnected(ctx: &ReducerContext) {
 }
 ```
 
+### ReducerContext fields
+
+```rust
+ctx.sender          // Identity of the caller
+ctx.timestamp       // Current timestamp
+ctx.db              // Database access
+ctx.rng             // Deterministic RNG (use instead of rand)
+```
+
 ---
 
-## 3) Server Module — Index Access
+## 4) Index Access
 
 ### Primary Key / Unique — `.find()` returns `Option<Row>`
 
@@ -396,7 +430,82 @@ for user in ctx.db.user().iter() {
 
 ---
 
-## 4) Client SDK
+## 5) Custom Types
+
+**Use `#[derive(SpacetimeType)]` ONLY for custom structs/enums used as fields or parameters.**
+
+```rust
+use spacetimedb::SpacetimeType;
+
+// Custom struct for table fields
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub struct Position {
+    pub x: i32,
+    pub y: i32,
+}
+
+// Custom enum
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub enum PlayerStatus {
+    Idle,
+    Walking(Position),
+    Fighting(Identity),
+}
+
+// Use in table (DO NOT derive SpacetimeType on the table!)
+#[table(name = player, public)]
+pub struct Player {
+    #[primary_key]
+    pub id: Identity,
+    pub position: Position,
+    pub status: PlayerStatus,
+}
+```
+
+---
+
+## 6) Scheduled Tables
+
+```rust
+use spacetimedb::{table, reducer, ReducerContext, ScheduleAt, Timestamp};
+
+#[table(name = cleanup_job, scheduled(cleanup_expired))]
+pub struct CleanupJob {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    
+    scheduled_at: ScheduleAt,
+    target_id: u64,
+}
+
+#[reducer]
+pub fn cleanup_expired(ctx: &ReducerContext, job: CleanupJob) {
+    // Job row is auto-deleted after reducer completes
+    log::info!("Cleaning up: {}", job.target_id);
+}
+
+// Schedule a job
+#[reducer]
+pub fn schedule_cleanup(ctx: &ReducerContext, target_id: u64, delay_ms: u64) {
+    let future_time = ctx.timestamp + std::time::Duration::from_millis(delay_ms);
+    ctx.db.cleanup_job().insert(CleanupJob {
+        scheduled_id: 0,  // auto-inc placeholder
+        scheduled_at: ScheduleAt::Time(future_time),
+        target_id,
+    });
+}
+
+// Cancel by deleting the row
+#[reducer]
+pub fn cancel_cleanup(ctx: &ReducerContext, job_id: u64) {
+    ctx.db.cleanup_job().scheduled_id().delete(&job_id);
+}
+```
+
+---
+
+## 7) Client SDK
 
 ```rust
 // Connection pattern
@@ -446,18 +555,101 @@ ctx.reducers.set_name("Alice".to_string()).unwrap();
 
 ---
 
-## 5) Hard Requirements
+## 8) Procedures (Beta)
+
+**Procedures are for side effects (HTTP, filesystem) that reducers can't do.**
+
+⚠️ Procedures are currently in beta. API may change.
+
+```rust
+use spacetimedb::{procedure, ProcedureContext};
+
+// Simple procedure
+#[procedure]
+fn add_numbers(_ctx: &mut ProcedureContext, a: u32, b: u32) -> u64 {
+    a as u64 + b as u64
+}
+
+// Procedure with database access
+#[procedure]
+fn save_external_data(ctx: &mut ProcedureContext, url: String) -> Result<(), String> {
+    // HTTP request (allowed in procedures, not reducers)
+    let data = fetch_from_url(&url)?;
+
+    // Database access requires explicit transaction
+    ctx.try_with_tx(|tx| {
+        tx.db.external_data().insert(ExternalData {
+            id: 0,
+            content: data,
+        });
+        Ok(())
+    })?;
+
+    Ok(())
+}
+```
+
+### Key differences from reducers
+
+| Reducers | Procedures |
+|----------|------------|
+| `&ReducerContext` (immutable) | `&mut ProcedureContext` (mutable) |
+| Direct `ctx.db` access | Must use `ctx.with_tx()` |
+| No HTTP/network | HTTP allowed |
+| No return values | Can return data |
+
+---
+
+## 9) Logging
+
+```rust
+use spacetimedb::log;
+
+log::trace!("Detailed trace");
+log::debug!("Debug info");
+log::info!("Information");
+log::warn!("Warning");
+log::error!("Error occurred");
+```
+
+---
+
+## 10) Commands
+
+```bash
+# Start local server
+spacetime start
+
+# Publish module
+spacetime publish <module-name> --project-path <backend-dir>
+
+# Clear database and republish
+spacetime publish <module-name> --clear-database -y --project-path <backend-dir>
+
+# Generate bindings
+spacetime generate --lang rust --out-dir <client>/src/module_bindings --project-path <backend-dir>
+
+# View logs
+spacetime logs <module-name>
+```
+
+---
+
+## 11) Hard Requirements
 
 **Rust-specific:**
 
-1. **Server modules use `spacetimedb` crate** — clients use `spacetimedb-sdk`
-2. **Tables MUST use `#[table(...)]` macro** — not attribute-style macros
-3. **Reducers take `&ReducerContext` as first argument** — must be a reference
-4. **Use `ctx.timestamp`** — never `std::time::SystemTime::now()` in reducers
-5. **Client MUST advance connection** — call `run_threaded()`, `run_async()`, or `frame_tick()`
-6. **Subscribe in `on_connect` callback** — not before connection is established
-7. **Update requires full row** — spread existing row with `..existing`
-8. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
-9. **Import `Table` trait** — `use spacetimedb::Table;` required for `.insert()`, `.iter()`, etc.
-10. **Identity to String needs `.to_string()`** — `identity.to_hex().to_string()`
-11. **Client SDK is blocking** — use `spawn_blocking` or dedicated thread if mixing with async runtimes
+1. **DO NOT derive `SpacetimeType` on `#[table]` structs** — the macro handles this
+2. **Import `Table` trait** — `use spacetimedb::Table;` required for `.insert()`, `.iter()`, etc.
+3. **Use `&ReducerContext`** — not `&mut ReducerContext`
+4. **Tables are methods** — `ctx.db.table()` not `ctx.db.table`
+5. **Server modules use `spacetimedb` crate** — clients use `spacetimedb-sdk`
+6. **Reducers must be deterministic** — no filesystem, network, timers, or external RNG
+7. **Use `ctx.rng`** — not `rand` crate for random numbers
+8. **Use `ctx.timestamp`** — never `std::time::SystemTime::now()` in reducers
+9. **Client MUST advance connection** — call `run_threaded()`, `run_async()`, or `frame_tick()`
+10. **Subscribe in `on_connect` callback** — not before connection is established
+11. **Update requires full row** — spread existing row with `..existing`
+12. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
+13. **Identity to String needs `.to_string()`** — `identity.to_hex().to_string()`
+14. **Client SDK is blocking** — use `spawn_blocking` or dedicated thread if mixing with async runtimes

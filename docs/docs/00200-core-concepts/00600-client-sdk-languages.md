@@ -3,7 +3,6 @@ title: Overview
 slug: /sdks
 ---
 
-
 The SpacetimeDB Client SDKs provide a comprehensive interface for building applications that connect to SpacetimeDB [databases](/databases). Client applications can query data, invoke server-side functions, and receive real-time updates as the database state changes.
 
 ## Available SDKs
@@ -27,7 +26,7 @@ To build a client application with SpacetimeDB:
 
 ### Connection Management
 
-The SDKs handle establishing and maintaining WebSocket connections to SpacetimeDB servers. Connections support authentication via tokens (for example, from [SpacetimeAuth](/spacetimeauth)) and provide lifecycle callbacks for connect, disconnect, and error events.
+The SDKs handle establishing and maintaining WebSocket connections to SpacetimeDB servers. Connections support authentication via tokens (for example, from [SpacetimeAuth](./00500-authentication/00100-spacetimeauth/index.md)) and provide lifecycle callbacks for connect, disconnect, and error events.
 
 See [Connecting to SpacetimeDB](/sdks/connection) for details.
 

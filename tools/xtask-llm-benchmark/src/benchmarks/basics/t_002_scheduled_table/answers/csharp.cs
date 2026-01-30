@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "tick_timer", Scheduled = nameof(Tick), ScheduledAt = nameof(TickTimer.ScheduledAt))]
+    [Table(Name = "TickTimer", Scheduled = nameof(Tick), ScheduledAt = nameof(TickTimer.ScheduledAt))]
     public partial struct TickTimer
     {
         [PrimaryKey, AutoInc] public ulong ScheduledId;
@@ -16,7 +16,7 @@ public static partial class Module
     public static void Init(ReducerContext ctx)
     {
         var interval = new TimeDuration { Microseconds = 50_000 };
-        ctx.Db.tick_timer.Insert(new TickTimer
+        ctx.Db.TickTimer.Insert(new TickTimer
         {
             ScheduledAt = new ScheduleAt.Interval(interval)
         });

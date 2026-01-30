@@ -94,3 +94,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ResultSimpleEnumI32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait result_simple_enum_i32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ResultSimpleEnumI32`.
+    fn result_simple_enum_i32(&self) -> __sdk::__query_builder::Table<ResultSimpleEnumI32>;
+}
+
+impl result_simple_enum_i32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_simple_enum_i32(&self) -> __sdk::__query_builder::Table<ResultSimpleEnumI32> {
+        __sdk::__query_builder::Table::new("result_simple_enum_i32")
+    }
+}

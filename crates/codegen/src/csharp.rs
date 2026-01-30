@@ -1,6 +1,7 @@
 // Note: the generated code depends on APIs and interfaces from crates/bindings-csharp/BSATN.Runtime.
 use super::util::fmt_fn;
 
+use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
 
@@ -473,6 +474,20 @@ const REDUCER_EVENTS: &str = r#"
             Error += callback;
             return this;
         }
+    
+        /// <summary>
+        /// Add a typed query to this subscription.
+        ///
+        /// This is the entry point for building subscriptions without writing SQL by hand.
+        /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
+        /// </summary>
+        public TypedSubscriptionBuilder AddQuery<TRow>(
+            Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build
+        )
+        {
+            var typed = new TypedSubscriptionBuilder(conn, Applied, Error);
+            return typed.AddQuery(build);
+        }
 
         /// <summary>
         /// Subscribe to the following SQL queries.
@@ -573,7 +588,7 @@ impl Lang for Csharp<'_> {
                 writeln!(output);
 
                 // If this is a table, we want to generate event accessor and indexes
-                let product_type = module.typespace_for_generate()[table.product_type_ref]
+                let product_type: &ProductTypeDef = module.typespace_for_generate()[table.product_type_ref]
                     .as_product()
                     .unwrap();
 
@@ -585,62 +600,66 @@ impl Lang for Csharp<'_> {
                         continue;
                     };
 
-                    match &idx.algorithm {
-                        IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                            let get_csharp_field_name_and_type = |col_pos: ColId| {
-                                let (field_name, field_type) = &product_type.elements[col_pos.idx()];
-                                let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
-                                let csharp_field_type = ty_fmt(module, field_type);
-                                (csharp_field_name_pascal, csharp_field_type)
-                            };
+                    // Whatever the index algorithm on the host,
+                    // the client can still use btrees.
+                    let columns = idx.algorithm.columns();
+                    let get_csharp_field_name_and_type = |col_pos: ColId| {
+                        let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                        let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
+                        let csharp_field_type = ty_fmt(module, field_type);
+                        (csharp_field_name_pascal, csharp_field_type)
+                    };
 
-                            let (row_to_key, key_type) = match columns.as_singleton() {
-                                Some(col_pos) => {
-                                    let (field_name, field_type) = get_csharp_field_name_and_type(col_pos);
-                                    (format!("row.{field_name}"), field_type.to_string())
-                                }
-                                None => {
-                                    let mut key_accessors = Vec::new();
-                                    let mut key_type_elems = Vec::new();
-                                    for (field_name, field_type) in columns.iter().map(get_csharp_field_name_and_type) {
-                                        key_accessors.push(format!("row.{field_name}"));
-                                        key_type_elems.push(format!("{field_type} {field_name}"));
-                                    }
-                                    (
-                                        format!("({})", key_accessors.join(", ")),
-                                        format!("({})", key_type_elems.join(", ")),
-                                    )
-                                }
-                            };
-
-                            let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
-
-                            let mut csharp_index_class_name = csharp_index_name.clone();
-                            let csharp_index_base_class_name = if schema.is_unique(columns) {
-                                csharp_index_class_name += "UniqueIndex";
-                                "UniqueIndexBase"
-                            } else {
-                                csharp_index_class_name += "Index";
-                                "BTreeIndexBase"
-                            };
-
-                            writeln!(output, "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{key_type}>");
-                            indented_block(output, |output| {
-                                writeln!(
-                                    output,
-                                    "protected override {key_type} GetKey({table_type} row) => {row_to_key};"
-                                );
-                                writeln!(output);
-                                writeln!(output, "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}");
-                            });
-                            writeln!(output);
-                            writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
-                            writeln!(output);
-
-                            index_names.push(csharp_index_name);
+                    let (row_to_key, key_type) = match columns.as_singleton() {
+                        Some(col_pos) => {
+                            let (field_name, field_type) = get_csharp_field_name_and_type(col_pos);
+                            (format!("row.{field_name}"), field_type.to_string())
                         }
-                        _ => todo!(),
-                    }
+                        None => {
+                            let mut key_accessors = Vec::new();
+                            let mut key_type_elems = Vec::new();
+                            for (field_name, field_type) in columns.iter().map(get_csharp_field_name_and_type) {
+                                key_accessors.push(format!("row.{field_name}"));
+                                key_type_elems.push(format!("{field_type} {field_name}"));
+                            }
+                            (
+                                format!("({})", key_accessors.join(", ")),
+                                format!("({})", key_type_elems.join(", ")),
+                            )
+                        }
+                    };
+
+                    let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
+
+                    let mut csharp_index_class_name = csharp_index_name.clone();
+                    let csharp_index_base_class_name = if schema.is_unique(&columns) {
+                        csharp_index_class_name += "UniqueIndex";
+                        "UniqueIndexBase"
+                    } else {
+                        csharp_index_class_name += "Index";
+                        "BTreeIndexBase"
+                    };
+
+                    writeln!(
+                        output,
+                        "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{key_type}>"
+                    );
+                    indented_block(output, |output| {
+                        writeln!(
+                            output,
+                            "protected override {key_type} GetKey({table_type} row) => {row_to_key};"
+                        );
+                        writeln!(output);
+                        writeln!(
+                            output,
+                            "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}"
+                        );
+                    });
+                    writeln!(output);
+                    writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
+                    writeln!(output);
+
+                    index_names.push(csharp_index_name);
                 }
 
                 writeln!(
@@ -664,6 +683,93 @@ impl Lang for Csharp<'_> {
             });
             writeln!(output);
             writeln!(output, "public readonly {csharp_table_class_name} {csharp_table_name};");
+        });
+
+        // Emit top-level Cols/IxCols helpers for the typed query builder.
+        writeln!(output);
+
+        let cols_owner_name = table.name.deref().to_case(Case::Pascal);
+        let row_type = type_ref_name(module, table.product_type_ref);
+        let product_type = module.typespace_for_generate()[table.product_type_ref]
+            .as_product()
+            .unwrap();
+
+        let mut ix_col_positions: BTreeSet<usize> = BTreeSet::new();
+        for idx in iter_indexes(table) {
+            if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &idx.algorithm {
+                for col_pos in columns.iter() {
+                    ix_col_positions.insert(col_pos.idx());
+                }
+            }
+        }
+
+        writeln!(output, "public sealed class {cols_owner_name}Cols");
+        indented_block(&mut output, |output| {
+            for (field_name, field_type) in &product_type.elements {
+                let prop = field_name.deref().to_case(Case::Pascal);
+                let (col_ty, ty) = match field_type {
+                    AlgebraicTypeUse::Option(inner) => ("NullableCol", ty_fmt(module, inner).to_string()),
+                    _ => ("Col", ty_fmt(module, field_type).to_string()),
+                };
+                writeln!(
+                    output,
+                    "public global::SpacetimeDB.{col_ty}<{row_type}, {ty}> {prop} {{ get; }}"
+                );
+            }
+            writeln!(output);
+            writeln!(output, "public {cols_owner_name}Cols(string tableName)");
+            indented_block(output, |output| {
+                for (field_name, field_type) in &product_type.elements {
+                    let prop = field_name.deref().to_case(Case::Pascal);
+                    let (col_ty, ty) = match field_type {
+                        AlgebraicTypeUse::Option(inner) => ("NullableCol", ty_fmt(module, inner).to_string()),
+                        _ => ("Col", ty_fmt(module, field_type).to_string()),
+                    };
+                    let col_name = field_name.deref();
+                    writeln!(
+                        output,
+                        "{prop} = new global::SpacetimeDB.{col_ty}<{row_type}, {ty}>(tableName, \"{col_name}\");"
+                    );
+                }
+            });
+        });
+        writeln!(output);
+
+        writeln!(output, "public sealed class {cols_owner_name}IxCols");
+        indented_block(&mut output, |output| {
+            for (i, (field_name, field_type)) in product_type.elements.iter().enumerate() {
+                if !ix_col_positions.contains(&i) {
+                    continue;
+                }
+                let prop = field_name.deref().to_case(Case::Pascal);
+                let (col_ty, ty) = match field_type {
+                    AlgebraicTypeUse::Option(inner) => ("NullableIxCol", ty_fmt(module, inner).to_string()),
+                    _ => ("IxCol", ty_fmt(module, field_type).to_string()),
+                };
+                writeln!(
+                    output,
+                    "public global::SpacetimeDB.{col_ty}<{row_type}, {ty}> {prop} {{ get; }}"
+                );
+            }
+            writeln!(output);
+            writeln!(output, "public {cols_owner_name}IxCols(string tableName)");
+            indented_block(output, |output| {
+                for (i, (field_name, field_type)) in product_type.elements.iter().enumerate() {
+                    if !ix_col_positions.contains(&i) {
+                        continue;
+                    }
+                    let prop = field_name.deref().to_case(Case::Pascal);
+                    let (col_ty, ty) = match field_type {
+                        AlgebraicTypeUse::Option(inner) => ("NullableIxCol", ty_fmt(module, inner).to_string()),
+                        _ => ("IxCol", ty_fmt(module, field_type).to_string()),
+                    };
+                    let col_name = field_name.deref();
+                    writeln!(
+                        output,
+                        "{prop} = new global::SpacetimeDB.{col_ty}<{row_type}, {ty}>(tableName, \"{col_name}\");"
+                    );
+                }
+            });
         });
 
         OutputFile {
@@ -956,6 +1062,80 @@ impl Lang for Csharp<'_> {
         writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
 
         writeln!(output, "{REDUCER_EVENTS}");
+
+        writeln!(output, "public sealed class QueryBuilder");
+        indented_block(&mut output, |output| {
+            writeln!(output, "public From From {{ get; }} = new();");
+        });
+        writeln!(output);
+
+        writeln!(output, "public sealed class From");
+        indented_block(&mut output, |output| {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+                let method_name = table_name.deref().to_case(Case::Pascal);
+                let row_type = type_ref_name(module, product_type_ref);
+                let table_name_lit = format!("{:?}", table_name.deref());
+                writeln!(
+                    output,
+                    "public global::SpacetimeDB.Table<{row_type}, {method_name}Cols, {method_name}IxCols> {method_name}() => new({table_name_lit}, new {method_name}Cols({table_name_lit}), new {method_name}IxCols({table_name_lit}));"
+                );
+            }
+        });
+        writeln!(output);
+
+        writeln!(output, "public sealed class TypedSubscriptionBuilder");
+        indented_block(&mut output, |output| {
+            writeln!(output, "private readonly IDbConnection conn;");
+            writeln!(output, "private Action<SubscriptionEventContext>? Applied;");
+            writeln!(output, "private Action<ErrorContext, Exception>? Error;");
+            writeln!(output, "private readonly List<string> querySqls = new();");
+            writeln!(output);
+
+            writeln!(
+                output,
+                "internal TypedSubscriptionBuilder(IDbConnection conn, Action<SubscriptionEventContext>? applied, Action<ErrorContext, Exception>? error)"
+            );
+            indented_block(output, |output| {
+                writeln!(output, "this.conn = conn;");
+                writeln!(output, "Applied = applied;");
+                writeln!(output, "Error = error;");
+            });
+            writeln!(output);
+
+            writeln!(
+                output,
+                "public TypedSubscriptionBuilder OnApplied(Action<SubscriptionEventContext> callback)"
+            );
+            indented_block(output, |output| {
+                writeln!(output, "Applied += callback;");
+                writeln!(output, "return this;");
+            });
+            writeln!(output);
+
+            writeln!(
+                output,
+                "public TypedSubscriptionBuilder OnError(Action<ErrorContext, Exception> callback)"
+            );
+            indented_block(output, |output| {
+                writeln!(output, "Error += callback;");
+                writeln!(output, "return this;");
+            });
+            writeln!(output);
+
+            writeln!(output, "public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)");
+            indented_block(output, |output| {
+                writeln!(output, "var qb = new QueryBuilder();");
+                writeln!(output, "querySqls.Add(build(qb).ToSql());");
+                writeln!(output, "return this;");
+            });
+            writeln!(output);
+
+            writeln!(
+                output,
+                "public SubscriptionHandle Subscribe() => new(conn, Applied, Error, querySqls.ToArray());"
+            );
+        });
+        writeln!(output);
 
         writeln!(output, "public abstract partial class Reducer");
         indented_block(&mut output, |output| {

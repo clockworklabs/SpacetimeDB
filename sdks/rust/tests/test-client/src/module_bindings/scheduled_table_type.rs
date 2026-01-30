@@ -15,3 +15,39 @@ pub struct ScheduledTable {
 impl __sdk::InModule for ScheduledTable {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `ScheduledTable`.
+///
+/// Provides typed access to columns for query building.
+pub struct ScheduledTableCols {
+    pub scheduled_id: __sdk::__query_builder::Col<ScheduledTable, u64>,
+    pub scheduled_at: __sdk::__query_builder::Col<ScheduledTable, __sdk::ScheduleAt>,
+    pub text: __sdk::__query_builder::Col<ScheduledTable, String>,
+}
+
+impl __sdk::__query_builder::HasCols for ScheduledTable {
+    type Cols = ScheduledTableCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ScheduledTableCols {
+            scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
+            scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+            text: __sdk::__query_builder::Col::new(table_name, "text"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `ScheduledTable`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct ScheduledTableIxCols {
+    pub scheduled_id: __sdk::__query_builder::IxCol<ScheduledTable, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for ScheduledTable {
+    type IxCols = ScheduledTableIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        ScheduledTableIxCols {
+            scheduled_id: __sdk::__query_builder::IxCol::new(table_name, "scheduled_id"),
+        }
+    }
+}

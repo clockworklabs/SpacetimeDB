@@ -135,6 +135,7 @@ impl<K: Ord + KeySize> RangedIndex for MultiMap<K> {
 }
 
 /// An iterator over values in a [`MultiMap`] where the keys are in a certain range.
+#[derive(Clone)]
 pub struct MultiMapRangeIter<'a, K> {
     /// The outer iterator seeking for matching keys in the range.
     outer: Range<'a, K, SameKeyEntry>,

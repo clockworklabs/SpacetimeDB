@@ -4,7 +4,7 @@ use super::{
 };
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::database_logger::{LogLevel, Record};
+use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
@@ -37,13 +37,14 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
 use scopeguard::ScopeGuard;
+use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
 };
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
@@ -54,16 +55,17 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{AlgebraicType, ConnectionId};
+use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::relation::RelValue;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
@@ -73,7 +75,7 @@ use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
-    pub tables: Vec<DatabaseTableUpdate>,
+    pub tables: SmallVec<[DatabaseTableUpdate; 1]>,
 }
 
 impl FromIterator<DatabaseTableUpdate> for DatabaseUpdate {
@@ -93,26 +95,15 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(tx_data: &TxData) -> Self {
-        let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
-        let new_update = |table_id, table_name: &str| DatabaseTableUpdate {
+        let entries = tx_data.iter_table_entries();
+        let mut tables = SmallVec::with_capacity(entries.len());
+        tables.extend(entries.map(|(table_id, e)| DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
-            inserts: [].into(),
-            deletes: [].into(),
-        };
-        for (table_id, table_name, rows) in tx_data.inserts_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .inserts = rows.clone();
-        }
-        for (table_id, table_name, rows) in tx_data.deletes_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .deletes = rows.clone();
-        }
-        DatabaseUpdate {
-            tables: map.into_values().collect(),
-        }
+            table_name: e.table_name.clone(),
+            inserts: e.inserts.clone(),
+            deletes: e.deletes.clone(),
+        }));
+        DatabaseUpdate { tables }
     }
 
     /// The number of rows in the payload
@@ -124,7 +115,7 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     // Note: `Arc<[ProductValue]>` allows to cheaply
     // use the values from `TxData` without cloning the
     // contained `ProductValue`s.
@@ -140,7 +131,7 @@ pub struct DatabaseUpdateRelValue<'a> {
 #[derive(PartialEq, Debug)]
 pub struct DatabaseTableUpdateRelValue<'a> {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub updates: UpdatesRelValue<'a>,
 }
 
@@ -192,7 +183,7 @@ impl EventStatus {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleFunctionCall {
-    pub reducer: String,
+    pub reducer: ReducerName,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
@@ -200,7 +191,7 @@ pub struct ModuleFunctionCall {
 impl ModuleFunctionCall {
     pub fn update() -> Self {
         Self {
-            reducer: String::from("update"),
+            reducer: ReducerName::new_from_str("update"),
             reducer_id: u32::MAX.into(),
             args: ArgsTuple::nullary(),
         }
@@ -232,8 +223,6 @@ pub struct ModuleInfo {
     pub database_identity: Identity,
     /// The hash of the module.
     pub module_hash: Hash,
-    /// Allows subscribing to module logs.
-    pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     /// Subscriptions to this module.
     pub subscriptions: ModuleSubscriptions,
     /// Metrics handles for this module.
@@ -296,7 +285,6 @@ impl ModuleInfo {
         owner_identity: Identity,
         database_identity: Identity,
         module_hash: Hash,
-        log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
         let metrics = ModuleMetrics::new(&database_identity);
@@ -305,7 +293,6 @@ impl ModuleInfo {
             owner_identity,
             database_identity,
             module_hash,
-            log_tx,
             subscriptions,
             metrics,
         })
@@ -592,7 +579,7 @@ pub fn call_identity_connected(
 
             // If the reducer returned an error or couldn't run due to insufficient energy,
             // abort the connection: the module code has decided it doesn't want this client.
-            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(message)),
+            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(*message)),
             ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
         }
     } else {
@@ -980,7 +967,7 @@ pub enum ClientConnectedError {
     #[error("Failed to insert `st_client` row for module without client_connected reducer: {0}")]
     DBError(#[from] Box<DBError>),
     #[error("Connection rejected by `client_connected` reducer: {0}")]
-    Rejected(String),
+    Rejected(Box<str>),
     #[error("Insufficient energy balance to run `client_connected` reducer")]
     OutOfEnergy,
 }
@@ -1504,9 +1491,9 @@ impl ModuleHost {
         Ok(self
             .call(
                 &reducer_def.name,
-                (None, call_reducer_params),
-                |(tx, p), inst| inst.call_reducer(tx, p),
-                |(_, p), inst| inst.call_reducer(p),
+                call_reducer_params,
+                |p, inst| inst.call_reducer(p),
+                |p, inst| inst.call_reducer(p),
             )
             .await?)
     }
@@ -1970,10 +1957,6 @@ impl ModuleHost {
         Ok(instance.common.call_view_with_tx(tx, params, instance.instance))
     }
 
-    pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
-        Ok(self.info().log_tx.subscribe())
-    }
-
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
         self.call(
             "<init_database>",
@@ -2094,6 +2077,8 @@ impl ModuleHost {
                         .map(PipelinedProject::from)
                         .collect::<Vec<_>>();
 
+                    let table_name = table_name.to_boxed_str();
+
                     if returns_view_table && num_private_cols > 0 {
                         let optimized = optimized
                             .into_iter()
@@ -2186,6 +2171,10 @@ impl ModuleHost {
 
     pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
         self.replica_ctx().relational_db.durable_tx_offset()
+    }
+
+    pub fn database_logger(&self) -> &Arc<DatabaseLogger> {
+        &self.replica_ctx().logger
     }
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {

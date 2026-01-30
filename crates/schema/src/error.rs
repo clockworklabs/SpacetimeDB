@@ -57,8 +57,6 @@ pub enum ValidationError {
     RepeatedPrimaryKey { table: RawIdentifier },
     #[error("Attempt to define {column} with more than 1 auto_inc sequence")]
     OneAutoInc { column: RawColumnName },
-    #[error("Hash indexes are not supported: `{index}` is a hash index")]
-    HashIndexUnsupported { index: RawIdentifier },
     #[error("No index found to support unique constraint `{constraint}` for columns `{columns:?}`")]
     UniqueConstraintWithoutIndex { constraint: Box<str>, columns: ColSet },
     #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]
@@ -138,6 +136,23 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
+    #[error("lifecycle event {lifecycle:?} without reducer")]
+    LifecycleWithoutReducer { lifecycle: Lifecycle },
+    #[error("lifecycle event {lifecycle:?} assigned multiple reducers")]
+    DuplicateLifeCycle { lifecycle: Lifecycle },
+    #[error("table {table} is assigned in multiple schedules")]
+    DuplicateSchedule { table: Identifier },
+    #[error("table {} corresponding to schedule {} not found", table_name, schedule_name)]
+    MissingScheduleTable {
+        table_name: Box<str>,
+        schedule_name: Box<str>,
+    },
+    #[error("reducer {reducer_name} has invalid return type: found Result<{ok_type}, {err_type}>")]
+    InvalidReducerReturnType {
+        reducer_name: RawIdentifier,
+        ok_type: PrettyAlgebraicType,
+        err_type: PrettyAlgebraicType,
+    },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

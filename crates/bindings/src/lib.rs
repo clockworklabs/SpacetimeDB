@@ -20,7 +20,7 @@ pub mod rt;
 pub mod table;
 
 #[doc(hidden)]
-pub mod query_builder;
+pub use spacetimedb_query_builder as query_builder;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
@@ -51,8 +51,8 @@ pub use spacetimedb_lib::Uuid;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
-    AutoIncOverflow, RangedIndex, RangedIndexReadOnly, Table, TryInsertError, UniqueColumn, UniqueColumnReadOnly,
-    UniqueConstraintViolation,
+    AutoIncOverflow, PointIndex, PointIndexReadOnly, RangedIndex, RangedIndexReadOnly, Table, TryInsertError,
+    UniqueColumn, UniqueColumnReadOnly, UniqueConstraintViolation,
 };
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;

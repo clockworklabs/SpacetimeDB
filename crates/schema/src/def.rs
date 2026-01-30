@@ -21,6 +21,7 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
@@ -139,6 +140,19 @@ pub struct ModuleDef {
     ///
     /// **Note**: Are only validated syntax-wise.
     row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
+
+    /// Indicates which raw module definition semantics this module
+    /// was authored under.
+    #[allow(unused)]
+    raw_module_def_version: RawModuleDefVersion,
+}
+
+#[derive(Debug, Clone)]
+pub enum RawModuleDefVersion {
+    /// Represents [`RawModuleDefV9`] and earlier.
+    V9OrEarlier,
+    /// Represents [`RawModuleDefV10`].
+    V10,
 }
 
 impl ModuleDef {
@@ -170,6 +184,11 @@ impl ModuleDef {
     /// The reducers of the module definition.
     pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
         self.reducers.values()
+    }
+
+    /// Returns an iterator over all reducer ids and definitions.
+    pub fn reducer_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (ReducerId, &ReducerDef)> {
+        self.reducers.values().enumerate().map(|(idx, def)| (idx.into(), def))
     }
 
     /// The procedures of the module definition.
@@ -405,6 +424,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             refmap: _,
             row_level_security_raw,
             procedures,
+            raw_module_def_version: _,
         } = val;
 
         RawModuleDefV9 {
@@ -420,6 +440,14 @@ impl From<ModuleDef> for RawModuleDefV9 {
             typespace,
             row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
+    }
+}
+
+impl TryFrom<raw_def::v10::RawModuleDefV10> for ModuleDef {
+    type Error = ValidationErrors;
+
+    fn try_from(v10_mod: raw_def::v10::RawModuleDefV10) -> Result<Self, Self::Error> {
+        validate::v10::validate(v10_mod)
     }
 }
 
@@ -643,6 +671,7 @@ impl From<IndexDef> for RawIndexDefV9 {
             name: Some(val.name),
             algorithm: match val.algorithm {
                 IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
+                IndexAlgorithm::Hash(HashAlgorithm { columns }) => RawIndexAlgorithm::Hash { columns },
                 IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
             accessor_name: val.accessor_name.map(Into::into),
@@ -656,8 +685,20 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
+    /// Implemented using a rust `HashMap`.
+    Hash(HashAlgorithm),
     /// Implemented using `DirectUniqueIndex`.
     Direct(DirectAlgorithm),
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for IndexAlgorithm {
+    fn heap_usage(&self) -> usize {
+        match self {
+            Self::BTree(a) => a.heap_usage(),
+            Self::Direct(a) => a.heap_usage(),
+            Self::Hash(a) => a.heap_usage(),
+        }
+    }
 }
 
 impl IndexAlgorithm {
@@ -665,6 +706,7 @@ impl IndexAlgorithm {
     pub fn columns(&self) -> ColOrCols<'_> {
         match self {
             Self::BTree(btree) => ColOrCols::ColList(&btree.columns),
+            Self::Hash(hash) => ColOrCols::ColList(&hash.columns),
             Self::Direct(direct) => ColOrCols::Col(direct.column),
         }
     }
@@ -680,6 +722,7 @@ impl From<IndexAlgorithm> for RawIndexAlgorithm {
     fn from(val: IndexAlgorithm) -> Self {
         match val {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Hash(HashAlgorithm { columns }) => Self::Hash { columns },
             IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
         }
     }
@@ -690,6 +733,12 @@ impl From<IndexAlgorithm> for RawIndexAlgorithm {
 pub struct BTreeAlgorithm {
     /// The columns to index.
     pub columns: ColList,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for BTreeAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
 }
 
 impl<CL: Into<ColList>> From<CL> for BTreeAlgorithm {
@@ -705,11 +754,43 @@ impl From<BTreeAlgorithm> for IndexAlgorithm {
     }
 }
 
+/// Data specifying a Hash index.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HashAlgorithm {
+    /// The columns to index.
+    pub columns: ColList,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for HashAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
+}
+
+impl<CL: Into<ColList>> From<CL> for HashAlgorithm {
+    fn from(columns: CL) -> Self {
+        let columns = columns.into();
+        Self { columns }
+    }
+}
+
+impl From<HashAlgorithm> for IndexAlgorithm {
+    fn from(val: HashAlgorithm) -> Self {
+        IndexAlgorithm::Hash(val)
+    }
+}
+
 /// Data specifying a Direct index.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DirectAlgorithm {
     /// The column to index.
     pub column: ColId,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for DirectAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.column.heap_usage()
+    }
 }
 
 impl<C: Into<ColId>> From<C> for DirectAlgorithm {
@@ -865,6 +946,14 @@ pub enum ConstraintData {
     Unique(UniqueConstraintData),
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for ConstraintData {
+    fn heap_usage(&self) -> usize {
+        match self {
+            ConstraintData::Unique(d) => d.heap_usage(),
+        }
+    }
+}
+
 impl ConstraintData {
     /// If this is a unique constraint, returns the columns that must be unique.
     /// Otherwise, returns `None`.
@@ -890,6 +979,12 @@ impl From<ConstraintData> for RawConstraintDataV9 {
 pub struct UniqueConstraintData {
     /// The columns on the containing `TableDef`
     pub columns: ColSet,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for UniqueConstraintData {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
 }
 
 impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
@@ -1200,12 +1295,33 @@ impl From<ViewDef> for RawMiscModuleExportV9 {
     }
 }
 
+/// The visibility of a function (reducer or procedure).
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum FunctionVisibility {
+    /// Internal-only, not callable from clients.
+    /// Typically used for lifecycle reducers and scheduled functions.
+    Internal,
+
+    /// Callable from client code.
+    ClientCallable,
+}
+
+use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawFunctionVisibility;
+impl From<RawFunctionVisibility> for FunctionVisibility {
+    fn from(val: RawFunctionVisibility) -> Self {
+        match val {
+            RawFunctionVisibility::Internal => FunctionVisibility::Internal,
+            RawFunctionVisibility::ClientCallable => FunctionVisibility::ClientCallable,
+        }
+    }
+}
+
 /// A reducer exported by the module.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReducerDef {
     /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
-    pub name: Identifier,
+    pub name: ReducerName,
 
     /// The parameters of the reducer.
     ///
@@ -1219,12 +1335,21 @@ pub struct ReducerDef {
 
     /// The special role of this reducer in the module lifecycle, if any.
     pub lifecycle: Option<Lifecycle>,
+
+    /// The visibility of this reducer.
+    pub visibility: FunctionVisibility,
+
+    /// The return type of the reducer on success.
+    pub ok_return_type: AlgebraicType,
+
+    /// The return type of the reducer on error.
+    pub err_return_type: AlgebraicType,
 }
 
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV9 {
-            name: val.name.into(),
+            name: val.name.to_string().into(),
             params: val.params,
             lifecycle: val.lifecycle,
         }
@@ -1260,6 +1385,9 @@ pub struct ProcedureDef {
     /// If this is a non-special compound type, it should be registered in the module's `TypespaceForGenerate`
     /// and indirected through an [`AlgebraicTypeUse::Ref`].
     pub return_type_for_generate: AlgebraicTypeUse,
+
+    /// The visibility of this procedure.
+    pub visibility: FunctionVisibility,
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {
@@ -1420,13 +1548,14 @@ impl ModuleDefLookup for TypeDef {
 }
 
 impl ModuleDefLookup for ReducerDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a ReducerName;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        let key = &**key;
         module_def.reducers.get(key)
     }
 }

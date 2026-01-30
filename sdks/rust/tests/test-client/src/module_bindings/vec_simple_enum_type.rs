@@ -15,3 +15,31 @@ pub struct VecSimpleEnum {
 impl __sdk::InModule for VecSimpleEnum {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `VecSimpleEnum`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecSimpleEnumCols {
+    pub e: __sdk::__query_builder::Col<VecSimpleEnum, Vec<SimpleEnum>>,
+}
+
+impl __sdk::__query_builder::HasCols for VecSimpleEnum {
+    type Cols = VecSimpleEnumCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecSimpleEnumCols {
+            e: __sdk::__query_builder::Col::new(table_name, "e"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecSimpleEnum`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecSimpleEnumIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for VecSimpleEnum {
+    type IxCols = VecSimpleEnumIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecSimpleEnumIxCols {}
+    }
+}
