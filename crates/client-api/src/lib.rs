@@ -204,7 +204,11 @@ pub struct DatabaseDef {
     pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
+    /// The optional identity of an existing database the database shall be a
+    /// child of.
     pub parent: Option<Identity>,
+    /// The optional identity of an organization the database shall belong to.
+    pub organization: Option<Identity>,
 }
 
 /// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
@@ -508,9 +512,12 @@ impl axum::response::IntoResponse for Unauthorized {
 }
 
 /// Action to be authorized via [Authorization::authorize_action].
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Action {
-    CreateDatabase { parent: Option<Identity> },
+    CreateDatabase {
+        parent: Option<Identity>,
+        organization: Option<Identity>,
+    },
     UpdateDatabase,
     ResetDatabase,
     DeleteDatabase,
@@ -521,9 +528,13 @@ pub enum Action {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CreateDatabase { parent } => match parent {
-                Some(parent) => write!(f, "create database with parent {}", parent),
-                None => f.write_str("create database"),
+            Self::CreateDatabase { parent, organization } => match (parent, organization) {
+                (Some(parent), Some(org)) => {
+                    write!(f, "create database with parent {} and organization {}", parent, org)
+                }
+                (Some(parent), None) => write!(f, "create database with parent {}", parent),
+                (None, Some(org)) => write!(f, "create database with organization {}", org),
+                (None, None) => f.write_str("create database"),
             },
             Self::UpdateDatabase => f.write_str("update database"),
             Self::ResetDatabase => f.write_str("reset database"),
