@@ -34,6 +34,10 @@ pub struct Options {
     ///
     /// Default: 50ms
     pub sync_interval: Duration,
+    /// If `true`, flush (but not sync) each transaction.
+    ///
+    /// Default: false
+    pub flush_each_tx: bool,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
 }
@@ -42,6 +46,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             sync_interval: Duration::from_millis(50),
+            flush_each_tx: false,
             commitlog: Default::default(),
         }
     }
@@ -130,6 +135,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                     queue_depth: queue_depth.clone(),
 
                     sync_interval: opts.sync_interval,
+                    flush_each_tx: opts.flush_each_tx,
 
                     lock,
                 }
@@ -188,6 +194,7 @@ struct Actor<T> {
     queue_depth: Arc<AtomicU64>,
 
     sync_interval: Duration,
+    flush_each_tx: bool,
 
     #[allow(unused)]
     lock: Lock,
@@ -237,10 +244,18 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     };
                     self.queue_depth.fetch_sub(1, Relaxed);
                     let clog = self.clog.clone();
-                    spawn_blocking(move || clog.commit([tx]))
-                        .await
-                        .expect("commitlog write panicked")
-                        .expect("commitlog write failed");
+                    let flush = self.flush_each_tx;
+                    spawn_blocking(move || -> io::Result<()> {
+                        clog.commit([tx])?;
+                        if flush {
+                            clog.flush()?;
+                        }
+
+                        Ok(())
+                    })
+                    .await
+                    .expect("commitlog write panicked")
+                    .expect("commitlog write failed");
                 },
             }
         }
