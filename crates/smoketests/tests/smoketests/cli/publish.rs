@@ -1,15 +1,10 @@
 //! CLI publish command tests
 
-use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
-use std::process::Command;
-
-fn cli_cmd() -> Command {
-    Command::new(ensure_binaries_built())
-}
+use spacetimedb_smoketests::{require_local_server, Smoketest};
 
 #[test]
 fn cli_can_publish_spacetimedb_on_disk() {
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
+    let test = Smoketest::builder().autopublish(false).build();
 
     // Workspace root for `cargo run -p ...`
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
@@ -19,56 +14,66 @@ fn cli_can_publish_spacetimedb_on_disk() {
         .join("chat-console-rs")
         .join("spacetimedb");
 
-    let output = cli_cmd()
-        .args(["publish", "--server", &spacetime.host_url.to_string(), "foobar"])
-        .current_dir(&dir)
-        .output()
-        .expect("failed to execute");
-    assert!(
-        output.status.success(),
-        "publish failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let dir = dir.to_string();
+    let _ = test
+        .spacetime(&[
+            "publish",
+            "--project-path",
+            &dir,
+            "--server",
+            &test.server_url,
+            "foobar",
+        ])
+        .unwrap();
 
     // Can republish without error to the same name
-    let output = cli_cmd()
-        .args(["publish", "--server", &spacetime.host_url.to_string(), "foobar"])
-        .current_dir(&dir)
-        .output()
-        .expect("failed to execute");
-    assert!(
-        output.status.success(),
-        "republish failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let _ = test
+        .spacetime(&[
+            "publish",
+            "--project-path",
+            &dir,
+            "--server",
+            &test.server_url,
+            "foobar",
+        ])
+        .unwrap();
 }
 
 // TODO: Somewhere we should test that data is actually deleted properly in all the expected cases,
 // e.g. when providing --delete-data, or when there's a conflict and --delete-data=on-conflict is provided.
 
 fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bool) {
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
+    // This only requires a local server because the module names are static
+    require_local_server!();
+
+    let test = Smoketest::builder().autopublish(false).build();
 
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
     let dir = workspace_dir.join("modules").join("module-test");
 
-    let output = cli_cmd()
-        .args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
-        .current_dir(&dir)
-        .output()
-        .expect("failed to execute");
-    assert!(
-        output.status.success(),
-        "initial publish failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let dir = dir.to_string();
+    let _ = test
+        .spacetime(&[
+            "publish",
+            "--project-path",
+            &dir,
+            "--server",
+            &test.server_url,
+            module_name,
+        ])
+        .unwrap();
 
-    let output = cli_cmd()
-        .args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
-        .args(republish_args)
-        .current_dir(&dir)
-        .output()
-        .expect("failed to execute");
+    let dir = dir.to_string();
+    let mut args = vec![
+        "publish",
+        "--project-path",
+        &dir,
+        "--server",
+        &test.server_url,
+        module_name,
+    ];
+    args.extend(republish_args);
+    let output = test.spacetime_cmd(&args);
 
     if expect_success {
         assert!(
