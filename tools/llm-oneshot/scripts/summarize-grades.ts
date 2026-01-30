@@ -3,11 +3,10 @@
  * Grade Summary Script for LLM One-Shot Benchmarks
  *
  * Aggregates all GRADING_RESULTS.md files and generates:
- * - GRADE_SUMMARY.md (executive summary)
- * - grades.json (structured data for websites)
- * - Per-app summaries in {app}/
+ * - oneshot-summary.md (combined summary with feature scores)
+ * - oneshot-grades.json (structured data for websites)
  *
- * Output is written to: docs/llms/oneshots/
+ * Output is written to: docs/llms/
  *
  * Usage:
  *   pnpm run summarize
@@ -290,7 +289,7 @@ function aggregateResults(results: GradeResult[]): Summary {
 // Markdown Generation
 // ============================================================================
 
-function generateExecutiveSummary(
+function generateCombinedSummary(
   summary: Summary,
   results: GradeResult[]
 ): string {
@@ -359,131 +358,13 @@ function generateExecutiveSummary(
 
   lines.push('');
 
-  // By App
-  lines.push('## Results by App');
-  lines.push('');
-  lines.push('| App | STDB Runs | STDB Avg | PG Runs | PG Avg | Delta |');
-  lines.push('|-----|-----------|----------|---------|--------|-------|');
-
-  for (const [app, stats] of Object.entries(summary.byApp)) {
-    const stdb = stats.spacetime;
-    const pg = stats.postgres;
-    const stdbRuns = stdb ? stdb.runs.toString() : '-';
-    const stdbAvg = stdb ? `${stdb.avgPercent.toFixed(1)}%` : '-';
-    const pgRuns = pg ? pg.runs.toString() : '-';
-    const pgAvg = pg ? `${pg.avgPercent.toFixed(1)}%` : '-';
-    let delta = '-';
-    if (stdb && pg) {
-      const d = stdb.avgPercent - pg.avgPercent;
-      delta = d >= 0 ? `+${d.toFixed(1)}%` : `${d.toFixed(1)}%`;
-    }
-    lines.push(
-      `| ${app} | ${stdbRuns} | ${stdbAvg} | ${pgRuns} | ${pgAvg} | ${delta} |`
-    );
-  }
-
-  lines.push('');
-
-  // Individual runs table
-  lines.push('## All Runs');
-  lines.push('');
-  lines.push('| App | LLM | Backend | Date | Score | % |');
-  lines.push('|-----|-----|---------|------|-------|---|');
-
-  const sortedResults = [...results].sort((a, b) => {
-    if (a.app !== b.app) return a.app.localeCompare(b.app);
-    if (a.llm !== b.llm) return a.llm.localeCompare(b.llm);
-    if (a.backend !== b.backend) return a.backend.localeCompare(b.backend);
-    return b.date.localeCompare(a.date);
-  });
-
-  for (const r of sortedResults) {
-    const backend = r.backend === 'spacetime' ? 'STDB' : 'PG';
-    lines.push(
-      `| ${r.app} | ${r.llm} | ${backend} | ${r.date} | ${r.totalScore}/${r.maxScore} | ${r.percentage.toFixed(1)}% |`
-    );
-  }
-
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-function generateAppSummary(app: string, results: GradeResult[]): string {
-  const lines: string[] = [];
-  const appResults = results.filter(r => r.app === app);
-
-  lines.push(`# ${app} Benchmark Summary`);
-  lines.push('');
-  lines.push(`**Generated:** ${new Date().toISOString().split('T')[0]}`);
-  lines.push(`**Total Runs:** ${appResults.length}`);
-  lines.push('');
-
-  // Stats by backend
-  const spacetimeResults = appResults.filter(r => r.backend === 'spacetime');
-  const postgresResults = appResults.filter(r => r.backend === 'postgres');
-
-  lines.push('## Results by Backend');
-  lines.push('');
-  lines.push('| Backend | Runs | Avg Score | Best | Worst |');
-  lines.push('|---------|------|-----------|------|-------|');
-
-  const stdbStats = calculateStats(spacetimeResults);
-  const pgStats = calculateStats(postgresResults);
-
-  if (stdbStats) {
-    lines.push(
-      `| SpacetimeDB | ${stdbStats.runs} | ${stdbStats.avgPercent.toFixed(1)}% | ${stdbStats.best.toFixed(1)}% | ${stdbStats.worst.toFixed(1)}% |`
-    );
-  }
-  if (pgStats) {
-    lines.push(
-      `| PostgreSQL | ${pgStats.runs} | ${pgStats.avgPercent.toFixed(1)}% | ${pgStats.best.toFixed(1)}% | ${pgStats.worst.toFixed(1)}% |`
-    );
-  }
-
-  lines.push('');
-
-  // By LLM
-  const llms = [...new Set(appResults.map(r => r.llm))].sort();
-
-  lines.push('## Results by LLM');
-  lines.push('');
-  lines.push('| LLM | STDB Runs | STDB Avg | PG Runs | PG Avg | Delta |');
-  lines.push('|-----|-----------|----------|---------|--------|-------|');
-
-  for (const llm of llms) {
-    const llmResults = appResults.filter(r => r.llm === llm);
-    const llmStdb = calculateStats(
-      llmResults.filter(r => r.backend === 'spacetime')
-    );
-    const llmPg = calculateStats(
-      llmResults.filter(r => r.backend === 'postgres')
-    );
-
-    const stdbRuns = llmStdb ? llmStdb.runs.toString() : '-';
-    const stdbAvg = llmStdb ? `${llmStdb.avgPercent.toFixed(1)}%` : '-';
-    const pgRuns = llmPg ? llmPg.runs.toString() : '-';
-    const pgAvg = llmPg ? `${llmPg.avgPercent.toFixed(1)}%` : '-';
-    let delta = '-';
-    if (llmStdb && llmPg) {
-      const d = llmStdb.avgPercent - llmPg.avgPercent;
-      delta = d >= 0 ? `+${d.toFixed(1)}%` : `${d.toFixed(1)}%`;
-    }
-    lines.push(
-      `| ${llm} | ${stdbRuns} | ${stdbAvg} | ${pgRuns} | ${pgAvg} | ${delta} |`
-    );
-  }
-
-  lines.push('');
-
-  // Feature breakdown (aggregate across all runs at the same prompt level)
+  // Feature breakdown (aggregate across all runs)
   const featureMap = new Map<
     number,
     { name: string; stdbScores: number[]; pgScores: number[]; max: number }
   >();
 
-  for (const r of appResults) {
+  for (const r of results) {
     for (const f of r.featureScores) {
       if (!featureMap.has(f.feature)) {
         featureMap.set(f.feature, {
@@ -545,19 +426,19 @@ function generateAppSummary(app: string, results: GradeResult[]): string {
     lines.push('');
   }
 
-  // Individual runs
+  // Individual runs table
   lines.push('## All Runs');
   lines.push('');
   lines.push('| LLM | Backend | Date | Score | % | Level |');
   lines.push('|-----|---------|------|-------|---|-------|');
 
-  const sorted = [...appResults].sort((a, b) => {
+  const sortedResults = [...results].sort((a, b) => {
     if (a.llm !== b.llm) return a.llm.localeCompare(b.llm);
     if (a.backend !== b.backend) return a.backend.localeCompare(b.backend);
     return b.date.localeCompare(a.date);
   });
 
-  for (const r of sorted) {
+  for (const r of sortedResults) {
     const backend = r.backend === 'spacetime' ? 'STDB' : 'PG';
     const level = r.promptLevel ?? '-';
     lines.push(
@@ -596,9 +477,9 @@ function main() {
   const baseDir = path.resolve(normalizedScriptDir, '..');
   const appsDir = path.join(baseDir, 'apps');
 
-  // Output directory: docs/llms/oneshots (relative to repo root)
+  // Output directory: docs/llms (relative to repo root)
   const repoRoot = path.resolve(baseDir, '../..');
-  const outputDir = path.join(repoRoot, 'docs', 'llms', 'oneshots');
+  const outputDir = path.join(repoRoot, 'docs', 'llms');
 
   console.log(`Scanning for grading files in: ${appsDir}`);
   console.log(`Output directory: ${outputDir}`);
@@ -646,41 +527,16 @@ function main() {
     runs: results,
   };
 
-  // Write executive summary
-  const execSummaryMd = generateExecutiveSummary(summary, results);
-  const execSummaryPath = path.join(outputDir, 'GRADE_SUMMARY.md');
-  fs.writeFileSync(execSummaryPath, execSummaryMd);
-  console.log(`Wrote: ${execSummaryPath}`);
+  // Write combined summary (includes feature scores)
+  const combinedSummaryMd = generateCombinedSummary(summary, results);
+  const summaryPath = path.join(outputDir, 'oneshot-summary.md');
+  fs.writeFileSync(summaryPath, combinedSummaryMd);
+  console.log(`Wrote: ${summaryPath}`);
 
   // Write JSON
-  const jsonPath = path.join(outputDir, 'grades.json');
+  const jsonPath = path.join(outputDir, 'oneshot-grades.json');
   fs.writeFileSync(jsonPath, JSON.stringify(gradesJson, null, 2));
   console.log(`Wrote: ${jsonPath}`);
-
-  // Write per-app summaries
-  const apps = [...new Set(results.map(r => r.app))];
-  for (const app of apps) {
-    const appOutputDir = path.join(outputDir, app);
-    fs.mkdirSync(appOutputDir, { recursive: true });
-
-    // App markdown
-    const appSummaryMd = generateAppSummary(app, results);
-    const appSummaryPath = path.join(appOutputDir, 'GRADE_SUMMARY.md');
-    fs.writeFileSync(appSummaryPath, appSummaryMd);
-    console.log(`Wrote: ${appSummaryPath}`);
-
-    // App JSON
-    const appResults = results.filter(r => r.app === app);
-    const appSummary = aggregateResults(appResults);
-    const appJson: GradesJson = {
-      generated: new Date().toISOString(),
-      summary: appSummary,
-      runs: appResults,
-    };
-    const appJsonPath = path.join(appOutputDir, 'grades.json');
-    fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2));
-    console.log(`Wrote: ${appJsonPath}`);
-  }
 
   console.log('\nDone!');
 }

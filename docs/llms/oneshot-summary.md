@@ -1,14 +1,16 @@
-# chat-app Benchmark Summary
+# LLM One-Shot Benchmark Summary
 
 **Generated:** 2026-01-30
 **Total Runs:** 13
 
-## Results by Backend
+## Overall Results by Backend
 
 | Backend | Runs | Avg Score | Best | Worst |
 |---------|------|-----------|------|-------|
 | SpacetimeDB | 7 | 91.7% | 100.0% | 76.0% |
 | PostgreSQL | 6 | 62.7% | 76.4% | 41.7% |
+
+**SpacetimeDB advantage:** +29.0 percentage points
 
 ## Results by LLM
 

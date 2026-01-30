@@ -2,11 +2,6 @@
 
 This project benchmarks how well Cursor rules enable AI to **one-shot** SpacetimeDB apps — generate and deploy a working app in a single attempt.
 
-## Requirements
-
-- **Cursor IDE** — This benchmark uses Cursor's `@file` reference syntax to compose prompts
-- Open this folder (`tools/llm-oneshot`) as your workspace root in Cursor
-
 ## Purpose
 
 This benchmark compares AI-generated apps across two platforms:
@@ -18,33 +13,65 @@ By generating equivalent apps for both platforms, we can evaluate how well Curso
 
 ---
 
-## Running a Benchmark
+## How to Run a Benchmark
 
-In Cursor, send this prompt to the AI:
+### Prerequisites
 
-```
-Read all rules first. Do not reference AI-generated apps in apps/ for guidance.
+1. Install [Cursor IDE](https://cursor.com/) (free download)
+2. Have a Cursor subscription or API credits for the model you want to test
+3. For SpacetimeDB tests: install the [SpacetimeDB CLI](https://spacetimedb.com/install)
+4. For PostgreSQL tests: have Docker installed (for the database container)
 
-Execute: @apps/chat-app/prompts/language/<LANGUAGE>.md @apps/chat-app/prompts/composed/<LEVEL>.md
-```
+### Step-by-Step Instructions
 
-**Example (TypeScript + SpacetimeDB, full features):**
+1. **Open this folder as a workspace in Cursor**
+   - File → Open Folder → select `tools/llm-oneshot`
+   - This folder must be the workspace root so Cursor loads the `.cursor/rules/` files
 
-```
-Read all rules first. Do not reference AI-generated apps in apps/ for guidance.
+2. **Open a new Agent chat**
+   - Press `Ctrl+I` (Windows/Linux) or `Cmd+I` (Mac) to open the AI panel
+   - Or click the Cursor icon in the sidebar
 
-Execute: @apps/chat-app/prompts/language/typescript-spacetime.md @apps/chat-app/prompts/composed/12_full.md
-```
+3. **Select your model**
+   - Click the model dropdown at the bottom of the chat panel
+   - Choose the model you want to benchmark (e.g., Claude Opus 4.5, GPT-5, Gemini 3 Pro)
 
-**Example (TypeScript + PostgreSQL, full features):**
+4. **Add the prompt files**
 
-```
-Read all rules first. Do not reference AI-generated apps in apps/ for guidance.
+   Drag these two files from the file explorer directly into the chat:
+   - `apps/chat-app/prompts/language/typescript-spacetime.md` (or your desired stack)
+   - `apps/chat-app/prompts/composed/12_full.md` (or your desired feature level)
 
-Execute: @apps/chat-app/prompts/language/typescript-postgres.md @apps/chat-app/prompts/composed/12_full.md
-```
+   Then type this message:
+
+   ```
+   Read all rules first. Do not reference AI-generated apps in apps/ for guidance.
+
+   Execute these prompts.
+   ```
+
+5. **Let the AI generate the app**
+   - Press Enter to send the prompt
+   - The AI will read the rules, then generate the backend and client code
+   - Do not interrupt — let it complete the full generation
+
+6. **Deploy when prompted**
+   - The AI will ask if you want to deploy (Local / Cloud / Skip)
+   - Choose "Local" to test the app on your machine
 
 **Why isolate from existing apps?** To ensure clean results. If the AI references previous attempts, we can't tell whether success came from the rules or from copying.
+
+### Example Configurations
+
+**TypeScript + SpacetimeDB (full features):**
+
+- Language: `apps/chat-app/prompts/language/typescript-spacetime.md`
+- Level: `apps/chat-app/prompts/composed/12_full.md`
+
+**TypeScript + PostgreSQL (full features):**
+
+- Language: `apps/chat-app/prompts/language/typescript-postgres.md`
+- Level: `apps/chat-app/prompts/composed/12_full.md`
 
 ---
 
@@ -101,11 +128,10 @@ pnpm install
 pnpm run summarize
 ```
 
-This outputs to `docs/llms/oneshots/`:
+This outputs to `docs/llms/`:
 
-- `GRADE_SUMMARY.md` — Executive summary
-- `grades.json` — Structured data for websites
-- Per-app summaries in `{app}/`
+- `oneshot-summary.md` — Combined summary with feature scores
+- `oneshot-grades.json` — Structured data for websites
 
 ---
 
