@@ -311,7 +311,7 @@ mod tests {
 
         let id = id.into();
         let fields = [fields.0, fields.1].map(|col| Column::new(FieldName::new(id, col), AlgebraicType::I8));
-        Header::new(id, TableName::new_from_str(name), fields.into(), ct)
+        Header::new(id, TableName::for_test(name), fields.into(), ct)
     }
 
     #[test]

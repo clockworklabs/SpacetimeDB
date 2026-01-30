@@ -1,4 +1,7 @@
+use ecow::EcoString;
+
 use crate::meta_type::MetaType;
+use crate::raw_identifier::RawIdentifier;
 use crate::{AlgebraicType, SpacetimeType, WithTypespace};
 
 /// A factor / element of a product type.
@@ -15,7 +18,7 @@ pub struct ProductTypeElement {
     /// As our type system is structural,
     /// a type like `{ foo: U8 }`, where `foo: U8` is the `ProductTypeElement`,
     /// is inequal to `{ bar: U8 }`, although their `algebraic_type`s (`U8`) match.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
     /// The type of the element.
     ///
     /// Only values of this type can be stored in the element.
@@ -24,23 +27,23 @@ pub struct ProductTypeElement {
 
 impl ProductTypeElement {
     /// Returns an element with the given `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<Box<str>>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<RawIdentifier>) -> Self {
         Self { algebraic_type, name }
     }
 
     /// Returns a named element with `name` and `algebraic_type`.
-    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<Box<str>>) -> Self {
-        Self::new(algebraic_type, Some(name.into()))
+    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<EcoString>) -> Self {
+        Self::new(algebraic_type, Some(RawIdentifier::new(name.into())))
     }
 
     /// Returns the name of the field.
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    pub fn name(&self) -> Option<&RawIdentifier> {
+        self.name.as_ref()
     }
 
     /// Returns whether the field has the given name.
     pub fn has_name(&self, name: &str) -> bool {
-        self.name() == Some(name)
+        self.name().is_some_and(|n| &**n == name)
     }
 }
 

@@ -33,7 +33,6 @@ use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, BufReservedFill, DecodeError, ToBsatn},
@@ -49,6 +48,7 @@ use spacetimedb_sats::{
     layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
     Typespace,
 };
+use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
@@ -2179,9 +2179,9 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
-    pub constraint_name: Box<str>,
+    pub constraint_name: RawIdentifier,
     pub table_name: TableName,
-    pub cols: Vec<Box<str>>,
+    pub cols: Vec<RawIdentifier>,
     pub value: AlgebraicValue,
 }
 
@@ -2394,12 +2394,12 @@ pub(crate) mod test {
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(
-                table_name,
+                RawIdentifier::new(table_name),
                 ProductType::from([("unique_col", AlgebraicType::I32), ("other_col", AlgebraicType::I32)]),
                 true,
             )
             .with_unique_constraint(0)
-            .with_index(btree(0), "accessor_name_doesnt_matter");
+            .with_index(btree(0), RawIdentifier::new("accessor_name_doesnt_matter"));
 
         let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
 

@@ -7,6 +7,7 @@ use spacetimedb_lib::bsatn::EncodeError;
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
+use spacetimedb_lib::sats::raw_identifier::RawIdentifier;
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -581,7 +582,7 @@ macro_rules! impl_reducer_procedure_view {
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ProductType::new(vec![
                         $(ProductTypeElement {
-                            name: $T.map(Into::into),
+                            name: $T.map(RawIdentifier::new),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
                 ].into())
@@ -703,7 +704,7 @@ pub fn register_table<T: Table>() {
 
         let mut table = module
             .inner
-            .build_table(T::TABLE_NAME, product_type_ref)
+            .build_table(RawIdentifier::new(T::TABLE_NAME), product_type_ref)
             .with_type(TableType::User)
             .with_access(T::TABLE_ACCESS);
 
@@ -711,7 +712,8 @@ pub fn register_table<T: Table>() {
             table = table.with_unique_constraint(col);
         }
         for &index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.accessor_name);
+            let name = RawIdentifier::new(index.accessor_name);
+            table = table.with_index(index.algo.into(), name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
             table = table.with_primary_key(primary_key);
@@ -720,7 +722,8 @@ pub fn register_table<T: Table>() {
             table = table.with_column_sequence(col);
         }
         if let Some(schedule) = T::SCHEDULE {
-            table = table.with_schedule(schedule.reducer_or_procedure_name, schedule.scheduled_at_column);
+            let name = RawIdentifier::new(schedule.reducer_or_procedure_name);
+            table = table.with_schedule(name, schedule.scheduled_at_column);
         }
 
         for col in T::get_default_col_values().iter_mut() {
@@ -749,7 +752,8 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
 pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
-        module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
+        let name = RawIdentifier::new(I::NAME);
+        module.inner.add_reducer(name, params, I::LIFECYCLE);
         module.reducers.push(I::INVOKE);
     })
 }
@@ -764,7 +768,8 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
-        module.inner.add_procedure(I::NAME, params, ret_ty);
+        let name = RawIdentifier::new(I::NAME);
+        module.inner.add_procedure(name, params, ret_ty);
         module.procedures.push(I::INVOKE);
     })
 }
@@ -779,9 +784,10 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
+        let name = RawIdentifier::new(I::NAME);
         module
             .inner
-            .add_view(I::NAME, module.views.len(), true, false, params, return_type);
+            .add_view(name, module.views.len(), true, false, params, return_type);
         module.views.push(I::INVOKE);
     })
 }
@@ -796,9 +802,10 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
+        let name = RawIdentifier::new(I::NAME);
         module
             .inner
-            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
+            .add_view(name, module.views_anon.len(), true, true, params, return_type);
         module.views_anon.push(I::INVOKE);
     })
 }

@@ -318,7 +318,7 @@ mod tests {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
             // Ensure the transaction is non-empty.
-            txdata.set_inserts_for_table(4000.into(), &TableName::new_from_str("foo"), [product![42u8]].into());
+            txdata.set_inserts_for_table(4000.into(), &TableName::for_test("foo"), [product![42u8]].into());
 
             worker.request_durability(None, &Arc::new(txdata));
         }

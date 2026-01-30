@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sql_parser::ast::BinOp;
 
 use crate::{
@@ -22,7 +23,7 @@ pub fn resolve_views_for_sub(
         return Ok(vec![expr]);
     }
 
-    let Some(return_name) = expr.return_name().map(|name| name.to_owned().into_boxed_str()) else {
+    let Some(return_name) = expr.return_name().cloned() else {
         anyhow::bail!("Could not determine return type during RLS resolution")
     };
 
@@ -287,7 +288,7 @@ fn resolve_views_for_expr(
 
     /// After we collect all the necessary view definitions and run alpha conversion,
     /// this function handles the actual replacement of the view with its definition.
-    fn expand_views(expr: RelExpr, view_def_fragments: &[(TableId, Box<str>, Vec<RelExpr>)], out: &mut Vec<RelExpr>) {
+    fn expand_views(expr: RelExpr, view_def_fragments: &[(TableId, RawIdentifier, Vec<RelExpr>)], out: &mut Vec<RelExpr>) {
         match view_def_fragments {
             [] => out.push(expr),
             [(table_id, alias, fragments), view_def_fragments @ ..] => {
@@ -332,19 +333,19 @@ fn resolve_views_for_expr(
 /// JOIN t AS t   ON t.id = v.id WHERE v.x = 0
 /// ```
 fn alpha_rename_fragments(
-    return_name: &str,
-    outer_alias: &str,
+    return_name: &RawIdentifier,
+    outer_alias: &RawIdentifier,
     inputs: Vec<RelExpr>,
     output: &mut Vec<RelExpr>,
     suffix: &mut usize,
 ) {
     for mut fragment in inputs {
         *suffix += 1;
-        alpha_rename(&mut fragment, &mut |name: &str| {
+        alpha_rename(&mut fragment, &mut |name: &RawIdentifier| {
             if name == return_name {
-                return outer_alias.to_owned().into_boxed_str();
+                return outer_alias.clone();
             }
-            (name.to_owned() + "_" + &suffix.to_string()).into_boxed_str()
+            RawIdentifier::new(name.to_string() + "_" + &suffix.to_string())
         });
         output.push(fragment);
     }
@@ -352,13 +353,13 @@ fn alpha_rename_fragments(
 
 /// When expanding a view, we must do an alpha conversion on the view definition.
 /// This involves renaming the table aliases before replacing the view reference.
-fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&str) -> Box<str>) {
+fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
     /// Helper for renaming a relvar
-    fn rename(relvar: &mut Relvar, f: &mut impl FnMut(&str) -> Box<str>) {
+    fn rename(relvar: &mut Relvar, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
         relvar.alias = f(&relvar.alias);
     }
     /// Helper for renaming a field reference
-    fn rename_field(field: &mut FieldProject, f: &mut impl FnMut(&str) -> Box<str>) {
+    fn rename_field(field: &mut FieldProject, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
         field.table = f(&field.table);
     }
     expr.visit_mut(&mut |expr| match expr {
@@ -474,6 +475,7 @@ mod tests {
 
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, AlgebraicValue, Identity, ProductType};
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::{
         def::ModuleDef,
         schema::{Schema, TableOrViewSchema, TableSchema},
@@ -564,7 +566,7 @@ mod tests {
             resolved,
             vec![ProjectName::None(RelExpr::RelVar(Relvar {
                 schema: users_schema,
-                alias: "users".into(),
+                alias: RawIdentifier::new("users"),
                 delta: None,
             }))]
         );
@@ -587,20 +589,20 @@ mod tests {
                 RelExpr::Select(
                     Box::new(RelExpr::RelVar(Relvar {
                         schema: users_schema,
-                        alias: "users".into(),
+                        alias: RawIdentifier::new("users"),
                         delta: None,
                     })),
                     Expr::BinOp(
                         BinOp::Eq,
                         Box::new(Expr::Field(FieldProject {
-                            table: "users".into(),
+                            table: RawIdentifier::new("users"),
                             field: 0,
                             ty: AlgebraicType::identity(),
                         })),
                         Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity()))
                     )
                 ),
-                "users".into()
+                RawIdentifier::new("users")
             )]
         );
 
@@ -628,19 +630,19 @@ mod tests {
                                 Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
                                     lhs: Box::new(RelExpr::RelVar(Relvar {
                                         schema: player_schema.clone(),
-                                        alias: "player".into(),
+                                        alias: RawIdentifier::new("player"),
                                         delta: None,
                                     })),
                                     rhs: Relvar {
                                         schema: users_schema.clone(),
-                                        alias: "u_2".into(),
+                                        alias: RawIdentifier::new("u_2"),
                                         delta: None,
                                     },
                                 })),
                                 Expr::BinOp(
                                     BinOp::Eq,
                                     Box::new(Expr::Field(FieldProject {
-                                        table: "u_2".into(),
+                                        table: RawIdentifier::new("u_2"),
                                         field: 0,
                                         ty: AlgebraicType::identity(),
                                     })),
@@ -650,12 +652,12 @@ mod tests {
                             Expr::BinOp(
                                 BinOp::Eq,
                                 Box::new(Expr::Field(FieldProject {
-                                    table: "player".into(),
+                                    table: RawIdentifier::new("player"),
                                     field: 0,
                                     ty: AlgebraicType::U64,
                                 })),
                                 Box::new(Expr::Field(FieldProject {
-                                    table: "u_2".into(),
+                                    table: RawIdentifier::new("u_2"),
                                     field: 1,
                                     ty: AlgebraicType::U64,
                                 })),
@@ -664,14 +666,14 @@ mod tests {
                         Expr::BinOp(
                             BinOp::Eq,
                             Box::new(Expr::Field(FieldProject {
-                                table: "player".into(),
+                                table: RawIdentifier::new("player"),
                                 field: 1,
                                 ty: AlgebraicType::U64,
                             })),
                             Box::new(Expr::Value(AlgebraicValue::U64(5), AlgebraicType::U64)),
                         ),
                     ),
-                    "player".into(),
+                    RawIdentifier::new("player"),
                 ),
                 ProjectName::Some(
                     RelExpr::Select(
@@ -679,19 +681,19 @@ mod tests {
                             Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
                                 lhs: Box::new(RelExpr::RelVar(Relvar {
                                     schema: player_schema.clone(),
-                                    alias: "player".into(),
+                                    alias: RawIdentifier::new("player"),
                                     delta: None,
                                 })),
                                 rhs: Relvar {
                                     schema: admins_schema.clone(),
-                                    alias: "admins_4".into(),
+                                    alias: RawIdentifier::new("admins_4"),
                                     delta: None,
                                 },
                             })),
                             Expr::BinOp(
                                 BinOp::Eq,
                                 Box::new(Expr::Field(FieldProject {
-                                    table: "admins_4".into(),
+                                    table: RawIdentifier::new("admins_4"),
                                     field: 0,
                                     ty: AlgebraicType::identity(),
                                 })),
@@ -701,14 +703,14 @@ mod tests {
                         Expr::BinOp(
                             BinOp::Eq,
                             Box::new(Expr::Field(FieldProject {
-                                table: "player".into(),
+                                table: RawIdentifier::new("player"),
                                 field: 1,
                                 ty: AlgebraicType::U64,
                             })),
                             Box::new(Expr::Value(AlgebraicValue::U64(5), AlgebraicType::U64)),
                         ),
                     ),
-                    "player".into(),
+                    RawIdentifier::new("player"),
                 ),
             ]
         );

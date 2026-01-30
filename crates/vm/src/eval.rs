@@ -110,7 +110,7 @@ pub mod test_helpers {
 
     pub fn header_for_mem_table(table_id: TableId, fields: ProductType) -> Header {
         let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = TableName::new_from_str(&format!("mem#{hash:x}"));
+        let table_name = TableName::for_test(&format!("mem#{hash:x}"));
 
         let cols = Vec::from(fields.elements)
             .into_iter()
@@ -321,7 +321,7 @@ pub mod tests {
         // The expected result.
         let head = Header::new(
             table_id,
-            TableName::new_from_str(""),
+            TableName::for_test(""),
             [field.clone(), field].into(),
             Vec::new(),
         );

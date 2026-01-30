@@ -24,6 +24,7 @@ use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
 use spacetimedb_schema::def::{
     BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
@@ -221,10 +222,10 @@ pub trait StFields: Copy + Sized {
     /// Returns the column name of the system table field a static string slice.
     fn name(self) -> &'static str;
 
-    /// Returns the column name of the system table field as a boxed slice.
+    /// Returns the column name of the system table field as a [`RawIdentifier`].
     #[inline]
-    fn col_name(self) -> Box<str> {
-        self.name().into()
+    fn col_name(self) -> RawIdentifier {
+        RawIdentifier::new(self.name())
     }
 
     /// Return all fields of this type, in order.
@@ -422,9 +423,11 @@ fn validate_system_table<T: StFields + 'static>(def: &ModuleDef, table_name: &st
 fn system_module_def() -> ModuleDef {
     let mut builder = RawModuleDefV9Builder::new();
 
+    let name = RawIdentifier::new;
+
     let st_table_type = builder.add_type::<StTableRow>();
     builder
-        .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_TABLE_NAME), *st_table_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StTableFields::TableId)
         .with_index_no_accessor_name(btree(StTableFields::TableId))
@@ -433,7 +436,7 @@ fn system_module_def() -> ModuleDef {
 
     let st_view_type = builder.add_type::<StViewRow>();
     builder
-        .build_table(ST_VIEW_NAME, *st_view_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_VIEW_NAME), *st_view_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StViewFields::ViewId)
         .with_index_no_accessor_name(btree(StViewFields::ViewId))
@@ -443,7 +446,7 @@ fn system_module_def() -> ModuleDef {
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     let st_col_row_unique_cols = [StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()];
     builder
-        .build_table(ST_COLUMN_NAME, *st_raw_column_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_COLUMN_NAME), *st_raw_column_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(st_col_row_unique_cols)
         .with_index_no_accessor_name(btree(st_col_row_unique_cols));
@@ -451,7 +454,7 @@ fn system_module_def() -> ModuleDef {
     let st_view_col_type = builder.add_type::<StViewColumnRow>();
     let st_view_col_unique_cols = [StViewColumnFields::ViewId.col_id(), StViewColumnFields::ColPos.col_id()];
     builder
-        .build_table(ST_VIEW_COLUMN_NAME, *st_view_col_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_VIEW_COLUMN_NAME), *st_view_col_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(st_view_col_unique_cols)
         .with_index_no_accessor_name(btree(st_view_col_unique_cols));
@@ -459,14 +462,14 @@ fn system_module_def() -> ModuleDef {
     let st_view_param_type = builder.add_type::<StViewParamRow>();
     let st_view_param_unique_cols = [StViewParamFields::ViewId.col_id(), StViewParamFields::ParamPos.col_id()];
     builder
-        .build_table(ST_VIEW_PARAM_NAME, *st_view_param_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_VIEW_PARAM_NAME), *st_view_param_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(st_view_param_unique_cols)
         .with_index_no_accessor_name(btree(st_view_param_unique_cols));
 
     let st_view_sub_type = builder.add_type::<StViewSubRow>();
     builder
-        .build_table(ST_VIEW_SUB_NAME, *st_view_sub_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_VIEW_SUB_NAME), *st_view_sub_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_index_no_accessor_name(btree(StViewSubFields::Identity))
         .with_index_no_accessor_name(btree(StViewSubFields::HasSubscribers))
@@ -478,7 +481,7 @@ fn system_module_def() -> ModuleDef {
 
     let st_view_arg_type = builder.add_type::<StViewArgRow>();
     builder
-        .build_table(ST_VIEW_ARG_NAME, *st_view_arg_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_VIEW_ARG_NAME), *st_view_arg_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StViewArgFields::Id)
         .with_index_no_accessor_name(btree(StViewArgFields::Id))
@@ -487,7 +490,7 @@ fn system_module_def() -> ModuleDef {
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
-        .build_table(ST_INDEX_NAME, *st_index_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_INDEX_NAME), *st_index_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StIndexFields::IndexId)
         .with_index_no_accessor_name(btree(StIndexFields::IndexId));
@@ -495,7 +498,7 @@ fn system_module_def() -> ModuleDef {
 
     let st_sequence_type = builder.add_type::<StSequenceRow>();
     builder
-        .build_table(ST_SEQUENCE_NAME, *st_sequence_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_SEQUENCE_NAME), *st_sequence_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StSequenceFields::SequenceId)
         .with_index_no_accessor_name(btree(StSequenceFields::SequenceId));
@@ -503,7 +506,7 @@ fn system_module_def() -> ModuleDef {
 
     let st_constraint_type = builder.add_type::<StConstraintRow>();
     builder
-        .build_table(ST_CONSTRAINT_NAME, *st_constraint_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_CONSTRAINT_NAME), *st_constraint_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StConstraintFields::ConstraintId)
         .with_index_no_accessor_name(btree(StConstraintFields::ConstraintId));
@@ -512,7 +515,7 @@ fn system_module_def() -> ModuleDef {
     let st_row_level_security_type = builder.add_type::<StRowLevelSecurityRow>();
     builder
         .build_table(
-            ST_ROW_LEVEL_SECURITY_NAME,
+            name(ST_ROW_LEVEL_SECURITY_NAME),
             *st_row_level_security_type.as_ref().expect("should be ref"),
         )
         .with_type(TableType::System)
@@ -523,14 +526,14 @@ fn system_module_def() -> ModuleDef {
 
     let st_module_type = builder.add_type::<StModuleRow>();
     builder
-        .build_table(ST_MODULE_NAME, *st_module_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_MODULE_NAME), *st_module_type.as_ref().expect("should be ref"))
         .with_type(TableType::System);
     // TODO: add empty unique constraint here, once we've implemented those.
 
     let st_connection_credentials_type = builder.add_type::<StConnectionCredentialsRow>();
     builder
         .build_table(
-            ST_CONNECTION_CREDENTIALS_NAME,
+            name(ST_CONNECTION_CREDENTIALS_NAME),
             *st_connection_credentials_type.as_ref().expect("should be ref"),
         )
         .with_type(TableType::System)
@@ -542,14 +545,14 @@ fn system_module_def() -> ModuleDef {
     let st_client_type = builder.add_type::<StClientRow>();
     let st_client_unique_cols = [StClientFields::Identity, StClientFields::ConnectionId];
     builder
-        .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_CLIENT_NAME), *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(st_client_unique_cols) // FIXME: this is a noop?
         .with_index_no_accessor_name(btree(st_client_unique_cols));
 
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
-        .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_SCHEDULED_NAME), *st_schedule_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(StScheduledFields::TableId) // FIXME: this is a noop?
         .with_index_no_accessor_name(btree(StScheduledFields::TableId))
@@ -559,7 +562,7 @@ fn system_module_def() -> ModuleDef {
 
     let st_var_type = builder.add_type::<StVarRow>();
     builder
-        .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
+        .build_table(name(ST_VAR_NAME), *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(StVarFields::Name) // FIXME: this is a noop?
         .with_index_no_accessor_name(btree(StVarFields::Name))
@@ -923,7 +926,7 @@ impl From<AlgebraicType> for AlgebraicTypeViaBytes {
 pub struct StColumnRow {
     pub table_id: TableId,
     pub col_pos: ColId,
-    pub col_name: Box<str>,
+    pub col_name: RawIdentifier,
     pub col_type: AlgebraicTypeViaBytes,
 }
 
@@ -973,7 +976,7 @@ pub struct StViewColumnRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub col_pos: ColId,
-    pub col_name: Box<str>,
+    pub col_name: RawIdentifier,
     pub col_type: AlgebraicTypeViaBytes,
 }
 
@@ -988,7 +991,7 @@ pub struct StViewParamRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub param_pos: ColId,
-    pub param_name: Box<str>,
+    pub param_name: RawIdentifier,
     pub param_type: AlgebraicTypeViaBytes,
 }
 
@@ -1038,7 +1041,7 @@ pub struct StViewArgRow {
 pub struct StIndexRow {
     pub index_id: IndexId,
     pub table_id: TableId,
-    pub index_name: Box<str>,
+    pub index_name: RawIdentifier,
     pub index_algorithm: StIndexAlgorithm,
 }
 
@@ -1138,7 +1141,7 @@ impl From<IndexSchema> for StIndexRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StSequenceRow {
     pub sequence_id: SequenceId,
-    pub sequence_name: Box<str>,
+    pub sequence_name: RawIdentifier,
     pub table_id: TableId,
     pub col_pos: ColId,
     pub increment: i128,
@@ -1189,7 +1192,7 @@ impl From<StSequenceRow> for SequenceSchema {
 #[sats(crate = spacetimedb_lib)]
 pub struct StConstraintRow {
     pub(crate) constraint_id: ConstraintId,
-    pub(crate) constraint_name: Box<str>,
+    pub(crate) constraint_name: RawIdentifier,
     pub table_id: TableId,
     pub(crate) constraint_data: StConstraintData,
 }
@@ -1604,8 +1607,8 @@ pub struct StScheduledRow {
     /// Note that, despite the column name, this may refer to either a reducer or a procedure.
     /// We cannot change the schema of existing system tables,
     /// so we are unable to rename this column.
-    pub(crate) reducer_name: Box<str>,
-    pub(crate) schedule_name: Box<str>,
+    pub(crate) reducer_name: RawIdentifier,
+    pub(crate) schedule_name: RawIdentifier,
     pub(crate) at_column: ColId,
 }
 

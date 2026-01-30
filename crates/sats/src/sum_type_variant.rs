@@ -1,6 +1,7 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
 use crate::SpacetimeType;
+use crate::raw_identifier::RawIdentifier;
 
 /// A variant of a sum type.
 ///
@@ -10,7 +11,7 @@ use crate::SpacetimeType;
 #[sats(crate = crate)]
 pub struct SumTypeVariant {
     /// The name of the variant, if any.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
     /// The type of the variant.
     ///
     /// Unlike a language like Rust,
@@ -23,7 +24,7 @@ pub struct SumTypeVariant {
 
 impl SumTypeVariant {
     /// Returns a sum type variant with an optional `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<Box<str>>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<RawIdentifier>) -> Self {
         Self { algebraic_type, name }
     }
 
@@ -31,7 +32,7 @@ impl SumTypeVariant {
     pub fn new_named(algebraic_type: AlgebraicType, name: impl AsRef<str>) -> Self {
         Self {
             algebraic_type,
-            name: Some(name.as_ref().into()),
+            name: Some(RawIdentifier::new(name.as_ref())),
         }
     }
 
@@ -41,13 +42,13 @@ impl SumTypeVariant {
     }
 
     /// Returns the name of the variant.
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    pub fn name(&self) -> Option<&RawIdentifier> {
+        self.name.as_ref()
     }
 
     /// Returns whether the variant has the given name.
     pub fn has_name(&self, name: &str) -> bool {
-        self.name() == Some(name)
+        self.name().is_some_and(|n| &**n == name)
     }
 
     /// Returns whether this is a unit variant.

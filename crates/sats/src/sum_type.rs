@@ -2,6 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
+use crate::raw_identifier::RawIdentifier;
 use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant, SumValue, Typespace};
 
 /// The tag used for the `Interval` variant of the special `ScheduleAt` sum type.
@@ -245,7 +246,7 @@ impl<const N: usize> From<[SumTypeVariant; N]> for SumType {
 }
 impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for SumType {
     fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
-        fields.map(|(s, t)| SumTypeVariant::new(t, s.map(<_>::into))).into()
+        fields.map(|(s, t)| SumTypeVariant::new(t, s.map(RawIdentifier::new))).into()
     }
 }
 impl<const N: usize> From<[(&str, AlgebraicType); N]> for SumType {
