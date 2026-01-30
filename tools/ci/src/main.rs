@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
@@ -36,6 +38,59 @@ fn ensure_repo_root() -> Result<()> {
     if !Path::new("Cargo.toml").exists() {
         bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
     }
+    Ok(())
+}
+
+fn check_global_json_policy() -> Result<()> {
+    ensure_repo_root()?;
+
+    let root_json = Path::new("global.json");
+    let root_real = fs::canonicalize(root_json)?;
+
+    fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
+        let mut out = Vec::new();
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let ft = entry.file_type()?;
+            if ft.is_dir() {
+                out.extend(find_all_global_json(&path)?);
+            } else if path.file_name() == Some(OsStr::new("global.json")) {
+                out.push(path);
+            }
+        }
+        Ok(out)
+    }
+
+    let globals = find_all_global_json(Path::new("."))?;
+
+    let mut ok = true;
+    for p in globals {
+        let resolved = fs::canonicalize(&p)?;
+
+        // The root global.json itself is allowed.
+        if resolved == root_real {
+            println!("OK: {}", p.display());
+            continue;
+        }
+
+        let meta = fs::symlink_metadata(&p)?;
+        if !meta.file_type().is_symlink() {
+            eprintln!("Error: {} is not a symlink to root global.json", p.display());
+            ok = false;
+            continue;
+        }
+
+        eprintln!("Error: {} does not resolve to root global.json", p.display());
+        eprintln!("  resolved: {}", resolved.display());
+        eprintln!("  expected: {}", root_real.display());
+        ok = false;
+    }
+
+    if !ok {
+        bail!("global.json policy check failed");
+    }
+
     Ok(())
 }
 
@@ -200,6 +255,9 @@ enum CiCmd {
         )]
         check: bool,
     },
+
+    /// Verify that any non-root global.json files are symlinks to the root global.json.
+    GlobalJsonPolicy,
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -494,6 +552,10 @@ fn main() -> Result<()> {
                 fs::write(path, readme_content)?;
                 log::info!("Wrote CLI docs to {}", path.display());
             }
+        }
+
+        Some(CiCmd::GlobalJsonPolicy) => {
+            check_global_json_policy()?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

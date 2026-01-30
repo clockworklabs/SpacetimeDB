@@ -7350,6 +7350,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "spacetimedb-data-structures",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 1.11.3",
 ]
@@ -7869,6 +7870,7 @@ dependencies = [
  "ethnum",
  "pretty_assertions",
  "spacetimedb 1.11.3",
+ "spacetimedb-data-structures",
  "spacetimedb-lib 1.11.3",
  "spacetimedb-primitives 1.11.3",
  "spacetimedb-sats 1.11.3",
@@ -8040,6 +8042,7 @@ dependencies = [
  "derive_more 0.99.20",
  "either",
  "pretty_assertions",
+ "spacetimedb-data-structures",
  "spacetimedb-expr",
  "spacetimedb-lib 1.11.3",
  "spacetimedb-primitives 1.11.3",
@@ -8253,6 +8256,7 @@ dependencies = [
  "rand 0.9.2",
  "scopeguard",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
@@ -8327,6 +8331,7 @@ name = "spacetimedb-subscription"
 version = "1.11.3"
 dependencies = [
  "anyhow",
+ "spacetimedb-data-structures",
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib 1.11.3",
@@ -11046,6 +11051,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb 1.11.3",
+ "spacetimedb-data-structures",
  "spacetimedb-guard",
  "tempfile",
  "thiserror 2.0.17",
