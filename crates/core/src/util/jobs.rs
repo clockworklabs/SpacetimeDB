@@ -112,7 +112,7 @@ impl JobCores {
 
 impl PinnedCoresExecutorManager {
     /// Get a core for running database operations on,
-    /// and store state in `self` necessary to move that database to a new runtime
+    /// and store state in `self` necessary to move that database to a new core
     /// for load-balancing purposes.
     ///
     /// The returned [`SingleCoreExecutorId`] is an index into internal data structures in `self` (namely, `self.cores`)
@@ -205,6 +205,11 @@ impl PinnedCoresExecutorManager {
     }
 }
 
+/// Returned from [`JobCores::take`]; represents a job thread allocated to a
+/// specific core.
+///
+/// The `guard` should be dropped when the job thread is no longer running, and
+/// the `pinner` should be ran on the job thread.
 #[derive(Default)]
 pub struct AllocatedJobCore {
     pub guard: LoadBalanceOnDropGuard,
@@ -212,36 +217,55 @@ pub struct AllocatedJobCore {
 }
 
 impl AllocatedJobCore {
+    /// Spawn a [`SingleCoreExecutor`] allocated to this core.
     pub fn spawn_async_executor(self) -> SingleCoreExecutor {
         SingleCoreExecutor::spawn(self)
     }
 }
 
+/// Used for pinning a job thread to an appropriate core, as determined by
+/// [`JobCores`].
+///
+/// Obtained from [`AllocatedJobCore.pinner`][AllocatedJobCore::pinner].
+/// You can either call [`run()`][Self::run] and poll it from the job thread,
+/// or call [`pin_now()`][Self::pin_now] once and then
+/// [`pin_if_changed()`][Self::pin_if_changed] in a loop.
 #[derive(Default, Clone)]
 pub struct CorePinner {
     move_core_rx: Option<watch::Receiver<CoreId>>,
 }
 
 impl CorePinner {
+    #[inline]
+    fn do_pin(move_core_rx: &mut watch::Receiver<CoreId>) {
+        let core_id = *move_core_rx.borrow_and_update();
+        core_affinity::set_for_current(core_id);
+    }
+
+    /// Pin the current thread to the appropriate core.
     pub fn pin_now(&mut self) {
         if let Some(move_core_rx) = &mut self.move_core_rx {
-            let core_id = *move_core_rx.borrow_and_update();
-            core_affinity::set_for_current(core_id);
+            Self::do_pin(move_core_rx);
         }
     }
+
+    /// Repin the current thread to the new appropriate core, if it's changed
+    /// since the last call to `pin_now()` or `pin_if_changed()`.
     pub fn pin_if_changed(&mut self) {
         if let Some(move_core_rx) = &mut self.move_core_rx {
             if let Ok(true) = move_core_rx.has_changed() {
-                let core_id = *move_core_rx.borrow_and_update();
-                core_affinity::set_for_current(core_id);
+                Self::do_pin(move_core_rx);
             }
         }
     }
+
+    /// In a loop, wait until [`JobCores`] decides that the current thread
+    /// needs to move and then repin to the new core.
     pub async fn run(self) {
+        let _not_send = std::marker::PhantomData::<*const ()>;
         if let Some(mut move_core_rx) = self.move_core_rx {
             while move_core_rx.changed().await.is_ok() {
-                let core_id = *move_core_rx.borrow_and_update();
-                core_affinity::set_for_current(core_id);
+                Self::do_pin(&mut move_core_rx);
             }
         }
     }

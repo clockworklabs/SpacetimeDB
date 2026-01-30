@@ -319,6 +319,10 @@ impl JsInstance {
         }
     }
 
+    /// Run the given function on the worker thread.
+    ///
+    /// This method, unlike the others, does not expect a response on the
+    /// `reply_rx` channel, since the return value `R` could be of any type.
     pub async fn run_on_thread<F, R>(&mut self, f: F) -> R
     where
         F: AsyncFnOnce() -> R + Send + 'static,
@@ -468,7 +472,7 @@ static_assert_size!(JsWorkerReply, 48);
 // We care about optimizing for `CallReducer` as it happens frequently,
 // so we don't want to box anything in it.
 enum JsWorkerRequest {
-    /// See [`JsInstance::run_on_thread`]
+    /// See [`JsInstance::run_on_thread`].
     ///
     /// This variant does not expect a [`JsWorkerReply`].
     RunFunction(Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>),
@@ -541,13 +545,15 @@ fn new_isolate() -> OwnedIsolate {
 /// and returns on success the corresponding [`JsInstance`]
 /// that talks to the worker.
 ///
-/// When [`ModuleCommon`] is passed,
-/// it's assumed that `spawn_instance_worker` has already happened once for this `program`
-/// and that it has been validated.
-/// In that case, `Ok(_)` should be returned.
+/// When [`ModuleCommon`] is passed, it's assumed that `spawn_instance_worker`
+/// has already happened once for this `program` and that it has been
+/// validated. In that case, `Ok(_)` should be returned.
 ///
 /// Otherwise, when [`ModuleCreationContext`] is passed,
 /// this is the first time both the module and instance are created.
+///
+/// `load_balance_guard` and `core_pinner` should both be from the same
+/// [`AllocatedJobCore`], and are used to manage the core pinning of this thread.
 async fn spawn_instance_worker(
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
