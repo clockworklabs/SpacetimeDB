@@ -6,7 +6,6 @@ slug: /functions/reducers/lifecycle
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Lifecycle Reducers
 
 Special reducers handle system events during the database lifecycle.
 
@@ -15,47 +14,6 @@ Special reducers handle system events during the database lifecycle.
 Runs once when the module is first published or when the database is cleared.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
-
-```rust
-#[reducer(init)]
-pub fn init(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Database initializing...");
-    
-    // Set up default data
-    if ctx.db.settings().count() == 0 {
-        ctx.db.settings().insert(Settings {
-            key: "welcome_message".to_string(),
-            value: "Hello, SpacetimeDB!".to_string(),
-        })?;
-    }
-    
-    Ok(())
-}
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-[SpacetimeDB.Reducer(ReducerKind.Init)]
-public static void Init(ReducerContext ctx)
-{
-    Log.Info("Database initializing...");
-    
-    // Set up default data
-    if (ctx.Db.settings.Count == 0)
-    {
-        ctx.Db.settings.Insert(new Settings
-        {
-            Key = "welcome_message",
-            Value = "Hello, SpacetimeDB!"
-        });
-    }
-}
-```
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -73,6 +31,47 @@ spacetimedb.init((ctx) => {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Reducer(ReducerKind.Init)]
+public static void Init(ReducerContext ctx)
+{
+    Log.Info("Database initializing...");
+    
+    // Set up default data
+    if (ctx.Db.Settings.Count == 0)
+    {
+        ctx.Db.Settings.Insert(new Settings
+        {
+            Key = "welcome_message",
+            Value = "Hello, SpacetimeDB!"
+        });
+    }
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Database initializing...");
+    
+    // Set up default data
+    if ctx.db.settings().count() == 0 {
+        ctx.db.settings().try_insert(Settings {
+            key: "welcome_message".to_string(),
+            value: "Hello, SpacetimeDB!".to_string(),
+        })?;
+    }
+    
+    Ok(())
+}
+```
+
+</TabItem>
 </Tabs>
 
 The `init` reducer:
@@ -86,50 +85,6 @@ The `init` reducer:
 Runs when a client establishes a connection.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
-
-```rust
-#[reducer(client_connected)]
-pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client connected: {}", ctx.sender);
-    
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
-    
-    // Initialize client session
-    ctx.db.sessions().insert(Session {
-        connection_id: conn_id,
-        identity: ctx.sender,
-        connected_at: ctx.timestamp,
-    })?;
-    
-    Ok(())
-}
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-public static void OnConnect(ReducerContext ctx)
-{
-    Log.Info($"Client connected: {ctx.Sender}");
-    
-    // ctx.ConnectionId is guaranteed to be non-null
-    var connId = ctx.ConnectionId!.Value;
-    
-    // Initialize client session
-    ctx.Db.sessions.Insert(new Session
-    {
-        ConnectionId = connId,
-        Identity = ctx.Sender,
-        ConnectedAt = ctx.Timestamp
-    });
-}
-```
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -149,6 +104,50 @@ spacetimedb.clientConnected((ctx) => {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+public static void OnConnect(ReducerContext ctx)
+{
+    Log.Info($"Client connected: {ctx.Sender}");
+    
+    // ctx.ConnectionId is guaranteed to be non-null
+    var connId = ctx.ConnectionId!.Value;
+    
+    // Initialize client session
+    ctx.Db.Session.Insert(new Session
+    {
+        ConnectionId = connId,
+        Identity = ctx.Sender,
+        ConnectedAt = ctx.Timestamp
+    });
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[reducer(client_connected)]
+pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Client connected: {}", ctx.sender);
+    
+    // ctx.connection_id is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id.unwrap();
+    
+    // Initialize client session
+    ctx.db.sessions().try_insert(Session {
+        connection_id: conn_id,
+        identity: ctx.sender,
+        connected_at: ctx.timestamp,
+    })?;
+    
+    Ok(())
+}
+```
+
+</TabItem>
 </Tabs>
 
 The `client_connected` reducer:
@@ -162,6 +161,38 @@ The `client_connected` reducer:
 Runs when a client connection terminates.
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+spacetimedb.clientDisconnected((ctx) => {
+  console.log(`Client disconnected: ${ctx.sender}`);
+  
+  // ctx.connectionId is guaranteed to be defined
+  const connId = ctx.connectionId!;
+  
+  // Clean up client session
+  ctx.db.sessions.connection_id.delete(connId);
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
+public static void OnDisconnect(ReducerContext ctx)
+{
+    Log.Info($"Client disconnected: {ctx.Sender}");
+    
+    // ctx.ConnectionId is guaranteed to be non-null
+    var connId = ctx.ConnectionId!.Value;
+    
+    // Clean up client session
+    ctx.Db.Session.ConnectionId.Delete(connId);
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -180,38 +211,6 @@ pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-[SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-public static void OnDisconnect(ReducerContext ctx)
-{
-    Log.Info($"Client disconnected: {ctx.Sender}");
-    
-    // ctx.ConnectionId is guaranteed to be non-null
-    var connId = ctx.ConnectionId!.Value;
-    
-    // Clean up client session
-    ctx.Db.sessions.ConnectionId.Delete(connId);
-}
-```
-
-</TabItem>
-<TabItem value="typescript" label="TypeScript">
-
-```typescript
-spacetimedb.clientDisconnected((ctx) => {
-  console.log(`Client disconnected: ${ctx.sender}`);
-  
-  // ctx.connectionId is guaranteed to be defined
-  const connId = ctx.connectionId!;
-  
-  // Clean up client session
-  ctx.db.sessions.connection_id.delete(connId);
-});
-```
-
-</TabItem>
 </Tabs>
 
 The `client_disconnected` reducer:
@@ -222,9 +221,9 @@ The `client_disconnected` reducer:
 
 ## Scheduled Reducers
 
-Reducers can be triggered at specific times using scheduled tables. See [Scheduled Tables](/tables/scheduled-tables) for details on:
+Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](/tables/schedule-tables) for details on:
 
-- Defining scheduled tables
+- Defining schedule tables
 - Triggering reducers at specific timestamps
 - Running reducers periodically
 - Canceling scheduled executions

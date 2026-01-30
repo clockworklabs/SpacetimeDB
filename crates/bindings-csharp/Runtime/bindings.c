@@ -122,6 +122,11 @@ IMPORT(int16_t, get_jwt, (const uint8_t* connection_id_ptr, BytesSource* bytes_p
 IMPORT(uint16_t, procedure_start_mut_tx, (int64_t* micros), (micros));
 IMPORT(uint16_t, procedure_commit_mut_tx, (void), ());
 IMPORT(uint16_t, procedure_abort_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_http_request,
+       (const uint8_t* request_ptr, uint32_t request_len,
+        const uint8_t* body_ptr, uint32_t body_len,
+        BytesSource* out),
+       (request_ptr, request_len, body_ptr, body_len, out));
 #undef SPACETIME_MODULE_VERSION
 
 #ifndef EXPERIMENTAL_WASM_AOT

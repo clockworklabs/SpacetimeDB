@@ -1,5 +1,6 @@
 import * as _syscalls1_0 from 'spacetime:sys@1.0';
 import * as _syscalls1_2 from 'spacetime:sys@1.2';
+import * as _syscalls1_3 from 'spacetime:sys@1.3';
 
 import type { ModuleHooks, u16, u32 } from 'spacetime:sys@1.0';
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
@@ -26,6 +27,7 @@ import {
   type JsonObject,
   type JwtClaims,
   type ReducerCtx,
+  type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
 import {
   MODULE_DEF,
@@ -46,10 +48,13 @@ import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
+import { makeRandom, type Random } from './rng';
 
 const { freeze } = Object;
 
-export const sys = freeze(wrapSyscalls(_syscalls1_0, _syscalls1_2));
+export const sys = freeze(
+  wrapSyscalls(_syscalls1_0, _syscalls1_2, _syscalls1_3)
+);
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -182,45 +187,66 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
-export const makeReducerCtx = (
-  sender: Identity,
-  timestamp: Timestamp,
-  connectionId: ConnectionId | null
-): ReducerCtx<UntypedSchemaDef> => {
-  return {
-    sender,
-    get identity() {
-      return new Identity(sys.identity().__identity__);
-    },
-    timestamp,
-    connectionId,
-    db: getDbView(),
-    senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
-    counter_uuid: { value: Number(0) },
+// Using a class expression rather than declaration keeps the class out of the
+// type namespace, so that `ReducerCtx` still refers to the interface.
+export const ReducerCtxImpl = class ReducerCtx<
+  SchemaDef extends UntypedSchemaDef,
+> implements IReducerCtx<SchemaDef>
+{
+  #identity: Identity | undefined;
+  #senderAuth: AuthCtx | undefined;
+  #uuidCounter: { value: number } | undefined;
+  #random: Random | undefined;
+  sender: Identity;
+  timestamp: Timestamp;
+  connectionId: ConnectionId | null;
+  db: DbView<SchemaDef>;
 
-    /**
-     * Create a new random {@link Uuid} `v4` using the {@link crypto} RNG.
-     *
-     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
-     */
-    newUuidV4(): Uuid {
-      // TODO: Use a spacetime RNG when available
-      const bytes = crypto.getRandomValues(new Uint8Array(16));
-      return Uuid.fromRandomBytesV4(bytes);
-    },
+  constructor(
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    Object.seal(this);
+    this.sender = sender;
+    this.timestamp = timestamp;
+    this.connectionId = connectionId;
+    this.db = getDbView();
+  }
 
-    /**
-     * Create a new sortable {@link Uuid} `v7` using the {@link crypto} RNG, counter,
-     * and the timestamp.
-     *
-     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
-     */
-    newUuidV7(): Uuid {
-      // TODO: Use a spacetime RNG when available
-      const bytes = crypto.getRandomValues(new Uint8Array(4));
-      return Uuid.fromCounterV7(this.counter_uuid, this.timestamp, bytes);
-    },
-  };
+  get identity() {
+    return (this.#identity ??= new Identity(sys.identity().__identity__));
+  }
+
+  get senderAuth() {
+    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
+      this.connectionId,
+      this.sender
+    ));
+  }
+
+  get random() {
+    return (this.#random ??= makeRandom(this.timestamp));
+  }
+
+  /**
+   * Create a new random {@link Uuid} `v4` using this `ReducerCtx`'s RNG.
+   */
+  newUuidV4(): Uuid {
+    // TODO: Use a spacetime RNG when available
+    const bytes = this.random.fill(new Uint8Array(16));
+    return Uuid.fromRandomBytesV4(bytes);
+  }
+
+  /**
+   * Create a new sortable {@link Uuid} `v7` using this `ReducerCtx`'s RNG, counter,
+   * and timestamp.
+   */
+  newUuidV7(): Uuid {
+    const bytes = this.random.fill(new Uint8Array(4));
+    const counter = (this.#uuidCounter ??= { value: 0 });
+    return Uuid.fromCounterV7(counter, this.timestamp, bytes);
+  }
 };
 
 /**
@@ -247,21 +273,17 @@ export const hooks: ModuleHooks = {
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
-    const argsType = AlgebraicType.Product(
-      MODULE_DEF.reducers[reducerId].params
-    );
-    const args = AlgebraicType.deserializeValue(
+    const argsType = MODULE_DEF.reducers[reducerId].params;
+    const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       argsType,
       MODULE_DEF.typespace
     );
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze(
-      makeReducerCtx(
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      )
+    const ctx: ReducerCtx<any> = new ReducerCtxImpl(
+      senderIdentity,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId))
     );
     try {
       return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };
@@ -526,14 +548,29 @@ function makeTableView(
       prefix: any[],
       prefix_elems: number
     ) => {
-      if (prefix_elems > numColumns - 1)
-        throw new TypeError('too many elements in prefix');
       for (let i = 0; i < prefix_elems; i++) {
         const elemType = indexType.value.elements[i].algebraicType;
         AlgebraicType.serializeValue(writer, elemType, prefix[i], typespace);
       }
       return writer;
     };
+
+    const serializePoint = (colVal: any[]): Uint8Array => {
+      const writer = new BinaryWriter(baseSize);
+      serializePrefix(writer, colVal, numColumns);
+      return writer.getBuffer();
+    };
+
+    const singleElement =
+      numColumns === 1 ? indexType.value.elements[0].algebraicType : null;
+
+    const serializeSinglePoint =
+      singleElement &&
+      ((colVal: any): Uint8Array => {
+        const writer = new BinaryWriter(baseSize);
+        AlgebraicType.serializeValue(writer, singleElement, colVal, typespace);
+        return writer.getBuffer();
+      });
 
     type IndexScanArgs = [
       prefix: Uint8Array,
@@ -543,33 +580,13 @@ function makeTableView(
     ];
 
     let index: Index<any, any>;
-    if (isUnique) {
-      const serializeBound = (colVal: any[]): IndexScanArgs => {
-        if (colVal.length !== numColumns)
-          throw new TypeError('wrong number of elements');
-
-        const writer = new BinaryWriter(baseSize + 1);
-        const prefix_elems = numColumns - 1;
-        serializePrefix(writer, colVal, prefix_elems);
-        const rstartOffset = writer.offset;
-        writer.writeU8(0);
-        AlgebraicType.serializeValue(
-          writer,
-          indexType.value.elements[numColumns - 1].algebraicType,
-          colVal[numColumns - 1],
-          typespace
-        );
-        const buffer = writer.getBuffer();
-        const prefix = buffer.slice(0, rstartOffset);
-        const rstart = buffer.slice(rstartOffset);
-        return [prefix, prefix_elems, rstart, rstart];
-      };
+    if (isUnique && serializeSinglePoint) {
+      // numColumns == 1, unique index
       index = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
-          if (numColumns === 1) colVal = [colVal];
-          const args = serializeBound(colVal);
+          const point = serializeSinglePoint(colVal);
           const iter = tableIterator(
-            sys.datastore_index_scan_range_bsatn(index_id, ...args),
+            sys.datastore_index_scan_point_bsatn(index_id, point),
             rowType
           );
           const { value, done } = iter.next();
@@ -581,11 +598,10 @@ function makeTableView(
           return value;
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
-          if (numColumns === 1) colVal = [colVal];
-          const args = serializeBound(colVal);
-          const num = sys.datastore_delete_by_index_scan_range_bsatn(
+          const point = serializeSinglePoint(colVal);
+          const num = sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
-            ...args
+            point
           );
           return num > 0;
         },
@@ -601,7 +617,69 @@ function makeTableView(
           return row;
         },
       } as UniqueIndex<any, any>;
+    } else if (isUnique) {
+      // numColumns != 1, unique index
+      index = {
+        find: (colVal: IndexVal<any, any>): RowType<any> | null => {
+          if (colVal.length !== numColumns) {
+            throw new TypeError('wrong number of elements');
+          }
+          const point = serializePoint(colVal);
+          const iter = tableIterator(
+            sys.datastore_index_scan_point_bsatn(index_id, point),
+            rowType
+          );
+          const { value, done } = iter.next();
+          if (done) return null;
+          if (!iter.next().done)
+            throw new Error(
+              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
+            );
+          return value;
+        },
+        delete: (colVal: IndexVal<any, any>): boolean => {
+          if (colVal.length !== numColumns)
+            throw new TypeError('wrong number of elements');
+
+          const point = serializePoint(colVal);
+          const num = sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            point
+          );
+          return num > 0;
+        },
+        update: (row: RowType<any>): RowType<any> => {
+          const writer = new BinaryWriter(baseSize);
+          AlgebraicType.serializeValue(writer, rowType, row, typespace);
+          const ret_buf = sys.datastore_update_bsatn(
+            table_id,
+            index_id,
+            writer.getBuffer()
+          );
+          integrateGeneratedColumns?.(row, ret_buf);
+          return row;
+        },
+      } as UniqueIndex<any, any>;
+    } else if (serializeSinglePoint) {
+      // numColumns == 1
+      index = {
+        filter: (range: any): IteratorObject<RowType<any>> => {
+          const point = serializeSinglePoint(range);
+          return tableIterator(
+            sys.datastore_index_scan_point_bsatn(index_id, point),
+            rowType
+          );
+        },
+        delete: (range: any): u32 => {
+          const point = serializeSinglePoint(range);
+          return sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            point
+          );
+        },
+      } as RangedIndex<any, any>;
     } else {
+      // numColumns != 1
       const serializeRange = (range: any[]): IndexScanArgs => {
         if (range.length > numColumns) throw new TypeError('too many elements');
 
@@ -640,21 +718,35 @@ function makeTableView(
         return [prefix, prefix_elems, rstart, rend];
       };
       index = {
-        filter: (range: any): IteratorObject<RowType<any>> => {
-          if (numColumns === 1) range = [range];
-          const args = serializeRange(range);
-          return tableIterator(
-            sys.datastore_index_scan_range_bsatn(index_id, ...args),
-            rowType
-          );
+        filter: (range: any[]): IteratorObject<RowType<any>> => {
+          if (range.length === numColumns) {
+            const point = serializePoint(range);
+            return tableIterator(
+              sys.datastore_index_scan_point_bsatn(index_id, point),
+              rowType
+            );
+          } else {
+            const args = serializeRange(range);
+            return tableIterator(
+              sys.datastore_index_scan_range_bsatn(index_id, ...args),
+              rowType
+            );
+          }
         },
-        delete: (range: any): u32 => {
-          if (numColumns === 1) range = [range];
-          const args = serializeRange(range);
-          return sys.datastore_delete_by_index_scan_range_bsatn(
-            index_id,
-            ...args
-          );
+        delete: (range: any[]): u32 => {
+          if (range.length === numColumns) {
+            const point = serializePoint(range);
+            return sys.datastore_delete_by_index_scan_point_bsatn(
+              index_id,
+              point
+            );
+          } else {
+            const args = serializeRange(range);
+            return sys.datastore_delete_by_index_scan_range_bsatn(
+              index_id,
+              ...args
+            );
+          }
         },
       } as RangedIndex<any, any>;
     }

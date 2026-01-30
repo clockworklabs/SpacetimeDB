@@ -25,16 +25,16 @@ use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
+use scopeguard::defer;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{hash_bytes, AlgebraicValue, Identity, Timestamp};
-use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
-use spacetimedb_paths::FromPathUnchecked;
+use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_schema::def::ModuleDef;
@@ -43,7 +43,6 @@ use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use tempfile::TempDir;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
 use tokio::task::AbortHandle;
 use tokio::time::error::Elapsed;
@@ -52,6 +51,14 @@ use tokio::time::{interval_at, timeout, Instant};
 // TODO:
 //
 // - [db::Config] should be per-[Database]
+
+/// The maximum size of in-memory database loggers.
+///
+/// Currently 16KiB, or about 111k log records of 150 bytes.
+//
+// TODO(config): We may want to allow overriding this via [db::Config], if and
+// when the config applies to individual databases (as opposed to globally).
+const IN_MEMORY_DATABASE_LOGGER_MAX_SIZE: u64 = 0x1_000_000;
 
 /// A shared mutable cell containing a module host and associated database.
 type HostCell = Arc<AsyncRwLock<Option<Host>>>;
@@ -87,7 +94,7 @@ pub type ProgramStorage = Arc<dyn ExternalStorage>;
 #[derive(Clone)]
 pub struct HostController {
     /// Map of all hosts managed by this controller,
-    /// keyed by database instance id.
+    /// keyed by replica id.
     hosts: Hosts,
     /// The root directory for database data.
     pub data_dir: Arc<ServerDataDir>,
@@ -149,7 +156,7 @@ impl From<ReducerCallResult> for Result<(), anyhow::Error> {
 #[derive(Clone, Debug)]
 pub enum ReducerOutcome {
     Committed,
-    Failed(String),
+    Failed(Box<Box<str>>),
     BudgetExceeded,
 }
 
@@ -171,7 +178,7 @@ impl From<&EventStatus> for ReducerOutcome {
     fn from(status: &EventStatus) -> Self {
         match &status {
             EventStatus::Committed(_) => ReducerOutcome::Committed,
-            EventStatus::Failed(e) => ReducerOutcome::Failed(e.clone()),
+            EventStatus::Failed(e) => ReducerOutcome::Failed(Box::new((&**e).into())),
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
@@ -496,7 +503,7 @@ impl HostController {
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
+    pub async fn exit_module_host(&self, replica_id: u64, timeout: Duration) -> Result<(), anyhow::Error> {
         let Some(lock) = self.hosts.lock().remove(&replica_id) else {
             return Ok(());
         };
@@ -505,38 +512,46 @@ impl HostController {
         // we'll log a warning every 5s if we can't acquire an exclusive lock.
         let start = Instant::now();
         let mut t = interval_at(start + Duration::from_secs(5), Duration::from_secs(5));
-        // Spawn so we don't lose our place in the queue.
-        let mut excl = tokio::spawn(lock.write_owned());
-        loop {
-            tokio::select! {
-                guard = &mut excl => {
-                    let Ok(mut guard) = guard else {
-                        warn!("cancelled shutdown of module of replica {replica_id}");
-                        break;
-                    };
-                    let Some(host) = guard.take() else {
-                        break;
-                    };
-                    let module = host.module.borrow().clone();
-                    let info = module.info();
-                    info!("exiting replica {} of database {}", replica_id, info.database_identity);
-                    module.exit().await;
-                    let db = &module.replica_ctx().relational_db;
-                    db.shutdown().await?;
-                    let table_names = info.module_def.tables().map(|t| t.name.deref());
-                    remove_database_gauges(&info.database_identity, table_names);
-                    info!("replica {} of database {} exited", replica_id, info.database_identity);
-
-                    break;
-                },
-                _ = t.tick() => {
-                    warn!(
-                        "blocked waiting to exit module for replica {} since {}s",
-                        replica_id,
-                        start.elapsed().as_secs_f32()
-                    );
-                }
+        let warn_blocked = tokio::spawn(async move {
+            loop {
+                t.tick().await;
+                warn!(
+                    "blocked waiting to exit module for replica {} since {}s",
+                    replica_id,
+                    start.elapsed().as_secs_f32()
+                );
             }
+        });
+        defer!(warn_blocked.abort());
+
+        let shutdown = tokio::time::timeout(timeout, async {
+            let mut guard = lock.write_owned().await;
+            let Some(host) = guard.take() else {
+                return;
+            };
+            let module = host.module.borrow().clone();
+            let info = module.info();
+
+            let database_identity = info.database_identity;
+            let table_names = info.module_def.tables().map(|t| t.name.deref());
+
+            // Ensure we clear the metrics even if the future is cancelled.
+            defer!(remove_database_gauges(&database_identity, table_names));
+
+            info!("replica={replica_id} database={database_identity} exiting module");
+            module.exit().await;
+            let db = &module.replica_ctx().relational_db;
+            info!("replica={replica_id} database={database_identity} exiting database");
+            db.shutdown().await;
+            info!("replica={replica_id} database={database_identity} module host exited");
+        })
+        .await;
+
+        if shutdown.is_err() {
+            warn!(
+                "replica={replica_id} shutdown timed out after {}s",
+                start.elapsed().as_secs_f32()
+            );
         }
 
         Ok(())
@@ -590,6 +605,12 @@ impl HostController {
         maybe_host.is_some()
     }
 
+    /// Obtain a snapshot of the replica ids of all hosts currently registered
+    /// with the controller.
+    pub fn managed_replicas(&self) -> IntSet<u64> {
+        self.hosts.lock().keys().copied().collect()
+    }
+
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
     ///
     /// Removes the module with the given `replica_id` from this controller.
@@ -634,13 +655,17 @@ fn stored_program_hash(db: &RelationalDB) -> anyhow::Result<Option<Hash>> {
 }
 
 async fn make_replica_ctx(
-    path: ReplicaDir,
+    module_logs: Option<ModuleLogsDir>,
     database: Database,
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) -> anyhow::Result<ReplicaContext> {
-    let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
+    let logger = match module_logs {
+        Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
+        None => Arc::new(DatabaseLogger::in_memory(IN_MEMORY_DATABASE_LOGGER_MAX_SIZE)),
+    };
+
     let send_worker_queue = spawn_send_worker(Some(database.database_identity));
     let subscriptions = Arc::new(parking_lot::RwLock::new(SubscriptionManager::new(
         send_worker_queue.clone(),
@@ -741,7 +766,7 @@ async fn launch_module(
     on_panic: impl Fn() + Send + Sync + 'static,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
-    replica_dir: ReplicaDir,
+    module_logs: Option<ModuleLogsDir>,
     runtimes: Arc<HostRuntimes>,
     executor: SingleCoreExecutor,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
@@ -749,7 +774,7 @@ async fn launch_module(
     let db_identity = database.database_identity;
     let host_type = database.host_type;
 
-    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db, bsatn_rlb_pool)
+    let replica_ctx = make_replica_ctx(module_logs, database, replica_id, relational_db, bsatn_rlb_pool)
         .await
         .map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
@@ -864,7 +889,6 @@ impl Host {
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
-                &replica_dir,
                 database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
@@ -873,24 +897,17 @@ impl Host {
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
-                // Open a read-only copy of the local durability to replay from.
-                let (history, _) = relational_db::local_durability(
-                    replica_dir.commit_log(),
-                    // No need to include a snapshot request channel here, 'cause we're only reading from this instance.
-                    None,
-                )
-                .await?;
+                // Replay from the local state.
+                let history = relational_db::local_history(&replica_dir).await?;
                 let persistence = persistence.persistence(&database, replica_id).await?;
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
-                    let replica_dir = replica_dir.clone();
                     let database_identity = database.database_identity;
                     let owner_identity = database.owner_identity;
                     let page_pool = page_pool.clone();
                     move || {
                         RelationalDB::open(
-                            &replica_dir,
                             database_identity,
                             owner_identity,
                             history,
@@ -930,7 +947,10 @@ impl Host {
             on_panic,
             Arc::new(db),
             energy_monitor.clone(),
-            replica_dir,
+            match config.storage {
+                db::Storage::Memory => None,
+                db::Storage::Disk => Some(replica_dir.module_logs()),
+            },
             runtimes.clone(),
             host_controller.db_cores.take(),
             bsatn_rlb_pool.clone(),
@@ -1007,16 +1027,7 @@ impl Host {
         executor: SingleCoreExecutor,
         bsatn_rlb_pool: BsatnRowListBuilderPool,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
-        // Even in-memory databases acquire a lockfile.
-        // Grab a tempdir to put that lockfile in.
-        let phony_replica_dir = TempDir::with_prefix("spacetimedb-publish-in-memory-check")
-            .context("Error creating temporary directory to house temporary database during publish")?;
-
-        // Leave the `TempDir` instance in place, so that its destructor will still run.
-        let phony_replica_dir = ReplicaDir::from_path_unchecked(phony_replica_dir.path().to_owned());
-
         let (db, _connected_clients) = RelationalDB::open(
-            &phony_replica_dir,
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),
@@ -1035,7 +1046,7 @@ impl Host {
             || log::error!("launch_module on_panic called for temporary publish in-memory instance"),
             Arc::new(db),
             Arc::new(NullEnergyMonitor),
-            phony_replica_dir,
+            None,
             runtimes.clone(),
             executor,
             bsatn_rlb_pool,

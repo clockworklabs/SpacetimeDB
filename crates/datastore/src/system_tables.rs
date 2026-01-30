@@ -11,6 +11,7 @@
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
@@ -25,16 +26,16 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
 use spacetimedb_schema::def::{
-    BTreeAlgorithm, ConstraintData, DirectAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
+    BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
 };
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::str::FromStr;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
@@ -830,7 +831,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
 #[sats(crate = spacetimedb_lib)]
 pub struct StTableRow {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_type: StTableType,
     pub table_access: StAccess,
     /// The primary key of the table.
@@ -863,7 +864,7 @@ pub struct StViewRow {
     /// An auto-inc id for each view
     pub view_id: ViewId,
     /// The name of the view function as defined in the module
-    pub view_name: Box<str>,
+    pub view_name: TableName,
     /// The [`TableId`] for this view if materialized.
     /// Currently all views are materialized and therefore are assigned a [`TableId`] by default.
     pub table_id: Option<TableId>,
@@ -1059,12 +1060,16 @@ pub enum StIndexAlgorithm {
 
     /// A Direct index.
     Direct { column: ColId },
+
+    /// A Hash index.
+    Hash { columns: ColList },
 }
 
 impl From<IndexAlgorithm> for StIndexAlgorithm {
     fn from(algorithm: IndexAlgorithm) -> Self {
         match algorithm {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Hash(HashAlgorithm { columns }) => Self::Hash { columns },
             IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
             algo => unreachable!("unexpected `{algo:?}`, did you add a new one?"),
         }
@@ -1074,8 +1079,9 @@ impl From<IndexAlgorithm> for StIndexAlgorithm {
 impl From<StIndexAlgorithm> for IndexAlgorithm {
     fn from(algorithm: StIndexAlgorithm) -> Self {
         match algorithm {
-            StIndexAlgorithm::BTree { columns } => Self::BTree(BTreeAlgorithm { columns }),
-            StIndexAlgorithm::Direct { column } => Self::Direct(DirectAlgorithm { column }),
+            StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
+            StIndexAlgorithm::Hash { columns } => BTreeAlgorithm { columns }.into(),
+            StIndexAlgorithm::Direct { column } => DirectAlgorithm { column }.into(),
             algo => unreachable!("unexpected `{algo:?}` in system table `st_indexes`"),
         }
     }
@@ -1659,10 +1665,11 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_data_structures::map::HashSet;
 
     #[test]
     fn test_index_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for index in table.indexes.iter() {
                 assert!(
@@ -1717,7 +1724,7 @@ mod tests {
 
     #[test]
     fn test_constraint_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for constraint in table.constraints.iter() {
                 assert!(
@@ -1752,7 +1759,7 @@ mod tests {
 
     #[test]
     fn test_sequence_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for sequence in table.sequences.iter() {
                 assert!(

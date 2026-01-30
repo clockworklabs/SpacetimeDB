@@ -127,6 +127,12 @@ fn main() -> anyhow::Result<()> {
                 .help("Update all targets (equivalent to --typescript --rust-and-cli --csharp)")
                 .conflicts_with_all(["typescript", "rust-and-cli", "csharp"]),
         )
+        .arg(
+            Arg::new("accept-snapshots")
+                .long("accept-snapshots")
+                .action(clap::ArgAction::SetTrue)
+                .help("If there are snapshots to review automatically accept them all."),
+        )
         .group(
             ArgGroup::new("update-targets")
                 .args(["all", "typescript", "rust-and-cli", "csharp"])
@@ -169,7 +175,7 @@ fn main() -> anyhow::Result<()> {
             }
         })?;
 
-        edit_toml("crates/cli/templates/basic-rust/server/Cargo.toml", |doc| {
+        edit_toml("templates/basic-rs/spacetimedb/Cargo.toml", |doc| {
             // Only set major.minor.* for the spacetimedb dependency.
             // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
             //
@@ -178,13 +184,56 @@ fn main() -> anyhow::Result<()> {
             doc["dependencies"]["spacetimedb"] = toml_edit::value(wildcard_patch.clone());
         })?;
 
-        edit_toml("crates/cli/templates/basic-rust/client/Cargo.toml", |doc| {
+        edit_toml("templates/basic-rs/Cargo.toml", |doc| {
             doc["dependencies"]["spacetimedb-sdk"] = toml_edit::value(wildcard_patch.clone());
         })?;
 
         process_license_file("LICENSE.txt", &full_version);
         process_license_file("licenses/BSL.txt", &full_version);
+        // Rebuild `Cargo.lock`
+        println!("$> cargo check");
         cmd!("cargo", "check").run().expect("Cargo check failed!");
+
+        println!("$> pnpm install");
+        cmd!("pnpm", "install").run().expect("pnpm run build failed!");
+
+        println!("$> pnpm run build");
+        cmd!("pnpm", "run", "build").run().expect("pnpm run build failed!");
+
+        println!("$> pnpm --dir templates/chat-react-ts generate");
+        cmd!("pnpm", "--dir", "templates/chat-react-ts", "generate")
+            .run()
+            .expect("pnpm generate failed!");
+
+        if matches.get_flag("accept-snapshots") {
+            // Generate and auto-accept snapshots
+            println!("$> INSTA_UPDATE=always cargo test -p spacetimedb-codegen --test codegen");
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .env("INSTA_UPDATE", "always")
+                .run()
+                .expect("cargo test -p spacetimedb-codegen --test codegen (INSTA_UPDATE=always) failed!");
+        } else {
+            println!("$> cargo install cargo-insta");
+            cmd!("cargo", "install", "cargo-insta")
+                .run()
+                .expect("cargo install cargo-insta failed!");
+
+            // Initial test - this will generate snapshots. This is expected to fail.
+            println!("$> cargo test -p spacetimedb-codegen --test codegen");
+            let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen").run();
+
+            // Review the new snapshots
+            println!("$> cargo insta review");
+            cmd!("cargo", "insta", "review")
+                .run()
+                .expect("cargo insta review failed!");
+
+            // Test again now that the user has had a chance to accept the snapshots
+            println!("$> cargo test -p spacetimedb-codegen --test codegen");
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .run()
+                .expect("cargo test -p spacetimedb-codegen --test codegen failed!");
+        }
     }
 
     if matches.get_flag("typescript") || matches.get_flag("all") {
@@ -256,7 +305,7 @@ fn main() -> anyhow::Result<()> {
         // 2) StdbModule.csproj files: SpacetimeDB.Runtime dependency -> major.minor
         let stdb_modules: &[&str] = &[
             "demo/Blackholio/server-csharp/StdbModule.csproj",
-            "sdks/csharp/examples~/quickstart-chat/server/StdbModule.csproj",
+            "templates/chat-console-cs/spacetimedb/StdbModule.csproj",
             "sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
         ];
         for path in stdb_modules {
@@ -287,7 +336,7 @@ fn main() -> anyhow::Result<()> {
 
         // 4) Template StdbModule.csproj: SpacetimeDB.Runtime dependency -> major.minor.*
         rewrite_csproj_package_ref_version(
-            "crates/cli/templates/basic-c-sharp/server/StdbModule.csproj",
+            "templates/basic-cs/spacetimedb/StdbModule.csproj",
             "SpacetimeDB.Runtime",
             &wildcard_patch,
         )?;

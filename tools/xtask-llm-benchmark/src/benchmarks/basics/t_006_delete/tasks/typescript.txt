@@ -1,0 +1,12 @@
+Write a SpacetimeDB backend module in TypeScript that defines one table and a reducer that deletes a row.
+
+TABLE
+- user
+  - Fields:
+    - id: number (i32, primary key)
+    - name: string
+    - age: number (i32)
+    - active: boolean
+
+REDUCERS
+- deleteUser: given id:number, delete the row with matching id

@@ -318,10 +318,10 @@ pub async fn get_login_token_or_log_in(
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false).await
+        spacetimedb_login_force(config, &host, false, true).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;
-        spacetimedb_login_force(config, &host, true).await
+        spacetimedb_login_force(config, &host, true, true).await
     }
 }
 

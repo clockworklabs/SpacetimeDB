@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PlayerLocation`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait nearby_playersQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PlayerLocation`.
+    fn nearby_players(&self) -> __sdk::__query_builder::Table<PlayerLocation>;
+}
+
+impl nearby_playersQueryTableAccess for __sdk::QueryTableAccessor {
+    fn nearby_players(&self) -> __sdk::__query_builder::Table<PlayerLocation> {
+        __sdk::__query_builder::Table::new("nearby_players")
+    }
+}

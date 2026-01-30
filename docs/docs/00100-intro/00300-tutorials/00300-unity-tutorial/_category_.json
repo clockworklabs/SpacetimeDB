@@ -1,4 +1,8 @@
 {
-  "label": "Unity Blackholio",
-  "collapsed": true
+  "label": "Unity Tutorial",
+  "collapsed": true,
+  "link": {
+    "type": "doc",
+    "id": "intro/tutorials/unity-tutorial/index"
+  }
 }

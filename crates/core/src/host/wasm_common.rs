@@ -10,6 +10,7 @@ use super::{scheduler::ScheduleError, AbiCall};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
+use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::table::UniqueConstraintViolation;
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
@@ -20,12 +21,51 @@ pub const CALL_VIEW_DUNDER: &str = "__call_view__";
 
 pub const CALL_VIEW_ANON_DUNDER: &str = "__call_view_anon__";
 
+/// Name of the function that modules export to the host to describe themselves.
+///
+/// Used by module definitions with versions up to
+/// [`RawModuleDefVersion::V9OrEarlier`].
 pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
+
+/// Versioned variant of [`DESCRIBE_MODULE_DUNDER`] for
+/// [`RawModuleDefVersion::V10`].
+pub const DESCRIBE_MODULE_DUNDER_V10: &str = "__describe_module_v10__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like
 pub const PREINIT_DUNDER: &str = "__preinit__";
 /// initializes the user code in the module. fallible
 pub const SETUP_DUNDER: &str = "__setup__";
+
+/// Detects the [`RawModuleDefVersion`] of a module by checking for the presence
+/// of a known describe function export.
+pub fn detect_raw_def_version<M>(module: &M) -> Result<RawModuleDefVersion, module_host_actor::DescribeError>
+where
+    M: module_host_actor::WasmModule,
+{
+    if module.get_export(DESCRIBE_MODULE_DUNDER).is_some() {
+        Ok(RawModuleDefVersion::V9OrEarlier)
+    } else if module.get_export(DESCRIBE_MODULE_DUNDER_V10).is_some() {
+        Ok(RawModuleDefVersion::V10)
+    } else {
+        Err(module_host_actor::DescribeError::Signature(anyhow::anyhow!(
+            "module does not export a {} or {} function",
+            DESCRIBE_MODULE_DUNDER,
+            DESCRIBE_MODULE_DUNDER_V10
+        )))
+    }
+}
+/// Returns the describe dunder symbol for a given module version.
+pub const fn describe_dunder(version: RawModuleDefVersion) -> &'static str {
+    match version {
+        RawModuleDefVersion::V9OrEarlier => DESCRIBE_MODULE_DUNDER,
+        RawModuleDefVersion::V10 => DESCRIBE_MODULE_DUNDER_V10,
+    }
+}
+
+/// Returns all known describe dunder symbols.
+pub const fn describe_dunders() -> &'static [&'static str] {
+    &[DESCRIBE_MODULE_DUNDER, DESCRIBE_MODULE_DUNDER_V10]
+}
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -229,7 +269,7 @@ impl FuncNames {
         }
         Ok(())
     }
-    pub fn check_required<F, T>(get_export: F) -> Result<(), ValidationError>
+    pub fn check_required<F, T>(raw_def_ver: RawModuleDefVersion, get_export: F) -> Result<(), ValidationError>
     where
         F: Fn(&str) -> Option<T>,
         T: FuncSigLike,
@@ -243,8 +283,9 @@ impl FuncNames {
         let sig = get_func(CALL_REDUCER_DUNDER)?;
         Self::validate_signature("call_reducer", &sig, CALL_REDUCER_DUNDER, CALL_REDUCER_SIG)?;
 
-        let sig = get_func(DESCRIBE_MODULE_DUNDER)?;
-        Self::validate_signature("describe_module", &sig, DESCRIBE_MODULE_DUNDER, DESCRIBE_MODULE_SIG)?;
+        let describe_dunder = describe_dunder(raw_def_ver);
+        let sig = get_func(describe_dunder)?;
+        Self::validate_signature("describe_module", &sig, describe_dunder, DESCRIBE_MODULE_SIG)?;
 
         Ok(())
     }
@@ -355,6 +396,7 @@ pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), Nod
         NodesError::IndexNotFound => errno::NO_SUCH_INDEX,
         NodesError::IndexNotUnique => errno::INDEX_NOT_UNIQUE,
         NodesError::IndexRowNotFound => errno::NO_SUCH_ROW,
+        NodesError::IndexCannotSeekRange => errno::WRONG_INDEX_ALGO,
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => errno::SCHEDULE_AT_DELAY_TOO_LONG,
         NodesError::AlreadyExists(_) => errno::UNIQUE_ALREADY_EXISTS,
         NodesError::HttpError(message) => return Ok((errno::HTTP_ERROR, Some(message))),
@@ -422,15 +464,19 @@ macro_rules! abi_funcs {
 
             "spacetime_10.2"::get_jwt,
 
+            // The procedure must not be suspended while holding the transaction lock,
+            // as this can result in a deadlock; therefore, these ABIs are synchronous.
+            "spacetime_10.3"::procedure_start_mut_tx,
+            "spacetime_10.3"::procedure_commit_mut_tx,
+            "spacetime_10.3"::procedure_abort_mut_tx,
+
             "spacetime_10.4"::datastore_index_scan_point_bsatn,
             "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
+
         }
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
-            "spacetime_10.3"::procedure_start_mut_tx,
-            "spacetime_10.3"::procedure_commit_mut_tx,
-            "spacetime_10.3"::procedure_abort_mut_tx,
             "spacetime_10.3"::procedure_http_request,
         }
     };

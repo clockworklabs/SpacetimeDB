@@ -22,7 +22,7 @@ use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
-use crate::sql::execute::run_from_module;
+use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
@@ -49,7 +49,9 @@ use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
@@ -280,7 +282,7 @@ impl From<TypeRefError> for InitializationError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum DescribeError {
-    #[error("bad signature for descriptor function: {0}")]
+    #[error("failed to call descriptor function: invalid signature or function does not exist: {0}")]
     Signature(anyhow::Error),
     #[error("error when preparing descriptor function: {0}")]
     Setup(anyhow::Error),
@@ -301,8 +303,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             mcc.program_hash,
         );
 
+        let raw_def_version = detect_raw_def_version(&module)?;
         let func_names = {
-            FuncNames::check_required(|name| module.get_export(name))?;
+            FuncNames::check_required(raw_def_version, |name| module.get_export(name))?;
             let mut func_names = FuncNames::default();
             module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
             func_names.preinits.sort_unstable();
@@ -394,8 +397,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .update_database(program, old_module_info, policy, &mut self.instance)
     }
 
-    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.call_reducer_with_tx(tx, params);
+    pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
+        let (res, trapped) = self.call_reducer_with_tx(None, params);
         self.trapped = trapped;
         res
     }
@@ -492,12 +495,17 @@ pub struct InstanceCommon {
     energy_monitor: Arc<dyn EnergyMonitor>,
     allocated_memory: usize,
     metric_wasm_memory_bytes: IntGauge,
+    vm_metrics: AllVmMetrics,
 }
 
 impl InstanceCommon {
     pub(crate) fn new(module: &ModuleCommon) -> Self {
+        let info = module.info();
+        let vm_metrics = AllVmMetrics::new(&info);
+
         Self {
             info: module.info(),
+            vm_metrics,
             energy_monitor: module.energy_monitor(),
             // Will be updated on the first reducer call.
             allocated_memory: 0,
@@ -505,6 +513,10 @@ impl InstanceCommon {
                 .wasm_memory_bytes
                 .with_label_values(module.database_identity()),
         }
+    }
+
+    pub(crate) fn info(&self) -> Arc<ModuleInfo> {
+        self.info.clone()
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -786,10 +798,9 @@ impl InstanceCommon {
 
         let replica_ctx = inst.replica_ctx();
         let stdb = &*replica_ctx.relational_db.clone();
-        let database_identity = replica_ctx.database_identity;
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
-        let reducer_name = &*reducer_def.name;
+        let reducer_name = &reducer_def.name;
 
         // Do some `with_label_values`.
         // TODO(perf, centril): consider caching this.
@@ -808,17 +819,15 @@ impl InstanceCommon {
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let mut tx_slot = inst.tx_slot();
 
-        let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
+        let vm_metrics = self.vm_metrics.get_for_reducer_id(reducer_id);
         let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
 
         let (mut tx, result) = tx_slot.set(tx, || {
             self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
 
-        // Report the reducer execution metrics
-        vm_metrics.report_energy_used(result.stats.energy_used());
-        vm_metrics.report_total_duration(result.stats.total_duration());
-        vm_metrics.report_abi_duration(result.stats.abi_duration());
+        // Report execution metrics on each reducer call.
+        vm_metrics.report(&result.stats);
 
         // An outer error occurred.
         // This signifies a logic error in the module rather than a properly
@@ -851,7 +860,7 @@ impl InstanceCommon {
                 // We handle OnConnect events before running the reducer.
                 let res = match reducer_def.lifecycle {
                     Some(Lifecycle::OnDisconnect) => {
-                        tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
+                        tx.delete_st_client(caller_identity, caller_connection_id, info.database_identity)
                     }
                     _ => Ok(()),
                 };
@@ -898,7 +907,7 @@ impl InstanceCommon {
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_string(),
+                reducer: reducer_name.clone(),
                 reducer_id,
                 args,
             },
@@ -977,26 +986,21 @@ impl InstanceCommon {
     }
 
     pub(crate) fn handle_cmd<I: WasmInstance>(&mut self, cmds: ViewCommand, inst: &mut I) -> (ViewCommandResult, bool) {
+        let info = self.info.clone();
         let mut inst = RefInstance {
             instance: inst,
             common: self,
         };
         match cmds {
             ViewCommand::AddSingleSubscription {
-                info,
                 sender,
                 auth,
                 request,
                 timer,
             } => {
-                let res = info.subscriptions.add_single_subscription_from_module(
-                    Some((&mut inst, &info.module_def)),
-                    sender,
-                    auth,
-                    request,
-                    timer,
-                    None,
-                );
+                let res = info
+                    .subscriptions
+                    .add_single_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
                     Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
@@ -1004,20 +1008,14 @@ impl InstanceCommon {
                 }
             }
             ViewCommand::AddLegacySubscription {
-                info,
                 sender,
                 auth,
                 subscribe,
                 timer,
             } => {
-                let res = info.subscriptions.add_legacy_subscriber_from_module(
-                    Some((&mut inst, &info.module_def)),
-                    sender,
-                    auth,
-                    subscribe,
-                    timer,
-                    None,
-                );
+                let res = info
+                    .subscriptions
+                    .add_legacy_subscriber_with_instance(&mut inst, sender, auth, subscribe, timer, None);
 
                 match res {
                     Ok((metrics, trapped)) => (
@@ -1030,20 +1028,14 @@ impl InstanceCommon {
                 }
             }
             ViewCommand::AddMultiSubscription {
-                info,
                 sender,
                 auth,
                 request,
                 timer,
             } => {
-                let res = info.subscriptions.add_multi_subscription_from_module(
-                    Some((&mut inst, &info.module_def)),
-                    sender,
-                    auth,
-                    request,
-                    timer,
-                    None,
-                );
+                let res = info
+                    .subscriptions
+                    .add_multi_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
                     Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
@@ -1052,14 +1044,13 @@ impl InstanceCommon {
             }
 
             ViewCommand::Sql {
-                info,
                 db,
                 sql_text,
                 auth,
                 subs,
             } => {
                 let mut head = vec![];
-                let res = run_from_module(Some((&mut inst, &info.module_def)), db, sql_text, auth, subs, &mut head);
+                let res = run_with_instance(&mut inst, db, sql_text, auth, subs, &mut head);
 
                 match res {
                     Ok((result, trapped)) => (
@@ -1131,13 +1122,10 @@ impl InstanceCommon {
             })
         });
 
-        let replica_ctx = inst.replica_ctx();
-        let stdb = &*replica_ctx.relational_db.clone();
-        let database_identity = replica_ctx.database_identity;
-        let vm_metrics = VmMetrics::new(&database_identity, &view_name);
-
-        // Report execution metrics on each view call
-        vm_metrics.report(&result.stats);
+        // Report execution metrics on each view call.
+        self.vm_metrics
+            .get_for_view_id(view_id, &self.info.database_identity, &view_name)
+            .report(&result.stats);
 
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
@@ -1180,6 +1168,8 @@ impl InstanceCommon {
                             .context("Error executing raw SQL returned by view".to_string())?,
                     };
 
+                    let replica_ctx = inst.replica_ctx();
+                    let stdb = &*replica_ctx.relational_db.clone();
                     let res = match sender {
                         Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
                         None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
@@ -1352,7 +1342,71 @@ impl InstanceCommon {
         crate::host::scheduler::call_scheduled_function(&self.info.clone(), params, self, inst).await
     }
 }
+
+/// Pre-fetched VM metrics counters for all reducers and views in a module.
+/// Anonymous views have lazily fetched metrics counters.
+struct AllVmMetrics {
+    // We use a `Vec` here as the number of reducers + views
+    // will likely be lower than e.g., 128, which would take up a page (4096 / 32).
+    // TODO(perf, centril): Define a `VecMapWithFallback<N>`
+    // that falls back to `HashMap` when exceeding `N` entries.
+    // This could be useful elsewhere for e.g., TableId => X maps and similar.
+    counters: Vec<VmMetrics>,
+    num_reducers: u32,
+}
+
+impl AllVmMetrics {
+    /// Pre-fetch all vm metrics counters for the module in `info`.
+    fn new(info: &ModuleInfo) -> Self {
+        // These are the reducers:
+        let def = &info.module_def;
+        let reducers = def.reducer_ids_and_defs();
+        let num_reducers = reducers.len() as u32;
+        let reducers = reducers.map(|(_, def)| def.name());
+
+        // These are the views:
+        let views = def.views().map(|def| def.name());
+
+        // Pre-fetch the metrics for both:
+        let counters = reducers
+            .chain(views)
+            .map(|name| VmMetrics::new(&info.database_identity, name))
+            .collect();
+
+        Self { counters, num_reducers }
+    }
+
+    #[inline]
+    fn get_for_index(&self, index: u32) -> Option<VmMetrics> {
+        self.counters.get(index as usize).cloned()
+    }
+
+    /// Returns the vm metrics counters for `id`,
+    /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
+    #[inline]
+    fn get_for_reducer_id(&self, id: ReducerId) -> VmMetrics {
+        self.get_for_index(id.0)
+            .expect("all counters for reducers should've been pre-fetched")
+    }
+
+    /// Returns the vm metrics counters for `id`,
+    /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
+    #[inline]
+    fn get_for_view_id(&self, id: ViewId, identity: &Identity, name: &str) -> VmMetrics {
+        // Cosunters for the first view starts after counters for the last reducer.
+        self.get_for_index(self.num_reducers + id.0)
+            // For anonymous views, the `id` doesn't have pre-fetched counters available.
+            // Reducers shouldn't have to pay for adding an `Option` layer in the map,
+            // which would be necessary due to `id`s being random here,
+            // so just create `VmMetrics` on the fly instead.
+            // TODO(perf, centril): We could ostensibly add another map for anonymous views,
+            // but this doesn't seem to be a pressing performance concern at the moment.
+            .unwrap_or_else(|| VmMetrics::new(identity, name))
+    }
+}
+
 /// VM-related metrics for reducer execution.
+#[derive(Clone)]
 struct VmMetrics {
     /// The time spent executing a reducer + plus evaluating its subscription queries.
     reducer_plus_query_duration: Histogram,
@@ -1568,7 +1622,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
 #[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
-    pub name: &'a str,
+    pub name: &'a ReducerName,
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
@@ -1600,7 +1654,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
         }: ReducerOp<'_>,
     ) -> Self {
         Self {
-            name: name.to_owned(),
+            name: name.clone(),
             caller_identity: *caller_identity,
             caller_connection_id: *caller_connection_id,
             timestamp,

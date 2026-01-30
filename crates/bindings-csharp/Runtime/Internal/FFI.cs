@@ -41,6 +41,7 @@ public enum Errno : short
     TRANSACTION_NOT_ANONYMOUS = 18,
     TRANSACTION_IS_READ_ONLY = 19,
     TRANSACTION_IS_MUT = 20,
+    HTTP_ERROR = 21,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -144,6 +145,7 @@ internal static partial class FFI
                 Errno.TRANSACTION_NOT_ANONYMOUS => new TransactionNotAnonymousException(),
                 Errno.TRANSACTION_IS_READ_ONLY => new TransactionIsReadOnlyException(),
                 Errno.TRANSACTION_IS_MUT => new TransactionIsMutableException(),
+                Errno.HTTP_ERROR => new HttpException(),
                 _ => new UnknownException(status),
             };
     }
@@ -379,4 +381,20 @@ internal static partial class FFI
 
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_abort_mut_tx")]
     public static partial Errno procedure_abort_mut_tx();
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct BytesSourcePair
+    {
+        public readonly BytesSource A;
+        public readonly BytesSource B;
+    }
+
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_http_request")]
+    public static partial Errno procedure_http_request(
+        ReadOnlySpan<byte> request,
+        uint request_len,
+        ReadOnlySpan<byte> body,
+        uint body_len,
+        out BytesSourcePair out_
+    );
 }

@@ -7,7 +7,6 @@ use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
-use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
@@ -53,8 +52,42 @@ pub struct InstanceEnv {
     procedure_last_tx_offset: Option<TransactionOffset>,
 }
 
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+///
+/// # Safety
+///
+/// `InstanceEnv` doesn't auto-derive `Send` because it may hold a `MutTxId`,
+/// which we've manually made `!Send` to preserve logical invariants.
+/// As described above, sending an `InstanceEnv` while it holds a `MutTxId` will violate logical invariants,
+/// but this is not a safety concern.
+/// Transferring a `MutTxId` between threads will never cause Undefined Behavior,
+/// though it is likely to lead to deadlocks.
+unsafe impl Send for InstanceEnv {}
+
 #[derive(Clone, Default)]
 pub struct TxSlot {
+    // Wrapped in Mutex for interior mutability.
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
@@ -654,7 +687,7 @@ impl InstanceEnv {
     // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
     // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
 
-    pub fn start_mutable_tx(&mut self) -> Result<impl Future<Output = ()> + use<'_>, NodesError> {
+    pub fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
         if self.get_tx().is_ok() {
             return Err(NodesError::WouldBlockTransaction(
                 super::AbiCall::ProcedureStartMutTransaction,
@@ -663,13 +696,11 @@ impl InstanceEnv {
 
         let stdb = self.replica_ctx.relational_db.clone();
         // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
-        let fut = async move {
-            let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
-            self.tx.set_raw(tx);
-            self.in_anon_tx = true;
-        };
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        self.tx.set_raw(tx);
+        self.in_anon_tx = true;
 
-        Ok(fut)
+        Ok(())
     }
 
     /// Finishes an anonymous transaction,
@@ -692,7 +723,7 @@ impl InstanceEnv {
     // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
     // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
 
-    pub fn commit_mutable_tx(&mut self) -> Result<impl Future<Output = ()> + use<'_>, NodesError> {
+    pub fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
         self.finish_anon_tx()?;
 
         let stdb = self.relational_db().clone();
@@ -712,15 +743,10 @@ impl InstanceEnv {
             host_execution_duration: Duration::from_millis(0),
         };
         // Commit the tx and broadcast it.
-        // This is somewhat expensive,
-        // and can block for a while,
-        // so we need to asyncify it.
-        let fut = async move {
-            let event = asyncify(move || commit_and_broadcast_event(&subs, None, event, tx)).await;
-            self.procedure_last_tx_offset = Some(event.tx_offset);
-        };
+        let event = commit_and_broadcast_event(&subs, None, event, tx);
+        self.procedure_last_tx_offset = Some(event.tx_offset);
 
-        Ok(fut)
+        Ok(())
     }
 
     pub fn abort_mutable_tx(&mut self) -> Result<(), NodesError> {
@@ -728,7 +754,7 @@ impl InstanceEnv {
         let stdb = self.relational_db().clone();
         let tx = self.take_tx()?;
 
-        // Roll back the tx; this isn't that expensive, so we don't need to `asyncify`.
+        // Roll back the tx.
         let offset = ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
         self.procedure_last_tx_offset = Some(from_tx_offset(offset));
         Ok(())
@@ -1064,23 +1090,22 @@ mod test {
     use anyhow::{anyhow, Result};
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
-    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
-    use tempfile::TempDir;
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
-    fn temp_logger() -> Result<DatabaseLogger> {
-        let temp = TempDir::new()?;
-        let path = ModuleLogsDir::from_path_unchecked(temp.keep());
-        let path = path.today();
-        Ok(DatabaseLogger::open(path))
+    fn temp_logger() -> DatabaseLogger {
+        DatabaseLogger::in_memory(64 * 1024)
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
         let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        let logger = {
+            let _rt = runtime.enter();
+            Arc::new(temp_logger())
+        };
         Ok((
             ReplicaContext {
                 database: Database {
@@ -1091,7 +1116,7 @@ mod test {
                     initial_program: Hash::ZERO,
                 },
                 replica_id: 0,
-                logger: Arc::new(temp_logger()?),
+                logger,
                 subscriptions: subs,
                 relational_db,
             },

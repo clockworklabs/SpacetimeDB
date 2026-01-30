@@ -537,7 +537,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 );
                 var scalars = members.Take(n).Select(m => $"{m.Type.Name} {m.Name}");
                 var lastScalar = $"{members[n].Type.Name} {members[n].Name}";
-                var lastBounds = $"Bound<{members[n].Type.Name}> {members[n].Name}";
+                var lastBounds =
+                    $"global::SpacetimeDB.Bound<{members[n].Type.Name}> {members[n].Name}";
                 var argsScalar = string.Join(", ", scalars.Append(lastScalar));
                 var argsBounds = string.Join(", ", scalars.Append(lastBounds));
                 string argName;
@@ -646,7 +647,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         .Take(n)
                         .Select(m => $"{m.Type.Name} {m.Name}")
                         .Append(
-                            $"global::SpacetimeDB.Internal.Bound<{declaringMembers[^1].Type.Name}> {declaringMembers[^1].Name}"
+                            $"global::SpacetimeDB.Bound<{declaringMembers[^1].Type.Name}> {declaringMembers[^1].Name}"
                         )
                 );
 
@@ -713,7 +714,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 globalName,
                 $$$"""
             {{{SyntaxFacts.GetText(Visibility)}}} readonly struct {{{v.Name}}} : {{{iTable}}} {
-                static {{{globalName}}} {{{iTable}}}.ReadGenFields(System.IO.BinaryReader reader, {{{globalName}}} row) {
+                public static {{{globalName}}} ReadGenFields(System.IO.BinaryReader reader, {{{globalName}}} row) {
                     {{{string.Join(
                         "\n",
                         autoIncFields.Select(m =>
@@ -728,7 +729,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     return row;
                 }
 
-                static SpacetimeDB.Internal.RawTableDefV9 {{{iTable}}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                     Name: nameof({{{v.Name}}}),
                     ProductTypeRef: (uint) new {{{globalName}}}.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [{{{GetPrimaryKey(v)?.ToString() ?? ""}}}],
@@ -978,6 +979,7 @@ record ViewDeclaration
         // Validate return type: must be Option<T> or Vec<T>
         if (
             !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
+            && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.List")
         )
         {
@@ -1030,8 +1032,10 @@ record ViewDeclaration
             ? "SpacetimeDB.AnonymousViewContext"
             : "SpacetimeDB.ViewContext";
 
-        var isValueOption = ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption");
-        var writeOutput = isValueOption
+        var isOption =
+            ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
+            || ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption");
+        var writeOutput = isOption
             ? $$$"""
                     var listSerializer = {{{ReturnType.BSATNName}}}.GetListSerializer();
                     var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
@@ -1179,7 +1183,7 @@ record ReducerDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
@@ -1296,7 +1300,7 @@ record ProcedureDeclaration
         }
         else
         {
-            var serializer = $"new {ReturnType.BSATNName}()";
+            var serializer = $"new {ReturnType.ToBSATNString()}()";
             bodyLines = new[]
             {
                 $"var result = {invocation};",
@@ -1322,12 +1326,12 @@ record ProcedureDeclaration
             ? (
                 txPayloadIsUnit
                     ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
-                    : $"new {txPayload.BSATNName}().GetAlgebraicType(registrar)"
+                    : $"new {txPayload.ToBSATNString2()}().GetAlgebraicType(registrar)"
             )
             : (
                 ReturnType.Name == "SpacetimeDB.Unit"
                     ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
-                    : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)"
+                    : $"new {ReturnType.ToBSATNString2()}().GetAlgebraicType(registrar)"
             );
 
         var classFields = MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args);
@@ -1373,7 +1377,7 @@ record ProcedureDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
@@ -1933,6 +1937,9 @@ public class Module : IIncrementalGenerator
 
                         public static List<T> ToListOrEmpty<T>(T? value) where T : struct
                                 => value is null ? new List<T>() : new List<T> { value.Value };
+
+                        public static List<T> ToListOrEmpty<T>(T? value) where T : class
+                                => value is null ? new List<T>() : new List<T> { value };
 
                     #if EXPERIMENTAL_WASM_AOT
                         // In AOT mode we're building a library.
