@@ -1,5 +1,5 @@
-﻿import type { ReducerConnector } from '../core/connectors';
-import * as mod from '../../modules/test-1/module_bindings';
+import type { ReducerConnector } from '../core/connectors';
+import * as mod from '../../module_bindings';
 
 export function spacetimedb(
   url = process.env.STDB_URL!,
@@ -58,14 +58,9 @@ export function spacetimedb(
           transferHooked = true;
           console.log('[stdb] hooking onTransfer');
           (reducers as any).onTransfer(
-            (
-              eventCtx: any,
-              _from: any,
-              _to: bigint,
-              _amount: bigint,
-              clientTxnId: bigint,
-            ) => {
-              // console.log('[stdb] onTransfer fired', { from, to, amount: amount.toString(), clientTxnId: clientTxnId.toString(), status: eventCtx?.event?.status });
+            (eventCtx: any, args: { from: number; to: number; amount: bigint; clientTxnId: bigint }) => {
+              const clientTxnId = args.clientTxnId;
+              // console.log('[stdb] onTransfer fired', { ...args, status: eventCtx?.event?.status });
 
               const waiter = transferWaiters.get(clientTxnId);
               if (!waiter) {

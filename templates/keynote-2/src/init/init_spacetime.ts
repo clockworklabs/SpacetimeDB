@@ -1,4 +1,4 @@
-﻿import { join } from 'node:path';
+import { join } from 'node:path';
 import { ACC, BAL, sh } from './utils.ts';
 
 export async function initSpacetime() {
@@ -35,7 +35,7 @@ export async function initSpacetime() {
   }
 
   // 2) Generate TS bindings
-  const outDir = join(process.cwd(), 'modules', 'test-1', 'module_bindings');
+  const outDir = join(process.cwd(), 'module_bindings');
   console.log(`[spacetimedb] generate bindings → ${outDir}`);
   await sh('spacetime', [
     'generate',

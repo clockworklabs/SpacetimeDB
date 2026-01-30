@@ -1,4 +1,4 @@
-﻿import hdr from 'hdr-histogram-js';
+import hdr from 'hdr-histogram-js';
 import { performance } from 'node:perf_hooks';
 import { pickTwoDistinct, zipfSampler } from './zipf.ts';
 import { getSpacetimeCommittedTransfers } from './spacetimeMetrics.ts';
@@ -137,6 +137,20 @@ export async function runOne({
     `[${connector.name}] max inflight per worker: ${MAX_INFLIGHT_PER_WORKER}`,
   );
 
+  // Track when workers reach end of test window (before waiting for in-flight ops)
+  let workersReachedEnd = 0;
+  let resolveTestWindowEnd: () => void;
+  const testWindowEndPromise = new Promise<void>((resolve) => {
+    resolveTestWindowEnd = resolve;
+  });
+
+  function signalWorkerReachedEnd() {
+    workersReachedEnd++;
+    if (workersReachedEnd >= concurrency) {
+      resolveTestWindowEnd();
+    }
+  }
+
   async function worker(workerIndex: number) {
     const conn = workers[workerIndex];
 
@@ -190,6 +204,7 @@ export async function runOne({
           }
         }
       }
+      signalWorkerReachedEnd();
       return;
     }
 
@@ -256,17 +271,26 @@ export async function runOne({
       }
     }
 
+    // Signal that this worker has reached end of test window
+    signalWorkerReachedEnd();
+
     await Promise.all(inflight);
   }
 
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
-  await Promise.all(Array.from({ length: concurrency }, (_, i) => worker(i)));
+  // Start all workers - they run in parallel
+  const workerPromises = Array.from({ length: concurrency }, (_, i) => worker(i));
 
+  // Wait for all workers to reach end of test window (before they wait for in-flight ops)
+  await testWindowEndPromise;
+
+  const testWindowEndTime = performance.now();
   console.log(
-    `[${connector.name}] All workers finished; collecting metrics...`,
+    `[${connector.name}] Test window ended at ${((testWindowEndTime - start) / 1000).toFixed(2)}s; capturing metrics...`,
   );
 
+  // Capture metrics immediately when test window ends
   let committedDelta: number | null = null;
 
   if (useSpacetimeMetrics && beforeTransfers !== null) {
@@ -279,20 +303,27 @@ export async function runOne({
           deltaBig <= maxSafe ? Number(deltaBig) : Number(maxSafe);
 
         console.log(
-          `[spacetimedb] metrics after run: committed transfer txns = ${afterTransfers.toString()} (delta = ${deltaBig.toString()})`,
+          `[spacetimedb] metrics at test window end: committed transfer txns = ${afterTransfers.toString()} (delta = ${deltaBig.toString()})`,
         );
       } else {
         console.warn(
-          '[spacetimedb] metrics after run missing or decreased; ignoring metrics delta',
+          '[spacetimedb] metrics at test window end missing or decreased; ignoring metrics delta',
         );
       }
     } catch (err) {
       console.warn(
-        '[spacetimedb] failed to read metrics after run; ignoring metrics delta:',
+        '[spacetimedb] failed to read metrics at test window end; ignoring metrics delta:',
         err,
       );
     }
   }
+
+  // Now wait for all workers to fully complete (including in-flight ops)
+  await Promise.all(workerPromises);
+
+  console.log(
+    `[${connector.name}] All workers finished (including in-flight ops)`,
+  );
 
   if (process.env.VERIFY === '1') {
     console.log(`[${connector.name}] Running verification pass...`);

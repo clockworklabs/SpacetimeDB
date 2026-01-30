@@ -1,4 +1,4 @@
-﻿## Overview
+## Overview
 
 This app runs repeatable load tests against multiple connectors (Bun+Postgres, CockroachDB, SQLite, Supabase, Convex, SpacetimeDB, etc.).
 
@@ -7,6 +7,30 @@ Each run:
 - Loads a scenario from `src/tests/<test-name>/`
 - Runs it against one or more connectors
 - Writes a JSON report into `./runs/` with TPS and latency stats
+
+---
+
+## Demo Mode
+
+Run a quick performance comparison:
+
+```bash
+npm run demo
+```
+
+The script will:
+- Check that required services are running (prompts you to start them if not)
+- Seed databases with test data
+- Run benchmarks at high contention
+- Display animated comparison results
+
+**Options:**
+- `--seconds N` - Benchmark duration (default: 10)
+- `--concurrency N` - Concurrent connections (default: 50)
+- `--alpha N` - Contention level (default: 1.5)
+- `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
+- `--skip-prep` - Skip database seeding
+- `--no-animation` - Disable animated output
 
 ---
 
@@ -95,9 +119,9 @@ Copy `.env.example` to `.env` and adjust.
 
 **SpacetimeDB module bindings:**
 ```bash
-cd modules/test-1/server
+cd spacetimedb
 spacetimedb generate --lang typescript --out-dir ../module_bindings
-cd ../../..
+cd ..
 ```
 
 **Convex generated files:**
