@@ -22,11 +22,11 @@ fn test_subscribe() {
     let updates = sub.collect().unwrap();
 
     assert_eq!(
-        updates,
-        vec![
-            serde_json::json!({"t": {"deletes": [], "inserts": [{"name": "Alice"}]}}),
-            serde_json::json!({"t": {"deletes": [], "inserts": [{"name": "Bob"}]}}),
-        ],
+        serde_json::json!(updates),
+        serde_json::json!([
+        {"t": {"deletes": [], "inserts": [{"name": "Alice"}]}},
+        {"t": {"deletes": [], "inserts": [{"name": "Bob"}]}},
+        ]),
         "Expected subscription updates for Alice and Bob inserts"
     );
 }
