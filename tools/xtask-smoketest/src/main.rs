@@ -133,7 +133,7 @@ fn build_precompiled_modules() -> Result<()> {
 
 /// Default parallelism for smoketests.
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
-const DEFAULT_PARALLELISM: &str = "16";
+const DEFAULT_PARALLELISM: &str = "1";
 
 fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Result<()> {
     // 1. Build binaries first (single process, no race)
