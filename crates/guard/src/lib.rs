@@ -266,7 +266,15 @@ impl SpacetimeDbGuard {
 
         let address = "127.0.0.1:0".to_string();
 
-        let mut args = vec!["start", "--data-dir", &data_dir_str, "--listen-addr", &address];
+        let mut args = vec![
+            "start",
+            "--jwt-key-dir",
+            &data_dir_str,
+            "--data-dir",
+            &data_dir_str,
+            "--listen-addr",
+            &address,
+        ];
         if let Some(ref port) = pg_port_str {
             args.extend(["--pg-port", port]);
         }
