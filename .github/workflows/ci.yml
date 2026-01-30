@@ -78,6 +78,9 @@ jobs:
         with:
           run_install: true
 
+      - name: Check for pnpm
+        run: pnpm --version
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
