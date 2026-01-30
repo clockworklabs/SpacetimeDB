@@ -172,7 +172,7 @@ impl SpacetimeDbGuard {
             let cli_path = ensure_binaries_built();
             let cmd = Command::new(&cli_path);
             let (child, logs, host_url, reader_threads) =
-                Self::spawn_server_with_command(data_dir, pg_port, spawn_id, cmd);
+                Self::spawn_server_with_command(&data_dir, pg_port, spawn_id, cmd);
             SpacetimeDbGuard {
                 child,
                 host_url,
@@ -213,7 +213,7 @@ impl SpacetimeDbGuard {
         let cli_path = ensure_binaries_built();
         let cmd = Command::new(&cli_path);
         let (child, logs, host_url, reader_threads) =
-            Self::spawn_server_with_command(self.data_dir.clone(), self.pg_port, spawn_id, cmd);
+            Self::spawn_server_with_command(&self.data_dir, self.pg_port, spawn_id, cmd);
         eprintln!(
             "[RESTART-{:03}] New server ready, pid={}, url={}",
             spawn_id,
