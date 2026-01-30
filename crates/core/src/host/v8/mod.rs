@@ -463,6 +463,10 @@ enum JsWorkerRequest {
     CallScheduledFunction(ScheduledFunctionParams, tokio::runtime::Handle),
 }
 
+// These two should be the same size (once core pinning PR lands).
+static_assert_size!(JsWorkerRequest, 208);
+static_assert_size!(CallReducerParams, 192);
+
 /// Performs some of the startup work of [`spawn_instance_worker`].
 ///
 /// NOTE(centril): in its own function due to lack of `try` blocks.
