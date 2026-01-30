@@ -34,7 +34,7 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 
 ### Contention Impact
 
-![Contention Chart](./docs/contention-chart.png)
+![Contention Chart](./contention-chart.png)
 
 The chart above shows TPS vs Zipf Alpha (contention level). Higher alpha values concentrate more transactions on fewer "hot" accounts, increasing contention. SpacetimeDB maintains consistent performance regardless of contention level, while traditional database architectures show significant degradation.
 
