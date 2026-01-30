@@ -124,16 +124,6 @@ SpacetimeDB: Client → SpacetimeDB (compute + storage) → Client
 
 This architectural difference means SpacetimeDB can execute transactions in microseconds rather than milliseconds, resulting in order-of-magnitude performance improvements.
 
-### Client Pipelining
-
-SpacetimeDB clients support **pipelining** - sending multiple requests without waiting for responses. This maximizes throughput by keeping the connection saturated.
-
-Results with pipelining disabled show even higher raw throughput (107,850 TPS) as the benchmark measures pure transaction processing without pipelining overhead.
-
-### Confirmed Reads (`withConfirmedReads`)
-
-SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are durably committed before acknowledging to the client. The benchmark results shown use `withConfirmedReads = ON` for fair comparison with databases that provide similar durability guarantees.
-
 ### Cloud vs Local Results
 
 PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
