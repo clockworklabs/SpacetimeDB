@@ -12,22 +12,22 @@
 
 ## Overall Metrics
 
-| Metric                  | Value                              |
-| ----------------------- | ---------------------------------- |
-| **Prompt Level Used**   | ****\*\*\*\*****\_****\*\*\*\***** |
-| **Features Evaluated**  | 1-\_\_\_ (max 15)                  |
-| **Total Feature Score** | **_ / _** (max 45)                 |
+| Metric                  | Value                                      |
+| ----------------------- | ------------------------------------------ |
+| **Prompt Level Used**   | \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\*** |
+| **Features Evaluated**  | 1-\_\_\_ (max 15)                          |
+| **Total Feature Score** | **_ / _** (max 45)                         |
 
 - [ ] Compiles without errors
 - [ ] Runs without crashing
 - [ ] First-try success (worked without manual fixes)
 
-| Metric                   | Value                              |
-| ------------------------ | ---------------------------------- |
-| Lines of code (backend)  | **\_\_\_**                         |
-| Lines of code (frontend) | **\_\_\_**                         |
-| Number of files created  | **\_\_\_**                         |
-| External dependencies    | ****\*\*\*\*****\_****\*\*\*\***** |
+| Metric                   | Value                                      |
+| ------------------------ | ------------------------------------------ |
+| Lines of code (backend)  | **\_\_\_**                                 |
+| Lines of code (frontend) | **\_\_\_**                                 |
+| Number of files created  | **\_\_\_**                                 |
+| External dependencies    | \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\*** |
 
 ---
 

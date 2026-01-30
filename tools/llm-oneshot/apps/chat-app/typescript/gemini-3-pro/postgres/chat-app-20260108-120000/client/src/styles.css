@@ -13,7 +13,8 @@
 
 body {
   margin: 0;
-  font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family:
+    'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-normal);
   -webkit-font-smoothing: antialiased;

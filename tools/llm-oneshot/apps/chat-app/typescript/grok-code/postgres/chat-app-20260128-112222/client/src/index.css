@@ -23,7 +23,12 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
@@ -33,7 +38,9 @@ button {
   font-family: inherit;
 }
 
-input, textarea, button {
+input,
+textarea,
+button {
   font-size: 14px;
 }
 

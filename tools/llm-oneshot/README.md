@@ -102,6 +102,7 @@ pnpm run summarize
 ```
 
 This outputs to `docs/llms/oneshots/`:
+
 - `GRADE_SUMMARY.md` — Executive summary
 - `grades.json` — Structured data for websites
 - Per-app summaries in `{app}/`
@@ -117,12 +118,14 @@ apps/{app-name}/{language}/{model}/{platform}/{app-name}-{YYYYMMDD-HHMMSS}/
 ```
 
 Example:
+
 ```
 apps/chat-app/typescript/opus-4-5/spacetime/chat-app-20260107-120000/
 apps/chat-app/typescript/opus-4-5/postgres/chat-app-20260108-140000/
 ```
 
 This structure allows comparing results across:
+
 - **Apps** — chat-app, paint-app
 - **Models** — opus-4-5, grok-code, gemini-3-pro, gpt-5-2
 - **Platforms** — spacetime vs postgres
