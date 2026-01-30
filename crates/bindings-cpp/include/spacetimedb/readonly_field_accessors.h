@@ -187,8 +187,12 @@ public:
  * @brief Read-only accessor for indexed (non-unique) fields
  * 
  * Allows only:
- * - filter(value) -> iterable range
- * - filter(range) -> iterable range (for range queries)
+ * - filter(value) -> lazy IndexIterator over matching rows
+ * - filter(range) -> lazy IndexIterator over range-matched rows
+ * 
+ * IndexIterator supports both traditional and range-based for loops.
+ * Results are evaluated lazily without materializing all matches.
+ * Call .collect() to materialize results into a std::vector if needed.
  */
 template<typename TableType, typename FieldType>
 class ReadOnlyIndexedAccessor : public ReadOnlyFieldAccessorBase<TableType, FieldType> {
@@ -214,37 +218,43 @@ public:
     
     /**
      * Filter rows by exact field value using index
-     * Returns an iterable range of matching rows
+     * Returns lazy IndexIterator - results evaluated during iteration
+     * Always use via range-based for loop for clean syntax
      * 
      * Example:
      * for (const auto& person : ctx.db[person_age].filter(25u)) {
-     *     // process persons aged 25
+     *     // process persons aged 25 - no materialization overhead
      * }
+     * 
+     * To materialize all matching rows into a vector:
+     * auto all_aged_25 = ctx.db[person_age].filter(25u).collect();
      */
-    IndexIterator<TableType> filter(const FieldType& value) const {
+    IndexIteratorRange<TableType> filter(const FieldType& value) const {
         IndexId index_id = get_index_id();
         if (index_id.inner != 0) {
-            return IndexIterator<TableType>(index_id, value);
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>(index_id, value));
         }
-        return IndexIterator<TableType>();
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>());
     }
     
     /**
      * Filter rows by range using index
+     * Returns lazy IndexIterator - results evaluated during iteration
+     * Always use via range-based for loop for clean syntax
      * 
      * Example:
      * for (const auto& person : ctx.db[person_age].filter(range_from(18u))) {
-     *     // process persons aged 18 or older
+     *     // process persons aged 18+ - no materialization overhead
      * }
      */
     template<typename RangeType>
-    std::enable_if_t<is_range_v<RangeType>, IndexIterator<TableType>>
+    std::enable_if_t<is_range_v<RangeType>, IndexIteratorRange<TableType>>
     filter(const RangeType& range) const {
         IndexId index_id = get_index_id();
         if (index_id.inner != 0) {
-            return IndexIterator<TableType>(index_id, range);
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>(index_id, range));
         }
-        return IndexIterator<TableType>();
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>());
     }
 };
 

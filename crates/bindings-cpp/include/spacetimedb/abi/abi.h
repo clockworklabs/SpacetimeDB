@@ -31,6 +31,10 @@
 #define STDB_IMPORT_10_3(name) \
     __attribute__((import_module("spacetime_10.3"), import_name(#name))) extern
 
+// Point scan delete is in spacetime_10.4
+#define STDB_IMPORT_10_4(name) \
+    __attribute__((import_module("spacetime_10.4"), import_name(#name))) extern
+
 // Import opaque types into global namespace for C compatibility
 using SpacetimeDB::Status;
 using SpacetimeDB::TableId;
@@ -72,6 +76,12 @@ Status datastore_index_scan_range_bsatn(
     const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len, 
     RowIter* out);
 
+STDB_IMPORT_10_4(datastore_index_scan_point_bsatn)
+Status datastore_index_scan_point_bsatn(
+    IndexId index_id, const uint8_t* point_ptr, size_t point_len,
+    RowIter* out);
+
+// Deprecated: Use datastore_index_scan_range_bsatn instead
 STDB_IMPORT(datastore_btree_scan_bsatn)
 Status datastore_btree_scan_bsatn(
     IndexId index_id, const uint8_t* prefix_ptr, size_t prefix_len, ColId prefix_elems,
@@ -97,6 +107,11 @@ STDB_IMPORT(datastore_delete_by_index_scan_range_bsatn)
 Status datastore_delete_by_index_scan_range_bsatn(
     IndexId index_id, const uint8_t* prefix_ptr, size_t prefix_len, ColId prefix_elems,
     const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len, 
+    uint32_t* out);
+
+STDB_IMPORT_10_4(datastore_delete_by_index_scan_point_bsatn)
+Status datastore_delete_by_index_scan_point_bsatn(
+    IndexId index_id, const uint8_t* point_ptr, size_t point_len,
     uint32_t* out);
 
 STDB_IMPORT(datastore_delete_by_btree_scan_bsatn)
