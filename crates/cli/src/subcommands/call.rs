@@ -10,6 +10,7 @@ use itertools::Itertools;
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
 use spacetimedb_lib::{Identity, ProductTypeElement};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef};
+use core::ops::Deref;
 use std::fmt::Write;
 
 use super::sql::parse_req;
@@ -198,7 +199,7 @@ impl std::fmt::Display for CallSignature<'_> {
             }
             comma = true;
             if let Some(name) = arg.name() {
-                write!(f, "{}: ", name.to_case(Case::Snake))?;
+                write!(f, "{}: ", name.deref().to_case(Case::Snake))?;
             }
             write_type::write_type(typespace, f, &arg.algebraic_type)?;
         }

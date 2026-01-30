@@ -50,11 +50,7 @@ use spacetimedb_primitives::{
     col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
 };
 use spacetimedb_sats::{
-    bsatn::{self, to_writer, DecodeError, Deserializer},
-    de::{DeserializeSeed, WithBound},
-    memory_usage::MemoryUsage,
-    ser::Serialize,
-    AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
+    AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace, bsatn::{self, DecodeError, Deserializer, to_writer}, de::{DeserializeSeed, WithBound}, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
@@ -570,7 +566,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name: Box<str> = name.clone().into();
+        let view_name = name.clone().into_raw();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -773,7 +769,7 @@ impl MutTxId {
                 &StViewParamRow {
                     view_id,
                     param_pos: *col_id,
-                    param_name: name.clone().into(),
+                    param_name: name.clone().into_raw(),
                     param_type: ty.clone().into(),
                 },
             )?;
@@ -789,7 +785,7 @@ impl MutTxId {
                 &StViewColumnRow {
                     view_id,
                     col_pos: def.col_id,
-                    col_name: def.name.clone().into(),
+                    col_name: def.name.clone().into_raw(),
                     col_type: def.ty.clone().into(),
                 },
             )?;
@@ -912,9 +908,9 @@ impl MutTxId {
     }
 
     // TODO(centril): remove this. It doesn't seem to be used by anything.
-    pub fn rename_table(&mut self, table_id: TableId, new_name: &str) -> Result<()> {
+    pub fn rename_table(&mut self, table_id: TableId, new_name: TableName) -> Result<()> {
         // Update the table's name in st_tables.
-        self.update_st_table_row(table_id, |st| st.table_name = TableName::new_from_str(new_name))
+        self.update_st_table_row(table_id, |st| st.table_name = new_name)
     }
 
     fn update_st_table_row<R>(&mut self, table_id: TableId, updater: impl FnOnce(&mut StTableRow) -> R) -> Result<R> {
@@ -1104,7 +1100,7 @@ impl MutTxId {
         // Store sequence values to restore them later with new table.
         // Using a map from name to value as the new sequence ids will be different.
         // and I am not sure if we should rely on the order of sequences in the table schema.
-        let seq_values: HashMap<Box<str>, i128> = original_table_schema
+        let seq_values: HashMap<_, i128> = original_table_schema
             .sequences
             .iter()
             .map(|s| {
@@ -1149,7 +1145,7 @@ impl MutTxId {
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<Box<str>, i128>,
+        seq_values: HashMap<RawIdentifier, i128>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;

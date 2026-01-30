@@ -11,6 +11,8 @@ use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -174,12 +176,15 @@ pub struct MessageExecutionError {
 
 impl MessageExecutionError {
     fn into_event(self) -> ModuleEvent {
+        let reducer = RawIdentifier::new(self.reducer.as_deref().unwrap_or("<none>"));
+        let reducer = ReducerName::new(Identifier::new(reducer).unwrap());
+
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
             caller_connection_id: self.caller_connection_id,
             function_call: ModuleFunctionCall {
-                reducer: ReducerName::new_from_str(&self.reducer.unwrap_or_else(|| "<none>".into())),
+                reducer,
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },

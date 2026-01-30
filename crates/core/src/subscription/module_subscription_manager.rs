@@ -2180,7 +2180,7 @@ mod tests {
         // select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: TableName::new_from_str("t"),
+            table_name: TableName::for_test("t"),
             inserts: [product![2u8]].into(),
             deletes: [product![3u8]].into(),
         };
@@ -2198,7 +2198,7 @@ mod tests {
         // Only: select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: TableName::new_from_str("t"),
+            table_name: TableName::for_test("t"),
             inserts: [product![8u8]].into(),
             deletes: [product![9u8]].into(),
         };
@@ -2239,7 +2239,7 @@ mod tests {
         // Therefore we must evaluate it for any update on `t`.
         let table_update = DatabaseTableUpdate {
             table_id: t_id,
-            table_name: TableName::new_from_str("t"),
+            table_name: TableName::for_test("t"),
             inserts: [product![0u8, 0u8]].into(),
             deletes: [].into(),
         };
@@ -2255,7 +2255,7 @@ mod tests {
         // Yes, because `s.a = 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: TableName::new_from_str("s"),
+            table_name: TableName::for_test("s"),
             inserts: [product![0u8, 1u8]].into(),
             deletes: [].into(),
         };
@@ -2271,7 +2271,7 @@ mod tests {
         // No, because `s.a != 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: TableName::new_from_str("s"),
+            table_name: TableName::for_test("s"),
             inserts: [product![0u8, 2u8]].into(),
             deletes: [].into(),
         };
@@ -2526,7 +2526,7 @@ mod tests {
             caller_identity: id0,
             caller_connection_id: Some(client0.id.connection_id),
             function_call: ModuleFunctionCall {
-                reducer: ReducerName::new_from_str("DummyReducer"),
+                reducer: ReducerName::for_test("DummyReducer"),
                 reducer_id: u32::MAX.into(),
                 args: ArgsTuple::nullary(),
             },

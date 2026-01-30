@@ -8,11 +8,12 @@ use spacetimedb_data_structures::{
 };
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
-    hash_bytes, AlgebraicType, Identity,
+    hash_bytes, Identity,
 };
 use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
-    WithTypespace,
+    raw_identifier::RawIdentifier,
+    AlgebraicType, WithTypespace,
 };
 use termcolor_formatter::{ColorScheme, TermColorFormatter};
 use thiserror::Error;
@@ -400,10 +401,10 @@ pub enum AutoMigrateError {
     ChangeWithinColumnTypeRenamedField(ChangeColumnTypeParts),
 
     #[error("Adding a unique constraint {constraint} requires a manual migration")]
-    AddUniqueConstraint { constraint: Box<str> },
+    AddUniqueConstraint { constraint: RawIdentifier },
 
     #[error("Changing a unique constraint {constraint} requires a manual migration")]
-    ChangeUniqueConstraint { constraint: Box<str> },
+    ChangeUniqueConstraint { constraint: RawIdentifier },
 
     #[error("Removing the table {table} requires a manual migration")]
     RemoveTable { table: Identifier },
@@ -419,7 +420,7 @@ pub enum AutoMigrateError {
         "Changing the accessor name on index {index} from {old_accessor:?} to {new_accessor:?} requires a manual migration"
     )]
     ChangeIndexAccessor {
-        index: Box<str>,
+        index: RawIdentifier,
         old_accessor: Option<Identifier>,
         new_accessor: Option<Identifier>,
     },
@@ -1064,10 +1065,10 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
         let schedule_at = builder.add_type::<ScheduleAt>();
         let sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64)]);
-        let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
+        let sum_refty = builder.add_algebraic_type([], RawIdentifier::new("sum"), sum_ty, true);
         builder
             .build_table_with_new_type(
-                "Apples",
+                RawIdentifier::new("Apples"),
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1084,7 +1085,7 @@ mod tests {
 
         builder
             .build_table_with_new_type(
-                "Bananas",
+                RawIdentifier::new("Bananas"),
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1097,7 +1098,7 @@ mod tests {
 
         let deliveries_type = builder
             .build_table_with_new_type(
-                "Deliveries",
+                RawIdentifier::new("Deliveries"),
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1117,9 +1118,9 @@ mod tests {
 
         // Add a view and add its return type to the typespace
         let view_return_ty = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::U64)]);
-        let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
+        let view_return_ty_ref = builder.add_algebraic_type([], RawIdentifier::new("my_view_return"), view_return_ty, true);
         builder.add_view(
-            "my_view",
+            RawIdentifier::new("my_view"),
             0,
             true,
             true,
@@ -1129,7 +1130,7 @@ mod tests {
 
         builder
             .build_table_with_new_type(
-                "Inspections",
+                RawIdentifier::new("Inspections"),
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1156,7 +1157,7 @@ mod tests {
         let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
         builder
             .build_table_with_new_type(
-                "Apples",
+                RawIdentifier::new("Apples"),
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1175,7 +1176,7 @@ mod tests {
 
         builder
             .build_table_with_new_type(
-                "Bananas",
+                RawIdentifier::new("Bananas"),
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1193,7 +1194,7 @@ mod tests {
 
         let deliveries_type = builder
             .build_table_with_new_type(
-                "Deliveries",
+                RawIdentifier::new("Deliveries"),
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1226,7 +1227,7 @@ mod tests {
 
         let new_inspections_type = builder
             .build_table_with_new_type(
-                "Inspections",
+                RawIdentifier::new("Inspections"),
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1241,14 +1242,14 @@ mod tests {
 
         // add reducer.
         builder.add_reducer(
-            "perform_inspection",
+            RawIdentifier::new("perform_inspection"),
             ProductType::from([("a", AlgebraicType::Ref(new_inspections_type))]),
             None,
         );
 
         // Add new table
         builder
-            .build_table_with_new_type("Oranges", ProductType::from([("id", AlgebraicType::U32)]), true)
+            .build_table_with_new_type(RawIdentifier::new("Oranges"), ProductType::from([("id", AlgebraicType::U32)]), true)
             .with_index(btree(0), "id_index")
             .with_column_sequence(0)
             .with_unique_constraint(0)
@@ -1275,20 +1276,20 @@ mod tests {
         let oranges = expect_identifier("Oranges");
         let my_view = expect_identifier("my_view");
 
-        let bananas_sequence = "Bananas_id_seq";
-        let apples_unique_constraint = "Apples_id_key";
-        let apples_sequence = "Apples_id_seq";
-        let apples_id_name_index = "Apples_id_name_idx_btree";
-        let apples_id_count_index = "Apples_id_count_idx_btree";
-        let deliveries_schedule = "Deliveries_sched";
-        let inspections_schedule = "Inspections_sched";
+        let bananas_sequence: RawIdentifier = "Bananas_id_seq".into();
+        let apples_unique_constraint: RawIdentifier = "Apples_id_key".into();
+        let apples_sequence: RawIdentifier = "Apples_id_seq".into();
+        let apples_id_name_index: RawIdentifier = "Apples_id_name_idx_btree".into();
+        let apples_id_count_index: RawIdentifier = "Apples_id_count_idx_btree".into();
+        let deliveries_schedule: RawIdentifier = "Deliveries_sched".into();
+        let inspections_schedule: RawIdentifier = "Inspections_sched".into();
 
         assert!(plan.prechecks.is_sorted());
 
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
             plan.prechecks[0],
-            AutoMigratePrecheck::CheckAddSequenceRangeValid(bananas_sequence)
+            AutoMigratePrecheck::CheckAddSequenceRangeValid(&bananas_sequence)
         );
         let sql_old = RawRowLevelSecurityDefV9 {
             sql: "SELECT * FROM Apples".into(),
@@ -1303,36 +1304,36 @@ mod tests {
         assert!(steps.is_sorted());
 
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveSequence(apples_sequence)),
+            steps.contains(&AutoMigrateStep::RemoveSequence(&apples_sequence)),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveConstraint(apples_unique_constraint)),
+            steps.contains(&AutoMigrateStep::RemoveConstraint(&apples_unique_constraint)),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveIndex(apples_id_name_index)),
+            steps.contains(&AutoMigrateStep::RemoveIndex(&apples_id_name_index)),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::AddIndex(apples_id_count_index)),
+            steps.contains(&AutoMigrateStep::AddIndex(&apples_id_count_index)),
             "{steps:?}"
         );
 
         assert!(steps.contains(&AutoMigrateStep::ChangeAccess(&bananas)), "{steps:?}");
         assert!(
-            steps.contains(&AutoMigrateStep::AddSequence(bananas_sequence)),
+            steps.contains(&AutoMigrateStep::AddSequence(&bananas_sequence)),
             "{steps:?}"
         );
 
         assert!(steps.contains(&AutoMigrateStep::AddTable(&oranges)), "{steps:?}");
 
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveSchedule(deliveries_schedule)),
+            steps.contains(&AutoMigrateStep::RemoveSchedule(&deliveries_schedule)),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::AddSchedule(inspections_schedule)),
+            steps.contains(&AutoMigrateStep::AddSchedule(&inspections_schedule)),
             "{steps:?}"
         );
 

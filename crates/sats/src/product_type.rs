@@ -3,6 +3,7 @@ use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_value::InvalidFieldError;
+use crate::raw_identifier::RawIdentifier;
 use crate::{
     AlgebraicType, AlgebraicValue, ProductTypeElement, ProductValue, SpacetimeType, Typespace, ValueWithType,
     WithTypespace,
@@ -258,7 +259,7 @@ impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
 impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
     fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
         iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(Into::into)))
+            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(RawIdentifier::new)))
             .collect()
     }
 }

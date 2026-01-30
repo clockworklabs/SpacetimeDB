@@ -526,7 +526,7 @@ impl MutTxDatastore for Locking {
         tx.drop_table(table_id)
     }
 
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()> {
+    fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: TableName) -> Result<()> {
         tx.rename_table(table_id, new_name)
     }
 
@@ -1289,6 +1289,7 @@ mod tests {
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use bsatn::to_vec;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -1427,7 +1428,7 @@ mod tests {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                index_name: value.name.into(),
+                index_name: RawIdentifier::new(value.name),
                 index_algorithm: StIndexAlgorithm::BTree { columns: value.col },
             }
         }
@@ -1450,7 +1451,7 @@ mod tests {
         fn from(value: TableRow<'_>) -> Self {
             Self {
                 table_id: value.id.into(),
-                table_name: TableName::new_from_str(value.name),
+                table_name: TableName::for_test(value.name),
                 table_type: value.ty,
                 table_access: value.access,
                 table_primary_key: value.primary_key.map(ColList::new),
@@ -1469,7 +1470,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
-                col_name: value.name.into(),
+                col_name: RawIdentifier::new(value.name),
                 col_type: value.ty.into(),
             }
         }
@@ -1479,7 +1480,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
-                col_name: value.name.into(),
+                col_name: RawIdentifier::new(value.name),
                 col_type: value.ty,
             }
         }
@@ -1496,7 +1497,7 @@ mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.into(),
+                sequence_name: RawIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1512,7 +1513,7 @@ mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.into(),
+                sequence_name: RawIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1533,7 +1534,7 @@ mod tests {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
-                constraint_name: value.constraint_name.into(),
+                constraint_name: RawIdentifier::new(value.constraint_name),
                 table_id: value.table_id.into(),
                 constraint_data: StConstraintData::Unique {
                     columns: value.unique_columns.into(),
@@ -1601,7 +1602,7 @@ mod tests {
     ) -> TableSchema {
         TableSchema::new(
             TableId::SENTINEL,
-            TableName::new_from_str("Foo"),
+            TableName::for_test("Foo"),
             None,
             cols.into(),
             indices.into(),
@@ -1622,7 +1623,7 @@ mod tests {
             sequence_id: SequenceId::SENTINEL,
             table_id: TableId::SENTINEL,
             col_pos: 0.into(),
-            sequence_name: "Foo_id_seq".into(),
+            sequence_name: RawIdentifier::new("Foo_id_seq"),
             start: 1,
             increment: 1,
             min_value: 1,
@@ -2096,7 +2097,7 @@ mod tests {
             IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id,
-                index_name: "Foo_id_idx_btree".into(),
+                index_name: RawIdentifier::new("Foo_id_idx_btree"),
                 index_algorithm: BTreeAlgorithm::from(0).into(),
             },
             true,
@@ -2336,7 +2337,7 @@ mod tests {
         let index_def = IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id,
-            index_name: "Foo_age_idx_btree".into(),
+            index_name: RawIdentifier::new("Foo_age_idx_btree"),
             index_algorithm: BTreeAlgorithm::from(2).into(),
         };
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
@@ -2474,7 +2475,7 @@ mod tests {
             sequence_id: SequenceId::SENTINEL,
             table_id,
             col_pos: 0.into(),
-            sequence_name: "seq".into(),
+            sequence_name: RawIdentifier::new("seq"),
             start: 1,
             increment: 1,
             min_value: 1,
@@ -3412,8 +3413,8 @@ mod tests {
         let schedule = ScheduleSchema {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
-            schedule_name: "schedule".into(),
-            function_name: "reducer".into(),
+            schedule_name: RawIdentifier::new("schedule"),
+            function_name: RawIdentifier::new("reducer"),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);

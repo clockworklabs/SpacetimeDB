@@ -652,6 +652,7 @@ pub(crate) mod tests {
     };
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
     use spacetimedb_schema::relation::{FieldName, Header};
@@ -686,7 +687,7 @@ pub(crate) mod tests {
             tx,
             TableSchema::new(
                 TableId::SENTINEL,
-                TableName::new_from_str(table_name),
+                TableName::for_test(table_name),
                 None,
                 columns,
                 vec![],
@@ -799,7 +800,7 @@ pub(crate) mod tests {
             .unwrap();
         let st_table_row = StTableRow {
             table_id: ST_TABLE_ID,
-            table_name: TableName::new_from_str(ST_TABLE_NAME),
+            table_name: TableName::for_test(ST_TABLE_NAME),
             table_type: StTableType::System,
             table_access: StAccess::Public,
             table_primary_key: Some(StTableFields::TableId.into()),
@@ -847,13 +848,13 @@ pub(crate) mod tests {
         let (schema, _) = with_auto_commit(&db, |tx| create_inv_table(&db, tx))?;
         let table_id = schema.table_id;
         let columns = ColList::from(ColId(0));
-        let index_name = "idx_1";
+        let index_name = RawIdentifier::new("idx_1");
         let is_unique = false;
 
         let index = IndexSchema {
             table_id,
             index_id: IndexId::SENTINEL,
-            index_name: index_name.into(),
+            index_name: index_name.clone(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                 columns: columns.clone(),
             }),
@@ -865,13 +866,13 @@ pub(crate) mod tests {
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::new(ST_INDEX_ID, StIndexFields::IndexName.into()),
-                scalar(index_name),
+                scalar(&*index_name),
             )
             .unwrap();
 
         let st_index_row = StIndexRow {
             index_id,
-            index_name: index_name.into(),
+            index_name: index_name.clone(),
             table_id,
             index_algorithm: StIndexAlgorithm::BTree { columns },
         }
@@ -895,7 +896,7 @@ pub(crate) mod tests {
             .unwrap();
         let st_sequence_row = StSequenceRow {
             sequence_id: 5.into(),
-            sequence_name: "st_sequence_sequence_id_seq".into(),
+            sequence_name: RawIdentifier::new("st_sequence_sequence_id_seq"),
             table_id: ST_SEQUENCE_ID,
             col_pos: 0.into(),
             increment: 1,

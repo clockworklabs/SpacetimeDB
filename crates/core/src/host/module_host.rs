@@ -57,9 +57,11 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
@@ -188,8 +190,9 @@ pub struct ModuleFunctionCall {
 
 impl ModuleFunctionCall {
     pub fn update() -> Self {
+        let reducer = ReducerName::new(Identifier::new_assume_valid(RawIdentifier::new("update")));
         Self {
-            reducer: ReducerName::new_from_str("update"),
+            reducer,
             reducer_id: u32::MAX.into(),
             args: ArgsTuple::nullary(),
         }
@@ -678,11 +681,11 @@ pub enum ViewCommandResult {
 
     Sql {
         result: Result<SqlResult, DBError>,
-        head: Vec<(Box<str>, AlgebraicType)>,
+        head: Vec<(RawIdentifier, AlgebraicType)>,
     },
 }
 pub struct CallViewParams {
-    pub view_name: Box<str>,
+    pub view_name: Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1651,7 +1654,7 @@ impl ModuleHost {
         sql_text: String,
         auth: AuthCtx,
         subs: Option<ModuleSubscriptions>,
-        head: &mut Vec<(Box<str>, AlgebraicType)>,
+        head: &mut Vec<(RawIdentifier, AlgebraicType)>,
     ) -> Result<SqlResult, DBError> {
         let cmd = ViewCommand::Sql {
             db,
@@ -1800,7 +1803,7 @@ impl ModuleHost {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name = st_view_row.view_name;
+            let view_name = st_view_row.view_name.into_identifier();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
@@ -1875,7 +1878,7 @@ impl ModuleHost {
     fn call_view<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &str,
+        view_name: &Identifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
@@ -1910,7 +1913,7 @@ impl ModuleHost {
     fn call_view_inner<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        name: &str,
+        name: &Identifier,
         view_id: ViewId,
         table_id: TableId,
         fn_ptr: ViewFnPtr,
@@ -1919,7 +1922,7 @@ impl ModuleHost {
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        let view_name = name.to_owned().into_boxed_str();
+        let view_name = name.clone();
         let params = CallViewParams {
             timestamp: Timestamp::now(),
             view_name,

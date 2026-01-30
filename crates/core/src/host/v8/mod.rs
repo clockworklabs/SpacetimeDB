@@ -969,7 +969,7 @@ mod test {
                 let hooks = get_hooks(scope).unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
-                    name: &ReducerName::new_from_str("foobar"),
+                    name: &ReducerName::for_test("foobar"),
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),

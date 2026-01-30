@@ -2113,7 +2113,7 @@ mod tests {
     use super::*;
 
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, Identity};
-    use spacetimedb_sats::{product, AlgebraicType, ProductType};
+    use spacetimedb_sats::{AlgebraicType, ProductType, product, raw_identifier::RawIdentifier};
     use spacetimedb_schema::{def::ModuleDef, relation::Column, schema::Schema};
     use typed_arena::Arena;
 
@@ -2129,7 +2129,7 @@ mod tests {
                 source_id: SourceId(0),
                 header: Arc::new(Header {
                     table_id: 42.into(),
-                    table_name: TableName::new_from_str("foo"),
+                    table_name: TableName::for_test("foo"),
                     fields: vec![],
                     constraints: Default::default(),
                 }),
@@ -2139,7 +2139,7 @@ mod tests {
             SourceExpr::DbTable(DbTable {
                 head: Arc::new(Header {
                     table_id: 42.into(),
-                    table_name: TableName::new_from_str("foo"),
+                    table_name: TableName::for_test("foo"),
                     fields: vec![],
                     constraints: [(ColId(42).into(), Constraints::indexed())].into_iter().collect(),
                 }),
@@ -2215,7 +2215,7 @@ mod tests {
         let table_access = StAccess::Public;
         let head = Header::new(
             id,
-            TableName::new_from_str(name),
+            TableName::for_test(name),
             fields
                 .iter()
                 .map(|(col, ty, _)| Column::new(FieldName::new(id, (*col).into()), ty.clone()))
@@ -2290,7 +2290,7 @@ mod tests {
 
         let head1 = Header::new(
             table_id,
-            TableName::new_from_str("t1"),
+            TableName::for_test("t1"),
             columns.to_vec(),
             vec![
                 // Index a
@@ -2573,12 +2573,12 @@ mod tests {
     fn test_def() -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         builder.build_table_with_new_type(
-            "lhs",
+            RawIdentifier::new("lhs"),
             ProductType::from([("a", AlgebraicType::I32), ("b", AlgebraicType::String)]),
             true,
         );
         builder.build_table_with_new_type(
-            "rhs",
+            RawIdentifier::new("rhs"),
             ProductType::from([("c", AlgebraicType::I32), ("d", AlgebraicType::I64)]),
             true,
         );

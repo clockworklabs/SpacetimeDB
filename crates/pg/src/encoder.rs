@@ -17,7 +17,11 @@ pub(crate) fn row_desc(schema: &ProductType, format: &Format) -> Arc<Vec<FieldIn
             .iter()
             .enumerate()
             .map(|(pos, ty)| {
-                let field_name = ty.name.clone().map(Into::into).unwrap_or_else(|| format!("col_{pos}"));
+                let field_name = ty
+                    .name
+                    .clone()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| format!("col_{pos}"));
                 let field_type = type_of(schema, ty);
                 FieldInfo::new(field_name, None, None, field_type, format.format_for(pos))
             })
@@ -26,7 +30,7 @@ pub(crate) fn row_desc(schema: &ProductType, format: &Format) -> Arc<Vec<FieldIn
 }
 
 pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
-    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name());
+    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name().map(|n| &**n));
     match &ty.algebraic_type {
         AlgebraicType::String => Type::VARCHAR,
         AlgebraicType::Bool => Type::BOOL,
@@ -267,8 +271,8 @@ mod tests {
 
         // Now nested product
         let product = AlgebraicType::product([
-            ProductTypeElement::new(AlgebraicType::Product(schema), Some("x".into())),
-            ProductTypeElement::new(AlgebraicType::String, Some("y".into())),
+            ("x", AlgebraicType::Product(schema)),
+            ("y", AlgebraicType::String),
         ]);
         let schema = ProductType::from([product.clone()]);
         let value = product![AlgebraicValue::product(vec![

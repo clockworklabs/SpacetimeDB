@@ -649,7 +649,7 @@ impl InstanceCommon {
 
             for sub in tx.lookup_st_view_subs(view_id)? {
                 view_calls.push(CallViewParams {
-                    view_name: view_name.to_owned().into(),
+                    view_name: view_name.clone(),
                     view_id,
                     table_id,
                     fn_ptr: *fn_ptr,
@@ -1282,7 +1282,7 @@ impl InstanceCommon {
                     .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
 
                 CallViewParams {
-                    view_name: view_def.name.clone().into(),
+                    view_name: view_def.name.clone(),
                     view_id: info.view_id,
                     table_id: info.table_id,
                     fn_ptr: view_def.fn_ptr,

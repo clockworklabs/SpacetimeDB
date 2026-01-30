@@ -32,15 +32,15 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
-    Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
-    RawIndexDefV9, RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
+    Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
+    RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
     RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewFnPtr};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
-use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
 
 pub mod deserialize;
 pub mod error;
@@ -49,8 +49,8 @@ pub mod validate;
 /// A map from `Identifier`s to values of type `T`.
 pub type IdentifierMap<T> = HashMap<Identifier, T>;
 
-/// A map from `Box<str>`s to values of type `T`.
-pub type StrMap<T> = HashMap<Box<str>, T>;
+/// A map from `RawIdentifier`s to values of type `T`.
+pub type StrMap<T> = HashMap<RawIdentifier, T>;
 
 // We may eventually want to reorganize this module to look more
 // like the system tables, with numeric IDs used for lookups
@@ -235,7 +235,7 @@ impl ModuleDef {
     /// The `TableDef` an entity in the global namespace is stored in, if any.
     ///
     /// Generally, you will want to use the `lookup` method on the entity type instead.
-    pub fn stored_in_table_def(&self, name: &str) -> Option<&TableDef> {
+    pub fn stored_in_table_def(&self, name: &RawIdentifier) -> Option<&TableDef> {
         self.stored_in_table_def
             .get(name)
             .and_then(|table_name| self.tables.get(table_name))
@@ -553,7 +553,7 @@ impl From<TableDef> for RawTableDefV9 {
         } = val;
 
         RawTableDefV9 {
-            name: name.into(),
+            name: name.into_raw(),
             product_type_ref,
             primary_key: ColList::from_iter(primary_key),
             indexes: to_raw(indexes),
@@ -595,7 +595,7 @@ impl From<ViewDef> for TableDef {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
     /// The name of the sequence. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -641,7 +641,7 @@ impl From<SequenceDef> for RawSequenceDefV9 {
 #[non_exhaustive]
 pub struct IndexDef {
     /// The name of the index. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -675,7 +675,7 @@ impl From<IndexDef> for RawIndexDefV9 {
                 IndexAlgorithm::Hash(HashAlgorithm { columns }) => RawIndexAlgorithm::Hash { columns },
                 IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
-            accessor_name: val.accessor_name.map(Into::into),
+            accessor_name: val.accessor_name.map(Identifier::into_raw),
         }
     }
 }
@@ -925,7 +925,7 @@ pub struct ViewParamDef {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConstraintDef {
     /// The name of the constraint. Unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// The data for the constraint.
     pub data: ConstraintData,
@@ -1043,7 +1043,7 @@ impl fmt::Display for FunctionKind {
 #[non_exhaustive]
 pub struct ScheduleDef {
     /// The name of the schedule. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// The name of the column that stores the desired invocation time.
     ///
@@ -1066,7 +1066,7 @@ impl From<ScheduleDef> for RawScheduleDefV9 {
     fn from(val: ScheduleDef) -> Self {
         RawScheduleDefV9 {
             name: Some(val.name),
-            reducer_name: val.function_name.into(),
+            reducer_name: val.function_name.into_raw(),
             scheduled_at_column: val.at_column,
         }
     }
@@ -1187,8 +1187,8 @@ impl TryFrom<RawScopedTypeNameV9> for ScopedTypeName {
 impl From<ScopedTypeName> for RawScopedTypeNameV9 {
     fn from(val: ScopedTypeName) -> Self {
         RawScopedTypeNameV9 {
-            scope: val.scope.into_vec().into_iter().map_into().collect(),
-            name: val.name.into(),
+            scope: val.scope.into_vec().into_iter().map(|id| id.into_raw()).collect(),
+            name: val.name.into_raw(),
         }
     }
 }
@@ -1280,7 +1280,7 @@ impl From<ViewDef> for RawViewDefV9 {
             ..
         } = val;
         RawViewDefV9 {
-            name: name.into(),
+            name: name.into_raw(),
             index: index.into(),
             is_anonymous,
             is_public,
@@ -1350,7 +1350,7 @@ pub struct ReducerDef {
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV9 {
-            name: val.name.to_string().into(),
+            name: val.name.into_identifier().into_raw(),
             params: val.params,
             lifecycle: val.lifecycle,
         }
@@ -1394,7 +1394,7 @@ pub struct ProcedureDef {
 impl From<ProcedureDef> for RawProcedureDefV9 {
     fn from(val: ProcedureDef) -> Self {
         RawProcedureDefV9 {
-            name: val.name.into(),
+            name: val.name.into_raw(),
             params: val.params,
             return_type: val.return_type,
         }
@@ -1420,7 +1420,7 @@ impl ModuleDefLookup for TableDef {
 }
 
 impl ModuleDefLookup for SequenceDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -1432,7 +1432,7 @@ impl ModuleDefLookup for SequenceDef {
 }
 
 impl ModuleDefLookup for IndexDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -1496,7 +1496,7 @@ impl ModuleDefLookup for ViewParamDef {
 }
 
 impl ModuleDefLookup for ConstraintDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -1520,7 +1520,7 @@ impl ModuleDefLookup for RawRowLevelSecurityDefV9 {
 }
 
 impl ModuleDefLookup for ScheduleDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -1528,7 +1528,7 @@ impl ModuleDefLookup for ScheduleDef {
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
         let schedule = module_def.stored_in_table_def(key)?.schedule.as_ref()?;
-        if &schedule.name[..] == key {
+        if &schedule.name == key {
             Some(schedule)
         } else {
             None
@@ -1595,7 +1595,7 @@ mod tests {
         #[test]
         fn to_raw_deterministic(vec in prop::collection::vec(any::<u32>(), 0..5)) {
             let mut map = HashMap::new();
-            let name = ScopedTypeName::try_new([], "fake_name").unwrap();
+            let name = ScopedTypeName::try_new([], RawIdentifier::new("fake_name")).unwrap();
             for k in vec {
                 let def = TypeDef { name: name.clone(), ty: AlgebraicTypeRef(k), custom_ordering: false };
                 map.insert(k, def);
@@ -1611,7 +1611,7 @@ mod tests {
         let mut old_builder = RawModuleDefV9Builder::new();
         old_builder
             .build_table_with_new_type(
-                "Apples",
+                RawIdentifier::new("Apples"),
                 ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
                 true,
             )
@@ -1636,7 +1636,7 @@ mod tests {
         let mut old_builder = RawModuleDefV9Builder::new();
         old_builder
             .build_table_with_new_type(
-                "Apples",
+                RawIdentifier::new("Apples"),
                 ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
                 true,
             )
