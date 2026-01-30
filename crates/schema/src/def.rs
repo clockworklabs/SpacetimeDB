@@ -1043,7 +1043,7 @@ impl fmt::Display for FunctionKind {
 #[non_exhaustive]
 pub struct ScheduleDef {
     /// The name of the schedule. Must be unique within the containing `ModuleDef`.
-    pub name: RawIdentifier,
+    pub name: Identifier,
 
     /// The name of the column that stores the desired invocation time.
     ///
@@ -1065,7 +1065,7 @@ pub struct ScheduleDef {
 impl From<ScheduleDef> for RawScheduleDefV9 {
     fn from(val: ScheduleDef) -> Self {
         RawScheduleDefV9 {
-            name: Some(val.name),
+            name: Some(val.name.into_raw()),
             reducer_name: val.function_name.into_raw(),
             scheduled_at_column: val.at_column,
         }
@@ -1520,14 +1520,14 @@ impl ModuleDefLookup for RawRowLevelSecurityDefV9 {
 }
 
 impl ModuleDefLookup for ScheduleDef {
-    type Key<'a> = &'a RawIdentifier;
+    type Key<'a> = &'a Identifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        let schedule = module_def.stored_in_table_def(key)?.schedule.as_ref()?;
+        let schedule = module_def.stored_in_table_def(key.as_raw())?.schedule.as_ref()?;
         if &schedule.name == key {
             Some(schedule)
         } else {

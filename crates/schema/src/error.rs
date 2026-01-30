@@ -111,7 +111,7 @@ pub enum ValidationError {
     #[error("Table {table} should have a type definition for its product_type_element, but does not")]
     TableTypeNameMismatch { table: Identifier },
     #[error("Schedule {schedule} refers to a scheduled reducer or procedure {function} that does not exist")]
-    MissingScheduledFunction { schedule: RawIdentifier, function: Identifier },
+    MissingScheduledFunction { schedule: Identifier, function: Identifier },
     #[error("Scheduled {function_kind} {function_name} expected to have type {expected}, but has type {actual}")]
     IncorrectScheduledFunctionParams {
         function_name: RawIdentifier,
@@ -144,7 +144,7 @@ pub enum ValidationError {
     #[error("table {} corresponding to schedule {} not found", table_name, schedule_name)]
     MissingScheduleTable {
         table_name: RawIdentifier,
-        schedule_name: RawIdentifier,
+        schedule_name: Identifier,
     },
     #[error("reducer {reducer_name} has invalid return type: found Result<{ok_type}, {err_type}>")]
     InvalidReducerReturnType {

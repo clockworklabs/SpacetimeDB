@@ -3,12 +3,12 @@
 //! Nothing to do with Chrome.
 
 use crate::db::auth::{StAccess, StTableType};
-#[cfg(feature = "test")]
-use ecow::EcoString;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 use crate::{AlgebraicType, ProductType, SpacetimeType};
 use derive_more::Display;
+#[cfg(feature = "test")]
+use ecow::EcoString;
 use spacetimedb_primitives::*;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 
 // TODO(1.0): move these definitions into this file,
 // along with the other structs contained in it,

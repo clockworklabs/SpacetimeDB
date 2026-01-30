@@ -111,9 +111,7 @@ pub enum Workload {
 impl Workload {
     /// Returns a reducer workload with no arguments to the reducer
     /// and the current timestamp.
-    pub fn reducer_no_args(name: &str, id: Identity, conn_id: ConnectionId) -> Self {
-        let name = ReducerName::new(Identifier::new_assume_valid(RawIdentifier::new(name)));
-
+    pub fn reducer_no_args(name: ReducerName, id: Identity, conn_id: ConnectionId) -> Self {
         Self::Reducer(ReducerContext {
             name,
             caller_identity: id,
@@ -192,8 +190,8 @@ impl ExecutionContext {
 
     /// If this is a reducer context, returns the name of the reducer.
     #[inline]
-    pub fn into_reducer_name(self) -> ReducerName {
-        self.reducer.map(|ctx| ctx.name).unwrap_or_default()
+    pub fn into_reducer_name(self) -> Option<ReducerName> {
+        self.reducer.map(|ctx| ctx.name)
     }
 
     /// If this is a reducer context, returns the full reducer metadata.

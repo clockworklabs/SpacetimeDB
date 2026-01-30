@@ -183,16 +183,15 @@ impl EventStatus {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleFunctionCall {
-    pub reducer: ReducerName,
+    pub reducer: Option<ReducerName>,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
 
 impl ModuleFunctionCall {
     pub fn update() -> Self {
-        let reducer = ReducerName::new(Identifier::new_assume_valid(RawIdentifier::new("update")));
         Self {
-            reducer,
+            reducer: None,
             reducer_id: u32::MAX.into(),
             args: ArgsTuple::nullary(),
         }
@@ -533,7 +532,7 @@ pub fn call_identity_connected(
     let reducer_lookup = module.module_def.lifecycle_reducer(Lifecycle::OnConnect);
     let stdb = module.relational_db();
     let workload = Workload::reducer_no_args(
-        "call_identity_connected",
+        ReducerName::new(Identifier::new_assume_valid("call_identity_connected".into())),
         caller_auth.claims.identity,
         caller_connection_id,
     );
@@ -1289,12 +1288,12 @@ impl ModuleHost {
         let reducer_lookup = info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
         let reducer_name = reducer_lookup
             .as_ref()
-            .map(|(_, def)| &*def.name)
-            .unwrap_or("__identity_disconnected__");
+            .map(|(_, def)| def.name.clone())
+            .unwrap_or_else(|| ReducerName::new(Identifier::new_assume_valid("__identity_disconnected__".into())));
 
         let is_client_exist = |mut_tx: &MutTxId| mut_tx.st_client_row(caller_identity, caller_connection_id).is_some();
 
-        let workload = || Workload::reducer_no_args(reducer_name, caller_identity, caller_connection_id);
+        let workload = || Workload::reducer_no_args(reducer_name.clone(), caller_identity, caller_connection_id);
 
         // Decrement the number of subscribers for each view this caller is subscribed to
         let dec_view_subscribers = |tx: &mut MutTxId| {
@@ -1330,7 +1329,7 @@ impl ModuleHost {
                 );
                 InvalidReducerArguments(InvalidFunctionArguments {
                     err: err.into(),
-                    function_name: reducer_name.into(),
+                    function_name: reducer_name.clone().into_identifier(),
                 })
                 .into()
             })

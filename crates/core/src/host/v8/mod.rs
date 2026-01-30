@@ -44,6 +44,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, LazyLock};
@@ -236,20 +237,14 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
+    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
         self.instance_env.start_funcall(name, ts, func_type);
-    }
-
-    /// Returns the name of the most recent reducer to be run in this environment.
-    fn funcall_name(&self) -> &str {
-        &self.instance_env.func_name
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
     /// or `None` if no reducer is actively being invoked.
     fn log_record_function(&self) -> Option<&str> {
-        let function = self.funcall_name();
-        (!function.is_empty()).then_some(function)
+        self.instance_env.log_record_function()
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.
@@ -882,7 +877,7 @@ where
 
     // Start the timer.
     // We'd like this tightly around `call`.
-    env.start_funcall(op.name(), op.timestamp(), op.call_type());
+    env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
     let call_result = catch_exception(scope, |scope| call(scope, op)).map_err(|(e, can_continue)| {
         // Convert `can_continue` to whether the isolate has "trapped".

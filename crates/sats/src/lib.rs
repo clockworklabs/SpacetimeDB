@@ -71,11 +71,11 @@ pub mod serde {
     }
 }
 
-use crate::raw_identifier::RawIdentifier;
 /// Allows the macros in [`spacetimedb_bindings_macro`] to accept `crate = spacetimedb_sats`,
 /// which will then emit `$krate::sats`.
 #[doc(hidden)]
 pub use crate as sats;
+use crate::raw_identifier::RawIdentifier;
 
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;

@@ -392,8 +392,8 @@ impl Tx for Locking {
     /// Returns:
     /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, ReducerName) {
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         tx.release()
     }
 }
@@ -782,7 +782,7 @@ impl TxMetrics {
     pub fn report<'a, R: MetricsRecorder + 'a>(
         &self,
         tx_data: Option<&TxData>,
-        reducer: &str,
+        reducer: Option<&ReducerName>,
         get_exec_counter: impl FnOnce(WorkloadType) -> &'a R,
     ) {
         let workload = &self.workload;
@@ -792,6 +792,8 @@ impl TxMetrics {
 
         let elapsed_time = self.elapsed_time.as_secs_f64();
         let cpu_time = cpu_time.as_secs_f64();
+
+        let reducer = reducer.map(|r| &**r).unwrap_or_default();
 
         // Increment tx counter
         DB_METRICS
@@ -811,7 +813,6 @@ impl TxMetrics {
 
         get_exec_counter(self.workload).record(&self.exec_metrics);
 
-        // TODO(centril): simplify this by exposing `tx_data.for_table(table_id)`.
         if let Some(tx_data) = tx_data {
             for (table_id, table_entry) in tx_data.iter_table_entries() {
                 let table_name = &table_entry.table_name;
@@ -938,13 +939,13 @@ impl MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, ReducerName) {
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         tx.rollback()
     }
 
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx`.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, ReducerName)>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, Option<ReducerName>)>> {
         Ok(Some(tx.commit()))
     }
 }
@@ -1289,7 +1290,6 @@ mod tests {
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use bsatn::to_vec;
-    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -1303,8 +1303,10 @@ mod tests {
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::ToBsatn;
     use spacetimedb_sats::layout::RowTypeLayout;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
+    use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::schema::{
         columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema,
         SequenceSchema,
@@ -1480,7 +1482,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
-                col_name: RawIdentifier::new(value.name),
+                col_name: Identifier::for_test(value.name),
                 col_type: value.ty,
             }
         }
@@ -3413,8 +3415,8 @@ mod tests {
         let schedule = ScheduleSchema {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
-            schedule_name: RawIdentifier::new("schedule"),
-            function_name: RawIdentifier::new("reducer"),
+            schedule_name: Identifier::for_test("schedule"),
+            function_name: Identifier::for_test("reducer"),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);

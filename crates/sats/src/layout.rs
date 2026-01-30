@@ -7,10 +7,15 @@
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant, SumValue, WithTypespace, de::{
+    de::{
         Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
         SumAccess, SumVisitor, VariantAccess as _, VariantVisitor,
-    }, i256, impl_deserialize, impl_serialize, raw_identifier::RawIdentifier, sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG}, u256
+    },
+    i256, impl_deserialize, impl_serialize,
+    raw_identifier::RawIdentifier,
+    sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
+    u256, AlgebraicType, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, ProductValue, SumType,
+    SumTypeVariant, SumValue, WithTypespace,
 };
 use core::ops::{Index, Mul};
 use core::{mem, ops::Deref};

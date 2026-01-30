@@ -270,10 +270,7 @@ mod tests {
         assert_eq!(row, "\0\0\0\u{b}{\"Gray\": 1}\0\0\0\u{15}{\"some\": {\"Gray\": 2}}");
 
         // Now nested product
-        let product = AlgebraicType::product([
-            ("x", AlgebraicType::Product(schema)),
-            ("y", AlgebraicType::String),
-        ]);
+        let product = AlgebraicType::product([("x", AlgebraicType::Product(schema)), ("y", AlgebraicType::String)]);
         let schema = ProductType::from([product.clone()]);
         let value = product![AlgebraicValue::product(vec![
             value.into(),

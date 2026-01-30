@@ -184,7 +184,7 @@ impl MessageExecutionError {
             caller_identity: self.caller_identity,
             caller_connection_id: self.caller_connection_id,
             function_call: ModuleFunctionCall {
-                reducer,
+                reducer: Some(reducer),
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },

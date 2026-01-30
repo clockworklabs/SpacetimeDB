@@ -244,7 +244,8 @@ impl TableSchema {
                 col_name: element
                     .name
                     .clone()
-                    .unwrap_or_else(|| RawIdentifier::new(format!("col{col_pos}"))),
+                    .map(Identifier::new_assume_valid)
+                    .unwrap_or_else(|| Identifier::for_test(format!("col{col_pos}"))),
                 col_type: element.algebraic_type.clone(),
             })
             .collect();
@@ -657,9 +658,7 @@ impl TableSchema {
     pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
         let table_name = self.table_name.clone().into_identifier();
         for col in &mut self.columns {
-            let def: &ColumnDef = module_def
-                .lookup((&table_name, &Identifier::new(col.col_name.clone()).unwrap()))
-                .unwrap();
+            let def: &ColumnDef = module_def.lookup((&table_name, &col.col_name)).unwrap();
             col.col_type = def.ty.clone();
         }
         let table_def: &TableDef = module_def.expect_lookup(&table_name);
@@ -821,7 +820,7 @@ impl TableSchema {
             columns.push(ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: columns.len().into(),
-                col_name: RawIdentifier::new(name),
+                col_name: Identifier::new_assume_valid(RawIdentifier::new(name)),
                 col_type,
             });
         };
@@ -1065,7 +1064,7 @@ pub struct ColumnSchema {
     /// The position of the column within the table.
     pub col_pos: ColId,
     /// The name of the column. Unique within the table.
-    pub col_name: RawIdentifier,
+    pub col_name: Identifier,
     /// The type of the column. This will never contain any `AlgebraicTypeRef`s,
     /// that is, it will be resolved.
     pub col_type: AlgebraicType,
@@ -1088,7 +1087,7 @@ impl ColumnSchema {
         Self {
             table_id: TableId::SENTINEL,
             col_pos: pos.into(),
-            col_name: RawIdentifier::new(name.as_ref()),
+            col_name: Identifier::for_test(name),
             col_type: ty,
         }
     }
@@ -1100,7 +1099,7 @@ impl ColumnSchema {
         ColumnSchema {
             table_id: TableId::SENTINEL,
             col_pos: def.col_id,
-            col_name: def.name.clone().into_raw(),
+            col_name: def.name.clone(),
             col_type,
         }
     }
@@ -1125,7 +1124,7 @@ impl Schema for ColumnSchema {
         ColumnSchema {
             table_id,
             col_pos,
-            col_name: def.name.clone().into_raw(),
+            col_name: def.name.clone(),
             col_type,
         }
     }
@@ -1142,7 +1141,7 @@ impl Schema for ColumnSchema {
 impl From<&ColumnSchema> for ProductTypeElement {
     fn from(value: &ColumnSchema) -> Self {
         Self {
-            name: Some(value.col_name.clone()),
+            name: Some(value.col_name.clone().into_raw()),
             algebraic_type: value.col_type.clone(),
         }
     }
@@ -1171,7 +1170,10 @@ pub struct ColumnSchemaRef<'a> {
 
 impl From<ColumnSchemaRef<'_>> for ProductTypeElement {
     fn from(value: ColumnSchemaRef) -> Self {
-        ProductTypeElement::new(value.column.col_type.clone(), Some(value.column.col_name.clone()))
+        ProductTypeElement::new(
+            value.column.col_type.clone(),
+            Some(value.column.col_name.clone().into_raw()),
+        )
     }
 }
 
@@ -1268,10 +1270,10 @@ pub struct ScheduleSchema {
     pub schedule_id: ScheduleId,
 
     /// The name of the schedule.
-    pub schedule_name: RawIdentifier,
+    pub schedule_name: Identifier,
 
     /// The name of the reducer or procedure to call.
-    pub function_name: RawIdentifier,
+    pub function_name: Identifier,
 
     /// The column containing the `ScheduleAt` enum.
     pub at_column: ColId,
@@ -1282,8 +1284,8 @@ impl ScheduleSchema {
         Self {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
-            schedule_name: RawIdentifier::new(name.as_ref()),
-            function_name: RawIdentifier::new(function.as_ref()),
+            schedule_name: Identifier::for_test(name.as_ref()),
+            function_name: Identifier::for_test(function.as_ref()),
             at_column: at.into(),
         }
     }
@@ -1303,7 +1305,7 @@ impl Schema for ScheduleSchema {
             table_id: parent_id,
             schedule_id: id,
             schedule_name: def.name.clone(),
-            function_name: def.function_name.clone().into_raw(),
+            function_name: def.function_name.clone(),
             at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }

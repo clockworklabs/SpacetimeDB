@@ -1118,7 +1118,8 @@ mod tests {
 
         // Add a view and add its return type to the typespace
         let view_return_ty = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::U64)]);
-        let view_return_ty_ref = builder.add_algebraic_type([], RawIdentifier::new("my_view_return"), view_return_ty, true);
+        let view_return_ty_ref =
+            builder.add_algebraic_type([], RawIdentifier::new("my_view_return"), view_return_ty, true);
         builder.add_view(
             RawIdentifier::new("my_view"),
             0,
@@ -1249,7 +1250,11 @@ mod tests {
 
         // Add new table
         builder
-            .build_table_with_new_type(RawIdentifier::new("Oranges"), ProductType::from([("id", AlgebraicType::U32)]), true)
+            .build_table_with_new_type(
+                RawIdentifier::new("Oranges"),
+                ProductType::from([("id", AlgebraicType::U32)]),
+                true,
+            )
             .with_index(btree(0), "id_index")
             .with_column_sequence(0)
             .with_unique_constraint(0)
@@ -1281,8 +1286,8 @@ mod tests {
         let apples_sequence: RawIdentifier = "Apples_id_seq".into();
         let apples_id_name_index: RawIdentifier = "Apples_id_name_idx_btree".into();
         let apples_id_count_index: RawIdentifier = "Apples_id_count_idx_btree".into();
-        let deliveries_schedule: RawIdentifier = "Deliveries_sched".into();
-        let inspections_schedule: RawIdentifier = "Inspections_sched".into();
+        let deliveries_schedule = expect_identifier("Deliveries_sched");
+        let inspections_schedule = expect_identifier("Inspections_sched");
 
         assert!(plan.prechecks.is_sorted());
 

@@ -50,7 +50,12 @@ use spacetimedb_primitives::{
     col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
 };
 use spacetimedb_sats::{
-    AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace, bsatn::{self, DecodeError, Deserializer, to_writer}, de::{DeserializeSeed, WithBound}, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize
+    bsatn::{self, to_writer, DecodeError, Deserializer},
+    de::{DeserializeSeed, WithBound},
+    memory_usage::MemoryUsage,
+    raw_identifier::RawIdentifier,
+    ser::Serialize,
+    AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
@@ -667,8 +672,8 @@ impl MutTxId {
             let row = StScheduledRow {
                 table_id: schedule.table_id,
                 schedule_id: schedule.schedule_id,
-                schedule_name: schedule.schedule_name,
-                reducer_name: schedule.function_name,
+                schedule_name: schedule.schedule_name.into_raw(),
+                reducer_name: schedule.function_name.into_raw(),
                 at_column: schedule.at_column,
             };
             let id = self
@@ -1931,7 +1936,7 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, ReducerName) {
+    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -2016,8 +2021,8 @@ impl MutTxId {
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn rollback(mut self) -> (TxOffset, TxMetrics, ReducerName) {
+    /// - `ReducerName`, the name of the reducer which ran during this transaction.
+    pub fn rollback(mut self) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         let offset = self
             .committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);

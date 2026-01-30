@@ -1418,11 +1418,15 @@ mod tests {
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
-        AlgebraicType, AlgebraicValue, db::auth::{StAccess, StTableType}, identity::AuthCtx, sats::raw_identifier::RawIdentifier
+        db::auth::{StAccess, StTableType},
+        identity::AuthCtx,
+        sats::raw_identifier::RawIdentifier,
+        AlgebraicType, AlgebraicValue,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
+        identifier::Identifier,
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
         table_name::TableName,
     };
@@ -1473,7 +1477,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, (name, ty))| ColumnSchema {
                     table_id,
-                    col_name: RawIdentifier::new(*name),
+                    col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
                 })

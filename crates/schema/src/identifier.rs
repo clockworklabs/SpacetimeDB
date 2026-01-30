@@ -77,9 +77,19 @@ impl Identifier {
         Ok(Identifier { id: name })
     }
 
+    #[cfg(any(test, feature = "test"))]
+    pub fn for_test(name: impl AsRef<str>) -> Self {
+        Identifier::new(RawIdentifier::new(name.as_ref())).unwrap()
+    }
+
     /// Returns the raw identifier of this identifier.
     pub fn into_raw(self) -> RawIdentifier {
         self.id
+    }
+
+    /// Returns the raw identifier of this identifier.
+    pub fn as_raw(&self) -> &RawIdentifier {
+        &self.id
     }
 
     /// Check if a string is a reserved identifier.

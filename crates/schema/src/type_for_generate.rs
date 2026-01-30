@@ -16,7 +16,8 @@ use spacetimedb_data_structures::{
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
 use spacetimedb_sats::{
-    AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace, layout::PrimitiveType, raw_identifier::RawIdentifier, typespace::TypeRefError
+    layout::PrimitiveType, raw_identifier::RawIdentifier, typespace::TypeRefError, AlgebraicTypeRef, ArrayType,
+    SumTypeVariant, Typespace,
 };
 use std::{cell::RefCell, ops::Index, sync::Arc};
 

@@ -9,11 +9,9 @@ use crate::{
     identifier::Identifier,
 };
 use itertools::Itertools;
-use spacetimedb_lib::{
-    db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType}
-};
-use spacetimedb_sats::{WithTypespace, AlgebraicType, AlgebraicValue};
+use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
 use thiserror::Error;
 
 pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> Result<(), FormattingErrors> {
@@ -222,7 +220,7 @@ pub struct AccessChangeInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleInfo {
-    pub table_name: RawIdentifier,
+    pub table_name: Identifier,
     pub function_name: Identifier,
     pub function_kind: FunctionKind,
 }
@@ -342,7 +340,7 @@ fn extract_table_info(
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     let schedule = table_def.schedule.as_ref().map(|schedule| ScheduleInfo {
-        table_name: table_def.name.clone().into_raw(),
+        table_name: table_def.name.clone(),
         function_name: schedule.function_name.clone(),
         function_kind: schedule.function_kind,
     });

@@ -2,7 +2,7 @@ use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
-use spacetimedb_schema::schema::TableOrViewSchema;
+use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use std::sync::Arc;
 
@@ -90,7 +90,7 @@ impl ProjectName {
     }
 
     /// Iterate over the returned column names and types
-    pub fn for_each_return_field(&self, mut f: impl FnMut(&RawIdentifier, &AlgebraicType)) {
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&Identifier, &AlgebraicType)) {
         if let Some(schema) = self.return_table() {
             for schema in schema.public_columns() {
                 f(&schema.col_name, &schema.col_type);
@@ -220,7 +220,9 @@ impl ProjectList {
     pub fn for_each_return_field(&self, mut f: impl FnMut(&RawIdentifier, &AlgebraicType)) {
         match self {
             Self::Name(input) => {
-                input.first().inspect(|expr| expr.for_each_return_field(f));
+                input
+                    .first()
+                    .inspect(|expr| expr.for_each_return_field(|n, at| f(n.as_raw(), at)));
             }
             Self::Limit(input, _) => {
                 input.for_each_return_field(f);

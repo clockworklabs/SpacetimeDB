@@ -1,7 +1,7 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
-use crate::SpacetimeType;
 use crate::raw_identifier::RawIdentifier;
+use crate::SpacetimeType;
 
 /// A variant of a sum type.
 ///

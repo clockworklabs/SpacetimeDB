@@ -773,10 +773,10 @@ impl CoreValidator<'_> {
             .into()
         });
         let table_name = identifier(table_name)?;
-        let name = self.add_to_global_namespace(name.into_raw(), table_name);
+        let name_res = self.add_to_global_namespace(name.clone().into_raw(), table_name);
         let function_name = identifier(function_name);
 
-        let (name, (at_column, id_column), function_name) = (name, at_id, function_name).combine_errors()?;
+        let (_, (at_column, id_column), function_name) = (name_res, at_id, function_name).combine_errors()?;
 
         Ok(ScheduleDef {
             name,

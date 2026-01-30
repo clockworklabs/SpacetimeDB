@@ -1,3 +1,4 @@
+use crate::identifier::Identifier;
 use crate::relation::{FieldName, Header};
 use crate::table_name::TableName;
 use derive_more::Display;
@@ -129,7 +130,7 @@ pub enum SchemaError {
         columns: ColList,
     },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
-    OneAutoInc { table: TableName, field: RawIdentifier },
+    OneAutoInc { table: TableName, field: Identifier },
     #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
     OnlyBtree {
         table: TableName,

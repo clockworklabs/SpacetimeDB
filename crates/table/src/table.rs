@@ -51,6 +51,7 @@ use spacetimedb_sats::{
 use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
+    identifier::Identifier,
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
     table_name::TableName,
 };
@@ -2181,7 +2182,7 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
 pub struct UniqueConstraintViolation {
     pub constraint_name: RawIdentifier,
     pub table_name: TableName,
-    pub cols: Vec<RawIdentifier>,
+    pub cols: Vec<Identifier>,
     pub value: AlgebraicValue,
 }
 

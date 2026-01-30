@@ -288,7 +288,11 @@ fn resolve_views_for_expr(
 
     /// After we collect all the necessary view definitions and run alpha conversion,
     /// this function handles the actual replacement of the view with its definition.
-    fn expand_views(expr: RelExpr, view_def_fragments: &[(TableId, RawIdentifier, Vec<RelExpr>)], out: &mut Vec<RelExpr>) {
+    fn expand_views(
+        expr: RelExpr,
+        view_def_fragments: &[(TableId, RawIdentifier, Vec<RelExpr>)],
+        out: &mut Vec<RelExpr>,
+    ) {
         match view_def_fragments {
             [] => out.push(expr),
             [(table_id, alias, fragments), view_def_fragments @ ..] => {

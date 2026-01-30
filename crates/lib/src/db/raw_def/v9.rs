@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use spacetimedb_primitives::*;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
@@ -18,7 +19,6 @@ use spacetimedb_sats::ProductType;
 use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::SpacetimeType;
 use spacetimedb_sats::Typespace;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
