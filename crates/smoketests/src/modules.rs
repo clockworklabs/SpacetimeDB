@@ -80,42 +80,41 @@ fn build_registry() -> HashMap<String, PathBuf> {
 
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
-        let Some(filename) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-
-        // Only process smoketest_module_*.wasm files
-        if !filename.starts_with("smoketest_module_") || !filename.ends_with(".wasm") {
-            continue;
+        if let Some(module_name) = wasm_to_module_name(path.clone()) {
+            reg.insert(module_name, path);
         }
-
-        // Extract module name: smoketest_module_foo_bar.wasm -> foo-bar
-        let module_name = filename
-            .strip_prefix("smoketest_module_")
-            .unwrap()
-            .strip_suffix(".wasm")
-            .unwrap()
-            .replace('_', "-");
-
-        reg.insert(module_name, path);
     }
 
     reg
 }
 
+/// Extract module name: smoketest_module_foo_bar.wasm -> foo-bar
+fn wasm_to_module_name(path: PathBuf) -> Option<String> {
+    let filename = path.file_name()?.to_str()?;
+    // Only process smoketest_module_*.wasm files
+    if !filename.starts_with("smoketest_module_") || !filename.ends_with(".wasm") {
+        return None;
+    }
+    Some(
+        filename
+            .strip_prefix("smoketest_module_")
+            .unwrap()
+            .strip_suffix(".wasm")
+            .unwrap()
+            .replace('_', "-"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_module_name_derivation() {
         // Test the naming convention
         let filename = "smoketest_module_foo_bar.wasm";
         let expected = "foo-bar";
-        let actual = filename
-            .strip_prefix("smoketest_module_")
-            .unwrap()
-            .strip_suffix(".wasm")
-            .unwrap()
-            .replace('_', "-");
-        assert_eq!(actual, expected);
+        let actual = wasm_to_module_name(PathBuf::from(filename));
+        assert_eq!(actual, Some(expected.to_string()));
     }
 }
