@@ -147,9 +147,7 @@ fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
         .map(|s| s.success())
         .unwrap_or(false);
 
-    // Set remote server environment variable if specified
     if let Some(ref server_url) = server {
-        cmd.env("SPACETIME_REMOTE_SERVER", server_url);
         eprintln!("Running smoketests against remote server {server_url}...\n");
     }
 
@@ -174,11 +172,19 @@ fn run_smoketest(server: Option<String>, args: Vec<String>) -> Result<()> {
             cmd.args(["-j", DEFAULT_PARALLELISM]);
         }
 
+        if let Some(ref server_url) = server {
+            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
+        }
+
         cmd.args(&args).status()?
     } else {
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
+
+        if let Some(ref server_url) = server {
+            cmd.env("SPACETIME_REMOTE_SERVER", server_url);
+        }
 
         cmd.args(&args).status()?
     };

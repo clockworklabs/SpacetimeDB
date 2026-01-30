@@ -105,6 +105,7 @@ pub struct SpacetimeDbGuard {
     _data_dir_handle: Option<tempfile::TempDir>,
     /// Reader thread handles for stdout/stderr - joined on drop to prevent leaks.
     reader_threads: Vec<thread::JoinHandle<()>>,
+    use_installed_cli: bool,
 }
 
 // Remove all Cargo-provided env vars from a child process. These are set by the fact that we're running in a cargo
@@ -149,40 +150,19 @@ impl SpacetimeDbGuard {
         _data_dir_handle: Option<tempfile::TempDir>,
     ) -> Self {
         let spawn_id = next_spawn_id();
-
-        if use_installed_cli {
-            // Use the installed CLI (rare case, mainly for spawn_in_temp_data_dir_use_cli)
-            eprintln!("[SPAWN-{:03}] START (installed CLI) data_dir={:?}", spawn_id, data_dir);
-
-            let cmd = Command::new("spacetime");
-            let (child, logs, host_url, reader_threads) =
-                Self::spawn_server_with_command(&data_dir, pg_port, spawn_id, cmd);
-            let guard = SpacetimeDbGuard {
-                child,
-                host_url,
-                logs,
-                pg_port,
-                data_dir,
-                _data_dir_handle,
-                reader_threads,
-            };
-            guard
-        } else {
-            // Use the built CLI (common case)
-            let cli_path = ensure_binaries_built();
-            let cmd = Command::new(&cli_path);
-            let (child, logs, host_url, reader_threads) =
-                Self::spawn_server_with_command(&data_dir, pg_port, spawn_id, cmd);
-            SpacetimeDbGuard {
-                child,
-                host_url,
-                logs,
-                pg_port,
-                data_dir,
-                _data_dir_handle,
-                reader_threads,
-            }
-        }
+        let (child, logs, host_url, reader_threads) =
+            Self::spawn_server(&data_dir, pg_port, spawn_id, use_installed_cli);
+        let guard = SpacetimeDbGuard {
+            child,
+            host_url,
+            logs,
+            pg_port,
+            data_dir,
+            _data_dir_handle,
+            reader_threads,
+            use_installed_cli,
+        };
+        guard
     }
 
     /// Stop the server process without dropping the guard.
@@ -209,11 +189,8 @@ impl SpacetimeDbGuard {
         sleep(Duration::from_millis(100));
 
         eprintln!("[RESTART-{:03}] Spawning new server", spawn_id);
-        // Use the built CLI (common case)
-        let cli_path = ensure_binaries_built();
-        let cmd = Command::new(&cli_path);
         let (child, logs, host_url, reader_threads) =
-            Self::spawn_server_with_command(&self.data_dir, self.pg_port, spawn_id, cmd);
+            Self::spawn_server(&self.data_dir, self.pg_port, spawn_id, self.use_installed_cli);
         eprintln!(
             "[RESTART-{:03}] New server ready, pid={}, url={}",
             spawn_id,
@@ -265,14 +242,22 @@ impl SpacetimeDbGuard {
 
     /// Spawns a new server process with the given data directory.
     /// Returns (child, logs, host_url, reader_threads).
-    fn spawn_server_with_command(
+    fn spawn_server(
         data_dir: &Path,
         pg_port: Option<u16>,
         spawn_id: u64,
-        cmd: Command,
+        use_installed_cli: bool,
     ) -> (Child, Arc<Mutex<String>>, String, Vec<thread::JoinHandle<()>>) {
+        let cmd = if use_installed_cli {
+            eprintln!("[SPAWN-{:03}] START Using installed CLI", spawn_id);
+            Command::new("spacetime")
+        } else {
+            // Use the built CLI (common case)
+            let cli_path = ensure_binaries_built();
+            Command::new(&cli_path)
+        };
         eprintln!(
-            "[SPAWN-{:03}] START data_dir={:?}, pg_port={:?}",
+            "[SPAWN-{:03}] START data_dir={:?} pg_port={:?}",
             spawn_id, data_dir, pg_port
         );
 
