@@ -347,21 +347,16 @@ async function displayResults(results: BenchResult[]): Promise<void> {
     }
 
     const boxWidth = 60;
+    const msgText = `${fastest.system} is ${multiplier}x FASTER than ${slowest.system}!`;
+    const msgWithEmoji = `🚀 ${msgText} 🚀`;
+    // Emojis are 2 display columns each, so total display width = text + 4 (2 emojis) + 2 (spaces)
+    const displayWidth = msgText.length + 6;
+    const msgPadding = Math.floor((boxWidth - displayWidth) / 2);
+    const rightPadding = boxWidth - msgPadding - displayWidth;
+
     console.log('  ' + c('cyan', '╔' + '═'.repeat(boxWidth) + '╗'));
     console.log('  ' + c('cyan', '║') + ' '.repeat(boxWidth) + c('cyan', '║'));
-
-    const msg = `🚀 ${fastest.system} is ${multiplier}x FASTER than ${slowest.system}! 🚀`;
-    const msgClean = `${fastest.system} is ${multiplier}x FASTER than ${slowest.system}!`;
-    const padding = Math.floor((boxWidth - msgClean.length - 4) / 2); // -4 for emojis
-    console.log(
-      '  ' +
-        c('cyan', '║') +
-        ' '.repeat(Math.max(0, padding)) +
-        c('bold', c('green', msg)) +
-        ' '.repeat(Math.max(0, boxWidth - padding - msgClean.length - 4)) +
-        c('cyan', '║')
-    );
-
+    console.log('  ' + c('cyan', '║') + ' '.repeat(msgPadding) + c('bold', c('green', msgWithEmoji)) + ' '.repeat(rightPadding) + c('cyan', '║'));
     console.log('  ' + c('cyan', '║') + ' '.repeat(boxWidth) + c('cyan', '║'));
     console.log('  ' + c('cyan', '╚' + '═'.repeat(boxWidth) + '╝'));
   }
@@ -372,10 +367,15 @@ async function displayResults(results: BenchResult[]): Promise<void> {
 // ============================================================================
 
 async function main() {
+  const headerWidth = 59;
+  const headerText = 'SpacetimeDB Benchmark Demo';
+  const headerPadding = Math.floor((headerWidth - headerText.length) / 2);
+  const headerPaddedText = ' '.repeat(headerPadding) + headerText + ' '.repeat(headerWidth - headerPadding - headerText.length);
+
   console.log('');
-  console.log(c('bold', c('cyan', '  ╔═══════════════════════════════════════════════════════════╗')));
-  console.log(c('bold', c('cyan', '  ║') + '         SpacetimeDB Benchmark Demo                      ' + c('cyan', '║')));
-  console.log(c('bold', c('cyan', '  ╚═══════════════════════════════════════════════════════════╝')));
+  console.log(c('bold', c('cyan', '  ╔' + '═'.repeat(headerWidth) + '╗')));
+  console.log(c('bold', c('cyan', '  ║') + headerPaddedText + c('cyan', '║')));
+  console.log(c('bold', c('cyan', '  ╚' + '═'.repeat(headerWidth) + '╝')));
   console.log('');
 
   console.log(`  ${c('dim', 'Config:')} ${seconds}s, ${concurrency} connections, alpha=${alpha}`);
