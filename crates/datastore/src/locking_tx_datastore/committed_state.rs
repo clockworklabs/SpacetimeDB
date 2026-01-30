@@ -407,7 +407,7 @@ impl CommittedState {
             let row = StColumnRow {
                 table_id: col.table_id,
                 col_pos: col.col_pos,
-                col_name: col.col_name,
+                col_name: col.col_name.into_raw(),
                 col_type: col.col_type.into(),
             };
             let row = ProductValue::from(row);
@@ -1037,7 +1037,7 @@ impl CommittedState {
         // Note that this may change in the future: some analytics and/or
         // timetravel queries may benefit from seeing all inputs, even if
         // the database state did not change.
-        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &*rcx.name))
+        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &rcx.name))
     }
 
     pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {

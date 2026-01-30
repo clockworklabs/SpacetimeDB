@@ -655,6 +655,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
+    use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::relation::{FieldName, Header};
     use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
@@ -674,11 +675,12 @@ pub(crate) mod tests {
         let columns = schema
             .elements
             .iter()
+            .cloned()
             .enumerate()
             .map(|(i, element)| ColumnSchema {
                 table_id: TableId::SENTINEL,
-                col_name: element.name.as_ref().unwrap().clone(),
-                col_type: element.algebraic_type.clone(),
+                col_name: Identifier::new(element.name.unwrap()).unwrap(),
+                col_type: element.algebraic_type,
                 col_pos: ColId(i as _),
             })
             .collect();

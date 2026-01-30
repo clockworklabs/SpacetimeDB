@@ -6,7 +6,7 @@ use crate::{
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::{AlgebraicValue, bsatn, raw_identifier::RawIdentifier};
+use spacetimedb_sats::{bsatn, raw_identifier::RawIdentifier, AlgebraicValue};
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
     schema::{IndexSchema, TableSchema},

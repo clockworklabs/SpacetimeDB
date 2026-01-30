@@ -29,6 +29,7 @@ use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, Algebrai
 use spacetimedb_schema::def::{
     BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
@@ -446,7 +447,10 @@ fn system_module_def() -> ModuleDef {
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     let st_col_row_unique_cols = [StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()];
     builder
-        .build_table(name(ST_COLUMN_NAME), *st_raw_column_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_COLUMN_NAME),
+            *st_raw_column_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_unique_constraint(st_col_row_unique_cols)
         .with_index_no_accessor_name(btree(st_col_row_unique_cols));
@@ -454,7 +458,10 @@ fn system_module_def() -> ModuleDef {
     let st_view_col_type = builder.add_type::<StViewColumnRow>();
     let st_view_col_unique_cols = [StViewColumnFields::ViewId.col_id(), StViewColumnFields::ColPos.col_id()];
     builder
-        .build_table(name(ST_VIEW_COLUMN_NAME), *st_view_col_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_VIEW_COLUMN_NAME),
+            *st_view_col_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_unique_constraint(st_view_col_unique_cols)
         .with_index_no_accessor_name(btree(st_view_col_unique_cols));
@@ -462,14 +469,20 @@ fn system_module_def() -> ModuleDef {
     let st_view_param_type = builder.add_type::<StViewParamRow>();
     let st_view_param_unique_cols = [StViewParamFields::ViewId.col_id(), StViewParamFields::ParamPos.col_id()];
     builder
-        .build_table(name(ST_VIEW_PARAM_NAME), *st_view_param_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_VIEW_PARAM_NAME),
+            *st_view_param_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_unique_constraint(st_view_param_unique_cols)
         .with_index_no_accessor_name(btree(st_view_param_unique_cols));
 
     let st_view_sub_type = builder.add_type::<StViewSubRow>();
     builder
-        .build_table(name(ST_VIEW_SUB_NAME), *st_view_sub_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_VIEW_SUB_NAME),
+            *st_view_sub_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_index_no_accessor_name(btree(StViewSubFields::Identity))
         .with_index_no_accessor_name(btree(StViewSubFields::HasSubscribers))
@@ -481,7 +494,10 @@ fn system_module_def() -> ModuleDef {
 
     let st_view_arg_type = builder.add_type::<StViewArgRow>();
     builder
-        .build_table(name(ST_VIEW_ARG_NAME), *st_view_arg_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_VIEW_ARG_NAME),
+            *st_view_arg_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StViewArgFields::Id)
         .with_index_no_accessor_name(btree(StViewArgFields::Id))
@@ -498,7 +514,10 @@ fn system_module_def() -> ModuleDef {
 
     let st_sequence_type = builder.add_type::<StSequenceRow>();
     builder
-        .build_table(name(ST_SEQUENCE_NAME), *st_sequence_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_SEQUENCE_NAME),
+            *st_sequence_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StSequenceFields::SequenceId)
         .with_index_no_accessor_name(btree(StSequenceFields::SequenceId));
@@ -506,7 +525,10 @@ fn system_module_def() -> ModuleDef {
 
     let st_constraint_type = builder.add_type::<StConstraintRow>();
     builder
-        .build_table(name(ST_CONSTRAINT_NAME), *st_constraint_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_CONSTRAINT_NAME),
+            *st_constraint_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StConstraintFields::ConstraintId)
         .with_index_no_accessor_name(btree(StConstraintFields::ConstraintId));
@@ -552,7 +574,10 @@ fn system_module_def() -> ModuleDef {
 
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
-        .build_table(name(ST_SCHEDULED_NAME), *st_schedule_type.as_ref().expect("should be ref"))
+        .build_table(
+            name(ST_SCHEDULED_NAME),
+            *st_schedule_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_unique_constraint(StScheduledFields::TableId) // FIXME: this is a noop?
         .with_index_no_accessor_name(btree(StScheduledFields::TableId))
@@ -948,7 +973,7 @@ impl From<StColumnRow> for ColumnSchema {
         Self {
             table_id: column.table_id,
             col_pos: column.col_pos,
-            col_name: column.col_name,
+            col_name: Identifier::new_assume_valid(column.col_name),
             col_type: column.col_type.0,
         }
     }
@@ -959,7 +984,7 @@ impl From<ColumnSchema> for StColumnRow {
         Self {
             table_id: column.table_id,
             col_pos: column.col_pos,
-            col_name: column.col_name,
+            col_name: column.col_name.into_raw(),
             col_type: column.col_type.into(),
         }
     }
@@ -1629,9 +1654,9 @@ impl From<StScheduledRow> for ScheduleSchema {
     fn from(row: StScheduledRow) -> Self {
         Self {
             table_id: row.table_id,
-            function_name: row.reducer_name,
+            function_name: Identifier::new_assume_valid(row.reducer_name),
             schedule_id: row.schedule_id,
-            schedule_name: row.schedule_name,
+            schedule_name: Identifier::new_assume_valid(row.schedule_name),
             at_column: row.at_column,
         }
     }

@@ -772,7 +772,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxOffset, TxMetrics, ReducerName) {
+    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx(tx)
     }
@@ -784,14 +784,17 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, ReducerName) {
+    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         log::trace!("RELEASE TX");
         self.inner.release_tx(tx)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
     #[allow(clippy::type_complexity)]
-    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, ReducerName)>, DBError> {
+    pub fn commit_tx(
+        &self,
+        tx: MutTx,
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
@@ -1005,7 +1008,7 @@ impl RelationalDB {
     /// Should only be called after the tx lock has been fully released.
     pub(crate) fn report_tx_metrics(
         &self,
-        reducer: ReducerName,
+        reducer: Option<ReducerName>,
         tx_data: Option<Arc<TxData>>,
         metrics_for_writer: Option<TxMetrics>,
         metrics_for_reader: Option<TxMetrics>,
@@ -1479,12 +1482,17 @@ impl RelationalDB {
     }
 
     /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub fn report_mut_tx_metrics(&self, reducer: ReducerName, metrics: TxMetrics, tx_data: Option<Arc<TxData>>) {
+    pub fn report_mut_tx_metrics(
+        &self,
+        reducer: Option<ReducerName>,
+        metrics: TxMetrics,
+        tx_data: Option<Arc<TxData>>,
+    ) {
         self.report_tx_metrics(reducer, tx_data, Some(metrics), None);
     }
 
     /// Reports subscription metrics for `reducer`, using counters provided by `db`.
-    pub fn report_read_tx_metrics(&self, reducer: ReducerName, metrics: TxMetrics) {
+    pub fn report_read_tx_metrics(&self, reducer: Option<ReducerName>, metrics: TxMetrics) {
         self.report_tx_metrics(reducer, None, None, Some(metrics));
     }
 
