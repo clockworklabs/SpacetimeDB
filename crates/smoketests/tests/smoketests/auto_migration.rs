@@ -262,3 +262,133 @@ fn test_add_table_auto_migration() {
         logs
     );
 }
+
+const MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED: &str = r#"
+use spacetimedb::{log, ReducerContext, Table};
+
+#[derive(Debug)]
+#[spacetimedb::table(name = person)]
+pub struct Person {
+    #[index(btree)]
+    name: String,
+    #[default(0)]
+    age: u16,
+    #[default(19)]
+    mass: u16,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name, age: 70, mass: 180 });
+}
+
+#[spacetimedb::reducer]
+pub fn print_persons(ctx: &ReducerContext, prefix: String) {
+    for person in ctx.db.person().iter() {
+        log::info!("{}: {:?}", prefix, person);
+    }
+}
+
+#[spacetimedb::reducer(client_disconnected)]
+pub fn identity_disconnected(_ctx: &ReducerContext) {
+    log::info!("FIRST_UPDATE: client disconnected");
+}
+"#;
+
+const MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED_AGAIN: &str = r#"
+use spacetimedb::{log, ReducerContext, Table};
+
+#[derive(Debug)]
+#[spacetimedb::table(name = person)]
+pub struct Person {
+    name: String,
+    age: u16,
+    #[default(19)]
+    mass: u16,
+    #[default(160)]
+    height: u32,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name, age: 70, mass: 180, height: 72 });
+}
+
+#[spacetimedb::reducer]
+pub fn print_persons(ctx: &ReducerContext, prefix: String) {
+    for person in ctx.db.person().iter() {
+        log::info!("{}: {:?}", prefix, person);
+    }
+}
+"#;
+
+/// Verify schema upgrades that add columns with defaults (twice).
+#[test]
+fn test_add_table_columns() {
+    const NUM_SUBSCRIBERS: usize = 20;
+
+    let mut test = Smoketest::builder().module_code(MODULE_CODE_BASIC).build();
+
+    // Subscribe to person table changes multiple times to simulate active clients
+    let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
+    for _ in 0..NUM_SUBSCRIBERS {
+        subs.push(test.subscribe_background(&["select * from person"], 5).unwrap());
+    }
+
+    // Insert under initial schema
+    test.call("add_person", &["Robert"]).unwrap();
+
+    // First upgrade: add age & mass columns
+    test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED).unwrap();
+    let identity = test.database_identity.clone().unwrap();
+    test.publish_module_with_options(&identity, false, true).unwrap();
+    test.call("print_persons", &["FIRST_UPDATE"]).unwrap();
+
+    let logs1 = test.logs(100).unwrap();
+    assert!(
+        logs1.iter().any(|l| l.contains("Disconnecting all users")),
+        "Expected disconnect log in logs: {:?}",
+        logs1
+    );
+    assert!(
+        logs1
+            .iter()
+            .any(|l| l.contains("FIRST_UPDATE: Person { name: \"Robert\", age: 0, mass: 19 }")),
+        "Expected migrated person with defaults in logs: {:?}",
+        logs1
+    );
+
+    let disconnect_count = logs1
+        .iter()
+        .filter(|l| l.contains("FIRST_UPDATE: client disconnected"))
+        .count();
+    assert_eq!(
+        disconnect_count,
+        NUM_SUBSCRIBERS + 1,
+        "Unexpected disconnect counts: {disconnect_count}"
+    );
+
+    // Insert new data under upgraded schema
+    test.call("add_person", &["Robert2"]).unwrap();
+
+    // Validate all subscribers were disconnected after first upgrade
+    for (i, sub) in subs.into_iter().enumerate() {
+        let rows = sub.collect().unwrap();
+        assert_eq!(rows.len(), 2, "Subscriber {i} received unexpected rows: {rows:?}");
+    }
+
+    // Second upgrade
+    test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED_AGAIN)
+        .unwrap();
+    test.publish_module_with_options(&identity, false, true).unwrap();
+    test.call("print_persons", &["UPDATE_2"]).unwrap();
+
+    let logs2 = test.logs(100).unwrap();
+    assert!(
+        logs2
+            .iter()
+            .any(|l| { l.contains("UPDATE_2: Person { name: \"Robert2\", age: 70, mass: 180, height: 160 }") }),
+        "Expected updated schema with default height in logs: {:?}",
+        logs2
+    );
+}
