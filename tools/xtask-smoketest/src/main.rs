@@ -84,6 +84,9 @@ fn build_binaries() -> Result<()> {
     for (key, _) in env::vars() {
         let should_remove = (key.starts_with("CARGO") && key != "CARGO_HOME" && key != "CARGO_TARGET_DIR")
             || key.starts_with("RUST")
+            // > The environment variable `__CARGO_FIX_YOLO` is an undocumented, internal-use-only feature
+            // > for the Rust cargo fix command (and cargo clippy --fix) that forces the application of all
+            // > available suggestions, including those that are marked as potentially incorrect or dangerous.
             || key == "__CARGO_FIX_YOLO";
         if should_remove {
             cmd.env_remove(&key);
