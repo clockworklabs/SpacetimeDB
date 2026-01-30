@@ -166,7 +166,10 @@ fn test_add_remove_index_after_restart() {
     );
 
     // Verify call works too
-    test.call("add", &[]).unwrap();
+    let sub = test.subscribe_background(&[JOIN_QUERY], 1).unwrap();
+    test.call_anon("add", &[]).unwrap();
+    let results = sub.collect().unwrap();
+    assert_eq!(results.len(), 1, "Expected 1 update from subscription");
 
     // Restart before removing indices
     test.restart_server();
