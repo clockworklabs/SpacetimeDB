@@ -168,9 +168,7 @@ SPACETIMEDB_VIEW(std::vector<Player>, players_at_level_0, Public, AnonymousViewC
     std::vector<Player> results;
     
     // Find all players at level 0
-    for (IndexIterator<PlayerLevel> iter = ctx.db[player_level_level].filter(0ULL); 
-         iter != IndexIterator<PlayerLevel>(); ++iter) {
-        const auto& lvl = *iter;
+    for (const auto& lvl : ctx.db[player_level_level].filter(0ULL)) {
         auto player_opt = ctx.db[player_entity_id].find(lvl.entity_id);
         if (player_opt.has_value()) {
             results.push_back(player_opt.value());
@@ -199,9 +197,7 @@ SPACETIMEDB_VIEW(std::vector<PlayerLocation>, nearby_players, Public, ViewContex
     PlayerLocation my_loc = my_loc_opt.value();
     
     // Find all active players
-    for (IndexIterator<PlayerLocation> iter = ctx.db[player_location_active].filter(true); 
-         iter != IndexIterator<PlayerLocation>(); ++iter) {
-        const auto& loc = *iter;
+    for (const auto& loc : ctx.db[player_location_active].filter(true)) {
         // Skip self
         if (loc.entity_id == my_loc.entity_id) {
             continue;
