@@ -189,7 +189,7 @@ struct FSpacetimeDBUuid
     GENERATED_BODY()
 
     /** The 128-bit value of the UUID. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBUInt128 Value;
 
     /** Default constructor initializes to zero (nil UUID). */
