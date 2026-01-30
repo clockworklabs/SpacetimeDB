@@ -3,7 +3,7 @@
 //! code from markdown docs and running it.
 
 use anyhow::{bail, Context, Result};
-use spacetimedb_smoketests::{parse_quickstart, requires_dotnet, requires_pnpm, workspace_root, Smoketest};
+use spacetimedb_smoketests::{parse_quickstart, require_dotnet, require_pnpm, workspace_root, Smoketest};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -648,7 +648,7 @@ fn test_quickstart_rust() {
 /// Run the C# quickstart guides for server and client.
 #[test]
 fn test_quickstart_csharp() {
-    requires_dotnet!();
+    require_dotnet!();
 
     let mut qt = QuickstartTest::new(QuickstartConfig::csharp());
     qt.run_quickstart().expect("C# quickstart test failed");
@@ -657,7 +657,7 @@ fn test_quickstart_csharp() {
 /// Run the TypeScript quickstart for server (with Rust client).
 #[test]
 fn test_quickstart_typescript() {
-    requires_pnpm!();
+    require_pnpm!();
 
     let mut qt = QuickstartTest::new(QuickstartConfig::typescript());
     qt.run_quickstart().expect("TypeScript quickstart test failed");

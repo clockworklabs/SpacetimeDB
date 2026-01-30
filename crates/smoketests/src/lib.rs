@@ -85,14 +85,14 @@ pub fn is_remote_server() -> bool {
 /// ```ignore
 /// #[test]
 /// fn test_restart() {
-///     skip_if_remote!();
+///     require_local_server!();
 ///     let mut test = Smoketest::builder().build();
 ///     test.restart_server();
 ///     // ...
 /// }
 /// ```
 #[macro_export]
-macro_rules! skip_if_remote {
+macro_rules! require_local_server {
     () => {
         if $crate::is_remote_server() {
             #[allow(clippy::disallowed_macros)]
@@ -105,7 +105,7 @@ macro_rules! skip_if_remote {
 }
 
 #[macro_export]
-macro_rules! requires_dotnet {
+macro_rules! require_dotnet {
     () => {
         if !$crate::allow_dotnet() {
             #[allow(clippy::disallowed_macros)]
@@ -121,7 +121,7 @@ macro_rules! requires_dotnet {
 }
 
 #[macro_export]
-macro_rules! requires_psql {
+macro_rules! require_psql {
     () => {
         if !$crate::have_psql() {
             panic!("psql not found");
@@ -130,7 +130,7 @@ macro_rules! requires_psql {
 }
 
 #[macro_export]
-macro_rules! requires_pnpm {
+macro_rules! require_pnpm {
     () => {
         if !$crate::have_pnpm() {
             panic!("pnpm not found");

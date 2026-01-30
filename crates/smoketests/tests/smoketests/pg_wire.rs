@@ -1,10 +1,10 @@
 #![allow(clippy::disallowed_macros)]
-use spacetimedb_smoketests::{requires_psql, Smoketest};
+use spacetimedb_smoketests::{require_psql, Smoketest};
 
 /// Test SQL output formatting via psql
 #[test]
 fn test_sql_format() {
-    requires_psql!();
+    require_psql!();
 
     let mut test = Smoketest::builder()
         .precompiled_module("pg-wire")
@@ -74,7 +74,7 @@ fn test_sql_format() {
 /// Test failure cases
 #[test]
 fn test_failures() {
-    requires_psql!();
+    require_psql!();
 
     let mut test = Smoketest::builder()
         .precompiled_module("pg-wire")

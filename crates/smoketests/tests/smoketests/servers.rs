@@ -1,9 +1,11 @@
 use regex::Regex;
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_local_server, Smoketest};
 
 /// Verify that we can add and list server configurations
 #[test]
 fn test_servers() {
+    require_local_server!();
+
     let test = Smoketest::builder().autopublish(false).build();
 
     // Add a test server (local-only command, no --server flag needed)
@@ -19,7 +21,14 @@ fn test_servers() {
         .unwrap();
 
     assert!(
-        output.contains("testnet.spacetimedb.com"),
+        Regex::new(r"Host: testnet\.spacetimedb\.com\n")
+            .unwrap()
+            .is_match(&output),
+        "Expected host in output: {}",
+        output
+    );
+    assert!(
+        Regex::new(r"Protocol: https\n").unwrap().is_match(&output),
         "Expected host in output: {}",
         output
     );
