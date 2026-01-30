@@ -93,7 +93,7 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 - c4-standard-32 (32 vCPUs, 120 GB Memory)
 - Runs on a **separate machine** from the server
 
-**Note:** Competitor results were consistent across both machine configurations. All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
+**Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
 
 ### Account Seeding
 
