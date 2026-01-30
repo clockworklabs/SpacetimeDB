@@ -81,7 +81,11 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 ### Hardware Configuration
 
-**Server Machine (Google Cloud):**
+**Server Machine (Variant A - PhoenixNAP):**
+- s3.c3.medium (8 cores, 32 GB Memory)
+- Used for SpacetimeDB headline results (107,850 TPS)
+
+**Server Machine (Variant B - Google Cloud):**
 - c4-standard-32-lssd (32 vCPUs, 120 GB Memory)
 - RAID 0 on 5 Local SSDs
 
@@ -89,14 +93,7 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 - c4-standard-32 (32 vCPUs, 120 GB Memory)
 - Runs on a **separate machine** from the server
 
-**Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
-
-### Why Separate Client Machines?
-
-Running clients on separate machines ensures:
-- Network round-trip latency is measured (realistic production scenario)
-- Client CPU/memory doesn't compete with server resources
-- Results reflect actual deployment conditions
+**Note:** Competitor results were consistent across both machine configurations. All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
 
 ### Account Seeding
 
