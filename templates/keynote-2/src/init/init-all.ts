@@ -13,7 +13,14 @@ async function main() {
   const useDocker = process.env.USE_DOCKER === '1';
   if (useDocker) {
     console.log('\n[docker] compose up -d --build');
-    await sh('docker', ['compose', 'up', '-d', '--build', '--force-recreate', "--remove-orphans"]);
+    await sh('docker', [
+      'compose',
+      'up',
+      '-d',
+      '--build',
+      '--force-recreate',
+      '--remove-orphans',
+    ]);
 
     // Seed the SQLite named volume inside Docker
     console.log('[sqlite] seeding named volume via sqlite-seed...');

@@ -280,7 +280,9 @@ export async function runOne({
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
   // Start all workers - they run in parallel
-  const workerPromises = Array.from({ length: concurrency }, (_, i) => worker(i));
+  const workerPromises = Array.from({ length: concurrency }, (_, i) =>
+    worker(i),
+  );
 
   // Wait for all workers to reach end of test window (before they wait for in-flight ops)
   await testWindowEndPromise;

@@ -58,7 +58,15 @@ export function spacetimedb(
           transferHooked = true;
           console.log('[stdb] hooking onTransfer');
           (reducers as any).onTransfer(
-            (eventCtx: any, args: { from: number; to: number; amount: bigint; clientTxnId: bigint }) => {
+            (
+              eventCtx: any,
+              args: {
+                from: number;
+                to: number;
+                amount: bigint;
+                clientTxnId: bigint;
+              },
+            ) => {
               const clientTxnId = args.clientTxnId;
               // console.log('[stdb] onTransfer fired', { ...args, status: eventCtx?.event?.status });
 

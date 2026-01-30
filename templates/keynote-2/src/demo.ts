@@ -45,7 +45,9 @@ function spacetimePing(): boolean {
 const args = process.argv.slice(2);
 
 function getArg(name: string, defaultValue: number): number {
-  const idx = args.findIndex((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+  const idx = args.findIndex(
+    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
+  );
   if (idx === -1) return defaultValue;
   const arg = args[idx];
   if (arg.includes('=')) return Number(arg.split('=')[1]);
@@ -53,7 +55,9 @@ function getArg(name: string, defaultValue: number): number {
 }
 
 function getStringArg(name: string, defaultValue: string): string {
-  const idx = args.findIndex((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+  const idx = args.findIndex(
+    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
+  );
   if (idx === -1) return defaultValue;
   const arg = args[idx];
   if (arg.includes('=')) return arg.split('=')[1];
@@ -67,7 +71,9 @@ function hasFlag(name: string): boolean {
 const seconds = getArg('seconds', 10);
 const concurrency = getArg('concurrency', 50);
 const alpha = getArg('alpha', 1.5);
-const systems = getStringArg('systems', 'convex,spacetimedb').split(',').map((s) => s.trim());
+const systems = getStringArg('systems', 'convex,spacetimedb')
+  .split(',')
+  .map((s) => s.trim());
 const skipPrep = hasFlag('skip-prep');
 const noAnimation = hasFlag('no-animation');
 
@@ -116,7 +122,9 @@ function createSpinner(label: string): { stop: (finalText: string) => void } {
 
   let frame = 0;
   const interval = setInterval(() => {
-    process.stdout.write(`\r  ${spinnerFrames[frame++ % spinnerFrames.length]} ${label}...`);
+    process.stdout.write(
+      `\r  ${spinnerFrames[frame++ % spinnerFrames.length]} ${label}...`,
+    );
   }, 80);
 
   return {
@@ -230,8 +238,23 @@ async function prepSystem(system: string): Promise<void> {
       const modulePath = process.env.STDB_MODULE_PATH || './spacetimedb';
 
       // Publish module (creates DB if needed, updates if exists)
-      await sh('spacetime', ['publish', '--server', server, moduleName, '--project-path', modulePath]);
-      await sh('spacetime', ['call', '--server', server, moduleName, 'seed', String(accounts), String(initialBalance)]);
+      await sh('spacetime', [
+        'publish',
+        '--server',
+        server,
+        moduleName,
+        '--project-path',
+        modulePath,
+      ]);
+      await sh('spacetime', [
+        'call',
+        '--server',
+        server,
+        moduleName,
+        'seed',
+        String(accounts),
+        String(initialBalance),
+      ]);
     } else if (system === 'convex') {
       await initConvex();
     } else {
@@ -315,19 +338,19 @@ async function displayResults(results: BenchResult[]): Promise<void> {
     const frames = 25;
     for (let i = 1; i <= frames; i++) {
       const progress = i / frames;
-      
+
       // Move cursor up to redraw (except first frame)
       if (i > 1) {
         process.stdout.write(`\x1b[${results.length}A`);
       }
-      
+
       for (const r of results) {
         const currentTps = Math.round(r.tps * progress);
         const bar = renderBar(currentTps, maxTps);
         const tpsStr = currentTps.toLocaleString().padStart(10);
         console.log(`  ${r.system.padEnd(14)} ${bar} ${tpsStr} TPS`);
       }
-      
+
       await sleep(40);
     }
   }
@@ -340,7 +363,7 @@ async function displayResults(results: BenchResult[]): Promise<void> {
     const multiplier = Math.round(fastest.tps / slowest.tps);
 
     console.log('');
-    
+
     if (!noAnimation) {
       // Animated reveal of the comparison box
       await sleep(200);
@@ -356,7 +379,14 @@ async function displayResults(results: BenchResult[]): Promise<void> {
 
     console.log('  ' + c('cyan', '╔' + '═'.repeat(boxWidth) + '╗'));
     console.log('  ' + c('cyan', '║') + ' '.repeat(boxWidth) + c('cyan', '║'));
-    console.log('  ' + c('cyan', '║') + ' '.repeat(msgPadding) + c('bold', c('green', msgWithEmoji)) + ' '.repeat(rightPadding) + c('cyan', '║'));
+    console.log(
+      '  ' +
+        c('cyan', '║') +
+        ' '.repeat(msgPadding) +
+        c('bold', c('green', msgWithEmoji)) +
+        ' '.repeat(rightPadding) +
+        c('cyan', '║'),
+    );
     console.log('  ' + c('cyan', '║') + ' '.repeat(boxWidth) + c('cyan', '║'));
     console.log('  ' + c('cyan', '╚' + '═'.repeat(boxWidth) + '╝'));
   }
@@ -370,7 +400,10 @@ async function main() {
   const headerWidth = 59;
   const headerText = 'SpacetimeDB Benchmark Demo';
   const headerPadding = Math.floor((headerWidth - headerText.length) / 2);
-  const headerPaddedText = ' '.repeat(headerPadding) + headerText + ' '.repeat(headerWidth - headerPadding - headerText.length);
+  const headerPaddedText =
+    ' '.repeat(headerPadding) +
+    headerText +
+    ' '.repeat(headerWidth - headerPadding - headerText.length);
 
   console.log('');
   console.log(c('bold', c('cyan', '  ╔' + '═'.repeat(headerWidth) + '╗')));
@@ -378,7 +411,9 @@ async function main() {
   console.log(c('bold', c('cyan', '  ╚' + '═'.repeat(headerWidth) + '╝')));
   console.log('');
 
-  console.log(`  ${c('dim', 'Config:')} ${seconds}s, ${concurrency} connections, alpha=${alpha}`);
+  console.log(
+    `  ${c('dim', 'Config:')} ${seconds}s, ${concurrency} connections, alpha=${alpha}`,
+  );
   console.log(`  ${c('dim', 'Systems:')} ${systems.join(', ')}\n`);
 
   // Step 1: Check services
@@ -387,7 +422,9 @@ async function main() {
   for (const system of systems) {
     const ok = await checkService(system);
     if (!ok) {
-      console.log(`\n${c('red', '  ERROR:')} ${system} is not running. Exiting.`);
+      console.log(
+        `\n${c('red', '  ERROR:')} ${system} is not running. Exiting.`,
+      );
       process.exit(1);
     }
   }
@@ -399,7 +436,11 @@ async function main() {
       await prepSystem(system);
     }
   } else {
-    console.log('\n' + c('bold', '  [2/4] Preparing databases...') + c('dim', ' (skipped)\n'));
+    console.log(
+      '\n' +
+        c('bold', '  [2/4] Preparing databases...') +
+        c('dim', ' (skipped)\n'),
+    );
   }
 
   // Step 3: Run benchmarks
@@ -424,7 +465,10 @@ async function main() {
     // Save to JSON
     const runsDir = join(process.cwd(), 'runs');
     await mkdir(runsDir, { recursive: true });
-    const outFile = join(runsDir, `demo-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    const outFile = join(
+      runsDir,
+      `demo-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+    );
     await writeFile(
       outFile,
       JSON.stringify(
@@ -439,8 +483,8 @@ async function main() {
           })),
         },
         null,
-        2
-      )
+        2,
+      ),
     );
     console.log(`\n${c('dim', `  Results saved to: ${outFile}`)}\n`);
   }
