@@ -7,14 +7,10 @@
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
 use crate::{
-    de::{
+    AlgebraicType, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant, SumValue, WithTypespace, de::{
         Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
         SumAccess, SumVisitor, VariantAccess as _, VariantVisitor,
-    },
-    i256, impl_deserialize, impl_serialize,
-    sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
-    u256, AlgebraicType, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, ProductValue, SumType,
-    SumTypeVariant, SumValue, WithTypespace,
+    }, i256, impl_deserialize, impl_serialize, raw_identifier::RawIdentifier, sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG}, u256
 };
 use core::ops::{Index, Mul};
 use core::{mem, ops::Deref};
@@ -449,7 +445,7 @@ pub struct ProductTypeElementLayout {
     ///
     /// This allows us to convert back to `ProductTypeElement`,
     /// which we do when reporting type errors.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 }
 
 #[cfg(feature = "memory-usage")]
@@ -500,7 +496,7 @@ pub struct SumTypeVariantLayout {
     ///
     /// This allows us to convert back to `SumTypeVariant`,
     /// which we do when reporting type errors.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 }
 
 #[cfg(feature = "memory-usage")]

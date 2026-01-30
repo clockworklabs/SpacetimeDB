@@ -1418,9 +1418,7 @@ mod tests {
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
-        db::auth::{StAccess, StTableType},
-        identity::AuthCtx,
-        AlgebraicType, AlgebraicValue,
+        AlgebraicType, AlgebraicValue, db::auth::{StAccess, StTableType}, identity::AuthCtx, sats::raw_identifier::RawIdentifier
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
@@ -1468,14 +1466,14 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            TableName::new_from_str(table_name),
+            TableName::for_test(table_name),
             None,
             columns
                 .iter()
                 .enumerate()
                 .map(|(i, (name, ty))| ColumnSchema {
                     table_id,
-                    col_name: (*name).to_owned().into_boxed_str(),
+                    col_name: RawIdentifier::new(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
                 })
@@ -1486,7 +1484,7 @@ mod tests {
                 .map(|(i, cols)| IndexSchema {
                     table_id,
                     index_id: i.into(),
-                    index_name: "".to_owned().into_boxed_str(),
+                    index_name: RawIdentifier::new(""),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
@@ -1498,7 +1496,7 @@ mod tests {
                 .map(|(i, cols)| ConstraintSchema {
                     table_id,
                     constraint_id: i.into(),
-                    constraint_name: "".to_owned().into_boxed_str(),
+                    constraint_name: RawIdentifier::new(""),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: ColSet::from_iter(cols.iter().copied()),
                     }),

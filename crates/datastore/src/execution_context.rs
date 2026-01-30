@@ -4,8 +4,8 @@ use bytes::Bytes;
 use derive_more::Display;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
-use spacetimedb_sats::bsatn;
-use spacetimedb_schema::reducer_name::ReducerName;
+use spacetimedb_sats::{bsatn, raw_identifier::RawIdentifier};
+use spacetimedb_schema::{identifier::Identifier, reducer_name::ReducerName};
 
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
@@ -80,8 +80,11 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
         let caller_connection_id = bsatn::from_reader(args)?;
         let timestamp = bsatn::from_reader(args)?;
 
+        let name = RawIdentifier::new(&**inputs.reducer_name);
+        let name = ReducerName::new(Identifier::new_assume_valid(name));
+
         Ok(Self {
-            name: ReducerName::new_from_str(&inputs.reducer_name),
+            name,
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -109,8 +112,10 @@ impl Workload {
     /// Returns a reducer workload with no arguments to the reducer
     /// and the current timestamp.
     pub fn reducer_no_args(name: &str, id: Identity, conn_id: ConnectionId) -> Self {
+        let name = ReducerName::new(Identifier::new_assume_valid(RawIdentifier::new(name)));
+
         Self::Reducer(ReducerContext {
-            name: ReducerName::new_from_str(name),
+            name,
             caller_identity: id,
             caller_connection_id: conn_id,
             timestamp: Timestamp::now(),

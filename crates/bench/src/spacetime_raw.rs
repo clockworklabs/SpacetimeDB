@@ -6,7 +6,7 @@ use crate::{
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::{bsatn, AlgebraicValue};
+use spacetimedb_sats::{AlgebraicValue, bsatn, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
     schema::{IndexSchema, TableSchema},
@@ -44,7 +44,7 @@ impl BenchDatabase for SpacetimeRaw {
             let mut table_schema = TableSchema::from_product_type(T::product_type());
             table_schema.table_name = name.clone();
             let table_id = self.db.create_table(tx, table_schema)?;
-            self.db.rename_table(tx, table_id, &name)?;
+            self.db.rename_table(tx, table_id, name)?;
             match index_strategy {
                 IndexStrategy::Unique0 => {
                     self.db.create_index(
@@ -52,7 +52,7 @@ impl BenchDatabase for SpacetimeRaw {
                         IndexSchema {
                             index_id: IndexId::SENTINEL,
                             table_id,
-                            index_name: "id".into(),
+                            index_name: RawIdentifier::new("id"),
                             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                                 columns: ColId(0).into(),
                             }),

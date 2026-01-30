@@ -20,6 +20,7 @@ pub mod primitives;
 pub mod product_type;
 pub mod product_type_element;
 pub mod product_value;
+pub mod raw_identifier;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
@@ -70,6 +71,7 @@ pub mod serde {
     }
 }
 
+use crate::raw_identifier::RawIdentifier;
 /// Allows the macros in [`spacetimedb_bindings_macro`] to accept `crate = spacetimedb_sats`,
 /// which will then emit `$krate::sats`.
 #[doc(hidden)]
@@ -300,6 +302,6 @@ macro_rules! __make_register_reftype {
 }
 
 /// A helper for prettier Debug implementation, without extra indirection around Some("name").
-fn dbg_aggregate_name(opt: &Option<Box<str>>) -> &dyn std::fmt::Debug {
+fn dbg_aggregate_name(opt: &Option<RawIdentifier>) -> &dyn std::fmt::Debug {
     opt.as_ref().map_or(opt, |s| s)
 }

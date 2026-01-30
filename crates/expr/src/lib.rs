@@ -17,6 +17,7 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
@@ -56,10 +57,12 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
         ast::Project::Star(None) if input.nfields() > 1 => Err(InvalidWildcard::Join.into()),
         ast::Project::Star(None) => Ok(ProjectList::Name(vec![ProjectName::None(input)])),
         ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => {
+            let var = RawIdentifier::new(&*var);
             Ok(ProjectList::Name(vec![ProjectName::Some(input, var)]))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
         ast::Project::Count(SqlIdent(alias)) => {
+            let alias = RawIdentifier::new(&*alias);
             Ok(ProjectList::Agg(vec![input], AggType::Count, alias, AlgebraicType::U64))
         }
         ast::Project::Exprs(elems) => {
@@ -67,8 +70,9 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
             let mut names = HashSet::new();
 
             for ProjectElem(expr, SqlIdent(alias)) in elems {
+                let alias = RawIdentifier::new(&*alias);
                 if !names.insert(alias.clone()) {
-                    return Err(DuplicateName(alias.into_string()).into());
+                    return Err(DuplicateName(alias.clone()).into());
                 }
 
                 if let Expr::Field(p) = type_expr(vars, expr.into(), None)? {
@@ -100,18 +104,18 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             ty.clone(),
         )),
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
             Ok(Expr::Field(FieldProject {
-                table,
+                table: table_type.table_name.clone().into_raw_identifier(),
                 field: col_pos.idx(),
                 ty: col_type.clone(),
             }))
         }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(ty)) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .as_ref()
                 .get_column_by_name(&field)
@@ -120,7 +124,7 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
                 return Err(UnexpectedType::new(col_type, ty).into());
             }
             Ok(Expr::Field(FieldProject {
-                table,
+                table: table_type.table_name.clone().into_raw_identifier(),
                 field: col_pos.idx(),
                 ty: col_type.clone(),
             }))

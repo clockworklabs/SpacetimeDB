@@ -1,7 +1,8 @@
 use core::ops::Deref;
 use core::{borrow::Borrow, fmt};
-use ecow::EcoString;
-use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
+use crate::identifier::Identifier;
 
 /// The name of a reducer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -10,16 +11,25 @@ pub struct ReducerName(
     // in RawIdentifier and `Identifier` and more places.
     // TODO(perf): Consider `lean_string` instead for `&'static str` optimization.
     // This could be useful in e.g., `SumType` and friends.
-    pub EcoString,
+    pub RawIdentifier,
 );
 
-impl_st!([] ReducerName, _ts => AlgebraicType::String);
-impl_serialize!([] ReducerName, (self, ser) => ser.serialize_str(&self.0));
-impl_deserialize!([] ReducerName, de => <Box<str>>::deserialize(de).map(|s| Self(EcoString::from(s.as_ref()))));
+impl_st!([] ReducerName, ts => RawIdentifier::make_type(ts));
+impl_serialize!([] ReducerName, (self, ser) => self.serialize(ser));
+impl_deserialize!([] ReducerName, de => RawIdentifier::deserialize(de).map(Self));
 
 impl ReducerName {
-    pub fn new_from_str(name: &str) -> Self {
-        Self(EcoString::from(name))
+    pub fn new(id: Identifier) -> Self {
+        Self(id.into_raw())
+    }
+
+    #[cfg(feature = "test")]
+    pub fn for_test(name: &str) -> Self {
+        Self(RawIdentifier::new(name))
+    }
+
+    pub fn into_identifier(self) -> Identifier {
+        Identifier::new_assume_valid(self.0)
     }
 }
 

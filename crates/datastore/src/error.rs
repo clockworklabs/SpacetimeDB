@@ -3,6 +3,7 @@ use enum_as_inner::EnumAsInner;
 use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::buffer::DecodeError;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{product_value::InvalidFieldError, satn::Satn};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::def::error::LibError;
@@ -40,7 +41,7 @@ pub enum DatastoreError {
 #[derive(Error, Debug)]
 pub enum ViewError {
     #[error("view '{0}' not found")]
-    NotFound(Box<str>),
+    NotFound(RawIdentifier),
     #[error("Table backing View '{0}' not found")]
     TableNotFound(ViewId),
     #[error("failed to deserialize view arguments from row")]
