@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SpacetimeDB Script Tag App</title>
+    <title>SpacetimeDB Browser App</title>
   </head>
   <body
     style="
@@ -16,7 +16,7 @@
       margin: 0 auto;
     "
   >
-    <h1>SpacetimeDB Script Tag App</h1>
+    <h1>SpacetimeDB Browser App</h1>
 
     <div style="margin-bottom: 1rem">
       Status: <strong id="status" style="color: red">Disconnected</strong>
@@ -42,7 +42,8 @@
       </ul>
     </div>
 
-    <script src="https://unpkg.com/spacetimedb@latest/dist/browser.bundle.js"></script>
+    <!-- Load the bundled bindings (run `npm run build` first) -->
+    <script src="dist/bindings.iife.js"></script>
 
     <script>
       const HOST = 'ws://localhost:3000';
@@ -55,41 +56,8 @@
       const peopleList = document.getElementById('people-list');
       const countEl = document.getElementById('count');
 
-      let people = [];
-
-      const client = SpacetimeDB.Client.builder()
-        .withUri(HOST)
-        .withModuleName(DB_NAME)
-        .withToken(localStorage.getItem('auth_token') || undefined)
-        .onConnect((identityHex, token) => {
-          localStorage.setItem('auth_token', token);
-          console.log('Connected to SpacetimeDB with identity:', identityHex);
-
-          statusEl.textContent = 'Connected';
-          statusEl.style.color = 'green';
-          nameInput.disabled = false;
-          addBtn.disabled = false;
-
-          client.subscribe('SELECT * FROM person', rows => {
-            people = rows;
-            renderPeople();
-          });
-        })
-        .onDisconnect(() => {
-          console.log('Disconnected from SpacetimeDB');
-          statusEl.textContent = 'Disconnected';
-          statusEl.style.color = 'red';
-          nameInput.disabled = true;
-          addBtn.disabled = true;
-        })
-        .onError(error => {
-          console.log('Error connecting to SpacetimeDB:', error);
-          statusEl.textContent = 'Error: ' + error.message;
-          statusEl.style.color = 'red';
-        })
-        .build();
-
-      function renderPeople() {
+      function renderPeople(conn) {
+        const people = Array.from(conn.db.person.iter());
         countEl.textContent = people.length;
         if (people.length === 0) {
           peopleList.innerHTML =
@@ -102,29 +70,52 @@
       }
 
       function escapeHtml(text) {
-        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
       }
 
-      addForm.addEventListener('submit', async e => {
+      const conn = DbConnection.builder()
+        .withUri(HOST)
+        .withModuleName(DB_NAME)
+        .withToken(localStorage.getItem('auth_token') || undefined)
+        .onConnect((conn, identity, token) => {
+          localStorage.setItem('auth_token', token);
+          console.log('Connected with identity:', identity.toHexString());
+
+          statusEl.textContent = 'Connected';
+          statusEl.style.color = 'green';
+          nameInput.disabled = false;
+          addBtn.disabled = false;
+
+          conn.subscriptionBuilder()
+            .onApplied(() => renderPeople(conn))
+            .subscribe(['SELECT * FROM person']);
+
+          conn.db.person.onInsert(() => renderPeople(conn));
+          conn.db.person.onDelete(() => renderPeople(conn));
+        })
+        .onDisconnect(() => {
+          console.log('Disconnected from SpacetimeDB');
+          statusEl.textContent = 'Disconnected';
+          statusEl.style.color = 'red';
+          nameInput.disabled = true;
+          addBtn.disabled = true;
+        })
+        .onConnectError((_ctx, error) => {
+          console.error('Connection error:', error);
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = 'red';
+        })
+        .build();
+
+      addForm.addEventListener('submit', e => {
         e.preventDefault();
         const name = nameInput.value.trim();
         if (name) {
-          try {
-            await client.call('add', { name });
-            nameInput.value = '';
-          } catch (err) {
-            console.error('Failed to add person:', err);
-          }
+          conn.reducers.add({ name });
+          nameInput.value = '';
         }
-      });
-
-      client.connect().catch(err => {
-        console.log('Error connecting to SpacetimeDB:', err);
-        statusEl.textContent = 'Error: ' + err.message;
-        statusEl.style.color = 'red';
       });
     </script>
   </body>
