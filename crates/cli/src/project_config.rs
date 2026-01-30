@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{ArgMatches, Command};
+use clap::{ArgMatches, Command, ValueEnum};
 use json5;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -7,6 +7,8 @@ use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+use crate::subcommands::generate::Language;
 
 /// Errors that can occur when building or using CommandConfig
 #[derive(Debug, Error)]
@@ -360,8 +362,6 @@ pub struct Key {
     module_specific: bool,
     /// Whether this key is required in the config file
     required: bool,
-    /// Whether this key can be used to filter config instances
-    filterable: bool,
     /// The expected TypeId for this key
     type_id: TypeId,
 }
@@ -375,7 +375,6 @@ impl Key {
             clap_alias: None,
             module_specific: false,
             required: false,
-            filterable: false,
             type_id: TypeId::of::<T>(),
         }
     }
@@ -419,14 +418,6 @@ impl Key {
         self
     }
 
-    /// Mark this key as filterable. Filterable keys can be used to filter config instances
-    /// when CLI arguments are provided. For example, "database" can filter which publish
-    /// configs to use.
-    pub fn filterable(mut self) -> Self {
-        self.filterable = true;
-        self
-    }
-
     /// Get the clap argument name (either the mapped name or the config name)
     pub fn clap_arg_name(&self) -> &str {
         self.clap_name.as_deref().unwrap_or(&self.config_name)
@@ -445,11 +436,6 @@ impl Key {
     /// Check if this key is required
     pub fn is_required(&self) -> bool {
         self.required
-    }
-
-    /// Check if this key is filterable
-    pub fn is_filterable(&self) -> bool {
-        self.filterable
     }
 }
 
@@ -548,30 +534,6 @@ impl<'a> CommandConfig<'a> {
         self.config_values.contains_key(key)
     }
 
-    /// Check if this config matches all CLI-provided filterable fields.
-    /// Returns true if all filterable keys provided via CLI match the config values.
-    /// Returns true if no filterable keys were provided via CLI (no filtering needed).
-    pub fn matches_cli_filters(&self, matches: &ArgMatches) -> Result<bool, CommandConfigError> {
-        for key in &self.schema.keys {
-            if !key.is_filterable() {
-                continue;
-            }
-
-            // If this filterable key was provided via CLI, check if config matches
-            if self.schema.is_from_cli(matches, key.config_name()) {
-                // Get the CLI value and config value as strings for comparison
-                // TODO: Support other types besides String for filtering
-                if let Some(cli_value) = self.schema.get_clap_arg::<String>(matches, key.config_name())? {
-                    let config_value = self.get_one::<String>(matches, key.config_name())?;
-                    if config_value.as_deref() != Some(cli_value.as_str()) {
-                        return Ok(false); // Doesn't match filter
-                    }
-                }
-            }
-        }
-        Ok(true) // Matches all filters (or no filters provided)
-    }
-
     /// Validate that all required keys are present in the config file.
     /// Note: This only checks config file keys. CLI required validation is handled by clap.
     pub fn validate(&self) -> Result<(), CommandConfigError> {
@@ -600,6 +562,8 @@ fn type_name_from_id(type_id: TypeId) -> &'static str {
         "u64"
     } else if type_id == TypeId::of::<f64>() {
         "f64"
+    } else if type_id == TypeId::of::<Language>() {
+        "spacetimedb_cli::subcommands::generate::Language"
     } else {
         "unknown"
     }
@@ -618,6 +582,12 @@ fn from_json_value<T: Clone + Send + Sync + 'static>(value: &Value) -> anyhow::R
         t if t == TypeId::of::<i64>() => Box::new(value.as_i64().context("Expected i64 value")?),
         t if t == TypeId::of::<u64>() => Box::new(value.as_u64().context("Expected u64 value")?),
         t if t == TypeId::of::<f64>() => Box::new(value.as_f64().context("Expected f64 value")?),
+        t if t == TypeId::of::<Language>() => {
+            let s = value.as_str().context("Expected string value for Language")?;
+            // Use ValueEnum's from_str method which handles aliases automatically
+            let lang = Language::from_str(s, true).map_err(|_| anyhow::anyhow!("Invalid language: {}", s))?;
+            Box::new(lang)
+        }
         _ => anyhow::bail!("Unsupported type for conversion from JSON"),
     };
 

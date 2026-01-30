@@ -18,12 +18,7 @@ use crate::{build, common_args};
 /// Build the CommandSchema for publish command
 fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
     CommandSchemaBuilder::new()
-        .key(
-            Key::new::<String>("database")
-                .from_clap("name|identity")
-                .required()
-                .filterable(),
-        )
+        .key(Key::new::<String>("database").from_clap("name|identity").required())
         .key(Key::new::<String>("server"))
         .key(
             Key::new::<PathBuf>("module_path")
@@ -71,11 +66,19 @@ fn get_filtered_publish_configs<'a>(
         })
         .collect::<Result<Vec<_>, anyhow::Error>>()?;
 
-    // Filter by CLI-provided filterable fields
-    let filtered_configs: Vec<CommandConfig> = all_configs
-        .into_iter()
-        .filter(|config| config.matches_cli_filters(args).unwrap_or(false))
-        .collect();
+    // Filter by database name if provided via CLI
+    let filtered_configs: Vec<CommandConfig> = if schema.is_from_cli(args, "database") {
+        let cli_database = schema.get_clap_arg::<String>(args, "database")?;
+        all_configs
+            .into_iter()
+            .filter(|config| {
+                let config_database = config.get_one::<String>(args, "database").ok().flatten();
+                config_database.as_deref() == cli_database.as_deref()
+            })
+            .collect()
+    } else {
+        all_configs
+    };
 
     // Validate module-specific args aren't used with multiple targets
     if filtered_configs.len() > 1 {
