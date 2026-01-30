@@ -5,15 +5,13 @@ alwaysApply: true
 ---
 # SpacetimeDB Rules (All Languages)
 
-> **Last updated:** 2026-01-06
-
 ## Language-Specific Rules
 
 | Language | Rule File |
 |----------|-----------|
 | **TypeScript/React** | `spacetimedb-typescript.mdc` (MANDATORY) |
-| **Rust** | Check existing Rust modules in repo |
-| **C#** | Check existing C# modules in repo |
+| **Rust** | `spacetimedb-rust.mdc` (MANDATORY) |
+| **C#** | `spacetimedb-csharp.mdc` (MANDATORY) |
 
 ---
 
@@ -38,6 +36,23 @@ When implementing a feature that spans backend and client:
 5. **Client:** Render the data from the table(s)
 
 **Common mistake:** Building backend tables/reducers but forgetting to wire up the client to call them.
+
+---
+
+## Index System
+
+SpacetimeDB automatically creates indexes for:
+- Primary key columns
+- Columns marked as unique
+
+You can add explicit indexes on non-unique columns for query performance.
+
+**Index names must be unique across your entire module (all tables).** If two tables have indexes with the same declared name → conflict error.
+
+**Schema ↔ Code coupling:**
+- Your query code references indexes by name
+- If you add/remove/rename an index in the schema, update all code that uses it
+- Removing an index without updating queries causes runtime errors
 
 ---
 
@@ -77,3 +92,4 @@ spacetime logs <db-name>
 - Make the smallest change necessary
 - Do NOT touch unrelated files, configs, or dependencies
 - Do NOT invent new SpacetimeDB APIs — use only what exists in docs or this repo
+- Do NOT add restrictions the prompt didn't ask for — if "users can do X", implement X for all users
