@@ -26,6 +26,9 @@ pub enum CommandConfigError {
     #[error("Config key '{config_key}' is not supported in the config file. Available keys: {available_keys}")]
     UnsupportedConfigKey { config_key: String, available_keys: String },
 
+    #[error("Required key '{key}' is missing from the config file")]
+    MissingRequiredKey { key: String },
+
     #[error("Mismatch between definition and access of `{key}`. Could not downcast to {requested_type}, need to downcast to {expected_type}")]
     TypeMismatch {
         key: String,
@@ -72,21 +75,275 @@ pub struct PublishConfig {
     pub additional_fields: HashMap<String, Value>,
 }
 
+impl PublishConfig {
+    /// Iterate through all publish targets (self + children recursively).
+    /// Returns an iterator that yields references to PublishConfig instances.
+    pub fn iter_all_targets(&self) -> Box<dyn Iterator<Item = &PublishConfig> + '_> {
+        Box::new(
+            std::iter::once(self).chain(
+                self.children
+                    .iter()
+                    .flat_map(|children| children.iter())
+                    .flat_map(|child| child.iter_all_targets()),
+            ),
+        )
+    }
+
+    /// Count total number of targets (self + all descendants)
+    pub fn count_targets(&self) -> usize {
+        1 + self
+            .children
+            .as_ref()
+            .map(|children| children.iter().map(|child| child.count_targets()).sum())
+            .unwrap_or(0)
+    }
+}
+
 /// A unified config that merges clap arguments with config file values.
 /// Provides a `get_one::<T>(key)` interface similar to clap's ArgMatches.
 /// CLI arguments take precedence over config file values.
 #[derive(Debug)]
 pub struct CommandConfig<'a> {
-    /// Clap argument matches
-    matches: &'a ArgMatches,
+    /// Schema defining the contract between CLI and config
+    schema: &'a CommandSchema,
     /// Config file values
     config_values: HashMap<String, Value>,
+}
+
+/// Schema that defines the contract between CLI arguments and config file keys.
+/// Does not hold ArgMatches - methods take matches as a parameter instead.
+#[derive(Debug)]
+pub struct CommandSchema {
+    /// Key definitions
+    keys: Vec<Key>,
+    /// Keys excluded from config file
+    excluded_keys: HashSet<String>,
     /// Type information for validation (keyed by config name)
     type_map: HashMap<String, TypeId>,
     /// Map from config name to clap arg name (for from_clap mapping)
     config_to_clap: HashMap<String, String>,
     /// Map from config name to alias (for alias mapping)
     config_to_alias: HashMap<String, String>,
+}
+
+/// Builder for creating a CommandSchema with custom mappings and exclusions.
+pub struct CommandSchemaBuilder {
+    /// Keys defined for this command
+    keys: Vec<Key>,
+    /// Set of keys to exclude from being read from the config file
+    excluded_keys: HashSet<String>,
+}
+
+impl CommandSchemaBuilder {
+    pub fn new() -> Self {
+        Self {
+            keys: Vec::new(),
+            excluded_keys: HashSet::new(),
+        }
+    }
+
+    /// Add a key definition to the builder.
+    /// Example: `.key(Key::new::<String>("server"))`
+    pub fn key(mut self, key: Key) -> Self {
+        self.keys.push(key);
+        self
+    }
+
+    /// Exclude a key from being read from the config file.
+    /// This is useful for keys that should only come from CLI arguments.
+    pub fn exclude(mut self, key: impl Into<String>) -> Self {
+        self.excluded_keys.insert(key.into());
+        self
+    }
+
+    /// Build a CommandSchema by validating against the clap Command.
+    ///
+    /// # Arguments
+    /// * `command` - The clap Command to validate against
+    pub fn build(self, command: &Command) -> Result<CommandSchema, CommandConfigError> {
+        // Collect all clap argument names for validation
+        let clap_arg_names: HashSet<String> = command
+            .get_arguments()
+            .map(|arg| arg.get_id().as_str().to_string())
+            .collect();
+
+        // Check that all the defined keys exist in clap
+        for key in &self.keys {
+            if !clap_arg_names.contains(key.clap_arg_name()) {
+                return Err(CommandConfigError::InvalidClapReference {
+                    config_name: key.config_name().to_string(),
+                    clap_name: key.clap_arg_name().to_string(),
+                });
+            }
+
+            // Validate alias if present
+            if let Some(alias) = &key.clap_alias {
+                if !clap_arg_names.contains(alias) {
+                    return Err(CommandConfigError::InvalidAliasReference {
+                        config_name: key.config_name().to_string(),
+                        alias: alias.clone(),
+                    });
+                }
+            }
+        }
+
+        // Validate exclusions reference valid clap arguments
+        for excluded_key in &self.excluded_keys {
+            if !clap_arg_names.contains(excluded_key) {
+                return Err(CommandConfigError::InvalidExclusion {
+                    key: excluded_key.clone(),
+                });
+            }
+        }
+
+        let mut type_map = HashMap::new();
+        // A list of clap args that are referenced by the config keys
+        let mut referenced_clap_args = HashSet::new();
+        let mut config_to_clap_map = HashMap::new();
+        let mut config_to_alias_map = HashMap::new();
+
+        for key in &self.keys {
+            let config_name = key.config_name().to_string();
+            let clap_name = key.clap_arg_name().to_string();
+
+            referenced_clap_args.insert(clap_name.clone());
+            type_map.insert(config_name.clone(), key.type_id());
+
+            // Track the mapping from config name to clap arg name (if using from_clap)
+            if key.clap_name.is_some() {
+                config_to_clap_map.insert(config_name.clone(), clap_name.clone());
+            }
+
+            // Register the alias if present
+            if let Some(alias) = &key.clap_alias {
+                referenced_clap_args.insert(alias.clone());
+                config_to_alias_map.insert(config_name.clone(), alias.clone());
+            }
+        }
+
+        // Check that all clap arguments are either referenced or excluded
+        for arg in command.get_arguments() {
+            let arg_name = arg.get_id().as_str();
+
+            // Skip clap's built-in arguments
+            if arg_name == "help" || arg_name == "version" {
+                continue;
+            }
+
+            if !referenced_clap_args.contains(arg_name) && !self.excluded_keys.contains(arg_name) {
+                return Err(CommandConfigError::ClapArgNotDefined {
+                    arg_name: arg_name.to_string(),
+                });
+            }
+        }
+
+        Ok(CommandSchema {
+            keys: self.keys,
+            excluded_keys: self.excluded_keys,
+            type_map,
+            config_to_clap: config_to_clap_map,
+            config_to_alias: config_to_alias_map,
+        })
+    }
+}
+
+impl Default for CommandSchemaBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommandSchema {
+    /// Get a value from clap arguments only (not from config).
+    /// Useful for filtering or checking if a value was provided via CLI.
+    pub fn get_clap_arg<T: Clone + Send + Sync + 'static>(
+        &self,
+        matches: &ArgMatches,
+        config_name: &str,
+    ) -> Result<Option<T>, CommandConfigError> {
+        let requested_type_id = TypeId::of::<T>();
+
+        // Validate type if we have type information
+        if let Some(&expected_type_id) = self.type_map.get(config_name) {
+            if requested_type_id != expected_type_id {
+                let expected_type_name = type_name_from_id(expected_type_id);
+                let requested_type_name = std::any::type_name::<T>();
+
+                return Err(CommandConfigError::TypeMismatch {
+                    key: config_name.to_string(),
+                    requested_type: requested_type_name.to_string(),
+                    expected_type: expected_type_name.to_string(),
+                });
+            }
+        }
+
+        // Check clap with mapped name (if from_clap was used, use that name, otherwise use config name)
+        let clap_name = self
+            .config_to_clap
+            .get(config_name)
+            .map(|s| s.as_str())
+            .unwrap_or(config_name);
+
+        // Only return the value if it was actually provided by the user, not from defaults
+        if let Some(source) = matches.value_source(clap_name) {
+            if source == clap::parser::ValueSource::CommandLine {
+                if let Some(value) = matches.get_one::<T>(clap_name) {
+                    return Ok(Some(value.clone()));
+                }
+            }
+        }
+
+        // Try clap with the alias if it exists
+        if let Some(alias) = self.config_to_alias.get(config_name) {
+            if let Some(source) = matches.value_source(alias) {
+                if source == clap::parser::ValueSource::CommandLine {
+                    if let Some(value) = matches.get_one::<T>(alias) {
+                        return Ok(Some(value.clone()));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Check if a value was provided via CLI (not from config).
+    /// Only returns true if the user explicitly provided the value, not if it came from a default.
+    pub fn is_from_cli(&self, matches: &ArgMatches, config_name: &str) -> bool {
+        // Check clap with mapped name
+        let clap_name = self
+            .config_to_clap
+            .get(config_name)
+            .map(|s| s.as_str())
+            .unwrap_or(config_name);
+
+        // Use value_source to check if the value was actually provided by the user
+        if let Some(source) = matches.value_source(clap_name) {
+            if source == clap::parser::ValueSource::CommandLine {
+                return true;
+            }
+        }
+
+        // Check clap with alias
+        if let Some(alias) = self.config_to_alias.get(config_name) {
+            if let Some(source) = matches.value_source(alias) {
+                if source == clap::parser::ValueSource::CommandLine {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Get all module-specific keys that were provided via CLI.
+    pub fn module_specific_cli_args(&self, matches: &ArgMatches) -> Vec<&str> {
+        self.keys
+            .iter()
+            .filter(|k| k.module_specific && self.is_from_cli(matches, k.config_name()))
+            .map(|k| k.config_name())
+            .collect()
+    }
 }
 
 /// Configuration for a single key in the CommandConfig.
@@ -101,6 +358,10 @@ pub struct Key {
     clap_alias: Option<String>,
     /// Whether this key is module-specific
     module_specific: bool,
+    /// Whether this key is required in the config file
+    required: bool,
+    /// Whether this key can be used to filter config instances
+    filterable: bool,
     /// The expected TypeId for this key
     type_id: TypeId,
 }
@@ -113,6 +374,8 @@ impl Key {
             clap_name: None,
             clap_alias: None,
             module_specific: false,
+            required: false,
+            filterable: false,
             type_id: TypeId::of::<T>(),
         }
     }
@@ -149,6 +412,21 @@ impl Key {
         self
     }
 
+    /// Mark this key as required in the config file. If a config file is provided but
+    /// this key is missing, an error will be returned.
+    pub fn required(mut self) -> Self {
+        self.required = true;
+        self
+    }
+
+    /// Mark this key as filterable. Filterable keys can be used to filter config instances
+    /// when CLI arguments are provided. For example, "database" can filter which publish
+    /// configs to use.
+    pub fn filterable(mut self) -> Self {
+        self.filterable = true;
+        self
+    }
+
     /// Get the clap argument name (either the mapped name or the config name)
     pub fn clap_arg_name(&self) -> &str {
         self.clap_name.as_deref().unwrap_or(&self.config_name)
@@ -163,137 +441,40 @@ impl Key {
     pub fn type_id(&self) -> TypeId {
         self.type_id
     }
+
+    /// Check if this key is required
+    pub fn is_required(&self) -> bool {
+        self.required
+    }
+
+    /// Check if this key is filterable
+    pub fn is_filterable(&self) -> bool {
+        self.filterable
+    }
 }
 
-/// Builder for creating a CommandConfig with custom mappings and exclusions.
-pub struct CommandConfigBuilder {
-    /// Keys defined for this command
-    keys: Vec<Key>,
-    /// Set of keys to exclude from being read from the config file
-    excluded_keys: HashSet<String>,
-}
-
-impl CommandConfigBuilder {
-    pub fn new() -> Self {
-        Self {
-            keys: Vec::new(),
-            excluded_keys: HashSet::new(),
-        }
-    }
-
-    /// Add a key definition to the builder.
-    /// Example: `.key(Key::new::<String>("server"))`
-    pub fn key(mut self, key: Key) -> Self {
-        self.keys.push(key);
-        self
-    }
-
-    /// Exclude a key from being read from the config file.
-    /// This is useful for keys that should only come from CLI arguments.
-    pub fn exclude(mut self, key: impl Into<String>) -> Self {
-        self.excluded_keys.insert(key.into());
-        self
-    }
-
-    /// Build a CommandConfig by merging clap arguments with config file values.
+impl<'a> CommandConfig<'a> {
+    /// Create a new CommandConfig by validating config values against a schema.
     ///
     /// # Arguments
-    /// * `matches` - Parsed clap arguments (takes precedence)
+    /// * `schema` - The command schema that defines valid keys and types
     /// * `config_values` - Values from the config file
-    /// * `command` - The clap Command to validate against
-    pub fn build<'a>(
-        self,
-        matches: &'a ArgMatches,
-        config_values: HashMap<String, Value>,
-        command: &Command,
-    ) -> Result<CommandConfig<'a>, CommandConfigError> {
-        // Collect all clap argument names for validation
-        let clap_arg_names: HashSet<String> = command
-            .get_arguments()
-            .map(|arg| arg.get_id().as_str().to_string())
+    ///
+    /// # Errors
+    /// Returns an error if any config keys are not defined in the schema.
+    /// Note: Required key validation happens when get_one() is called, not during construction.
+    pub fn new(schema: &'a CommandSchema, config_values: HashMap<String, Value>) -> Result<Self, CommandConfigError> {
+        // Normalize keys from kebab-case to snake_case to match clap's Arg::new() convention
+        let normalized_values: HashMap<String, Value> = config_values
+            .into_iter()
+            .map(|(k, v)| (k.replace('-', "_"), v))
             .collect();
 
-        // Check that all the defined keys exist in clap
-        for key in &self.keys {
-            if !clap_arg_names.contains(key.clap_arg_name()) {
-                return Err(CommandConfigError::InvalidClapReference {
-                    config_name: key.config_name().to_string(),
-                    clap_name: key.clap_arg_name().to_string(),
-                });
-            }
+        // Build set of valid config keys from schema
+        let valid_config_keys: HashSet<String> = schema.keys.iter().map(|k| k.config_name().to_string()).collect();
 
-            // Also validate alias if present
-            if let Some(alias) = &key.clap_alias {
-                if !clap_arg_names.contains(alias) {
-                    return Err(CommandConfigError::InvalidAliasReference {
-                        config_name: key.config_name().to_string(),
-                        alias: alias.clone(),
-                    });
-                }
-            }
-        }
-
-        // Validate exclusions reference valid clap arguments
-        for excluded_key in &self.excluded_keys {
-            if !clap_arg_names.contains(excluded_key) {
-                return Err(CommandConfigError::InvalidExclusion {
-                    key: excluded_key.clone(),
-                });
-            }
-        }
-
-        let mut type_map = HashMap::new();
-        // A list of clap args that are referenced by the config keys, either by a direct
-        // mapping, a from_clap() mapping, or an alias. This is only used to validate that
-        // all of the clap args have been referenced
-        let mut referenced_clap_args = HashSet::new();
-        // Map from config name to clap arg name (for from_clap mapping)
-        let mut config_to_clap_map = HashMap::new();
-        // Map from config name to alias (for alias mapping)
-        let mut config_to_alias_map = HashMap::new();
-        let mut valid_config_keys = HashSet::new();
-
-        for key in &self.keys {
-            let config_name = key.config_name().to_string();
-            let clap_name = key.clap_arg_name().to_string();
-
-            referenced_clap_args.insert(clap_name.clone());
-            type_map.insert(config_name.clone(), key.type_id());
-
-            // Track the mapping from config name to clap arg name (if using from_clap)
-            if key.clap_name.is_some() {
-                config_to_clap_map.insert(config_name.clone(), clap_name.clone());
-            }
-
-            // Track valid config key names
-            valid_config_keys.insert(config_name.clone());
-
-            // Register the alias if present
-            if let Some(alias) = &key.clap_alias {
-                referenced_clap_args.insert(alias.clone());
-                // Map config name -> alias for lookup in get_one()
-                config_to_alias_map.insert(config_name.clone(), alias.clone());
-            }
-        }
-
-        // Check that all clap arguments are either referenced or excluded
-        for arg in command.get_arguments() {
-            let arg_name = arg.get_id().as_str();
-
-            // Skip clap's built-in arguments
-            if arg_name == "help" || arg_name == "version" {
-                continue;
-            }
-
-            if !referenced_clap_args.contains(arg_name) && !self.excluded_keys.contains(arg_name) {
-                return Err(CommandConfigError::ClapArgNotDefined {
-                    arg_name: arg_name.to_string(),
-                });
-            }
-        }
-
-        // Check that all keys that are present in the config file are defined as Keys
-        for config_key in config_values.keys() {
+        // Check that all keys in config file are defined in schema
+        for config_key in normalized_values.keys() {
             if !valid_config_keys.contains(config_key) {
                 return Err(CommandConfigError::UnsupportedConfigKey {
                     config_key: config_key.clone(),
@@ -307,92 +488,101 @@ impl CommandConfigBuilder {
         }
 
         Ok(CommandConfig {
-            matches,
-            config_values,
-            type_map,
-            config_to_clap: config_to_clap_map,
-            config_to_alias: config_to_alias_map,
+            schema,
+            config_values: normalized_values,
         })
     }
-}
 
-impl Default for CommandConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<'a> CommandConfig<'a> {
     /// Get a single value from the config as a specific type.
-    /// First checks clap args, then falls back to config values.
-    /// Validates that the requested type matches the clap definition.
+    /// First checks clap args (via schema), then falls back to config values.
+    /// Validates that the requested type matches the schema definition.
     ///
     /// Returns:
     /// - Ok(Some(T)) if the value exists and can be converted
     /// - Ok(None) if the value doesn't exist in either clap or config
     /// - Err if the type doesn't match or conversion fails
-    pub fn get_one<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Result<Option<T>, CommandConfigError> {
-        let requested_type_id = TypeId::of::<T>();
-
-        // Validate type if we have type information
-        if let Some(&expected_type_id) = self.type_map.get(key) {
-            if requested_type_id != expected_type_id {
-                let expected_type_name = type_name_from_id(expected_type_id);
-                let requested_type_name = std::any::type_name::<T>();
-
-                return Err(CommandConfigError::TypeMismatch {
-                    key: key.to_string(),
-                    requested_type: requested_type_name.to_string(),
-                    expected_type: expected_type_name.to_string(),
-                });
-            }
-        }
-
-        // Try clap arguments first (CLI takes precedence)
-        // If from_clap() was used, use the mapped clap arg name, otherwise use the config name
-        let clap_name = self.config_to_clap.get(key).map(|s| s.as_str()).unwrap_or(key);
-        if let Some(value) = self.matches.get_one::<T>(clap_name) {
+    pub fn get_one<T: Clone + Send + Sync + 'static>(
+        &self,
+        matches: &ArgMatches,
+        key: &str,
+    ) -> Result<Option<T>, CommandConfigError> {
+        // Try clap arguments first (CLI takes precedence) via schema
+        let from_cli = self.schema.get_clap_arg::<T>(matches, key)?;
+        if let Some(ref value) = from_cli {
+            eprintln!(
+                "DEBUG get_one: key='{}' source=CLI value={:?}",
+                key,
+                std::any::type_name::<T>()
+            );
             return Ok(Some(value.clone()));
-        }
-
-        // Try clap with the alias if it exists
-        if let Some(alias) = self.config_to_alias.get(key) {
-            if let Some(value) = self.matches.get_one::<T>(alias) {
-                return Ok(Some(value.clone()));
-            }
         }
 
         // Fall back to config values using the config name
         if let Some(value) = self.config_values.get(key) {
-            from_json_value::<T>(value)
+            let result = from_json_value::<T>(value)
                 .map_err(|source| CommandConfigError::ConversionError {
                     key: key.to_string(),
                     target_type: std::any::type_name::<T>().to_string(),
                     source,
                 })
-                .map(Some)
+                .map(Some);
+
+            if result.is_ok() {
+                eprintln!("DEBUG get_one: key='{}' source=config value={:?}", key, value);
+            }
+            result
         } else {
+            eprintln!("DEBUG get_one: key='{}' source=none value=None", key);
             Ok(None)
         }
     }
 
     /// Check if a key exists in either clap or config.
-    pub fn contains(&self, key: &str) -> bool {
-        // Check clap with mapped name (if from_clap was used, use that name, otherwise use config name)
-        let clap_name = self.config_to_clap.get(key).map(|s| s.as_str()).unwrap_or(key);
-        if self.matches.contains_id(clap_name) {
+    pub fn contains(&self, matches: &ArgMatches, key: &str) -> bool {
+        // Check if provided via CLI using schema
+        if self.schema.is_from_cli(matches, key) {
             return true;
-        }
-
-        // Check clap with alias
-        if let Some(alias) = self.config_to_alias.get(key) {
-            if self.matches.contains_id(alias) {
-                return true;
-            }
         }
 
         // Check config key
         self.config_values.contains_key(key)
+    }
+
+    /// Check if this config matches all CLI-provided filterable fields.
+    /// Returns true if all filterable keys provided via CLI match the config values.
+    /// Returns true if no filterable keys were provided via CLI (no filtering needed).
+    pub fn matches_cli_filters(&self, matches: &ArgMatches) -> Result<bool, CommandConfigError> {
+        for key in &self.schema.keys {
+            if !key.is_filterable() {
+                continue;
+            }
+
+            // If this filterable key was provided via CLI, check if config matches
+            if self.schema.is_from_cli(matches, key.config_name()) {
+                // Get the CLI value and config value as strings for comparison
+                // TODO: Support other types besides String for filtering
+                if let Some(cli_value) = self.schema.get_clap_arg::<String>(matches, key.config_name())? {
+                    let config_value = self.get_one::<String>(matches, key.config_name())?;
+                    if config_value.as_deref() != Some(cli_value.as_str()) {
+                        return Ok(false); // Doesn't match filter
+                    }
+                }
+            }
+        }
+        Ok(true) // Matches all filters (or no filters provided)
+    }
+
+    /// Validate that all required keys are present in the config file.
+    /// Note: This only checks config file keys. CLI required validation is handled by clap.
+    pub fn validate(&self) -> Result<(), CommandConfigError> {
+        for key in &self.schema.keys {
+            if key.is_required() && !self.config_values.contains_key(key.config_name()) {
+                return Err(CommandConfigError::MissingRequiredKey {
+                    key: key.config_name().to_string(),
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -615,30 +805,33 @@ mod tests {
             .clone()
             .get_matches_from(vec!["test", "--out-dir", "./bindings", "--lang", "typescript"]);
 
+        // Build schema
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("language").from_clap("lang"))
+            .key(Key::new::<String>("out-dir"))
+            .key(Key::new::<String>("server"))
+            .build(&cmd)
+            .unwrap();
+
         // Simulate config file values
         let mut config_values = HashMap::new();
         config_values.insert("language".to_string(), Value::String("rust".to_string()));
         config_values.insert("server".to_string(), Value::String("local".to_string()));
 
-        // Build CommandConfig with key mapping (config uses "language", clap uses "lang")
-        let command_config = CommandConfigBuilder::new()
-            .key(Key::new::<String>("language").from_clap("lang"))
-            .key(Key::new::<String>("out-dir"))
-            .key(Key::new::<String>("server"))
-            .build(&matches, config_values, &cmd)
-            .unwrap();
+        // Create CommandConfig with schema
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
 
         // CLI args should override config values
         assert_eq!(
-            command_config.get_one::<String>("out-dir").unwrap(),
+            command_config.get_one::<String>(&matches, "out-dir").unwrap(),
             Some("./bindings".to_string())
         );
         assert_eq!(
-            command_config.get_one::<String>("lang").unwrap(),
+            command_config.get_one::<String>(&matches, "language").unwrap(),
             Some("typescript".to_string())
-        ); // CLI overrides
+        ); // CLI overrides (use config name, not clap name)
         assert_eq!(
-            command_config.get_one::<String>("server").unwrap(),
+            command_config.get_one::<String>(&matches, "server").unwrap(),
             Some("local".to_string())
         ); // from config
     }
@@ -700,53 +893,46 @@ mod tests {
         let cmd = Command::new("test")
             .arg(Arg::new("database").long("database"))
             .arg(Arg::new("server").long("server"))
-            .arg(Arg::new("module-path").long("module-path"))
-            .arg(Arg::new("build-options").long("build-options"));
+            .arg(Arg::new("module_path").long("module-path"))
+            .arg(Arg::new("build_options").long("build-options"))
+            .arg(Arg::new("break_clients").long("break-clients"))
+            .arg(Arg::new("anon_identity").long("anonymous"));
 
         // CLI overrides the server
         let matches = cmd.clone().get_matches_from(vec!["test", "--server", "maincloud"]);
 
-        // Convert PublishConfig to HashMap for CommandConfig
-        let mut config_values = HashMap::new();
-        if let Some(database) = publish_config.additional_fields.get("database") {
-            config_values.insert("database".to_string(), database.clone());
-        }
-        if let Some(server) = publish_config.additional_fields.get("server") {
-            config_values.insert("server".to_string(), server.clone());
-        }
-        if let Some(module_path) = publish_config.additional_fields.get("module-path") {
-            config_values.insert("module-path".to_string(), module_path.clone());
-        }
-        if let Some(build_options) = publish_config.additional_fields.get("build-options") {
-            config_values.insert("build-options".to_string(), build_options.clone());
-        }
-
-        let command_config = CommandConfigBuilder::new()
+        // Build schema with snake_case keys
+        let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("database"))
             .key(Key::new::<String>("server"))
-            .key(Key::new::<String>("module-path"))
-            .key(Key::new::<String>("build-options"))
-            .build(&matches, config_values, &cmd)
+            .key(Key::new::<String>("module_path"))
+            .key(Key::new::<String>("build_options"))
+            .key(Key::new::<bool>("break_clients"))
+            .key(Key::new::<bool>("anon_identity"))
+            .build(&cmd)
             .unwrap();
+
+        // Just pass the additional_fields directly - they will be normalized from kebab to snake_case
+        let command_config = CommandConfig::new(&schema, publish_config.additional_fields).unwrap();
 
         // database comes from config
         assert_eq!(
-            command_config.get_one::<String>("database").unwrap(),
+            command_config.get_one::<String>(&matches, "database").unwrap(),
             Some("my-database".to_string())
         );
         // server comes from CLI (overrides config)
         assert_eq!(
-            command_config.get_one::<String>("server").unwrap(),
+            command_config.get_one::<String>(&matches, "server").unwrap(),
             Some("maincloud".to_string())
         );
-        // module-path comes from config
+        // module_path comes from config (kebab-case in JSON was normalized to snake_case)
         assert_eq!(
-            command_config.get_one::<String>("module-path").unwrap(),
+            command_config.get_one::<String>(&matches, "module_path").unwrap(),
             Some("./my-module".to_string())
         );
-        // build-options comes from config
+        // build_options comes from config
         assert_eq!(
-            command_config.get_one::<String>("build-options").unwrap(),
+            command_config.get_one::<String>(&matches, "build_options").unwrap(),
             Some("--features extra".to_string())
         );
     }
@@ -763,13 +949,15 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test", "--server", "local"]);
 
-        let command_config = CommandConfigBuilder::new()
+        let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("server"))
-            .build(&matches, HashMap::new(), &cmd)
+            .build(&cmd)
             .unwrap();
 
+        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+
         // Trying to get as i64 when it's defined as String should error
-        let result = command_config.get_one::<i64>("server");
+        let result = command_config.get_one::<i64>(&matches, "server");
         assert!(matches!(
             result.unwrap_err(),
             CommandConfigError::TypeMismatch { key, requested_type, expected_type }
@@ -778,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_key_definition_error() {
+    fn test_schema_missing_key_definition_error() {
         use clap::{Arg, Command};
 
         // Define clap command with some arguments
@@ -792,11 +980,11 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
-        // Try to build config but don't define all keys (missing "server" key)
-        let result = CommandConfigBuilder::new()
+        // Try to build schema but don't define all keys (missing "server" key)
+        let result = CommandSchemaBuilder::new()
             .key(Key::new::<bool>("yes"))
             // Missing .key(Key::new::<String>("server"))
-            .build(&matches, HashMap::new(), &cmd);
+            .build(&cmd);
 
         // This should error because "server" is in clap but not defined in the builder
         // and not excluded
@@ -821,18 +1009,20 @@ mod tests {
             .clone()
             .get_matches_from(vec!["test", "--project-path", "./my-project"]);
 
-        // Config file uses "module-path"
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("module_path").from_clap("project-path"))
+            .build(&cmd)
+            .unwrap();
+
+        // Config file uses "module-path" (kebab-case, will be normalized to module_path)
         let mut config_values = HashMap::new();
         config_values.insert("module-path".to_string(), Value::String("./config-project".to_string()));
 
-        let command_config = CommandConfigBuilder::new()
-            .key(Key::new::<String>("module-path").from_clap("project-path"))
-            .build(&matches, config_values, &cmd)
-            .unwrap();
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
 
-        // CLI should override config, accessed via config name "module-path"
+        // CLI should override config, accessed via config name "module_path" (snake_case)
         assert_eq!(
-            command_config.get_one::<String>("module-path").unwrap(),
+            command_config.get_one::<String>(&matches, "module_path").unwrap(),
             Some("./my-project".to_string())
         );
     }
@@ -854,14 +1044,16 @@ mod tests {
             .clone()
             .get_matches_from(vec!["test", "--project-path", "./my-project"]);
 
-        let command_config = CommandConfigBuilder::new()
+        let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("module-path"))
-            .build(&matches, HashMap::new(), &cmd)
+            .build(&cmd)
             .unwrap();
+
+        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
 
         // Should be accessible via the primary name
         assert_eq!(
-            command_config.get_one::<String>("module-path").unwrap(),
+            command_config.get_one::<String>(&matches, "module-path").unwrap(),
             Some("./my-project".to_string())
         );
     }
@@ -878,13 +1070,15 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
-        let command_config = CommandConfigBuilder::new()
+        let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("server"))
-            .build(&matches, HashMap::new(), &cmd)
+            .build(&cmd)
             .unwrap();
 
+        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+
         // Should return Ok(None) when optional argument not provided
-        assert_eq!(command_config.get_one::<String>("server").unwrap(), None);
+        assert_eq!(command_config.get_one::<String>(&matches, "server").unwrap(), None);
     }
 
     #[test]
@@ -909,14 +1103,16 @@ mod tests {
             .clone()
             .get_matches_from(vec!["test", "--project-path", "./deprecated"]);
 
-        let command_config = CommandConfigBuilder::new()
+        let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("module-path").alias("project-path"))
-            .build(&matches, HashMap::new(), &cmd)
+            .build(&cmd)
             .unwrap();
+
+        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
 
         // Should be able to get the value via the canonical name
         assert_eq!(
-            command_config.get_one::<String>("module-path").unwrap(),
+            command_config.get_one::<String>(&matches, "module-path").unwrap(),
             Some("./deprecated".to_string())
         );
     }
@@ -947,14 +1143,16 @@ mod tests {
             "./deprecated",
         ]);
 
-        let command_config = CommandConfigBuilder::new()
+        let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("module-path").alias("project-path"))
-            .build(&matches, HashMap::new(), &cmd)
+            .build(&cmd)
             .unwrap();
+
+        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
 
         // Canonical name should take precedence
         assert_eq!(
-            command_config.get_one::<String>("module-path").unwrap(),
+            command_config.get_one::<String>(&matches, "module-path").unwrap(),
             Some("./canonical".to_string())
         );
     }
@@ -963,10 +1161,10 @@ mod tests {
     fn test_alias_with_config_fallback() {
         use clap::{Arg, Command};
 
-        // Clap has both module-path and deprecated project-path
+        // Clap has both module_path and deprecated project-path as alias
         let cmd = Command::new("test")
             .arg(
-                Arg::new("module-path")
+                Arg::new("module_path")
                     .long("module-path")
                     .value_parser(clap::value_parser!(String)),
             )
@@ -979,24 +1177,26 @@ mod tests {
         // User doesn't provide CLI args
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
-        // Config has the value
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("module_path").alias("project-path"))
+            .build(&cmd)
+            .unwrap();
+
+        // Config has the value (kebab-case will be normalized)
         let mut config_values = HashMap::new();
         config_values.insert("module-path".to_string(), Value::String("./from-config".to_string()));
 
-        let command_config = CommandConfigBuilder::new()
-            .key(Key::new::<String>("module-path").alias("project-path"))
-            .build(&matches, config_values, &cmd)
-            .unwrap();
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
 
         // Should fall back to config
         assert_eq!(
-            command_config.get_one::<String>("module-path").unwrap(),
+            command_config.get_one::<String>(&matches, "module_path").unwrap(),
             Some("./from-config".to_string())
         );
     }
 
     #[test]
-    fn test_invalid_from_clap_reference() {
+    fn test_schema_invalid_from_clap_reference() {
         use clap::{Arg, Command};
 
         let cmd = Command::new("test").arg(
@@ -1008,10 +1208,10 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         // Try to map to a non-existent clap arg
-        let result = CommandConfigBuilder::new()
+        let result = CommandSchemaBuilder::new()
             .key(Key::new::<String>("module-path").from_clap("non-existent"))
             .exclude("server") // Exclude the server arg we're not using
-            .build(&matches, HashMap::new(), &cmd);
+            .build(&cmd);
 
         assert!(matches!(
             result.unwrap_err(),
@@ -1021,7 +1221,7 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_alias_reference() {
+    fn test_schema_invalid_alias_reference() {
         use clap::{Arg, Command};
 
         let cmd = Command::new("test").arg(
@@ -1033,9 +1233,9 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         // Try to alias a non-existent clap arg
-        let result = CommandConfigBuilder::new()
+        let result = CommandSchemaBuilder::new()
             .key(Key::new::<String>("module-path").alias("non-existent-alias"))
-            .build(&matches, HashMap::new(), &cmd);
+            .build(&cmd);
 
         assert!(matches!(
             result.unwrap_err(),
@@ -1056,24 +1256,28 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("server"))
+            .build(&cmd)
+            .unwrap();
+
         // Config has a key that's not defined in CommandConfig
         let mut config_values = HashMap::new();
         config_values.insert("server".to_string(), Value::String("local".to_string()));
         config_values.insert("undefined-key".to_string(), Value::String("value".to_string()));
 
-        let result = CommandConfigBuilder::new()
-            .key(Key::new::<String>("server"))
-            .build(&matches, config_values, &cmd);
+        let result = CommandConfig::new(&schema, config_values);
 
+        // After normalization, "undefined-key" becomes "undefined_key"
         assert!(matches!(
             result.unwrap_err(),
             CommandConfigError::UnsupportedConfigKey { config_key, .. }
-                if config_key == "undefined-key"
+                if config_key == "undefined_key"
         ));
     }
 
     #[test]
-    fn test_from_clap_with_wrong_arg_name() {
+    fn test_schema_from_clap_with_wrong_arg_name() {
         use clap::{Arg, Command};
 
         // Command has "lang" argument
@@ -1082,9 +1286,9 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         // Try to create a key that references "language" via from_clap, but clap has "lang"
-        let result = CommandConfigBuilder::new()
+        let result = CommandSchemaBuilder::new()
             .key(Key::new::<String>("lang").from_clap("language"))
-            .build(&matches, HashMap::new(), &cmd);
+            .build(&cmd);
 
         // Should fail because "language" doesn't exist in the Command
         assert!(matches!(
@@ -1104,21 +1308,193 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("server"))
+            .exclude("yes")
+            .build(&cmd)
+            .unwrap();
+
         // Config has yes, which is excluded
         let mut config_values = HashMap::new();
         config_values.insert("yes".to_string(), Value::Bool(true));
         config_values.insert("server".to_string(), Value::String("local".to_string()));
 
-        let result = CommandConfigBuilder::new()
-            .key(Key::new::<String>("server"))
-            .exclude("yes")
-            .build(&matches, config_values, &cmd);
+        let result = CommandConfig::new(&schema, config_values);
 
         // Should error because "yes" is excluded and shouldn't be in config
         assert!(matches!(
             result.unwrap_err(),
             CommandConfigError::UnsupportedConfigKey { config_key, .. }
                 if config_key == "yes"
+        ));
+    }
+
+    #[test]
+    fn test_schema_get_clap_arg() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(Arg::new("port").long("port").value_parser(clap::value_parser!(i64)));
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["test", "--server", "localhost", "--port", "8080"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("server"))
+            .key(Key::new::<i64>("port"))
+            .build(&cmd)
+            .unwrap();
+
+        // Should get values from CLI
+        assert_eq!(
+            schema.get_clap_arg::<String>(&matches, "server").unwrap(),
+            Some("localhost".to_string())
+        );
+        assert_eq!(schema.get_clap_arg::<i64>(&matches, "port").unwrap(), Some(8080));
+    }
+
+    #[test]
+    fn test_schema_is_from_cli() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(Arg::new("port").long("port").value_parser(clap::value_parser!(i64)));
+
+        let matches = cmd.clone().get_matches_from(vec!["test", "--server", "localhost"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("server"))
+            .key(Key::new::<i64>("port"))
+            .build(&cmd)
+            .unwrap();
+
+        // server was provided via CLI
+        assert!(schema.is_from_cli(&matches, "server"));
+        // port was not provided
+        assert!(!schema.is_from_cli(&matches, "port"));
+    }
+
+    #[test]
+    fn test_schema_module_specific_cli_args() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("module-path")
+                    .long("module-path")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("database")
+                    .long("database")
+                    .value_parser(clap::value_parser!(String)),
+            );
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["test", "--module-path", "./module", "--server", "local"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("server"))
+            .key(Key::new::<String>("module-path").module_specific())
+            .key(Key::new::<String>("database"))
+            .build(&cmd)
+            .unwrap();
+
+        let module_specific = schema.module_specific_cli_args(&matches);
+        assert_eq!(module_specific.len(), 1);
+        assert!(module_specific.contains(&"module-path"));
+    }
+
+    #[test]
+    fn test_schema_get_clap_arg_with_from_clap() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test").arg(Arg::new("name").long("name").value_parser(clap::value_parser!(String)));
+
+        let matches = cmd.clone().get_matches_from(vec!["test", "--name", "my-db"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("database").from_clap("name"))
+            .build(&cmd)
+            .unwrap();
+
+        // Should get value using config name, which maps to clap arg "name"
+        assert_eq!(
+            schema.get_clap_arg::<String>(&matches, "database").unwrap(),
+            Some("my-db".to_string())
+        );
+    }
+
+    #[test]
+    fn test_schema_get_clap_arg_with_alias() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("module-path")
+                    .long("module-path")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("project-path")
+                    .long("project-path")
+                    .value_parser(clap::value_parser!(String)),
+            );
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["test", "--project-path", "./my-project"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("module-path").alias("project-path"))
+            .build(&cmd)
+            .unwrap();
+
+        // Should get value from alias
+        assert_eq!(
+            schema.get_clap_arg::<String>(&matches, "module-path").unwrap(),
+            Some("./my-project".to_string())
+        );
+    }
+
+    #[test]
+    fn test_schema_invalid_exclusion() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test").arg(
+            Arg::new("server")
+                .long("server")
+                .value_parser(clap::value_parser!(String)),
+        );
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        // Try to exclude a non-existent arg
+        let result = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("server"))
+            .exclude("non-existent")
+            .build(&cmd);
+
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::InvalidExclusion { key } if key == "non-existent"
         ));
     }
 
@@ -1130,21 +1506,242 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<i64>("port"))
+            .build(&cmd)
+            .unwrap();
+
         // Config has a string value for port, but clap expects i64
         let mut config_values = HashMap::new();
         config_values.insert("port".to_string(), Value::String("not-a-number".to_string()));
 
-        let command_config = CommandConfigBuilder::new()
-            .key(Key::new::<i64>("port"))
-            .build(&matches, config_values, &cmd)
-            .unwrap();
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
 
         // Should error when trying to convert invalid value
-        let result = command_config.get_one::<i64>("port");
+        let result = command_config.get_one::<i64>(&matches, "port");
         assert!(matches!(
             result.unwrap_err(),
             CommandConfigError::ConversionError { key, target_type, .. }
                 if key == "port" && target_type.contains("i64")
         ));
+    }
+
+    #[test]
+    fn test_validate_required_key_missing() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("database")
+                    .long("database")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .value_parser(clap::value_parser!(String)),
+            );
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("database").required())
+            .key(Key::new::<String>("server"))
+            .build(&cmd)
+            .unwrap();
+
+        // Config is missing the required "database" key
+        let config_values = HashMap::new();
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+
+        // Should error on validation
+        let result = command_config.validate();
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::MissingRequiredKey { key }
+                if key == "database"
+        ));
+    }
+
+    #[test]
+    fn test_validate_required_key_present() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("database")
+                    .long("database")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .value_parser(clap::value_parser!(String)),
+            );
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("database").required())
+            .key(Key::new::<String>("server"))
+            .build(&cmd)
+            .unwrap();
+
+        // Config has the required database key
+        let mut config_values = HashMap::new();
+        config_values.insert("database".to_string(), Value::String("my-db".to_string()));
+
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+
+        // Should succeed on validation
+        assert!(command_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_no_required_keys() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test").arg(
+            Arg::new("server")
+                .long("server")
+                .value_parser(clap::value_parser!(String)),
+        );
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("server"))
+            .build(&cmd)
+            .unwrap();
+
+        // No required keys, empty config should be fine
+        let config_values = HashMap::new();
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+
+        // Should succeed on validation
+        assert!(command_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_default_values_not_treated_as_cli() {
+        use clap::{Arg, Command};
+        use std::path::PathBuf;
+
+        // Create a command with a default value
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("project_path")
+                    .long("project-path")
+                    .value_parser(clap::value_parser!(PathBuf))
+                    .default_value("."),
+            )
+            .arg(
+                Arg::new("build_options")
+                    .long("build-options")
+                    .value_parser(clap::value_parser!(String))
+                    .default_value(""),
+            );
+
+        // Get matches WITHOUT providing the arguments
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<PathBuf>("project_path"))
+            .key(Key::new::<String>("build_options"))
+            .build(&cmd)
+            .unwrap();
+
+        // Config file has values
+        let mut config_values = HashMap::new();
+        config_values.insert("project_path".to_string(), Value::String("./my-module".to_string()));
+        config_values.insert("build_options".to_string(), Value::String("--release".to_string()));
+
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+
+        // Default values should NOT override config values
+        assert_eq!(
+            command_config.get_one::<PathBuf>(&matches, "project_path").unwrap(),
+            Some(PathBuf::from("./my-module"))
+        );
+        assert_eq!(
+            command_config.get_one::<String>(&matches, "build_options").unwrap(),
+            Some("--release".to_string())
+        );
+
+        // is_from_cli should return false for default values
+        assert!(!schema.is_from_cli(&matches, "project_path"));
+        assert!(!schema.is_from_cli(&matches, "build_options"));
+    }
+
+    #[test]
+    fn test_module_specific_only_checks_cli() {
+        use clap::{Arg, Command};
+        use std::path::PathBuf;
+
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("project_path")
+                    .long("project-path")
+                    .value_parser(clap::value_parser!(PathBuf))
+                    .default_value("."),
+            )
+            .arg(
+                Arg::new("build_options")
+                    .long("build-options")
+                    .value_parser(clap::value_parser!(String))
+                    .default_value(""),
+            );
+
+        // Test 1: No CLI args provided (only defaults)
+        let matches_no_cli = cmd.clone().get_matches_from(vec!["test"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<PathBuf>("project_path").module_specific())
+            .key(Key::new::<String>("build_options").module_specific())
+            .build(&cmd)
+            .unwrap();
+
+        // module_specific_cli_args should be empty when only defaults are present
+        let module_specific = schema.module_specific_cli_args(&matches_no_cli);
+        assert!(module_specific.is_empty());
+
+        // Test 2: CLI args actually provided
+        let matches_with_cli = cmd.clone().get_matches_from(vec![
+            "test",
+            "--project-path",
+            "./custom",
+            "--build-options",
+            "release-mode",
+        ]);
+
+        let module_specific = schema.module_specific_cli_args(&matches_with_cli);
+        assert_eq!(module_specific.len(), 2);
+        assert!(module_specific.contains(&"project_path"));
+        assert!(module_specific.contains(&"build_options"));
+    }
+
+    #[test]
+    fn test_kebab_case_normalization() {
+        use clap::{Arg, Command};
+
+        let cmd = Command::new("test").arg(
+            Arg::new("build_options")
+                .long("build-options")
+                .value_parser(clap::value_parser!(String)),
+        );
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("build_options"))
+            .build(&cmd)
+            .unwrap();
+
+        // Config file uses kebab-case
+        let mut config_values = HashMap::new();
+        config_values.insert("build-options".to_string(), Value::String("--release".to_string()));
+
+        // The normalization in CommandConfig::new should convert build-options to build_options
+        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+
+        // Should be able to access via snake_case key
+        assert_eq!(
+            command_config.get_one::<String>(&matches, "build_options").unwrap(),
+            Some("--release".to_string())
+        );
     }
 }

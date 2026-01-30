@@ -10,9 +10,87 @@ use std::{env, fs};
 
 use crate::common_args::ClearMode;
 use crate::config::Config;
+use crate::project_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
 use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
+
+/// Build the CommandSchema for publish command
+fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
+    CommandSchemaBuilder::new()
+        .key(
+            Key::new::<String>("database")
+                .from_clap("name|identity")
+                .required()
+                .filterable(),
+        )
+        .key(Key::new::<String>("server"))
+        .key(
+            Key::new::<PathBuf>("module_path")
+                .from_clap("project_path")
+                .module_specific(),
+        )
+        .key(Key::new::<String>("build_options").module_specific())
+        .key(Key::new::<PathBuf>("wasm_file").module_specific())
+        .key(Key::new::<PathBuf>("js_file").module_specific())
+        .key(Key::new::<u8>("num_replicas"))
+        .key(Key::new::<bool>("break_clients"))
+        .key(Key::new::<bool>("anon_identity"))
+        .key(Key::new::<String>("parent"))
+        .exclude("clear-database")
+        .exclude("force")
+        .build(command)
+        .map_err(Into::into)
+}
+
+/// Get filtered publish configs based on CLI arguments
+fn get_filtered_publish_configs<'a>(
+    spacetime_config: &'a SpacetimeConfig,
+    schema: &'a CommandSchema,
+    args: &ArgMatches,
+) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
+    // Get all publish targets from config
+    let all_targets: Vec<_> = spacetime_config
+        .publish
+        .as_ref()
+        .map(|p| p.iter_all_targets().collect())
+        .unwrap_or_default();
+
+    // If no config file, return empty (will use CLI args only)
+    if all_targets.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Build CommandConfig for each target
+    let all_configs: Vec<CommandConfig> = all_targets
+        .into_iter()
+        .map(|target| {
+            let config = CommandConfig::new(schema, target.additional_fields.clone())?;
+            config.validate()?;
+            Ok(config)
+        })
+        .collect::<Result<Vec<_>, anyhow::Error>>()?;
+
+    // Filter by CLI-provided filterable fields
+    let filtered_configs: Vec<CommandConfig> = all_configs
+        .into_iter()
+        .filter(|config| config.matches_cli_filters(args).unwrap_or(false))
+        .collect();
+
+    // Validate module-specific args aren't used with multiple targets
+    if filtered_configs.len() > 1 {
+        let module_specific_args = schema.module_specific_cli_args(args);
+        if !module_specific_args.is_empty() {
+            anyhow::bail!(
+                "Cannot use module-specific arguments ({}) when publishing to multiple targets. \
+                 Please specify a database filter (--database) or remove these arguments.",
+                module_specific_args.join(", ")
+            );
+        }
+    }
+
+    Ok(filtered_configs)
+}
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
@@ -123,158 +201,188 @@ fn confirm_and_clear(
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_str());
-    let name_or_identity = args.get_one::<String>("name|identity");
-    let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
-    let clear_database = args
-        .get_one::<ClearMode>("clear-database")
-        .copied()
-        .unwrap_or(ClearMode::Never);
-    let force = args.get_flag("force");
-    let anon_identity = args.get_flag("anon_identity");
-    let wasm_file = args.get_one::<PathBuf>("wasm_file");
-    let js_file = args.get_one::<PathBuf>("js_file");
-    let database_host = config.get_host_url(server)?;
-    let build_options = args.get_one::<String>("build_options").unwrap();
-    let num_replicas = args.get_one::<u8>("num_replicas");
-    let force_break_clients = args.get_flag("break_clients");
-    let parent = args.get_one::<String>("parent");
+    eprintln!("DEBUG: Starting publish command execution");
 
-    // If the user didn't specify an identity and we didn't specify an anonymous identity, then
-    // we want to use the default identity
-    // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
-    //  easily create a new identity with an email
-    let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
+    // Build schema
+    let cmd = cli();
+    let schema = build_publish_schema(&cmd)?;
 
-    let (name_or_identity, parent) =
-        validate_name_and_parent(name_or_identity.map(String::as_str), parent.map(String::as_str))?;
-
-    if !path_to_project.exists() {
-        return Err(anyhow::anyhow!(
-            "Project path does not exist: {}",
-            path_to_project.display()
-        ));
-    }
-
-    // Decide program file path and read program.
-    // Optionally build the program.
-    let (path_to_program, host_type) = if let Some(path) = wasm_file {
-        println!("(WASM) Skipping build. Instead we are publishing {}", path.display());
-        (path.clone(), "Wasm")
-    } else if let Some(path) = js_file {
-        println!("(JS) Skipping build. Instead we are publishing {}", path.display());
-        (path.clone(), "Js")
+    // Get publish configs (from spacetime.json or empty)
+    let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
+    let publish_configs = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
+        eprintln!("DEBUG: Found spacetime.json at: {}", config_path.display());
+        get_filtered_publish_configs(spacetime_config, &schema, args)?
     } else {
-        build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
-    };
-    let program_bytes = fs::read(path_to_program)?;
-
-    let server_address = {
-        let url = Url::parse(&database_host)?;
-        url.host_str().unwrap_or("<default>").to_string()
-    };
-    if server_address != "localhost" && server_address != "127.0.0.1" {
-        println!("You are about to publish to a non-local server: {server_address}");
-        if !y_or_n(force, "Are you sure you want to proceed?")? {
-            println!("Aborting");
-            return Ok(());
-        }
-    }
-
-    println!(
-        "Uploading to {} => {}",
-        server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
-        database_host
-    );
-
-    let client = reqwest::Client::new();
-    // If a name was given, ensure to percent-encode it.
-    // We also use PUT with a name or identity, and POST otherwise.
-    let mut builder = if let Some(name_or_identity) = name_or_identity {
-        let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
-        let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
-        let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
-
-        // note that this only happens in the case where we've passed a `name_or_identity`, but that's required if we pass `--clear-database`.
-        if clear_database == ClearMode::Always {
-            builder = confirm_and_clear(name_or_identity, force, builder)?;
-        } else {
-            builder = apply_pre_publish_if_needed(
-                builder,
-                &client,
-                &database_host,
-                name_or_identity,
-                &domain.to_string(),
-                host_type,
-                &program_bytes,
-                &auth_header,
-                clear_database,
-                force_break_clients,
-                force,
-            )
-            .await?;
-        }
-
-        builder
-    } else {
-        client.post(format!("{database_host}/v1/database"))
+        eprintln!("DEBUG: No spacetime.json found, using empty config (CLI args only)");
+        vec![CommandConfig::new(&schema, std::collections::HashMap::new())?]
     };
 
-    if let Some(n) = num_replicas {
-        eprintln!("WARNING: Use of unstable option `--num-replicas`.\n");
-        builder = builder.query(&[("num_replicas", *n)]);
-    }
-    if let Some(parent) = parent {
-        builder = builder.query(&[("parent", parent)]);
-    }
+    eprintln!("DEBUG: Processing {} publish target(s)", publish_configs.len());
 
-    println!("Publishing module...");
+    // Execute publish for each config
+    for command_config in publish_configs {
+        eprintln!("DEBUG: Executing publish for one target");
 
-    builder = add_auth_header_opt(builder, &auth_header);
+        // Get values using command_config.get_one() which merges CLI + config
+        let server_opt = command_config.get_one::<String>(args, "server")?;
+        let server = server_opt.as_deref();
+        let name_or_identity_opt = command_config.get_one::<String>(args, "database")?;
+        let name_or_identity = name_or_identity_opt.as_deref();
+        let path_to_project = command_config
+            .get_one::<PathBuf>(args, "module_path")?
+            .unwrap_or_else(|| PathBuf::from("."));
+        let clear_database = args
+            .get_one::<ClearMode>("clear-database")
+            .copied()
+            .unwrap_or(ClearMode::Never);
+        let force = args.get_flag("force");
+        let anon_identity = command_config.get_one::<bool>(args, "anon_identity")?.unwrap_or(false);
+        let wasm_file = command_config.get_one::<PathBuf>(args, "wasm_file")?;
+        let js_file = command_config.get_one::<PathBuf>(args, "js_file")?;
+        let database_host = config.get_host_url(server)?;
+        let build_options = command_config
+            .get_one::<String>(args, "build_options")?
+            .unwrap_or_else(|| String::new());
+        let num_replicas = command_config.get_one::<u8>(args, "num_replicas")?;
+        let force_break_clients = command_config.get_one::<bool>(args, "break_clients")?.unwrap_or(false);
+        let parent_opt = command_config.get_one::<String>(args, "parent")?;
+        let parent = parent_opt.as_deref();
 
-    // Set the host type.
-    builder = builder.query(&[("host_type", host_type)]);
+        // If the user didn't specify an identity and we didn't specify an anonymous identity, then
+        // we want to use the default identity
+        // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
+        //  easily create a new identity with an email
+        let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    // JS/TS is beta quality atm.
-    if host_type == "Js" {
-        println!("JavaScript / TypeScript support is currently in BETA.");
-        println!("There may be bugs. Please file issues if you encounter any.");
-        println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
-    }
+        let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
-    let res = builder.body(program_bytes).send().await?;
-    let response: PublishResult = res.json_or_error().await?;
-    match response {
-        PublishResult::Success {
-            domain,
-            database_identity,
-            op,
-        } => {
-            let op = match op {
-                PublishOp::Created => "Created new",
-                PublishOp::Updated => "Updated",
-            };
-            if let Some(domain) = domain {
-                println!("{op} database with name: {domain}, identity: {database_identity}");
-            } else {
-                println!("{op} database with identity: {database_identity}");
-            }
-        }
-        PublishResult::PermissionDenied { name } => {
-            if anon_identity {
-                anyhow::bail!("You need to be logged in as the owner of {name} to publish to {name}",);
-            }
-            // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
-            let token = config.spacetimedb_token().unwrap();
-            let identity = decode_identity(token)?;
-            //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
-            // we should perhaps generate fun names like 'green-fire-dragon' instead
-            let suggested_tld: String = identity.chars().take(12).collect();
+        if !path_to_project.exists() {
             return Err(anyhow::anyhow!(
-                "The database {name} is not registered to the identity you provided.\n\
-                We suggest you push to either a domain owned by you, or a new domain like:\n\
-                \tspacetime publish {suggested_tld}\n",
+                "Project path does not exist: {}",
+                path_to_project.display()
             ));
+        }
+
+        // Decide program file path and read program.
+        // Optionally build the program.
+        let (path_to_program, host_type) = if let Some(path) = wasm_file {
+            println!("(WASM) Skipping build. Instead we are publishing {}", path.display());
+            (path.clone(), "Wasm")
+        } else if let Some(path) = js_file {
+            println!("(JS) Skipping build. Instead we are publishing {}", path.display());
+            (path.clone(), "Js")
+        } else {
+            build::exec_with_argstring(config.clone(), &path_to_project, &build_options).await?
+        };
+        let program_bytes = fs::read(path_to_program)?;
+
+        let server_address = {
+            let url = Url::parse(&database_host)?;
+            url.host_str().unwrap_or("<default>").to_string()
+        };
+        if server_address != "localhost" && server_address != "127.0.0.1" {
+            println!("You are about to publish to a non-local server: {server_address}");
+            if !y_or_n(force, "Are you sure you want to proceed?")? {
+                println!("Aborting");
+                return Ok(());
+            }
+        }
+
+        println!(
+            "Uploading to {} => {}",
+            server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
+            database_host
+        );
+
+        let client = reqwest::Client::new();
+        // If a name was given, ensure to percent-encode it.
+        // We also use PUT with a name or identity, and POST otherwise.
+        let mut builder = if let Some(name_or_identity) = name_or_identity {
+            let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
+            let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
+            let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
+
+            // note that this only happens in the case where we've passed a `name_or_identity`, but that's required if we pass `--clear-database`.
+            if clear_database == ClearMode::Always {
+                builder = confirm_and_clear(name_or_identity, force, builder)?;
+            } else {
+                builder = apply_pre_publish_if_needed(
+                    builder,
+                    &client,
+                    &database_host,
+                    name_or_identity,
+                    &domain.to_string(),
+                    host_type,
+                    &program_bytes,
+                    &auth_header,
+                    clear_database,
+                    force_break_clients,
+                    force,
+                )
+                .await?;
+            }
+
+            builder
+        } else {
+            client.post(format!("{database_host}/v1/database"))
+        };
+
+        if let Some(n) = num_replicas {
+            eprintln!("WARNING: Use of unstable option `--num-replicas`.\n");
+            builder = builder.query(&[("num_replicas", n)]);
+        }
+        if let Some(parent) = parent {
+            builder = builder.query(&[("parent", parent)]);
+        }
+
+        println!("Publishing module...");
+
+        builder = add_auth_header_opt(builder, &auth_header);
+
+        // Set the host type.
+        builder = builder.query(&[("host_type", host_type)]);
+
+        // JS/TS is beta quality atm.
+        if host_type == "Js" {
+            println!("JavaScript / TypeScript support is currently in BETA.");
+            println!("There may be bugs. Please file issues if you encounter any.");
+            println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
+        }
+
+        let res = builder.body(program_bytes).send().await?;
+        let response: PublishResult = res.json_or_error().await?;
+        match response {
+            PublishResult::Success {
+                domain,
+                database_identity,
+                op,
+            } => {
+                let op = match op {
+                    PublishOp::Created => "Created new",
+                    PublishOp::Updated => "Updated",
+                };
+                if let Some(domain) = domain {
+                    println!("{op} database with name: {domain}, identity: {database_identity}");
+                } else {
+                    println!("{op} database with identity: {database_identity}");
+                }
+            }
+            PublishResult::PermissionDenied { name } => {
+                if anon_identity {
+                    anyhow::bail!("You need to be logged in as the owner of {name} to publish to {name}",);
+                }
+                // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
+                let token = config.spacetimedb_token().unwrap();
+                let identity = decode_identity(token)?;
+                //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
+                // we should perhaps generate fun names like 'green-fire-dragon' instead
+                let suggested_tld: String = identity.chars().take(12).collect();
+                return Err(anyhow::anyhow!(
+                    "The database {name} is not registered to the identity you provided.\n\
+                    We suggest you push to either a domain owned by you, or a new domain like:\n\
+                    \tspacetime publish {suggested_tld}\n",
+                ));
+            }
         }
     }
 
