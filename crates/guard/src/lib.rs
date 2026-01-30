@@ -152,7 +152,7 @@ impl SpacetimeDbGuard {
         let spawn_id = next_spawn_id();
         let (child, logs, host_url, reader_threads) =
             Self::spawn_server(&data_dir, pg_port, spawn_id, use_installed_cli);
-        let guard = SpacetimeDbGuard {
+        SpacetimeDbGuard {
             child,
             host_url,
             logs,
@@ -161,8 +161,7 @@ impl SpacetimeDbGuard {
             _data_dir_handle,
             reader_threads,
             use_installed_cli,
-        };
-        guard
+        }
     }
 
     /// Stop the server process without dropping the guard.
