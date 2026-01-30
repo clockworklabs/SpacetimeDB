@@ -21,41 +21,11 @@ fn test_st_view_tables() {
     );
 }
 
-const MODULE_CODE_BROKEN_NAMESPACE: &str = r#"
-use spacetimedb::ViewContext;
-
-#[spacetimedb::table(name = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::view(name = person, public)]
-pub fn person(ctx: &ViewContext) -> Option<Person> {
-    None
-}
-"#;
-
-const MODULE_CODE_BROKEN_RETURN_TYPE: &str = r#"
-use spacetimedb::{SpacetimeType, ViewContext};
-
-#[derive(SpacetimeType)]
-pub enum ABC {
-    A,
-    B,
-    C,
-}
-
-#[spacetimedb::view(name = person, public)]
-pub fn person(ctx: &ViewContext) -> Option<ABC> {
-    None
-}
-"#;
-
 /// Publishing a module should fail if a table and view have the same name
 #[test]
 fn test_fail_publish_namespace_collision() {
     let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE_BROKEN_NAMESPACE)
+        .use_precompiled_module("views-broken-namespace")
         .autopublish(false)
         .build();
 
@@ -70,7 +40,7 @@ fn test_fail_publish_namespace_collision() {
 #[test]
 fn test_fail_publish_wrong_return_type() {
     let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE_BROKEN_RETURN_TYPE)
+        .use_precompiled_module("views-broken-return-type")
         .autopublish(false)
         .build();
 
