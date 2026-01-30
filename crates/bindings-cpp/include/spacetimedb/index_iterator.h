@@ -18,10 +18,8 @@
  * FIELD_Index(person, age);
  * 
  * // In a view or reducer, query persons with age 25
- * // The filter() method returns an IndexIterator internally
- * for (IndexIterator<Person> iter = ctx.db[person_age].filter(25u); 
- *      iter != IndexIterator<Person>(); ++iter) {
- *     const Person& person = *iter;
+ * // The filter() method returns an IndexIteratorRange for clean syntax
+ * for (const auto& person : ctx.db[person_age].filter(25u)) {
  *     // Process person aged 25...
  * }
  * @endcode
@@ -66,6 +64,7 @@
 #include <optional>
 #include <algorithm>
 #include <utility>
+#include <memory>
 
 namespace SpacetimeDB {
 
@@ -126,32 +125,27 @@ public:
      * FIELD_Index(players, level);  // Creates level index
      * 
      * // In a view - find all level 0 players using filter()
-     * for (IndexIterator<Player> iter = ctx.db[players_level].filter(0u); 
-     *      iter != IndexIterator<Player>(); ++iter) {
-     *     const Player& player = *iter;
+     * for (const auto& player : ctx.db[players_level].filter(0u)) {
      *     LOG_INFO("Found level 0 player: " + player.name);
      * }
      * @endcode
      */
     template<typename FieldType>
     IndexIterator(IndexId index_id, const FieldType& value) {
-        // Serialize the exact value for prefix matching
-        SpacetimeDB::bsatn::Writer bound_writer;
-        bound_writer.write_u8(0);  // Bound::Included tag
-        SpacetimeDB::bsatn::serialize(bound_writer, value);
-        auto bound_buffer = bound_writer.take_buffer();
+        // Serialize the exact value for point scan
+        SpacetimeDB::bsatn::Writer point_writer;
+        SpacetimeDB::bsatn::serialize(point_writer, value);
+        auto point_buffer = point_writer.take_buffer();
 
-        // For exact match, use the value as both prefix and range bounds
-        Status status = FFI::datastore_btree_scan_bsatn(
+        // Use optimized point scan for exact value matches
+        Status status = FFI::datastore_index_scan_point_bsatn(
             index_id,
-            nullptr, 0, ColId{0},  // prefix with 1 element
-            bound_buffer.data(), bound_buffer.size(),  // no range start
-            bound_buffer.data(), bound_buffer.size(),  // no range end
+            point_buffer.data(), point_buffer.size(),
             &iter_handle_
         );
         
         if (status != StatusCode::OK) {
-            std::abort(); // IndexIterator: datastore_btree_scan_bsatn failed
+            std::abort(); // IndexIterator: datastore_index_scan_point_bsatn failed
         }
         advance();
     }
@@ -166,7 +160,7 @@ public:
 
     /**
      * @brief Helper to serialize Range as rstart/rend bounds
-     * Converts a Range<T> to the binary format expected by datastore_btree_scan_bsatn
+     * Converts a Range<T> to the binary format expected by datastore_index_scan_range_bsatn
      */
     template<typename RangeT>
     static std::vector<uint8_t> serialize_range_start(const RangeT& range) {
@@ -236,7 +230,7 @@ public:
         auto rend_buffer = rend_writer.take_buffer();
 
         // Call FFI with prefix_elems = 1 (only the first column)
-        Status status = FFI::datastore_btree_scan_bsatn(
+        Status status = FFI::datastore_index_scan_range_bsatn(
             index_id,
             prefix_buffer.data(), prefix_buffer.size(), ColId{1},
             rstart_buffer.data(), rstart_buffer.size(),
@@ -281,7 +275,7 @@ public:
         auto rend_buffer = serialize_range_end(range);
 
         // Call FFI with prefix_elems = 1 (only the prefix column)
-        Status status = FFI::datastore_btree_scan_bsatn(
+        Status status = FFI::datastore_index_scan_range_bsatn(
             index_id,
             prefix_buffer.data(), prefix_buffer.size(), ColId{1},
             rstart_buffer.data(), rstart_buffer.size(),
@@ -331,7 +325,7 @@ public:
         auto bound_buffer = bound_writer.take_buffer();
 
         // Call FFI with prefix_elems = N-1 (as per C# pattern)
-        Status status = FFI::datastore_btree_scan_bsatn(
+        Status status = FFI::datastore_index_scan_range_bsatn(
             index_id,
             prefix_buffer.data(), prefix_buffer.size(), ColId{static_cast<uint16_t>(prefix_count)},
             bound_buffer.data(), bound_buffer.size(),  // Last value as start
@@ -407,8 +401,8 @@ public:
             end_buffer.push_back(2); // Bound::Unbounded tag
         }
         
-        // Call btree scan with range bounds
-        Status status = FFI::datastore_btree_scan_bsatn(
+        // Call range scan with no prefix (range queries on single column)
+        Status status = FFI::datastore_index_scan_range_bsatn(
             index_id,
             nullptr, 0, ColId{0},  // no prefix for range queries
             start_buffer.empty() ? nullptr : start_buffer.data(), start_buffer.size(),
@@ -417,7 +411,7 @@ public:
         );
         
         if (status != StatusCode::OK) {
-            std::abort(); // IndexIterator: datastore_btree_scan_bsatn failed
+            std::abort(); // IndexIterator: datastore_index_scan_range_bsatn failed
         }
         
         // Apply inclusive/exclusive bounds during iteration
@@ -482,6 +476,17 @@ public:
     bool operator!=(const IndexIterator& other) const noexcept {
         return !(*this == other);
     }
+    
+    // Range-based for loop support
+    // Returns self to support: for (auto& row : ctx.db[field].filter(value)) { ... }
+    // This works because the temporary returned from filter() stays alive for the loop
+    IndexIterator& begin() noexcept { return *this; }
+    IndexIterator end() const noexcept { return IndexIterator(); }
+    
+    // Explicitly allow const iteration - needed for range-based for loops
+    // The iterator itself is const-iterable (doesn't modify internal state during iteration)
+    const IndexIterator& cbegin() const noexcept { return *this; }
+    const IndexIterator cend() const noexcept { return IndexIterator(); }
     
     /**
      * @brief Collect all remaining results into a vector
@@ -614,6 +619,95 @@ private:
     }
 };
 
+// =============================================================================
+// Range Wrapper for clean range-based for loops
+// =============================================================================
+
+/**
+ * @brief Lightweight wrapper to make IndexIterator work with range-based for loops
+ * 
+ * Provides the range interface while holding the move-only IndexIterator,
+ * allowing clean syntax: for (auto& row : ctx.db[field].filter(value)) { ... }
+ */
+template<typename T>
+class IndexIteratorRange {
+private:
+    struct Iterator {
+        std::shared_ptr<IndexIterator<T>> iter;
+        bool is_end = true;
+
+        Iterator() = default;
+        Iterator(std::shared_ptr<IndexIterator<T>> it, bool end) noexcept
+            : iter(std::move(it)), is_end(end) {}
+
+        const T& operator*() const noexcept { return **iter; }
+        const T* operator->() const noexcept { return iter->operator->(); }
+
+        Iterator& operator++() {
+            ++(*iter);
+            if (*iter == IndexIterator<T>()) {
+                is_end = true;
+                iter.reset();
+            }
+            return *this;
+        }
+
+        bool operator==(const Iterator& other) const noexcept {
+            if (is_end && other.is_end) return true;
+            return is_end == other.is_end && iter == other.iter;
+        }
+
+        bool operator!=(const Iterator& other) const noexcept { return !(*this == other); }
+    };
+
+    std::shared_ptr<IndexIterator<T>> iter_;
+    
+public:
+    explicit IndexIteratorRange(IndexIterator<T>&& it) noexcept
+        : iter_(std::make_shared<IndexIterator<T>>(std::move(it))) {}
+
+    Iterator begin() {
+        if (!iter_ || *iter_ == IndexIterator<T>()) {
+            return Iterator(nullptr, true);
+        }
+        return Iterator(iter_, false);
+    }
+
+    Iterator end() { return Iterator(nullptr, true); }
+
+    /**
+     * @brief Materialize all remaining results into a vector
+     * 
+     * Convenience method to collect all matching rows without manual iteration.
+     * 
+     * @return Vector containing all matching rows
+     */
+    std::vector<T> collect() {
+        if (!iter_) return {};
+        return iter_->collect();
+    }
+
+    /**
+     * @brief Count all remaining results
+     *
+     * Note: This consumes the iterator, just like iterating in a for-loop.
+     */
+    size_t size() {
+        size_t count = 0;
+        for (auto it = begin(); it != end(); ++it) {
+            ++count;
+        }
+        return count;
+    }
+
+    /**
+     * @brief Alias for size()
+     *
+     * Note: This consumes the iterator, just like iterating in a for-loop.
+     */
+    size_t count() { return size(); }
+};
 } // namespace SpacetimeDB
+
 
 #endif // SPACETIMEDB_INDEX_ITERATOR_H
