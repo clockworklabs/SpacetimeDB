@@ -94,6 +94,13 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 **Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
 
+### Why Separate Client Machines?
+
+Running clients on separate machines ensures:
+- Network round-trip latency is measured (realistic production scenario)
+- Client CPU/memory doesn't compete with server resources
+- Results reflect actual deployment conditions
+
 ### Account Seeding
 
 - 100,000 accounts seeded before each benchmark
@@ -119,6 +126,14 @@ SpacetimeDB: Client → SpacetimeDB (compute + storage) → Client
 ```
 
 This architectural difference means SpacetimeDB can execute transactions in microseconds rather than milliseconds, resulting in order-of-magnitude performance improvements.
+
+### Client Pipelining
+
+SpacetimeDB clients support **pipelining** - sending multiple requests without waiting for responses. This maximizes throughput by keeping the connection saturated.
+
+### Confirmed Reads (`withConfirmedReads`)
+
+SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are durably committed before acknowledging to the client. The benchmark results shown use `withConfirmedReads = ON` for fair comparison with databases that provide similar durability guarantees.
 
 ### Cloud vs Local Results
 
