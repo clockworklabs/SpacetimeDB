@@ -5,6 +5,18 @@ alwaysApply: true
 ---
 # SpacetimeDB Rules (All Languages)
 
+> **Last updated:** 2026-01-06
+
+## Language-Specific Rules
+
+| Language | Rule File |
+|----------|-----------|
+| **TypeScript/React** | `spacetimedb-typescript.mdc` (MANDATORY) |
+| **Rust** | Check existing Rust modules in repo |
+| **C#** | Check existing C# modules in repo |
+
+---
+
 ## Core Concepts
 
 1. **Reducers are transactional** — they do not return data to callers
@@ -15,20 +27,48 @@ alwaysApply: true
 
 ---
 
-## Index System
+## Feature Implementation Checklist
 
-SpacetimeDB automatically creates indexes for:
-- Primary key columns
-- Columns marked as unique
+When implementing a feature that spans backend and client:
 
-You can add explicit indexes on non-unique columns for query performance.
+1. **Backend:** Define table(s) to store the data
+2. **Backend:** Define reducer(s) to mutate the data
+3. **Client:** Subscribe to the table(s)
+4. **Client:** Call the reducer(s) from UI — **don't forget this step!**
+5. **Client:** Render the data from the table(s)
 
-**Index names must be unique across your entire module (all tables).** If two tables have indexes with the same declared name → conflict error.
+**Common mistake:** Building backend tables/reducers but forgetting to wire up the client to call them.
 
-**Schema ↔ Code coupling:**
-- Your query code references indexes by name
-- If you add/remove/rename an index in the schema, update all code that uses it
-- Removing an index without updating queries causes runtime errors
+---
+
+## Commands
+
+```bash
+# Start local SpacetimeDB
+spacetime start
+
+# Publish module
+spacetime publish <db-name> --project-path <module-path>
+
+# Clear and republish
+spacetime publish <db-name> --clear-database -y --project-path <module-path>
+
+# Generate client bindings
+spacetime generate --lang <lang> --out-dir <out> --project-path <module-path>
+
+# View logs
+spacetime logs <db-name>
+```
+
+---
+
+## Debugging Checklist
+
+1. Is SpacetimeDB server running? (`spacetime start`)
+2. Is the module published? (`spacetime publish`)
+3. Are client bindings generated? (`spacetime generate`)
+4. Check server logs for errors (`spacetime logs <db-name>`)
+5. **Is the reducer actually being called from the client?**
 
 ---
 
@@ -37,4 +77,3 @@ You can add explicit indexes on non-unique columns for query performance.
 - Make the smallest change necessary
 - Do NOT touch unrelated files, configs, or dependencies
 - Do NOT invent new SpacetimeDB APIs — use only what exists in docs or this repo
-- Do NOT add restrictions the prompt didn't ask for — if "users can do X", implement X for all users
