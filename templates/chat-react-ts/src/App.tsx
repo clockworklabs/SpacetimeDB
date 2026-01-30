@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import './App.css';
-import { tables, reducers, Rows } from './module_bindings';
+import { tables, reducers, type Types } from './module_bindings';
 import {
   useSpacetimeDB,
   useTable,
@@ -20,7 +20,7 @@ export type PrettyMessage = {
 function App() {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessages, setSystemMessages] = useState([] as Rows.Message[]);
+  const [systemMessages, setSystemMessages] = useState([] as Types.Message[]);
   const [newMessage, setNewMessage] = useState('');
 
   const { identity, isActive: connected } = useSpacetimeDB();
