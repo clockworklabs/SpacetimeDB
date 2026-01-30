@@ -36,27 +36,6 @@ pub fn precompiled_module(name: &str) -> PathBuf {
     })
 }
 
-/// Returns true if pre-compiled modules are available.
-///
-/// This checks if the modules workspace target directory exists and contains
-/// at least one WASM file.
-pub fn precompiled_modules_available() -> bool {
-    let target = modules_target_dir();
-    if !target.exists() {
-        return false;
-    }
-    // Check if there's at least one smoketest_module_*.wasm file
-    std::fs::read_dir(&target)
-        .map(|entries| {
-            entries.filter_map(Result::ok).any(|e| {
-                e.file_name()
-                    .to_str()
-                    .is_some_and(|n| n.starts_with("smoketest_module_") && n.ends_with(".wasm"))
-            })
-        })
-        .unwrap_or(false)
-}
-
 /// Returns the target directory where pre-compiled WASM modules are stored.
 fn modules_target_dir() -> PathBuf {
     // Respect CARGO_TARGET_DIR if set (e.g., in CI), otherwise use the modules workspace's target dir
