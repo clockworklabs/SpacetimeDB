@@ -13,6 +13,7 @@
 #include "BSATN/UEBSATNHelpers.h"
 #include "Connection/SetReducerFlags.h"
 #include "Connection/Callback.h"
+#include "LogCategory.h"
 
 #include "DbConnectionBase.generated.h"
 
@@ -164,7 +165,7 @@ public:
 			else
 			{
 				// If no preprocessed data, process the update directly. Backup
-				UE_LOG(LogTemp, Warning, TEXT("No preprocessed data for table update. Processing directly."));
+				UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("No preprocessed data for table update. Processing directly."));
 				TArray<FWithBsatn<RowType>> Inserts, Deletes;
 				UE::SpacetimeDB::ProcessTableUpdateWithBsatn<RowType>(Update, Inserts, Deletes);
 				LastDiff = Table->Update(Inserts, Deletes);
