@@ -292,8 +292,6 @@ import TestERow from "./test_e_table";
 import TestFRow from "./test_f_table";
 
 /** Type-only namespace exports for generated type groups. */
-export type * as Reducers from "./types/reducers";
-export type * as Procedures from "./types/procedures";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema(
