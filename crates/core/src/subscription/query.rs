@@ -164,6 +164,7 @@ mod tests {
     use itertools::Itertools;
     use smallvec::SmallVec;
     use spacetimedb_client_api_messages::websocket::{BsatnFormat, CompressableQueryUpdate, Compression};
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::execution_context::Workload;
     use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -181,7 +182,6 @@ mod tests {
     use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
     use spacetimedb_vm::relation::{MemTable, RelValue};
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]

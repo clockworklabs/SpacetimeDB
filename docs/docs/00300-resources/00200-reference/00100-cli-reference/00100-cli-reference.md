@@ -382,6 +382,7 @@ Manage your login to the SpacetimeDB CLI
   Default value: `https://spacetimedb.com`
 * `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
 * `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
+* `--no-browser` — Do not open a browser window
 
 
 

@@ -25,7 +25,7 @@ use crate::host::wasm_common::module_host_actor::{
     InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
     WasmInstance,
 };
-use crate::host::wasm_common::{RowIters, TimingSpanSet};
+use crate::host::wasm_common::{RowIters, TimingSpanSet, DESCRIBE_MODULE_DUNDER};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
@@ -43,6 +43,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_table::static_assert_size;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -368,11 +369,13 @@ impl JsInstance {
         self: Box<Self>,
         program: Program,
     ) -> (anyhow::Result<Option<ReducerCallResult>>, Box<Self>) {
-        self.send_recv(
-            JsWorkerReply::into_init_database,
-            JsWorkerRequest::InitDatabase(program),
-        )
-        .await
+        let (ret, inst) = self
+            .send_recv(
+                JsWorkerReply::into_init_database,
+                JsWorkerRequest::InitDatabase(program),
+            )
+            .await;
+        (*ret, inst)
     }
 
     pub async fn call_procedure(self: Box<Self>, params: CallProcedureParams) -> (CallProcedureReturn, Box<Self>) {
@@ -421,9 +424,11 @@ enum JsWorkerReply {
     CallIdentityConnected(Result<(), ClientConnectedError>),
     CallIdentityDisconnected(Result<(), ReducerCallError>),
     DisconnectClient(Result<(), ReducerCallError>),
-    InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
+    InitDatabase(Box<anyhow::Result<Option<ReducerCallResult>>>),
     CallScheduledFunction(CallScheduledFunctionResult),
 }
+
+static_assert_size!(JsWorkerReply, 48);
 
 /// A request for the worker in [`spawn_instance_worker`].
 // We care about optimizing for `CallReducer` as it happens frequently,
@@ -457,6 +462,10 @@ enum JsWorkerRequest {
     /// See [`JsInstance::call_scheduled_function`].
     CallScheduledFunction(ScheduledFunctionParams, tokio::runtime::Handle),
 }
+
+// These two should be the same size (once core pinning PR lands).
+static_assert_size!(JsWorkerRequest, 208);
+static_assert_size!(CallReducerParams, 192);
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
 ///
@@ -646,7 +655,7 @@ fn spawn_instance_worker(
                 JsWorkerRequest::InitDatabase(program) => {
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
-                    reply("init_database", InitDatabase(res), trapped);
+                    reply("init_database", InitDatabase(Box::new(res)), trapped);
                 }
                 JsWorkerRequest::CallScheduledFunction(params, rt) => {
                     let _guard = rt.enter();
@@ -866,6 +875,8 @@ fn extract_description<'scope>(
     replica_ctx: &ReplicaContext,
 ) -> Result<RawModuleDef, DescribeError> {
     run_describer(
+        //TODO(shub): make it work with `DESCRIBE_MODULE_DUNDER_V10`
+        DESCRIBE_MODULE_DUNDER,
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             catch_exception(scope, |scope| {
