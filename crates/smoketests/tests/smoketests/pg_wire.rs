@@ -1,10 +1,13 @@
 #![allow(clippy::disallowed_macros)]
-use spacetimedb_smoketests::{require_psql, Smoketest};
+use spacetimedb_smoketests::{require_local_server, require_psql, Smoketest};
 
 /// Test SQL output formatting via psql
 #[test]
 fn test_sql_format() {
     require_psql!();
+    // This requires a local server because we don't have a clean way of providing
+    // the remote server's PG port.
+    require_local_server!();
 
     let mut test = Smoketest::builder()
         .precompiled_module("pg-wire")
@@ -75,6 +78,9 @@ fn test_sql_format() {
 #[test]
 fn test_failures() {
     require_psql!();
+    // This requires a local server because we don't have a clean way of providing
+    // the remote server's PG port.
+    require_local_server!();
 
     let mut test = Smoketest::builder()
         .precompiled_module("pg-wire")
