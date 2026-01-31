@@ -924,7 +924,7 @@ pub mod raw {
             /// would be where you would initialize the interepreter and load the user module into it.
             fn __setup__() -> Result;
             /// Required. Runs after `__setup__`; returns all the exports for the module.
-            fn __describe_module__() -> Encoded<ModuleDef>;
+            fn __describe_module_v10__() -> Encoded<ModuleDef>;
             /// Required. id is an index into the `ModuleDef.reducers` returned from `__describe_module__`.
             /// args is a bsatn-encoded product value defined by the schema at `reducers[id]`.
             fn __call_reducer__(
