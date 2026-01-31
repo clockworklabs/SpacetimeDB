@@ -117,7 +117,10 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Run smoketests
-        run: cargo ci smoketests
+        # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
+        # build artifacts.
+        # It also seemed to improve performance a fair amount (11m -> 6m)
+        run: cargo ci smoketests -- --test-threads=1
 
   smoketests-python:
     needs: [lints]

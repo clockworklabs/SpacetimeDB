@@ -133,7 +133,7 @@ fn build_precompiled_modules() -> Result<()> {
 
 /// Default parallelism for smoketests.
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
-const DEFAULT_PARALLELISM: &str = "1";
+const DEFAULT_PARALLELISM: &str = "16";
 
 fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Result<()> {
     // 1. Build binaries first (single process, no race)
@@ -170,7 +170,10 @@ fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Res
         ]);
 
         // Set default parallelism if user didn't specify -j
-        if !args.iter().any(|a| a.starts_with("-j") || a.starts_with("--jobs")) {
+        if !args
+            .iter()
+            .any(|a| a.starts_with("-j") || a.starts_with("--jobs") || a.starts_with("--test-threads"))
+        {
             cmd.args(["-j", DEFAULT_PARALLELISM]);
         }
 
@@ -182,7 +185,7 @@ fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Res
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
         cmd
     };
-    let status = cmd.arg("--").args(&args).status()?;
+    let status = cmd.args(&args).status()?;
 
     ensure!(status.success(), "Tests failed");
     Ok(())

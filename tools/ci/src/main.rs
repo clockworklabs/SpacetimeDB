@@ -467,7 +467,7 @@ fn main() -> Result<()> {
             // - Running in release mode with optimal parallelism
             cmd(
                 "cargo",
-                ["smoketest"]
+                ["smoketest", "--"]
                     .into_iter()
                     .chain(smoketest_args.iter().map(|s| s.as_str()).clone()),
             )
