@@ -210,6 +210,7 @@ namespace SpacetimeDB
 #if !(UNITY_WEBGL && !UNITY_EDITOR)
             // For targets other than webgl we start a thread to parse messages
             networkMessageParseThread = new Thread(ParseMessages);
+            networkMessageParseThread.Name = "SpacetimeDB Network Thread";
             networkMessageParseThread.Start();
 #endif
         }
