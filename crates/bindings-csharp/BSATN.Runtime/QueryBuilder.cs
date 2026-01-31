@@ -60,8 +60,6 @@ public static class SqlLit
         new(SqlFormat.FormatHexLiteral(value.ToString()));
 }
 
-public readonly partial struct QueryBuilder { }
-
 public readonly struct Query<TRow>
 {
     public string Sql { get; }
