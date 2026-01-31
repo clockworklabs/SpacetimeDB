@@ -1,4 +1,7 @@
+import type { DbConnectionImpl } from './db_connection_impl.ts';
+import type { DbContext } from './db_context.ts';
 import { EventEmitter } from './event_emitter.ts';
+import { QueryBuilderImpl } from './query_builder_impl.ts';
 
 import { stdbLogger } from './logger.ts';
 import { deepEqual, type ComparablePrimitive } from '../';
@@ -71,6 +74,7 @@ export class TableCacheImpl<
     ComparablePrimitive,
     [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
   >;
+  private ctx: DbContext<RemoteModule>;
   private tableDef: TableDefForTableName<RemoteModule, TableName>;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
@@ -80,7 +84,8 @@ export class TableCacheImpl<
    * @param primaryKey column name designated as `#[primarykey]`
    * @param entityClass the entityClass
    */
-  constructor(tableDef: TableDefForTableName<RemoteModule, TableName>) {
+  constructor(ctx: DbContext<RemoteModule>, tableDef: TableDefForTableName<RemoteModule, TableName>) {
+    this.ctx = ctx;
     this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
@@ -252,6 +257,19 @@ export class TableCacheImpl<
     undefined
   > {
     return this.iter();
+  }
+
+  remoteQuery(filters: string): Promise<IterableIterator<
+    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+  >> {
+    return new Promise((resolve, reject) => {
+      const name = this.tableDef.name;
+
+      new QueryBuilderImpl(this.ctx as DbConnectionImpl<RemoteModule>)
+        .onResolved((ctx, tables) => resolve(tables.get(name)!.iter()))
+        .onError((ctx, error) => reject(error))
+        .query(`SELECT ${name}.* FROM ${name} ${filters}`);
+    });
   }
 
   applyOperations = (

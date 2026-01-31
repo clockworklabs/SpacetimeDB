@@ -3,6 +3,7 @@ import type { ReducerEventInfo } from './reducers';
 
 export type Event<Reducer extends ReducerEventInfo> =
   | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
+  | { tag: 'QueryResolved' }
   | { tag: 'SubscribeApplied' }
   | { tag: 'UnsubscribeApplied' }
   | { tag: 'Error'; value: Error }

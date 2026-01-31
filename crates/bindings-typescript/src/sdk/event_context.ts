@@ -18,6 +18,13 @@ export interface EventContextInterface<RemoteModule extends UntypedRemoteModule>
   >;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface QueryEventContextInterface<
+  RemoteModule extends UntypedRemoteModule,
+> extends DbContext<RemoteModule> {
+  /** No event is provided **/
+}
+
 export interface ReducerEventContextInterface<
   RemoteModule extends UntypedRemoteModule,
 > extends DbContext<RemoteModule> {

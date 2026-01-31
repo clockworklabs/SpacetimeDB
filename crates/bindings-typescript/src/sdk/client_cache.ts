@@ -1,9 +1,10 @@
+import type { DbContext } from './db_context.ts';
 import type { TableNamesOf, UntypedSchemaDef } from '../lib/schema.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import { type TableCache, TableCacheImpl } from './table_cache.ts';
 
-type TableName<SchemaDef> = [SchemaDef] extends [UntypedSchemaDef]
+export type TableName<SchemaDef> = [SchemaDef] extends [UntypedSchemaDef]
   ? TableNamesOf<SchemaDef>
   : string;
 
@@ -23,7 +24,7 @@ type TableCacheForTableName<
  * This is a helper class that provides a mapping from table names to their corresponding TableCache instances
  * while preserving the correspondence between the key and value type.
  */
-class TableMap<RemoteModule extends UntypedRemoteModule> {
+export class TableMap<RemoteModule extends UntypedRemoteModule> {
   private readonly map: Map<
     string,
     TableCacheForTableName<RemoteModule, TableName<RemoteModule>>
@@ -83,6 +84,11 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
    * The tables in the database.
    */
   readonly tables = new TableMap<RemoteModule>();
+  private ctx: DbContext<RemoteModule>;
+
+  constructor(ctx: DbContext<RemoteModule>) {
+    this.ctx = ctx;
+  }
 
   /**
    * Returns the table with the given name.
@@ -120,6 +126,7 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
     }
 
     const newTable = new TableCacheImpl<RemoteModule, N>(
+      this.ctx,
       tableDef
     ) as TableCache<RemoteModule, N>;
     this.tables.set(name, newTable);
