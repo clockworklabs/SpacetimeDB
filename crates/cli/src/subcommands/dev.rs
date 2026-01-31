@@ -403,6 +403,7 @@ async fn generate_build_and_publish(
         crate::util::ModuleLanguage::Rust => &Language::Rust,
         crate::util::ModuleLanguage::Csharp => &Language::Csharp,
         crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
+        crate::util::ModuleLanguage::Cpp => &Language::Rust,
     });
     let client_language_str = match client_language {
         Language::Rust => "rust",
