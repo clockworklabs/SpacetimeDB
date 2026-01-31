@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use futures::{stream, StreamExt};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;

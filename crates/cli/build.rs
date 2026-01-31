@@ -72,7 +72,7 @@ fn generate_template_files() {
     let discovered_templates = discover_templates(&templates_dir);
 
     let mut generated_code = String::new();
-    generated_code.push_str("use std::collections::HashMap;\n\n");
+    generated_code.push_str("use spacetimedb_data_structures::map::HashMap;\n\n");
 
     generated_code.push_str("pub fn get_templates_json() -> &'static str {\n");
     generated_code.push_str("    r#\"");
