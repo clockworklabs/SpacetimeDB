@@ -19,6 +19,7 @@ proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
 heck.workspace = true
+proc-macro-type-name = "0.1.0"
 
 [lints]
 workspace = true
