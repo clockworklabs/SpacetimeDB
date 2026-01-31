@@ -221,7 +221,7 @@ public static partial class Module
         ctx.Db.Document.Insert(new Document
         {
             Id = 0,  // auto-increment
-            OwnerId = ctx.Sender,
+            OwnerId = ctx.Sender(),
             Filename = filename,
             MimeType = mimeType,
             SizeBytes = sizeBytes,
@@ -263,7 +263,7 @@ pub fn register_document(
 ) {
     ctx.db.document().insert(Document {
         id: 0,  // auto-increment
-        owner_id: ctx.sender,
+        owner_id: ctx.sender(),
         filename,
         mime_type,
         size_bytes,

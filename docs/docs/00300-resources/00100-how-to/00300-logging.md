@@ -69,7 +69,7 @@ public static partial class Module
             throw new ArgumentException("Value cannot be zero");
         }
         
-        Log.Debug($"Debug information: ctx.Sender = {ctx.Sender}");
+        Log.Debug($"Debug information: ctx.Sender() = {ctx.Sender()}");
     }
 }
 ```
@@ -102,7 +102,7 @@ pub fn process_data(ctx: &ReducerContext, value: u32) -> Result<(), String> {
         return Err("Value cannot be zero".to_string());
     }
     
-    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender);
+    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender());
     
     Ok(())
 }
@@ -202,7 +202,7 @@ Include relevant context in your log messages:
 [SpacetimeDB.Reducer]
 public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
 {
-    Log.Info($"Credit transfer: from={ctx.Sender}, to={toUser}, amount={amount}");
+    Log.Info($"Credit transfer: from={ctx.Sender()}, to={toUser}, amount={amount}");
     
     // ... transfer logic
 }
@@ -220,7 +220,7 @@ use spacetimedb::log;
 pub fn transfer_credits(ctx: &ReducerContext, to_user: u64, amount: u32) -> Result<(), String> {
     log::info!(
         "Credit transfer: from={:?}, to={}, amount={}", 
-        ctx.sender, 
+        ctx.sender(), 
         to_user, 
         amount
     );

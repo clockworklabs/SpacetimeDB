@@ -145,7 +145,7 @@ public static partial class Module
     public static void UpdateScore(ReducerContext ctx, uint newScore)
     {
         // Get the caller's identity
-        Identity caller = ctx.Sender;
+        Identity caller = ctx.Sender();
         
         // Find and update their player record
         if (ctx.Db.Player.Identity.Find(caller) is Player player)
@@ -174,7 +174,7 @@ pub struct Player {
 #[reducer]
 fn update_score(ctx: &ReducerContext, new_score: u32) {
     // Get the caller's identity
-    let caller = ctx.sender;
+    let caller = ctx.sender();
     
     // Find and update their player record
     if let Some(mut player) = ctx.db.player().identity().find(caller) {
@@ -262,7 +262,7 @@ public static partial class Module
     public static void SendReminder(ReducerContext ctx, ScheduledTask task)
     {
         // Only allow the scheduler (module identity) to call this
-        if (ctx.Sender != ctx.Identity)
+        if (ctx.Sender() != ctx.Identity)
         {
             throw new Exception("This reducer can only be called by the scheduler");
         }
@@ -290,7 +290,7 @@ pub struct ScheduledTask {
 #[reducer]
 fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
     // Only allow the scheduler (module identity) to call this
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         panic!("This reducer can only be called by the scheduler");
     }
     

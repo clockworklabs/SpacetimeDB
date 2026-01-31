@@ -26,8 +26,8 @@ fn validate_name(name: String) -> Result<String, String> {
 #[spacetimedb::reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?;
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        log::info!("User {} sets name to {name}", ctx.sender);
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
+        log::info!("User {} sets name to {name}", ctx.sender());
         ctx.db.user().identity().update(User {
             name: Some(name),
             ..user
@@ -52,9 +52,9 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     // - Rate-limit messages per-user.
     // - Reject messages from unnamed user.
     let text = validate_message(text)?;
-    log::info!("User {}: {text}", ctx.sender);
+    log::info!("User {}: {text}", ctx.sender());
     ctx.db.message().insert(Message {
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     });
@@ -67,7 +67,7 @@ pub fn init(_ctx: &ReducerContext) {}
 
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
         // set `online: true`, but leave `name` and `identity` unchanged.
         ctx.db.user().identity().update(User { online: true, ..user });
@@ -76,7 +76,7 @@ pub fn identity_connected(ctx: &ReducerContext) {
         // which is online, but hasn't set a name.
         ctx.db.user().insert(User {
             name: None,
-            identity: ctx.sender,
+            identity: ctx.sender(),
             online: true,
         });
     }
@@ -84,11 +84,11 @@ pub fn identity_connected(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn identity_disconnected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { online: false, ..user });
     } else {
         // This branch should be unreachable,
         // as it doesn't make sense for a client to disconnect without connecting first.
-        log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender);
+        log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender());
     }
 }

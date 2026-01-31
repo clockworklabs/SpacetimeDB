@@ -609,12 +609,12 @@ pub struct PlayerState {
 
 #[spacetimedb::view(name = my_player, public)]
 pub fn my_player(ctx: &ViewContext) -> Option<PlayerState> {
-    ctx.db.player_state().identity().find(ctx.sender)
+    ctx.db.player_state().identity().find(ctx.sender())
 }
 
 #[spacetimedb::reducer]
 pub fn insert_player(ctx: &ReducerContext, name: String) {
-    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender });
+    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender() });
 }
 """
 

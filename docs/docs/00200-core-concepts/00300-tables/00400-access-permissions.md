@@ -330,7 +330,7 @@ Views can only access table data through indexed lookups, not by scanning all ro
 
 ### Filtering Rows by Caller
 
-Use views with `ViewContext` to return only the rows that belong to the caller. The view accesses the caller's identity through `ctx.sender` and uses it to look up rows via an index.
+Use views with `ViewContext` to return only the rows that belong to the caller. The view accesses the caller's identity through `ctx.sender()` and uses it to look up rows via an index.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -393,8 +393,8 @@ public partial class Module
     public static List<Message> MyMessages(ViewContext ctx)
     {
         // Look up messages by index where caller is sender or recipient
-        var sent = ctx.Db.Message.Sender.Filter(ctx.Sender).ToList();
-        var received = ctx.Db.Message.Recipient.Filter(ctx.Sender).ToList();
+        var sent = ctx.Db.Message.Sender.Filter(ctx.Sender()).ToList();
+        var received = ctx.Db.Message.Recipient.Filter(ctx.Sender()).ToList();
         sent.AddRange(received);
         return sent;
     }
@@ -426,8 +426,8 @@ pub struct Message {
 #[spacetimedb::view(name = my_messages, public)]
 fn my_messages(ctx: &ViewContext) -> Vec<Message> {
     // Look up messages by index where caller is sender or recipient
-    let sent: Vec<_> = ctx.db.message().sender().filter(&ctx.sender).collect();
-    let received: Vec<_> = ctx.db.message().recipient().filter(&ctx.sender).collect();
+    let sent: Vec<_> = ctx.db.message().sender().filter(&ctx.sender()).collect();
+    let received: Vec<_> = ctx.db.message().recipient().filter(&ctx.sender()).collect();
     sent.into_iter().chain(received).collect()
 }
 ```
@@ -526,7 +526,7 @@ public partial class Module
     public static PublicUserProfile? MyProfile(ViewContext ctx)
     {
         // Look up the caller's account by their identity (unique index)
-        if (ctx.Db.UserAccount.Identity.Find(ctx.Sender) is not UserAccount user)
+        if (ctx.Db.UserAccount.Identity.Find(ctx.Sender()) is not UserAccount user)
         {
             return null;
         }
@@ -574,7 +574,7 @@ pub struct PublicUserProfile {
 #[spacetimedb::view(name = my_profile, public)]
 fn my_profile(ctx: &ViewContext) -> Option<PublicUserProfile> {
     // Look up the caller's account by their identity (unique index)
-    let user = ctx.db.user_account().identity().find(&ctx.sender)?;
+    let user = ctx.db.user_account().identity().find(&ctx.sender())?;
     Some(PublicUserProfile {
         id: user.id,
         username: user.username,
@@ -676,7 +676,7 @@ public partial class Module
     public static List<Colleague> MyColleagues(ViewContext ctx)
     {
         // Find the caller's employee record by identity (unique index)
-        if (ctx.Db.Employee.Identity.Find(ctx.Sender) is not Employee me)
+        if (ctx.Db.Employee.Identity.Find(ctx.Sender()) is not Employee me)
         {
             return new List<Colleague>();
         }
@@ -726,7 +726,7 @@ pub struct Colleague {
 #[spacetimedb::view(name = my_colleagues, public)]
 fn my_colleagues(ctx: &ViewContext) -> Vec<Colleague> {
     // Find the caller's employee record by identity (unique index)
-    let Some(me) = ctx.db.employee().identity().find(&ctx.sender) else {
+    let Some(me) = ctx.db.employee().identity().find(&ctx.sender()) else {
         return vec![];
     };
 
