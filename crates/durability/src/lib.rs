@@ -95,28 +95,29 @@ pub type Close = BoxFuture<'static, Option<TxOffset>>;
 ///
 /// NOTE: This is a preliminary definition, still under consideration.
 ///
-/// A durability implementation accepts a payload representing a single database
-/// transaction via [`Durability::append_tx`] in a non-blocking fashion. The
-/// payload _should_ become durable eventually. [`TxOffset`]s reported by
-/// [`Durability::durable_tx_offset`] shall be considered durable to the
-/// extent the implementation can guarantee.
+/// A durability implementation accepts one or more [Transaction]s to be made
+/// durable via [Durability::commit] in a non-blocking fashion.
+///
+/// A batch of transactions is eventually made durable atomically.
+/// Note that this means that a torn write can render the whole batch
+/// inaccessible, so small batches are usually preferable.
+///
+/// Once a transaction becomes durable, the [DurableOffset] is updated.
+/// What durable means depends on the implementation, informally it can be
+/// thought of as "written to disk".
 pub trait Durability: Send + Sync {
     /// The payload representing a single transaction.
     type TxData;
 
-    /// Submit the transaction payload to be made durable.
+    /// Submit a [Transaction] to be made durable.
     ///
     /// This method must never block, and accept new transactions even if they
     /// cannot be made durable immediately.
     ///
-    /// A permanent failure of the durable storage may be signalled by panicking.
-    fn append_tx(&self, tx: Self::TxData);
+    /// Errors may be signalled by panicking.
+    fn append_tx(&self, tx: Transaction<Self::TxData>);
 
-    /// The [`TxOffset`] considered durable.
-    ///
-    /// A `None` return value indicates that the durable offset is not known,
-    /// either because nothing has been persisted yet, or because the status
-    /// cannot be retrieved.
+    /// Obtain a handle to the [DurableOffset].
     fn durable_tx_offset(&self) -> DurableOffset;
 
     /// Asynchronously request the durability to shut down, without dropping it.
