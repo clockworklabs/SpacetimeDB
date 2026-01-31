@@ -1,0 +1,19 @@
+{
+  "name": "@clockworklabs/bun-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts",
+    "build": "bun build src/main.ts --outdir dist",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.6.2"
+  }
+}
