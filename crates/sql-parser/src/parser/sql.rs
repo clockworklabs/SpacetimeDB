@@ -142,7 +142,7 @@ use crate::ast::{
 };
 
 use super::{
-    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_parts, parse_projection, RelParser,
+    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_literal_array, parse_parts, parse_projection, RelParser,
     SqlParseResult,
 };
 
@@ -242,10 +242,10 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
                 for row in rows {
                     let mut literals = Vec::new();
                     for expr in row {
-                        if let Expr::Value(value) = expr {
-                            literals.push(parse_literal(value)?);
-                        } else {
-                            return Err(SqlUnsupported::InsertValue(expr).into());
+                        match expr {
+                            Expr::Array(array) => literals.push(parse_literal_array(array)?),
+                            Expr::Value(value) => literals.push(parse_literal(value)?),
+                            _ => return Err(SqlUnsupported::InsertValue(expr).into()),
                         }
                     }
                     row_literals.push(literals);
@@ -275,6 +275,7 @@ fn parse_assignments(assignments: Vec<Assignment>) -> SqlParseResult<Vec<SqlSet>
 /// Parse a column/variable assignment in an UPDATE or SET statement
 fn parse_assignment(Assignment { id, value }: Assignment) -> SqlParseResult<SqlSet> {
     match value {
+        Expr::Array(array) => Ok(SqlSet(parse_parts(id)?, parse_literal_array(array)?)),
         Expr::Value(value) => Ok(SqlSet(parse_parts(id)?, parse_literal(value)?)),
         _ => Err(SqlUnsupported::Assignment(value).into()),
     }

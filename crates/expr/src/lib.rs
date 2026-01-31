@@ -5,7 +5,7 @@ use anyhow::Context;
 use bigdecimal::BigDecimal;
 use bigdecimal::ToPrimitive;
 use check::{Relvars, TypingResult};
-use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, UnexpectedType, Unresolved};
+use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, UnexpectedArrayType, UnexpectedType, Unresolved};
 use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
@@ -14,7 +14,8 @@ use spacetimedb_data_structures::map::HashCollectionExt as _;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
+use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity, ProductType, ProductTypeElement};
+use spacetimedb_sats::{ArrayType, ArrayValue, F32, F64};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::uuid::Uuid;
@@ -92,13 +93,48 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
     match (expr, expected) {
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => {
+        (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_) | SqlLiteral::Arr(_)), None) => {
             Err(Unresolved::Literal.into())
         }
         (SqlExpr::Lit(SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
+        (SqlExpr::Lit(SqlLiteral::Arr(v)), Some(AlgebraicType::Array(ty))) => Ok(Expr::Value(
+            parse_array_value(&v, &ty).map_err(|_| UnexpectedArrayType::new(&ty.elem_ty))?,
+            AlgebraicType::Array(ty.clone()),
+        )),
+        (SqlExpr::Lit(SqlLiteral::Arr(_)), Some(ty)) => {
+            Err(UnexpectedArrayType::new(ty).into())
+        }
+        (SqlExpr::Tup(_), None) => {
+            Err(Unresolved::Literal.into())
+        }
+        (SqlExpr::Tup(t), Some(&AlgebraicType::Product(ref pty))) => Ok(Expr::Tuple(
+            t.iter().zip(pty.elements.iter()).map(|(lit, ty)| {
+                match (lit, ty) {
+                    (SqlLiteral::Bool(v), ProductTypeElement { algebraic_type: AlgebraicType::Bool, .. }) => {
+                        Ok(AlgebraicValue::Bool(*v))
+                    }
+                    (SqlLiteral::Bool(_), ProductTypeElement { algebraic_type: ty, .. }) => {
+                        Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into())
+                    }
+                    (SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v), ProductTypeElement { algebraic_type: ty, .. }) => {
+                        Ok(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.clone().into_string(), ty))?)
+                    }
+                    (SqlLiteral::Arr(v), ProductTypeElement { algebraic_type: AlgebraicType::Array(a), .. }) => {
+                        Ok(parse_array_value(v, a).map_err(|_| UnexpectedArrayType::new(&a.elem_ty))?)
+                    }
+                    (SqlLiteral::Arr(_), ProductTypeElement { algebraic_type: ty, .. }) => {
+                        Err(UnexpectedArrayType::new(ty).into())
+                    }
+                }
+            }).collect::<TypingResult<Box<[AlgebraicValue]>>>()?,
+            AlgebraicType::Product(pty.clone()),
+        )),
+        (SqlExpr::Tup(_), Some(ty)) => {
+            Err(UnexpectedType::new(&AlgebraicType::Product(ProductType::unit()), ty).into())
+        }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
             let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
@@ -159,16 +195,20 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
 }
 
 /// Is this type compatible with this binary operator?
-fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
-    t.is_bool()
-        || t.is_integer()
-        || t.is_float()
-        || t.is_string()
-        || t.is_bytes()
-        || t.is_identity()
-        || t.is_connection_id()
-        || t.is_timestamp()
-        || t.is_uuid()
+fn op_supports_type(op: BinOp, ty: &AlgebraicType) -> bool {
+    match (ty, op) {
+        (AlgebraicType::Product(_) | AlgebraicType::Array(_), BinOp::Eq | BinOp::Ne) => true,
+        _ if ty.is_bool() => true,
+        _ if ty.is_integer() => true,
+        _ if ty.is_float() => true,
+        _ if ty.is_string() => true,
+        _ if ty.is_bytes() => true,
+        _ if ty.is_identity() => true,
+        _ if ty.is_connection_id() => true,
+        _ if ty.is_timestamp() => true,
+        _ if ty.is_uuid() => true,
+        _ => false,
+    }
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -365,6 +405,50 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         t if t.is_uuid() => to_uuid(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
+}
+
+macro_rules! parse_array_number {
+    ($arr:expr, $elem_ty:expr, $($t:ident, $ty:ty),*) => {
+        match $elem_ty {
+            AlgebraicType::Bool => ArrayValue::Bool($arr.iter().map(|x| match x {
+                SqlLiteral::Bool(b) => Ok(*b),
+                _ => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::Bool).into()),
+            }).collect::<TypingResult<Box<[bool]>>>()?),
+            AlgebraicType::String => ArrayValue::String($arr.iter().map(|x| match x {
+                SqlLiteral::Str(b) => Ok(b.clone()),
+                _ => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::String).into()),
+            }).collect::<TypingResult<Box<[Box<str>]>>>()?),
+            $(AlgebraicType::$t => ArrayValue::$t($arr.iter().map(|x| match x {
+                SqlLiteral::Num(v) | SqlLiteral::Hex(v) => Ok(match parse(v, &$elem_ty).map_err(|_| InvalidLiteral::new(v.clone().into_string(), &$elem_ty))? {
+                    AlgebraicValue::$t(r) => r,
+                    _ => unreachable!(),  // guaranteed by `parse()'
+                }.into()),
+                SqlLiteral::Str(_) => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::String).into()),
+                SqlLiteral::Bool(_) => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::Bool).into()),
+                SqlLiteral::Arr(_) => Err(UnexpectedArrayType::new(&$elem_ty).into()),
+            }).collect::<anyhow::Result<Box<[$ty]>>>()?),)*
+            _ => {
+                return Err(UnexpectedArrayType::new(&$elem_ty).into());
+            }
+        }
+    }
+}
+
+pub(crate) fn parse_array_value(arr: &Box<[SqlLiteral]>, a: &ArrayType) -> anyhow::Result<AlgebraicValue> {
+    Ok(AlgebraicValue::Array(parse_array_number!(arr, *a.elem_ty,
+        I8, i8,
+        U8, u8,
+        I16, i16,
+        U16, u16,
+        I32, i32,
+        U32, u32,
+        I128, i128,
+        U128, u128,
+        /*I256, i256,
+        U256, u256,*/ // TODO: Boxed
+        F32, F32,
+        F64, F64
+    )))
 }
 
 /// The source of a statement

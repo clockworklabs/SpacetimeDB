@@ -85,7 +85,7 @@ pub enum AlgebraicValue {
     I256(Box<i256>),
     /// A [`u256`] value of type [`AlgebraicType::U256`].
     ///
-    /// We pack these to shrink `AlgebraicValue`.
+    /// We box these up to shrink `AlgebraicValue`.
     U256(Box<u256>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
@@ -122,6 +122,18 @@ impl<T> From<T> for Packed<T> {
         Self(value)
     }
 }
+
+macro_rules! impl_from_packed {
+    ($ty:ty) => {
+        impl From<Packed<$ty>> for $ty {
+            fn from(packed: Packed<$ty>) -> Self {
+                packed.0
+            }
+        }
+    };
+}
+impl_from_packed!(i128);
+impl_from_packed!(u128);
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
