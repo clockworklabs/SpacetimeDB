@@ -336,3 +336,17 @@ impl ModuleLanguage for TypeScript {
         &MODULE
     }
 }
+
+pub struct Cpp;
+
+impl ModuleLanguage for Cpp {
+    const NAME: &'static str = "cpp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cpp", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}

@@ -424,7 +424,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 
 * `--project-path <PATH>` — Directory where the project will be created (defaults to `./<PROJECT_NAME>`)
 * `--server-only` — Initialize server only from the template (no client)
-* `--lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
+* `--lang <LANG>` — Server language: rust, csharp, typescript, cpp (it can only be used when --template is not specified)
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
