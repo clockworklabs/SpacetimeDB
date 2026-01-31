@@ -1,0 +1,376 @@
+---
+description: Deployment commands and workflow for SpacetimeDB and PostgreSQL apps.
+globs: 
+---
+
+# Deployment Guide
+
+> **Last updated:** 2026-01-08
+
+This file covers deployment workflows for benchmark apps in this repository (SpacetimeDB and PostgreSQL).
+
+---
+
+## 0) Folder Structure & Staging Workflow
+
+All new benchmark apps should be created in the **staging** folder:
+
+```
+apps/chat-app/
+├── staging/                    # ← CREATE NEW APPS HERE
+│   ├── typescript/
+│   │   └── <llm-model>/        # e.g., opus-4-5, gpt-5, gemini-3-pro
+│   │       └── spacetime|postgres/
+│   │           └── chat-app-YYYYMMDD-HHMMSS/
+│   ├── rust/
+│   └── csharp/
+│
+├── typescript/                 # ← GRADED apps get promoted here
+├── rust/
+├── csharp/
+├── prompts/
+└── test-harness/
+```
+
+### Creating New Projects
+
+Use the test harness to scaffold new projects:
+
+```bash
+cd apps/chat-app/test-harness
+npm run create -- --lang=typescript --llm=opus-4-5 --backend=spacetime
+```
+
+This creates: `staging/typescript/opus-4-5/spacetime/chat-app-YYYYMMDD-HHMMSS/`
+
+### After Grading: Promote to Final Location
+
+```bash
+npm run promote -- ../staging/typescript/opus-4-5/spacetime/chat-app-YYYYMMDD-HHMMSS/
+```
+
+This verifies `GRADING_RESULTS.md` exists and moves to `typescript/opus-4-5/spacetime/...`
+
+---
+
+## 1) Agent Workflow Rules
+
+| Wrong | Right |
+|-------|-------|
+| Create app in `typescript/llm/...` directly | Create app in `staging/typescript/llm/...` first |
+| Write backend AND client, then deploy | Write backend, publish, generate bindings, THEN write client |
+| Create files, list commands, stop | Create files, verify, **ASK** to deploy, **RUN** commands if yes |
+| Deploy benchmark app, stop | Deploy, **ASK** to run benchmark test harness |
+| `spacetime publish` without `npm install` | Run `npm install` in backend first |
+| Write client code before bindings exist | Generate bindings first so imports resolve correctly |
+
+**After creating AND VERIFYING project files, ALWAYS ask:**
+
+> "Would you like me to deploy this?
+> - **Local** — Deploy locally
+> - **Cloud/Docker** — Deploy to cloud or containers
+> - **Skip** — Skip deployment"
+
+**Then execute if they say yes.** Don't just list commands.
+
+---
+
+## 2) Running Dev Servers (CRITICAL for Cursor AI)
+
+**Run dev servers with `is_background: true`** in Cursor AI context. Long-running foreground commands will time out.
+
+Check the terminals folder files to verify servers started successfully (look for "ready" messages).
+
+---
+
+## 3) SpacetimeDB Development Workflow (5 Phases)
+
+SpacetimeDB apps MUST follow this phased workflow to ensure type safety:
+
+```
+Phase 1: Backend → Phase 2: Bindings → Phase 3: Client → Phase 4: Verify → Phase 5: Deploy
+```
+
+### Why This Order Matters
+
+Client code imports from generated `module_bindings/`. If you write client code BEFORE generating bindings:
+- Imports won't resolve
+- Type errors won't be caught
+- You're guessing at generated types
+
+**Generate bindings FIRST, then write client code against real types.**
+
+---
+
+### Phase 1: Write and Publish Backend
+
+1. Create backend files (`schema.ts`, reducers, `index.ts`)
+2. Install dependencies and publish:
+
+```bash
+cd <backend-dir> && npm install
+spacetime publish <MODULE_NAME> --project-path <backend-dir>
+```
+
+**Module naming:** Use the timestamped folder name (e.g., `chat-app-20260106-180327`) for unique module names.
+
+---
+
+### Phase 2: Generate Bindings
+
+```bash
+spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>
+```
+
+This creates the `module_bindings/` folder with:
+- `DbConnection` class
+- Table types (e.g., `User`, `Message`)
+- `tables` object for `useTable()`
+- Reducer type signatures
+
+---
+
+### Phase 3: Write Client Code
+
+NOW write client code. Imports from `./module_bindings` will resolve correctly:
+
+```ts
+import { DbConnection, tables, User, Message } from './module_bindings';
+```
+
+TypeScript will catch type errors because bindings actually exist.
+
+---
+
+### Phase 4: Verify Client Compiles
+
+Before deployment, verify the client builds successfully:
+
+```bash
+cd <client-dir> && npm install
+npx tsc --noEmit          # Type-check only
+npm run build             # Full production build
+```
+
+**Both must pass.** If either fails, fix the errors before deploying.
+
+---
+
+### Phase 5: Deploy (Run Dev Servers)
+
+Only after verification passes:
+
+```bash
+cd <client-dir> && npm run dev
+```
+
+**Note:** If bindings were generated in Phase 2, skip regeneration in deployment.
+
+---
+
+## 4) SpacetimeDB Deployment Commands
+
+### 4.1 Port Configuration (CRITICAL)
+
+**SpacetimeDB local server uses port 3000 by default.**
+
+| Service | Port |
+|---------|------|
+| SpacetimeDB server | 3000 (WebSocket) |
+| Vite client | 5173 (or 5174 if 5173 in use) |
+
+**NEVER set Vite to port 3000** — it will conflict with SpacetimeDB.
+
+In `vite.config.ts`:
+```ts
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,  // NOT 3000!
+  },
+});
+```
+
+### 4.2 Docker Deployment (RECOMMENDED)
+
+```bash
+# 1. Create docker-compose.yml
+version: '3.8'
+services:
+  spacetimedb:
+    image: clockworklabs/spacetimedb-standalone:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - spacetimedb-data:/stdb
+volumes:
+  spacetimedb-data:
+
+# 2. Clean up and start fresh
+docker-compose down -v
+docker-compose up -d
+
+# 3. Wait for ready, then add server
+spacetime server add docker http://localhost:3000 --no-fingerprint
+spacetime server set-default docker
+
+# 4. Run Phase 1-4 if not already done (see workflow above)
+# If bindings already exist from Phase 2, skip step 6
+
+# 5. Publish module (use echo y to auto-confirm)
+echo y | spacetime publish <MODULE_NAME> --clear-database --project-path <backend-dir>
+
+# 6. Generate bindings (skip if already done in Phase 2)
+spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>
+
+# 7. Install and run client (background)
+cd <client-dir> && npm install && npm run dev
+```
+
+### 4.3 Local Deployment (Alternative)
+
+```bash
+# 1. Check local server
+spacetime server ping local
+
+# If not running, start in background:
+spacetime start
+
+# 2. Publish module (use echo y to auto-confirm)
+echo y | spacetime publish <MODULE_NAME> --clear-database --project-path <backend-dir>
+
+# 3. Generate bindings (skip if already done in Phase 2)
+spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>
+
+# 4. Install and run client (background)
+cd <client-dir> && npm install && npm run dev
+```
+
+### 4.4 Maincloud Deployment
+
+Use URI: `wss://maincloud.spacetimedb.com`
+
+Same commands as local, but publishing goes to maincloud automatically if configured.
+
+### 4.5 Kill Port Before Dev Server
+
+Add to client `package.json`:
+```json
+"scripts": {
+  "kill-port": "npx kill-port 5173 2>nul || true",
+  "dev": "npm run kill-port && vite"
+}
+```
+
+---
+
+## 5) PostgreSQL Deployment
+
+### 5.1 Docker Deployment (Recommended)
+
+1. **Clean up previous deployments** — Stop containers and remove volumes:
+   ```bash
+   docker-compose down -v
+   ```
+
+2. **Use unique JWT secret per deployment** — Include timestamp:
+   ```yaml
+   JWT_SECRET: my-app-YYYYMMDD-HHMMSS-secret
+   ```
+
+3. **Build and run:**
+   ```bash
+   docker-compose up --build -d
+   ```
+
+4. **Verify:** Check logs for schema push:
+   ```bash
+   docker-compose logs server
+   ```
+
+### 5.2 Local Deployment
+
+```bash
+# 1. Check PostgreSQL is running
+pg_isready
+
+# 2. Create database if needed
+
+# 3. Server (background)
+cd <server-dir> && npm install && npm run db:push && npm run dev
+
+# 4. Client (background, separate terminal)
+cd <client-dir> && npm install && npm run dev
+```
+
+### 5.3 Kill Port Before Dev Server
+
+Add to client `package.json`:
+```json
+"scripts": {
+  "kill-port": "npx kill-port 5174 2>nul || true",
+  "dev": "npm run kill-port && vite"
+}
+```
+
+### 5.4 Default Ports
+
+- PostgreSQL: 5432
+- Server API: 3001
+- Client: 5174
+
+---
+
+## 6) C# SpacetimeDB Deployment
+
+### 6.1 GUI Framework
+
+**Use .NET MAUI for C# GUI clients** — Microsoft's recommended cross-platform framework.
+
+| Framework | Use Case |
+|-----------|----------|
+| **.NET MAUI** | ✅ Desktop/mobile GUI apps (RECOMMENDED) |
+| Console | Backend tools, CLI utilities only |
+| WPF/WinForms | ❌ DO NOT USE (legacy, Windows-only) |
+
+### 6.2 Backend Module Build
+
+C# modules require WASI-WASM compilation:
+
+```bash
+# 1. Add global.json for .NET 8
+echo '{"sdk":{"version":"8.0.319","rollForward":"latestFeature"}}' > backend/global.json
+
+# 2. Build WASM module
+cd backend && dotnet publish -c Release
+
+# 3. Publish to SpacetimeDB
+spacetime publish <MODULE_NAME> -c=always -y --bin-path bin/Release/net8.0/wasi-wasm/AppBundle/backend.wasm
+```
+
+### 6.3 Generate C# Bindings
+
+```bash
+spacetime generate --lang csharp --out-dir client/module_bindings --bin-path backend/bin/Release/net8.0/wasi-wasm/AppBundle/backend.wasm
+```
+
+### 6.4 MAUI Client Setup
+
+```bash
+# Create MAUI project
+dotnet new maui -n client
+cd client
+dotnet add package SpacetimeDB.ClientSDK
+```
+
+### 6.5 Run MAUI Client
+
+```bash
+# Windows
+dotnet build -f net8.0-windows10.0.19041.0
+dotnet run -f net8.0-windows10.0.19041.0
+
+# macOS
+dotnet build -f net8.0-maccatalyst
+dotnet run -f net8.0-maccatalyst
+```

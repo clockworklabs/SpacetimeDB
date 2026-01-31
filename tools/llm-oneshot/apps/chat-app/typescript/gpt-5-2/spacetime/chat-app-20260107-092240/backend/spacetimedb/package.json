@@ -1,0 +1,12 @@
+{
+  "name": "chat-app-backend",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "dependencies": {
+    "spacetimedb": "^1.11.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
