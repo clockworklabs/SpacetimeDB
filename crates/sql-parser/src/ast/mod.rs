@@ -107,6 +107,8 @@ impl Project {
 pub enum SqlExpr {
     /// A constant expression
     Lit(SqlLiteral),
+    /// A tuple of constant expressions
+    Tup(Vec<SqlLiteral>),
     /// Unqualified column ref
     Var(SqlIdent),
     /// A parameter prefixed with `:`
@@ -123,7 +125,7 @@ impl SqlExpr {
     pub fn qualify_vars(self, with: SqlIdent) -> Self {
         match self {
             Self::Var(name) => Self::Field(with, name),
-            Self::Lit(..) | Self::Field(..) | Self::Param(..) => self,
+            Self::Lit(..) | Self::Tup(..) | Self::Field(..) | Self::Param(..) => self,
             Self::Bin(a, b, op) => Self::Bin(
                 Box::new(a.qualify_vars(with.clone())),
                 Box::new(b.qualify_vars(with)),
@@ -149,7 +151,7 @@ impl SqlExpr {
     /// We need to know in order to hash subscription queries correctly.
     pub fn has_parameter(&self) -> bool {
         match self {
-            Self::Lit(_) | Self::Var(_) | Self::Field(..) => false,
+            Self::Lit(_) | Self::Tup(_) | Self::Var(_) | Self::Field(..) => false,
             Self::Param(Parameter::Sender) => true,
             Self::Bin(a, b, _) | Self::Log(a, b, _) => a.has_parameter() || b.has_parameter(),
         }
@@ -158,7 +160,7 @@ impl SqlExpr {
     /// Replace the `:sender` parameter with the [Identity] it represents
     pub fn resolve_sender(self, sender_identity: Identity) -> Self {
         match self {
-            Self::Lit(_) | Self::Var(_) | Self::Field(..) => self,
+            Self::Lit(_) | Self::Tup(_) | Self::Var(_) | Self::Field(..) => self,
             Self::Param(Parameter::Sender) => {
                 Self::Lit(SqlLiteral::Hex(String::from(sender_identity.to_hex()).into_boxed_str()))
             }
