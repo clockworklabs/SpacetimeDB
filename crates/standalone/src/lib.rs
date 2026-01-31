@@ -84,7 +84,7 @@ impl StandaloneEnv {
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
-        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.to_owned());
+        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.into());
 
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
@@ -478,6 +478,13 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
         database: Identity,
         action: spacetimedb_client_api::Action,
     ) -> Result<(), spacetimedb_client_api::Unauthorized> {
+        // Creating a database is always allowed.
+        if let spacetimedb_client_api::Action::CreateDatabase { .. } = action {
+            return Ok(());
+        }
+
+        // Otherwise, the database must already exist,
+        // and the `subject` equal to `database.owner_identity`.
         let database = self
             .get_database_by_identity(&database)
             .await?

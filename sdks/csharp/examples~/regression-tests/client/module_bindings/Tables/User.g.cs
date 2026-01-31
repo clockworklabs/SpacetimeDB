@@ -15,7 +15,16 @@ namespace SpacetimeDB.Types
     {
         public sealed class UserHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "User";
+            protected override string RemoteTableName => "user";
+
+            public sealed class AgeIndex : BTreeIndexBase<byte>
+            {
+                protected override byte GetKey(User row) => row.Age;
+
+                public AgeIndex(UserHandle table) : base(table) { }
+            }
+
+            public readonly AgeIndex Age;
 
             public sealed class IdUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
             {
@@ -35,10 +44,21 @@ namespace SpacetimeDB.Types
 
             public readonly IsAdminIndex IsAdmin;
 
+            public sealed class NameIndex : BTreeIndexBase<string>
+            {
+                protected override string GetKey(User row) => row.Name;
+
+                public NameIndex(UserHandle table) : base(table) { }
+            }
+
+            public readonly NameIndex Name;
+
             internal UserHandle(DbConnection conn) : base(conn)
             {
+                Age = new(this);
                 Id = new(this);
                 IsAdmin = new(this);
+                Name = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Id;
@@ -52,24 +72,30 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Col<User, SpacetimeDB.Uuid> Id { get; }
         public global::SpacetimeDB.Col<User, string> Name { get; }
         public global::SpacetimeDB.Col<User, bool> IsAdmin { get; }
+        public global::SpacetimeDB.Col<User, byte> Age { get; }
 
         public UserCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "Id");
             Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
             IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "IsAdmin");
+            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "Age");
         }
     }
 
     public sealed class UserIxCols
     {
         public global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid> Id { get; }
+        public global::SpacetimeDB.IxCol<User, string> Name { get; }
         public global::SpacetimeDB.IxCol<User, bool> IsAdmin { get; }
+        public global::SpacetimeDB.IxCol<User, byte> Age { get; }
 
         public UserIxCols(string tableName)
         {
             Id = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid>(tableName, "Id");
+            Name = new global::SpacetimeDB.IxCol<User, string>(tableName, "Name");
             IsAdmin = new global::SpacetimeDB.IxCol<User, bool>(tableName, "IsAdmin");
+            Age = new global::SpacetimeDB.IxCol<User, byte>(tableName, "Age");
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::util::{iter_indexes, iter_procedures, iter_reducers};
 use crate::Lang;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
@@ -15,7 +16,6 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{
     AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, ProductTypeDef, SumTypeDef,
 };
-use std::collections::HashSet;
 use std::fmt::{self};
 use std::ops::Deref;
 use std::path::Path;
@@ -5471,12 +5471,7 @@ fn cpp_ty_init_fmt_impl(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
 
 // Given an `AlgebraicTypeUse`, add every referenced type’s generated
 // header name (`"<FTypeName>.g.h"`) into `out` (a `HashSet` avoids dups).
-fn collect_includes_for_type(
-    module: &ModuleDef,
-    ty: &AlgebraicTypeUse,
-    out: &mut std::collections::HashSet<String>,
-    module_name: &str,
-) {
+fn collect_includes_for_type(module: &ModuleDef, ty: &AlgebraicTypeUse, out: &mut HashSet<String>, module_name: &str) {
     use AlgebraicTypeUse::*;
     match ty {
         Ref(r) => {

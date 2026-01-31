@@ -31,6 +31,7 @@ use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
 };
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
@@ -44,7 +45,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
 use spacetimedb_table::static_assert_size;
-use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
 
