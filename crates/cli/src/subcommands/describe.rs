@@ -88,6 +88,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             None => sats_to_json(&module_def)?,
         };
 
+        // TODO: validate the JSON output
         println!("{json}");
     } else {
         // TODO: human-readable API

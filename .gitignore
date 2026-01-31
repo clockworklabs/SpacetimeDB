@@ -211,6 +211,10 @@ crates/bench/spacetime.svg
 crates/bench/sqlite.svg
 .vs/
 
+# .NET build artifacts
+**/obj/
+**/bin/
+
 # benchmark files
 out.json
 old.json
