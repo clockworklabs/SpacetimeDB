@@ -366,6 +366,30 @@ public static class Module
         }
     }
 
+    /// <summary>
+    /// Called by the host to execute a view when the sender calls the view identified by <paramref name="id" />.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The sender identity is passed as 4 <see cref="ulong" /> values (<paramref name="sender_0" /> through
+    /// <paramref name="sender_3" />) representing a little-endian <see cref="SpacetimeDB.Identity" />.
+    /// </para>
+    /// <para>
+    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
+    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
+    /// </para>
+    /// <para>
+    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
+    /// </para>
+    /// <para>
+    /// Note: a previous view ABI wrote the return rows directly to the sink.
+    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
+    /// between views that return row data and views that return queries.
+    /// </para>
+    /// <para>
+    /// The current ABI is identified by returning error code <c>2</c>.
+    /// </para>
+    /// </remarks>
     public static Errno __call_view__(
         uint id,
         ulong sender_0,
@@ -386,7 +410,7 @@ public static class Module
             using var reader = new BinaryReader(stream);
             var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
             rows.Write(bytes);
-            return Errno.OK;
+            return (Errno)2;
         }
         catch (Exception e)
         {
@@ -395,6 +419,26 @@ public static class Module
         }
     }
 
+    /// <summary>
+    /// Called by the host to execute an anonymous view.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
+    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
+    /// </para>
+    /// <para>
+    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
+    /// </para>
+    /// <para>
+    /// Note: a previous view ABI wrote the return rows directly to the sink.
+    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
+    /// between views that return row data and views that return queries.
+    /// </para>
+    /// <para>
+    /// The current ABI is identified by returning error code <c>2</c>.
+    /// </para>
+    /// </remarks>
     public static Errno __call_view_anon__(uint id, BytesSource args, BytesSink rows)
     {
         try
@@ -404,7 +448,7 @@ public static class Module
             using var reader = new BinaryReader(stream);
             var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
             rows.Write(bytes);
-            return Errno.OK;
+            return (Errno)2;
         }
         catch (Exception e)
         {

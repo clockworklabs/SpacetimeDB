@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_execution::{
     pipelined::{
         PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScanEq, PipelinedIxDeltaScanRange, PipelinedIxJoin,
@@ -12,7 +13,7 @@ use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, Proje
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_schema::table_name::TableName;
-use std::{collections::HashSet, ops::RangeBounds};
+use std::ops::RangeBounds;
 
 /// A subscription is a view over a particular table.
 /// How do we incrementally maintain that view?

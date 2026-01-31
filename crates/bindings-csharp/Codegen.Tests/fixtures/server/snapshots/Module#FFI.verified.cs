@@ -1162,8 +1162,11 @@ sealed class public_table_viewViewDispatcher : global::SpacetimeDB.Internal.IVie
                 PublicTable.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
@@ -1208,8 +1211,11 @@ sealed class find_public_table__by_identityViewDispatcher
                 PublicTable.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }

@@ -23,6 +23,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::compression::{
     compress_with_zstd, CompressCount, CompressReader, CompressType, CompressionAlgorithm,
@@ -47,7 +48,6 @@ use std::ops::RangeBounds;
 use std::time::{Duration, Instant};
 use std::{
     collections::BTreeMap,
-    collections::HashMap,
     ffi::OsStr,
     fmt,
     io::{BufWriter, Read, Write},
