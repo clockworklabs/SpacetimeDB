@@ -108,6 +108,38 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
+  // Svelte subpath (SSR-friendly): dist/svelte/index.{mjs,cjs}
+  {
+    entry: { index: 'src/svelte/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/svelte',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['svelte', 'svelte/store'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Svelte subpath (browser ESM): dist/browser/svelte/index.mjs
+  {
+    entry: { index: 'src/svelte/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/browser/svelte',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'browser',
+    treeshake: 'smallest',
+    external: ['svelte', 'svelte/store'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
   // SDK subpath (SSR-friendly): dist/sdk/index.{mjs,cjs}
   {
     entry: { index: 'src/sdk/index.ts' },

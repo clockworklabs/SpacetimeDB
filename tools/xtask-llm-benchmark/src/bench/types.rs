@@ -3,7 +3,7 @@ use crate::llm::types::Vendor;
 use crate::llm::{LlmProvider, ModelRoute};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 

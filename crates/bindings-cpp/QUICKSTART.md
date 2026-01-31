@@ -219,8 +219,8 @@ spacetime sql my-chat-db "SELECT * FROM message"
 ### Database Access Pattern
 
 SpacetimeDB C++ uses a unique accessor pattern:
-- `ctx.db[table]` - Access table for iteration and basic operations, eg. ctx.db[user]
-- `ctx.db[table_field]` - Access indexed fields for optimized operations, eg. ctx.db[user_id]
+- `ctx.db[tableName]` - Access table for iteration and basic operations, eg. ctx.db[user]
+- `ctx.db[tableName_fieldName]` - Access indexed fields for optimized operations, eg. ctx.db[user_id]
 
 ```cpp
 // Table access
