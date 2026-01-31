@@ -2089,16 +2089,3 @@ SPACETIMEDB_REDUCER(no_op_succeeds, ReducerContext ctx)
     LOG_INFO("No-op reducer executed successfully");
     return Ok();
 }
-// =============================================================================
-// TEST RESULT TYPE AS REDUCER PARAMETER
-// =============================================================================
-
-SPACETIMEDB_REDUCER(test_result_param, ReducerContext ctx, Result<int32_t, std::string> r)
-{
-    if (r.is_ok()) {
-        LOG_INFO("Received ok: " + std::to_string(*r.ok_value()));
-    } else {
-        LOG_INFO("Received err: " + *r.err_value());
-    }
-    return Ok();
-}
