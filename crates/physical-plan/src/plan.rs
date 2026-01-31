@@ -1,13 +1,7 @@
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-    ops::{Bound, Deref, DerefMut},
-    sync::Arc,
-};
-
 use anyhow::{bail, Result};
 use derive_more::From;
 use either::Either;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
@@ -17,6 +11,11 @@ use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
+use std::{
+    borrow::Cow,
+    ops::{Bound, Deref, DerefMut},
+    sync::Arc,
+};
 
 use crate::rules::{
     ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
