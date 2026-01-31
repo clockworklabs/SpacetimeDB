@@ -87,6 +87,29 @@ fn add_post(ctx: &ReducerContext, title: String) -> Result<(), String> {
 Use the `#[auto_inc]` attribute.
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Post {
+    uint64_t id;
+    std::string title;
+};
+SPACETIMEDB_STRUCT(Post, id, title)
+SPACETIMEDB_TABLE(Post, post, Public)
+FIELD_PrimaryKeyAutoInc(post, id)
+
+SPACETIMEDB_REDUCER(add_post, ReducerContext ctx, std::string title) {
+    // Pass 0 for the auto-increment field
+    auto inserted = ctx.db[post].insert(Post{0, title});
+    // inserted.id now contains the assigned value
+    LOG_INFO("Created post with id: " + std::to_string(inserted.id));
+    return Ok();
+}
+```
+
+Use the `FIELD_PrimaryKeyAutoInc(table, field)` macro after table registration.
+
+</TabItem>
 </Tabs>
 
 Auto-increment columns must be integer types (`u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, etc.).
