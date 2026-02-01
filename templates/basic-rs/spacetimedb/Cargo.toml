@@ -1,5 +1,5 @@
 [package]
-name = "spacetime-module"
+name = "basic-rs-template-module"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,5 +9,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = "1.11.*"
+spacetimedb = { path = "../../../crates/bindings" }
 log = "0.4"

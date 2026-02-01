@@ -19,16 +19,20 @@ namespace SpacetimeDB.Types
         public string Name;
         [DataMember(Name = "IsAdmin")]
         public bool IsAdmin;
+        [DataMember(Name = "Age")]
+        public byte Age;
 
         public User(
             SpacetimeDB.Uuid Id,
             string Name,
-            bool IsAdmin
+            bool IsAdmin,
+            byte Age
         )
         {
             this.Id = Id;
             this.Name = Name;
             this.IsAdmin = IsAdmin;
+            this.Age = Age;
         }
 
         public User()
