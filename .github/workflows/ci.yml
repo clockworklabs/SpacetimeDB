@@ -51,16 +51,29 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
+
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_DIR=$CACHE_MNT/cargo-target/SpacetimeDB" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+            # Enable sccache for Rust
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+            # Prefer cached cargo-home/bin if you bootstrap shims there
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            # Still enable sccache even without the cache disk if you want local speedups:
+            # echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -145,15 +158,28 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_DIR=$CACHE_MNT/cargo-target/SpacetimeDB" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+            # Enable sccache for Rust
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+            # Prefer cached cargo-home/bin if you bootstrap shims there
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            # Still enable sccache even without the cache disk if you want local speedups:
+            # echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -187,14 +213,28 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_DIR=$CACHE_MNT/cargo-target/SpacetimeDB" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+            # Enable sccache for Rust
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+            # Prefer cached cargo-home/bin if you bootstrap shims there
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            # Still enable sccache even without the cache disk if you want local speedups:
+            # echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -214,14 +254,28 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_DIR=$CACHE_MNT/cargo-target/SpacetimeDB" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+            # Enable sccache for Rust
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+            # Prefer cached cargo-home/bin if you bootstrap shims there
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            # Still enable sccache even without the cache disk if you want local speedups:
+            # echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
@@ -465,14 +519,28 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_DIR=$CACHE_MNT/cargo-target/SpacetimeDB" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+            # Enable sccache for Rust     
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+            # Prefer cached cargo-home/bin if you bootstrap shims there
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            # Still enable sccache even without the cache disk if you want local speedups:
+            # echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
       - name: Check for docs change
         run: |
@@ -561,14 +629,28 @@ jobs:
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_DIR=$CACHE_MNT/cargo-target/SpacetimeDB" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+            # Enable sccache for Rust
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+            # Prefer cached cargo-home/bin if you bootstrap shims there
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            # Still enable sccache even without the cache disk if you want local speedups:
+            # echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -683,14 +765,28 @@ jobs:
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_DIR=$CACHE_MNT/cargo-target/SpacetimeDB" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+            # Enable sccache for Rust     
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+            # Prefer cached cargo-home/bin if you bootstrap shims there
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            # Still enable sccache even without the cache disk if you want local speedups:
+            # echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
