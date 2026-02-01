@@ -305,7 +305,7 @@ public sealed class QueryBuilderTests
             .Sql;
 
         Assert.Equal(
-            "SELECT \"other\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\" WHERE ((\"users\".\"id\" = 1) AND (\"other\".\"uid\" > 10))",
+            "SELECT \"other\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\" WHERE (\"users\".\"id\" = 1) AND (\"other\".\"uid\" > 10)",
             sql
         );
     }
