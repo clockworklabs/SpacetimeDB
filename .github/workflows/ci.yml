@@ -19,20 +19,16 @@ concurrency:
 
 jobs:
   smoketests:
-    name: Smoketests
+    name: Smoketests (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [spacetimedb-new-runner, windows-latest]
         include:
-          - runner: spacetimedb-new-runner
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
-          - runner: windows-latest
-            container: null
+          - name: Linux
+            runner: spacetimedb-new-runner-2
+          - name: Windows
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container }}
     timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -127,18 +123,14 @@ jobs:
     name: Smoketests (Python Legacy)
     strategy:
       matrix:
-        runner: [spacetimedb-new-runner, windows-latest]
         include:
-          - runner: spacetimedb-new-runner
+          - name: Linux
+            runner: spacetimedb-new-runner-2
             smoketest_args: --docker
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
-          - runner: windows-latest
+          - name: Windows
+            runner: windows-latest
             smoketest_args: --no-build-cli
-            container: null
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container }}
     timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -169,6 +161,21 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
           prefix-key: v1
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        shell: bash
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -242,11 +249,8 @@ jobs:
   test:
     needs: [lints]
     name: Test Suite
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
+
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -299,11 +303,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -331,11 +331,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -358,11 +354,7 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -391,16 +383,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: spacetimedb-new-runner
-            target: x86_64-unknown-linux-gnu
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -443,7 +430,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner
+    runs-on: spacetimedb-new-runner-2
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -530,7 +517,7 @@ jobs:
 
   ci_command_docs:
     name: Check CI command docs
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Find Git ref
         env:
@@ -558,11 +545,7 @@ jobs:
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -783,12 +766,7 @@ jobs:
 
   csharp-testsuite:
     needs: [lints]
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
-        --cgroupns=host
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -842,13 +820,6 @@ jobs:
           save-if: false
           prefix-key: v1
 
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
-
       # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
       # ChatGPT suspects that this could be due to different build invocations using the same target dir,
       # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
@@ -862,6 +833,13 @@ jobs:
             cargo clean -p v8 || true
             cargo build -p v8
           fi
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        run: |
+          cargo install --force --path crates/cli --locked --message-format=short
+          cargo install --force --path crates/standalone --locked --message-format=short
+          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp
