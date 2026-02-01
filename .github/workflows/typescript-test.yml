@@ -13,13 +13,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: --privileged
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
-
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
