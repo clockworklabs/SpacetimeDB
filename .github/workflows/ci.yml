@@ -123,7 +123,7 @@ jobs:
 
   smoketests-python:
     needs: [lints]
-    name: Smoketests (Python Legacy)
+    name: Smoketests (Python Legacy) (${{matrix.name}})
     strategy:
       matrix:
         include:
