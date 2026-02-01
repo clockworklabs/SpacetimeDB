@@ -17,73 +17,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
   cancel-in-progress: true
 
-# -------------------------------------------------------------------
-# Shared steps for self-hosted Linux runner cache disk + Rust toolchain
-# -------------------------------------------------------------------
-x-cache-disk-step: &cache_disk_step
-  name: Enable cache disk + sccache (if present)
-  shell: bash
-  run: |
-    set -euo pipefail
-    CACHE_MNT="/mnt/runner-cache"
-    if mountpoint -q "$CACHE_MNT"; then
-      echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
-      echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
-      echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
-      echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
-      echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
-
-      # Enable sccache for Rust (assumes sccache is installed on the runner image)
-      echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-
-      # Prefer cached cargo-home/bin if you bootstrap shims there
-      echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
-    else
-      echo "Cache disk not present; using default cargo locations."
-    fi
-
-x-install-rust-step: &install_rust_step
-  name: Install Rust toolchain from repo + components
-  shell: bash
-  run: |
-    set -euo pipefail
-
-    # Detect toolchain from rust-toolchain(.toml)
-    tc="stable"
-    if [[ -f rust-toolchain.toml ]]; then
-      tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
-    elif [[ -f rust-toolchain ]]; then
-      tc="$(awk -F'"' '
-        /^[[:space:]]*#/ {next}
-        /^[[:space:]]*$/ {next}
-        /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
-        {print $0; exit}
-      ' rust-toolchain | tr -d "\r")"
-    fi
-
-    echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
-
-    rustup toolchain install "$tc" --profile minimal
-    rustup component add rustfmt --toolchain "$tc"
-    rustup component add clippy  --toolchain "$tc"
-
-    # IMPORTANT: your cargo-ci tool runs plain `cargo ...` internally.
-    # This ensures all those invocations use the pinned toolchain.
-    rustup override set "$tc"
-
-x-config-target-dir-step: &config_target_dir_step
-  name: Configure CARGO_TARGET_DIR (cache disk if present)
-  shell: bash
-  run: |
-    set -euo pipefail
-    target="${GITHUB_WORKSPACE}/target"
-    if [[ -n "${CACHE_MNT:-}" ]]; then
-      # No concurrent jobs share this cache disk, so use a stable per-toolchain target dir
-      target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN}"
-    fi
-    echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
-    echo "Using CARGO_TARGET_DIR=$target"
-
 jobs:
   docker_smoketests:
     needs: [lints]
@@ -118,14 +51,61 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - <<: *cache_disk_step
+      - name: Enable cache disk + sccache (if present)
         if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
-      - <<: *install_rust_step
+      - name: Install Rust toolchain from repo + components
         if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - <<: *config_target_dir_step
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+
+          # Ensure all nested "cargo" calls inside tools/ci use the pinned toolchain
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
         if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -139,7 +119,6 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
-      # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -160,20 +139,17 @@ jobs:
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
           docker compose -f .github/docker-compose.yml up -d
 
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
-          # Fail properly if any individual command fails
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
           Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update
 
@@ -185,7 +161,6 @@ jobs:
         run: python -m pip install -r smoketests/requirements.txt
 
       - name: Run smoketests
-        # Note: clear_database and replication only work in private
         run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
 
       - name: Stop containers (Linux)
@@ -196,11 +171,11 @@ jobs:
     needs: [lints]
     name: Test Suite
     runs-on: spacetimedb-new-runner-2
-
     steps:
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
           if test -n "${PR_NUMBER}"; then
@@ -215,9 +190,54 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - <<: *cache_disk_step
-      - <<: *install_rust_step
-      - <<: *config_target_dir_step
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -248,9 +268,54 @@ jobs:
 
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - <<: *cache_disk_step
-      - <<: *install_rust_step
-      - <<: *config_target_dir_step
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -267,9 +332,54 @@ jobs:
 
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - <<: *cache_disk_step
-      - <<: *install_rust_step
-      - <<: *config_target_dir_step
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
@@ -366,7 +476,6 @@ jobs:
         env:
           UE_ROOT_PATH: /home/ue4/UnrealEngine
         run: |
-
           apt-get update
           apt-get install -y acl curl ca-certificates
 
@@ -475,11 +584,54 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - uses: dsherret/rust-toolchain-file@v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
-      - <<: *cache_disk_step
-      - <<: *install_rust_step
-      - <<: *config_target_dir_step
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - name: Check for docs change
         run: cargo ci cli-docs
@@ -550,38 +702,40 @@ jobs:
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
 
-      # Keep your existing runner-local cache disk behavior here as-is, since this is a special runner.
       - name: Enable cache disk + sccache (if present)
         shell: bash
         run: |
           set -euo pipefail
           CACHE_MNT="/mnt/runner-cache"
           if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
             echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
             echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
             echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
             echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
             echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
             echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
-            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
           else
             echo "Cache disk not present; using default cargo locations."
           fi
 
-      - name: Install Rust toolchain from repo + components
+      - name: Install Rust components + override + target dir
         shell: bash
         run: |
           set -euo pipefail
-          tc="stable"
-          if [[ -f rust-toolchain.toml ]]; then
-            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
-          elif [[ -f rust-toolchain ]]; then
-            tc="$(awk -F'"' '
-              /^[[:space:]]*#/ {next}
-              /^[[:space:]]*$/ {next}
-              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
-              {print $0; exit}
-            ' rust-toolchain | tr -d "\r")"
+          tc="${RUST_TOOLCHAIN:-}"
+          if [[ -z "$tc" ]]; then
+            tc="stable"
+            if [[ -f rust-toolchain.toml ]]; then
+              tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+            elif [[ -f rust-toolchain ]]; then
+              tc="$(awk -F'"' '
+                /^[[:space:]]*#/ {next}
+                /^[[:space:]]*$/ {next}
+                /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+                {print $0; exit}
+              ' rust-toolchain | tr -d "\r")"
+            fi
           fi
           echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
           rustup toolchain install "$tc" --profile minimal
@@ -589,13 +743,9 @@ jobs:
           rustup component add clippy  --toolchain "$tc"
           rustup override set "$tc"
 
-      - name: Configure CARGO_TARGET_DIR (cache disk if present)
-        shell: bash
-        run: |
-          set -euo pipefail
           target="${GITHUB_WORKSPACE}/target"
           if [[ -n "${CACHE_MNT:-}" ]]; then
-            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN}"
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${tc}"
           fi
           echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
           echo "Using CARGO_TARGET_DIR=$target"
@@ -698,9 +848,54 @@ jobs:
         working-directory: sdks/csharp
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
 
-      - <<: *cache_disk_step
-      - <<: *install_rust_step
-      - <<: *config_target_dir_step
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
