@@ -32,8 +32,6 @@ jobs:
             smoketest_args: --no-build-cli
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -47,20 +45,67 @@ jobs:
             GIT_REF="${{ github.ref }}"
           fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
+
+      - name: Enable cache disk + sccache (if present)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+
+          # Ensure all nested "cargo" calls inside tools/ci use the pinned toolchain
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
       # ChatGPT suspects that this could be due to different build invocations using the same target dir,
@@ -89,7 +134,6 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
-      # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -103,34 +147,37 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
           docker compose -f .github/docker-compose.yml up -d
+
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
-          # Fail properly if any individual command fails
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
           Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
         if: runner.os == 'Windows'
+
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
+
       - name: Run smoketests
-        # Note: clear_database and replication only work in private
         run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
+
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down
@@ -139,13 +186,11 @@ jobs:
     needs: [lints]
     name: Test Suite
     runs-on: spacetimedb-new-runner-2
-
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
           if test -n "${PR_NUMBER}"; then
@@ -160,15 +205,54 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -193,23 +277,60 @@ jobs:
   lints:
     name: Lints
     runs-on: spacetimedb-new-runner-2
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -221,22 +342,59 @@ jobs:
   wasm_bindings:
     name: Build and test wasm bindings
     runs-on: spacetimedb-new-runner-2
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v3
 
-      - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
@@ -302,9 +460,6 @@ jobs:
         shell: bash
         run: |
           ROOT_DIR="$(mktemp -d)"
-          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
-          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
-          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
           cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
         if: runner.os == 'Windows'
@@ -317,41 +472,15 @@ jobs:
 
   unreal_engine_tests:
     name: Unreal Engine Tests
-    # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
-    # a custom runner.
     runs-on: spacetimedb-new-runner-2
-    # Disable the tests because they are very flaky at the moment.
-    # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
-    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
-    # if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:
-        # Note(bfops): I don't think that `github.actor` needs to match the user that the token is for, because I'm using a token for my account and
-        # it seems to be totally happy.
-        # However, the token needs to be for a user that has access to the EpicGames org (see
-        # https://dev.epicgames.com/documentation/en-us/unreal-engine/downloading-source-code-in-unreal-engine?application_version=5.6)
         username: ${{ github.actor }}
         password: ${{ secrets.GHCR_TOKEN }}
-      # Run as root because otherwise we get permission denied for various directories inside the container. I tried doing dances to allow it to run
-      # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
     steps:
-      # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
-      # commits though.
-      #      - name: Find Git ref
-      #        env:
-      #          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #        shell: bash
-      #        run: |
-      #          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-      #          if test -n "${PR_NUMBER}"; then
-      #            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-      #          else
-      #            GIT_REF="${{ github.ref }}"
-      #          fi
-      #          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
@@ -362,28 +491,23 @@ jobs:
         env:
           UE_ROOT_PATH: /home/ue4/UnrealEngine
         run: |
-
           apt-get update
           apt-get install -y acl curl ca-certificates
 
           REPO="$GITHUB_WORKSPACE"
-          # Let ue4 read/write the workspace & tool caches without changing ownership
           for p in "$REPO" "${RUNNER_TEMP:-/__t}" "${RUNNER_TOOL_CACHE:-/__t}"; do
             [ -d "$p" ] && setfacl -R -m u:ue4:rwX -m d:u:ue4:rwX "$p" || true
           done
 
-          # Rust tool caches live under the runner tool cache so they persist
           export CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
           export RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
           mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
           chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
 
-          # Make sure the UE build script is executable (and parents traversable)
           UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
           chmod a+rx "$UE_DIR" "$UE_DIR/Engine" "$UE_DIR/Engine/Build" "$UE_DIR/Engine/Build/BatchFiles/Linux" || true
           chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
 
-          # Run the build & tests as ue4 (who owns the UE tree)
           sudo -E -H -u ue4 env \
             HOME=/home/ue4 \
             XDG_CONFIG_HOME=/home/ue4/.config \
@@ -392,7 +516,6 @@ jobs:
             PATH="$CARGO_HOME/bin:$PATH" \
             bash -lc '
               set -euxo pipefail
-              # Install rustup for ue4 if needed (uses the shared caches)
               if ! command -v cargo >/dev/null 2>&1; then
                 curl -sSf https://sh.rustup.rs | sh -s -- -y
               fi
@@ -435,8 +558,6 @@ jobs:
     name: Check CLI docs
     permissions: read-all
     runs-on: spacetimedb-new-runner-2
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -478,20 +599,57 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - uses: dsherret/rust-toolchain-file@v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - name: Check for docs change
-        run: |
-          cargo ci cli-docs
+        run: cargo ci cli-docs
 
   llm_ci_check:
     name: Verify LLM benchmark is up to date
@@ -501,8 +659,6 @@ jobs:
     # Disable the tests because they are causing us headaches with merge conflicts and re-runs etc.
     if: false
     steps:
-      # Build the tool from master to ensure consistent hash computation
-      # with the llm-benchmark-update workflow (which also uses master's tool).
       - name: Checkout master (build tool from trusted code)
         uses: actions/checkout@v4
         with:
@@ -517,7 +673,6 @@ jobs:
           cargo install --path tools/xtask-llm-benchmark --locked
           command -v llm_benchmark
 
-      # Now checkout the PR branch to verify its benchmark files
       - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
@@ -528,22 +683,16 @@ jobs:
 
   unity-testsuite:
     needs: [lints]
-    # Skip if this is an external contribution.
-    # The license secrets will be empty, so the step would fail anyway.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: read
       checks: write
     runs-on: spacetimedb-unity-runner
     timeout-minutes: 30
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
-
-      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -554,13 +703,6 @@ jobs:
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
           dotnet pack crates/bindings-csharp/Runtime
-
-          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
-          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
-          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
-          # This means that (if version numbers match) we will test the local versions of the C# packages, even
-          # if they're not pushed to NuGet.
-          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
@@ -568,7 +710,6 @@ jobs:
         working-directory: sdks/csharp
         run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
-      # Now, setup the Unity tests.
       - name: Patch spacetimedb dependency in Cargo.toml
         working-directory: demo/Blackholio/server-rust
         run: |
@@ -578,20 +719,58 @@ jobs:
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
+          fi
+
+      - name: Install Rust components + override + target dir
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="${RUST_TOOLCHAIN:-}"
+          if [[ -z "$tc" ]]; then
+            tc="stable"
+            if [[ -f rust-toolchain.toml ]]; then
+              tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+            elif [[ -f rust-toolchain ]]; then
+              tc="$(awk -F'"' '
+                /^[[:space:]]*#/ {next}
+                /^[[:space:]]*$/ {next}
+                /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+                {print $0; exit}
+              ' rust-toolchain | tr -d "\r")"
+            fi
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${tc}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Generate client bindings
@@ -642,8 +821,8 @@ jobs:
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
-          unityVersion: 2022.3.32f1 # Adjust Unity version to a valid tag
-          projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
+          unityVersion: 2022.3.32f1
+          projectPath: demo/Blackholio/client-unity
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
           useHostNetwork: true
@@ -657,14 +836,10 @@ jobs:
     needs: [lints]
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
-
-      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -675,13 +850,6 @@ jobs:
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
           dotnet pack crates/bindings-csharp/Runtime
-
-          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
-          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
-          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
-          # This means that (if version numbers match) we will test the local versions of the C# packages, even
-          # if they're not pushed to NuGet.
-          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
@@ -697,31 +865,60 @@ jobs:
         working-directory: sdks/csharp
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
 
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
+      - name: Enable cache disk + sccache (if present)
+        shell: bash
         run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
+          set -euo pipefail
+          CACHE_MNT="/mnt/runner-cache"
+          if mountpoint -q "$CACHE_MNT"; then
+            echo "CACHE_MNT=$CACHE_MNT" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$CACHE_MNT/cargo-home" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CACHE_MNT/rustup" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=$CACHE_MNT/sccache" >> "$GITHUB_ENV"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "$CACHE_MNT/cargo-home/bin" >> "$GITHUB_PATH"
+          else
+            echo "Cache disk not present; using default cargo locations."
           fi
+
+      - name: Install Rust toolchain from repo + components
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc="stable"
+          if [[ -f rust-toolchain.toml ]]; then
+            tc="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' rust-toolchain.toml)"
+          elif [[ -f rust-toolchain ]]; then
+            tc="$(awk -F'"' '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              /^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}
+              {print $0; exit}
+            ' rust-toolchain | tr -d "\r")"
+          fi
+          echo "RUST_TOOLCHAIN=$tc" >> "$GITHUB_ENV"
+          rustup toolchain install "$tc" --profile minimal
+          rustup component add rustfmt --toolchain "$tc"
+          rustup component add clippy  --toolchain "$tc"
+          rustup override set "$tc"
+
+      - name: Configure CARGO_TARGET_DIR (cache disk if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${GITHUB_WORKSPACE}/target"
+          if [[ -n "${CACHE_MNT:-}" ]]; then
+            target="${CACHE_MNT}/cargo-target/SpacetimeDB/${RUST_TOOLCHAIN:-unknown}"
+          fi
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          echo "Using CARGO_TARGET_DIR=$target"
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        run: |
+          cargo install --force --path crates/cli --locked --message-format=short
+          cargo install --force --path crates/standalone --locked --message-format=short
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -764,8 +961,6 @@ jobs:
   internal-tests:
     name: Internal Tests
     needs: [lints]
-    # Skip if not a PR or a push to master
-    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
       && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
@@ -785,11 +980,9 @@ jobs:
             const targetRef = 'master';
             const targetOwner = process.env.TARGET_OWNER;
             const targetRepo = process.env.TARGET_REPO;
-            // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const preDispatch = new Date().toISOString();
-  
-            // Dispatch the workflow in the target repository
+
             await github.rest.actions.createWorkflowDispatch({
               owner: targetOwner,
               repo: targetRepo,
@@ -797,12 +990,11 @@ jobs:
               ref: targetRef,
               inputs: { public_ref: publicRef }
             });
-  
+
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  
-            // Find the dispatched run by name
+
             let runId = null;
-            for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
+            for (let attempt = 0; attempt < 20 && !runId; attempt++) {
               await sleep(5000);
               const runsResp = await github.rest.actions.listWorkflowRuns({
                 owner: targetOwner,
@@ -812,28 +1004,28 @@ jobs:
                 branch: targetRef,
                 per_page: 50,
               });
-  
+
               const expectedName = `CI [public_ref=${publicRef}]`;
               const candidates = runsResp.data.workflow_runs
                 .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  
+
               if (candidates.length > 0) {
                 runId = candidates[0].id;
                 break;
               }
             }
-  
+
             if (!runId) {
               core.setFailed('Failed to locate dispatched run in the private repository.');
               return;
             }
-  
+
             const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
             core.info(`View run: ${runUrl}`);
             core.setOutput('run_id', String(runId));
             core.setOutput('run_url', runUrl);
-  
+
       - name: Wait for Internal Tests to complete
         uses: actions/github-script@v7
         with:
@@ -844,11 +1036,11 @@ jobs:
             const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
             const runUrl = `${{ steps.dispatch.outputs.run_url }}`;
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  
+
             core.info(`Waiting for workflow result... ${runUrl}`);
-  
+
             let conclusion = null;
-            for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
+            for (let attempt = 0; attempt < 240; attempt++) {
               const runResp = await github.rest.actions.getWorkflowRun({
                 owner: targetOwner,
                 repo: targetRepo,
@@ -861,16 +1053,16 @@ jobs:
               }
               await sleep(30000);
             }
-  
+
             if (!conclusion) {
               core.setFailed('Timed out waiting for private workflow to complete.');
               return;
             }
-  
+
             if (conclusion !== 'success') {
               core.setFailed(`Private workflow failed with conclusion: ${conclusion}`);
             }
-  
+
       - name: Cancel invoked run if workflow cancelled
         if: ${{ cancelled() }}
         uses: actions/github-script@v7
