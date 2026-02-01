@@ -25,10 +25,7 @@ public partial class ReturnStruct
 }
 
 [SpacetimeDB.Type]
-public partial record ReturnEnum : SpacetimeDB.TaggedEnum<(
-    uint A,
-    string B
-    )>;
+public partial record ReturnEnum : SpacetimeDB.TaggedEnum<(uint A, string B)>;
 
 [SpacetimeDB.Type]
 public partial struct DbVector2
@@ -44,6 +41,19 @@ public static partial class Module
     {
         public ReturnStruct Field;
     }
+
+    [SpacetimeDB.Table(Name = "where_test", Public = true)]
+    public partial struct WhereTest
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+
+        [SpacetimeDB.Index.BTree]
+        public uint Value;
+
+        public string Name;
+    }
+
     [SpacetimeDB.Table(Name = "example_data", Public = true)]
     public partial struct ExampleData
     {
@@ -105,16 +115,29 @@ public static partial class Module
         public ulong Level;
     }
 
-    [SpacetimeDB.Table(Name = "User", Public = true)]
+    [SpacetimeDB.Table(Name = "user", Public = true)]
     public partial struct User
     {
         [SpacetimeDB.PrimaryKey]
         public Uuid Id;
 
+        [SpacetimeDB.Index.BTree]
         public string Name;
 
         [SpacetimeDB.Index.BTree]
         public bool IsAdmin;
+
+        [SpacetimeDB.Index.BTree]
+        public byte Age;
+    }
+
+    [SpacetimeDB.Table(Name = "score", Public = true)]
+    [SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+    public partial struct Score
+    {
+        public uint PlayerId;
+        public uint Level;
+        public long Points;
     }
 
     [SpacetimeDB.Table(Name = "nullable_vec", Public = true)]
@@ -179,7 +202,7 @@ public static partial class Module
                     Id = p.Id,
                     Identity = p.Identity,
                     Name = p.Name,
-                    Level = player.Level
+                    Level = player.Level,
                 };
                 rows.Add(row);
             }
@@ -191,9 +214,88 @@ public static partial class Module
     public static List<User> Admins(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
-        foreach (var user in ctx.Db.User.IsAdmin.Filter(true))
+        foreach (var user in ctx.Db.user.IsAdmin.Filter(true))
         {
             rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_named_alice", Public = true)]
+    public static List<User> UsersNamedAlice(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Name.Filter("Alice"))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_age_18_65", Public = true)]
+    public static List<User> UsersAge1865(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(18, 65)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_age_18_plus", Public = true)]
+    public static List<User> UsersAge18Plus(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(18, byte.MaxValue)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "users_age_under_18", Public = true)]
+    public static List<User> UsersAgeUnder18(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(byte.MinValue, 17)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "scores_player_123", Public = true)]
+    public static List<Score> ScoresPlayer123(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (var score in ctx.Db.score.by_player_and_level.Filter(123u))
+        {
+            rows.Add(score);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "scores_player_123_range", Public = true)]
+    public static List<Score> ScoresPlayer123Range(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (
+            var score in ctx.Db.score.by_player_and_level.Filter((123u, new Bound<uint>(1u, 10u)))
+        )
+        {
+            rows.Add(score);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "scores_player_123_level5", Public = true)]
+    public static List<Score> ScoresPlayer123Level5(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (var score in ctx.Db.score.by_player_and_level.Filter((123u, 5u)))
+        {
+            rows.Add(score);
         }
         return rows;
     }
@@ -243,11 +345,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void SetNullableVec(ReducerContext ctx, uint id, bool hasPos, int x, int y)
     {
-        var row = new NullableVec
-        {
-            Id = id,
-            Pos = hasPos ? new DbVector2 { X = x, Y = y } : null
-        };
+        var row = new NullableVec { Id = id, Pos = hasPos ? new DbVector2 { X = x, Y = y } : null };
 
         if (ctx.Db.nullable_vec.Id.Find(id) is null)
         {
@@ -277,6 +375,19 @@ public static partial class Module
         ctx.Db.null_string_nullable.Insert(new NullStringNullable { Name = null });
     }
 
+    [SpacetimeDB.Reducer]
+    public static void InsertWhereTest(ReducerContext ctx, uint id, uint value, string name)
+    {
+        ctx.Db.where_test.Insert(
+            new WhereTest
+            {
+                Id = id,
+                Value = value,
+                Name = name,
+            }
+        );
+    }
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
@@ -301,30 +412,98 @@ public static partial class Module
 
         if (ctx.Db.nullable_vec.Id.Find(1) is null)
         {
-            ctx.Db.nullable_vec.Insert(new NullableVec
-            {
-                Id = 1,
-                Pos = new DbVector2 { X = 1, Y = 2 },
-            });
+            ctx.Db.nullable_vec.Insert(
+                new NullableVec
+                {
+                    Id = 1,
+                    Pos = new DbVector2 { X = 1, Y = 2 },
+                }
+            );
         }
 
         if (ctx.Db.nullable_vec.Id.Find(2) is null)
         {
-            ctx.Db.nullable_vec.Insert(new NullableVec
-            {
-                Id = 2,
-                Pos = null,
-            });
+            ctx.Db.nullable_vec.Insert(new NullableVec { Id = 2, Pos = null });
         }
 
-        foreach (var (Name, IsAdmin) in new List<(string Name, bool IsAdmin)>
-            {
-                ("Alice", true),
-                ("Bob", false),
-                ("Charlie", true)
-            })
+        if (ctx.Db.user.Count == 0)
         {
-            ctx.Db.User.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin });
+            foreach (
+                var (Name, IsAdmin, Age) in new List<(string Name, bool IsAdmin, byte Age)>
+                {
+                    ("Alice", true, (byte)30),
+                    ("Bob", false, (byte)16),
+                    ("Charlie", true, (byte)22),
+                }
+            )
+            {
+                ctx.Db.user.Insert(
+                    new User
+                    {
+                        Id = ctx.NewUuidV7(),
+                        Name = Name,
+                        IsAdmin = IsAdmin,
+                        Age = Age,
+                    }
+                );
+            }
+        }
+
+        if (ctx.Db.score.Count == 0)
+        {
+            foreach (
+                var (PlayerId, Level, Points) in new List<(uint PlayerId, uint Level, long Points)>
+                {
+                    (123u, 1u, 1_000),
+                    (123u, 5u, 5_000),
+                    (123u, 10u, 10_000),
+                    (999u, 2u, 2_500),
+                }
+            )
+            {
+                ctx.Db.score.Insert(
+                    new Score
+                    {
+                        PlayerId = PlayerId,
+                        Level = Level,
+                        Points = Points,
+                    }
+                );
+            }
+        }
+
+        if (ctx.Db.where_test.Id.Find(1) is null)
+        {
+            ctx.Db.where_test.Insert(
+                new WhereTest
+                {
+                    Id = 1,
+                    Value = 5,
+                    Name = "low",
+                }
+            );
+        }
+        if (ctx.Db.where_test.Id.Find(2) is null)
+        {
+            ctx.Db.where_test.Insert(
+                new WhereTest
+                {
+                    Id = 2,
+                    Value = 15,
+                    Name = "high",
+                }
+            );
+        }
+        if (ctx.Db.where_test.Id.Find(3) is null)
+        {
+            ctx.Db.where_test.Insert(
+                new WhereTest
+                {
+                    Id = 3,
+                    Value = 15,
+                    Name = "alsohigh",
+                }
+            );
         }
     }
 
@@ -412,10 +591,7 @@ public static partial class Module
     {
         ctx.WithTx(tx =>
         {
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(a: 42, b: "magic"),
-            });
+            tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 42, b: "magic") });
             return new Unit();
         });
 
@@ -427,10 +603,7 @@ public static partial class Module
     {
         var outcome = ctx.TryWithTx<SpacetimeDB.Unit, InvalidOperationException>(tx =>
         {
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(a: 42, b: "magic")
-            });
+            tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 42, b: "magic") });
 
             throw new InvalidOperationException("rollback");
         });
@@ -446,10 +619,7 @@ public static partial class Module
         {
             var outcome = ctx.TryWithTx<SpacetimeDB.Unit, InvalidOperationException>(tx =>
             {
-                tx.Db.my_table.Insert(new MyTable
-                {
-                    Field = new ReturnStruct(a: 42, b: "magic")
-                });
+                tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 42, b: "magic") });
 
                 throw new InvalidOperationException("rollback");
             });
@@ -537,10 +707,9 @@ public static partial class Module
             ctx.WithTx<object>(tx =>
             {
                 // Insert a row
-                tx.Db.my_table.Insert(new MyTable
-                {
-                    Field = new ReturnStruct(a: 99, b: "panic-test")
-                });
+                tx.Db.my_table.Insert(
+                    new MyTable { Field = new ReturnStruct(a: 99, b: "panic-test") }
+                );
 
                 // Throw an exception to abort the transaction
                 throw new InvalidOperationException("panic abort");
@@ -568,10 +737,9 @@ public static partial class Module
             ctx.WithTx<object>(tx =>
             {
                 // Insert a row
-                tx.Db.my_table.Insert(new MyTable
-                {
-                    Field = new ReturnStruct(a: 123, b: "dangling")
-                });
+                tx.Db.my_table.Insert(
+                    new MyTable { Field = new ReturnStruct(a: 123, b: "dangling") }
+                );
 
                 // Simulate an unexpected system exception that might leave transaction in limbo
                 // This should trigger the transaction cleanup/auto-abort mechanisms
@@ -602,15 +770,14 @@ public static partial class Module
             var initialCount = tx.Db.my_table.Count;
 
             // Test 2: Insert data and verify it's visible within the same transaction
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(a: 200, b: "tx-test")
-            });
+            tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 200, b: "tx-test") });
 
             var countAfterInsert = tx.Db.my_table.Count;
             if (countAfterInsert != initialCount + 1)
             {
-                throw new InvalidOperationException($"Expected count {initialCount + 1}, got {countAfterInsert}");
+                throw new InvalidOperationException(
+                    $"Expected count {initialCount + 1}, got {countAfterInsert}"
+                );
             }
 
             // Test 3: Verify transaction context properties are accessible
@@ -619,7 +786,9 @@ public static partial class Module
 
             if (txSender.Equals(ctx.Sender) == false)
             {
-                throw new InvalidOperationException("Transaction sender should match procedure sender");
+                throw new InvalidOperationException(
+                    "Transaction sender should match procedure sender"
+                );
             }
 
             // Test 4: Return data from within transaction
@@ -634,7 +803,9 @@ public static partial class Module
                 var actualCount = tx.Db.my_table.Count;
                 if (actualCount == 0)
                 {
-                    throw new InvalidOperationException("Expected at least 1 MyTable row but found none - transaction may not have committed");
+                    throw new InvalidOperationException(
+                        "Expected at least 1 MyTable row but found none - transaction may not have committed"
+                    );
                 }
                 return 0;
             });
@@ -668,22 +839,27 @@ public static partial class Module
             if (txSender.Equals(procSender) == false)
             {
                 throw new InvalidOperationException(
-                    $"Transaction sender {txSender} should match procedure sender {procSender}");
+                    $"Transaction sender {txSender} should match procedure sender {procSender}"
+                );
             }
 
             if (txConnectionId.Equals(procConnectionId) == false)
             {
                 throw new InvalidOperationException(
-                    $"Transaction connectionId {txConnectionId} should match procedure connectionId {procConnectionId}");
+                    $"Transaction connectionId {txConnectionId} should match procedure connectionId {procConnectionId}"
+                );
             }
 
             // Test 4: Insert data with authentication information
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(
-                    a: (uint)(txSender.GetHashCode() & 0xFF),
-                    b: $"auth:sender:{txSender}:conn:{txConnectionId}")
-            });
+            tx.Db.my_table.Insert(
+                new MyTable
+                {
+                    Field = new ReturnStruct(
+                        a: (uint)(txSender.GetHashCode() & 0xFF),
+                        b: $"auth:sender:{txSender}:conn:{txConnectionId}"
+                    ),
+                }
+            );
 
             // Test 5: Check JWT claims (if available)
             var jwtInfo = "no-jwt";
@@ -701,9 +877,7 @@ public static partial class Module
                 jwtInfo = "jwt:unavailable";
             }
 
-            return new ReturnStruct(
-                a: (uint)(txSender.GetHashCode() & 0xFF),
-                b: jwtInfo);
+            return new ReturnStruct(a: (uint)(txSender.GetHashCode() & 0xFF), b: jwtInfo);
         });
 
         return result;
@@ -722,7 +896,8 @@ public static partial class Module
             {
                 Field = new ReturnStruct(
                     a: 999, // Use a distinctive value to identify this test
-                    b: $"offset-test:{tx.Timestamp.MicrosecondsSinceUnixEpoch}")
+                    b: $"offset-test:{tx.Timestamp.MicrosecondsSinceUnixEpoch}"
+                ),
             };
 
             tx.Db.my_table.Insert(testData);
@@ -730,7 +905,8 @@ public static partial class Module
             // Return data that can be used to correlate with subscription events
             return new ReturnStruct(
                 a: 999,
-                b: $"committed:{tx.Timestamp.MicrosecondsSinceUnixEpoch}");
+                b: $"committed:{tx.Timestamp.MicrosecondsSinceUnixEpoch}"
+            );
         });
 
         // At this point, the transaction should be committed and subscription events
@@ -740,7 +916,11 @@ public static partial class Module
     }
 
     [SpacetimeDB.Procedure]
-    public static ReturnStruct DocumentationGapChecks(ProcedureContext ctx, uint inputValue, string inputText)
+    public static ReturnStruct DocumentationGapChecks(
+        ProcedureContext ctx,
+        uint inputValue,
+        string inputText
+    )
     {
         // This procedure tests various documentation gaps and edge cases
         // Test 1: Parameter handling - procedures can accept multiple parameters
@@ -763,25 +943,27 @@ public static partial class Module
             if (count > 10)
             {
                 // Don't insert if too many rows
-                return new ReturnStruct(
-                    a: (uint)count,
-                    b: $"skipped:too-many-rows:{count}");
+                return new ReturnStruct(a: (uint)count, b: $"skipped:too-many-rows:{count}");
             }
 
             // Test 4: Complex data manipulation
             var processedValue = inputValue * 2 + (uint)inputText.Length;
 
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(
-                    a: processedValue,
-                    b: $"doc-gap:{inputText}:processed:{processedValue}")
-            });
+            tx.Db.my_table.Insert(
+                new MyTable
+                {
+                    Field = new ReturnStruct(
+                        a: processedValue,
+                        b: $"doc-gap:{inputText}:processed:{processedValue}"
+                    ),
+                }
+            );
 
             // Test 5: Return computed results
             return new ReturnStruct(
                 a: processedValue,
-                b: $"success:input:{inputText}:result:{processedValue}");
+                b: $"success:input:{inputText}:result:{processedValue}"
+            );
         });
 
         // Test 6: Post-transaction validation

@@ -31,6 +31,7 @@ use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
 };
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
@@ -44,7 +45,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
 use spacetimedb_table::static_assert_size;
-use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
 
@@ -332,7 +332,7 @@ impl ModuleSubscriptions {
         )?;
 
         let table_id = query.subscribed_table_id();
-        let table_name = query.subscribed_table_name();
+        let table_name = query.subscribed_table_name().clone();
 
         let plans = query
             .plans_fragments()
@@ -364,27 +364,13 @@ impl ModuleSubscriptions {
                     .map(PipelinedProject::from)
                     .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
                     .collect::<Vec<_>>();
-                collect_table_update_for_view(
-                    &plans,
-                    table_id,
-                    table_name.into(),
-                    &tx,
-                    update_type,
-                    &self.bsatn_rlb_pool,
-                )
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                collect_table_update_for_view(&plans, table_id, table_name, &tx, update_type, &self.bsatn_rlb_pool)
+                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Binary, None) => {
                 let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
-                collect_table_update(
-                    &plans,
-                    table_id,
-                    table_name.into(),
-                    &tx,
-                    update_type,
-                    &self.bsatn_rlb_pool,
-                )
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                collect_table_update(&plans, table_id, table_name, &tx, update_type, &self.bsatn_rlb_pool)
+                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Text, Some(view_info)) => {
                 let plans = plans
@@ -395,7 +381,7 @@ impl ModuleSubscriptions {
                 collect_table_update_for_view(
                     &plans,
                     table_id,
-                    table_name.into(),
+                    table_name,
                     &tx,
                     update_type,
                     &JsonRowListBuilderFakePool,
@@ -407,7 +393,7 @@ impl ModuleSubscriptions {
                 collect_table_update(
                     &plans,
                     table_id,
-                    table_name.into(),
+                    table_name,
                     &tx,
                     update_type,
                     &JsonRowListBuilderFakePool,
@@ -590,7 +576,7 @@ impl ModuleSubscriptions {
                 timer: Some(timer),
                 result: SubscriptionResult::Subscribe(SubscriptionRows {
                     table_id: query.subscribed_table_id(),
-                    table_name: query.subscribed_table_name().into(),
+                    table_name: query.subscribed_table_name().clone(),
                     table_rows,
                 }),
             },
@@ -663,7 +649,7 @@ impl ModuleSubscriptions {
                 timer: Some(timer),
                 result: SubscriptionResult::Unsubscribe(SubscriptionRows {
                     table_id: query.subscribed_table_id(),
-                    table_name: query.subscribed_table_name().into(),
+                    table_name: query.subscribed_table_name().clone(),
                     table_rows,
                 }),
             },
