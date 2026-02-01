@@ -61,6 +61,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::time::Instant;
+use which::which;
 
 /// Returns the remote server URL if running against a remote server.
 ///
@@ -132,7 +133,7 @@ macro_rules! require_psql {
 #[macro_export]
 macro_rules! require_pnpm {
     () => {
-        if !$crate::have_pnpm() {
+        if $crate::pnpm_path().is_none() {
             panic!("pnpm not found");
         }
     };
@@ -236,15 +237,9 @@ pub fn have_psql() -> bool {
 }
 
 /// Returns true if pnpm is available on the system.
-pub fn have_pnpm() -> bool {
-    static HAVE_PNPM: OnceLock<bool> = OnceLock::new();
-    *HAVE_PNPM.get_or_init(|| {
-        Command::new("pnpm")
-            .args(["--version"])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    })
+pub fn pnpm_path() -> Option<PathBuf> {
+    static PNPM_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+    PNPM_PATH.get_or_init(|| which("pnpm").ok()).clone()
 }
 
 /// A smoketest instance that manages a SpacetimeDB server and module project.

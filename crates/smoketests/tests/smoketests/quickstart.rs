@@ -4,7 +4,7 @@
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
-use spacetimedb_smoketests::{require_dotnet, require_pnpm, workspace_root, Smoketest};
+use spacetimedb_smoketests::{pnpm_path, require_dotnet, require_pnpm, workspace_root, Smoketest};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -122,7 +122,15 @@ fn parse_quickstart(doc_content: &str, language: &str, module_name: &str, server
 
 /// Run pnpm command.
 fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
-    let mut full_args = vec!["pnpm"];
+    let pnpm_path = match pnpm_path()
+        .expect("Could not locate pnpm")
+        .into_os_string()
+        .into_string()
+    {
+        Ok(s) => s,
+        Err(os_string) => anyhow::bail!("Could not convert to string: {os_string:?}"),
+    };
+    let mut full_args = vec![pnpm_path.as_ref()];
     full_args.extend(args);
     run_cmd(&full_args, cwd, None)
 }
