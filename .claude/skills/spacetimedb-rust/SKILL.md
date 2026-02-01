@@ -4,12 +4,111 @@ description: Develop SpacetimeDB server modules in Rust. Use when writing reduce
 license: Apache-2.0
 metadata:
   author: clockworklabs
-  version: "1.0"
+  version: "1.1"
 ---
 
 # SpacetimeDB Rust Module Development
 
 SpacetimeDB modules are WebAssembly applications that run inside the database. They define tables to store data and reducers to modify data. Clients connect directly to the database and execute application logic inside it.
+
+> **Tested with:** SpacetimeDB runtime 1.11.x, `spacetimedb` crate 1.1.x
+
+---
+
+## HALLUCINATED APIs — DO NOT USE
+
+**These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
+
+```rust
+// WRONG — these macros/attributes don't exist
+#[spacetimedb::table]           // Use #[table] after importing
+#[spacetimedb::reducer]         // Use #[reducer] after importing
+#[derive(Table)]                // Tables use #[table] attribute, not derive
+#[derive(Reducer)]              // Reducers use #[reducer] attribute
+
+// WRONG — SpacetimeType on tables
+#[derive(SpacetimeType)]        // DO NOT use on #[table] structs!
+#[table(name = my_table)]
+pub struct MyTable { ... }
+
+// WRONG — mutable context
+pub fn my_reducer(ctx: &mut ReducerContext, ...) { }  // Should be &ReducerContext
+
+// WRONG — table access without parentheses
+ctx.db.player                   // Should be ctx.db.player()
+ctx.db.player.find(id)          // Should be ctx.db.player().id().find(&id)
+```
+
+### CORRECT PATTERNS:
+
+```rust
+// CORRECT IMPORTS
+use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
+use spacetimedb::SpacetimeType;  // Only for custom types, NOT tables
+
+// CORRECT TABLE — no SpacetimeType derive!
+#[table(name = player, public)]
+pub struct Player {
+    #[primary_key]
+    pub id: u64,
+    pub name: String,
+}
+
+// CORRECT REDUCER — immutable context reference
+#[reducer]
+pub fn create_player(ctx: &ReducerContext, name: String) {
+    ctx.db.player().insert(Player { id: 0, name });
+}
+
+// CORRECT TABLE ACCESS — methods with parentheses
+let player = ctx.db.player().id().find(&player_id);
+```
+
+### DO NOT:
+- **Derive `SpacetimeType` on `#[table]` structs** — the macro handles this
+- **Use mutable context** — `&ReducerContext`, not `&mut ReducerContext`
+- **Forget `Table` trait import** — required for table operations
+- **Use field access for tables** — `ctx.db.player()` not `ctx.db.player`
+
+---
+
+## Common Mistakes Table
+
+### Server-side errors
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| `#[derive(SpacetimeType)]` on `#[table]` | Remove it — macro handles this | Conflicting derive macros |
+| `ctx.db.player` (field access) | `ctx.db.player()` (method) | "no field `player` on type" |
+| `ctx.db.player().find(id)` | `ctx.db.player().id().find(&id)` | Must access via index |
+| `&mut ReducerContext` | `&ReducerContext` | Wrong context type |
+| Missing `use spacetimedb::Table;` | Add import | "no method named `insert`" |
+| `#[table(name = "my_table")]` | `#[table(name = my_table)]` | String literals not allowed |
+| Missing `public` on table | Add `public` flag | Clients can't subscribe |
+| `#[spacetimedb::reducer]` | `#[reducer]` after import | Wrong attribute path |
+| Network/filesystem in reducer | Use procedures instead | Sandbox violation |
+| Panic for expected errors | Return `Result<(), String>` | WASM instance destroyed |
+
+### Client-side errors
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| Wrong crate name | `spacetimedb-sdk` | Dependency not found |
+| Manual event loop | Use `tokio` runtime | Async issues |
+
+---
+
+## Hard Requirements
+
+1. **DO NOT derive `SpacetimeType` on `#[table]` structs** — the macro handles this
+2. **Import `Table` trait** — required for all table operations
+3. **Use `&ReducerContext`** — not `&mut ReducerContext`
+4. **Tables are methods** — `ctx.db.table()` not `ctx.db.table`
+5. **Reducers must be deterministic** — no filesystem, network, timers, or external RNG
+6. **Use `ctx.random()` or `ctx.rng`** — not `rand` crate for random numbers
+7. **Add `public` flag** — if clients need to subscribe to a table
+
+---
 
 ## Project Setup
 
@@ -88,6 +187,58 @@ pub struct Player {
 **Collections**: `Vec<T>`, `Option<T>`, `Result<T, E>` where inner types are also supported
 
 **Custom Types**: Any struct/enum with `#[derive(SpacetimeType)]`
+
+### Insert Returns the Row
+
+```rust
+// Insert and get the auto-generated ID
+let row = ctx.db.task().insert(Task {
+    id: 0,  // Placeholder for auto_inc
+    owner_id: ctx.sender,
+    title: "New task".to_string(),
+    created_at: ctx.timestamp,
+});
+let new_id = row.id;  // Get the actual ID
+```
+
+---
+
+## Data Visibility and Row-Level Security
+
+**`public` flag exposes ALL rows to ALL clients.**
+
+| Scenario | Pattern |
+|----------|---------|
+| Everyone sees all rows | `#[table(name = x, public)]` |
+| Users see only their data | Private table + row-level security |
+
+### Private Table (default)
+
+```rust
+// No public flag — only server can read
+#[table(name = secret_data)]
+pub struct SecretData { ... }
+```
+
+### Row-Level Security (RLS)
+
+Use RLS to filter which rows each client can see:
+
+```rust
+// Use row-level security for per-user visibility
+#[table(name = player_data, public)]
+#[rls(filter = |ctx, row| row.owner_id == ctx.sender)]
+pub struct PlayerData {
+    #[primary_key]
+    pub id: u64,
+    pub owner_id: Identity,
+    pub data: String,
+}
+```
+
+With RLS, clients can subscribe to the table but only see rows where the filter returns `true` for their identity.
+
+---
 
 ## Reducers
 
@@ -454,6 +605,59 @@ fn schedule_reminder(ctx: &ReducerContext, delay_secs: u64) {
 }
 ```
 
+---
+
+## Procedures (Beta)
+
+**Procedures are for side effects (HTTP, filesystem) that reducers can't do.**
+
+Procedures are currently unstable. Enable with:
+
+```toml
+# Cargo.toml
+[dependencies]
+spacetimedb = { version = "1.*", features = ["unstable"] }
+```
+
+```rust
+use spacetimedb::{procedure, ProcedureContext};
+
+// Simple procedure
+#[procedure]
+fn add_numbers(_ctx: &mut ProcedureContext, a: u32, b: u32) -> u64 {
+    a as u64 + b as u64
+}
+
+// Procedure with database access
+#[procedure]
+fn save_external_data(ctx: &mut ProcedureContext, url: String) -> Result<(), String> {
+    // HTTP request (allowed in procedures, not reducers)
+    let data = fetch_from_url(&url)?;
+
+    // Database access requires explicit transaction
+    ctx.try_with_tx(|tx| {
+        tx.db.external_data().insert(ExternalData {
+            id: 0,
+            content: data,
+        });
+        Ok(())
+    })?;
+
+    Ok(())
+}
+```
+
+### Key Differences from Reducers
+
+| Reducers | Procedures |
+|----------|------------|
+| `&ReducerContext` (immutable) | `&mut ProcedureContext` (mutable) |
+| Direct `ctx.db` access | Must use `ctx.with_tx()` |
+| No HTTP/network | HTTP allowed |
+| No return values | Can return data |
+
+---
+
 ## Error Handling
 
 ### Sender Errors (Expected)
@@ -676,6 +880,9 @@ spacetime call my_database create_player "Alice"
 
 # Run SQL query
 spacetime sql my_database "SELECT * FROM player"
+
+# Generate bindings
+spacetime generate --lang rust --out-dir <client>/src/module_bindings --project-path <backend-dir>
 ```
 
 ## Important Constraints

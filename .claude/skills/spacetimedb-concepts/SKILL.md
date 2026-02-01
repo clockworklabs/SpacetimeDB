@@ -4,12 +4,73 @@ description: Understand SpacetimeDB architecture and core concepts. Use when lea
 license: Apache-2.0
 metadata:
   author: clockworklabs
-  version: "1.0"
+  version: "1.1"
 ---
 
 # SpacetimeDB Core Concepts
 
 SpacetimeDB is a relational database that is also a server. It lets you upload application logic directly into the database via WebAssembly modules, eliminating the traditional web/game server layer entirely.
+
+---
+
+## Critical Rules (Read First)
+
+These five rules prevent the most common SpacetimeDB mistakes:
+
+1. **Reducers are transactional** — they do not return data to callers. Use subscriptions to read data.
+2. **Reducers must be deterministic** — no filesystem, network, timers, or random. All state must come from tables.
+3. **Read data via tables/subscriptions** — not reducer return values. Clients get data through subscribed queries.
+4. **Auto-increment IDs are not sequential** — gaps are normal, do not use for ordering. Use timestamps or explicit sequence columns.
+5. **`ctx.sender` is the authenticated principal** — never trust identity passed as arguments. Always use `ctx.sender` for authorization.
+
+---
+
+## Feature Implementation Checklist
+
+When implementing a feature that spans backend and client:
+
+1. **Backend:** Define table(s) to store the data
+2. **Backend:** Define reducer(s) to mutate the data
+3. **Client:** Subscribe to the table(s)
+4. **Client:** Call the reducer(s) from UI — **do not skip this step**
+5. **Client:** Render the data from the table(s)
+
+**Common mistake:** Building backend tables/reducers but forgetting to wire up the client to call them.
+
+---
+
+## Debugging Checklist
+
+When things are not working:
+
+1. Is SpacetimeDB server running? (`spacetime start`)
+2. Is the module published? (`spacetime publish`)
+3. Are client bindings generated? (`spacetime generate`)
+4. Check server logs for errors (`spacetime logs <db-name>`)
+5. **Is the reducer actually being called from the client?**
+
+---
+
+## CLI Commands
+
+```bash
+# Start local SpacetimeDB
+spacetime start
+
+# Publish module
+spacetime publish <db-name> --project-path <module-path>
+
+# Clear and republish
+spacetime publish <db-name> --clear-database -y --project-path <module-path>
+
+# Generate client bindings
+spacetime generate --lang <lang> --out-dir <out> --project-path <module-path>
+
+# View logs
+spacetime logs <db-name>
+```
+
+---
 
 ## What SpacetimeDB Is
 
@@ -123,6 +184,14 @@ Reducers are transactional functions that modify database state. They are the ON
 - **Isolated**: Cannot interact with the outside world (no network, no filesystem)
 - **Callable**: Clients invoke reducers as remote procedure calls
 
+### Critical Reducer Rules
+
+1. **No global state**: Relying on static variables is undefined behavior
+2. **No side effects**: Reducers cannot make network requests or access files
+3. **Store state in tables**: All persistent state must be in tables
+4. **No return data**: Reducers do not return data to callers — use subscriptions
+5. **Must be deterministic**: No random, no timers, no external I/O
+
 ### Defining Reducers
 
 **Rust:**
@@ -152,15 +221,9 @@ public static void CreateUser(ReducerContext ctx, string name, string email)
 
 Every reducer receives a `ReducerContext` providing:
 - `ctx.db`: Access to all tables (read and write)
-- `ctx.sender`: The Identity of the caller
+- `ctx.sender`: The Identity of the caller (use this for authorization, never trust args)
 - `ctx.connection_id`: The connection ID of the caller
 - `ctx.timestamp`: The current timestamp
-
-### Critical Rules
-
-1. **No global state**: Relying on static variables is undefined behavior
-2. **No side effects**: Reducers cannot make network requests or access files
-3. **Store state in tables**: All persistent state must be in tables
 
 ## Subscriptions
 
@@ -241,6 +304,7 @@ Identity is SpacetimeDB's authentication system based on OpenID Connect (OIDC).
 pub fn do_something(ctx: &ReducerContext) {
     let caller_identity = ctx.sender;  // Who is calling this reducer?
     // Use identity for authorization checks
+    // NEVER trust identity passed as a reducer argument
 }
 ```
 
@@ -336,7 +400,7 @@ Choose SpacetimeDB when you need:
 
 - **Batch analytics**: SpacetimeDB is optimized for OLTP, not OLAP
 - **Large blob storage**: Better suited for structured relational data
-- **Stateless APIs**: Traditional REST APIs don't need real-time sync
+- **Stateless APIs**: Traditional REST APIs do not need real-time sync
 
 ## Comparison to Traditional Architectures
 
@@ -399,26 +463,7 @@ Key differences:
 - No blockchain or cryptocurrency involved
 - Designed for real-time, not eventual consistency
 
-## Quick Reference
-
-### CLI Commands
-
-```bash
-# Install SpacetimeDB
-curl -sSf https://install.spacetimedb.com | sh
-
-# Start local server
-spacetime start
-
-# Create and publish module
-spacetime init my-module --lang rust
-spacetime publish my-module
-
-# Generate client bindings
-spacetime generate --out-dir ./client/bindings
-```
-
-### Common Patterns
+## Common Patterns
 
 **Authentication check in reducer:**
 ```rust
@@ -460,3 +505,13 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
     log::info!("Reminder: {}", reminder.message);
 }
 ```
+
+---
+
+## Editing Behavior
+
+When modifying SpacetimeDB code:
+
+- Make the smallest change necessary
+- Do NOT touch unrelated files, configs, or dependencies
+- Do NOT invent new SpacetimeDB APIs — use only what exists in docs or this repo

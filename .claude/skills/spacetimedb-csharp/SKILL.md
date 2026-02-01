@@ -1,17 +1,587 @@
 ---
 name: spacetimedb-csharp
-description: Build C# and Unity clients for SpacetimeDB. Use when integrating SpacetimeDB with Unity games or .NET applications.
+description: Build C# modules and Unity clients for SpacetimeDB. Covers server-side module development and client SDK integration.
 license: Apache-2.0
 metadata:
   author: clockworklabs
-  version: "1.0"
+  version: "1.1"
+  tested_with: "SpacetimeDB runtime 1.11.x, .NET 8 SDK"
 ---
 
-# SpacetimeDB C# / Unity SDK
+# SpacetimeDB C# SDK
 
-This skill provides comprehensive guidance for building C# and Unity clients that connect to SpacetimeDB modules.
+This skill provides comprehensive guidance for building C# server-side modules and Unity/C# clients that connect to SpacetimeDB.
 
-## Overview
+---
+
+## HALLUCINATED APIs — DO NOT USE
+
+**These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
+
+```csharp
+// WRONG — these do not exist
+[SpacetimeDB.Procedure]             // C# does NOT support procedures yet!
+ctx.db.tableName                    // Wrong casing, should be PascalCase
+ctx.Db.tableName.Get(id)            // Use Find, not Get
+ctx.Db.TableName.FindById(id)       // Use index accessor: ctx.Db.TableName.Id.Find(id)
+ctx.Db.table.field_name.Find(x)     // Wrong! Use PascalCase: ctx.Db.Table.FieldName.Find(x)
+Optional<string> field;             // Use C# nullable: string? field
+
+// WRONG — missing partial keyword
+public struct MyTable { }           // Must be "partial struct"
+public class Module { }             // Must be "static partial class"
+
+// WRONG — non-partial types
+[SpacetimeDB.Table(Name = "player")]
+public struct Player { }            // WRONG — missing partial!
+
+// WRONG — sum type syntax (VERY COMMON MISTAKE)
+public partial struct Shape : TaggedEnum<(Circle, Rectangle)> { }     // WRONG: struct, missing names
+public partial record Shape : TaggedEnum<(Circle, Rectangle)> { }     // WRONG: missing variant names
+public partial class Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }  // WRONG: class
+
+// WRONG — Index attribute without full qualification
+[Index.BTree(Name = "idx", Columns = new[] { "Col" })]    // Ambiguous with System.Index!
+[Index.BTree(Name = "idx", Columns = ["Col"])]            // Collection expressions don't work in attributes!
+```
+
+### CORRECT PATTERNS
+
+```csharp
+// CORRECT IMPORTS
+using SpacetimeDB;
+
+// CORRECT TABLE — must be partial struct
+[SpacetimeDB.Table(Name = "player", Public = true)]
+public partial struct Player
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong Id;
+
+    public Identity OwnerId;
+    public string Name;
+}
+
+// CORRECT MODULE — must be static partial class
+public static partial class Module
+{
+    [SpacetimeDB.Reducer]
+    public static void CreatePlayer(ReducerContext ctx, string name)
+    {
+        ctx.Db.Player.Insert(new Player { Id = 0, OwnerId = ctx.Sender, Name = name });
+    }
+}
+
+// CORRECT DATABASE ACCESS — PascalCase, index-based lookups
+var player = ctx.Db.Player.Id.Find(playerId);
+var player = ctx.Db.Player.OwnerId.Find(ctx.Sender);
+
+// CORRECT SUM TYPE — partial record with named tuple elements
+[SpacetimeDB.Type]
+public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
+```
+
+### DO NOT
+
+- **Forget `partial` keyword** — required on all tables and Module class
+- **Use lowercase table access** — `ctx.Db.Player` not `ctx.Db.player`
+- **Try to use procedures** — C# does not support procedures yet
+- **Use `Optional<T>`** — use C# nullable syntax `T?` instead
+- **Use struct for sum types** — must be `partial record`
+
+---
+
+## Common Mistakes Table
+
+### Server-side errors
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| Missing `partial` keyword | `public partial struct Table` | Generated code won't compile |
+| `ctx.Db.player` (lowercase) | `ctx.Db.Player` (PascalCase) | Property not found |
+| `Optional<string>` | `string?` | Type not found |
+| `ctx.Db.Table.Get(id)` | `ctx.Db.Table.Id.Find(id)` | Method not found |
+| Wrong .csproj name | `StdbModule.csproj` | Publish fails silently |
+| .NET 9 SDK | .NET 8 SDK only | WASI compilation fails |
+| Missing WASI workload | `dotnet workload install wasi-experimental` | Build fails |
+| `[Procedure]` attribute | Reducers only | Procedures not supported in C# |
+| Missing `Public = true` | Add to `[Table]` attribute | Clients can't subscribe |
+| Using `Random` | Avoid non-deterministic code | Sandbox violation |
+| async/await in reducers | Synchronous only | Not supported |
+| `[Index.BTree(...)]` | `[SpacetimeDB.Index.BTree(...)]` | Ambiguous with System.Index |
+| `Columns = ["A", "B"]` | `Columns = new[] { "A", "B" }` | Collection expressions invalid in attributes |
+| `partial struct : TaggedEnum` | `partial record : TaggedEnum` | Sum types must be record |
+| `TaggedEnum<(A, B)>` | `TaggedEnum<(A A, B B)>` | Tuple must include variant names |
+
+### Client-side errors
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| Wrong namespace | `using SpacetimeDB.ClientApi;` | Types not found |
+| Not calling `FrameTick()` | `conn.FrameTick()` in Update loop | No callbacks fire |
+| Accessing `conn.Db` from background thread | Copy data in callback, process elsewhere | Data races |
+
+---
+
+## Hard Requirements
+
+1. **Tables and Module MUST be `partial`** — required for code generation
+2. **Use PascalCase for table access** — `ctx.Db.TableName`, not `ctx.Db.tableName`
+3. **Project file MUST be named `StdbModule.csproj`** — CLI requirement
+4. **Requires .NET 8 SDK** — .NET 9 and newer not yet supported
+5. **Install WASI workload** — `dotnet workload install wasi-experimental`
+6. **C# does NOT support procedures** — use reducers only
+7. **Reducers must be deterministic** — no filesystem, network, timers, or `Random`
+8. **Add `Public = true`** — if clients need to subscribe to a table
+9. **Use `T?` for nullable fields** — not `Optional<T>`
+10. **Pass `0` for auto-increment** — to trigger ID generation on insert
+11. **Sum types must be `partial record`** — not struct or class
+12. **Fully qualify Index attribute** — `[SpacetimeDB.Index.BTree]` to avoid System.Index ambiguity
+
+---
+
+## Server-Side Module Development
+
+### Table Definition (CRITICAL)
+
+**Tables MUST use `partial struct` or `partial class` for code generation.**
+
+```csharp
+using SpacetimeDB;
+
+// WRONG — missing partial!
+[SpacetimeDB.Table(Name = "player")]
+public struct Player { }  // Will not generate properly!
+
+// RIGHT — with partial keyword
+[SpacetimeDB.Table(Name = "player", Public = true)]
+public partial struct Player
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong Id;
+
+    public Identity OwnerId;
+    public string Name;
+    public Timestamp CreatedAt;
+}
+
+// With indexes
+[SpacetimeDB.Table(Name = "task", Public = true)]
+public partial struct Task
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong Id;
+
+    [SpacetimeDB.Index.BTree]
+    public Identity OwnerId;
+
+    public string Title;
+    public bool Completed;
+}
+
+// Multi-column index
+[SpacetimeDB.Table(Name = "score", Public = true)]
+[SpacetimeDB.Index.BTree(Name = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
+public partial struct Score
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong Id;
+
+    public Identity PlayerId;
+    public string GameId;
+    public int Points;
+}
+```
+
+### Field Attributes
+
+```csharp
+[SpacetimeDB.PrimaryKey]     // Exactly one per table (required)
+[SpacetimeDB.AutoInc]        // Auto-increment (integer fields only)
+[SpacetimeDB.Unique]         // Unique constraint
+[SpacetimeDB.Index.BTree]    // Single-column B-tree index
+[SpacetimeDB.Default(value)] // Default value for new columns
+```
+
+### Column Types
+
+```csharp
+byte, sbyte, short, ushort   // 8/16-bit integers
+int, uint, long, ulong       // 32/64-bit integers
+float, double                // Floats
+bool                         // Boolean
+string                       // Text
+Identity                     // User identity
+Timestamp                    // Timestamp
+ScheduleAt                   // For scheduled tables
+T?                           // Nullable (e.g., string?)
+List<T>                      // Arrays
+```
+
+### Insert with Auto-increment
+
+```csharp
+// Insert returns the row with generated ID
+var player = ctx.Db.Player.Insert(new Player
+{
+    Id = 0,  // Pass 0 to trigger auto-increment
+    OwnerId = ctx.Sender,
+    Name = name,
+    CreatedAt = ctx.Timestamp
+});
+ulong newId = player.Id;  // Get actual generated ID
+```
+
+### Module and Reducers
+
+**The Module class MUST be `public static partial class`.**
+
+```csharp
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Reducer]
+    public static void CreateTask(ReducerContext ctx, string title)
+    {
+        // Validate
+        if (string.IsNullOrEmpty(title))
+        {
+            throw new Exception("Title cannot be empty");  // Rolls back transaction
+        }
+
+        // Insert
+        ctx.Db.Task.Insert(new Task
+        {
+            Id = 0,
+            OwnerId = ctx.Sender,
+            Title = title,
+            Completed = false
+        });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void CompleteTask(ReducerContext ctx, ulong taskId)
+    {
+        var task = ctx.Db.Task.Id.Find(taskId);
+        if (task is null)
+        {
+            throw new Exception("Task not found");
+        }
+
+        if (task.Value.OwnerId != ctx.Sender)
+        {
+            throw new Exception("Not authorized");
+        }
+
+        ctx.Db.Task.Id.Update(task.Value with { Completed = true });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void DeleteTask(ReducerContext ctx, ulong taskId)
+    {
+        ctx.Db.Task.Id.Delete(taskId);
+    }
+}
+```
+
+### Lifecycle Reducers
+
+```csharp
+public static partial class Module
+{
+    [SpacetimeDB.Reducer(ReducerKind.Init)]
+    public static void Init(ReducerContext ctx)
+    {
+        // Called once when module is first published
+        Log.Info("Module initialized");
+    }
+
+    [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+    public static void OnConnect(ReducerContext ctx)
+    {
+        // ctx.Sender is the connecting client
+        Log.Info($"Client connected: {ctx.Sender}");
+    }
+
+    [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
+    public static void OnDisconnect(ReducerContext ctx)
+    {
+        // Clean up client state
+        Log.Info($"Client disconnected: {ctx.Sender}");
+    }
+}
+```
+
+### ReducerContext API
+
+```csharp
+ctx.Sender          // Identity of the caller
+ctx.Timestamp       // Current timestamp
+ctx.Db              // Database access
+ctx.Identity        // Module's own identity
+ctx.ConnectionId    // Connection ID (nullable)
+```
+
+### Database Access
+
+#### Naming Convention
+
+- **Tables**: Use PascalCase singular names in the `Name` attribute
+  - `[Table(Name = "User")]` → `ctx.Db.User`
+  - `[Table(Name = "PlayerStats")]` → `ctx.Db.PlayerStats`
+- **Indexes**: PascalCase, match field name
+  - Field `OwnerId` with `[Index.BTree]` → `ctx.Db.User.OwnerId`
+
+#### Primary Key Operations
+
+```csharp
+// Find by primary key — returns nullable
+if (ctx.Db.Task.Id.Find(taskId) is Task task)
+{
+    // Use task
+}
+
+// Update by primary key
+ctx.Db.Task.Id.Update(updatedTask);
+
+// Delete by primary key
+ctx.Db.Task.Id.Delete(taskId);
+```
+
+#### Index Operations
+
+```csharp
+// Find by unique index — returns nullable
+if (ctx.Db.Player.Username.Find("alice") is Player player)
+{
+    // Found player
+}
+
+// Filter by B-tree index — returns iterator
+foreach (var task in ctx.Db.Task.OwnerId.Filter(ctx.Sender))
+{
+    // Process each task
+}
+```
+
+#### Iterate All Rows
+
+```csharp
+// Full table scan
+foreach (var task in ctx.Db.Task.Iter())
+{
+    // Process each task
+}
+```
+
+### Custom Types
+
+**Use `[SpacetimeDB.Type]` for custom structs/enums. Must be `partial`.**
+
+```csharp
+using SpacetimeDB;
+
+[SpacetimeDB.Type]
+public partial struct Position
+{
+    public int X;
+    public int Y;
+}
+
+[SpacetimeDB.Type]
+public partial struct PlayerStats
+{
+    public int Health;
+    public int Mana;
+    public Position Location;
+}
+
+// Use in table
+[SpacetimeDB.Table(Name = "player", Public = true)]
+public partial struct Player
+{
+    [SpacetimeDB.PrimaryKey]
+    public Identity Id;
+
+    public string Name;
+    public PlayerStats Stats;
+}
+```
+
+### Sum Types / Tagged Enums (CRITICAL)
+
+**Sum types MUST use `partial record` and inherit from `TaggedEnum<T>`.**
+
+```csharp
+using SpacetimeDB;
+
+// Step 1: Define variant types as partial structs with [Type]
+[SpacetimeDB.Type]
+public partial struct Circle { public int Radius; }
+
+[SpacetimeDB.Type]
+public partial struct Rectangle { public int Width; public int Height; }
+
+// Step 2: Define sum type as partial RECORD (not struct!) inheriting TaggedEnum
+// The tuple MUST include both the type AND a name for each variant
+[SpacetimeDB.Type]
+public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
+
+// Step 3: Use in a table
+[SpacetimeDB.Table(Name = "drawings", Public = true)]
+public partial struct Drawing
+{
+    [SpacetimeDB.PrimaryKey]
+    public int Id;
+    public Shape ShapeA;
+    public Shape ShapeB;
+}
+```
+
+#### Creating Sum Type Values
+
+```csharp
+// Create variant instances using the generated nested types
+var circle = new Shape.Circle(new Circle { Radius = 10 });
+var rect = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
+
+// Insert into table
+ctx.Db.Drawing.Insert(new Drawing { Id = 1, ShapeA = circle, ShapeB = rect });
+```
+
+#### COMMON SUM TYPE MISTAKES
+
+| Wrong | Right | Why |
+|-------|-------|-----|
+| `partial struct Shape : TaggedEnum<...>` | `partial record Shape : TaggedEnum<...>` | Must be `record`, not `struct` |
+| `TaggedEnum<(Circle, Rectangle)>` | `TaggedEnum<(Circle Circle, Rectangle Rectangle)>` | Tuple must have names |
+| `new Shape { ... }` | `new Shape.Circle(new Circle { ... })` | Use nested variant constructor |
+
+### Scheduled Tables
+
+```csharp
+using SpacetimeDB;
+
+[SpacetimeDB.Table(Name = "reminder", Scheduled = nameof(Module.SendReminder))]
+public partial struct Reminder
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong Id;
+
+    public string Message;
+    public ScheduleAt ScheduledAt;
+}
+
+public static partial class Module
+{
+    // Scheduled reducer receives the full row
+    [SpacetimeDB.Reducer]
+    public static void SendReminder(ReducerContext ctx, Reminder reminder)
+    {
+        Log.Info($"Reminder: {reminder.Message}");
+        // Row is automatically deleted after reducer completes
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void CreateReminder(ReducerContext ctx, string message, ulong delaySecs)
+    {
+        var futureTime = ctx.Timestamp + TimeSpan.FromSeconds(delaySecs);
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Id = 0,
+            Message = message,
+            ScheduledAt = ScheduleAt.Time(futureTime)
+        });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void CancelReminder(ReducerContext ctx, ulong reminderId)
+    {
+        ctx.Db.Reminder.Id.Delete(reminderId);
+    }
+}
+```
+
+### Logging
+
+```csharp
+using SpacetimeDB;
+
+Log.Debug("Debug message");
+Log.Info("Information");
+Log.Warn("Warning");
+Log.Error("Error occurred");
+Log.Panic("Critical failure");  // Terminates execution
+```
+
+### Data Visibility
+
+**`Public = true` exposes ALL rows to ALL clients.**
+
+| Scenario | Pattern |
+|----------|---------|
+| Everyone sees all rows | `[Table(Name = "x", Public = true)]` |
+| Server-only data | `[Table(Name = "x")]` (private by default) |
+
+### Project Setup
+
+#### Required .csproj (MUST be named `StdbModule.csproj`)
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.ServerSdk" Version="1.*" />
+  </ItemGroup>
+</Project>
+```
+
+#### Prerequisites
+
+```bash
+# Install .NET 8 SDK (required, not .NET 9)
+# Download from https://dotnet.microsoft.com/download/dotnet/8.0
+
+# Install WASI workload
+dotnet workload install wasi-experimental
+```
+
+### Commands
+
+```bash
+# Start local server
+spacetime start
+
+# Publish module
+spacetime publish <module-name> --project-path <backend-dir>
+
+# Clear database and republish
+spacetime publish <module-name> --clear-database -y --project-path <backend-dir>
+
+# Generate bindings
+spacetime generate --lang csharp --out-dir <client>/SpacetimeDB --project-path <backend-dir>
+
+# View logs
+spacetime logs <module-name>
+```
+
+---
+
+## Client-Side SDK
+
+### Overview
 
 The SpacetimeDB C# SDK enables .NET applications and Unity games to:
 - Connect to SpacetimeDB databases over WebSocket
@@ -22,9 +592,9 @@ The SpacetimeDB C# SDK enables .NET applications and Unity games to:
 
 **Critical Requirement**: The C# SDK requires manual connection advancement. You must call `FrameTick()` regularly to process messages.
 
-## Installation
+### Installation
 
-### .NET Console/Library Applications
+#### .NET Console/Library Applications
 
 Add the NuGet package:
 
@@ -32,7 +602,7 @@ Add the NuGet package:
 dotnet add package SpacetimeDB.ClientSDK
 ```
 
-### Unity Applications
+#### Unity Applications
 
 Add via Unity Package Manager using the git URL:
 
@@ -46,7 +616,7 @@ Steps:
 3. Select "Add package from git URL"
 4. Paste the URL above and click Add
 
-## Generate Module Bindings
+### Generate Module Bindings
 
 Before using the SDK, generate type-safe bindings from your module:
 
@@ -61,9 +631,9 @@ This creates:
 - `Reducers/*.g.cs` - Reducer invocation methods
 - `Types/*.g.cs` - Row types and custom types from the module
 
-## Connection Setup
+### Connection Setup
 
-### Basic Connection Pattern
+#### Basic Connection Pattern
 
 ```csharp
 using SpacetimeDB;
@@ -93,7 +663,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 }
 ```
 
-### Connection Builder Methods
+#### Connection Builder Methods
 
 | Method | Description |
 |--------|-------------|
@@ -106,11 +676,11 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 | `OnDisconnect(callback)` | Called when disconnected |
 | `Build()` | Create and open the connection |
 
-## Critical: Advancing the Connection
+### Critical: Advancing the Connection
 
 **The SDK does NOT automatically process messages.** You must call `FrameTick()` regularly.
 
-### Console Application Loop
+#### Console Application Loop
 
 ```csharp
 while (true)
@@ -120,7 +690,7 @@ while (true)
 }
 ```
 
-### Unity MonoBehaviour Pattern
+#### Unity MonoBehaviour Pattern
 
 ```csharp
 public class SpacetimeManager : MonoBehaviour
@@ -136,9 +706,9 @@ public class SpacetimeManager : MonoBehaviour
 
 **Warning**: Do NOT call `FrameTick()` from a background thread. It modifies `conn.Db` and can cause data races with main thread access.
 
-## Subscribing to Tables
+### Subscribing to Tables
 
-### Using SQL Queries
+#### Using SQL Queries
 
 ```csharp
 void OnConnected(DbConnection conn, Identity identity, string authToken)
@@ -161,7 +731,7 @@ void OnSubscriptionApplied(SubscriptionEventContext ctx)
 }
 ```
 
-### Using Typed Query Builder
+#### Using Typed Query Builder
 
 ```csharp
 conn.SubscriptionBuilder()
@@ -172,7 +742,7 @@ conn.SubscriptionBuilder()
     .Subscribe();
 ```
 
-### Subscribe to All Tables (Development Only)
+#### Subscribe to All Tables (Development Only)
 
 ```csharp
 conn.SubscriptionBuilder()
@@ -182,7 +752,7 @@ conn.SubscriptionBuilder()
 
 **Warning**: `SubscribeToAllTables()` cannot be mixed with `Subscribe()` on the same connection.
 
-### Subscription Handle
+#### Subscription Handle
 
 ```csharp
 SubscriptionHandle handle = conn.SubscriptionBuilder()
@@ -199,11 +769,11 @@ bool isActive = handle.IsActive;
 bool isEnded = handle.IsEnded;
 ```
 
-## Accessing the Client Cache
+### Accessing the Client Cache
 
 Subscribed data is stored in `conn.Db` (or `ctx.Db` in callbacks).
 
-### Iterating All Rows
+#### Iterating All Rows
 
 ```csharp
 foreach (var player in ctx.Db.Player.Iter())
@@ -212,13 +782,13 @@ foreach (var player in ctx.Db.Player.Iter())
 }
 ```
 
-### Count Rows
+#### Count Rows
 
 ```csharp
 int playerCount = ctx.Db.Player.Count;
 ```
 
-### Find by Unique/Primary Key
+#### Find by Unique/Primary Key
 
 For columns marked `[Unique]` or `[PrimaryKey]` on the server:
 
@@ -233,7 +803,7 @@ if (player != null)
 }
 ```
 
-### Filter by BTree Index
+#### Filter by BTree Index
 
 For columns with `[Index.BTree]` on the server:
 
@@ -244,18 +814,18 @@ IEnumerable<Player> levelOnePlayers = ctx.Db.Player.Level.Filter(1);
 int count = levelOnePlayers.Count();
 ```
 
-### Remote Query (Ad-hoc SQL)
+#### Remote Query (Ad-hoc SQL)
 
 ```csharp
 var result = ctx.Db.Player.RemoteQuery("WHERE level > 10");
 Player[] highLevelPlayers = result.Result;
 ```
 
-## Row Event Callbacks
+### Row Event Callbacks
 
 Register callbacks to react to table changes:
 
-### OnInsert
+#### OnInsert
 
 ```csharp
 ctx.Db.Player.OnInsert += (EventContext ctx, Player player) => {
@@ -263,7 +833,7 @@ ctx.Db.Player.OnInsert += (EventContext ctx, Player player) => {
 };
 ```
 
-### OnDelete
+#### OnDelete
 
 ```csharp
 ctx.Db.Player.OnDelete += (EventContext ctx, Player player) => {
@@ -271,7 +841,7 @@ ctx.Db.Player.OnDelete += (EventContext ctx, Player player) => {
 };
 ```
 
-### OnUpdate
+#### OnUpdate
 
 Fires when a row with a primary key is replaced:
 
@@ -281,7 +851,7 @@ ctx.Db.Player.OnUpdate += (EventContext ctx, Player oldRow, Player newRow) => {
 };
 ```
 
-### Checking Event Source
+#### Checking Event Source
 
 ```csharp
 ctx.Db.Player.OnInsert += (EventContext ctx, Player player) => {
@@ -298,11 +868,11 @@ ctx.Db.Player.OnInsert += (EventContext ctx, Player player) => {
 };
 ```
 
-## Calling Reducers
+### Calling Reducers
 
 Reducers are server-side functions that modify the database.
 
-### Invoke a Reducer
+#### Invoke a Reducer
 
 ```csharp
 // Reducers are methods on ctx.Reducers or conn.Reducers
@@ -311,7 +881,7 @@ ctx.Reducers.CreatePlayer("NewPlayer");
 ctx.Reducers.UpdateScore(playerId, 100);
 ```
 
-### Reducer Callbacks
+#### Reducer Callbacks
 
 React when a reducer completes (success or failure):
 
@@ -328,7 +898,7 @@ conn.Reducers.OnSendMessage += (ReducerEventContext ctx, string text) => {
 };
 ```
 
-### Unhandled Reducer Errors
+#### Unhandled Reducer Errors
 
 Catch reducer errors without specific handlers:
 
@@ -338,7 +908,7 @@ conn.OnUnhandledReducerError += (ReducerEventContext ctx, Exception ex) => {
 };
 ```
 
-### Reducer Event Properties
+#### Reducer Event Properties
 
 ```csharp
 conn.Reducers.OnSendMessage += (ReducerEventContext ctx, string text) => {
@@ -352,9 +922,9 @@ conn.Reducers.OnSendMessage += (ReducerEventContext ctx, string text) => {
 };
 ```
 
-## Identity and Authentication
+### Identity and Authentication
 
-### Getting Current Identity
+#### Getting Current Identity
 
 ```csharp
 // In OnConnect callback
@@ -370,7 +940,7 @@ Identity? myIdentity = ctx.Identity;
 ConnectionId myConnectionId = ctx.ConnectionId;
 ```
 
-### Reconnecting with Token
+#### Reconnecting with Token
 
 ```csharp
 string savedToken = PlayerPrefs.GetString("SpacetimeToken", null);
@@ -383,15 +953,15 @@ DbConnection.Builder()
     .Build();
 ```
 
-### Anonymous Connection
+#### Anonymous Connection
 
 Pass `null` to `WithToken` or omit it entirely for a new anonymous identity.
 
-## BSATN Serialization
+### BSATN Serialization
 
 SpacetimeDB uses BSATN (Binary SpacetimeDB Algebraic Type Notation) for serialization. The SDK handles this automatically for generated types.
 
-### Supported Types
+#### Supported Types
 
 | C# Type | SpacetimeDB Type |
 |---------|------------------|
@@ -411,7 +981,7 @@ SpacetimeDB uses BSATN (Binary SpacetimeDB Algebraic Type Notation) for serializ
 | `Timestamp` | Timestamp |
 | `Uuid` | Uuid |
 
-### Custom Types
+#### Custom Types
 
 Types marked with `[SpacetimeDB.Type]` on the server are generated as C# types:
 
@@ -435,7 +1005,7 @@ public partial struct Vector3 : IEquatable<Vector3>
 }
 ```
 
-### TaggedEnum (Sum Types)
+#### TaggedEnum (Sum Types) on Client
 
 ```csharp
 // Server
@@ -458,7 +1028,7 @@ switch (gameEvent)
 }
 ```
 
-### Result Type
+#### Result Type
 
 ```csharp
 // Result<T, E> for success/error handling
@@ -474,15 +1044,15 @@ else if (result is Result<Player, string>.Err(var error))
 }
 ```
 
-## Unity Integration
+### Unity Integration
 
-### Project Setup
+#### Project Setup
 
 1. Add the SpacetimeDB package via Package Manager
 2. Generate bindings and add to your Unity project
 3. Create a manager MonoBehaviour
 
-### SpacetimeManager Pattern
+#### SpacetimeManager Pattern
 
 ```csharp
 using UnityEngine;
@@ -572,7 +1142,7 @@ public class SpacetimeManager : MonoBehaviour
 }
 ```
 
-### Unity-Specific Considerations
+#### Unity-Specific Considerations
 
 1. **Main Thread Only**: All SpacetimeDB callbacks run on the main thread (during `FrameTick()`)
 
@@ -582,7 +1152,7 @@ public class SpacetimeManager : MonoBehaviour
 
 4. **PlayerPrefs**: Use for token persistence (or use a more secure method for production)
 
-### Spawning GameObjects from Table Data
+#### Spawning GameObjects from Table Data
 
 ```csharp
 public class PlayerSpawner : MonoBehaviour
@@ -640,7 +1210,7 @@ public class PlayerSpawner : MonoBehaviour
 }
 ```
 
-## Thread Safety
+### Thread Safety
 
 The C# SDK is NOT thread-safe. Follow these rules:
 
@@ -666,9 +1236,9 @@ conn.Db.Player.OnInsert += (ctx, player) => {
 };
 ```
 
-## Error Handling
+### Error Handling
 
-### Connection Errors
+#### Connection Errors
 
 ```csharp
 .OnConnectError((err) => {
@@ -677,7 +1247,7 @@ conn.Db.Player.OnInsert += (ctx, player) => {
 })
 ```
 
-### Subscription Errors
+#### Subscription Errors
 
 ```csharp
 .OnError((ctx, err) => {
@@ -686,7 +1256,7 @@ conn.Db.Player.OnInsert += (ctx, player) => {
 })
 ```
 
-### Reducer Errors
+#### Reducer Errors
 
 ```csharp
 conn.Reducers.OnMyReducer += (ctx, args) => {
@@ -702,7 +1272,7 @@ conn.OnUnhandledReducerError += (ctx, ex) => {
 };
 ```
 
-## Complete Example
+### Complete Console Example
 
 ```csharp
 using System;
@@ -772,9 +1342,9 @@ class Program
 }
 ```
 
-## Common Patterns
+### Common Patterns
 
-### Optimistic Updates
+#### Optimistic Updates
 
 ```csharp
 // Show immediate feedback, correct on server response
@@ -804,7 +1374,7 @@ conn.Reducers.OnSendMessage += (ctx, text) => {
 };
 ```
 
-### Local Player Detection
+#### Local Player Detection
 
 ```csharp
 conn.Db.Player.OnInsert += (ctx, player) => {
@@ -823,7 +1393,7 @@ conn.Db.Player.OnInsert += (ctx, player) => {
 };
 ```
 
-### Waiting for Specific Data
+#### Waiting for Specific Data
 
 ```csharp
 async Task<Player> WaitForPlayerAsync(Identity playerId)
@@ -847,6 +1417,8 @@ async Task<Player> WaitForPlayerAsync(Identity playerId)
     return await tcs.Task;
 }
 ```
+
+---
 
 ## Troubleshooting
 
@@ -873,6 +1445,14 @@ async Task<Player> WaitForPlayerAsync(Identity playerId)
 - **NullReferenceException in Update**: Guard with `conn?.FrameTick()`
 - **Missing types**: Regenerate bindings after module changes
 - **Assembly errors**: Ensure SpacetimeDB assemblies are in correct folder
+
+### Build Issues
+
+- **WASI compilation fails**: Ensure .NET 8 SDK (not 9+), install WASI workload
+- **Publish fails silently**: Ensure project is named `StdbModule.csproj`
+- **Generated code errors**: Ensure all tables/types have `partial` keyword
+
+---
 
 ## References
 

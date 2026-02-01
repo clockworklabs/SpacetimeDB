@@ -11,6 +11,94 @@ metadata:
 
 Build real-time TypeScript clients that connect directly to SpacetimeDB modules. The SDK provides type-safe database access, automatic synchronization, and reactive updates for web apps, Node.js, Deno, Bun, and other JavaScript runtimes.
 
+---
+
+## HALLUCINATED APIs — DO NOT USE
+
+**These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
+
+```typescript
+// WRONG PACKAGE — does not exist
+import { SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+
+// WRONG — these methods don't exist
+SpacetimeDBClient.connect(...);
+SpacetimeDBClient.call("reducer_name", [...]);
+connection.call("reducer_name", [arg1, arg2]);
+
+// WRONG — positional reducer arguments
+conn.reducers.doSomething("value");  // WRONG!
+```
+
+### CORRECT PATTERNS:
+
+```typescript
+// CORRECT IMPORTS
+import { DbConnection, tables } from './module_bindings';  // Generated!
+import { SpacetimeDBProvider, useTable, Identity } from 'spacetimedb/react';
+
+// CORRECT REDUCER CALLS — object syntax, not positional!
+conn.reducers.doSomething({ value: 'test' });
+conn.reducers.updateItem({ itemId: 1n, newValue: 42 });
+
+// CORRECT DATA ACCESS — useTable returns [rows, isLoading]
+const [items, isLoading] = useTable(tables.item);
+```
+
+### DO NOT:
+- **Invent hooks** like `useItems()`, `useData()` — use `useTable(tables.tableName)`
+- **Import from fake packages** — only `spacetimedb`, `spacetimedb/react`, `./module_bindings`
+
+---
+
+## Common Mistakes Table
+
+### Server-side errors
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| Missing `package.json` | Create `package.json` | "could not detect language" |
+| Missing `tsconfig.json` | Create `tsconfig.json` | "TsconfigNotFound" |
+| Entrypoint not at `src/index.ts` | Use `src/index.ts` | Module won't bundle |
+| `indexes` in COLUMNS (2nd arg) | `indexes` in OPTIONS (1st arg) | "reading 'tag'" error |
+| Index without `algorithm` | `algorithm: 'btree'` | "reading 'tag'" error |
+| `filter({ ownerId })` | `filter(ownerId)` | "does not exist in type 'Range'" |
+| `.filter()` on unique column | `.find()` on unique column | TypeError |
+| `insert({ ...without id })` | `insert({ id: 0n, ... })` | "Property 'id' is missing" |
+| `const id = table.insert(...)` | `const row = table.insert(...)` | `.insert()` returns ROW, not ID |
+| `.unique()` + explicit index | Just use `.unique()` | "name is used for multiple entities" |
+| Import spacetimedb from index.ts | Import from schema.ts | "Cannot access before initialization" |
+| Multi-column index `.filter()` | Use single-column index | PANIC or silent empty results |
+| `.iter()` in views | Use index lookups only | Views can't scan tables |
+| `ctx.db` in procedures | `ctx.withTx(tx => tx.db...)` | Procedures need explicit transactions |
+| `ctx.myTable` in procedure tx | `tx.db.myTable` | Wrong context variable |
+
+### Client-side errors
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| `@spacetimedb/sdk` | `spacetimedb` | 404 / missing subpath |
+| `conn.reducers.foo("val")` | `conn.reducers.foo({ param: "val" })` | Wrong reducer syntax |
+| Inline `connectionBuilder` | `useMemo(() => ..., [])` | Reconnects every render |
+| `const rows = useTable(table)` | `const [rows, isLoading] = useTable(table)` | Tuple destructuring |
+| Optimistic UI updates | Let subscriptions drive state | Desync issues |
+| `<SpacetimeDBProvider builder={...}>` | `connectionBuilder={...}` | Wrong prop name |
+
+---
+
+## Hard Requirements
+
+1. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
+2. **Reducers are transactional** — they do not return data
+3. **Reducers must be deterministic** — no filesystem, network, timers, random
+4. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
+5. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
+6. **useTable returns a tuple** — `const [rows, isLoading] = useTable(tables.myTable)`
+7. **Memoize connectionBuilder** — wrap in `useMemo(() => ..., [])` to prevent reconnects
+8. **Views can only use index lookups** — `.iter()` is not allowed in views
+
+---
+
 ## Installation
 
 ```bash
@@ -251,11 +339,14 @@ connection.db.player.onInsert((ctx, player) => {
 
 ## Calling Reducers
 
-Reducers are server-side functions that modify the database:
+Reducers are server-side functions that modify the database. **CRITICAL: Use object syntax, not positional arguments.**
 
 ```typescript
-// Call a reducer
+// CORRECT: Object syntax
 connection.reducers.createPlayer({ name: 'Alice', location: { x: 0, y: 0 } });
+
+// WRONG: Positional arguments
+// connection.reducers.createPlayer('Alice', { x: 0, y: 0 });  // DO NOT DO THIS
 
 // Listen for reducer results
 connection.reducers.onCreatePlayer((ctx, args) => {
@@ -272,6 +363,10 @@ connection.reducers.onCreatePlayer((ctx, args) => {
 connection.reducers.removeOnCreatePlayer(callback);
 ```
 
+### Snake_case to camelCase conversion
+- Server: `spacetimedb.reducer('do_something', ...)`
+- Client: `conn.reducers.doSomething({ ... })`
+
 ### Reducer Flags
 
 Control how the server handles reducer calls:
@@ -283,6 +378,109 @@ connection.setReducerFlags.movePlayer('NoSuccessNotify');
 // FullUpdate: Always send full TransactionUpdate (default)
 connection.setReducerFlags.movePlayer('FullUpdate');
 ```
+
+## Views
+
+Views provide filtered access to private table data based on the connected user.
+
+### ViewContext vs AnonymousViewContext
+
+```typescript
+// ViewContext — has ctx.sender, result varies per user (computed per-subscriber)
+spacetimedb.view({ name: 'my_items', public: true }, t.array(Item.rowType), (ctx) => {
+  return [...ctx.db.item.by_owner.filter(ctx.sender)];
+});
+
+// AnonymousViewContext — no ctx.sender, same result for everyone (shared, better perf)
+spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(LeaderboardRow), (ctx) => {
+  return [...ctx.db.player.by_score.filter(/* top scores */)];
+});
+```
+
+### CRITICAL: Views can only use index lookups
+
+```typescript
+// WRONG — views cannot use .iter()
+spacetimedb.view(
+  { name: 'my_data_wrong', public: true },
+  t.array(PrivateData.rowType),
+  (ctx) => [...ctx.db.privateData.iter()]  // NOT ALLOWED
+);
+
+// RIGHT — use index lookup
+spacetimedb.view(
+  { name: 'my_data', public: true },
+  t.array(PrivateData.rowType),
+  (ctx) => [...ctx.db.privateData.by_owner.filter(ctx.sender)]
+);
+```
+
+### Subscribing to Views
+
+Views require explicit subscription:
+
+```typescript
+conn.subscriptionBuilder().subscribe([
+  'SELECT * FROM public_table',
+  'SELECT * FROM my_data',  // Views need explicit SQL!
+]);
+```
+
+## Procedures (Beta)
+
+**Procedures are for side effects (HTTP requests, etc.) that reducers can't do.**
+
+Procedures are currently in beta. API may change.
+
+### Defining a procedure
+
+```typescript
+spacetimedb.procedure(
+  'fetch_external_data',
+  { url: t.string() },
+  t.string(),  // return type
+  (ctx, { url }) => {
+    const response = ctx.http.fetch(url);
+    return response.text();
+  }
+);
+```
+
+### CRITICAL: Database access in procedures
+
+**Procedures don't have `ctx.db`. Use `ctx.withTx()` for database access.**
+
+```typescript
+spacetimedb.procedure('save_fetched_data', { url: t.string() }, t.unit(), (ctx, { url }) => {
+  // Fetch external data (outside transaction)
+  const response = ctx.http.fetch(url);
+  const data = response.text();
+
+  // WRONG — ctx.db doesn't exist in procedures
+  // ctx.db.myTable.insert({ ... });
+
+  // RIGHT — use ctx.withTx() for database access
+  ctx.withTx(tx => {
+    tx.db.myTable.insert({
+      id: 0n,
+      content: data,
+      fetchedAt: tx.timestamp,
+      fetchedBy: tx.sender,
+    });
+  });
+
+  return {};
+});
+```
+
+### Key differences from reducers
+
+| Reducers | Procedures |
+|----------|------------|
+| `ctx.db` available directly | Must use `ctx.withTx(tx => tx.db...)` |
+| Automatic transaction | Manual transaction management |
+| No HTTP/network | `ctx.http.fetch()` available |
+| No return values to caller | Can return data to caller |
 
 ## Identity and Authentication
 
@@ -303,6 +501,9 @@ const parsed = Identity.fromString('0x1234...');
 
 // Zero identity
 const zero = Identity.zero();
+
+// Compare identities using toHexString()
+const isOwner = row.ownerId.toHexString() === myIdentity.toHexString();
 ```
 
 ### Persisting Authentication
@@ -318,6 +519,17 @@ const zero = Identity.zero();
 .withToken(localStorage.getItem('auth_token') ?? undefined)
 ```
 
+### Stale token handling
+
+```typescript
+const onConnectError = (_ctx: ErrorContext, err: Error) => {
+  if (err.message?.includes('Unauthorized') || err.message?.includes('401')) {
+    localStorage.removeItem('auth_token');
+    window.location.reload();
+  }
+};
+```
+
 ## React Integration
 
 The SDK includes React hooks for reactive UI updates.
@@ -325,27 +537,39 @@ The SDK includes React hooks for reactive UI updates.
 ### Provider Setup
 
 ```tsx
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, query } from './module_bindings';
 import App from './App';
 
-const connectionBuilder = DbConnection.builder()
-  .withUri('ws://localhost:3000')
-  .withModuleName('my_game')
-  .onConnect((conn, identity, token) => {
-    console.log('Connected:', identity.toHexString());
-    conn.subscriptionBuilder().subscribe(query.player.build());
-  })
-  .onDisconnect(() => console.log('Disconnected'))
-  .onConnectError((ctx, err) => console.error('Error:', err));
+function Root() {
+  // CRITICAL: Memoize to prevent reconnects on every render
+  const connectionBuilder = useMemo(() =>
+    DbConnection.builder()
+      .withUri('ws://localhost:3000')
+      .withModuleName('my_game')
+      .withToken(localStorage.getItem('auth_token') || undefined)
+      .onConnect((conn, identity, token) => {
+        console.log('Connected:', identity.toHexString());
+        localStorage.setItem('auth_token', token);
+        conn.subscriptionBuilder().subscribe(query.player.build());
+      })
+      .onDisconnect(() => console.log('Disconnected'))
+      .onConnectError((ctx, err) => console.error('Error:', err)),
+    []  // Empty deps - only create once
+  );
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+  return (
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
       <App />
     </SpacetimeDBProvider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <Root />
   </React.StrictMode>
 );
 ```
@@ -374,14 +598,14 @@ function ConnectionStatus() {
 
 ### useTable Hook
 
-Subscribe to table data with reactive updates:
+Subscribe to table data with reactive updates. **CRITICAL: Returns a tuple `[rows, isLoading]`.**
 
 ```tsx
 import { useTable, where, eq } from 'spacetimedb/react';
 import { tables } from './module_bindings';
 
 function PlayerList() {
-  // All players
+  // CORRECT: Tuple destructuring
   const [players, isLoading] = useTable(tables.player);
 
   if (isLoading) return <div>Loading...</div>;
@@ -433,6 +657,7 @@ function CreatePlayerForm() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // CORRECT: Object syntax
     createPlayer({ name, location: { x: 0, y: 0 } });
     setName('');
   };
@@ -491,6 +716,74 @@ async function main() {
 }
 
 main();
+```
+
+## Timestamps
+
+### Server-side
+
+```typescript
+import { Timestamp, ScheduleAt } from 'spacetimedb';
+
+// Current time
+ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
+
+// Future time (add microseconds)
+const future = ctx.timestamp.microsSinceUnixEpoch + 300_000_000n;  // 5 minutes
+```
+
+### Client-side (CRITICAL)
+
+**Timestamps are objects, not numbers:**
+
+```typescript
+// WRONG
+const date = new Date(row.createdAt);
+const date = new Date(Number(row.createdAt / 1000n));
+
+// RIGHT
+const date = new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
+```
+
+### ScheduleAt on client
+
+```typescript
+// ScheduleAt is a tagged union
+if (scheduleAt.tag === 'Time') {
+  const date = new Date(Number(scheduleAt.value.microsSinceUnixEpoch / 1000n));
+}
+```
+
+## Scheduled Tables
+
+```typescript
+// Scheduled table MUST use scheduledId and scheduledAt columns
+export const CleanupJob = table({
+  name: 'cleanup_job',
+  scheduled: 'run_cleanup'  // reducer name
+}, {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+  targetId: t.u64(),  // Your custom data
+});
+
+// Scheduled reducer receives full row as arg
+spacetimedb.reducer('run_cleanup', { arg: CleanupJob.rowType }, (ctx, { arg }) => {
+  // arg.scheduledId, arg.targetId available
+  // Row is auto-deleted after reducer completes
+});
+
+// Schedule a job
+import { ScheduleAt } from 'spacetimedb';
+const futureTime = ctx.timestamp.microsSinceUnixEpoch + 60_000_000n; // 60 seconds
+ctx.db.cleanupJob.insert({
+  scheduledId: 0n,
+  scheduledAt: ScheduleAt.time(futureTime),
+  targetId: someId
+});
+
+// Cancel a job by deleting the row
+ctx.db.cleanupJob.scheduledId.delete(jobId);
 ```
 
 ## Error Handling
@@ -584,6 +877,25 @@ import {
 } from './module_bindings';
 ```
 
+## Commands
+
+```bash
+# Start local server
+spacetime start
+
+# Publish module
+spacetime publish <module-name> --project-path <backend-dir>
+
+# Clear database and republish
+spacetime publish <module-name> --clear-database -y --project-path <backend-dir>
+
+# Generate bindings
+spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend-dir>
+
+# View logs
+spacetime logs <module-name>
+```
+
 ## Best Practices
 
 1. **Store auth tokens**: Save the token from `onConnect` for seamless reconnection.
@@ -599,6 +911,10 @@ import {
 6. **Unsubscribe when done**: Clean up subscriptions when components unmount or data is no longer needed.
 
 7. **Use primary keys**: Define primary keys on tables to enable `onUpdate` callbacks.
+
+8. **Memoize connectionBuilder**: Always wrap in `useMemo()` to prevent reconnects.
+
+9. **Let subscriptions drive state**: Avoid optimistic updates; let the server be the source of truth.
 
 ## Common Patterns
 
@@ -660,4 +976,28 @@ const [redTeamHighScorers] = useTable(
   where(eq('team', 'red')),  // Additional filtering in client
 );
 const filtered = redTeamHighScorers.filter(p => p.score >= 100);
+```
+
+## Project Structure
+
+### Server (`backend/spacetimedb/`)
+```
+src/schema.ts   -> Tables, export spacetimedb
+src/index.ts    -> Reducers, lifecycle, import schema
+package.json    -> { "type": "module", "dependencies": { "spacetimedb": "^1.11.0" } }
+tsconfig.json   -> Standard config
+```
+
+### Avoiding circular imports
+```
+schema.ts -> defines tables AND exports spacetimedb
+index.ts  -> imports spacetimedb from ./schema, defines reducers
+```
+
+### Client (`client/`)
+```
+src/module_bindings/ -> Generated (spacetime generate)
+src/main.tsx         -> Provider, connection setup
+src/App.tsx          -> UI components
+src/config.ts        -> MODULE_NAME, SPACETIMEDB_URI
 ```
