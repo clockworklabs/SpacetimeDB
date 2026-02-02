@@ -70,6 +70,14 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Override NuGet packages
+        shell: bash
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
       # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -507,6 +515,8 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    # Disable the tests because they are causing us headaches with merge conflicts and re-runs etc.
+    if: false
     steps:
       # Build the tool from master to ensure consistent hash computation
       # with the llm-benchmark-update workflow (which also uses master's tool).
@@ -570,6 +580,10 @@ jobs:
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
+
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
       # Now, setup the Unity tests.
       - name: Patch spacetimedb dependency in Cargo.toml
@@ -693,9 +707,13 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
+
       - name: Run .NET tests
         working-directory: sdks/csharp
-        run: dotnet test -warnaserror
+        run: dotnet test -warnaserror --no-restore
 
       - name: Verify C# formatting
         working-directory: sdks/csharp

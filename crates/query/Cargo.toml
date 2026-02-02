@@ -16,6 +16,7 @@ spacetimedb-expr.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-physical-plan.workspace = true
+spacetimedb-schema.workspace = true
 spacetimedb-sql-parser.workspace = true
 spacetimedb-table.workspace = true
 

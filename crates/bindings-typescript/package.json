@@ -78,6 +78,12 @@
       "require": "./dist/vue/index.cjs",
       "default": "./dist/vue/index.mjs"
     },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "import": "./dist/svelte/index.mjs",
+      "require": "./dist/svelte/index.cjs",
+      "default": "./dist/svelte/index.mjs"
+    },
     "./tanstack": {
       "types": "./dist/tanstack/index.d.ts",
       "import": "./dist/tanstack/index.mjs",
@@ -168,6 +174,7 @@
     "fast-text-encoding": "^1.0.0",
     "headers-polyfill": "^4.0.3",
     "prettier": "^3.3.3",
+    "pure-rand": "^7.0.1",
     "statuses": "^2.0.2",
     "url-polyfill": "^1.1.14"
   },
@@ -175,6 +182,7 @@
     "@tanstack/react-query": "^5.0.0",
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
     "vue": "^3.3.0",
+    "svelte": "^4.0.0 || ^5.0.0",
     "undici": "^6.19.2"
   },
   "peerDependenciesMeta": {
@@ -184,15 +192,19 @@
     "react": {
       "optional": true
     },
-    "vue": {
+    "svelte": {
       "optional": true
     },
     "undici": {
+      "optional": true
+    },
+    "vue": {
       "optional": true
     }
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "svelte": "^5.0.0",
     "@size-limit/file": "^11.2.0",
     "@tanstack/react-query": "^5.90.19",
     "@types/fast-text-encoding": "^1.0.3",

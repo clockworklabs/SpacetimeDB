@@ -52,6 +52,7 @@ use spacetimedb_sats::{
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
+    table_name::TableName,
 };
 use std::{
     collections::{btree_map, BTreeMap},
@@ -281,7 +282,7 @@ pub enum ReadViaBsatnError {
 #[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct ChangeColumnsError {
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
     reason: ChangeColumnsErrorReason,
@@ -317,7 +318,7 @@ pub enum ChangeColumnsErrorReason {
 #[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct AddColumnsError {
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
     default_values: Vec<AlgebraicValue>,
@@ -2179,7 +2180,7 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
     pub constraint_name: Box<str>,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub cols: Vec<Box<str>>,
     pub value: AlgebraicValue,
 }

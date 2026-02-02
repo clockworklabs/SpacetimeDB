@@ -3,7 +3,8 @@ use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
+use crate::host::module_host::DatabaseTableUpdate;
+use crate::host::module_host::{DatabaseTableUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket::TableUpdate;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::util::slow::SlowQueryLogger;
@@ -16,6 +17,7 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{u256, ProductValue};
 use spacetimedb_schema::def::error::AuthError;
 use spacetimedb_schema::relation::DbTable;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -202,8 +204,8 @@ impl ExecutionUnit {
         self.return_db_table().table_id
     }
 
-    pub fn return_name(&self) -> Box<str> {
-        self.return_db_table().head.table_name.clone()
+    pub fn return_name(&self) -> &TableName {
+        &self.return_db_table().head.table_name
     }
 
     /// The table on which this query filters rows.
@@ -259,7 +261,7 @@ impl ExecutionUnit {
             let update = F::into_query_update(qu, compression);
             TableUpdate::new(
                 self.return_table(),
-                self.return_name(),
+                self.return_name().to_boxed_str(),
                 SingleQueryUpdate { update, num_rows },
             )
         })
@@ -282,7 +284,7 @@ impl ExecutionUnit {
 
         updates.has_updates().then(|| DatabaseTableUpdateRelValue {
             table_id: self.return_table(),
-            table_name: self.return_name(),
+            table_name: self.return_name().clone(),
             updates,
         })
     }
