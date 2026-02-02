@@ -190,7 +190,11 @@ ctx.db.user().insert(User {
 <TabItem value="cpp" label="C++">
 
 ```cpp
-ctx.db[user].insert(User{0, "Alice", "alice@example.com"});  // 0 for id - auto-increment will assign
+ctx.db[user].insert(User{
+    0,  // auto-increment will assign
+    "Alice",
+    "alice@example.com"
+});
 ```
 
 </TabItem>
