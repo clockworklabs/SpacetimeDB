@@ -175,10 +175,6 @@ fn main() -> anyhow::Result<()> {
             }
         })?;
 
-        edit_toml("templates/basic-rs/Cargo.toml", |doc| {
-            doc["dependencies"]["spacetimedb-sdk"] = toml_edit::value(wildcard_patch.clone());
-        })?;
-
         process_license_file("LICENSE.txt", &full_version);
         process_license_file("licenses/BSL.txt", &full_version);
         // Rebuild `Cargo.lock`

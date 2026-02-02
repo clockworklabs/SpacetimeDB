@@ -7,4 +7,4 @@ edition = "2021"
 exclude = ["spacetimedb"]
 
 [dependencies]
-spacetimedb-sdk = "1.11.*"
+spacetimedb-sdk = { path = "../../sdks/rust" }
