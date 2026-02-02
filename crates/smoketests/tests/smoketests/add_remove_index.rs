@@ -14,6 +14,7 @@ fn test_add_then_remove_index() {
         .autopublish(false)
         .build();
 
+    // TODO: Does the name do anything? Other tests just let the DB assign.
     let name = format!("test-db-{}", std::process::id());
 
     // Publish and attempt a subscribing to a join query.
