@@ -1,0 +1,39 @@
+<div class="flex h-screen">
+  <div class="flex flex-1">
+    <div class="flex flex-1 flex-col h-full">
+      <div class="flex-1 p-4 overflow-y-auto" #messagesContainer>
+        <div class="mb-4">
+          @for (message of messages().rows; track message.id) {
+            <div class="font-bold">{{ message.senderIdentity.toHexString().slice(-8) }}:</div>
+            <div>{{ message.content }}</div>
+            <div class="text-sm text-gray-500 mb-2">
+              {{ message.timestamp.toDate() | date: 'short' }}
+            </div>
+          }
+        </div>
+      </div>
+      <div class="flex p-4 border-t">
+        <input
+          type="text"
+          placeholder="Type a message..."
+          [(ngModel)]="messageContent"
+          class="border p-2 w-full"
+        />
+        <button
+          (click)="onSendMessage()"
+          class="bg-blue-500 text-white p-2 px-8 cursor-pointer hover:bg-blue-800"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+    <div class="p-4 border-l">
+      <h2>Online users: {{ onlineUsersCount() }}</h2>
+      <ul class="list-disc">
+        @for (user of onlineUsers().rows; track user.identity) {
+          <li>{{ user.identity.toHexString().slice(-8) }}</li>
+        }
+      </ul>
+    </div>
+  </div>
+</div>
