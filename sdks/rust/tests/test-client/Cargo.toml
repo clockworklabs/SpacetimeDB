@@ -6,13 +6,42 @@ license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["native"]
+
+# Builds the existing CLI test client.
+native = [
+    "dep:test-counter",
+    "dep:tokio",
+    "dep:env_logger",
+    "dep:rand",
+]
+
+# Builds the wasm-bindgen-test based client tests.
+wasm = [
+    "spacetimedb-sdk/web",
+    "dep:wasm-bindgen-test",
+    "dep:wasm-bindgen-futures",
+    "dep:js-sys",
+]
+
+[[bin]]
+name = "test-client"
+path = "src/main.rs"
+required-features = ["native"]
+
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
-test-counter = { path = "../test-counter" }
-tokio.workspace = true
 anyhow.workspace = true
-env_logger.workspace = true
-rand.workspace = true
+
+test-counter = { path = "../test-counter", optional = true }
+tokio = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+
+wasm-bindgen-test = { version = "0.3", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
 
 [lints]
 workspace = true

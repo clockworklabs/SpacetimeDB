@@ -358,8 +358,9 @@ fn split_command_string(command: &str) -> (String, Vec<String>) {
 // Note: this function is memoized to ensure we only compile each client once.
 fn compile_client(compile_command: &str, client_project: &str) {
     let client_project = client_project.to_owned();
+    let compile_command = compile_command.to_owned();
 
-    memoized!(|client_project: String| -> () {
+    memoized!(|(client_project, compile_command): (String, String)| -> () {
         let (exe, args) = split_command_string(compile_command);
 
         let output = cmd(exe, args)
@@ -378,7 +379,14 @@ fn compile_client(compile_command: &str, client_project: &str) {
 fn run_client(run_command: &str, client_project: &str, db_name: &str) {
     let (exe, args) = split_command_string(run_command);
 
-    let output = cmd(exe, args)
+    let is_wasm32_unknown_unknown = run_command.contains("--target wasm32-unknown-unknown");
+
+    let mut command = cmd(exe, args);
+    if is_wasm32_unknown_unknown {
+        command = command.env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER", "wasm-bindgen-test-runner");
+    }
+
+    let output = command
         .dir(client_project)
         .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
         .env(TEST_DB_NAME_ENV_VAR, db_name)

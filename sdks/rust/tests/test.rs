@@ -19,6 +19,24 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn wasm_smoke() {
+                Test::builder()
+                    .with_name("wasm-smoke")
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command(
+                        "cargo test --target wasm32-unknown-unknown --no-default-features --features wasm --no-run",
+                    )
+                    .with_run_command(
+                        "cargo test --target wasm32-unknown-unknown --no-default-features --features wasm",
+                    )
+                    .build()
+                    .run();
+            }
+
+            #[test]
             fn insert_primitive() {
                 make_test("insert-primitive").run();
             }
