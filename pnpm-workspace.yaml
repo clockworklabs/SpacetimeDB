@@ -6,6 +6,7 @@ packages:
   - 'templates/basic-ts'
   - 'templates/vue-ts'
   - 'templates/svelte-ts'
+  - 'templates/nuxt-ts'
   - 'modules/benchmarks-ts'
   - 'modules/module-test-ts'
   - 'templates/chat-react-ts/spacetimedb'

@@ -1,0 +1,23 @@
+{
+  "name": "@clockworklabs/nuxt-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "generate": "pnpm --dir spacetimedb install --ignore-workspace && cargo run -p gen-bindings -- --out-dir module_bindings --project-path spacetimedb && prettier --write module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir module_bindings --project-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*",
+    "nuxt": "~3.16.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2"
+  }
+}
