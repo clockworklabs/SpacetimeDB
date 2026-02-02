@@ -98,8 +98,14 @@ fn test_failures() {
         output
     );
 
-    // Connection fails with invalid token - we can't easily test this without
-    // modifying the token, so skip this part
+    let result = test.psql_with_token("quickstart", "invalid_token", "SELECT * FROM t_uints");
+    assert!(result.is_err(), "Expected error for invalid token");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Invalid token"),
+        "Expected 'Invalid token' in error message, got: {}",
+        err
+    );
 
     // Returns error for unsupported sql statements
     let result = test.psql(

@@ -551,9 +551,8 @@ impl Smoketest {
     /// Runs psql command against the PostgreSQL wire protocol server.
     ///
     /// Returns the output on success, or an error with stderr on failure.
-    pub fn psql(&self, database: &str, sql: &str) -> Result<String> {
+    pub fn psql_with_token(&self, database: &str, token: &str, sql: &str) -> Result<String> {
         let pg_port = self.pg_port().context("PostgreSQL wire protocol not enabled")?;
-        let token = self.read_token()?;
 
         // Extract just the host part (without port)
         let host = self.server_host().split(':').next().unwrap_or("127.0.0.1");
@@ -582,6 +581,11 @@ impl Smoketest {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    pub fn psql(&self, database: &str, sql: &str) -> Result<String> {
+        let token = self.read_token()?;
+        self.psql_with_token(database, &token, sql)
     }
 
     /// Asserts that psql output matches the expected value.
