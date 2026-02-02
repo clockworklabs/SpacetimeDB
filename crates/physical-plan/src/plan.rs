@@ -1420,7 +1420,6 @@ mod tests {
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         identity::AuthCtx,
-        sats::raw_identifier::RawIdentifier,
         AlgebraicType, AlgebraicValue,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
@@ -1488,7 +1487,7 @@ mod tests {
                 .map(|(i, cols)| IndexSchema {
                     table_id,
                     index_id: i.into(),
-                    index_name: RawIdentifier::new(""),
+                    index_name: "".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
@@ -1500,7 +1499,7 @@ mod tests {
                 .map(|(i, cols)| ConstraintSchema {
                     table_id,
                     constraint_id: i.into(),
-                    constraint_name: RawIdentifier::new(""),
+                    constraint_name: "".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: ColSet::from_iter(cols.iter().copied()),
                     }),

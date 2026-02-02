@@ -714,7 +714,7 @@ trait IndexedRow: Row + Sized {
                 RawIndexAlgorithm::BTree {
                     columns: Self::indexed_columns(),
                 },
-                RawIdentifier::new("accessor_name_doesnt_matter"),
+                "accessor_name_doesnt_matter",
             );
         let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
         def.table_schema(&*name, TableId::SENTINEL).unwrap()

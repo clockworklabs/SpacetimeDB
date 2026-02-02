@@ -850,7 +850,7 @@ pub(crate) mod tests {
         let (schema, _) = with_auto_commit(&db, |tx| create_inv_table(&db, tx))?;
         let table_id = schema.table_id;
         let columns = ColList::from(ColId(0));
-        let index_name = RawIdentifier::new("idx_1");
+        let index_name: RawIdentifier = "idx_1".into();
         let is_unique = false;
 
         let index = IndexSchema {
@@ -898,7 +898,7 @@ pub(crate) mod tests {
             .unwrap();
         let st_sequence_row = StSequenceRow {
             sequence_id: 5.into(),
-            sequence_name: RawIdentifier::new("st_sequence_sequence_id_seq"),
+            sequence_name: "st_sequence_sequence_id_seq".into(),
             table_id: ST_SEQUENCE_ID,
             col_pos: 0.into(),
             increment: 1,

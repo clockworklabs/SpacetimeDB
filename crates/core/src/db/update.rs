@@ -257,7 +257,7 @@ fn auto_migrate_database(
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
-                let table_def = plan.new.stored_in_table_def(&table_name.clone().into_raw()).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 
@@ -266,7 +266,7 @@ fn auto_migrate_database(
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
-                let table_def = plan.new.stored_in_table_def(&table_name.clone().into_raw()).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
@@ -289,7 +289,7 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
                 let table_def = plan
                     .new
-                    .stored_in_table_def(&table_name.clone().into_raw())
+                    .stored_in_table_def(&table_name.clone().into())
                     .expect("table must exist");
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
@@ -323,7 +323,7 @@ mod test {
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
-    use spacetimedb_sats::{product, raw_identifier::RawIdentifier, AlgebraicType::U64};
+    use spacetimedb_sats::{product, AlgebraicType::U64};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
@@ -339,21 +339,21 @@ mod test {
         // Define the old and new modules, the latter with the index on `b`.
         let define_p = |builder: &mut RawModuleDefV9Builder| {
             builder
-                .build_table_with_new_type(RawIdentifier::new("p"), [("x", U64), ("y", U64)], true)
+                .build_table_with_new_type("p", [("x", U64), ("y", U64)], true)
                 .with_unique_constraint(0)
                 .with_unique_constraint(1)
-                .with_index(btree(0), RawIdentifier::new("idx_x"))
-                .with_index(btree(1), RawIdentifier::new("idx_y"))
+                .with_index(btree(0), "idx_x")
+                .with_index(btree(1), "idx_y")
                 .with_access(TableAccess::Public)
                 .finish()
         };
         let define_t = |builder: &mut RawModuleDefV9Builder, with_index| {
             let builder = builder
-                .build_table_with_new_type(RawIdentifier::new("t"), [("a", U64), ("b", U64)], true)
+                .build_table_with_new_type("t", [("a", U64), ("b", U64)], true)
                 .with_access(TableAccess::Public);
 
             let builder = if with_index {
-                builder.with_index(btree(1), RawIdentifier::new("idx_b"))
+                builder.with_index(btree(1), "idx_b")
             } else {
                 builder
             };

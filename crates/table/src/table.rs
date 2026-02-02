@@ -2395,12 +2395,12 @@ pub(crate) mod test {
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(
-                RawIdentifier::new(table_name),
+                table_name,
                 ProductType::from([("unique_col", AlgebraicType::I32), ("other_col", AlgebraicType::I32)]),
                 true,
             )
             .with_unique_constraint(0)
-            .with_index(btree(0), RawIdentifier::new("accessor_name_doesnt_matter"));
+            .with_index(btree(0), "accessor_name_doesnt_matter");
 
         let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
 

@@ -29,15 +29,15 @@ impl SumTypeVariant {
     }
 
     /// Returns a sum type variant with `name` and `algebraic_type`.
-    pub fn new_named(algebraic_type: AlgebraicType, name: impl AsRef<str>) -> Self {
+    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<RawIdentifier>) -> Self {
         Self {
             algebraic_type,
-            name: Some(RawIdentifier::new(name.as_ref())),
+            name: Some(name.into()),
         }
     }
 
     /// Returns a unit variant with `name`.
-    pub fn unit(name: &str) -> Self {
+    pub fn unit(name: impl Into<RawIdentifier>) -> Self {
         Self::new_named(AlgebraicType::unit(), name)
     }
 

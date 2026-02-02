@@ -268,7 +268,7 @@ impl TypespaceBuilder for ModuleDefBuilder {
                 // Alias provided? Relate `name -> slot_ref`.
                 if let Some(name) = name {
                     self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: RawIdentifier::new(name),
+                        name: name.into(),
                         ty: slot_ref,
                     }));
                 }

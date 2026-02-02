@@ -533,12 +533,6 @@ impl TableSchema {
     pub fn validated(self) -> Result<Self, Vec<SchemaError>> {
         let mut errors = Vec::new();
 
-        if self.table_name.is_empty() {
-            errors.push(SchemaError::EmptyTableName {
-                table_id: self.table_id,
-            });
-        }
-
         let columns_not_found = self
             .sequences
             .iter()
@@ -656,7 +650,7 @@ impl TableSchema {
     /// This method works around this problem by copying the column types from the module def into the table schema.
     /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
     pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
-        let table_name = self.table_name.clone().into_identifier();
+        let table_name = self.table_name.clone().into();
         for col in &mut self.columns {
             let def: &ColumnDef = module_def.lookup((&table_name, &col.col_name)).unwrap();
             col.col_type = def.ty.clone();
@@ -1083,6 +1077,7 @@ impl spacetimedb_memory_usage::MemoryUsage for ColumnSchema {
 }
 
 impl ColumnSchema {
+    #[cfg(any(test, feature = "test"))]
     pub fn for_test(pos: impl Into<ColId>, name: impl AsRef<str>, ty: AlgebraicType) -> Self {
         Self {
             table_id: TableId::SENTINEL,
@@ -1141,7 +1136,7 @@ impl Schema for ColumnSchema {
 impl From<&ColumnSchema> for ProductTypeElement {
     fn from(value: &ColumnSchema) -> Self {
         Self {
-            name: Some(value.col_name.clone().into_raw()),
+            name: Some(value.col_name.clone().into()),
             algebraic_type: value.col_type.clone(),
         }
     }
@@ -1172,7 +1167,7 @@ impl From<ColumnSchemaRef<'_>> for ProductTypeElement {
     fn from(value: ColumnSchemaRef) -> Self {
         ProductTypeElement::new(
             value.column.col_type.clone(),
-            Some(value.column.col_name.clone().into_raw()),
+            Some(value.column.col_name.clone().into()),
         )
     }
 }
@@ -1280,6 +1275,7 @@ pub struct ScheduleSchema {
 }
 
 impl ScheduleSchema {
+    #[cfg(any(test, feature = "test"))]
     pub fn for_test(name: impl AsRef<str>, function: impl AsRef<str>, at: impl Into<ColId>) -> Self {
         Self {
             table_id: TableId::SENTINEL,
