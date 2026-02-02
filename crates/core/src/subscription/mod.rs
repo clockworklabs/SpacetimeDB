@@ -203,7 +203,7 @@ where
         (
             TableUpdate::new(
                 table_id,
-                table_name.to_boxed_str(),
+                table_name.clone().into(),
                 SingleQueryUpdate { update, num_rows },
             ),
             metrics,
@@ -239,7 +239,7 @@ pub fn collect_table_update<F: BuildableWebsocketFormat>(
         (
             TableUpdate::new(
                 table_id,
-                table_name.to_boxed_str(),
+                table_name.clone().into(),
                 SingleQueryUpdate { update, num_rows },
             ),
             metrics,

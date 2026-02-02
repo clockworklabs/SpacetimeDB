@@ -1554,7 +1554,7 @@ impl SendWorker {
             .filter(|upd| !clients_with_errors.contains(&upd.id))
             // Do the aggregation.
             .fold(client_table_id_updates, |mut tables, upd| {
-                let table_name = upd.table_name.to_boxed_str();
+                let table_name = upd.table_name.into();
                 match tables.entry((upd.id, upd.table_id)) {
                     Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
                         Bsatn((tbl_upd, update)) => tbl_upd.push(update),
