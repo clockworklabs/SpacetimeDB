@@ -8,4 +8,4 @@ import { type Infer as __Infer } from '../../../../src/index';
 // Import all reducer arg schemas
 import CreatePlayerReducer from '../create_player_reducer';
 
-export type CreatePlayerArgs = __Infer<typeof CreatePlayerReducer>;
+export type CreatePlayerParams = __Infer<typeof CreatePlayerReducer>;

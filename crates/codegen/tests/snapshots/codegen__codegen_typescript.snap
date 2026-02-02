@@ -1327,20 +1327,20 @@ import SayHelloReducer from "../say_hello_reducer";
 import TestReducer from "../test_reducer";
 import TestBtreeIndexArgsReducer from "../test_btree_index_args_reducer";
 
-export type AddArgs = __Infer<typeof AddReducer>;
-export type AddPlayerArgs = __Infer<typeof AddPlayerReducer>;
-export type AddPrivateArgs = __Infer<typeof AddPrivateReducer>;
-export type AssertCallerIdentityIsModuleIdentityArgs = __Infer<typeof AssertCallerIdentityIsModuleIdentityReducer>;
-export type ClientConnectedArgs = __Infer<typeof ClientConnectedReducer>;
-export type DeletePlayerArgs = __Infer<typeof DeletePlayerReducer>;
-export type DeletePlayersByNameArgs = __Infer<typeof DeletePlayersByNameReducer>;
-export type ListOverAgeArgs = __Infer<typeof ListOverAgeReducer>;
-export type LogModuleIdentityArgs = __Infer<typeof LogModuleIdentityReducer>;
-export type QueryPrivateArgs = __Infer<typeof QueryPrivateReducer>;
-export type RepeatingTestArgs = __Infer<typeof RepeatingTestReducer>;
-export type SayHelloArgs = __Infer<typeof SayHelloReducer>;
-export type TestArgs = __Infer<typeof TestReducer>;
-export type TestBtreeIndexArgsArgs = __Infer<typeof TestBtreeIndexArgsReducer>;
+export type AddParams = __Infer<typeof AddReducer>;
+export type AddPlayerParams = __Infer<typeof AddPlayerReducer>;
+export type AddPrivateParams = __Infer<typeof AddPrivateReducer>;
+export type AssertCallerIdentityIsModuleIdentityParams = __Infer<typeof AssertCallerIdentityIsModuleIdentityReducer>;
+export type ClientConnectedParams = __Infer<typeof ClientConnectedReducer>;
+export type DeletePlayerParams = __Infer<typeof DeletePlayerReducer>;
+export type DeletePlayersByNameParams = __Infer<typeof DeletePlayersByNameReducer>;
+export type ListOverAgeParams = __Infer<typeof ListOverAgeReducer>;
+export type LogModuleIdentityParams = __Infer<typeof LogModuleIdentityReducer>;
+export type QueryPrivateParams = __Infer<typeof QueryPrivateReducer>;
+export type RepeatingTestParams = __Infer<typeof RepeatingTestReducer>;
+export type SayHelloParams = __Infer<typeof SayHelloReducer>;
+export type TestParams = __Infer<typeof TestReducer>;
+export type TestBtreeIndexArgsParams = __Infer<typeof TestBtreeIndexArgsReducer>;
 
 '''
 "with_tx_procedure.ts" = '''

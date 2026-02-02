@@ -11,7 +11,7 @@ import SendMessageReducer from '../send_message_reducer';
 import OnConnectReducer from '../on_connect_reducer';
 import OnDisconnectReducer from '../on_disconnect_reducer';
 
-export type SetNameArgs = __Infer<typeof SetNameReducer>;
-export type SendMessageArgs = __Infer<typeof SendMessageReducer>;
-export type OnConnectArgs = __Infer<typeof OnConnectReducer>;
-export type OnDisconnectArgs = __Infer<typeof OnDisconnectReducer>;
+export type SetNameParams = __Infer<typeof SetNameReducer>;
+export type SendMessageParams = __Infer<typeof SendMessageReducer>;
+export type OnConnectParams = __Infer<typeof OnConnectReducer>;
+export type OnDisconnectParams = __Infer<typeof OnDisconnectReducer>;

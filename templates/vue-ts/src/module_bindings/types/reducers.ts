@@ -11,7 +11,7 @@ import OnDisconnectReducer from '../on_disconnect_reducer';
 import AddReducer from '../add_reducer';
 import SayHelloReducer from '../say_hello_reducer';
 
-export type OnConnectArgs = __Infer<typeof OnConnectReducer>;
-export type OnDisconnectArgs = __Infer<typeof OnDisconnectReducer>;
-export type AddArgs = __Infer<typeof AddReducer>;
-export type SayHelloArgs = __Infer<typeof SayHelloReducer>;
+export type OnConnectParams = __Infer<typeof OnConnectReducer>;
+export type OnDisconnectParams = __Infer<typeof OnDisconnectReducer>;
+export type AddParams = __Infer<typeof AddReducer>;
+export type SayHelloParams = __Infer<typeof SayHelloReducer>;

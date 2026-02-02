@@ -476,7 +476,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
         let args_type = reducer_args_type_name(&reducer.name);
         writeln!(
             out,
-            "export type {reducer_name_pascalcase}Args = __Infer<typeof {args_type}>;"
+            "export type {reducer_name_pascalcase}Params = __Infer<typeof {args_type}>;"
         );
     }
     out.newline();
