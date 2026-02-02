@@ -392,6 +392,16 @@ impl clap::ValueEnum for Language {
 }
 
 impl Language {
+    /// Returns the display name for the language
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Language::Rust => "Rust",
+            Language::Csharp => "C#",
+            Language::TypeScript => "TypeScript",
+            Language::UnrealCpp => "Unreal C++",
+        }
+    }
+
     fn format_files(&self, project_dir: &Path, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
         match self {
             Language::Rust => rustfmt(generated_files)?,
