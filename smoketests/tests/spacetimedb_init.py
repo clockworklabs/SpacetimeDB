@@ -262,8 +262,19 @@ class TestSpacetimeInit(unittest.TestCase):
 
             # Install other dependencies
             pnpm("install", cwd=project_path)
+
+            # Use vue-tsc if vue is a dependency, otherwise use tsc
+            with open(package_json_path, 'r') as f:
+                package_data = json.load(f)
+            has_vue = 'vue' in package_data.get('dependencies', {}) or 'vue' in package_data.get('devDependencies', {})
+
             # Run TypeScript compiler in check mode
-            pnpm("exec", "tsc", "--noEmit", cwd=project_path)
+            if has_vue:
+                print(f"    - DEBUG: Using vue-tsc for Vue project")
+                pnpm("exec", "vue-tsc", "--noEmit", cwd=project_path)
+            else:
+                print(f"    - DEBUG: Using tsc for non-Vue project")
+                pnpm("exec", "tsc", "--noEmit", cwd=project_path)
 
         elif client_lang == "csharp":
             print(f"    - Building C# client...")
