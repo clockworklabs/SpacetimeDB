@@ -10,7 +10,6 @@ use crate::def::error::{DefType, SchemaError};
 use crate::relation::{combine_constraints, Column, DbTable, FieldName, Header};
 use crate::table_name::TableName;
 use core::mem;
-use ecow::eco_format;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
@@ -805,16 +804,16 @@ impl TableSchema {
         let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
         let mut meta_cols = 0;
-        let mut index_name = eco_format!("{name}");
+        let mut index_name = name.as_raw().clone().into_inner();
 
-        let mut push_column = |name: &str, col_type| {
+        let mut push_column = |name: &'static str, col_type| {
             meta_cols += 1;
             index_name += "_";
             index_name += name;
             columns.push(ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: columns.len().into(),
-                col_name: Identifier::new_assume_valid(RawIdentifier::new(name)),
+                col_name: Identifier::new_assume_valid(name.into()),
                 col_type,
             });
         };
