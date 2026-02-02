@@ -318,7 +318,7 @@ fn extract_table_info(
             Ok(IndexInfo {
                 name: index.name.clone(),
                 columns,
-                table_name: table_def.name.clone().into_raw(),
+                table_name: table_def.name.clone().into(),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
@@ -346,7 +346,7 @@ fn extract_table_info(
     });
 
     Ok(TableInfo {
-        name: table_def.name.clone().into_raw(),
+        name: table_def.name.clone().into(),
         is_system: table_def.table_type == TableType::System,
         access: table_def.table_access,
         columns,
@@ -365,7 +365,7 @@ fn extract_view_info(
         view: view.to_string().into(),
     })?;
 
-    let name = view_def.name.clone().into_raw();
+    let name = view_def.name.clone().into();
     let is_anonymous = view_def.is_anonymous;
 
     let params = view_def
@@ -426,7 +426,7 @@ fn extract_index_info(
     Ok(IndexInfo {
         name: index_def.name.clone(),
         columns,
-        table_name: table_def.name.clone().into_raw(),
+        table_name: table_def.name.clone().into(),
     })
 }
 

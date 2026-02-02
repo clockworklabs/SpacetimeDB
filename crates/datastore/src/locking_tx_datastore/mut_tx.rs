@@ -571,7 +571,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name = name.clone().into_raw();
+        let view_name: RawIdentifier = name.clone().into();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -672,8 +672,8 @@ impl MutTxId {
             let row = StScheduledRow {
                 table_id: schedule.table_id,
                 schedule_id: schedule.schedule_id,
-                schedule_name: schedule.schedule_name.into_raw(),
-                reducer_name: schedule.function_name.into_raw(),
+                schedule_name: schedule.schedule_name,
+                reducer_name: schedule.function_name,
                 at_column: schedule.at_column,
             };
             let id = self
@@ -774,7 +774,7 @@ impl MutTxId {
                 &StViewParamRow {
                     view_id,
                     param_pos: *col_id,
-                    param_name: name.clone().into_raw(),
+                    param_name: name.clone().into(),
                     param_type: ty.clone().into(),
                 },
             )?;
@@ -790,7 +790,7 @@ impl MutTxId {
                 &StViewColumnRow {
                     view_id,
                     col_pos: def.col_id,
-                    col_name: def.name.clone().into_raw(),
+                    col_name: def.name.clone(),
                     col_type: def.ty.clone().into(),
                 },
             )?;

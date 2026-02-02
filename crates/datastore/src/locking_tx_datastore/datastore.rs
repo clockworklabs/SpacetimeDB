@@ -1472,7 +1472,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
-                col_name: RawIdentifier::new(value.name),
+                col_name: Identifier::for_test(value.name),
                 col_type: value.ty.into(),
             }
         }
@@ -1625,7 +1625,7 @@ mod tests {
             sequence_id: SequenceId::SENTINEL,
             table_id: TableId::SENTINEL,
             col_pos: 0.into(),
-            sequence_name: RawIdentifier::new("Foo_id_seq"),
+            sequence_name: "Foo_id_seq".into(),
             start: 1,
             increment: 1,
             min_value: 1,
@@ -2099,7 +2099,7 @@ mod tests {
             IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id,
-                index_name: RawIdentifier::new("Foo_id_idx_btree"),
+                index_name: "Foo_id_idx_btree".into(),
                 index_algorithm: BTreeAlgorithm::from(0).into(),
             },
             true,
@@ -2339,7 +2339,7 @@ mod tests {
         let index_def = IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id,
-            index_name: RawIdentifier::new("Foo_age_idx_btree"),
+            index_name: "Foo_age_idx_btree".into(),
             index_algorithm: BTreeAlgorithm::from(2).into(),
         };
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
@@ -2477,7 +2477,7 @@ mod tests {
             sequence_id: SequenceId::SENTINEL,
             table_id,
             col_pos: 0.into(),
-            sequence_name: RawIdentifier::new("seq"),
+            sequence_name: "seq".into(),
             start: 1,
             increment: 1,
             min_value: 1,

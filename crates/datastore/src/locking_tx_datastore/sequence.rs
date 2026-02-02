@@ -226,7 +226,6 @@ mod tests {
 
     use crate::locking_tx_datastore::sequence::Sequence;
     use spacetimedb_primitives::{ColId, SequenceId, TableId};
-    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::schema::SequenceSchema;
 
     #[derive(Clone, Copy)]
@@ -246,7 +245,7 @@ mod tests {
             start: params.start,
             col_pos: ColId(1),
             table_id: TableId(1),
-            sequence_name: RawIdentifier::new("test_sequence"),
+            sequence_name: "test_sequence".into(),
         };
         Sequence::new(schema, params.previous_allocation)
     }

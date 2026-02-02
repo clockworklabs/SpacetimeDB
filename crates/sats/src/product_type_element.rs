@@ -1,5 +1,3 @@
-use ecow::EcoString;
-
 use crate::meta_type::MetaType;
 use crate::raw_identifier::RawIdentifier;
 use crate::{AlgebraicType, SpacetimeType, WithTypespace};
@@ -32,8 +30,8 @@ impl ProductTypeElement {
     }
 
     /// Returns a named element with `name` and `algebraic_type`.
-    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<EcoString>) -> Self {
-        Self::new(algebraic_type, Some(RawIdentifier::new(name.into())))
+    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<RawIdentifier>) -> Self {
+        Self::new(algebraic_type, Some(name.into()))
     }
 
     /// Returns the name of the field.

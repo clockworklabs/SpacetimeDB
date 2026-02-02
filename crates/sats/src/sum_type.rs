@@ -244,15 +244,13 @@ impl<const N: usize> From<[SumTypeVariant; N]> for SumType {
         SumType::new(fields.into())
     }
 }
-impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for SumType {
-    fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
-        fields
-            .map(|(s, t)| SumTypeVariant::new(t, s.map(RawIdentifier::new)))
-            .into()
+impl<const N: usize> From<[(Option<&'static str>, AlgebraicType); N]> for SumType {
+    fn from(fields: [(Option<&'static str>, AlgebraicType); N]) -> Self {
+        fields.map(|(s, t)| SumTypeVariant::new(t, s.map(Into::into))).into()
     }
 }
-impl<const N: usize> From<[(&str, AlgebraicType); N]> for SumType {
-    fn from(fields: [(&str, AlgebraicType); N]) -> Self {
+impl<Id: Into<RawIdentifier>, const N: usize> From<[(Id, AlgebraicType); N]> for SumType {
+    fn from(fields: [(Id, AlgebraicType); N]) -> Self {
         fields.map(|(s, t)| SumTypeVariant::new_named(t, s)).into()
     }
 }

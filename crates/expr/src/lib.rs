@@ -109,7 +109,7 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
             Ok(Expr::Field(FieldProject {
-                table: table_type.table_name.clone().into_raw_identifier(),
+                table: table_type.table_name.clone().into(),
                 field: col_pos.idx(),
                 ty: col_type.clone(),
             }))
@@ -124,7 +124,7 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
                 return Err(UnexpectedType::new(col_type, ty).into());
             }
             Ok(Expr::Field(FieldProject {
-                table: table_type.table_name.clone().into_raw_identifier(),
+                table: table_type.table_name.clone().into(),
                 field: col_pos.idx(),
                 ty: col_type.clone(),
             }))

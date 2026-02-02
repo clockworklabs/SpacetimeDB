@@ -405,7 +405,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let reducer_name = op.name.as_identifier().clone();
+        let reducer_name = op.name.clone().into();
         let (args_source, errors_sink) =
             store
                 .data_mut()

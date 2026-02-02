@@ -1116,7 +1116,7 @@ impl RelationalDB {
     pub fn create_table_for_test_with_the_works(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         indexes: &[ColList],
         unique_constraints: &[ColList],
         access: StAccess,
@@ -1132,10 +1132,7 @@ impl RelationalDB {
             .with_access(access.into());
 
         for columns in indexes {
-            table_builder = table_builder.with_index(
-                btree(columns.clone()),
-                RawIdentifier::new("accessor_name_doesnt_matter"),
-            );
+            table_builder = table_builder.with_index(btree(columns.clone()), "accessor_name_doesnt_matter");
         }
         for columns in unique_constraints {
             table_builder = table_builder.with_unique_constraint(columns.clone());
@@ -1155,7 +1152,7 @@ impl RelationalDB {
     pub fn create_table_for_test_with_access(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         indexes: &[ColId],
         access: StAccess,
     ) -> Result<TableId, DBError> {
@@ -1166,7 +1163,7 @@ impl RelationalDB {
     pub fn create_table_for_test(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         indexes: &[ColId],
     ) -> Result<TableId, DBError> {
         self.create_table_for_test_with_access(name, schema, indexes, StAccess::Public)
@@ -1175,7 +1172,7 @@ impl RelationalDB {
     pub fn create_table_for_test_multi_column(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
         self.create_table_for_test_with_the_works(name, schema, &[idx_cols], &[], StAccess::Public)
@@ -1184,7 +1181,7 @@ impl RelationalDB {
     pub fn create_table_for_test_mix_indexes(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         idx_cols_single: &[ColId],
         idx_cols_multi: ColList,
     ) -> Result<TableId, DBError> {
@@ -2232,7 +2229,7 @@ pub mod tests_utils {
     pub fn create_view_for_test(
         db: &RelationalDB,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         is_anonymous: bool,
     ) -> Result<(ViewId, TableId), DBError> {
         let mut builder = RawModuleDefV9Builder::new();
@@ -2408,12 +2405,12 @@ mod tests {
 
         let return_type_ref = builder.add_algebraic_type(
             [],
-            RawIdentifier::new("my_view_return_type"),
+            "my_view_return_type",
             AlgebraicType::product([("b", AlgebraicType::U8)]),
             true,
         );
         builder.add_view(
-            RawIdentifier::new("my_view"),
+            "my_view",
             0,
             true,
             false,
@@ -3205,7 +3202,7 @@ mod tests {
         ]);
 
         let schema = table("t", columns, |builder| {
-            builder.with_index(btree([0, 1]), RawIdentifier::new("accessor_name_doesnt_matter"))
+            builder.with_index(btree([0, 1]), "accessor_name_doesnt_matter")
         });
 
         let mut tx = begin_mut_tx(&stdb);

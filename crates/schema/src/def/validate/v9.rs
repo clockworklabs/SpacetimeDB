@@ -773,7 +773,7 @@ impl CoreValidator<'_> {
             .into()
         });
         let table_name = identifier(table_name)?;
-        let name_res = self.add_to_global_namespace(name.clone().into_raw(), table_name);
+        let name_res = self.add_to_global_namespace(name.clone().into(), table_name);
         let function_name = identifier(function_name);
 
         let (_, (at_column, id_column), function_name) = (name_res, at_id, function_name).combine_errors()?;
@@ -1292,7 +1292,7 @@ pub(crate) fn check_scheduled_functions_exist(
                 Ok(())
             } else {
                 Err(ValidationError::IncorrectScheduledFunctionParams {
-                    function_name: function_name.into_raw(),
+                    function_name: function_name.into(),
                     function_kind: FunctionKind::Reducer,
                     expected: AlgebraicType::product([AlgebraicType::Ref(table_row_type_ref)]).into(),
                     actual: params_from_function.clone().into(),
@@ -1306,12 +1306,8 @@ pub(crate) fn check_scheduled_functions_exist(
             if let Some(schedule) = &mut table.schedule {
                 if let Some(reducer) = reducers.get(&schedule.function_name) {
                     schedule.function_kind = FunctionKind::Reducer;
-                    validate_params(
-                        &reducer.params,
-                        table.product_type_ref,
-                        reducer.name.clone().into_identifier(),
-                    )
-                    .map_err(Into::into)
+                    validate_params(&reducer.params, table.product_type_ref, reducer.name.clone().into())
+                        .map_err(Into::into)
                 } else if let Some(procedure) = procedures.get(&schedule.function_name) {
                     schedule.function_kind = FunctionKind::Procedure;
                     validate_params(&procedure.params, table.product_type_ref, procedure.name.clone())

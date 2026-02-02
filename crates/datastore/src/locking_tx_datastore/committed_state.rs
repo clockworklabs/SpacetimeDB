@@ -407,7 +407,7 @@ impl CommittedState {
             let row = StColumnRow {
                 table_id: col.table_id,
                 col_pos: col.col_pos,
-                col_name: col.col_name.into_raw(),
+                col_name: col.col_name,
                 col_type: col.col_type.into(),
             };
             let row = ProductValue::from(row);

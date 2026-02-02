@@ -553,7 +553,7 @@ impl From<TableDef> for RawTableDefV9 {
         } = val;
 
         RawTableDefV9 {
-            name: name.into_raw(),
+            name: name.into(),
             product_type_ref,
             primary_key: ColList::from_iter(primary_key),
             indexes: to_raw(indexes),
@@ -675,7 +675,7 @@ impl From<IndexDef> for RawIndexDefV9 {
                 IndexAlgorithm::Hash(HashAlgorithm { columns }) => RawIndexAlgorithm::Hash { columns },
                 IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
-            accessor_name: val.accessor_name.map(Identifier::into_raw),
+            accessor_name: val.accessor_name.map(Into::into),
         }
     }
 }
@@ -1065,8 +1065,8 @@ pub struct ScheduleDef {
 impl From<ScheduleDef> for RawScheduleDefV9 {
     fn from(val: ScheduleDef) -> Self {
         RawScheduleDefV9 {
-            name: Some(val.name.into_raw()),
-            reducer_name: val.function_name.into_raw(),
+            name: Some(val.name.into()),
+            reducer_name: val.function_name.into(),
             scheduled_at_column: val.at_column,
         }
     }
@@ -1187,8 +1187,8 @@ impl TryFrom<RawScopedTypeNameV9> for ScopedTypeName {
 impl From<ScopedTypeName> for RawScopedTypeNameV9 {
     fn from(val: ScopedTypeName) -> Self {
         RawScopedTypeNameV9 {
-            scope: val.scope.into_vec().into_iter().map(|id| id.into_raw()).collect(),
-            name: val.name.into_raw(),
+            scope: val.scope.into_vec().into_iter().map(|id| id.into()).collect(),
+            name: val.name.into(),
         }
     }
 }
@@ -1280,7 +1280,7 @@ impl From<ViewDef> for RawViewDefV9 {
             ..
         } = val;
         RawViewDefV9 {
-            name: name.into_raw(),
+            name: name.into(),
             index: index.into(),
             is_anonymous,
             is_public,
@@ -1350,7 +1350,7 @@ pub struct ReducerDef {
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV9 {
-            name: val.name.into_identifier().into_raw(),
+            name: val.name.into(),
             params: val.params,
             lifecycle: val.lifecycle,
         }
@@ -1394,7 +1394,7 @@ pub struct ProcedureDef {
 impl From<ProcedureDef> for RawProcedureDefV9 {
     fn from(val: ProcedureDef) -> Self {
         RawProcedureDefV9 {
-            name: val.name.into_raw(),
+            name: val.name.into(),
             params: val.params,
             return_type: val.return_type,
         }
@@ -1595,7 +1595,7 @@ mod tests {
         #[test]
         fn to_raw_deterministic(vec in prop::collection::vec(any::<u32>(), 0..5)) {
             let mut map = HashMap::new();
-            let name = ScopedTypeName::try_new([], RawIdentifier::new("fake_name")).unwrap();
+            let name = ScopedTypeName::try_new([], "fake_name").unwrap();
             for k in vec {
                 let def = TypeDef { name: name.clone(), ty: AlgebraicTypeRef(k), custom_ordering: false };
                 map.insert(k, def);
@@ -1611,7 +1611,7 @@ mod tests {
         let mut old_builder = RawModuleDefV9Builder::new();
         old_builder
             .build_table_with_new_type(
-                RawIdentifier::new("Apples"),
+                "Apples",
                 ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
                 true,
             )
@@ -1636,7 +1636,7 @@ mod tests {
         let mut old_builder = RawModuleDefV9Builder::new();
         old_builder
             .build_table_with_new_type(
-                RawIdentifier::new("Apples"),
+                "Apples",
                 ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
                 true,
             )

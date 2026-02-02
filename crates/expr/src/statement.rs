@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::{
@@ -176,7 +175,7 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
         }));
     }
     let mut vars = Relvars::default();
-    vars.insert(table_name.clone().into_raw_identifier(), from.clone());
+    vars.insert(table_name.clone().into(), from.clone());
     let expr = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
@@ -236,7 +235,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
         }
     }
     let mut vars = Relvars::default();
-    vars.insert(table_name.clone().into_raw_identifier(), schema.clone());
+    vars.insert(table_name.clone().into(), schema.clone());
     let values = values.into_boxed_slice();
     let filter = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
@@ -345,7 +344,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     //                                ^^^^
     // -------------------------------------------
     let var_name_field = Expr::Field(FieldProject {
-        table: table_name.clone().into_raw_identifier(),
+        table: table_name.clone().into(),
         // TODO: Avoid hard coding the field position.
         // See `StVarFields` for the schema of `st_var`.
         field: 0,
@@ -363,9 +362,9 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     //        ^^^^^
     // -------------------------------------------
     let column_list = vec![(
-        RawIdentifier::new(VALUE_COLUMN),
+        VALUE_COLUMN.into(),
         FieldProject {
-            table: table_name.clone().into_raw_identifier(),
+            table: table_name.clone().into(),
             // TODO: Avoid hard coding the field position.
             // See `StVarFields` for the schema of `st_var`.
             field: 1,
@@ -379,7 +378,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     // -------------------------------------------
     let relvar = RelExpr::RelVar(Relvar {
         schema: table_schema.clone(),
-        alias: table_name.clone().into_raw_identifier(),
+        alias: table_name.clone().into(),
         delta: None,
     });
 

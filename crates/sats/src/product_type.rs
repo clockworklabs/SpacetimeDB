@@ -248,18 +248,18 @@ impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
         Self::new(iter.into_iter().map(Into::into).collect())
     }
 }
-impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (&'a str, I)>>(iter: T) -> Self {
+impl<Id: Into<RawIdentifier>, I: Into<AlgebraicType>> FromIterator<(Id, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (Id, I)>>(iter: T) -> Self {
         iter.into_iter()
             .map(|(name, ty)| ProductTypeElement::new_named(ty.into(), name))
             .collect()
     }
 }
 
-impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
+impl<I: Into<AlgebraicType>> FromIterator<(Option<&'static str>, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (Option<&'static str>, I)>>(iter: T) -> Self {
         iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(RawIdentifier::new)))
+            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(Into::into)))
             .collect()
     }
 }
@@ -274,13 +274,13 @@ impl<const N: usize> From<[ProductTypeElement; N]> for ProductType {
         ProductType::new(fields.into())
     }
 }
-impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for ProductType {
-    fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
+impl<const N: usize> From<[(Option<&'static str>, AlgebraicType); N]> for ProductType {
+    fn from(fields: [(Option<&'static str>, AlgebraicType); N]) -> Self {
         fields.into_iter().collect()
     }
 }
-impl<const N: usize> From<[(&str, AlgebraicType); N]> for ProductType {
-    fn from(fields: [(&str, AlgebraicType); N]) -> Self {
+impl<Id: Into<RawIdentifier>, const N: usize> From<[(Id, AlgebraicType); N]> for ProductType {
+    fn from(fields: [(Id, AlgebraicType); N]) -> Self {
         fields.into_iter().collect()
     }
 }

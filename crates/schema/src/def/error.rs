@@ -3,7 +3,7 @@ use crate::relation::{FieldName, Header};
 use crate::table_name::TableName;
 use derive_more::Display;
 use spacetimedb_lib::db::raw_def::IndexType;
-use spacetimedb_primitives::{ColId, ColList, TableId};
+use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::satn::Satn as _;
@@ -112,8 +112,6 @@ pub enum DefType {
 pub enum SchemaError {
     #[error("Multiple primary columns defined for table: {table} columns: {pks:?}")]
     MultiplePrimaryKeys { table: Box<str>, pks: Vec<String> },
-    #[error("table id `{table_id}` should have name")]
-    EmptyTableName { table_id: TableId },
     #[error("{ty} {name} columns `{columns:?}` not found  in table `{table}`")]
     ColumnsNotFound {
         name: RawIdentifier,

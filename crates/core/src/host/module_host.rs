@@ -1329,7 +1329,7 @@ impl ModuleHost {
                 );
                 InvalidReducerArguments(InvalidFunctionArguments {
                     err: err.into(),
-                    function_name: reducer_name.clone().into_identifier(),
+                    function_name: reducer_name.clone().into(),
                 })
                 .into()
             })
@@ -1802,7 +1802,7 @@ impl ModuleHost {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name = st_view_row.view_name.into_identifier();
+            let view_name = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;

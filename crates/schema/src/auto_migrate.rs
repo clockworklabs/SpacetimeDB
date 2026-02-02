@@ -1065,10 +1065,10 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
         let schedule_at = builder.add_type::<ScheduleAt>();
         let sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64)]);
-        let sum_refty = builder.add_algebraic_type([], RawIdentifier::new("sum"), sum_ty, true);
+        let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
         builder
             .build_table_with_new_type(
-                RawIdentifier::new("Apples"),
+                "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1085,7 +1085,7 @@ mod tests {
 
         builder
             .build_table_with_new_type(
-                RawIdentifier::new("Bananas"),
+                "Bananas",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1098,7 +1098,7 @@ mod tests {
 
         let deliveries_type = builder
             .build_table_with_new_type(
-                RawIdentifier::new("Deliveries"),
+                "Deliveries",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1118,10 +1118,9 @@ mod tests {
 
         // Add a view and add its return type to the typespace
         let view_return_ty = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::U64)]);
-        let view_return_ty_ref =
-            builder.add_algebraic_type([], RawIdentifier::new("my_view_return"), view_return_ty, true);
+        let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
         builder.add_view(
-            RawIdentifier::new("my_view"),
+            "my_view",
             0,
             true,
             true,
@@ -1131,7 +1130,7 @@ mod tests {
 
         builder
             .build_table_with_new_type(
-                RawIdentifier::new("Inspections"),
+                "Inspections",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1158,7 +1157,7 @@ mod tests {
         let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
         builder
             .build_table_with_new_type(
-                RawIdentifier::new("Apples"),
+                "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1177,7 +1176,7 @@ mod tests {
 
         builder
             .build_table_with_new_type(
-                RawIdentifier::new("Bananas"),
+                "Bananas",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
@@ -1195,7 +1194,7 @@ mod tests {
 
         let deliveries_type = builder
             .build_table_with_new_type(
-                RawIdentifier::new("Deliveries"),
+                "Deliveries",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1228,7 +1227,7 @@ mod tests {
 
         let new_inspections_type = builder
             .build_table_with_new_type(
-                RawIdentifier::new("Inspections"),
+                "Inspections",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", schedule_at.clone()),
@@ -1243,18 +1242,14 @@ mod tests {
 
         // add reducer.
         builder.add_reducer(
-            RawIdentifier::new("perform_inspection"),
+            "perform_inspection",
             ProductType::from([("a", AlgebraicType::Ref(new_inspections_type))]),
             None,
         );
 
         // Add new table
         builder
-            .build_table_with_new_type(
-                RawIdentifier::new("Oranges"),
-                ProductType::from([("id", AlgebraicType::U32)]),
-                true,
-            )
+            .build_table_with_new_type("Oranges", ProductType::from([("id", AlgebraicType::U32)]), true)
             .with_index(btree(0), "id_index")
             .with_column_sequence(0)
             .with_unique_constraint(0)

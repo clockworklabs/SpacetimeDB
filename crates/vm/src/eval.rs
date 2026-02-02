@@ -92,6 +92,7 @@ pub fn run_ast<const N: usize, P: ProgramVm>(
 
 /// Used internally for testing SQL JOINS.
 #[doc(hidden)]
+#[cfg(test)]
 pub mod test_helpers {
     use crate::relation::MemTable;
     use core::hash::BuildHasher as _;

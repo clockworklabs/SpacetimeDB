@@ -69,7 +69,7 @@ pub mod tests {
             .unwrap();
 
         for (element, column) in product_type.elements.iter().zip(table_def.columns.iter()) {
-            assert_eq!(Some(&column.name.clone().into_raw()), element.name());
+            assert_eq!(Some(&column.name.clone().into()), element.name());
             assert_eq!(column.ty, element.algebraic_type);
         }
     }
@@ -79,15 +79,15 @@ pub mod tests {
         assert_eq!(
             expect_raw_type_name("foo::bar::baz"),
             RawScopedTypeNameV9 {
-                scope: Box::new([RawIdentifier::new("foo"), RawIdentifier::new("bar")]),
-                name: RawIdentifier::new("baz"),
+                scope: Box::new(["foo", "bar"].map(Into::into)),
+                name: "baz".into(),
             }
         );
         assert_eq!(
             expect_raw_type_name("foo"),
             RawScopedTypeNameV9 {
                 scope: Default::default(),
-                name: RawIdentifier::new("foo"),
+                name: "foo".into(),
             }
         );
         assert_eq!(

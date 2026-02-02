@@ -1,6 +1,7 @@
 use crate::error::IdentifierError;
 use spacetimedb_data_structures::map::{Equivalent, HashSet};
-use spacetimedb_sats::{de, raw_identifier::RawIdentifier, ser};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::fmt::{self, Debug, Display};
 use std::ops::Deref;
 use unicode_ident::{is_xid_continue, is_xid_start};
@@ -25,11 +26,14 @@ lazy_static::lazy_static! {
 /// The list of reserved words can be found in the file `SpacetimeDB/crates/sats/db/reserved_identifiers.txt`.
 ///
 /// Internally, this is just a raw identifier with some validation on construction.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, de::Deserialize, ser::Serialize)]
-#[sats(crate = spacetimedb_sats)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
     id: RawIdentifier,
 }
+
+impl_st!([] Identifier, ts => RawIdentifier::make_type(ts));
+impl_serialize!([] Identifier, (self, ser) => ser.serialize_str(&self.id));
+impl_deserialize!([] Identifier, de => RawIdentifier::deserialize(de).map(Self::new_assume_valid));
 
 impl Identifier {
     /// Returns a new identifier without validating the input.
@@ -83,11 +87,6 @@ impl Identifier {
     }
 
     /// Returns the raw identifier of this identifier.
-    pub fn into_raw(self) -> RawIdentifier {
-        self.id
-    }
-
-    /// Returns the raw identifier of this identifier.
     pub fn as_raw(&self) -> &RawIdentifier {
         &self.id
     }
@@ -126,7 +125,7 @@ impl Equivalent<Identifier> for str {
 
 impl From<Identifier> for RawIdentifier {
     fn from(id: Identifier) -> Self {
-        id.into_raw()
+        id.id
     }
 }
 
