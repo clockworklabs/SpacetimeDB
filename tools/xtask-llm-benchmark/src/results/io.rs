@@ -2,7 +2,8 @@ use super::schema::{GoldenAnswer, LangSummary, ModeSummary, ModelSummary, Result
 use crate::bench::results_merge::ensure_lang;
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 

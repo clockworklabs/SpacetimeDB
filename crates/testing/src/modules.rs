@@ -122,7 +122,7 @@ impl CompiledModule {
             mode == CompilationMode::Debug,
             None,
         )
-        .unwrap();
+        .expect("Module compilation failed");
         Self {
             name: name.to_owned(),
             path,
@@ -221,6 +221,7 @@ impl CompiledModule {
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
+                organization: None,
             },
             MigrationPolicy::Compatible,
         )

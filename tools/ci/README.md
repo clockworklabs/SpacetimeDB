@@ -70,6 +70,21 @@ Usage: wasm-bindings
 
 - `--help`: Print help (see a summary with '-h')
 
+### `dlls`
+
+Builds and packs C# DLLs and NuGet packages for local Unity workflows
+
+Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`. Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored versioned package directory, so Unity can associate stable meta files with the most recently built package.
+
+**Usage:**
+```bash
+Usage: dlls
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
+
 ### `smoketests`
 
 Runs smoketests
@@ -126,6 +141,17 @@ Usage: self-docs [OPTIONS]
 
 - `--check`: Only check for changes, do not generate the docs
 - `--help`: Print help (see a summary with '-h')
+
+### `global-json-policy`
+
+**Usage:**
+```bash
+Usage: global-json-policy
+```
+
+**Options:**
+
+- `--help`: 
 
 ### `help`
 

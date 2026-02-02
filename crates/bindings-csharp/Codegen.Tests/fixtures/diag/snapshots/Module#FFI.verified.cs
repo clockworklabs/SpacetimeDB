@@ -1177,8 +1177,11 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
         {
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
             SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             returnRW.Write(writer, returnValue);
             return output.ToArray();
         }
@@ -1215,8 +1218,11 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
         {
             var returnValue = Module.ViewDefNoPublic((SpacetimeDB.ViewContext)ctx);
             SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             returnRW.Write(writer, returnValue);
             return output.ToArray();
         }
@@ -1253,8 +1259,11 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
         {
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
             SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             returnRW.Write(writer, returnValue);
             return output.ToArray();
         }
@@ -1289,8 +1298,11 @@ sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.
         {
             var returnValue = Module.ViewDefWrongReturn((SpacetimeDB.ViewContext)ctx);
             Player.BSATN returnRW = new();
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             returnRW.Write(writer, returnValue);
             return output.ToArray();
         }
@@ -1331,8 +1343,11 @@ sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
                 Player.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
@@ -1373,8 +1388,11 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
                 Player.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
@@ -1415,8 +1433,11 @@ sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Inte
                 Player.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
@@ -1457,8 +1478,11 @@ sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Inter
                 Player.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
@@ -1499,8 +1523,11 @@ sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnon
                 Player.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
@@ -1545,8 +1572,11 @@ sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
                 NotSpacetimeType.BSATN
             >.GetListSerializer();
             var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
             listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
