@@ -495,30 +495,19 @@ impl<'a> CommandConfig<'a> {
         // Try clap arguments first (CLI takes precedence) via schema
         let from_cli = self.schema.get_clap_arg::<T>(matches, key)?;
         if let Some(ref value) = from_cli {
-            eprintln!(
-                "DEBUG get_one: key='{}' source=CLI value={:?}",
-                key,
-                std::any::type_name::<T>()
-            );
             return Ok(Some(value.clone()));
         }
 
         // Fall back to config values using the config name
         if let Some(value) = self.config_values.get(key) {
-            let result = from_json_value::<T>(value)
+            from_json_value::<T>(value)
                 .map_err(|source| CommandConfigError::ConversionError {
                     key: key.to_string(),
                     target_type: std::any::type_name::<T>().to_string(),
                     source,
                 })
-                .map(Some);
-
-            if result.is_ok() {
-                eprintln!("DEBUG get_one: key='{}' source=config value={:?}", key, value);
-            }
-            result
+                .map(Some)
         } else {
-            eprintln!("DEBUG get_one: key='{}' source=none value=None", key);
             Ok(None)
         }
     }

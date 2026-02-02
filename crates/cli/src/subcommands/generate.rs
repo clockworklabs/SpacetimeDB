@@ -185,7 +185,8 @@ pub async fn exec_ex(
 
     // Get generate configs (from spacetime.json or empty)
     let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
-    let generate_configs = if let Some((_, ref spacetime_config)) = spacetime_config_opt {
+    let generate_configs = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
+        println!("Using configuration from {}", config_path.display());
         get_filtered_generate_configs(spacetime_config, &schema, args)?
     } else {
         vec![CommandConfig::new(&schema, HashMap::new())?]
@@ -203,6 +204,13 @@ pub async fn exec_ex(
         let lang = command_config
             .get_one::<Language>(args, "language")?
             .ok_or_else(|| anyhow::anyhow!("Language is required (use --lang or add to config)"))?;
+
+        println!(
+            "Generating {} module bindings for module {}",
+            lang.display_name(),
+            project_path.display()
+        );
+
         let namespace = command_config
             .get_one::<String>(args, "namespace")?
             .unwrap_or_else(|| "SpacetimeDB.Types".to_string());

@@ -204,28 +204,24 @@ fn confirm_and_clear(
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("DEBUG: Starting publish command execution");
-
     // Build schema
     let cmd = cli();
     let schema = build_publish_schema(&cmd)?;
 
     // Get publish configs (from spacetime.json or empty)
     let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
-    let publish_configs = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
-        eprintln!("DEBUG: Found spacetime.json at: {}", config_path.display());
-        get_filtered_publish_configs(spacetime_config, &schema, args)?
+    let (using_config, publish_configs) = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
+        println!("Using configuration from {}", config_path.display());
+        (true, get_filtered_publish_configs(spacetime_config, &schema, args)?)
     } else {
-        eprintln!("DEBUG: No spacetime.json found, using empty config (CLI args only)");
-        vec![CommandConfig::new(&schema, std::collections::HashMap::new())?]
+        (
+            false,
+            vec![CommandConfig::new(&schema, std::collections::HashMap::new())?],
+        )
     };
-
-    eprintln!("DEBUG: Processing {} publish target(s)", publish_configs.len());
 
     // Execute publish for each config
     for command_config in publish_configs {
-        eprintln!("DEBUG: Executing publish for one target");
-
         // Get values using command_config.get_one() which merges CLI + config
         let server_opt = command_config.get_one::<String>(args, "server")?;
         let server = server_opt.as_deref();
@@ -234,6 +230,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let path_to_project = command_config
             .get_one::<PathBuf>(args, "module_path")?
             .unwrap_or_else(|| PathBuf::from("."));
+
+        if using_config {
+            println!(
+                "Publishing module {} to database '{}'",
+                path_to_project.display(),
+                name_or_identity.unwrap()
+            );
+        }
         let clear_database = args
             .get_one::<ClearMode>("clear-database")
             .copied()
