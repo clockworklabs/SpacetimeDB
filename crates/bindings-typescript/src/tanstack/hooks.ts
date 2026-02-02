@@ -6,7 +6,7 @@ import type {
   UseSuspenseQueryResult,
 } from '@tanstack/react-query';
 import type { UntypedTableDef, RowType } from '../lib/table';
-import type { Expr, ColumnsFromRow } from '../react/useTable';
+import type { Expr, ColumnsFromRow } from '../lib/filter';
 import { spacetimeDBQuery } from './SpacetimeDBQueryClient';
 
 export type UseSpacetimeDBQueryResult<T> = [
@@ -21,10 +21,14 @@ export type UseSpacetimeDBSuspenseQueryResult<T> = [
   UseSuspenseQueryResult<T[], Error>,
 ];
 
-// returns [data, loading, query] tuple
+// Wraps TanStack Query useQuery and returns [data, loading, query]
+// pass 'skip' as the filter to set enabled: false, disabling the query
+// until a condition is met
 export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
   table: TableDef,
   whereOrSkip?: Expr<ColumnsFromRow<RowType<TableDef>>> | 'skip',
+  // any useQuery option (e.g. enabled, refetchInterval, select, placeholderData),
+  // except queryKey, queryFn, and meta (managed internally)
   options?: Omit<
     UseQueryOptions<
       RowType<TableDef>[],
@@ -48,7 +52,10 @@ export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
   return [query.data ?? [], query.isPending, query];
 }
 
-// returns [data, false, query] tuple
+// Suspense version of useSpacetimeDBQuery, returns [data, false, query] tuple (loading = false)
+// Instead of returning a loading boolean, this hook suspends the component
+// until data is ready, a parent <Suspense fallback={…}> handles the loading UI.
+// does not support 'skip' because useSuspenseQuery must always resolve
 export function useSpacetimeDBSuspenseQuery<TableDef extends UntypedTableDef>(
   table: TableDef,
   where?: Expr<ColumnsFromRow<RowType<TableDef>>>,

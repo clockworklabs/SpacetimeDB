@@ -9,7 +9,7 @@ import {
   type ColumnsFromRow,
   evaluate,
   toString,
-} from '../react/useTable';
+} from '../lib/filter';
 
 const tableRegistry = new Map<string, UntypedTableDef>();
 const whereRegistry = new Map<string, Expr<any>>();
