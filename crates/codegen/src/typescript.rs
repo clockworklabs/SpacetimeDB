@@ -17,6 +17,7 @@ use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
 
@@ -217,7 +218,7 @@ impl Lang for TypeScript {
             }
             let reducer_name = &reducer.name;
             let reducer_module_name = reducer_module_name(reducer_name);
-            let args_type = reducer_args_type_name(&reducer.name);
+            let args_type = reducer_args_type_name(reducer_name);
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
         }
 
@@ -931,7 +932,7 @@ fn table_module_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Snake) + "_table"
 }
 
-fn reducer_args_type_name(reducer_name: &Identifier) -> String {
+fn reducer_args_type_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
 
@@ -939,7 +940,7 @@ fn procedure_args_type_name(reducer_name: &Identifier) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Procedure"
 }
 
-fn reducer_module_name(reducer_name: &Identifier) -> String {
+fn reducer_module_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Snake) + "_reducer"
 }
 

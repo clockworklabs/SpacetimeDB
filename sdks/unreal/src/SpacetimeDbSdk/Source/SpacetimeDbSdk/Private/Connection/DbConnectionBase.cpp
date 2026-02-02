@@ -1,6 +1,7 @@
 #include "Connection/DbConnectionBase.h"
 #include "Connection/DbConnectionBuilder.h"
 #include "Connection/Credentials.h"
+#include "Connection/LogCategory.h"
 #include "ModuleBindings/Types/ClientMessageType.g.h"
 #include "ModuleBindings/Types/SubscribeMultiType.g.h"
 #include "ModuleBindings/Types/UnsubscribeMultiType.g.h"
@@ -45,7 +46,7 @@ bool UDbConnectionBase::TryGetIdentity(FSpacetimeDBIdentity& OutIdentity) const
 		return true;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TryGetIdentity called before identity was set"));
+	UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("TryGetIdentity called before identity was set"));
 	return false;
 }
 
@@ -250,7 +251,7 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 		UCredentials::SaveToken(Token);
 		Identity = Payload.Identity;
 		bIsIdentitySet = true;
-		UE_LOG(LogTemp, Verbose, TEXT("IdentityToken: Identity set to: %s"), *Identity.ToHex());
+		UE_LOG(LogSpacetimeDb_Connection, Verbose, TEXT("IdentityToken: Identity set to: %s"), *Identity.ToHex());
 		ConnectionId = Payload.ConnectionId;
 		if (OnConnectBaseDelegate.IsBound())
 		{
@@ -281,7 +282,7 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 		{
 			if (!Handle)
 			{
-				UE_LOG(LogTemp, Error, TEXT("SubscriptionError: Null handle for QueryId %u. Error: %s"),
+				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("SubscriptionError: Null handle for QueryId %u. Error: %s"),
 					Payload.QueryId.Value,
 					*Payload.Error);
 				return;
@@ -303,7 +304,7 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 		{
 			if (!Handle)
 			{
-				UE_LOG(LogTemp, Error, TEXT("SubscriptionError: Null handle for QueryId %u."), Payload.QueryId.Id);
+				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("SubscriptionError: Null handle for QueryId %u."), Payload.QueryId.Id);
 				return;
 			}
 			FSubscriptionEventContextBase Ctx; Ctx.Event = FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit());
@@ -323,7 +324,7 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 		{
 			if (!Handle)
 			{
-				UE_LOG(LogTemp, Error, TEXT("UnsubscribeMultiApplied: Null handle for QueryId %u."), Payload.QueryId.Id);
+				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("UnsubscribeMultiApplied: Null handle for QueryId %u."), Payload.QueryId.Id);
 				return;
 			}
 			Handle->bEnded = true;
@@ -368,14 +369,14 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 	}
 	default:
 		// Unknown tag - bail out
-		UE_LOG(LogTemp, Warning, TEXT("Unknown server-message tag"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Unknown server-message tag"));
 		break;
 	}
 }
 
 bool UDbConnectionBase::DecompressBrotli(const TArray<uint8>& InData, TArray<uint8>& OutData)
 {
-	UE_LOG(LogTemp, Error, TEXT("Brotli decompression unavilable"));
+	UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Brotli decompression unavilable"));
 	return false;
 }
 
@@ -383,7 +384,7 @@ bool UDbConnectionBase::DecompressGzip(const TArray<uint8>& InData, TArray<uint8
 {
 	if (InData.Num() < 4)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Gzip data too small"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Gzip data too small"));
 		return false;
 	}
 
@@ -396,7 +397,7 @@ bool UDbConnectionBase::DecompressGzip(const TArray<uint8>& InData, TArray<uint8
 	// Attempt to decompress the Gzip data
 	if (!FCompression::UncompressMemory(NAME_Gzip, OutData.GetData(), OutSize, InData.GetData(), InData.Num()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Gzip decompression failed"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Gzip decompression failed"));
 		return false;
 	}
 
@@ -417,7 +418,7 @@ bool UDbConnectionBase::DecompressPayload(ECompressableQueryUpdateTag Variant, c
 	case ECompressableQueryUpdateTag::Gzip:
 		return DecompressGzip(In, Out);
 	default:
-		UE_LOG(LogTemp, Error, TEXT("Unknown compression variant"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Unknown compression variant"));
 		return false;
 	}
 }
@@ -459,11 +460,11 @@ void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Upda
 				break;
 			}
 			default:
-				UE_LOG(LogTemp, Error, TEXT("Unknown compression variant in CQU"));
+				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Unknown compression variant in CQU"));
 				break;
 			}
 			UncompressedCQUs.Add(FCompressableQueryUpdateType::Uncompressed(UncompressedUpdate));
-			UE_LOG(LogTemp, Verbose, TEXT("Table %s Inserts:%d Deletes:%d"), *TableUpdate.TableName, UncompressedUpdate.Inserts.RowsData.Num(), UncompressedUpdate.Deletes.RowsData.Num());
+			UE_LOG(LogSpacetimeDb_Connection, Verbose, TEXT("Table %s Inserts:%d Deletes:%d"), *TableUpdate.TableName, UncompressedUpdate.Inserts.RowsData.Num(), UncompressedUpdate.Deletes.RowsData.Num());
 		}
 
 		// After ensuring all updates are uncompressed, attempt to deserialize rows
@@ -478,7 +479,7 @@ void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Upda
 			}
 			else
 			{
-				UE_LOG(LogTemp, Error, TEXT("No deserializer found for table %s"), *TableUpdate.TableName);
+				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("No deserializer found for table %s"), *TableUpdate.TableName);
 			}
 		}
 		if (Deserializer)
@@ -496,7 +497,7 @@ void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Upda
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("Skipping table %s updates due to missing deserializer"), *TableUpdate.TableName);
+			UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Skipping table %s updates due to missing deserializer"), *TableUpdate.TableName);
 		}
 	}
 }
@@ -505,7 +506,7 @@ FServerMessageType UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Mes
 {
 	if (Message.Num() == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Empty message recived from server, ignored"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Empty message recived from server, ignored"));
 		return FServerMessageType{};
 	}
 	// Check if the first byte is a valid compression tag
@@ -517,7 +518,7 @@ FServerMessageType UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Mes
 	TArray<uint8> Decompressed;
 	if (!DecompressPayload(Compression, CompressedPayload, Decompressed))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to decompress incoming message"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Failed to decompress incoming message"));
 		return FServerMessageType{};
 	}
 
@@ -587,13 +588,13 @@ void UDbConnectionBase::StartSubscription(USubscriptionHandleBase* Handle)
 {
 	if (!Handle)
 	{
-		UE_LOG(LogTemp, Error, TEXT("StartSubscription called with null handle"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("StartSubscription called with null handle"));
 		return;
 	}
 
 	if (Handle->QuerySqls.Num() == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("StartSubscription called with empty query list"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("StartSubscription called with empty query list"));
 		return;
 	}
 	
@@ -633,7 +634,7 @@ void UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uint8
 {
 	if (!WebSocket || !WebSocket->IsConnected())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Cannot call reducer, not connected to server!"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Cannot call reducer, not connected to server!"));
 		return;
 	}
 
@@ -660,7 +661,7 @@ void UDbConnectionBase::InternalCallProcedure(const FString& ProcedureName, TArr
 {
 	if (!WebSocket || !WebSocket->IsConnected())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Cannot call proceduer, not connected to server!"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Cannot call proceduer, not connected to server!"));
 		return;
 	}
 	FCallProcedureType MsgData;
