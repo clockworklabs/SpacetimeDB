@@ -18,6 +18,8 @@ which = "8.0.0"
 cargo_metadata.workspace = true
 assert_cmd = "2"
 predicates = "3"
+tokio.workspace = true
+tokio-postgres.workspace = true
 
 [lints]
 workspace = true

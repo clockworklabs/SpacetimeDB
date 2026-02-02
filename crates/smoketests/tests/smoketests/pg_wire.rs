@@ -74,6 +74,77 @@ fn test_sql_format() {
     );
 }
 
+/// Test connecting to the database using a PostgreSQL client.
+#[test]
+fn test_sql_conn() {
+    // This requires a local server because we don't have a clean way of providing
+    // the remote server's PG port.
+    require_local_server!();
+
+    let mut test = Smoketest::builder()
+        .precompiled_module("pg-wire")
+        .pg_port(5435) // Use different port from test_sql_format/test_failures
+        .autopublish(false)
+        .build();
+
+    test.publish_module_named("quickstart", true).unwrap();
+    test.call("test", &[]).unwrap();
+
+    let token = test.read_token().unwrap();
+    let pg_port = test.pg_port().expect("PostgreSQL wire protocol not enabled");
+    let host = test.server_host().split(':').next().unwrap_or("127.0.0.1");
+
+    let mut cfg = tokio_postgres::Config::new();
+    cfg.host(host);
+    cfg.port(pg_port);
+    cfg.user("postgres");
+    cfg.password(token);
+    cfg.dbname("quickstart");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async move {
+        let (client, connection) = cfg.connect(tokio_postgres::NoTls).await.unwrap();
+        tokio::spawn(async move {
+            let _ = connection.await;
+        });
+
+        let rows = client
+            .simple_query("select * from t_uints where u8 = 105 and u16 = 1050")
+            .await
+            .unwrap();
+
+        let row = rows
+            .iter()
+            .find_map(|m| match m {
+                tokio_postgres::SimpleQueryMessage::Row(r) => Some(r),
+                _ => None,
+            })
+            .expect("Expected at least one row");
+
+        assert_eq!(row.get(0), Some("105"));
+        assert_eq!(row.get(1), Some("1050"));
+        assert_eq!(row.get(2), Some("83892"));
+        assert_eq!(row.get(3), Some("48937498"));
+        assert_eq!(row.get(4), Some("4378528978889"));
+        assert_eq!(row.get(5), Some("4378528978889"));
+
+        // Check long-lived connection.
+        for _ in 0..10 {
+            let rows = client.simple_query("select count(*) as t from t_uints").await.unwrap();
+
+            let row = rows
+                .iter()
+                .find_map(|m| match m {
+                    tokio_postgres::SimpleQueryMessage::Row(r) => Some(r),
+                    _ => None,
+                })
+                .expect("Expected count row");
+
+            assert_eq!(row.get(0), Some("1"));
+        }
+    });
+}
+
 /// Test failure cases
 #[test]
 fn test_failures() {

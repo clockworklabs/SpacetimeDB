@@ -8243,6 +8243,8 @@ dependencies = [
  "serde_json",
  "spacetimedb-guard",
  "tempfile",
+ "tokio",
+ "tokio-postgres",
  "toml 0.8.23",
  "which 8.0.0",
 ]
