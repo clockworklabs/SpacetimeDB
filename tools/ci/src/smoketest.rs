@@ -6,6 +6,10 @@ use std::process::{Command, Stdio};
 
 #[derive(Parser)]
 #[command(name = "cargo ci smoketests")]
+/// This command first builds the spacetimedb-cli and spacetimedb-standalone binaries,
+/// then runs the smoketests. This prevents race conditions when running tests in parallel
+/// with nextest, where multiple test processes might try to build the same binaries
+/// simultaneously.
 pub struct SmoketestsArgs {
     #[command(subcommand)]
     cmd: Option<SmoketestCmd>,
