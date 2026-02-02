@@ -249,6 +249,10 @@ pub struct Smoketest {
     pub guard: Option<SpacetimeDbGuard>,
     /// Temporary directory containing the module project.
     pub project_dir: tempfile::TempDir,
+    /// Additional features for the spacetimedb bindings dependency.
+    pub bindings_features: Vec<String>,
+    /// Additional dependencies to add to the module's Cargo.toml.
+    pub extra_deps: String,
     /// Database identity after publishing (if any).
     pub database_identity: Option<String>,
     /// The server URL (e.g., "http://127.0.0.1:3000").
@@ -423,56 +427,6 @@ impl SmoketestBuilder {
         // The format is smoketest_module_{random} which produces smoketest_module_{random}.wasm
         let module_name = format!("smoketest_module_{}", random_string());
 
-        // Only set up project structure if not using precompiled module
-        if precompiled_wasm_path.is_none() {
-            // Create project structure
-            fs::create_dir_all(project_dir.path().join("src")).expect("Failed to create src directory");
-
-            // Write Cargo.toml with unique module name
-            let workspace_root = workspace_root();
-            let bindings_path = workspace_root.join("crates/bindings");
-            let bindings_path_str = bindings_path.display().to_string().replace('\\', "/");
-            let features_str = format!("{:?}", self.bindings_features);
-
-            let cargo_toml = format!(
-                r#"[package]
-name = "{}"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-spacetimedb = {{ path = "{}", features = {} }}
-log = "0.4"
-{}
-"#,
-                module_name, bindings_path_str, features_str, self.extra_deps
-            );
-            fs::write(project_dir.path().join("Cargo.toml"), cargo_toml).expect("Failed to write Cargo.toml");
-
-            // Copy rust-toolchain.toml
-            let toolchain_src = workspace_root.join("rust-toolchain.toml");
-            if toolchain_src.exists() {
-                fs::copy(&toolchain_src, project_dir.path().join("rust-toolchain.toml"))
-                    .expect("Failed to copy rust-toolchain.toml");
-            }
-
-            // Write module code
-            let module_code = self.module_code.unwrap_or_else(|| {
-                r#"use spacetimedb::ReducerContext;
-
-#[spacetimedb::reducer]
-pub fn noop(_ctx: &ReducerContext) {}
-"#
-                .to_string()
-            });
-            fs::write(project_dir.path().join("src/lib.rs"), &module_code).expect("Failed to write lib.rs");
-
-            eprintln!("[TIMING] project setup: {:?}", project_setup_start.elapsed());
-        }
-
         let config_path = project_dir.path().join("config.toml");
         let mut smoketest = Smoketest {
             guard,
@@ -481,8 +435,25 @@ pub fn noop(_ctx: &ReducerContext) {}
             server_url,
             config_path,
             module_name,
-            precompiled_wasm_path,
+            precompiled_wasm_path: precompiled_wasm_path.clone(),
+            bindings_features: self.bindings_features.clone(),
+            extra_deps: self.extra_deps.clone(),
         };
+
+        // Only set up project structure if not using precompiled module
+        if precompiled_wasm_path.is_none() {
+            let module_code = self.module_code.unwrap_or_else(|| {
+                r#"use spacetimedb::ReducerContext;
+
+#[spacetimedb::reducer]
+pub fn noop(_ctx: &ReducerContext) {}
+"#
+                .to_string()
+            });
+            smoketest.write_module_code(&module_code).unwrap();
+
+            eprintln!("[TIMING] project setup: {:?}", project_setup_start.elapsed());
+        }
 
         if self.autopublish {
             smoketest.publish_module().expect("Failed to publish module");
@@ -657,6 +628,7 @@ impl Smoketest {
             let workspace_root = workspace_root();
             let bindings_path = workspace_root.join("crates/bindings");
             let bindings_path_str = bindings_path.display().to_string().replace('\\', "/");
+            let features_str = format!("{:?}", self.bindings_features);
 
             let cargo_toml = format!(
                 r#"[package]
@@ -668,10 +640,11 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = {{ path = "{}", features = ["unstable"] }}
+spacetimedb = {{ path = "{}", features = {} }}
 log = "0.4"
+{}
 "#,
-                self.module_name, bindings_path_str
+                self.module_name, bindings_path_str, features_str, self.extra_deps
             );
             fs::write(self.project_dir.path().join("Cargo.toml"), cargo_toml).context("Failed to write Cargo.toml")?;
 
