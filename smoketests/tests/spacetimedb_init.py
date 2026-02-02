@@ -154,30 +154,40 @@ class TestSpacetimeInit(unittest.TestCase):
         """Replace npm registry spacetimedb dependency with local SDK path reference."""
         print(f"  > Setting up local TypeScript SDK...")
         typescript_sdk_path = STDB_DIR / "crates/bindings-typescript"
+
+        print(f"  > DEBUG: TypeScript SDK path: {typescript_sdk_path}")
+        print(f"  > DEBUG: TypeScript SDK absolute path: {typescript_sdk_path.absolute()}")
+        print(f"  > DEBUG: Server path: {server_path}")
+        print(f"  > DEBUG: Server path absolute: {server_path.absolute()}")
+
         print(f"  > Building TypeScript SDK...")
         pnpm("install", cwd=typescript_sdk_path)
         pnpm("build", cwd=typescript_sdk_path)
 
-        # Unlink any existing global link to ensure fresh build
-        print(f"  > Unlinking any existing global spacetimedb link...")
-        try:
-            pnpm("unlink", "--global", "spacetimedb")
-        except Exception:
-            # It's okay if there's nothing to unlink
-            pass
+        # Update package.json to use file: protocol
+        package_json_path = server_path / "package.json"
+        print(f"  > DEBUG: package.json path: {package_json_path}")
 
-        # Create a global link from the SDK
-        print(f"  > Linking TypeScript SDK globally...")
-        pnpm("link", "--global", cwd=typescript_sdk_path)
+        print(f"  > DEBUG: Reading original package.json...")
+        with open(package_json_path, 'r') as f:
+            package_data = json.load(f)
+        print(f"  > DEBUG: Original package.json dependencies: {json.dumps(package_data.get('dependencies', {}), indent=2)}")
 
-        # Link it in the server project
-        print(f"  > Linking spacetimedb package in server...")
-        pnpm("link", "--global", "spacetimedb", cwd=server_path)
+        self._update_package_json_dependency(package_json_path, "spacetimedb", typescript_sdk_path)
 
-        # Remove lockfile since the linked version may differ from lockfile spec
+        print(f"  > DEBUG: Reading modified package.json...")
+        with open(package_json_path, 'r') as f:
+            package_data = json.load(f)
+        print(f"  > DEBUG: Modified package.json dependencies: {json.dumps(package_data.get('dependencies', {}), indent=2)}")
+        print(f"  > DEBUG: spacetimedb dependency value: {package_data.get('dependencies', {}).get('spacetimedb')}")
+
+        # Remove lockfile since we changed the dependency
         lockfile = server_path / "pnpm-lock.yaml"
         if lockfile.exists():
+            print(f"  > DEBUG: Removing lockfile: {lockfile}")
             lockfile.unlink()
+        else:
+            print(f"  > DEBUG: No lockfile found at: {lockfile}")
 
     def _setup_csharp_nuget(self, server_path):
         """Create a local nuget.config file to avoid polluting global NuGet sources"""
@@ -223,12 +233,33 @@ class TestSpacetimeInit(unittest.TestCase):
 
         elif client_lang == "typescript":
             print(f"    - Type-checking TypeScript client...")
-            # Link the globally linked spacetimedb package
-            pnpm("link", "--global", "spacetimedb", cwd=project_path)
-            # Remove lockfile since the linked version may differ from lockfile spec
+
+            # Update package.json to use file: protocol
+            package_json_path = project_path / "package.json"
+            typescript_sdk_path = STDB_DIR / "crates/bindings-typescript"
+
+            print(f"    - DEBUG: Client project path: {project_path}")
+            print(f"    - DEBUG: Client package.json path: {package_json_path}")
+            print(f"    - DEBUG: TypeScript SDK path: {typescript_sdk_path}")
+
+            print(f"    - DEBUG: Reading original client package.json...")
+            with open(package_json_path, 'r') as f:
+                package_data = json.load(f)
+            print(f"    - DEBUG: Original client dependencies: {json.dumps(package_data.get('dependencies', {}), indent=2)}")
+
+            self._update_package_json_dependency(package_json_path, "spacetimedb", typescript_sdk_path)
+
+            print(f"    - DEBUG: Reading modified client package.json...")
+            with open(package_json_path, 'r') as f:
+                package_data = json.load(f)
+            print(f"    - DEBUG: Modified client dependencies: {json.dumps(package_data.get('dependencies', {}), indent=2)}")
+
+            # Remove lockfile since we changed the dependency
             lockfile = project_path / "pnpm-lock.yaml"
             if lockfile.exists():
+                print(f"    - DEBUG: Removing client lockfile: {lockfile}")
                 lockfile.unlink()
+
             # Install other dependencies
             pnpm("install", cwd=project_path)
             # Run TypeScript compiler in check mode
