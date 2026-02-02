@@ -1,11 +1,10 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{ensure, Result};
-use clap::{Parser, Subcommand};
+use clap::{Args, Subcommand};
 use std::env;
 use std::process::{Command, Stdio};
 
-#[derive(Parser)]
-#[command(name = "cargo ci smoketests")]
+#[derive(Args)]
 /// This command first builds the spacetimedb-cli and spacetimedb-standalone binaries,
 /// then runs the smoketests. This prevents race conditions when running tests in parallel
 /// with nextest, where multiple test processes might try to build the same binaries
@@ -38,20 +37,14 @@ enum SmoketestCmd {
     Prepare,
 }
 
-pub fn run_from_cli_args(args: Vec<String>) -> Result<()> {
-    let mut argv = Vec::with_capacity(args.len() + 1);
-    argv.push("smoketests".to_owned());
-    argv.extend(args);
-
-    let cli = SmoketestsArgs::parse_from(argv);
-
-    match cli.cmd {
+pub fn run(args: SmoketestsArgs) -> Result<()> {
+    match args.cmd {
         Some(SmoketestCmd::Prepare) => {
             build_binaries()?;
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
             Ok(())
         }
-        None => run_smoketest(cli.server, cli.dotnet, cli.args),
+        None => run_smoketest(args.server, args.dotnet, args.args),
     }
 }
 

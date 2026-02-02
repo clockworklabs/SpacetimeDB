@@ -215,13 +215,7 @@ enum CiCmd {
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
-    Smoketests {
-        #[arg(
-            trailing_var_arg = true,
-            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
-        )]
-        args: Vec<String>,
-    },
+    Smoketests(smoketest::SmoketestsArgs),
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -460,8 +454,8 @@ fn main() -> Result<()> {
             .run()?;
         }
 
-        Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            smoketest::run_from_cli_args(smoketest_args)?;
+        Some(CiCmd::Smoketests(args)) => {
+            smoketest::run(args)?;
         }
 
         Some(CiCmd::UpdateFlow {
