@@ -1333,17 +1333,27 @@ impl Page {
     /// where the fixed size part is `fixed_row_size` bytes large,
     /// and the variable part requires `num_granules`.
     pub fn has_space_for_row(&self, fixed_row_size: Size, num_granules: usize) -> bool {
+        let has_fixed_free = self.header.fixed.next_free.has();
+        let var_first = self.header.var.first;
+        let fixed_last = self.header.fixed.last;
+
+        if num_granules == 0 {
+            // No granules needed. Just verify that there's space for the fixed part.
+            return has_fixed_free || gap_enough_size_for_row(var_first, fixed_last, fixed_row_size);
+        }
+
         // Determine the gap remaining after allocating for the fixed part.
-        let gap_remaining = gap_remaining_size(self.header.var.first, self.header.fixed.last);
-        let gap_avail_for_granules = if self.header.fixed.next_free.has() {
+        let gap_remaining = gap_remaining_size(var_first, fixed_last);
+        let gap_avail_for_granules = if has_fixed_free {
             // If we have a free fixed length block, then we can use the whole gap for var-len granules.
             gap_remaining
         } else {
             // If we need to grow the fixed-length store into the gap,
             if gap_remaining < fixed_row_size {
-                // if the gap is too small for fixed-length row, fail.
+                // If the gap is too small for fixed-length row, fail.
                 return false;
             }
+
             // Otherwise, the space available in the gap for var-len granules
             // is the current gap size less the fixed-len row size.
             gap_remaining - fixed_row_size
