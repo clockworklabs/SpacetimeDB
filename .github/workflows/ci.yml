@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   smoketests:
+    needs: [lints]
     name: Smoketests (${{ matrix.name }})
     strategy:
-      fail-fast: false
       matrix:
         include:
           - name: Linux
@@ -76,9 +76,6 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           run_install: true
-
-      - name: Check for pnpm
-        run: pnpm --version
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
