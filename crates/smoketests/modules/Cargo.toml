@@ -17,6 +17,13 @@ members = [
     # "views-broken-namespace" - intentionally broken, uses runtime compilation
     # "views-broken-return-type" - intentionally broken, uses runtime compilation
     "views-sql",
+    "views-auto-migrate",
+    "views-auto-migrate-updated",
+    "views-drop-view",
+    "views-trapped",
+    "views-recovered",
+    "views-subscribe",
+    "views-query",
 
     # Security and permissions
     "rls",

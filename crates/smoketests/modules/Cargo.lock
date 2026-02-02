@@ -826,6 +826,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-auto-migrate"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-auto-migrate-updated"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-basic"
 version = "0.1.0"
 dependencies = [
@@ -834,10 +848,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-drop-view"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-query"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-recovered"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-sql"
 version = "0.1.0"
 dependencies = [
  "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-subscribe"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-trapped"
+version = "0.1.0"
+dependencies = [
  "spacetimedb",
 ]
 
