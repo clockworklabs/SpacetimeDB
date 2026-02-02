@@ -445,7 +445,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "basic-rs-module"
+name = "basic-rs-template-module"
 version = "0.1.0"
 dependencies = [
  "log",

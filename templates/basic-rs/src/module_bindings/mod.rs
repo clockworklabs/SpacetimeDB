@@ -6,27 +6,23 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+pub mod add_reducer;
 pub mod identity_connected_reducer;
 pub mod identity_disconnected_reducer;
-pub mod message_table;
-pub mod message_type;
-pub mod send_message_reducer;
-pub mod set_name_reducer;
-pub mod user_table;
-pub mod user_type;
+pub mod person_table;
+pub mod person_type;
+pub mod say_hello_reducer;
 
+pub use add_reducer::{add, set_flags_for_add, AddCallbackId};
 pub use identity_connected_reducer::{
     identity_connected, set_flags_for_identity_connected, IdentityConnectedCallbackId,
 };
 pub use identity_disconnected_reducer::{
     identity_disconnected, set_flags_for_identity_disconnected, IdentityDisconnectedCallbackId,
 };
-pub use message_table::*;
-pub use message_type::Message;
-pub use send_message_reducer::{send_message, set_flags_for_send_message, SendMessageCallbackId};
-pub use set_name_reducer::{set_flags_for_set_name, set_name, SetNameCallbackId};
-pub use user_table::*;
-pub use user_type::User;
+pub use person_table::*;
+pub use person_type::Person;
+pub use say_hello_reducer::{say_hello, set_flags_for_say_hello, SayHelloCallbackId};
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -36,10 +32,10 @@ pub use user_type::User;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
+    Add { name: String },
     IdentityConnected,
     IdentityDisconnected,
-    SendMessage { text: String },
-    SetName { name: String },
+    SayHello,
 }
 
 impl __sdk::InModule for Reducer {
@@ -49,10 +45,10 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::Add { .. } => "add",
             Reducer::IdentityConnected => "identity_connected",
             Reducer::IdentityDisconnected => "identity_disconnected",
-            Reducer::SendMessage { .. } => "send_message",
-            Reducer::SetName { .. } => "set_name",
+            Reducer::SayHello => "say_hello",
             _ => unreachable!(),
         }
     }
@@ -61,6 +57,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __sdk::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
         match &value.reducer_name[..] {
+            "add" => Ok(__sdk::parse_reducer_args::<add_reducer::AddArgs>("add", &value.args)?.into()),
             "identity_connected" => Ok(
                 __sdk::parse_reducer_args::<identity_connected_reducer::IdentityConnectedArgs>(
                     "identity_connected",
@@ -72,13 +69,8 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 identity_disconnected_reducer::IdentityDisconnectedArgs,
             >("identity_disconnected", &value.args)?
             .into()),
-            "send_message" => Ok(__sdk::parse_reducer_args::<send_message_reducer::SendMessageArgs>(
-                "send_message",
-                &value.args,
-            )?
-            .into()),
-            "set_name" => {
-                Ok(__sdk::parse_reducer_args::<set_name_reducer::SetNameArgs>("set_name", &value.args)?.into())
+            "say_hello" => {
+                Ok(__sdk::parse_reducer_args::<say_hello_reducer::SayHelloArgs>("say_hello", &value.args)?.into())
             }
             unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
         }
@@ -89,8 +81,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
-    message: __sdk::TableUpdate<Message>,
-    user: __sdk::TableUpdate<User>,
+    person: __sdk::TableUpdate<Person>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -99,10 +90,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "message" => db_update
-                    .message
-                    .append(message_table::parse_table_update(table_update)?),
-                "user" => db_update.user.append(user_table::parse_table_update(table_update)?),
+                "person" => db_update.person.append(person_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
@@ -121,10 +109,7 @@ impl __sdk::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
-        diff.message = cache.apply_diff_to_table::<Message>("message", &self.message);
-        diff.user = cache
-            .apply_diff_to_table::<User>("user", &self.user)
-            .with_updates_by_pk(|row| &row.identity);
+        diff.person = cache.apply_diff_to_table::<Person>("person", &self.person);
 
         diff
     }
@@ -134,8 +119,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
-    message: __sdk::TableAppliedDiff<'r, Message>,
-    user: __sdk::TableAppliedDiff<'r, User>,
+    person: __sdk::TableAppliedDiff<'r, Person>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -145,8 +129,7 @@ impl __sdk::InModule for AppliedDiff<'_> {
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<Message>("message", &self.message, event);
-        callbacks.invoke_table_row_callbacks::<User>("user", &self.user, event);
+        callbacks.invoke_table_row_callbacks::<Person>("person", &self.person, event);
     }
 }
 
@@ -867,7 +850,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-        message_table::register_table(client_cache);
-        user_table::register_table(client_cache);
+        person_table::register_table(client_cache);
     }
 }

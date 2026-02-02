@@ -24,4 +24,22 @@ namespace SpacetimeDB.Types
 
         public readonly PersonHandle Person;
     }
+
+    public sealed class PersonCols
+    {
+        public global::SpacetimeDB.Col<Person, string> Name { get; }
+
+        public PersonCols(string tableName)
+        {
+            Name = new global::SpacetimeDB.Col<Person, string>(tableName, "Name");
+        }
+    }
+
+    public sealed class PersonIxCols
+    {
+
+        public PersonIxCols(string tableName)
+        {
+        }
+    }
 }
