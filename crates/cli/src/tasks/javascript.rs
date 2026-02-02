@@ -1,3 +1,4 @@
+use anyhow::Context;
 use regex::Regex;
 use rolldown::{Bundler, BundlerOptions, Either, SourceMapType};
 use rolldown_utils::indexmap::FxIndexMap;
@@ -179,6 +180,40 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
     bundle_output.warnings.into_iter().for_each(|w| {
         eprintln!("Rolldown warning: {w}");
     });
+
+    let output_chunk = bundle_output
+        .assets
+        .into_iter()
+        .find_map(|chunk| match chunk {
+            rolldown_common::Output::Chunk(chunk) if chunk.is_entry && chunk.filename == "bundle.js" => Some(chunk),
+            _ => None,
+        })
+        .expect("there should be an output chunk");
+
+    let sys_imports = output_chunk.imports.iter().filter_map(|spec| {
+        let (maj, min) = spec.strip_prefix("spacetime:sys@")?.split_once('.')?;
+        Option::zip(maj.parse::<u16>().ok(), min.parse::<u16>().ok())
+    });
+
+    let mut maj_sys_ver = None;
+    for (maj, _min) in sys_imports {
+        anyhow::ensure!(
+            *maj_sys_ver.get_or_insert(maj) == maj,
+            "The module pulls in 2 different versions of the `spacetimedb/server` package"
+        );
+    }
+
+    let maj_sys_ver = maj_sys_ver.context(
+        "Your module doesn't import the `spacetimedb/server` package at all - \
+         this is likely a mistake, as your module will not be able to do anything",
+    )?;
+
+    if maj_sys_ver == 2 {
+        anyhow::ensure!(
+            output_chunk.exports.contains(&"default".into()),
+            "It seems like you haven't exported your schema. You must `export default spacetime;`"
+        );
+    }
 
     Ok(project_path.join("dist").join("bundle.js"))
 }
