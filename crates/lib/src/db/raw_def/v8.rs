@@ -5,8 +5,6 @@
 use crate::db::auth::{StAccess, StTableType};
 use crate::{AlgebraicType, ProductType, SpacetimeType};
 use derive_more::Display;
-#[cfg(feature = "test")]
-use ecow::EcoString;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 
@@ -350,11 +348,8 @@ impl RawTableDefV8 {
     }
 
     #[cfg(feature = "test")]
-    pub fn new_for_tests(table_name: impl Into<EcoString>, columns: ProductType) -> Self {
-        Self::new(
-            RawIdentifier::new(table_name),
-            RawColumnDefV8::from_product_type(columns),
-        )
+    pub fn new_for_tests(table_name: impl Into<RawIdentifier>, columns: ProductType) -> Self {
+        Self::new(table_name.into(), RawColumnDefV8::from_product_type(columns))
     }
 
     /// Set the type of the table and return a new `TableDef` instance with the updated type.

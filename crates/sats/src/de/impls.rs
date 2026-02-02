@@ -9,7 +9,7 @@ use crate::{
 };
 use crate::{i256, u256};
 use core::{iter, marker::PhantomData, ops::Bound};
-use ecow::EcoString;
+use lean_string::LeanString;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList};
 use std::{borrow::Cow, rc::Rc, sync::Arc};
@@ -169,7 +169,7 @@ impl<'de> Deserialize<'de> for u8 {
 impl_deserialize!([] F32, de => f32::deserialize(de).map(Into::into));
 impl_deserialize!([] F64, de => f64::deserialize(de).map(Into::into));
 impl_deserialize!([] String, de => de.deserialize_str(OwnedSliceVisitor));
-impl_deserialize!([] EcoString, de => <Cow<'_, str>>::deserialize(de).map(|s| (&*s).into()));
+impl_deserialize!([] LeanString, de => <Cow<'_, str>>::deserialize(de).map(|s| (&*s).into()));
 impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
 impl_deserialize!([T: Deserialize<'de>, const N: usize] SmallVec<[T; N]>, de => {
     de.deserialize_array(BasicSmallVecVisitor)

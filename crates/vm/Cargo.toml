@@ -6,6 +6,9 @@ license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
 rust-version.workspace = true
 
+[features]
+test = []
+
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-execution.workspace = true

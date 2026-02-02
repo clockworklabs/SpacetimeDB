@@ -179,7 +179,6 @@ derive_more = "0.99"
 dialoguer = { version = "0.11", default-features = false }
 dirs = "5.0.1"
 duct = "0.13.5"
-ecow = "0.2.6"
 either = "1.9"
 email_address = "0.2.4"
 enum-as-inner = "0.6"
@@ -220,6 +219,7 @@ jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
 junction = "1"
 jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
 lazy_static = "1.4.0"
+lean_string = "0.5.1"
 log = "0.4.17"
 memchr = "2"
 mimalloc = "0.1.39"
