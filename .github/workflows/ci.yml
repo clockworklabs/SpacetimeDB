@@ -1043,7 +1043,8 @@ jobs:
 
       - name: Fail if Python smoketests were modified
         run: |
-          PYTHON_SMOKETEST_CHANGES=$(git diff --name-only origin/${{ github.base_ref }} HEAD -- 'smoketests/**.py')
+          MERGE_BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
+          PYTHON_SMOKETEST_CHANGES="$(git diff --name-only "$MERGE_BASE" HEAD -- 'smoketests/**.py')"
 
           if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
             echo "::error::This PR modifies legacy Python smoketests. Please add new tests to the Rust smoketests in crates/smoketests/ instead."
