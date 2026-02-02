@@ -19,15 +19,54 @@ import {
 import { bsatnBaseSize } from '../lib/util';
 import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
+import type { DbView } from './db_view';
 import { makeRandom, type Random } from './rng';
 import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
-import type { SchemaInner } from './schema';
+import {
+  exportContext,
+  registerExport,
+  type ModuleExport,
+  type SchemaInner,
+} from './schema';
+
+export type ProcedureExport<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends TypeBuilder<any, any>,
+> = ProcedureFn<S, Params, Ret> & ModuleExport;
+
+export function makeProcedureExport<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends TypeBuilder<any, any>,
+>(
+  ctx: SchemaInner,
+  opts: ProcedureOpts | undefined,
+  params: Params,
+  ret: Ret,
+  fn: ProcedureFn<S, Params, Ret>
+): ProcedureExport<S, Params, Ret> {
+  const name = opts?.name;
+
+  const procedureExport: ProcedureExport<S, Params, Ret> = (...args) =>
+    fn(...args);
+  procedureExport[exportContext] = ctx;
+  procedureExport[registerExport] = (ctx, exportName) => {
+    registerProcedure(ctx, name ?? exportName, params, ret, fn);
+  };
+
+  return procedureExport;
+}
 
 export type ProcedureFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
 > = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
+
+export interface ProcedureOpts {
+  name: string;
+}
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly sender: Identity;
@@ -45,7 +84,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
 
-export function procedure<
+function registerProcedure<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
@@ -99,7 +138,8 @@ export function callProcedure(
   sender: Identity,
   connectionId: ConnectionId | null,
   timestamp: Timestamp,
-  argsBuf: Uint8Array
+  argsBuf: Uint8Array,
+  dbView: DbView<any>
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
     moduleCtx.procedures[id];
@@ -108,7 +148,8 @@ export function callProcedure(
   const ctx: ProcedureCtx<UntypedSchemaDef> = new ProcedureCtxImpl(
     sender,
     timestamp,
-    connectionId
+    connectionId,
+    dbView
   );
 
   const ret = callUserFunction(fn, ctx, args);
@@ -124,12 +165,16 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #identity: Identity | undefined;
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
+  #dbView: DbView<any>;
 
   constructor(
     readonly sender: Identity,
     readonly timestamp: Timestamp,
-    readonly connectionId: ConnectionId | null
-  ) {}
+    readonly connectionId: ConnectionId | null,
+    dbView: DbView<any>
+  ) {
+    this.#dbView = dbView;
+  }
 
   get identity() {
     return (this.#identity ??= new Identity(sys.identity()));
@@ -151,7 +196,8 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
         const ctx: TransactionCtx<UntypedSchemaDef> = new ReducerCtxImpl(
           this.sender,
           new Timestamp(timestamp),
-          this.connectionId
+          this.connectionId,
+          this.#dbView
         );
         return body(ctx);
       } catch (e) {

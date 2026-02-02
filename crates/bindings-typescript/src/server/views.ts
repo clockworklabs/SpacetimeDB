@@ -19,7 +19,58 @@ import {
 } from '../lib/type_builders';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import { type QueryBuilder, type RowTypedQuery } from './query';
-import type { SchemaInner } from './schema';
+import {
+  exportContext,
+  registerExport,
+  type ModuleExport,
+  type SchemaInner,
+} from './schema';
+
+export type ViewExport<ViewFn> = ViewFn & ModuleExport;
+
+export function makeViewExport<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends ViewReturnTypeBuilder,
+  F extends ViewFn<S, Params, Ret>,
+>(
+  ctx: SchemaInner,
+  opts: ViewOpts,
+  params: Params,
+  ret: Ret,
+  fn: F
+): ViewExport<F> {
+  const viewExport =
+    // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
+    fn.bind() as ViewExport<F>;
+  viewExport[exportContext] = ctx;
+  viewExport[registerExport] = (ctx, exportName) => {
+    registerView(ctx, opts, exportName, false, params, ret, fn);
+  };
+  return viewExport;
+}
+
+export function makeAnonViewExport<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends ViewReturnTypeBuilder,
+  F extends AnonymousViewFn<S, Params, Ret>,
+>(
+  ctx: SchemaInner,
+  opts: ViewOpts,
+  params: Params,
+  ret: Ret,
+  fn: F
+): ViewExport<F> {
+  const viewExport =
+    // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
+    fn.bind() as ViewExport<F>;
+  viewExport[exportContext] = ctx;
+  viewExport[registerExport] = (ctx, exportName) => {
+    registerView(ctx, opts, exportName, true, params, ret, fn);
+  };
+  return viewExport;
+}
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -37,7 +88,7 @@ export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
 };
 
 export type ViewOpts = {
-  name: string;
+  name?: string;
   public: true;
 };
 
@@ -80,7 +131,7 @@ export type ViewReturnTypeBuilder =
       OptionAlgebraicType<AlgebraicTypeVariants.Product>
     >;
 
-export function defineView<
+export function registerView<
   S extends UntypedSchemaDef,
   const Anonymous extends boolean,
   Params extends ParamsObj,
@@ -88,6 +139,7 @@ export function defineView<
 >(
   ctx: SchemaInner,
   opts: ViewOpts,
+  exportName: string,
   anon: Anonymous,
   params: Params,
   ret: Ret,
@@ -95,7 +147,8 @@ export function defineView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
-  const paramsBuilder = new RowBuilder(params, toPascalCase(opts.name));
+  const name = opts.name ?? exportName;
+  const paramsBuilder = new RowBuilder(params, toPascalCase(name));
 
   // Register return types if they are product types
   let returnType = ctx.registerTypesRecursively(ret).algebraicType;
@@ -109,7 +162,7 @@ export function defineView<
   ctx.moduleDef.miscExports.push({
     tag: 'View',
     value: {
-      name: opts.name,
+      name,
       index: (anon ? ctx.anonViews : ctx.views).length,
       isPublic: opts.public,
       isAnonymous: anon,
