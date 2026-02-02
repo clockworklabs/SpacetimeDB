@@ -554,11 +554,11 @@ mod tests {
         assert_eq!(def.types[&deliveries_type_name].ty, delivery_def.product_type_ref);
 
         let init_name = expect_identifier(INIT_NAME);
-        assert_eq!(def.reducers[&init_name].name, init_name);
+        assert_eq!(&*def.reducers[&init_name].name, &*init_name);
         assert_eq!(def.reducers[&init_name].lifecycle, Some(Lifecycle::Init));
 
         let identity_connected_name = expect_identifier(IDENTITY_CONNECTED_NAME);
-        assert_eq!(def.reducers[&identity_connected_name].name, identity_connected_name);
+        assert_eq!(&*def.reducers[&identity_connected_name].name, &*identity_connected_name);
         assert_eq!(
             def.reducers[&identity_connected_name].lifecycle,
             Some(Lifecycle::OnConnect)
@@ -566,8 +566,8 @@ mod tests {
 
         let identity_disconnected_name = expect_identifier(IDENTITY_DISCONNECTED_NAME);
         assert_eq!(
-            def.reducers[&identity_disconnected_name].name,
-            identity_disconnected_name
+            &*def.reducers[&identity_disconnected_name].name,
+            &*identity_disconnected_name
         );
         assert_eq!(
             def.reducers[&identity_disconnected_name].lifecycle,
@@ -575,7 +575,7 @@ mod tests {
         );
 
         let extra_reducer_name = expect_identifier("extra_reducer");
-        assert_eq!(def.reducers[&extra_reducer_name].name, extra_reducer_name);
+        assert_eq!(&*def.reducers[&extra_reducer_name].name, &*extra_reducer_name);
         assert_eq!(def.reducers[&extra_reducer_name].lifecycle, None);
         assert_eq!(
             def.reducers[&extra_reducer_name].params,
@@ -583,7 +583,7 @@ mod tests {
         );
 
         let check_deliveries_name = expect_identifier("check_deliveries");
-        assert_eq!(def.reducers[&check_deliveries_name].name, check_deliveries_name);
+        assert_eq!(&*def.reducers[&check_deliveries_name].name, &*check_deliveries_name);
         assert_eq!(def.reducers[&check_deliveries_name].lifecycle, None);
         assert_eq!(
             def.reducers[&check_deliveries_name].params,

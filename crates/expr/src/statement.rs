@@ -3,6 +3,7 @@ use std::sync::Arc;
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::{
     ast::{
         sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate},
@@ -53,8 +54,8 @@ impl DML {
     }
 
     /// Returns the name of the table on which this mutation applies
-    pub fn table_name(&self) -> Box<str> {
-        self.table_schema().table_name.clone()
+    pub fn table_name(&self) -> &TableName {
+        &self.table_schema().table_name
     }
 }
 
