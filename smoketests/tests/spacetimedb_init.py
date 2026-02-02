@@ -158,6 +158,14 @@ class TestSpacetimeInit(unittest.TestCase):
         pnpm("install", cwd=typescript_sdk_path)
         pnpm("build", cwd=typescript_sdk_path)
 
+        # Unlink any existing global link to ensure fresh build
+        print(f"  > Unlinking any existing global spacetimedb link...")
+        try:
+            pnpm("unlink", "--global", "spacetimedb")
+        except Exception:
+            # It's okay if there's nothing to unlink
+            pass
+
         # Create a global link from the SDK
         print(f"  > Linking TypeScript SDK globally...")
         pnpm("link", "--global", cwd=typescript_sdk_path)
