@@ -11080,14 +11080,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "xtask-smoketest"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.5.50",
-]
-
-[[package]]
 name = "xxhash-rust"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
