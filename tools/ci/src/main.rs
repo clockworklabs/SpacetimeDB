@@ -118,9 +118,7 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
     let versioned_dir = match find_only_subdir(&pkg_root) {
         Ok(dir) => dir,
         Err(err) => {
-            log::info!(
-                "Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}"
-            );
+            log::info!("Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}");
             return Ok(());
         }
     };
