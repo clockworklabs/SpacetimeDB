@@ -1306,6 +1306,12 @@ pub enum FunctionVisibility {
     ClientCallable,
 }
 
+impl FunctionVisibility {
+    pub fn is_internal(&self) -> bool {
+        matches!(self, FunctionVisibility::Internal)
+    }
+}
+
 use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawFunctionVisibility;
 impl From<RawFunctionVisibility> for FunctionVisibility {
     fn from(val: RawFunctionVisibility) -> Self {

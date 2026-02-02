@@ -93,19 +93,26 @@ pub(super) fn is_reducer_invokable(reducer: &ReducerDef) -> bool {
 
 /// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
 ///
-/// The init reducer is skipped because it should never be visible to the clients.
+/// Skipping the `init` reducer and internal [`FunctionVisibiity::Internal`] reducers because they
+/// should not be directly invokable.
 /// Sorting is not necessary for reducers because they are already stored in an IndexMap.
 pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
     module
         .reducers()
         .filter(|reducer| reducer.lifecycle != Some(Lifecycle::Init))
+        .filter(|reducer| !reducer.visibility.is_internal())
 }
 
 /// Iterate over all the [`ProcedureDef`]s defined by the module, in alphabetical order by name.
 ///
+/// Skipping internal [`FunctionVisibiity::Internal`] procedures because they should not be
+/// directly invokable.
 /// Sorting is necessary to have deterministic reproducible codegen.
 pub(super) fn iter_procedures(module: &ModuleDef) -> impl Iterator<Item = &ProcedureDef> {
-    module.procedures().sorted_by_key(|procedure| &procedure.name)
+    module
+        .procedures()
+        .sorted_by_key(|procedure| &procedure.name)
+        .filter(|reducer| !reducer.visibility.is_internal())
 }
 
 /// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.

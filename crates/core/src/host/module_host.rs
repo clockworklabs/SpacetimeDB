@@ -1517,6 +1517,11 @@ impl ModuleHost {
             if let Some(lifecycle) = reducer_def.lifecycle {
                 return Err(ReducerCallError::LifecycleReducer(lifecycle));
             }
+
+            if reducer_def.visibility.is_internal() {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
+
             self.call_reducer_inner(
                 caller_identity,
                 caller_connection_id,
@@ -1693,6 +1698,11 @@ impl ModuleHost {
                 .module_def
                 .procedure_full(procedure_name)
                 .ok_or(ProcedureCallError::NoSuchProcedure)?;
+
+            if procedure_def.visibility.is_internal() {
+                return Err(ProcedureCallError::NoSuchProcedure);
+            }
+
             self.call_procedure_inner(
                 caller_identity,
                 caller_connection_id,
