@@ -261,7 +261,7 @@ impl ExecutionUnit {
             let update = F::into_query_update(qu, compression);
             TableUpdate::new(
                 self.return_table(),
-                self.return_name().to_boxed_str(),
+                self.return_name().clone().into(),
                 SingleQueryUpdate { update, num_rows },
             )
         })
