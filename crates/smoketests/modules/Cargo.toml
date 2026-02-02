@@ -36,6 +36,7 @@ members = [
     # Scheduled reducer tests
     "schedule-cancel",
     "schedule-subscribe",
+    "schedule-procedure",
     "schedule-volatile",
 
     # Module lifecycle tests

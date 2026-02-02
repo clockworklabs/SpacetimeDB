@@ -786,6 +786,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-schedule-procedure"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-schedule-subscribe"
 version = "0.1.0"
 dependencies = [
