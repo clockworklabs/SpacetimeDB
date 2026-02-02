@@ -1039,15 +1039,21 @@ record ViewDeclaration
             ? $$$"""
                     var listSerializer = {{{ReturnType.BSATNName}}}.GetListSerializer();
                     var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+                    var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+                    var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
                     using var output = new System.IO.MemoryStream();
                     using var writer = new System.IO.BinaryWriter(output);
+                    headerRW.Write(writer, header);
                     listSerializer.Write(writer, listValue);
                     return output.ToArray();
                 """
             : $$$"""
                     {{{ReturnType.BSATNName}}} returnRW = new();
+                    var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+                    var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
                     using var output = new System.IO.MemoryStream();
                     using var writer = new System.IO.BinaryWriter(output);
+                    headerRW.Write(writer, header);
                     returnRW.Write(writer, returnValue);
                     return output.ToArray();            
                 """;

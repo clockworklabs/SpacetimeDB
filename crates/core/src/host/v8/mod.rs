@@ -628,8 +628,9 @@ async fn spawn_instance_worker(
         let reply = |ctx: &str, reply: JsWorkerReply, trapped| {
             if let Err(e) = reply_tx.send((reply, trapped)) {
                 // This should never happen as `JsInstance::$function` immediately
-                // does `.recv` on the other end of the channel.
-                unreachable!("should have receiver for `{ctx}` response, {e}");
+                // does `.recv` on the other end of the channel, though sometimes
+                // it gets cancelled.
+                log::error!("should have receiver for `{ctx}` response, {e}");
             }
         };
         for request in request_rx.iter() {
