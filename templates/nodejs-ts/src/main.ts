@@ -30,11 +30,6 @@ async function main(): Promise<void> {
     .build();
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
-
 function onConnect(
   conn: DbConnection,
   identity: Identity,
@@ -159,3 +154,8 @@ function saveToken(token: string): void {
     console.warn('Could not save token:', err);
   }
 }
+
+main().catch(err => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
