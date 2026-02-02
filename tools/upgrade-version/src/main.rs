@@ -175,19 +175,6 @@ fn main() -> anyhow::Result<()> {
             }
         })?;
 
-        edit_toml("templates/basic-rs/spacetimedb/Cargo.toml", |doc| {
-            // Only set major.minor.* for the spacetimedb dependency.
-            // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
-            //
-            // Note: This is meaningfully different than setting just major.minor.
-            // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
-            doc["dependencies"]["spacetimedb"] = toml_edit::value(wildcard_patch.clone());
-        })?;
-
-        edit_toml("templates/basic-rs/Cargo.toml", |doc| {
-            doc["dependencies"]["spacetimedb-sdk"] = toml_edit::value(wildcard_patch.clone());
-        })?;
-
         process_license_file("LICENSE.txt", &full_version);
         process_license_file("licenses/BSL.txt", &full_version);
         // Rebuild `Cargo.lock`

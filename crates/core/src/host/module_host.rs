@@ -44,6 +44,7 @@ use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
 };
 use spacetimedb_data_structures::error_stream::ErrorStream;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
@@ -64,7 +65,7 @@ use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::relation::RelValue;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
@@ -578,7 +579,7 @@ pub fn call_identity_connected(
 
             // If the reducer returned an error or couldn't run due to insufficient energy,
             // abort the connection: the module code has decided it doesn't want this client.
-            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(message)),
+            ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(*message)),
             ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
         }
     } else {
@@ -966,7 +967,7 @@ pub enum ClientConnectedError {
     #[error("Failed to insert `st_client` row for module without client_connected reducer: {0}")]
     DBError(#[from] Box<DBError>),
     #[error("Connection rejected by `client_connected` reducer: {0}")]
-    Rejected(String),
+    Rejected(Box<str>),
     #[error("Insufficient energy balance to run `client_connected` reducer")]
     OutOfEnergy,
 }
