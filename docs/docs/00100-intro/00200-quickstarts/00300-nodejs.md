@@ -8,7 +8,6 @@ hide_table_of_contents: true
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { StepByStep, Step, StepText, StepCode } from "@site/src/components/Steps";
 
-
 Get a SpacetimeDB Node.js app running in under 5 minutes.
 
 ## Prerequisites
@@ -28,10 +27,13 @@ Get a SpacetimeDB Node.js app running in under 5 minutes.
       This will start the local SpacetimeDB server, publish your module, and generate TypeScript bindings.
     </StepText>
     <StepCode>
+
 ```bash
 spacetime dev --template nodejs-ts
 ```
+
     </StepCode>
+
   </Step>
 
   <Step title="Explore the project structure">
@@ -41,6 +43,7 @@ spacetime dev --template nodejs-ts
       Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `src/main.ts` to build your Node.js client.
     </StepText>
     <StepCode>
+
 ```
 my-spacetime-app/
 ├── spacetimedb/          # Your SpacetimeDB module
@@ -51,7 +54,9 @@ my-spacetime-app/
 │   └── module_bindings/  # Auto-generated types
 └── package.json
 ```
+
     </StepCode>
+
   </Step>
 
   <Step title="Understand tables and reducers">
@@ -61,6 +66,7 @@ my-spacetime-app/
       Tables store your data. Reducers are functions that modify data — they're the only way to write to the database.
     </StepText>
     <StepCode>
+
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
@@ -77,14 +83,16 @@ spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
   ctx.db.person.insert({ name });
 });
 
-spacetimedb.reducer('say_hello', (ctx) => {
+spacetimedb.reducer('say_hello', ctx => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }
   console.info('Hello, World!');
 });
 ```
+
     </StepCode>
+
   </Step>
 
   <Step title="Run the client">
@@ -97,7 +105,9 @@ spacetimedb.reducer('say_hello', (ctx) => {
 npm run dev
 
 # Or run once
+
 npm run start
+
 ```
     </StepCode>
   </Step>
@@ -108,36 +118,39 @@ npm run start
     </StepText>
     <StepCode>
 ```
+
 Connecting to SpacetimeDB...
-  URI: ws://localhost:3000
-  Module: nodejs-ts
+URI: ws://localhost:3000
+Module: nodejs-ts
 
 Connected to SpacetimeDB!
 Identity: abc123def456...
 
 Current people (0):
-  (none yet)
+(none yet)
 
 Commands:
-  <name>  - Add a person with that name
-  list    - Show all people
-  hello   - Greet everyone (check server logs)
-  Ctrl+C  - Quit
+<name> - Add a person with that name
+list - Show all people
+hello - Greet everyone (check server logs)
+Ctrl+C - Quit
 
 > Alice
-[Added] Alice
+> [Added] Alice
 
 > Bob
-[Added] Bob
+> [Added] Bob
 
 > list
-People in database:
-  - Alice
-  - Bob
+> People in database:
+
+- Alice
+- Bob
 
 > hello
-Called say_hello reducer (check server logs)
-```
+> Called say_hello reducer (check server logs)
+
+````
     </StepCode>
   </Step>
 
@@ -152,7 +165,7 @@ Called say_hello reducer (check server logs)
 import { DbConnection } from './module_bindings/index.js';
 
 // Build and establish connection
-const conn = DbConnection.builder()
+DbConnection.builder()
   .withUri(HOST)
   .withModuleName(DB_NAME)
   .withToken(loadToken())  // Load saved token from file
@@ -164,7 +177,7 @@ const conn = DbConnection.builder()
     conn.subscriptionBuilder()
       .onApplied((ctx) => {
         // Show current data, start CLI
-        setupCLI();
+        setupCLI(conn);
       })
       .subscribeToAllTables();
 
@@ -174,8 +187,10 @@ const conn = DbConnection.builder()
     });
   })
   .build();
-```
+````
+
     </StepCode>
+
   </Step>
 
   <Step title="Test with the SpacetimeDB CLI">
@@ -188,23 +203,29 @@ const conn = DbConnection.builder()
 spacetime call <database-name> add Charlie
 
 # Query the person table
-spacetime sql <database-name> "SELECT * FROM person"
- name
----------
- "Alice"
- "Bob"
- "Charlie"
+
+spacetime sql <database-name> "SELECT \* FROM person"
+name
+
+---
+
+"Alice"
+"Bob"
+"Charlie"
 
 # Call say_hello to greet everyone
+
 spacetime call <database-name> say_hello
 
 # View the module logs
+
 spacetime logs <database-name>
-2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
-2025-01-13T12:00:00.000000Z  INFO: Hello, Bob!
-2025-01-13T12:00:00.000000Z  INFO: Hello, Charlie!
-2025-01-13T12:00:00.000000Z  INFO: Hello, World!
-```
+2025-01-13T12:00:00.000000Z INFO: Hello, Alice!
+2025-01-13T12:00:00.000000Z INFO: Hello, Bob!
+2025-01-13T12:00:00.000000Z INFO: Hello, Charlie!
+2025-01-13T12:00:00.000000Z INFO: Hello, World!
+
+````
     </StepCode>
   </Step>
 
@@ -224,8 +245,10 @@ SPACETIMEDB_DB_NAME=my-app \
 npm run start
 
 # Or use a .env file with dotenv
-```
+````
+
     </StepCode>
+
   </Step>
 </StepByStep>
 
