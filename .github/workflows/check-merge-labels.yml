@@ -8,7 +8,7 @@ permissions: read-all
 
 jobs:
   label_checks:
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - id: manually_blocked
         if: |

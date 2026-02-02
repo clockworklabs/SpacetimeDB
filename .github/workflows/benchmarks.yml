@@ -180,7 +180,7 @@ jobs:
     # Fortunately, we can run on standard GitHub Actions infra because we don't care
     # about other stuff running on the machine!
     # runs-on: benchmarks-runner
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
       image: rust:1.90.0

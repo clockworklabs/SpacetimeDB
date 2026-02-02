@@ -11,7 +11,7 @@ on:
 
 jobs:
   docker-amd64:
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     name: Build DockerHub AMD64 Container
     steps:
       - name: Checkout
