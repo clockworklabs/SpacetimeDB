@@ -547,7 +547,7 @@ impl Smoketest {
                 "-c",
                 sql,
             ])
-            .env("PGPASSWORD", &token)
+            .env("PGPASSWORD", token)
             .output()
             .context("Failed to run psql")?;
 
