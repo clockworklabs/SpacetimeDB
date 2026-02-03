@@ -95,7 +95,8 @@ fn check_global_json_policy() -> Result<()> {
 }
 
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
+    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
+    let skeleton_root = skeleton_base.join(pkg_id);
     if !skeleton_root.exists() {
         return Ok(());
     }
@@ -105,6 +106,15 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
         return Ok(());
     }
 
+    // Copy spacetimedb.<pkg>.meta
+    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
+    if pkg_root_meta.exists() {
+        if let Some(parent) = pkg_root.parent() {
+            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
+            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
+        }
+    }
+
     let versioned_dir = match find_only_subdir(&pkg_root) {
         Ok(dir) => dir,
         Err(err) => {
@@ -112,6 +122,18 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
             return Ok(());
         }
     };
+
+    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
+    let version_meta_template = skeleton_root.join("version.meta");
+    if version_meta_template.exists() {
+        if let Some(parent) = versioned_dir.parent() {
+            let version_name = versioned_dir
+                .file_name()
+                .expect("versioned directory should have a file name");
+            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
+            fs::copy(&version_meta_template, &version_meta_dst)?;
+        }
+    }
 
     copy_overlay_dir(&skeleton_root, &versioned_dir)
 }
