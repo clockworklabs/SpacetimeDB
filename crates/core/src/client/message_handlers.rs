@@ -176,15 +176,21 @@ pub struct MessageExecutionError {
 
 impl MessageExecutionError {
     fn into_event(self) -> ModuleEvent {
-        let reducer = RawIdentifier::new(self.reducer.as_deref().unwrap_or("<none>"));
-        let reducer = ReducerName::new(Identifier::new(reducer).unwrap());
+        let reducer = self
+            .reducer
+            .as_deref()
+            .map(RawIdentifier::new)
+            .map(Identifier::new)
+            .transpose()
+            .unwrap()
+            .map(ReducerName::new);
 
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
             caller_connection_id: self.caller_connection_id,
             function_call: ModuleFunctionCall {
-                reducer: Some(reducer),
+                reducer,
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },
