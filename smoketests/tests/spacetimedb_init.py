@@ -141,11 +141,20 @@ class TestSpacetimeInit(unittest.TestCase):
         with open(package_json_path, 'r') as f:
             package_data = json.load(f)
 
-        # Convert to absolute path and format as URI for npm/pnpm file: protocol
-        abs_path = Path(local_path).absolute()
-        # Use as_uri() to get proper file:// URL format (works on both Windows and Unix)
-        file_url = abs_path.as_uri()
-        package_data["dependencies"][package_name] = file_url
+        # Use relative path from package.json to the SDK
+        # pnpm handles relative paths better than file:// URLs on Windows
+        abs_sdk_path = Path(local_path).absolute()
+        abs_package_json_dir = package_json_path.parent.absolute()
+
+        try:
+            rel_path = os.path.relpath(abs_sdk_path, abs_package_json_dir)
+            # Convert backslashes to forward slashes for cross-platform compatibility
+            rel_path = rel_path.replace('\\', '/')
+            package_data["dependencies"][package_name] = rel_path
+        except ValueError:
+            # On Windows, if paths are on different drives, use file:// protocol
+            file_url = abs_sdk_path.as_uri()
+            package_data["dependencies"][package_name] = file_url
 
         with open(package_json_path, 'w') as f:
             json.dump(package_data, f, indent=2)
