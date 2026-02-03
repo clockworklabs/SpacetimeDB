@@ -149,10 +149,8 @@ public partial struct GeneratedSql
 
 public static partial class Reducers
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.General)
-    {
-        WriteIndented = false,
-    };
+    private static readonly JsonSerializerOptions JsonOptions =
+        new(JsonSerializerDefaults.General) { WriteIndented = false };
 
     [SpacetimeDB.Reducer]
     public static void InsertData(ReducerContext ctx, PublicTable data)
@@ -196,11 +194,14 @@ public static partial class Reducers
     [SpacetimeDB.Reducer]
     public static void GenerateSql(ReducerContext ctx, string label)
     {
-        var query = ctx.From.PublicTable()
+        var query = ctx
+            .From.PublicTable()
             .Where(cols => cols.Id.Eq(SpacetimeDB.SqlLit.Int(0)))
             .Build();
 
-        foreach (var existing in ctx.Db.GeneratedSql.Iter().Where(row => row.Label == label).ToList())
+        foreach (
+            var existing in ctx.Db.GeneratedSql.Iter().Where(row => row.Label == label).ToList()
+        )
         {
             ctx.Db.GeneratedSql.Delete(existing);
         }
