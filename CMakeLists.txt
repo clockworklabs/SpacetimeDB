@@ -3,10 +3,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(SpacetimeDBCppModuleLibrary CXX)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
 # Module Library source files
 set(LIBRARY_SOURCES
     src/abi/module_exports.cpp
@@ -15,12 +11,15 @@ set(LIBRARY_SOURCES
     src/internal/AlgebraicType.cpp  # Required for V9 autogen types
     src/internal/v9_builder.cpp  # V9 incremental module builder
     src/internal/v9_type_registration.cpp  # Unified type registration system
-    # src/library/index_management.cpp  # Disabled due to conflicts with index_ops.h
-    # src/type_registry.cpp  # REMOVED - TypeRegistry system eliminated
 )
 
-# Create the Module Library
-add_library(spacetimedb_cpp_library STATIC ${LIBRARY_SOURCES})
+add_library(spacetimedb_cpp_library STATIC)
+add_library(spacetimedb::spacetimedb_cpp_library ALIAS spacetimedb_cpp_library)
+
+target_sources(spacetimedb_cpp_library PRIVATE ${LIBRARY_SOURCES})
+
+# Require C++20 for consumers of this library without forcing global flags
+target_compile_features(spacetimedb_cpp_library PUBLIC cxx_std_20)
 
 # Set include directories
 target_include_directories(spacetimedb_cpp_library
@@ -45,11 +44,24 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # This allows debugging the library during development if needed
 endif()
 
-# Export compile commands for better IDE support
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Export compile commands for better IDE support (top-level only)
+if(PROJECT_IS_TOP_LEVEL)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+endif()
 
-# Testing configuration
-option(BUILD_TESTS "Build the test suite" ON)
+# ---- Tests ----
+# Default: ON only when building this project directly; OFF when used via FetchContent/add_subdirectory
+if(CMAKE_VERSION VERSION_LESS 3.21)
+    # Fallback heuristic for older CMake
+    set(_is_top_level FALSE)
+    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+        set(_is_top_level TRUE)
+    endif()
+else()
+    set(_is_top_level ${PROJECT_IS_TOP_LEVEL})
+endif()
+
+option(BUILD_TESTS "Build the test suite" ${_is_top_level})
 
 if(BUILD_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     enable_testing()
