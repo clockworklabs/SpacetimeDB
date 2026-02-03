@@ -5,7 +5,8 @@ import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, ErrorContext } from '../src/module_bindings';
 import { Identity } from 'spacetimedb';
 
-const HOST = process.env.NEXT_PUBLIC_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const HOST =
+  process.env.NEXT_PUBLIC_SPACETIMEDB_HOST ?? 'wss://maincloud.spacetimedb.com';
 const DB_NAME = process.env.NEXT_PUBLIC_SPACETIMEDB_DB_NAME ?? 'nextjs-ts';
 
 const onConnect = (_conn: DbConnection, identity: Identity, token: string) => {

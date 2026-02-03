@@ -36,9 +36,9 @@ spacetime dev --template nextjs-ts my-nextjs-app
 
   <Step title="Open your app">
     <StepText>
-      Navigate to [http://localhost:3001](http://localhost:3001) to see your app running.
+      Navigate to [http://localhost:3000](http://localhost:3000) to see your app running.
 
-      Note: The Next.js dev server runs on port 3001 to avoid conflict with SpacetimeDB on port 3000.
+      The `spacetime dev` command automatically configures your app to connect to SpacetimeDB via environment variables in `.env.local`.
     </StepText>
   </Step>
 
@@ -46,18 +46,21 @@ spacetime dev --template nextjs-ts my-nextjs-app
     <StepText>
       Your project contains both server and client code using the Next.js App Router.
 
-      Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `app/page.tsx` to build your UI.
+      Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `app/page.tsx` and `app/PersonList.tsx` to build your UI.
     </StepText>
     <StepCode>
 ```
 my-nextjs-app/
 ├── spacetimedb/          # Your SpacetimeDB module
 │   └── src/
-│       └── index.ts      # Server-side logic
+│       └── index.ts      # SpacetimeDB module logic
 ├── app/                  # Next.js App Router
 │   ├── layout.tsx        # Root layout with providers
-│   ├── page.tsx          # Home page
-│   └── providers.tsx     # SpacetimeDB provider (client component)
+│   ├── page.tsx          # Server Component (fetches initial data)
+│   ├── PersonList.tsx    # Client Component (real-time updates)
+│   └── providers.tsx     # SpacetimeDB provider for real-time
+├── lib/
+│   └── spacetimedb-server.ts  # Server-side data fetching
 ├── src/
 │   └── module_bindings/  # Auto-generated types
 └── package.json
@@ -124,69 +127,75 @@ spacetime logs my-nextjs-app
     </StepCode>
   </Step>
 
-  <Step title="Understand the provider pattern">
+  <Step title="Understand server-side rendering">
     <StepText>
-      SpacetimeDB is client-side only — it cannot run during server-side rendering. The `app/providers.tsx` file uses the `"use client"` directive and wraps your app with `SpacetimeDBProvider`.
+      The SpacetimeDB SDK works both server-side and client-side. The template uses a hybrid approach:
 
-      The template uses environment variables for configuration. Set `NEXT_PUBLIC_SPACETIMEDB_URI` and `NEXT_PUBLIC_SPACETIMEDB_MODULE` to override defaults.
+      - **Server Component** (`page.tsx`): Fetches initial data during SSR for fast page loads
+      - **Client Component** (`PersonList.tsx`): Maintains a real-time WebSocket connection for live updates
+
+      The `lib/spacetimedb-server.ts` file provides a utility for server-side data fetching.
     </StepText>
     <StepCode>
 ```tsx
-// app/providers.tsx
-'use client';
-
-import { useMemo } from 'react';
-import { SpacetimeDBProvider } from 'spacetimedb/react';
+// lib/spacetimedb-server.ts
 import { DbConnection } from '../src/module_bindings';
 
-const URI = process.env.NEXT_PUBLIC_SPACETIMEDB_URI ?? 'ws://localhost:3000';
-const MODULE = process.env.NEXT_PUBLIC_SPACETIMEDB_MODULE ?? 'my-nextjs-app';
-
-export function Providers({ children }: { children: React.ReactNode }) {
-  const connectionBuilder = useMemo(() =>
-    DbConnection.builder()
-      .withUri(URI)
-      .withModuleName(MODULE),
-    []
-  );
-
-  return (
-    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-      {children}
-    </SpacetimeDBProvider>
-  );
+export async function fetchPeople() {
+  return new Promise((resolve, reject) => {
+    const connection = DbConnection.builder()
+      .withUri(process.env.SPACETIMEDB_HOST!)
+      .withModuleName(process.env.SPACETIMEDB_DB_NAME!)
+      .onConnect(conn => {
+        conn.subscriptionBuilder()
+          .onApplied(() => {
+            const people = Array.from(conn.db.person.iter());
+            conn.disconnect();
+            resolve(people);
+          })
+          .subscribe('SELECT * FROM person');
+      })
+      .build();
+  });
 }
 ```
     </StepCode>
   </Step>
 
-  <Step title="Use React hooks for data">
+  <Step title="Use React hooks for real-time data">
     <StepText>
-      In your page components, use `useTable` to subscribe to table data and `useReducer` to call reducers. All components using these hooks must have the `"use client"` directive.
+      In client components, use `useTable` to subscribe to table data and `useReducer` to call reducers. The Server Component passes initial data as props for instant rendering.
     </StepText>
     <StepCode>
 ```tsx
-// app/page.tsx
+// app/page.tsx (Server Component)
+import { PersonList } from './PersonList';
+import { fetchPeople } from '../lib/spacetimedb-server';
+
+export default async function Home() {
+  const initialPeople = await fetchPeople();
+  return <PersonList initialPeople={initialPeople} />;
+}
+```
+
+```tsx
+// app/PersonList.tsx (Client Component)
 'use client';
 
 import { tables, reducers } from '../src/module_bindings';
 import { useTable, useReducer } from 'spacetimedb/react';
 
-export default function Home() {
-  // Subscribe to table data - returns [rows, isLoading]
-  const [people] = useTable(tables.person);
-
-  // Get a function to call a reducer
+export function PersonList({ initialPeople }) {
+  // Real-time data from WebSocket subscription
+  const [people, isLoading] = useTable(tables.person);
   const addPerson = useReducer(reducers.add);
 
-  const handleAdd = () => {
-    // Call reducer with object syntax
-    addPerson({ name: 'Alice' });
-  };
+  // Use server data until client is connected
+  const displayPeople = isLoading ? initialPeople : people;
 
   return (
     <ul>
-      {people.map((person, i) => <li key={i}>{person.name}</li>)}
+      {displayPeople.map((person, i) => <li key={i}>{person.name}</li>)}
     </ul>
   );
 }
