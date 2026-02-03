@@ -1,4 +1,4 @@
-import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
 import type Typespace from './autogen/typespace_type';
 import {
   ArrayBuilder,
@@ -27,7 +27,6 @@ import {
   type ParamsObj,
   type Reducer,
 } from './reducers';
-import type RawModuleDefV9 from './autogen/raw_module_def_v_9_type';
 import {
   AlgebraicType,
   ProductType,
@@ -35,7 +34,7 @@ import {
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
-import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
+import type RawScopedTypeNameV10 from './autogen/raw_scoped_type_name_v_10_type';
 import type { CamelCase } from './type_util';
 import type { UntypedTableSchema } from './table_schema';
 import { toCamelCase } from './util';
@@ -48,6 +47,7 @@ import {
 } from './views';
 import type { UntypedIndex } from './indexes';
 import { procedure, type ProcedureFn } from './procedures';
+import type RawModuleDefV10Section from './autogen/raw_module_def_v_10_section_type';
 
 export type TableNamesOf<S extends UntypedSchemaDef> =
   S['tables'][number]['name'];
@@ -106,7 +106,7 @@ function tableToSchema<T extends UntypedTableSchema>(
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     constraints: schema.tableDef.constraints.map(c => ({
-      name: c.name,
+      name: c.sourceName,
       constraint: 'unique',
       columns: c.data.value.columns.map(getColName) as [string],
     })),
@@ -132,16 +132,74 @@ function tableToSchema<T extends UntypedTableSchema>(
 }
 
 /**
- * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
+ * The global module definition that gets populated by calls to `reducer()`
+ * and lifecycle hooks.
  */
-export const MODULE_DEF: Infer<typeof RawModuleDefV9> = {
-  typespace: { types: [] },
-  tables: [],
-  reducers: [],
-  types: [],
-  miscExports: [],
-  rowLevelSecurity: [],
+
+type Section = Infer<typeof RawModuleDefV10Section>;
+type Tag = Section["tag"];
+
+type ValueOf<T extends Tag> =
+  Extract<Section, { tag: T }>["value"];
+
+const defaults: { [K in Tag]: () => ValueOf<K> } = {
+  Typespace: () => ({ types: [] }),
+  Types: () => [],
+  Tables: () => [],
+  Reducers: () => [],
+  Procedures: () => [],
+  Views: () => [],
+  Schedules: () => [],
+  LifeCycleReducers: () => [],
+  RowLevelSecurity: () => [],
 };
+
+
+class ModuleDefWithoutAccessors { 
+  private readonly _sections: Section[] = [];
+
+  /** read-only view */
+  get sections(): Section[] {
+    return this._sections;
+  }
+
+  /** core typed accessor */
+  get<T extends Tag>(tag: T): Extract<Section, { tag: T }>{
+    const found = this._sections.find(
+      (x): x is Extract<Section, { tag: T }> => x.tag === tag
+    );
+
+    if (found) return found;
+
+    const value = defaults[tag]();
+    const section = { tag, value } as Section;
+
+    // single safe boundary cast (TS can't correlate generics here)
+    this._sections.push(section);
+
+    return section as Extract<Section, { tag: T }>;
+  }
+
+  /** auto-generate strongly typed fields: module.Tables, module.Reducers, ... */
+  constructor() {
+    const tags = Object.keys(defaults) as Tag[];
+
+    for (const tag of tags) {
+      Object.defineProperty(this, tag, {
+        get: () => this.get(tag),
+        enumerable: true,
+      });
+    }
+  }
+}
+
+
+export type ModuleDef =
+  ModuleDefWithoutAccessors & {
+  [K in Tag as Uncapitalize<K>]: ValueOf<K>;
+  };
+
+export const MODULE_DEF = new ModuleDefWithoutAccessors() as ModuleDef;
 
 const COMPOUND_TYPES = new Map<
   AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
@@ -264,7 +322,7 @@ function registerCompoundTypeRecursively<
   }
 
   MODULE_DEF.types.push({
-    name: splitName(name),
+    sourceName: splitName(name),
     ty: r.ref,
     customOrdering: true,
   });
@@ -279,9 +337,9 @@ function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
   );
 }
 
-export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
+export function splitName(name: string): Infer<typeof RawScopedTypeNameV10> {
   const scope = name.split('.');
-  return { name: scope.pop()!, scope };
+  return { sourceName: scope.pop()!, scope };
 }
 
 /**
@@ -319,12 +377,12 @@ export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
 class Schema<S extends UntypedSchemaDef> {
-  readonly tablesDef: { tables: Infer<typeof RawTableDefV9>[] };
+  readonly tablesDef: { tables: Infer<typeof RawTableDefV10>[] };
   readonly typespace: Infer<typeof Typespace>;
   readonly schemaType: S;
 
   constructor(
-    tables: Infer<typeof RawTableDefV9>[],
+    tables: Infer<typeof RawTableDefV10>[],
     typespace: Infer<typeof Typespace>,
     handles: readonly UntypedTableSchema[]
   ) {
@@ -637,6 +695,12 @@ export function schema<const H extends readonly UntypedTableSchema[]>(
       constraints: handle.constraints,
     })),
   };
+
+
+handles.forEach(h => {
+  if (h.schedule) MODULE_DEF.schedules.push(h.schedule);
+});
+
   // MODULE_DEF.typespace = typespace;
   // throw new Error(
   //   MODULE_DEF.tables

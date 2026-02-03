@@ -1,6 +1,6 @@
-import { ProductType } from './algebraic_type';
+import { AlgebraicType, ProductType } from './algebraic_type';
 import Lifecycle from './autogen/lifecycle_type';
-import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
+import type RawLifeCycleDefV10 from './autogen/raw_life_cycle_reducer_def_v_10_type.ts';
 import type { ConnectionId } from './connection_id';
 import type { Identity } from './identity';
 import { type Timestamp } from './timestamp';
@@ -25,6 +25,8 @@ import { toCamelCase, toPascalCase } from './util';
 import type { CamelCase } from './type_util';
 import { Uuid } from './uuid.ts';
 import type { Random } from '../server/rng';
+import type raw_life_cycle_reducer_def_v_10_type from './autogen/raw_life_cycle_reducer_def_v_10_type.ts';
+import FunctionVisibility from './autogen/function_visibility_type.ts';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -139,7 +141,7 @@ export function pushReducer(
   name: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof RawReducerDefV9>['lifecycle']
+  lifecycle?: Infer<typeof RawLifeCycleDefV10>['lifecycleSpec']
 ): void {
   if (existingReducers.has(name)) {
     throw new TypeError(`There is already a reducer with the name '${name}'`);
@@ -157,11 +159,25 @@ export function pushReducer(
   const ref = registerTypesRecursively(params);
   const paramsType = resolveType(MODULE_DEF.typespace, ref).value;
 
+  const isLifecycle = lifecycle != null;
+
   MODULE_DEF.reducers.push({
-    name,
-    params: paramsType,
-    lifecycle, // <- lifecycle flag lands here
+  sourceName: name,
+  params: paramsType,
+  visibility: isLifecycle
+    ? FunctionVisibility.Internal
+    : FunctionVisibility.ClientCallable,
+  okReturnType: AlgebraicType.Product({ elements: [] }),
+  errReturnType: AlgebraicType.String,
+});
+
+  if (isLifecycle) {
+  MODULE_DEF.lifeCycleReducers.push({
+    lifecycleSpec: lifecycle,
+    functionName: name,
   });
+}
+
 
   // If the function isn't named (e.g. `function foobar() {}`), give it the same
   // name as the reducer so that it's clear what it is in in backtraces.

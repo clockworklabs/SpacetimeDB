@@ -1,8 +1,10 @@
-import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
+import type RawColumnDefaultValueV10 from './autogen/raw_column_default_value_v_10_type';
+import type RawConstraintDefV10 from './autogen/raw_constraint_def_v_10_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
-import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
-import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
-import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type RawIndexDefV10 from './autogen/raw_index_def_v_10_type';
+import type RawScheduleDefV10 from './autogen/raw_schedule_def_v_10_type';
+import type RawSequenceDefV10 from './autogen/raw_sequence_def_v_10_type';
+import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type {
   ColumnIndex,
@@ -309,11 +311,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
-  const indexes: Infer<typeof RawIndexDefV9>[] = [];
-  const constraints: Infer<typeof RawConstraintDefV9>[] = [];
-  const sequences: Infer<typeof RawSequenceDefV9>[] = [];
+  const indexes: Infer<typeof RawIndexDefV10>[] = [];
+  const constraints: Infer<typeof RawConstraintDefV10>[] = [];
+  const sequences: Infer<typeof RawSequenceDefV10>[] = [];
 
   let scheduleAtCol: ColId | undefined;
+  let defaultValues: Infer<typeof RawColumnDefaultValueV10>[] = [];
 
   for (const [name, builder] of Object.entries(row.row)) {
     const meta: ColumnMetadata<any> = builder.columnMetadata;
@@ -338,7 +341,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
           break;
       }
       indexes.push({
-        name: undefined, // Unnamed indexes will be assigned a globally unique name
+        sourceName: undefined, // Unnamed indexes will be assigned a globally unique name
         accessorName: name, // The name of this column will be used as the accessor name
         algorithm,
       });
@@ -346,20 +349,27 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
     if (isUnique) {
       constraints.push({
-        name: undefined,
+        sourceName: undefined,
         data: { tag: 'Unique', value: { columns: [colIds.get(name)!] } },
       });
     }
 
     if (meta.isAutoIncrement) {
       sequences.push({
-        name: undefined,
+        sourceName: undefined,
         start: undefined,
         minValue: undefined,
         maxValue: undefined,
         column: colIds.get(name)!,
         increment: 1n,
       });
+
+      if (meta.defaultValue) {
+      defaultValues.push({
+          colId: colIds.get(name)!,
+          value: meta.defaultValue,
+      });
+      }
     }
 
     // If this column is shaped like ScheduleAtAlgebraicType, mark it as the schedule‑at column
@@ -392,17 +402,17 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     // no actual way for the user to set the actual index name.
     // I think we should standardize: name and accessorName as the way to set
     // the name and accessor name of an index across all SDKs.
-    indexes.push({ name: undefined, accessorName: indexOpts.name, algorithm });
+    indexes.push({ sourceName: undefined, accessorName: indexOpts.name, algorithm });
   }
 
   // add explicit constraints from options.constraints
   for (const constraintOpts of opts.constraints ?? []) {
     if (constraintOpts.constraint === 'unique') {
-      const data: Infer<typeof RawConstraintDefV9>['data'] = {
+      const data: Infer<typeof RawConstraintDefV10>['data'] = {
         tag: 'Unique',
         value: { columns: constraintOpts.columns.map(c => colIds.get(c)!) },
       };
-      constraints.push({ name: constraintOpts.name, data });
+      constraints.push({ sourceName: constraintOpts.name, data });
       continue;
     }
   }
@@ -413,35 +423,39 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         ? [index.algorithm.value]
         : index.algorithm.value;
     const colS = cols.map(i => colNameList[i]).join('_');
-    index.name = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
+    index.sourceName = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
   }
 
   // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
 
-  const tableDef: Infer<typeof RawTableDefV9> = {
-    name,
+  const tableDef: Infer<typeof RawTableDefV10> = {
+    sourceName: name,
     productTypeRef: rowTypeRef.ref,
     primaryKey: pk,
     indexes,
     constraints,
     sequences,
-    schedule:
-      scheduled && scheduleAtCol !== undefined
-        ? {
-            name: undefined,
-            reducerName: scheduled,
-            scheduledAtColumn: scheduleAtCol,
-          }
-        : undefined,
     tableType: { tag: 'User' },
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
+    defaultValues,
   };
 
   const productType = row.algebraicType.value as RowBuilder<
     CoerceRow<Row>
   >['algebraicType']['value'];
 
+
+  const schedule: Infer<typeof RawScheduleDefV10> | undefined = 
+      scheduled && scheduleAtCol !== undefined
+        ? {
+            sourceName: undefined,
+            tableName: name,
+            functionName: scheduled,
+            scheduleAtCol: scheduleAtCol,
+          }
+        : undefined;
+ 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
@@ -449,5 +463,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableDef,
     idxs: {} as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
+    schedule,
   };
 }

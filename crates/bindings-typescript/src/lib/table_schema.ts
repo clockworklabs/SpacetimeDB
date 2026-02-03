@@ -1,4 +1,5 @@
-import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
+import type RawScheduleDefV10 from './autogen/raw_schedule_def_v_10_type';
 import type { IndexOpts } from './indexes';
 import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
 
@@ -26,9 +27,9 @@ export type TableSchema<
   readonly rowSpacetimeType: RowBuilder<Row>['algebraicType']['value'];
 
   /**
-   * The {@link RawTableDefV9} of the configured table
+   * The {@link RawTableDefV10} of the configured table
    */
-  readonly tableDef: Infer<typeof RawTableDefV9>;
+  readonly tableDef: Infer<typeof RawTableDefV10>;
 
   /**
    * The indexes defined on the table.
@@ -43,6 +44,12 @@ export type TableSchema<
     constraint: 'unique';
     columns: [any];
   }[];
+
+
+  /**
+   * The schedule defined on the table, if any.
+   */
+ readonly schedule?: Infer<typeof RawScheduleDefV10>;
 };
 
 export type UntypedTableSchema = TableSchema<

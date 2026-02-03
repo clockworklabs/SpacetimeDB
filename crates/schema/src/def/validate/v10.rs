@@ -159,8 +159,9 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .combine_errors()
         .and_then(
             |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
-                let (mut reducers, procedures, views) = check_function_names_are_unique(reducers, procedures, views)?;
+                let (mut reducers, mut procedures, views) = check_function_names_are_unique(reducers, procedures, views)?;
 
+                change_scheduled_functions_and_lifetimes_visibility(&schedules, &lifecycles, &mut reducers, &mut procedures)?;
                 // Attach lifecycles to their respective reducers
                 attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
 
@@ -172,7 +173,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 Ok((tables, types, reducers, procedures, views))
             },
         );
-
     let CoreValidator {
         stored_in_table_def,
         typespace_for_generate,
@@ -199,6 +199,54 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         procedures,
         raw_module_def_version: RawModuleDefVersion::V10,
     })
+}
+
+/// Change the visibility of scheduled functions and lifecycle reducers to Internal.
+fn change_scheduled_functions_and_lifetimes_visibility(
+    schedules: &[(ScheduleDef, Box<str>)],
+    lifecycles: &[(ReducerId, Lifecycle)],
+    reducers: &mut IndexMap<Identifier, ReducerDef>,
+    procedures: &mut IndexMap<Identifier, ProcedureDef>,
+) -> Result<()> {
+    for (sched_def, _) in schedules {
+        match sched_def.function_kind {
+            FunctionKind::Reducer => {
+                let def = reducers.get_mut(&sched_def.function_name).ok_or_else(|| {
+                    ValidationError::MissingScheduledFunction {
+                        schedule: sched_def.name.clone(),
+                        function: sched_def.function_name.clone(),
+                    }
+                })?;
+
+                def.visibility = crate::def::FunctionVisibility::Internal;
+            }
+
+            FunctionKind::Procedure => {
+                let def = procedures.get_mut(&sched_def.function_name).ok_or_else(|| {
+                    ValidationError::MissingScheduledFunction {
+                        schedule: sched_def.name.clone(),
+                        function: sched_def.function_name.clone(),
+                    }
+                })?;
+
+                def.visibility = crate::def::FunctionVisibility::Internal;
+            }
+
+            FunctionKind::Unknown => {
+                panic!("FunctionKind::Unknown should have been resolved by now");
+            }
+        }
+    }
+
+    for (rid, lifecycle) in lifecycles {
+        let (_, def) = reducers
+            .get_index_mut(rid.idx())
+            .ok_or_else(|| ValidationError::LifecycleWithoutReducer { lifecycle: *lifecycle })?;
+
+        def.visibility = crate::def::FunctionVisibility::Internal;
+    }
+
+    Ok(())
 }
 
 struct ModuleValidatorV10<'a> {

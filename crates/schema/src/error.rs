@@ -153,6 +153,8 @@ pub enum ValidationError {
         ok_type: PrettyAlgebraicType,
         err_type: PrettyAlgebraicType,
     },
+    #[error("function {function_name} should be internal but it is not")]
+    FunctionNotInternal { function_name: Identifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

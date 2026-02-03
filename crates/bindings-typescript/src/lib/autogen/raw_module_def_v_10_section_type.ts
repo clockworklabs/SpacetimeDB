@@ -10,6 +10,7 @@ import {
   type Infer as __Infer,
 } from "../../lib/type_builders";
 import Typespace from "./typespace_type";
+import RawRowLevelSecurityDefV9 from "./raw_row_level_security_def_v_9_type";
 import RawTypeDefV10 from "./raw_type_def_v_10_type";
 import RawTableDefV10 from "./raw_table_def_v_10_type";
 import RawReducerDefV10 from "./raw_reducer_def_v_10_type";
@@ -43,6 +44,9 @@ const RawModuleDefV10Section = __t.enum("RawModuleDefV10Section", {get Typespace
   },
   get LifeCycleReducers() {
     return __t.array(RawLifeCycleReducerDefV10);
+  },
+  get RowLevelSecurity() {
+    return __t.array(RawRowLevelSecurityDefV9);
   },
 });
 
