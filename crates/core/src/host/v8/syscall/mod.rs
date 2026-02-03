@@ -1,14 +1,11 @@
-use bytes::Bytes;
-use spacetimedb_lib::{RawModuleDef, VersionTuple};
-use v8::{callback_scope, Context, FixedArray, Local, Module, PinScope};
-
 use crate::host::v8::de::scratch_buf;
 use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
 use crate::host::wasm_common::abi::parse_abi_version;
-use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
-};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
+use spacetimedb_lib::VersionTuple;
+use v8::{callback_scope, ArrayBuffer, Context, FixedArray, Local, Module, PinScope};
 
+mod common;
 mod hooks;
 mod v1;
 mod v2;
@@ -78,11 +75,11 @@ pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinScope<'scope, '_>,
     hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
-    reducer_args_data_view: Local<'scope, v8::DataView>,
+    reducer_args_buf: Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_reducer(scope, hooks, op),
-        AbiVersion::V2 => v2::call_call_reducer(scope, hooks, op, reducer_args_data_view),
+        AbiVersion::V2 => v2::call_call_reducer(scope, hooks, op, reducer_args_buf),
     }
 }
 
@@ -114,29 +111,4 @@ pub(super) fn call_call_view_anon(
     }
 }
 
-/// Calls the registered `__call_procedure__` function hook.
-///
-/// This handles any (future) ABI version differences.
-pub(super) fn call_call_procedure(
-    scope: &mut PinScope<'_, '_>,
-    hooks: &HookFunctions<'_>,
-    op: ProcedureOp,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
-    match hooks.abi {
-        AbiVersion::V1 => v1::call_call_procedure(scope, hooks, op),
-        AbiVersion::V2 => v2::call_call_procedure(scope, hooks, op),
-    }
-}
-
-/// Calls the registered `__describe_module__` function hook.
-///
-/// This handles any (future) ABI version differences.
-pub(super) fn call_describe_module<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'_>,
-) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
-    match hooks.abi {
-        AbiVersion::V1 => v1::call_describe_module(scope, hooks),
-        AbiVersion::V2 => v2::call_describe_module(scope, hooks),
-    }
-}
+pub use self::common::{call_call_procedure, call_describe_module};

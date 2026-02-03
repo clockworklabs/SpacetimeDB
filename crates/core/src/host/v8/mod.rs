@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, ErrorOrException, ExcResult,
-    ExceptionThrown, JsStackTrace, TerminationError, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -618,14 +618,13 @@ async fn spawn_instance_worker(
         // Create a zero-initialized buffer for holding reducer args.
         // Arguments needing more space will not use this.
         const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096; // 1 page.
-        let buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
-        let reducer_args_data_view = v8::DataView::new(scope, buf, 0, buf.byte_length());
+        let reducer_args_buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
 
         let mut inst = V8Instance {
             scope,
             replica_ctx,
             hooks: &hooks,
-            reducer_args_data_view,
+            reducer_args_buf,
         };
 
         // Process requests to the worker.
@@ -815,7 +814,7 @@ struct V8Instance<'a, 'scope, 'isolate> {
     scope: &'a mut PinScope<'scope, 'isolate>,
     replica_ctx: &'a Arc<ReplicaContext>,
     hooks: &'a HookFunctions<'scope>,
-    reducer_args_data_view: Local<'scope, v8::DataView>,
+    reducer_args_buf: Local<'scope, ArrayBuffer>,
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
@@ -833,7 +832,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
         common_call(self.scope, budget, op, |scope, op| {
-            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_data_view)?)
+            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
@@ -984,8 +983,7 @@ mod test {
                     args: &ArgsTuple::nullary(),
                 };
                 let buffer = v8::ArrayBuffer::new(scope, 4096);
-                let data_view = v8::DataView::new(scope, buffer, 0, 4096);
-                Ok(call_call_reducer(scope, &hooks, op, data_view)?)
+                Ok(call_call_reducer(scope, &hooks, op, buffer)?)
             })
         };
 

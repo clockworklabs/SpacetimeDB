@@ -1,37 +1,37 @@
+use super::super::de::deserialize_js;
+use super::super::error::{
+    handle_sys_call_error, no_such_iter, throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult,
+    ExceptionThrown, SysCallResult, OOB,
+};
+use super::super::from_value::cast;
+use super::super::ser::serialize_to_js;
+use super::super::string::{str_from_ident, StringConst};
+use super::super::to_value::ToValue;
+use super::super::util::{make_dataview, make_uint8array};
+use super::super::{call_free_fun, env_on_isolate, Throwable};
+use super::common::{
+    console_log, console_timer_end, console_timer_start, datastore_index_scan_range_bsatn_inner,
+    datastore_table_row_count, datastore_table_scan_bsatn, deserialize_row_iter_idx, get_env, identity,
+    index_id_from_name, procedure_abort_mut_tx, procedure_commit_mut_tx, procedure_http_request,
+    procedure_start_mut_tx, row_iter_bsatn_close, table_id_from_name, volatile_nonatomic_schedule_immediate,
+};
+use super::hooks::HookFunctions;
 use super::hooks::{get_hook_function, set_hook_slots};
 use super::{AbiVersion, ModuleHookKey};
-use crate::database_logger::{LogLevel, Record};
-use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::v8::de::{deserialize_js, scratch_buf};
-use crate::host::v8::error::{
-    CodeError, CodeMessageError, ErrorOrException, ExcResult, ExceptionThrown, RangeError, TypeError,
-};
-use crate::host::v8::from_value::cast;
-use crate::host::v8::ser::serialize_to_js;
-use crate::host::v8::string::{str_from_ident, StringConst};
-use crate::host::v8::syscall::hooks::HookFunctions;
-use crate::host::v8::to_value::ToValue;
-use crate::host::v8::util::{make_dataview, make_uint8array};
-use crate::host::v8::{
-    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, JsInstanceEnv, JsStackTrace,
-    TerminationError, Throwable,
-};
 use crate::host::wasm_common::instrumentation::span;
-use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
-};
-use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
+use crate::host::wasm_common::RowIterIdx;
 use crate::host::{AbiCall, ArgsTuple};
 use anyhow::Context;
 use bytes::Bytes;
-use core::ptr::NonNull;
-use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, ReducerId, TableId, ViewFnPtr};
+use core::slice;
+use spacetimedb_lib::Identity;
+use spacetimedb_primitives::{ColId, IndexId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::u256;
 use v8::{
-    callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
-    PinCallbackScope, PinScope, Value,
+    callback_scope, ArrayBuffer, ConstructorBehavior, DataView, Function, FunctionCallbackArguments, Local, Module,
+    Object, PinCallbackScope, PinScope, Value,
 };
 
 macro_rules! create_synthetic_module {
@@ -153,42 +153,18 @@ fn register_module_fun(
     module.set_synthetic_module_export(scope, name, fun)
 }
 
-/// A flag set in [`handle_nodes_error`].
-/// The flag should be checked in every module -> host ABI.
-/// If the flag is set, the call is prevented.
-struct TerminationFlag;
-
 /// Adapts `fun` to check for termination
 fn adapt_fun(
     fun: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>),
 ) -> impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>) {
     move |scope, args, rv| {
-        // If the flag was set in `handle_nodes_error`,
-        // we need to block all module -> host ABI calls.
-        if scope.get_slot::<TerminationFlag>().is_some() {
-            let err = anyhow::anyhow!("execution is being terminated");
-            if let Ok(exception) = TerminationError::from_error(scope, &err) {
-                exception.throw(scope);
-            }
+        if throw_if_terminated(scope) {
             return;
         }
 
         fun(scope, args, rv)
     }
 }
-
-/// Either an exception, already thrown, or [`NodesError`] arising from [`InstanceEnv`].
-#[derive(derive_more::From)]
-enum SysCallError {
-    NoEnv,
-    OutOfBounds,
-    Error(NodesError),
-    Exception(ExceptionThrown),
-}
-
-const OOB: SysCallError = SysCallError::OutOfBounds;
-
-type SysCallResult<T> = Result<T, SysCallError>;
 
 trait JsReturnValue {
     fn set_return(self, scope: &mut PinScope<'_, '_>, rv: v8::ReturnValue<'_>);
@@ -271,60 +247,6 @@ fn with_nothing<'scope, O: JsReturnValue>(
     }
 }
 
-/// Converts a `SysCallError` into a `ExceptionThrown`.
-fn handle_sys_call_error<'scope>(
-    abi_call: AbiCall,
-    scope: &mut PinScope<'scope, '_>,
-    err: SysCallError,
-) -> ExceptionThrown {
-    const ENV_NOT_SET: u16 = 1;
-    match err {
-        SysCallError::NoEnv => code_error(scope, ENV_NOT_SET),
-        SysCallError::OutOfBounds => RangeError("length argument was out of bounds for `ArrayBuffer`").throw(scope),
-        SysCallError::Exception(exc) => exc,
-        SysCallError::Error(error) => throw_nodes_error(abi_call, scope, error),
-    }
-}
-
-/// Throws `{ __code_error__: code }`.
-fn code_error(scope: &PinScope<'_, '_>, code: u16) -> ExceptionThrown {
-    let res = CodeError::from_code(scope, code);
-    collapse_exc_thrown(scope, res)
-}
-
-/// Turns a [`NodesError`] into a thrown exception.
-fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
-    let res = match err_to_errno_and_log::<u16>(abi_call, error) {
-        Ok((code, None)) => CodeError::from_code(scope, code),
-        Ok((code, Some(message))) => CodeMessageError::from_code(scope, code, message),
-        Err(err) => {
-            // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
-            // Unfortunately, JS execution won't be terminated once the callback returns,
-            // so we set a slot that all callbacks immediately check
-            // to ensure that the module won't be able to do anything to the host
-            // while it's being terminated (eventually).
-            scope.terminate_execution();
-            scope.set_slot(TerminationFlag);
-            TerminationError::from_error(scope, &err)
-        }
-    };
-    collapse_exc_thrown(scope, res)
-}
-
-/// Collapses `res` where the `Ok(x)` where `x` is throwable.
-fn collapse_exc_thrown<'scope>(
-    scope: &PinScope<'scope, '_>,
-    res: ExcResult<impl Throwable<'scope>>,
-) -> ExceptionThrown {
-    let (Ok(thrown) | Err(thrown)) = res.map(|ev| ev.throw(scope));
-    thrown
-}
-
-/// Returns the environment or errors.
-fn get_env(isolate: &mut Isolate) -> Result<&mut JsInstanceEnv, SysCallError> {
-    env_on_isolate(isolate).ok_or(SysCallError::NoEnv)
-}
-
 /// Module ABI that registers the functions called by the host.
 ///
 /// # Signature
@@ -389,7 +311,7 @@ pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinScope<'scope, '_>,
     hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
-    reducer_args_data_view: Local<'scope, v8::DataView>,
+    reducer_args_buf: Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {
     let ReducerOp {
         id: ReducerId(reducer_id),
@@ -404,7 +326,7 @@ pub(super) fn call_call_reducer<'scope>(
     let sender = serialize_to_js(scope, &sender.to_u256())?;
     let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
     let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
-    let reducer_args = reducer_args_to_value(scope, reducer_args, reducer_args_data_view);
+    let reducer_args = reducer_args_to_value(scope, reducer_args, reducer_args_buf);
 
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
@@ -425,31 +347,24 @@ pub(super) fn call_call_reducer<'scope>(
 fn reducer_args_to_value<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: &ArgsTuple,
-    buffer: Local<'scope, v8::DataView>,
+    buffer: Local<'scope, ArrayBuffer>,
 ) -> Local<'scope, Value> {
     let reducer_args = &**args.get_bsatn();
 
     let len = reducer_args.len();
-    let dv = if len <= buffer.byte_length() {
-        // We can use the buffer.
-        let dst_ptr = NonNull::new(buffer.data())
-            .expect("backing store byte length should be > 0")
-            .cast::<u8>();
-
-        // Copy `reducer_args` into `buffer`.
-        let mut dst_ptr = NonNull::slice_from_raw_parts(dst_ptr, len);
-        // SAFETY: We know `dst_ptr` to be:
-        // - trivially properly aligned due to `u8`s alignment being 1.
-        // - non-null as it was derived from `NonNull`.
-        // - the range is within the allocation of `buffer`
-        //   as `len <= buffer.byte_length()`,
-        //   so `buffer` is dereferenceable.
-        // - `dst` will point to a valid `[u8]` as it was zero-initialized.
-        // - nothing is aliasing the pointer.
-        let dst = unsafe { dst_ptr.as_mut() };
+    let wrote = with_arraybuffer_mut(buffer, |buf| {
+        if len > buf.len() {
+            // Buffer is too small.
+            return false;
+        }
+        let dst = &mut buf[..len];
         dst.copy_from_slice(reducer_args);
+        true
+    });
 
-        buffer
+    let dv = if wrote {
+        // Fall back to allocating new buffers.
+        DataView::new(scope, buffer, 0, len)
     } else {
         // Fall back to allocating new buffers.
         make_dataview(scope, <Box<[u8]>>::from(reducer_args))
@@ -555,222 +470,13 @@ pub(super) fn call_call_view_anon(
     Ok(ViewReturnData::HeaderFirst(Bytes::copy_from_slice(bytes)))
 }
 
-/// Calls the `__call_procedure__` function `fun`.
-pub(super) fn call_call_procedure(
-    scope: &mut PinScope<'_, '_>,
-    hooks: &HookFunctions<'_>,
-    op: ProcedureOp,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
-    let fun = hooks.call_procedure.context("`__call_procedure__` was never defined")?;
-
-    let ProcedureOp {
-        id: ProcedureId(procedure_id),
-        name: _,
-        caller_identity: sender,
-        caller_connection_id: connection_id,
-        timestamp,
-        arg_bytes: procedure_args,
-    } = op;
-    // Serialize the arguments.
-    let procedure_id = serialize_to_js(scope, &procedure_id)?;
-    let sender = serialize_to_js(scope, &sender.to_u256())?;
-    let connection_id = serialize_to_js(scope, &connection_id.to_u128())?;
-    let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
-    let procedure_args = serialize_to_js(scope, &procedure_args)?;
-    let args = &[procedure_id, sender, connection_id, timestamp, procedure_args];
-
-    // Call the function.
-    let ret = call_free_fun(scope, fun, args)?;
-
-    // Deserialize the user result.
-    let ret =
-        cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_procedure__`").map_err(|e| e.throw(scope))?;
-    let bytes = ret.get_contents(&mut []);
-
-    Ok(Bytes::copy_from_slice(bytes))
-}
-
-/// Calls the registered `__describe_module__` function hook.
-pub(super) fn call_describe_module(
-    scope: &mut PinScope<'_, '_>,
-    hooks: &HookFunctions<'_>,
-) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
-    // Call the function.
-    let raw_mod_js = call_free_fun(scope, hooks.describe_module, &[])?;
-
-    // Deserialize the raw module.
-    let raw_mod = cast!(
-        scope,
-        raw_mod_js,
-        v8::Uint8Array,
-        "bytes return from `__describe_module__`"
-    )
-    .map_err(|e| e.throw(scope))?;
-
-    let bytes = raw_mod.get_contents(&mut []);
-    let module = bsatn::from_slice::<RawModuleDef>(bytes).context("invalid bsatn module def")?;
-    Ok(module)
-}
-
-/// Module ABI that finds the `TableId` for a table name.
-///
-/// # Signature
-///
-/// ```ignore
-/// table_id_from_name(name: string) -> u32 throws {
-///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
-/// }
-/// ```
-///
-/// # Types
-///
-/// - `u16` is `number` in JS restricted to unsigned 16-bit integers.
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-///
-/// # Returns
-///
-/// Returns an `u32` containing the id of the table.
-///
-/// # Throws
-///
-/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
-///
-/// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
-///   when called outside of a transaction.
-///
-/// - [`spacetimedb_primitives::errno::NO_SUCH_TABLE`]
-///   when `name` is not the name of a table.
-///
-/// Throws a `TypeError` if:
-/// - `name` is not `string`.
-fn table_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<TableId> {
-    let name: String = deserialize_js(scope, args.get(0))?;
-    Ok(get_env(scope)?.instance_env.table_id_from_name(&name)?)
-}
-
-/// Module ABI that finds the `IndexId` for an index name.
-///
-/// # Signature
-///
-/// ```ignore
-/// index_id_from_name(name: string) -> u32 throws {
-///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_INDEX
-/// }
-/// ```
-///
-/// # Types
-///
-/// - `u16` is `number` in JS restricted to unsigned 16-bit integers.
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-///
-/// # Returns
-///
-/// Returns an `u32` containing the id of the index.
-///
-/// # Throws
-///
-/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
-///
-/// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
-///   when called outside of a transaction.
-///
-/// - [`spacetimedb_primitives::errno::NO_SUCH_INDEX`]
-///   when `name` is not the name of an index.
-///
-/// Throws a `TypeError`:
-/// - if `name` is not `string`.
-fn index_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<IndexId> {
-    let name: String = deserialize_js(scope, args.get(0))?;
-    Ok(get_env(scope)?.instance_env.index_id_from_name(&name)?)
-}
-
-/// Module ABI that returns the number of rows currently in table identified by `table_id`.
-///
-/// # Signature
-///
-/// ```ignore
-/// datastore_table_row_count(table_id: u32) -> u64 throws {
-///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
-/// }
-/// ```
-///
-/// # Types
-///
-/// - `u16` is `number` in JS restricted to unsigned 16-bit integers.
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-/// - `u64` is `bigint` in JS restricted to unsigned 64-bit integers.
-///
-/// # Returns
-///
-/// Returns a `u64` containing the number of rows in the table.
-///
-/// # Throws
-///
-/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
-///
-/// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
-///   when called outside of a transaction.
-///
-/// - [`spacetimedb_primitives::errno::NO_SUCH_TABLE`]
-///   when `table_id` is not a known ID of a table.
-///
-/// Throws a `TypeError` if:
-/// - `table_id` is not a `u32`.
-fn datastore_table_row_count(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
-    let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    Ok(get_env(scope)?.instance_env.datastore_table_row_count(table_id)?)
-}
-
-/// Module ABI that starts iteration on each row, as BSATN-encoded,
-/// of a table identified by `table_id`.
-///
-/// # Signature
-///
-/// ```ignore
-/// datastore_table_scan_bsatn(table_id: u32) -> u32 throws {
-///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
-/// }
-/// ```
-///
-/// # Types
-///
-/// - `u16` is `number` in JS restricted to unsigned 16-bit integers.
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-/// - `u64` is `bigint` in JS restricted to unsigned 64-bit integers.
-///
-/// # Returns
-///
-/// Returns a `u32` that is the iterator handle.
-/// This handle can be advanced by [`row_iter_bsatn_advance`].
-///
-/// # Throws
-///
-/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
-///
-/// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
-///   when called outside of a transaction.
-///
-/// - [`spacetimedb_primitives::errno::NO_SUCH_TABLE`]
-///   when `table_id` is not a known ID of a table.
-///
-/// Throws a `TypeError`:
-/// - if `table_id` is not a `u32`.
-fn datastore_table_scan_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u32> {
-    let table_id: TableId = deserialize_js(scope, args.get(0))?;
-
-    let env = get_env(scope)?;
-    // Collect the iterator chunks.
-    let chunks = env
-        .instance_env
-        .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id)?;
-
-    // Register the iterator and get back the index to write to `out`.
-    // Calls to the iterator are done through dynamic dispatch.
-    Ok(env.iters.insert(chunks.into_iter()).0)
-}
-
 /// Module ABI that finds all rows in the index identified by `index_id`,
-/// according to `prefix`, `rstart`, and `rend`.
+/// according to `prefix`, `rstart`, and `rend` where:
+/// - `prefix = buffer[...prefix_len]`
+/// - `rstart = buffer[prefix_len..prefix_len + rstart_len]`
+/// - `rend = buffer[prefix_len + rstart_len..prefix_len + rstart_len + rend_len]`
+///   if `rend_len > 0`
+/// - `rend = rstart` if `rend_len == 0`
 ///
 /// The index itself has a schema/type.
 /// The `prefix` is decoded to the initial `prefix_elems` `AlgebraicType`s
@@ -810,10 +516,11 @@ fn datastore_table_scan_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallba
 /// ```ignore
 /// datastore_index_scan_range_bsatn(
 ///     index_id: u32,
-///     prefix: u8[],
+///     buffer: ArrayBuffer,
+///     prefix_len: u32,
 ///     prefix_elems: u16,
-///     rstart: u8[],
-///     rend: u8[],
+///     rstart_len: u32,
+///     rend_len: u32,
 /// ) -> u32 throws {
 ///    __code_error__: NOT_IN_TRANSACTION | NO_SUCH_INDEX | BSATN_DECODE_ERROR
 /// }
@@ -850,9 +557,14 @@ fn datastore_table_scan_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallba
 ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
 ///
 /// Throws a `TypeError` if:
-/// - `table_id` is not a `u32`.
-/// - `prefix`, `rstart`, and `rend` are not arrays of `u8`s.
+/// - `index_id` is not a `u32`.
+/// - `prefix_len`, `rstart_len`, and `rend_len` are not `u32`s.
 /// - `prefix_elems` is not a `u16`.
+///
+/// Throws a `RangeError` if any of these are out of bounds of `buffer`:
+/// - `prefix_len`,
+/// - `prefix_len + rstart_len`,
+/// - or `prefix_len + rstart_len + rend_len`
 fn datastore_index_scan_range_bsatn(
     scope: &mut PinScope<'_, '_>,
     args: FunctionCallbackArguments<'_>,
@@ -873,26 +585,8 @@ fn datastore_index_scan_range_bsatn(
             buf.split_off(..rend_len).ok_or(OOB)?
         };
 
-        let env = get_env(scope)?;
-
-        // Find the relevant rows.
-        let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
-            &mut env.chunk_pool,
-            index_id,
-            prefix,
-            prefix_elems,
-            rstart,
-            rend,
-        )?;
-
-        // Insert the encoded + concatenated rows into a new buffer and return its id.
-        Ok(env.iters.insert(chunks.into_iter()).0)
+        datastore_index_scan_range_bsatn_inner(scope, index_id, prefix, prefix_elems, rstart, rend)
     })
-}
-
-/// Throws `{ __code_error__: NO_SUCH_ITER }`.
-fn no_such_iter(scope: &PinScope<'_, '_>) -> SysCallError {
-    code_error(scope, errno::NO_SUCH_ITER.get()).into()
 }
 
 /// Module ABI that reads rows from the given iterator registered under `iter`.
@@ -948,8 +642,7 @@ fn row_iter_bsatn_advance<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
 ) -> SysCallResult<i32> {
-    let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
-    let row_iter_idx = RowIterIdx(row_iter_idx);
+    let row_iter_idx = deserialize_row_iter_idx(scope, args.get(0))?;
     let array_buffer = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
 
     // Retrieve the iterator by `row_iter_idx`, or error.
@@ -964,75 +657,25 @@ fn row_iter_bsatn_advance<'scope>(
     });
 
     let next_buf_len = iter.as_slice().first().map(|v| v.len());
-
-    if written == 0 {
-        if let Some(min_len) = next_buf_len {
-            // Nothing was written and the iterator is not exhausted.
+    let done = match (written, next_buf_len) {
+        // Nothing was written and the iterator is not exhausted.
+        (0, Some(min_len)) => {
             let min_len = min_len.try_into().unwrap();
             let exc = BufferTooSmall::from_requirement(scope, min_len)?;
             return Err(exc.throw(scope).into());
         }
-    }
-
-    let done = next_buf_len.is_none();
-    if done {
         // The iterator is exhausted, destroy it, and tell the caller.
-        env.iters.take(row_iter_idx);
-    }
+        (_, None) => {
+            env.iters.take(row_iter_idx);
+            true
+        }
+        // Something was written, but the iterator is not exhausted.
+        (_, Some(_)) => false,
+    };
+
     let written: i32 = written.try_into().unwrap();
     let out = if done { -written } else { written };
     Ok(out)
-}
-
-/// Module ABI that destroys the iterator registered under `iter`.
-///
-/// Once `row_iter_bsatn_close` is called on `iter`, the `iter` is invalid.
-/// That is, `row_iter_bsatn_close(iter)` the second time will yield `NO_SUCH_ITER`.
-///
-/// # Signature
-///
-/// ```ignore
-/// row_iter_bsatn_close(iter: u32) -> undefined throws {
-///     __code_error__: NO_SUCH_ITER
-/// }
-/// ```
-///
-/// # Types
-///
-/// - `u16` is `number` in JS restricted to unsigned 16-bit integers.
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-///
-/// # Returns
-///
-/// Returns nothing.
-///
-/// # Throws
-///
-/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
-///
-/// - [`spacetimedb_primitives::errno::NO_SUCH_ITER`]
-///   when `iter` is not a valid iterator.
-///
-/// Throws a `TypeError` if:
-/// - `iter` is not a `u32`.
-fn row_iter_bsatn_close<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<()> {
-    let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
-    let row_iter_idx = RowIterIdx(row_iter_idx);
-
-    // Retrieve the iterator by `row_iter_idx`, or error.
-    let env = get_env(scope)?;
-
-    // Retrieve the iterator by `row_iter_idx`, or error.
-    if env.iters.take(row_iter_idx).is_none() {
-        return Err(no_such_iter(scope));
-    } else {
-        // TODO(Centril): consider putting these into a pool for reuse.
-    }
-
-    Ok(())
 }
 
 /// Module ABI that inserts a row into the table identified by `table_id`,
@@ -1112,8 +755,20 @@ fn datastore_insert_bsatn<'scope>(
 
 fn with_arraybuffer<R>(buf: Local<'_, v8::ArrayBuffer>, f: impl FnOnce(&[u8]) -> R) -> R {
     let buf: &[u8] = match buf.data().map(|p| p.cast::<u8>()) {
-        // SAFETY: see comment in `with_uint8array_mut`
-        Some(data) => unsafe { std::slice::from_raw_parts(data.as_ptr(), buf.byte_length()) },
+        Some(data) => {
+            let ptr = data.as_ptr();
+            let len = buf.byte_length();
+
+            // SAFETY: We know `ptr` to be:
+            // - trivially properly aligned due to `u8`s alignment being 1.
+            // - non-null as it was derived from `NonNull`.
+            // - the range is within the allocation of `buffer`
+            //   as `len = buffer.byte_length()`,
+            //   so `buffer` is dereferenceable.
+            // - `ptr` will point to a valid `[u8]` as it was zero-initialized.
+            // - nothing is aliasing the pointer.
+            unsafe { slice::from_raw_parts(ptr, len) }
+        }
         None => &[],
     };
     f(buf)
@@ -1122,7 +777,20 @@ fn with_arraybuffer<R>(buf: Local<'_, v8::ArrayBuffer>, f: impl FnOnce(&[u8]) ->
 fn with_arraybuffer_mut<R>(buf: Local<'_, v8::ArrayBuffer>, f: impl FnOnce(&mut [u8]) -> R) -> R {
     let buf: &mut [u8] = match buf.data().map(|p| p.cast::<u8>()) {
         // SAFETY: see comment in `with_uint8array_mut`
-        Some(data) => unsafe { std::slice::from_raw_parts_mut(data.as_ptr(), buf.byte_length()) },
+        Some(data) => {
+            let ptr = data.as_ptr();
+            let len = buf.byte_length();
+
+            // SAFETY: We know `ptr` to be:
+            // - trivially properly aligned due to `u8`s alignment being 1.
+            // - non-null as it was derived from `NonNull`.
+            // - the range is within the allocation of `buffer`
+            //   as `len = buffer.byte_length()`,
+            //   so `buffer` is dereferenceable.
+            // - `ptr` will point to a valid `[u8]` as it was zero-initialized.
+            // - nothing is aliasing the pointer.
+            unsafe { slice::from_raw_parts_mut(ptr, len) }
+        }
         None => &mut [],
     };
     f(buf)
@@ -1219,7 +887,12 @@ fn datastore_update_bsatn<'scope>(
 }
 
 /// Module ABI that deletes all rows found in the index identified by `index_id`,
-/// according to `prefix`, `rstart`, and `rend`.
+/// according to `prefix`, `rstart`, and `rend` where:
+/// - `prefix = buffer[...prefix_len]`
+/// - `rstart = buffer[prefix_len..prefix_len + rstart_len]`
+/// - `rend = buffer[prefix_len + rstart_len..prefix_len + rstart_len + rend_len]`
+///   if `rend_len > 0`
+/// - `rend = rstart` if `rend_len == 0`
 ///
 /// This syscall will delete all the rows found by
 /// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
@@ -1269,9 +942,14 @@ fn datastore_update_bsatn<'scope>(
 ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
 ///
 /// Throws a `TypeError` if:
-/// - `table_id` is not a `u32`.
-/// - `prefix`, `rstart`, and `rend` are not arrays of `u8`s.
+/// - `index_id` is not a `u32`.
+/// - `prefix_len`, `rstart_len`, and `rend_len` are not `u32`s.
 /// - `prefix_elems` is not a `u16`.
+///
+/// Throws a `RangeError` if any of these are out of bounds of `buffer`:
+/// - `prefix_len`,
+/// - `prefix_len + rstart_len`,
+/// - or `prefix_len + rstart_len + rend_len`
 fn datastore_delete_by_index_scan_range_bsatn(
     scope: &mut PinScope<'_, '_>,
     args: FunctionCallbackArguments<'_>,
@@ -1364,174 +1042,6 @@ fn datastore_delete_all_by_eq_bsatn(
     })
 }
 
-/// # Signature
-///
-/// ```ignore
-/// volatile_nonatomic_schedule_immediate(reducer_name: string, args: u8[]) -> undefined
-/// ```
-fn volatile_nonatomic_schedule_immediate<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<()> {
-    let name: String = deserialize_js(scope, args.get(0))?;
-    let args: Vec<u8> = deserialize_js(scope, args.get(1))?;
-
-    get_env(scope)?
-        .instance_env
-        .scheduler
-        .volatile_nonatomic_schedule_immediate(name, crate::host::FunctionArgs::Bsatn(args.into()));
-
-    Ok(())
-}
-
-/// Module ABI that logs at `level` a `message` message occurring
-/// at the parent stack frame.
-///
-/// The `message` is interpreted lossily as a UTF-8 string.
-///
-/// # Signature
-///
-/// ```ignore
-/// console_log(level: u8, message: string) -> u32
-/// ```
-///
-/// # Types
-///
-/// - `u8` is `number` in JS restricted to unsigned 8-bit integers.
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-///
-/// # Returns
-///
-/// Returns nothing.
-fn console_log<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'scope>) -> SysCallResult<()> {
-    let level: u32 = deserialize_js(scope, args.get(0))?;
-
-    let msg = args.get(1).cast::<v8::String>();
-    let mut buf = scratch_buf::<128>();
-    let msg = msg.to_rust_cow_lossy(scope, &mut buf);
-
-    let frame: Local<'_, v8::StackFrame> = v8::StackTrace::current_stack_trace(scope, 2)
-        .ok_or_else(exception_already_thrown)?
-        .get_frame(scope, 1)
-        .ok_or_else(exception_already_thrown)?;
-    let mut buf = scratch_buf::<32>();
-    let filename = frame
-        .get_script_name(scope)
-        .map(|s| s.to_rust_cow_lossy(scope, &mut buf));
-
-    let level = (level as u8).into();
-    let trace = if level == LogLevel::Panic {
-        JsStackTrace::from_current_stack_trace(scope)?
-    } else {
-        <_>::default()
-    };
-
-    let env = get_env(scope).inspect_err(|_| {
-        tracing::warn!(
-            "{}:{} {msg}",
-            filename.as_deref().unwrap_or("unknown"),
-            frame.get_line_number()
-        );
-    })?;
-
-    let function = env.log_record_function();
-    let record = Record {
-        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
-        ts: InstanceEnv::now_for_logging(),
-        target: None,
-        filename: filename.as_deref(),
-        line_number: Some(frame.get_line_number() as u32),
-        function,
-        message: &msg,
-    };
-
-    env.instance_env.console_log(level, &record, &trace);
-
-    Ok(())
-}
-
-/// Module ABI that begins a timing span with `name`.
-///
-/// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
-/// the duration between the calls will be printed to the module's logs.
-///
-/// The `name` is interpreted lossily as a UTF-8 string.
-///
-/// # Signature
-///
-/// ```ignore
-/// console_timer_start(name: string) -> u32
-/// ```
-///
-/// # Types
-///
-/// - `u8` is `number` in JS restricted to unsigned 8-bit integers.
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-///
-/// # Returns
-///
-/// Returns a `u32` that is the `ConsoleTimerId`.
-///
-/// # Throws
-///
-/// Throws a `TypeError` if:
-/// - `name` is not a `string`.
-fn console_timer_start<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<u32> {
-    let name = args.get(0).cast::<v8::String>();
-    let mut buf = scratch_buf::<128>();
-    let name = name.to_rust_cow_lossy(scope, &mut buf).into_owned();
-
-    let span_id = get_env(scope)?.timing_spans.insert(TimingSpan::new(name)).0;
-    Ok(span_id)
-}
-
-/// Module ABI that ends a timing span with `span_id`.
-///
-/// # Signature
-///
-/// ```ignore
-/// console_timer_end(span_id: u32) -> undefined throws {
-///     __code_error__: NO_SUCH_CONSOLE_TIMER
-/// }
-/// ```
-///
-/// # Types
-///
-/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
-///
-/// # Returns
-///
-/// Returns nothing.
-///
-/// # Throws
-///
-/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
-///
-/// - [`spacetimedb_primitives::errno::NO_SUCH_CONSOLE_TIMER`]
-///   when `span_id` doesn't refer to an active timing span.
-///
-/// Throws a `TypeError` if:
-/// - `span_id` is not a `u32`.
-fn console_timer_end<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<()> {
-    let span_id: u32 = deserialize_js(scope, args.get(0))?;
-
-    let env = get_env(scope)?;
-    let Some(span) = env.timing_spans.take(TimingSpanIdx(span_id)) else {
-        let exc = CodeError::from_code(scope, errno::NO_SUCH_CONSOLE_TIMER.get())?;
-        return Err(exc.throw(scope).into());
-    };
-    let function = env.log_record_function();
-    env.instance_env.console_timer_end(&span, function);
-
-    Ok(())
-}
-
 /// Module ABI to read a JWT payload associated with a connection ID from the system tables.
 ///
 /// # Signature
@@ -1562,118 +1072,8 @@ fn get_jwt_payload<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<Local<'scope, v8::Uint8Array>> {
-    let connection_id: u128 = deserialize_js(scope, args.get(0))?;
-    let connection_id = ConnectionId::from_u128(connection_id);
-    let payload = get_env(scope)?
-        .instance_env
-        .get_jwt_payload(connection_id)?
-        .map(String::into_bytes)
-        .unwrap_or_default();
+    let payload = super::common::get_jwt_payload(scope, args)?;
     Ok(make_uint8array(scope, payload))
-}
-
-/// Module ABI that returns the module identity.
-///
-/// # Signature
-///
-/// ```ignore
-/// identity() -> { __identity__: u256 }
-/// ```
-///
-/// # Types
-///
-/// - `u256` is `bigint` in JS restricted to unsigned 256-bit integers.
-///
-/// # Returns
-///
-/// Returns the module identity.
-fn identity<'scope>(scope: &mut PinScope<'scope, '_>, _: FunctionCallbackArguments<'scope>) -> SysCallResult<Identity> {
-    Ok(*get_env(scope)?.instance_env.database_identity())
-}
-
-/// Execute an HTTP request in the context of a procedure.
-///
-/// # Signature
-///
-/// ```ignore
-/// function procedure_http_request(
-///     request: Uint8Array,
-///     body: Uint8Array | string
-/// ): [response: Uint8Array, body: Uint8Array];
-/// ```
-///
-/// Accepts a BSATN-encoded [`spacetimedb_lib::http::Request`] and a request body, and
-/// returns a BSATN-encoded [`spacetimedb_lib::http::Response`] and the response body.
-fn procedure_http_request<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<Local<'scope, v8::Array>> {
-    use spacetimedb_lib::http as st_http;
-
-    let request =
-        cast!(scope, args.get(0), v8::Uint8Array, "Uint8Array for procedure request").map_err(|e| e.throw(scope))?;
-
-    let request = bsatn::from_slice::<st_http::Request>(request.get_contents(&mut []))
-        .map_err(|e| TypeError(format!("failed to decode http request: {e}")).throw(scope))?;
-
-    let request_body = args.get(1);
-    let request_body = if let Ok(s) = request_body.try_cast::<v8::String>() {
-        Bytes::from(s.to_rust_string_lossy(scope))
-    } else {
-        let bytes = cast!(
-            scope,
-            request_body,
-            v8::Uint8Array,
-            "Uint8Array or string for request body"
-        )
-        .map_err(|e| e.throw(scope))?;
-        Bytes::copy_from_slice(bytes.get_contents(&mut []))
-    };
-
-    let env = get_env(scope)?;
-
-    let fut = env.instance_env.http_request(request, request_body)?;
-
-    let rt = tokio::runtime::Handle::current();
-    let (response, response_body) = rt.block_on(fut)?;
-
-    let response = bsatn::to_vec(&response).expect("failed to serialize `HttpResponse`");
-    let response = make_uint8array(scope, response);
-
-    let response_body = match response_body.try_into_mut() {
-        Ok(bytes_mut) => make_uint8array(scope, Box::new(bytes_mut)),
-        Err(bytes) => make_uint8array(scope, Vec::from(bytes)),
-    };
-
-    Ok(v8::Array::new_with_elements(
-        scope,
-        &[response.into(), response_body.into()],
-    ))
-}
-
-fn procedure_start_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
-    let env = get_env(scope)?;
-
-    env.instance_env.start_mutable_tx()?;
-
-    let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
-
-    Ok(timestamp)
-}
-
-fn procedure_abort_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<()> {
-    let env = get_env(scope)?;
-
-    env.instance_env.abort_mutable_tx()?;
-    Ok(())
-}
-
-fn procedure_commit_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<()> {
-    let env = get_env(scope)?;
-
-    env.instance_env.commit_mutable_tx()?;
-
-    Ok(())
 }
 
 fn datastore_index_scan_point_bsatn(
