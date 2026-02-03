@@ -160,13 +160,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
             |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
                 let (mut reducers, mut procedures, views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
-
-                change_scheduled_functions_and_lifetimes_visibility(
-                    &schedules,
-                    &lifecycles,
-                    &mut reducers,
-                    &mut procedures,
-                )?;
                 // Attach lifecycles to their respective reducers
                 attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
 
@@ -174,6 +167,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
+                change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
 
                 Ok((tables, types, reducers, procedures, views))
             },
@@ -214,13 +208,13 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
+///
 fn change_scheduled_functions_and_lifetimes_visibility(
-    schedules: &[(ScheduleDef, Box<str>)],
-    lifecycles: &[(ReducerId, Lifecycle)],
+    tables: &HashMap<Identifier, TableDef>,
     reducers: &mut IndexMap<Identifier, ReducerDef>,
     procedures: &mut IndexMap<Identifier, ProcedureDef>,
 ) -> Result<()> {
-    for (sched_def, _) in schedules {
+    for sched_def in tables.iter().filter_map(|(_, t)| t.schedule.as_ref()) {
         match sched_def.function_kind {
             FunctionKind::Reducer => {
                 let def = reducers.get_mut(&sched_def.function_name).ok_or_else(|| {
@@ -244,18 +238,14 @@ fn change_scheduled_functions_and_lifetimes_visibility(
                 def.visibility = crate::def::FunctionVisibility::Internal;
             }
 
-            FunctionKind::Unknown => {
-                panic!("FunctionKind::Unknown should have been resolved by now");
-            }
+            FunctionKind::Unknown => {}
         }
     }
 
-    for (rid, lifecycle) in lifecycles {
-        let (_, def) = reducers
-            .get_index_mut(rid.idx())
-            .ok_or_else(|| ValidationError::LifecycleWithoutReducer { lifecycle: *lifecycle })?;
-
-        def.visibility = crate::def::FunctionVisibility::Internal;
+    for red_def in reducers.iter_mut().map(|(_, r)| r) {
+        if red_def.lifecycle.is_some() {
+            red_def.visibility = crate::def::FunctionVisibility::Internal;
+        }
     }
 
     Ok(())
