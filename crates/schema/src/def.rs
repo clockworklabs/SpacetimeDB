@@ -390,6 +390,7 @@ impl TryFrom<RawModuleDef> for ModuleDef {
         match raw {
             RawModuleDef::V8BackCompat(v8_mod) => Self::try_from(v8_mod),
             RawModuleDef::V9(v9_mod) => Self::try_from(v9_mod),
+            RawModuleDef::V10(v10_mod) => Self::try_from(v10_mod),
             _ => unimplemented!(),
         }
     }
@@ -685,7 +686,7 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
-    /// Implemented using a rust `std::collections::HashMap`.
+    /// Implemented using a rust `HashMap`.
     Hash(HashAlgorithm),
     /// Implemented using `DirectUniqueIndex`.
     Direct(DirectAlgorithm),

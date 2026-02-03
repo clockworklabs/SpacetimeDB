@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
@@ -39,8 +41,62 @@ fn ensure_repo_root() -> Result<()> {
     Ok(())
 }
 
+fn check_global_json_policy() -> Result<()> {
+    ensure_repo_root()?;
+
+    let root_json = Path::new("global.json");
+    let root_real = fs::canonicalize(root_json)?;
+
+    fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
+        let mut out = Vec::new();
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let ft = entry.file_type()?;
+            if ft.is_dir() {
+                out.extend(find_all_global_json(&path)?);
+            } else if path.file_name() == Some(OsStr::new("global.json")) {
+                out.push(path);
+            }
+        }
+        Ok(out)
+    }
+
+    let globals = find_all_global_json(Path::new("."))?;
+
+    let mut ok = true;
+    for p in globals {
+        let resolved = fs::canonicalize(&p)?;
+
+        // The root global.json itself is allowed.
+        if resolved == root_real {
+            println!("OK: {}", p.display());
+            continue;
+        }
+
+        let meta = fs::symlink_metadata(&p)?;
+        if !meta.file_type().is_symlink() {
+            eprintln!("Error: {} is not a symlink to root global.json", p.display());
+            ok = false;
+            continue;
+        }
+
+        eprintln!("Error: {} does not resolve to root global.json", p.display());
+        eprintln!("  resolved: {}", resolved.display());
+        eprintln!("  expected: {}", root_real.display());
+        ok = false;
+    }
+
+    if !ok {
+        bail!("global.json policy check failed");
+    }
+
+    Ok(())
+}
+
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
+    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
+    let skeleton_root = skeleton_base.join(pkg_id);
     if !skeleton_root.exists() {
         return Ok(());
     }
@@ -50,6 +106,15 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
         return Ok(());
     }
 
+    // Copy spacetimedb.<pkg>.meta
+    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
+    if pkg_root_meta.exists() {
+        if let Some(parent) = pkg_root.parent() {
+            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
+            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
+        }
+    }
+
     let versioned_dir = match find_only_subdir(&pkg_root) {
         Ok(dir) => dir,
         Err(err) => {
@@ -57,6 +122,18 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
             return Ok(());
         }
     };
+
+    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
+    let version_meta_template = skeleton_root.join("version.meta");
+    if version_meta_template.exists() {
+        if let Some(parent) = versioned_dir.parent() {
+            let version_name = versioned_dir
+                .file_name()
+                .expect("versioned directory should have a file name");
+            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
+            fs::copy(&version_meta_template, &version_meta_dst)?;
+        }
+    }
 
     copy_overlay_dir(&skeleton_root, &versioned_dir)
 }
@@ -200,6 +277,9 @@ enum CiCmd {
         )]
         check: bool,
     },
+
+    /// Verify that any non-root global.json files are symlinks to the root global.json.
+    GlobalJsonPolicy,
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -488,6 +568,10 @@ fn main() -> Result<()> {
                 fs::write(path, readme_content)?;
                 log::info!("Wrote CLI docs to {}", path.display());
             }
+        }
+
+        Some(CiCmd::GlobalJsonPolicy) => {
+            check_global_json_policy()?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

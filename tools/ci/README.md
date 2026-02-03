@@ -142,6 +142,17 @@ Usage: self-docs [OPTIONS]
 - `--check`: Only check for changes, do not generate the docs
 - `--help`: Print help (see a summary with '-h')
 
+### `global-json-policy`
+
+**Usage:**
+```bash
+Usage: global-json-policy
+```
+
+**Options:**
+
+- `--help`: 
+
 ### `help`
 
 **Usage:**

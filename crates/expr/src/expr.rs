@@ -1,9 +1,9 @@
-use std::{collections::HashSet, sync::Arc};
-
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+use std::sync::Arc;
 
 pub trait CollectViews {
     fn collect_views(&self, views: &mut HashSet<ViewId>);
