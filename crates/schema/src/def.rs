@@ -390,6 +390,7 @@ impl TryFrom<RawModuleDef> for ModuleDef {
         match raw {
             RawModuleDef::V8BackCompat(v8_mod) => Self::try_from(v8_mod),
             RawModuleDef::V9(v9_mod) => Self::try_from(v9_mod),
+            RawModuleDef::V10(v10_mod) => Self::try_from(v10_mod),
             _ => unimplemented!(),
         }
     }

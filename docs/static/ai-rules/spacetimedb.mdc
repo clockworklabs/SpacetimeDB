@@ -70,6 +70,7 @@ spacetime logs <db-name>
 - Maincloud is the spacetimedb hosted cloud and the default location for module publishing
 - The default server marked by *** in `spacetime server list` should be used when publishing
 - If the default server is maincloud you should publish to maincloud
+- Publishing to maincloud is free of charge
 - When publishing to maincloud the database dashboard will be at the url: https://spacetimedb.com/@<username>/<database-name>
 - The database owner can view utilization and performance metrics on the dashboard
 
