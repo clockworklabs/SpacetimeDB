@@ -100,7 +100,7 @@ impl fmt::Display for MetadataFile {
     }
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(Clone, serde::Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ConfigFile {
     #[serde(default)]
@@ -115,7 +115,7 @@ impl ConfigFile {
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct CertificateAuthority {
     pub jwt_priv_key_path: PrivKeyPath,
