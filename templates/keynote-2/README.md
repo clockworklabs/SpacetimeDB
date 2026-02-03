@@ -11,7 +11,7 @@ npm install
 npm run demo
 ```
 
-The demo automatically starts required services, seeds databases, and displays animated results comparing SpacetimeDB vs Convex.
+The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results comparing your chosen systems (SpacetimeDB vs Convex by default).
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
 
@@ -39,6 +39,13 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 The chart above shows TPS vs Zipf Alpha (contention level). Higher alpha values concentrate more transactions on fewer "hot" accounts, increasing contention. SpacetimeDB maintains consistent performance regardless of contention level, while traditional database architectures show significant degradation.
 
 ## Methodology
+
+All systems were tested with **out-of-the-box default settings** - no custom tuning, no configuration optimization. This reflects what developers experience when they first adopt these technologies.
+
+For cloud services, we tested paid tiers to give them their best chance:
+- **PlanetScale**: PS-256G (32 cores, 256 GB RAM)
+- **Supabase**: Pro tier
+- **Convex**: Pro tier
 
 ### Test Architecture
 
