@@ -1131,7 +1131,7 @@ fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
         iter_types(module).map(|ty| type_module_name(&ty.name)),
         iter_reducers(module).map(|r| reducer_module_name(&r.name)),
-        iter_tables(module).map(|tbl| table_module_name(&tbl.name)),
+        iter_tables(module, false).map(|tbl| table_module_name(&tbl.name)),
         iter_views(module).map(|view| table_module_name(&view.name)),
         iter_procedures(module).map(|proc| procedure_module_name(&proc.name)),
     )
@@ -1151,7 +1151,7 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
         let type_name = collect_case(Case::Pascal, ty.name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};")
     }
-    for (table_name, _) in iter_table_names_and_types(module) {
+    for (table_name, _) in iter_table_names_and_types(module, false) {
         let mod_name = table_module_name(table_name);
         // TODO: More precise reexport: we want:
         // - The trait name.
@@ -1310,7 +1310,7 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
         "pub struct DbUpdate {",
         |out| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module, false) {
                 writeln!(
                     out,
                     "{}: __sdk::TableUpdate<{}>,",
@@ -1334,7 +1334,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
             match &table_update.table_name[..] {
 ",
         |out| {
-            for (table_name, _) in iter_table_names_and_types(module) {
+            for (table_name, _) in iter_table_names_and_types(module, false) {
                 writeln!(
                     out,
                     "{:?} => db_update.{}.append({}::parse_table_update(table_update)?),",
@@ -1378,7 +1378,7 @@ impl __sdk::InModule for DbUpdate {{
                     let mut diff = AppliedDiff::default();
                 ",
                 |out| {
-                    for table in iter_tables(module) {
+                    for table in iter_tables(module, false) {
                         let with_updates = table
                             .primary_key
                             .map(|col| {
@@ -1421,7 +1421,7 @@ fn print_applied_diff_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
         "pub struct AppliedDiff<'r> {",
         |out| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module, false) {
                 writeln!(
                     out,
                     "{}: __sdk::TableAppliedDiff<'r, {}>,",
@@ -1454,7 +1454,7 @@ impl __sdk::InModule for AppliedDiff<'_> {{
             out.delimited_block(
                 "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {",
                 |out| {
-                    for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+                    for (table_name, product_type_ref) in iter_table_names_and_types(module, false) {
                         writeln!(
                             out,
                             "callbacks.invoke_table_row_callbacks::<{}>({:?}, &self.{}, event);",
@@ -1497,7 +1497,7 @@ type QueryBuilder = __sdk::QueryBuilder;
             out.delimited_block(
                 "fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {",
                 |out| {
-                    for (table_name, _) in iter_table_names_and_types(module) {
+                    for (table_name, _) in iter_table_names_and_types(module, false) {
                         writeln!(out, "{}::register_table(client_cache);", table_module_name(table_name));
                     }
                 },

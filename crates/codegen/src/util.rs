@@ -8,6 +8,7 @@ use std::{
 use super::code_indenter::Indenter;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::version;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
@@ -111,8 +112,11 @@ pub(super) fn iter_procedures(module: &ModuleDef) -> impl Iterator<Item = &Proce
 /// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.
-pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
+pub(super) fn iter_tables(module: &ModuleDef, allow_private: bool) -> impl Iterator<Item = &TableDef> {
+    module
+        .tables()
+        .filter(move |table| allow_private || table.table_access == TableAccess::Public)
+        .sorted_by_key(|table| &table.name)
 }
 
 /// Iterate over all the [`ViewDef`]s defined by the module, in alphabetical order by name.
@@ -125,9 +129,13 @@ pub(super) fn iter_views(module: &ModuleDef) -> impl Iterator<Item = &ViewDef> {
 /// Iterate over the names of all the tables and views defined by the module, in alphabetical order.
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.
-pub(super) fn iter_table_names_and_types(module: &ModuleDef) -> impl Iterator<Item = (&Identifier, AlgebraicTypeRef)> {
+pub(super) fn iter_table_names_and_types(
+    module: &ModuleDef,
+    allow_private: bool,
+) -> impl Iterator<Item = (&Identifier, AlgebraicTypeRef)> {
     module
         .tables()
+        .filter(move |table| allow_private || table.table_access == TableAccess::Public)
         .map(|def| (&def.name, def.product_type_ref))
         .chain(module.views().map(|def| (&def.name, def.product_type_ref)))
         .sorted_by_key(|(name, _)| *name)

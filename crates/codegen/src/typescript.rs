@@ -231,7 +231,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "// Import and reexport all table handle types");
-        for (table_name, _) in iter_table_names_and_types(module) {
+        for (table_name, _) in iter_table_names_and_types(module, false) {
             let table_module_name = table_module_name(table_name);
             let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
@@ -253,7 +253,7 @@ impl Lang for TypeScript {
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
         writeln!(out, "const tablesSchema = __schema(");
         out.indent(1);
-        for table in iter_tables(module) {
+        for table in iter_tables(module, false) {
             let type_ref = table.product_type_ref;
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
             writeln!(out, "__table({{");
