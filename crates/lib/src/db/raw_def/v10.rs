@@ -85,6 +85,9 @@ pub enum RawModuleDefV10Section {
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
 
     RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
+
+    /// Specifies how identifiers should be converted when interpreting module definitions.
+    CaseConversionPolicy(CaseConversionPolicy),
 }
 
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
@@ -403,6 +406,22 @@ pub struct RawViewDefV10 {
     /// All elements of the inner `ProductType` must have names.
     /// This again will be validated by the server on publish.
     pub return_type: AlgebraicType,
+}
+
+/// Specifies how identifiers should be converted when interpreting module definitions.
+#[derive(Debug, Default, Clone, Copy, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub enum CaseConversionPolicy {
+    /// No conversion - source names used verbatim as canonical names
+    None,
+    /// Convert to snake_case (SpacetimeDB default)
+    #[default]
+    SnakeCase,
+    /// Convert to camelCase
+    CamelCase,
+    /// Convert to PascalCase (UpperCamelCase)
+    PascalCase,
 }
 
 impl RawModuleDefV10 {
