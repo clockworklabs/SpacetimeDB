@@ -67,14 +67,6 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Override NuGet packages
-        shell: bash
-        run: |
-          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
-          dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
-
       # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
         uses: actions/setup-node@v4
