@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import type { MetaFunction } from '@remix-run/node';
+import { useLoaderData } from '@remix-run/react';
 import { tables, reducers } from '../../src/module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
+import { fetchPeople, type PersonData } from '../lib/spacetimedb.server';
 
 export const meta: MetaFunction = () => {
   return [
@@ -10,24 +12,44 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-// Client-only component that uses SpacetimeDB hooks
-function SpacetimeDBContent() {
+export async function loader() {
+  try {
+    const people = await fetchPeople();
+    return { initialPeople: people };
+  } catch (error) {
+    // If server-side fetch fails, the client will still work
+    console.error('Failed to fetch initial data:', error);
+    return { initialPeople: [] as PersonData[] };
+  }
+}
+
+// Client component that uses SpacetimeDB hooks for real-time updates
+function PersonList({ initialPeople }: { initialPeople: PersonData[] }) {
   const [name, setName] = useState('');
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const conn = useSpacetimeDB();
   const { isActive: connected } = conn;
 
   // Subscribe to all people in the database
-  // useTable returns [rows, isLoading] tuple
-  const [people] = useTable(tables.person);
+  const [people, isLoading] = useTable(tables.person);
 
   const addReducer = useReducer(reducers.add);
+
+  // Once connected and loaded, we're hydrated with real-time data
+  useEffect(() => {
+    if (connected && !isLoading) {
+      setIsHydrated(true);
+    }
+  }, [connected, isLoading]);
+
+  // Use server-rendered data until client is hydrated with real-time data
+  const displayPeople = isHydrated ? people : initialPeople;
 
   const addPerson = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !connected) return;
 
-    // Call the add reducer with object syntax
     addReducer({ name: name });
     setName('');
   };
@@ -37,7 +59,7 @@ function SpacetimeDBContent() {
       <div style={{ marginBottom: '1rem' }}>
         Status:{' '}
         <strong style={{ color: connected ? 'green' : 'red' }}>
-          {connected ? 'Connected' : 'Disconnected'}
+          {connected ? 'Connected' : 'Connecting...'}
         </strong>
       </div>
 
@@ -60,12 +82,12 @@ function SpacetimeDBContent() {
       </form>
 
       <div>
-        <h2>People ({people.length})</h2>
-        {people.length === 0 ? (
+        <h2>People ({displayPeople.length})</h2>
+        {displayPeople.length === 0 ? (
           <p>No people yet. Add someone above!</p>
         ) : (
           <ul>
-            {people.map((person, index) => (
+            {displayPeople.map((person, index) => (
               <li key={index}>{person.name}</li>
             ))}
           </ul>
@@ -76,6 +98,7 @@ function SpacetimeDBContent() {
 }
 
 export default function Index() {
+  const { initialPeople } = useLoaderData<typeof loader>();
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -87,11 +110,25 @@ export default function Index() {
       <h1>SpacetimeDB Remix App</h1>
 
       {isClient ? (
-        <SpacetimeDBContent />
+        <PersonList initialPeople={initialPeople} />
       ) : (
-        <div style={{ marginBottom: '1rem' }}>
-          Status: <strong style={{ color: 'gray' }}>Loading...</strong>
-        </div>
+        <>
+          <div style={{ marginBottom: '1rem' }}>
+            Status: <strong style={{ color: 'gray' }}>Loading...</strong>
+          </div>
+          <div>
+            <h2>People ({initialPeople.length})</h2>
+            {initialPeople.length === 0 ? (
+              <p>No people yet. Add someone above!</p>
+            ) : (
+              <ul>
+                {initialPeople.map((person, index) => (
+                  <li key={index}>{person.name}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
       )}
     </main>
   );

@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "npx remix vite:dev --port 3001",
+    "dev": "npx remix vite:dev",
     "build": "npx remix vite:build",
     "start": "npx remix-serve ./build/server/index.js",
     "generate": "pnpm --dir spacetimedb install --ignore-workspace && cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path spacetimedb && prettier --write src/module_bindings",

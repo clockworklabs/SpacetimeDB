@@ -19,7 +19,4 @@ export default defineConfig({
       },
     }),
   ],
-  server: {
-    port: 3001, // Avoid conflict with SpacetimeDB on port 3000
-  },
 });
