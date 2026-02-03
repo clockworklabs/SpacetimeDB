@@ -1,4 +1,6 @@
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using SpacetimeDB;
 
 #pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
@@ -133,8 +135,25 @@ public partial struct PublicTable
     public string? NullableReferenceField;
 }
 
+[SpacetimeDB.Table(Public = true)]
+public partial struct GeneratedSql
+{
+    [SpacetimeDB.AutoInc]
+    [SpacetimeDB.PrimaryKey]
+    public int Id;
+
+    public string Label;
+    public string SqlText;
+    public string ResultJson;
+}
+
 public static partial class Reducers
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.General)
+    {
+        WriteIndented = false,
+    };
+
     [SpacetimeDB.Reducer]
     public static void InsertData(ReducerContext ctx, PublicTable data)
     {
@@ -150,6 +169,91 @@ public static partial class Reducers
     public static void ScheduleImmediate(ReducerContext ctx, PublicTable data)
     {
         VolatileNonatomicScheduleImmediateInsertData(data);
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void ClearGeneratedSql(ReducerContext ctx)
+    {
+        foreach (var row in ctx.Db.GeneratedSql.Iter().ToList())
+        {
+            ctx.Db.GeneratedSql.Delete(row);
+        }
+
+        foreach (var row in ctx.Db.PublicTable.Iter().ToList())
+        {
+            ctx.Db.PublicTable.Delete(row);
+        }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SeedDeterministicData(ReducerContext ctx)
+    {
+        ClearGeneratedSql(ctx);
+        ctx.Db.PublicTable.Insert(CreateDefaultRow(0, "Alpha"));
+        ctx.Db.PublicTable.Insert(CreateDefaultRow(1, "Beta"));
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void GenerateSql(ReducerContext ctx, string label)
+    {
+        var query = ctx.From.PublicTable()
+            .Where(cols => cols.Id.Eq(SpacetimeDB.SqlLit.Int(0)))
+            .Build();
+
+        foreach (var existing in ctx.Db.GeneratedSql.Iter().Where(row => row.Label == label).ToList())
+        {
+            ctx.Db.GeneratedSql.Delete(existing);
+        }
+
+        var matchingRows = ctx.Db.PublicTable.Iter().Where(row => row.Id == 0).ToList();
+        ctx.Db.GeneratedSql.Insert(
+            new GeneratedSql
+            {
+                Label = label,
+                SqlText = query.Sql,
+                ResultJson = SerializeResults(matchingRows),
+            }
+        );
+    }
+
+    private static string SerializeResults(IEnumerable<PublicTable> rows) =>
+        JsonSerializer.Serialize(rows, JsonOptions);
+
+    private static PublicTable CreateDefaultRow(int id, string name)
+    {
+        var row = new PublicTable
+        {
+            Id = id,
+            ByteField = (byte)id,
+            UshortField = (ushort)id,
+            UintField = (uint)id,
+            UlongField = (ulong)id,
+            UInt128Field = new UInt128(0, (ulong)id),
+            U128Field = new U128(upper: 0, lower: (ulong)id),
+            U256Field = new U256(upper: UInt128.Zero, lower: new UInt128(0, (ulong)id)),
+            SbyteField = (sbyte)id,
+            ShortField = (short)id,
+            IntField = id,
+            LongField = id,
+            Int128Field = new Int128(0, (ulong)id),
+            I128Field = new I128(upper: 0, lower: (ulong)id),
+            I256Field = new I256(upper: Int128.Zero, lower: new Int128(0, (ulong)id)),
+            BoolField = true,
+            FloatField = id,
+            DoubleField = id,
+            StringField = name,
+            IdentityField = Identity.Zero,
+            ConnectionIdField = ConnectionId.Zero,
+            CustomStructField = default,
+            CustomClassField = new CustomClass(),
+            CustomEnumField = CustomEnum.EnumVariant1,
+            CustomTaggedEnumField = new CustomTaggedEnum.IntVariant(id),
+            ListField = new List<int>(),
+            NullableValueField = id,
+            NullableReferenceField = name,
+        };
+
+        return row;
     }
 }
 
@@ -290,5 +394,11 @@ public class Module
     public static PublicTable? FindPublicTableByIdentity(AnonymousViewContext ctx)
     {
         return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
+    }
+
+    [SpacetimeDB.View(Name = "generated_sql", Public = true)]
+    public static List<GeneratedSql> GeneratedSqlView(ViewContext ctx)
+    {
+        return ctx.Db.GeneratedSql.Iter().ToList();
     }
 }
