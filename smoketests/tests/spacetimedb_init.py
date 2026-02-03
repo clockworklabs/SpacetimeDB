@@ -141,20 +141,11 @@ class TestSpacetimeInit(unittest.TestCase):
         with open(package_json_path, 'r') as f:
             package_data = json.load(f)
 
-        # Use relative path from package.json to the SDK
-        # pnpm handles relative paths better than file:// URLs on Windows
+        # Always use absolute paths with forward slashes
+        # This works on both Windows and Unix, and handles different drives on Windows
         abs_sdk_path = Path(local_path).absolute()
-        abs_package_json_dir = package_json_path.parent.absolute()
-
-        try:
-            rel_path = os.path.relpath(abs_sdk_path, abs_package_json_dir)
-            # Convert backslashes to forward slashes for cross-platform compatibility
-            rel_path = rel_path.replace('\\', '/')
-            package_data["dependencies"][package_name] = rel_path
-        except ValueError:
-            # On Windows, if paths are on different drives, use file:// protocol
-            file_url = abs_sdk_path.as_uri()
-            package_data["dependencies"][package_name] = file_url
+        abs_path_str = str(abs_sdk_path).replace('\\', '/')
+        package_data["dependencies"][package_name] = abs_path_str
 
         with open(package_json_path, 'w') as f:
             json.dump(package_data, f, indent=2)
