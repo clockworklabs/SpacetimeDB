@@ -916,7 +916,7 @@ where
     ExecutionResult { stats, call_result }
 }
 
-/// Extracts the raw module def by running the registered `__describe_module__` hook.
+/// Extracts the raw module def by running the registered `__describe_module_v10__` hook.
 fn extract_description<'scope>(
     scope: &mut PinScope<'scope, '_>,
     hooks: &HookFunctions<'_>,
@@ -983,7 +983,7 @@ mod test {
             r#"
             import { register_hooks } from "spacetime:sys@1.0";
             register_hooks({
-                __describe_module__: function() {},
+                __describe_module_v10__: function() {},
                 __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
                     throw new Error("foobar");
                 },
@@ -1002,7 +1002,7 @@ js error Uncaught Error: foobar
             r#"
             import { register_hooks } from "spacetime:sys@1.0";
             register_hooks({
-                __describe_module__: function() {},
+                __describe_module_v10__: function() {},
                 __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
                     return {
                         "tag": "err",
@@ -1019,7 +1019,7 @@ js error Uncaught Error: foobar
             r#"
             import { register_hooks } from "spacetime:sys@1.0";
             register_hooks({
-                __describe_module__: function() {},
+                __describe_module_v10__: function() {},
                 __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
                     return {
                         "tag": "ok",
@@ -1038,7 +1038,7 @@ js error Uncaught Error: foobar
             import { register_hooks } from "spacetime:sys@1.0";
             register_hooks({
                 __call_reducer__: function() {},
-                __describe_module__: function() {
+                __describe_module_v10__: function() {
                     return new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
                 },
             })
