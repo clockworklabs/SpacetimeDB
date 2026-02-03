@@ -24,8 +24,11 @@ use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::io::Read;
 
-/// Build the CommandSchema for generate command
-fn build_generate_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
+/// Build the CommandSchema for generate command configuration.
+///
+/// This schema is used to validate and merge values from both the config file
+/// and CLI arguments, with CLI arguments taking precedence over config values.
+fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
     CommandSchemaBuilder::new()
         .key(Key::new::<Language>("language").from_clap("lang").required())
         .key(Key::new::<PathBuf>("out_dir"))
@@ -42,7 +45,10 @@ fn build_generate_schema(command: &clap::Command) -> Result<CommandSchema, anyho
         .map_err(Into::into)
 }
 
-/// Get filtered generate configs based on CLI arguments
+/// Get filtered generate configs based on CLI arguments. When the user sets
+/// the module path as a CLI argument and the config file is available,
+/// we should only run the generate command for config entries that match
+/// the module path
 fn get_filtered_generate_configs<'a>(
     spacetime_config: &'a SpacetimeConfig,
     schema: &'a CommandSchema,
@@ -56,7 +62,8 @@ fn get_filtered_generate_configs<'a>(
         return Ok(vec![]);
     }
 
-    // Build CommandConfig for each generate config
+    // Build CommandConfig for each generate config - this merges any arguments passed
+    // through the CLI with the values from the config file
     let all_command_configs: Vec<CommandConfig> = all_configs
         .into_iter()
         .map(|config| {
@@ -69,10 +76,24 @@ fn get_filtered_generate_configs<'a>(
     // Filter by module_path if provided via CLI
     let filtered_configs: Vec<CommandConfig> = if schema.is_from_cli(args, "module_path") {
         let cli_module_path = schema.get_clap_arg::<PathBuf>(args, "module_path")?;
+        // Canonicalize the CLI path for comparison (if it exists)
+        let cli_canonical = cli_module_path.as_ref().and_then(|p| p.canonicalize().ok());
+
         all_command_configs
             .into_iter()
             .filter(|config| {
                 let config_module_path = config.get_one::<PathBuf>(args, "module_path").ok().flatten();
+
+                // If we have a canonical CLI path, try to canonicalize config path and compare
+                if let Some(ref cli_canon) = cli_canonical {
+                    if let Some(ref config_path) = config_module_path {
+                        if let Ok(config_canon) = config_path.canonicalize() {
+                            return cli_canon == &config_canon;
+                        }
+                    }
+                }
+
+                // Fallback to direct comparison if canonicalization fails
                 config_module_path.as_ref() == cli_module_path.as_ref()
             })
             .collect()
