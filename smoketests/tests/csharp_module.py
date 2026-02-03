@@ -1,10 +1,20 @@
-from .. import run_cmd, STDB_DIR, requires_dotnet, spacetime
-import unittest
-import tempfile
-from pathlib import Path
+from .. import (
+    STDB_CONFIG,
+    STDB_DIR,
+    parse_sql_result,
+    random_string,
+    requires_dotnet,
+    run_cmd,
+    spacetime,
+)
+import json
+import re
 import shutil
 import subprocess
+import tempfile
+import unittest
 import xml.etree.ElementTree as xml
+from pathlib import Path
 
 
 @requires_dotnet
@@ -73,6 +83,72 @@ class CreateProject(unittest.TestCase):
                     f.write(config)
 
                 run_cmd("dotnet", "publish", cwd=server_path, capture_stderr=True)
+
+                # Validate typed query builder
+                fixture_path = STDB_DIR / "crates/bindings-csharp/Codegen.Tests/fixtures/server"
+                module_name = random_string(12)
+
+                if not STDB_CONFIG:
+                    self.fail("smoketest config not initialized; rerun via smoketests.__main__")
+
+                with tempfile.TemporaryDirectory() as config_dir:
+                    config_path = Path(config_dir) / "config.toml"
+                    config_path.write_text(STDB_CONFIG)
+
+                    publish_output = spacetime(
+                        "--config-path",
+                        str(config_path),
+                        "publish",
+                        module_name,
+                        "-c",
+                        "--project-path",
+                        fixture_path,
+                        "--yes",
+                        capture_stderr=True,
+                    )
+                    identity_match = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)
+                    self.assertIsNotNone(identity_match, "failed to parse identity from publish output")
+                    identity = identity_match.group(1)
+
+                    def call(reducer, *args):
+                        spacetime(
+                            "--config-path",
+                            str(config_path),
+                            "call",
+                            "--",
+                            identity,
+                            reducer,
+                            *map(json.dumps, args),
+                            capture_stderr=True,
+                        )
+
+                    call("Reducers.ClearGeneratedSql")
+                    call("Reducers.SeedDeterministicData")
+                    call("Reducers.GenerateSql", "basic_where")
+
+                    sql_output = spacetime(
+                        "--config-path",
+                        str(config_path),
+                        "sql",
+                        "--anonymous",
+                        "--",
+                        identity,
+                        "SELECT Label, SqlText, ResultJson FROM GeneratedSql ORDER BY Id",
+                        capture_stderr=True,
+                    )
+
+                    rows = parse_sql_result(sql_output)
+                    self.assertEqual(len(rows), 1)
+                    row = rows[0]
+                    self.assertEqual(row["Label"], "basic_where")
+                    expected_sql = 'SELECT * FROM "PublicTable" WHERE ("PublicTable"."Id" = 0)'
+                    self.assertEqual(row["SqlText"], expected_sql)
+
+                    data = json.loads(row["ResultJson"])
+                    self.assertEqual(len(data), 1)
+                    first = data[0]
+                    self.assertEqual(first["Id"], "0")
+                    self.assertEqual(first["StringField"], '"Alpha"')
 
         except subprocess.CalledProcessError as e:
             print(e)
