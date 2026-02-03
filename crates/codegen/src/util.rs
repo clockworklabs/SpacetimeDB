@@ -93,8 +93,8 @@ pub(super) fn is_reducer_invokable(reducer: &ReducerDef) -> bool {
 
 /// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
 ///
-/// Skipping the `init` reducer and internal [`FunctionVisibiity::Internal`] reducers because they
-/// should not be directly invokable.
+/// Skipping the `init` reducer and internal [`FunctionVisibiity::Internal`] reducers because
+/// they should not be directly invokable.
 /// Sorting is not necessary for reducers because they are already stored in an IndexMap.
 pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
     module

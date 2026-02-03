@@ -1765,7 +1765,7 @@ impl ModuleHost {
         Ok(self.call_procedure_with_params(&procedure_def.name, params).await?)
     }
 
-    //TODO(shub): Also allow for collaborators along with owner
+    //TODO(shub) #4195: Also allow for collaborators along with owner
     fn is_database_owner(&self, caller_identity: Identity) -> bool {
         self.info.owner_identity == caller_identity
     }
