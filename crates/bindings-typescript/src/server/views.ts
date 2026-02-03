@@ -1,27 +1,25 @@
 import {
   AlgebraicType,
+  ProductType,
   type AlgebraicTypeVariants,
-  type ProductType,
+  type Deserializer,
+  type Serializer,
 } from '../lib/algebraic_type';
 import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
-import type { ParamsObj } from './reducers';
-import {
-  MODULE_DEF,
-  registerTypesRecursively,
-  resolveType,
-  type UntypedSchemaDef,
-} from './schema';
-import type { ReadonlyTable } from './table';
+import type { ParamsObj } from '../lib/reducers';
+import { type UntypedSchemaDef } from '../lib/schema';
+import type { ReadonlyTable } from '../lib/table';
 import {
   RowBuilder,
   type Infer,
   type InferSpacetimeTypeOfTypeBuilder,
   type InferTypeOfRow,
   type TypeBuilder,
-} from './type_builders';
-import { bsatnBaseSize, toPascalCase } from './util';
+} from '../lib/type_builders';
+import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import { type QueryBuilder, type RowTypedQuery } from './query';
+import type { SchemaInner } from './schema';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -88,6 +86,7 @@ export function defineView<
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 >(
+  ctx: SchemaInner,
   opts: ViewOpts,
   anon: Anonymous,
   params: Params,
@@ -99,18 +98,19 @@ export function defineView<
   const paramsBuilder = new RowBuilder(params, toPascalCase(opts.name));
 
   // Register return types if they are product types
-  let returnType = registerTypesRecursively(ret).algebraicType;
+  let returnType = ctx.registerTypesRecursively(ret).algebraicType;
 
-  const { value: paramType } = resolveType(
-    MODULE_DEF.typespace,
-    registerTypesRecursively(paramsBuilder)
+  const { typespace } = ctx;
+
+  const { value: paramType } = ctx.resolveType(
+    ctx.registerTypesRecursively(paramsBuilder)
   );
 
-  MODULE_DEF.miscExports.push({
+  ctx.moduleDef.miscExports.push({
     tag: 'View',
     value: {
       name: opts.name,
-      index: (anon ? ANON_VIEWS : VIEWS).length,
+      index: (anon ? ctx.anonViews : ctx.views).length,
       isPublic: opts.public,
       isAnonymous: anon,
       params: paramType,
@@ -130,23 +130,23 @@ export function defineView<
     );
   }
 
-  (anon ? ANON_VIEWS : VIEWS).push({
+  (anon ? ctx.anonViews : ctx.views).push({
     fn,
-    params: paramType,
-    returnType,
-    returnTypeBaseSize: bsatnBaseSize(MODULE_DEF.typespace, returnType),
+    deserializeParams: ProductType.makeDeserializer(paramType, typespace),
+    serializeReturn: AlgebraicType.makeSerializer(returnType, typespace),
+    returnTypeBaseSize: bsatnBaseSize(typespace, returnType),
   });
 }
 
 type ViewInfo<F> = {
   fn: F;
-  params: ProductType;
-  returnType: AlgebraicType;
+  deserializeParams: Deserializer<any>;
+  serializeReturn: Serializer<any>;
   returnTypeBaseSize: number;
 };
 
-export const VIEWS: ViewInfo<ViewFn<any, any, any>>[] = [];
-export const ANON_VIEWS: ViewInfo<AnonymousViewFn<any, any, any>>[] = [];
+export type Views = ViewInfo<ViewFn<any, any, any>>[];
+export type AnonViews = ViewInfo<AnonymousViewFn<any, any, any>>[];
 
 // A helper to get the product type out of a type builder.
 // This is only non-never if the type builder is an array.

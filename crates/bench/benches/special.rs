@@ -8,6 +8,7 @@ use spacetimedb_bench::{
 use spacetimedb_lib::sats::{self, bsatn};
 use spacetimedb_lib::{bsatn::ToBsatn as _, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_testing::modules::{Csharp, ModuleLanguage, Rust};
 use std::sync::Arc;
@@ -136,7 +137,7 @@ fn serialize_benchmarks<
     });
 
     let mut table_schema = TableSchema::from_product_type(T::product_type());
-    table_schema.table_name = name.into();
+    table_schema.table_name = TableName::new_from_str(name);
     let mut table = spacetimedb_table::table::Table::new(
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
