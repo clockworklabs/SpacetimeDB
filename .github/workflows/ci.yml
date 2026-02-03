@@ -20,21 +20,17 @@ concurrency:
 jobs:
   docker_smoketests:
     needs: [lints]
-    name: Smoketests
+    name: Smoketests (${{ matrix.name }})
     strategy:
       matrix:
-        runner: [spacetimedb-new-runner, windows-latest]
         include:
-          - runner: spacetimedb-new-runner
+          - name: Linux
+            runner: spacetimedb-new-runner-2
             smoketest_args: --docker
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
-          - runner: windows-latest
+          - name: Windows
+            runner: windows-latest
             smoketest_args: --no-build-cli
-            container: null
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container }}
     timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -109,10 +105,6 @@ jobs:
         shell: powershell
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-      - name: Start Docker daemon
-        if: runner.os == 'Linux'
-        run: /usr/local/bin/start-docker.sh
-
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -146,11 +138,8 @@ jobs:
   test:
     needs: [lints]
     name: Test Suite
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
+
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -203,11 +192,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -235,11 +220,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -262,11 +243,7 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -295,16 +272,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: spacetimedb-new-runner
-            target: x86_64-unknown-linux-gnu
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -347,7 +319,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner
+    runs-on: spacetimedb-new-runner-2
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -434,7 +406,7 @@ jobs:
 
   ci_command_docs:
     name: Check CI command docs
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Find Git ref
         env:
@@ -462,11 +434,7 @@ jobs:
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -687,12 +655,7 @@ jobs:
 
   csharp-testsuite:
     needs: [lints]
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
-        --cgroupns=host
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
