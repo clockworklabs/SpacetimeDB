@@ -946,9 +946,9 @@ mod tests {
 
         assert_eq!(
             def.reducers[&check_deliveries_name].visibility,
-            FunctionVisibility::Internal,
+            FunctionVisibility::Private,
         );
-        assert_eq!(def.reducers[&init_name].visibility, FunctionVisibility::Internal);
+        assert_eq!(def.reducers[&init_name].visibility, FunctionVisibility::Private);
         assert_eq!(
             def.reducers[&extra_reducer_name].visibility,
             FunctionVisibility::ClientCallable
