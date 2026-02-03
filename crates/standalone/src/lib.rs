@@ -84,7 +84,7 @@ impl StandaloneEnv {
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
-        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.to_owned());
+        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.into());
 
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
@@ -478,6 +478,13 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
         database: Identity,
         action: spacetimedb_client_api::Action,
     ) -> Result<(), spacetimedb_client_api::Unauthorized> {
+        // Creating a database is always allowed.
+        if let spacetimedb_client_api::Action::CreateDatabase { .. } = action {
+            return Ok(());
+        }
+
+        // Otherwise, the database must already exist,
+        // and the `subject` equal to `database.owner_identity`.
         let database = self
             .get_database_by_identity(&database)
             .await?
@@ -597,7 +604,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args, JobCores::without_pinned_cores(tokio::runtime::Handle::current())).await
+    start::exec(&args, JobCores::without_pinned_cores()).await
 }
 
 #[cfg(test)]
@@ -637,22 +644,13 @@ mod tests {
             websocket: WebSocketOptions::default(),
         };
 
-        let _env = StandaloneEnv::init(
-            config,
-            &ca,
-            data_dir.clone(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
-        )
-        .await?;
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(
-            config,
-            &ca,
-            data_dir.clone(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current())
-        )
-        .await
-        .is_err());
+        assert!(
+            StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores())
+                .await
+                .is_err()
+        );
 
         Ok(())
     }

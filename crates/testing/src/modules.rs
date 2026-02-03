@@ -204,7 +204,7 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+            JobCores::without_pinned_cores(),
         )
         .await
         .unwrap();
@@ -221,6 +221,7 @@ impl CompiledModule {
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
+                organization: None,
             },
             MigrationPolicy::Compatible,
         )

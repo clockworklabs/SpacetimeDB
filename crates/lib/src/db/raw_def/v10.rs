@@ -83,8 +83,11 @@ pub enum RawModuleDefV10Section {
     /// Unlike V9 where lifecycle was a field on reducers,
     /// V10 stores lifecycle-to-reducer mappings separately.
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
-    //TODO: Add section for Event tables, and Case conversion before exposing this from module
+
+    RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
 }
+
+pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
 
 /// The definition of a database table.
 ///
@@ -476,6 +479,14 @@ impl RawModuleDefV10 {
             })
             .expect("Tables section must exist for tests")
     }
+
+    // Get the row-level security section, if present.
+    pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::RowLevelSecurity(rls) => Some(rls),
+            _ => None,
+        })
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -631,6 +642,26 @@ impl RawModuleDefV10Builder {
     /// The returned type must satisfy `AlgebraicType::is_valid_for_client_type_definition` or `AlgebraicType::is_valid_for_client_type_use`.
     pub fn add_type<T: SpacetimeType>(&mut self) -> AlgebraicType {
         TypespaceBuilder::add_type::<T>(self)
+    }
+
+    /// Get mutable access to the row-level security section, creating it if missing.
+    fn row_level_security_mut(&mut self) -> &mut Vec<RawRowLevelSecurityDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::RowLevelSecurity(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::RowLevelSecurity(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
+            _ => unreachable!("Just ensured RowLevelSecurity section exists"),
+        }
     }
 
     /// Create a table builder.
@@ -865,6 +896,16 @@ impl RawModuleDefV10Builder {
             schedule_at_col: column.into(),
             function_name: function.into(),
         });
+    }
+
+    /// Add a row-level security policy to the module.
+    ///
+    /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
+    ///
+    /// **NOTE**: The `sql` expression must be unique within the module.
+    pub fn add_row_level_security(&mut self, sql: &str) {
+        self.row_level_security_mut()
+            .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
     }
 
     /// Finish building, consuming the builder and returning the module.

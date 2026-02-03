@@ -685,7 +685,7 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
-    /// Implemented using a rust `std::collections::HashMap`.
+    /// Implemented using a rust `HashMap`.
     Hash(HashAlgorithm),
     /// Implemented using `DirectUniqueIndex`.
     Direct(DirectAlgorithm),
@@ -1304,12 +1304,6 @@ pub enum FunctionVisibility {
 
     /// Callable from client code.
     ClientCallable,
-}
-
-impl FunctionVisibility {
-    fn is_internal(&self) -> bool {
-        matches!(self, FunctionVisibility::Internal)
-    }
 }
 
 use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawFunctionVisibility;

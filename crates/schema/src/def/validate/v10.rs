@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use spacetimedb_data_structures::map::HashCollectionExt;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::de::DeserializeSeed as _;
@@ -180,6 +179,13 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         ..
     } = validator.core;
 
+    let row_level_security_raw = def
+        .row_level_security()
+        .into_iter()
+        .flatten()
+        .map(|rls| (rls.sql.clone(), rls.to_owned()))
+        .collect();
+
     let (tables, types, reducers, procedures, views) =
         (tables_types_reducers_procedures_views).map_err(|errors| errors.sort_deduplicate())?;
 
@@ -194,7 +200,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         typespace_for_generate,
         stored_in_table_def,
         refmap,
-        row_level_security_raw: HashMap::new(),
+        row_level_security_raw,
         lifecycle_reducers,
         procedures,
         raw_module_def_version: RawModuleDefVersion::V10,
