@@ -177,7 +177,6 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
 
 /// Override nuget config to use a local NuGet package on a .NET project.
 fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, build_subdir: &str) -> Result<()> {
-    println!("Override {package}: {project_dir:?} with {source_dir:?}");
     // Clean before packing to avoid stale artifacts causing conflicts
     let _ = Command::new("dotnet").args(["clean"]).current_dir(source_dir).output();
 
