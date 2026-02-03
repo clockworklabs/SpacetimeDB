@@ -441,9 +441,15 @@ spacetimedb.view('my_player', {}, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
-// Return multiple rows
+// Return potentially multiple rows
 spacetimedb.view('top_players', {}, t.array(player.rowType), ctx => {
-  return ctx.db.player.iter().filter(p => p.score > 1000);
+  return ctx.db.player.score.filter(1000);
+});
+
+// Perform a generic filter using the query builder.
+// Equivalent to `SELECT * FROM player WHERE score < 1000`.
+spacetimedb.view('bottom_players', {}, t.array(player.rowType), ctx => {
+  return ctx.from.player.where(p => p.score.lt(1000)).build()
 });
 ```
 
@@ -460,11 +466,19 @@ public static Player? MyPlayer(ViewContext ctx)
     return ctx.Db.Player.Identity.Find(ctx.Sender);
 }
 
-// Return multiple rows
+// Return potentially multiple rows
 [SpacetimeDB.View(Public = true)]
 public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 {
-    return ctx.Db.Player.Iter().Where(p => p.Score > 1000);
+    return ctx.Db.Player.Score.Filter(1000);
+}
+
+// Perform a generic filter using the query builder.
+// Equivalent to `SELECT * FROM player WHERE score < 1000`.
+[SpacetimeDB.View(Public = true)]
+public static IEnumerable<Player> BottomPlayers(ViewContext ctx)
+{
+    return ctx.From.Player.Where(p => p.Score.Lt(1000)).Build();
 }
 ```
 
@@ -472,7 +486,7 @@ public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{view, ViewContext};
+use spacetimedb::{view, Query, ViewContext};
 
 // Return single row
 #[view(name = my_player, public)]
@@ -480,12 +494,17 @@ fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender)
 }
 
-// Return multiple rows
+// Return potentially multiple rows
 #[view(name = top_players, public)]
 fn top_players(ctx: &ViewContext) -> Vec<Player> {
-    ctx.db.player().iter()
-        .filter(|p| p.score > 1000)
-        .collect()
+    ctx.db.player().score().filter(1000).collect()
+}
+
+// Perform a generic filter using the query builder.
+// Equivalent to `SELECT * FROM player WHERE score < 1000`.
+#[view(name = bottom_players, public)]
+fn bottom_players(ctx: &ViewContext) -> Query<Player> {
+    ctx.from.player().r#where(|p| p.score.lt(1000)).build()
 }
 ```
 
