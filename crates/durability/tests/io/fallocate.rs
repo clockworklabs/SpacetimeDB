@@ -98,8 +98,8 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             // Mark initial segment as seen.
             new_segment_rx.borrow_and_update();
             // Write past available space.
-            for _ in 0..256 {
-                durability.append_tx(txdata.clone());
+            for offset in 0..256 {
+                durability.commit([(offset, txdata.clone()).into()].into());
             }
             // Ensure new segment is created.
             new_segment_rx.changed().await?;
@@ -107,7 +107,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             sleep(Duration::from_millis(5)).await;
             // Durability actor should have crashed, so this should panic.
             info!("trying append on crashed durability");
-            durability.append_tx(txdata.clone());
+            durability.commit([(256, txdata.clone()).into()].into());
         }
 
         Ok(())
@@ -168,7 +168,6 @@ async fn local_durability(
         spacetimedb_durability::local::Options {
             commitlog: spacetimedb_commitlog::Options {
                 max_segment_size,
-                max_records_in_commit: 1.try_into().unwrap(),
                 preallocate_segments: true,
                 ..<_>::default()
             },
