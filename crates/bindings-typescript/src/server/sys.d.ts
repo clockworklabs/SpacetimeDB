@@ -7,7 +7,7 @@ declare module 'spacetime:sys@1.0' {
   export type u256 = bigint;
 
   export type ModuleHooks = {
-    __describe_module_v10__(): Uint8Array;
+    __describe_module__(): Uint8Array;
 
     __call_reducer__(
       reducerId: u32,
