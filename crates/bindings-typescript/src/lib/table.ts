@@ -316,7 +316,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   const sequences: Infer<typeof RawSequenceDefV10>[] = [];
 
   let scheduleAtCol: ColId | undefined;
-  let defaultValues: Infer<typeof RawColumnDefaultValueV10>[] = [];
+  const defaultValues: Infer<typeof RawColumnDefaultValueV10>[] = [];
 
   for (const [name, builder] of Object.entries(row.row)) {
     const meta: ColumnMetadata<any> = builder.columnMetadata;
@@ -365,10 +365,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       });
 
       if (meta.defaultValue) {
-      defaultValues.push({
+        defaultValues.push({
           colId: colIds.get(name)!,
           value: meta.defaultValue,
-      });
+        });
       }
     }
 
@@ -402,7 +402,11 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     // no actual way for the user to set the actual index name.
     // I think we should standardize: name and accessorName as the way to set
     // the name and accessor name of an index across all SDKs.
-    indexes.push({ sourceName: undefined, accessorName: indexOpts.name, algorithm });
+    indexes.push({
+      sourceName: undefined,
+      accessorName: indexOpts.name,
+      algorithm,
+    });
   }
 
   // add explicit constraints from options.constraints
@@ -445,17 +449,16 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     CoerceRow<Row>
   >['algebraicType']['value'];
 
+  const schedule: Infer<typeof RawScheduleDefV10> | undefined =
+    scheduled && scheduleAtCol !== undefined
+      ? {
+          sourceName: undefined,
+          tableName: name,
+          functionName: scheduled,
+          scheduleAtCol: scheduleAtCol,
+        }
+      : undefined;
 
-  const schedule: Infer<typeof RawScheduleDefV10> | undefined = 
-      scheduled && scheduleAtCol !== undefined
-        ? {
-            sourceName: undefined,
-            tableName: name,
-            functionName: scheduled,
-            scheduleAtCol: scheduleAtCol,
-          }
-        : undefined;
- 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,

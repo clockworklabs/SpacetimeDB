@@ -8,15 +8,12 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import AlgebraicType from "./algebraic_type_type";
+} from '../../lib/type_builders';
+import AlgebraicType from './algebraic_type_type';
 
-
-export default __t.object("SumTypeVariant", {
+export default __t.object('SumTypeVariant', {
   name: __t.option(__t.string()),
   get algebraicType() {
     return AlgebraicType;
   },
 });
-
-

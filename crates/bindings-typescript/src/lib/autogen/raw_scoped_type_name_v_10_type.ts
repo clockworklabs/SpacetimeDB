@@ -8,11 +8,9 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
+} from '../../lib/type_builders';
 
-export default __t.object("RawScopedTypeNameV10", {
+export default __t.object('RawScopedTypeNameV10', {
   scope: __t.array(__t.string()),
   sourceName: __t.string(),
 });
-
-

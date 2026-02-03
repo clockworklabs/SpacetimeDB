@@ -45,11 +45,10 @@ export type TableSchema<
     columns: [any];
   }[];
 
-
   /**
    * The schedule defined on the table, if any.
    */
- readonly schedule?: Infer<typeof RawScheduleDefV10>;
+  readonly schedule?: Infer<typeof RawScheduleDefV10>;
 };
 
 export type UntypedTableSchema = TableSchema<

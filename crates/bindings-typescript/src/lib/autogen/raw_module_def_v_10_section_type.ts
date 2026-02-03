@@ -8,20 +8,20 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import Typespace from "./typespace_type";
-import RawRowLevelSecurityDefV9 from "./raw_row_level_security_def_v_9_type";
-import RawTypeDefV10 from "./raw_type_def_v_10_type";
-import RawTableDefV10 from "./raw_table_def_v_10_type";
-import RawReducerDefV10 from "./raw_reducer_def_v_10_type";
-import RawProcedureDefV10 from "./raw_procedure_def_v_10_type";
-import RawViewDefV10 from "./raw_view_def_v_10_type";
-import RawScheduleDefV10 from "./raw_schedule_def_v_10_type";
-import RawLifeCycleReducerDefV10 from "./raw_life_cycle_reducer_def_v_10_type";
-
+} from '../../lib/type_builders';
+import Typespace from './typespace_type';
+import RawRowLevelSecurityDefV9 from './raw_row_level_security_def_v_9_type';
+import RawTypeDefV10 from './raw_type_def_v_10_type';
+import RawTableDefV10 from './raw_table_def_v_10_type';
+import RawReducerDefV10 from './raw_reducer_def_v_10_type';
+import RawProcedureDefV10 from './raw_procedure_def_v_10_type';
+import RawViewDefV10 from './raw_view_def_v_10_type';
+import RawScheduleDefV10 from './raw_schedule_def_v_10_type';
+import RawLifeCycleReducerDefV10 from './raw_life_cycle_reducer_def_v_10_type';
 
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
-const RawModuleDefV10Section = __t.enum("RawModuleDefV10Section", {get Typespace() {
+const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
+  get Typespace() {
     return Typespace;
   },
   get Types() {
@@ -51,5 +51,3 @@ const RawModuleDefV10Section = __t.enum("RawModuleDefV10Section", {get Typespace
 });
 
 export default RawModuleDefV10Section;
-
-

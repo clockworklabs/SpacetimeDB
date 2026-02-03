@@ -8,13 +8,12 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import HttpMethod from "./http_method_type";
-import HttpHeaders from "./http_headers_type";
-import HttpVersion from "./http_version_type";
+} from '../../lib/type_builders';
+import HttpMethod from './http_method_type';
+import HttpHeaders from './http_headers_type';
+import HttpVersion from './http_version_type';
 
-
-export default __t.object("HttpRequest", {
+export default __t.object('HttpRequest', {
   get method() {
     return HttpMethod;
   },
@@ -27,5 +26,3 @@ export default __t.object("HttpRequest", {
     return HttpVersion;
   },
 });
-
-

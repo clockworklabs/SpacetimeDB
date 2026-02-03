@@ -8,15 +8,12 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import RawTableDefV8 from "./raw_table_def_v_8_type";
+} from '../../lib/type_builders';
+import RawTableDefV8 from './raw_table_def_v_8_type';
 
-
-export default __t.object("TableDesc", {
+export default __t.object('TableDesc', {
   get schema() {
     return RawTableDefV8;
   },
   data: __t.u32(),
 });
-
-

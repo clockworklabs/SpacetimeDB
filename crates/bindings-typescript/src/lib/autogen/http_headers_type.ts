@@ -8,14 +8,11 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import HttpHeaderPair from "./http_header_pair_type";
+} from '../../lib/type_builders';
+import HttpHeaderPair from './http_header_pair_type';
 
-
-export default __t.object("HttpHeaders", {
+export default __t.object('HttpHeaders', {
   get entries() {
     return __t.array(HttpHeaderPair);
   },
 });
-
-

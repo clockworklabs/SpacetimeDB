@@ -8,12 +8,11 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import AlgebraicType from "./algebraic_type_type";
-import ProductType from "./product_type_type";
+} from '../../lib/type_builders';
+import AlgebraicType from './algebraic_type_type';
+import ProductType from './product_type_type';
 
-
-export default __t.object("RawViewDefV10", {
+export default __t.object('RawViewDefV10', {
   sourceName: __t.string(),
   index: __t.u32(),
   isPublic: __t.bool(),
@@ -25,5 +24,3 @@ export default __t.object("RawViewDefV10", {
     return AlgebraicType;
   },
 });
-
-

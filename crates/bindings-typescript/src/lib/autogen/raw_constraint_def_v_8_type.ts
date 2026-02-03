@@ -8,12 +8,10 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
+} from '../../lib/type_builders';
 
-export default __t.object("RawConstraintDefV8", {
+export default __t.object('RawConstraintDefV8', {
   constraintName: __t.string(),
   constraints: __t.u8(),
   columns: __t.array(__t.u16()),
 });
-
-

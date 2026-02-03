@@ -8,14 +8,13 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import RawColumnDefV8 from "./raw_column_def_v_8_type";
-import RawIndexDefV8 from "./raw_index_def_v_8_type";
-import RawConstraintDefV8 from "./raw_constraint_def_v_8_type";
-import RawSequenceDefV8 from "./raw_sequence_def_v_8_type";
+} from '../../lib/type_builders';
+import RawColumnDefV8 from './raw_column_def_v_8_type';
+import RawIndexDefV8 from './raw_index_def_v_8_type';
+import RawConstraintDefV8 from './raw_constraint_def_v_8_type';
+import RawSequenceDefV8 from './raw_sequence_def_v_8_type';
 
-
-export default __t.object("RawTableDefV8", {
+export default __t.object('RawTableDefV8', {
   tableName: __t.string(),
   get columns() {
     return __t.array(RawColumnDefV8);
@@ -33,5 +32,3 @@ export default __t.object("RawTableDefV8", {
   tableAccess: __t.string(),
   scheduled: __t.option(__t.string()),
 });
-
-

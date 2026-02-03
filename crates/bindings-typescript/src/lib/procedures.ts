@@ -9,7 +9,6 @@ import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
 import type { HttpClient } from '../server/http_internal';
 import FunctionVisibility from './autogen/function_visibility_type';
-import RawProcedureDefV10 from './autogen/raw_procedure_def_v_10_type';
 import type { ParamsObj, ReducerCtx } from './reducers';
 import {
   MODULE_DEF,
@@ -68,12 +67,11 @@ export function procedure<
   const returnType = registerTypesRecursively(ret).algebraicType;
 
   MODULE_DEF.procedures.push({
-      sourceName: name,
-      params: paramsType,
-      returnType,
+    sourceName: name,
+    params: paramsType,
+    returnType,
     visibility: FunctionVisibility.ClientCallable,
-  },);
-
+  });
 
   const { typespace } = MODULE_DEF;
 

@@ -8,12 +8,11 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import AlgebraicType from "./algebraic_type_type";
-import ProductType from "./product_type_type";
+} from '../../lib/type_builders';
+import AlgebraicType from './algebraic_type_type';
+import ProductType from './product_type_type';
 
-
-export default __t.object("RawProcedureDefV9", {
+export default __t.object('RawProcedureDefV9', {
   name: __t.string(),
   get params() {
     return ProductType;
@@ -22,5 +21,3 @@ export default __t.object("RawProcedureDefV9", {
     return AlgebraicType;
   },
 });
-
-

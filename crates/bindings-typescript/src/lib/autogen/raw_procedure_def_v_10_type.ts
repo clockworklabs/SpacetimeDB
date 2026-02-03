@@ -8,13 +8,12 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import AlgebraicType from "./algebraic_type_type";
-import ProductType from "./product_type_type";
-import FunctionVisibility from "./function_visibility_type";
+} from '../../lib/type_builders';
+import AlgebraicType from './algebraic_type_type';
+import ProductType from './product_type_type';
+import FunctionVisibility from './function_visibility_type';
 
-
-export default __t.object("RawProcedureDefV10", {
+export default __t.object('RawProcedureDefV10', {
   sourceName: __t.string(),
   get params() {
     return ProductType;
@@ -26,5 +25,3 @@ export default __t.object("RawProcedureDefV10", {
     return FunctionVisibility;
   },
 });
-
-

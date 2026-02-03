@@ -135,12 +135,9 @@ function tableToSchema<T extends UntypedTableSchema>(
  * The global module definition that gets populated by calls to `reducer()`
  * and lifecycle hooks.
  */
-
 type Section = Infer<typeof RawModuleDefV10Section>;
-type Tag = Section["tag"];
-
-type ValueOf<T extends Tag> =
-  Extract<Section, { tag: T }>["value"];
+type Tag = Section['tag'];
+type ValueOf<T extends Tag> = Extract<Section, { tag: T }>['value'];
 
 const defaults: { [K in Tag]: () => ValueOf<K> } = {
   Typespace: () => ({ types: [] }),
@@ -154,52 +151,48 @@ const defaults: { [K in Tag]: () => ValueOf<K> } = {
   RowLevelSecurity: () => [],
 };
 
-
-class ModuleDefWithoutAccessors { 
-  private readonly _sections: Section[] = [];
-
-  /** read-only view */
-  get sections(): Section[] {
-    return this._sections;
-  }
-
-  /** core typed accessor */
-  get<T extends Tag>(tag: T): Extract<Section, { tag: T }>{
-    const found = this._sections.find(
-      (x): x is Extract<Section, { tag: T }> => x.tag === tag
-    );
-
-    if (found) return found;
-
-    const value = defaults[tag]();
-    const section = { tag, value } as Section;
-
-    // single safe boundary cast (TS can't correlate generics here)
-    this._sections.push(section);
-
-    return section as Extract<Section, { tag: T }>;
-  }
-
-  /** auto-generate strongly typed fields: module.Tables, module.Reducers, ... */
-  constructor() {
-    const tags = Object.keys(defaults) as Tag[];
-
-    for (const tag of tags) {
-      Object.defineProperty(this, tag, {
-        get: () => this.get(tag),
-        enumerable: true,
-      });
-    }
-  }
+export interface ModuleDef {
+  readonly sections: Section[];
+  get<T extends Tag>(tag: T): Extract<Section, { tag: T }>;
+  typespace: ValueOf<'Typespace'>;
+  types: ValueOf<'Types'>;
+  tables: ValueOf<'Tables'>;
+  reducers: ValueOf<'Reducers'>;
+  procedures: ValueOf<'Procedures'>;
+  views: ValueOf<'Views'>;
+  schedules: ValueOf<'Schedules'>;
+  lifeCycleReducers: ValueOf<'LifeCycleReducers'>;
+  rowLevelSecurity: ValueOf<'RowLevelSecurity'>;
 }
 
+export function createModuleDef(): ModuleDef {
+  const sections: Section[] = [];
 
-export type ModuleDef =
-  ModuleDefWithoutAccessors & {
-  [K in Tag as Uncapitalize<K>]: ValueOf<K>;
+  const get = <T extends Tag>(tag: T): Extract<Section, { tag: T }> => {
+    const found = sections.find(
+      (x): x is Extract<Section, { tag: T }> => x.tag === tag
+    );
+    if (found) return found;
+    const value = defaults[tag]();
+    const section = { tag, value } as Section;
+    sections.push(section);
+    return section as Extract<Section, { tag: T }>;
   };
 
-export const MODULE_DEF = new ModuleDefWithoutAccessors() as ModuleDef;
+  const moduleDef: any = { sections, get };
+
+  for (const tag of Object.keys(defaults) as Tag[]) {
+    const key = tag.charAt(0).toLowerCase() + tag.slice(1);
+    Object.defineProperty(moduleDef, key, {
+      get: () => get(tag).value,
+      enumerable: true,
+    });
+  }
+
+  return moduleDef;
+}
+
+export const MODULE_DEF = createModuleDef();
 
 const COMPOUND_TYPES = new Map<
   AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
@@ -293,6 +286,7 @@ function registerCompoundTypeRecursively<
         } as AlgebraicTypeVariants.Product)
       : ({ tag: 'Sum', value: { variants: [] } } as AlgebraicTypeVariants.Sum);
 
+  console.log(MODULE_DEF);
   r = new RefBuilder(MODULE_DEF.typespace.types.length);
   MODULE_DEF.typespace.types.push(newTy);
 
@@ -696,10 +690,9 @@ export function schema<const H extends readonly UntypedTableSchema[]>(
     })),
   };
 
-
-handles.forEach(h => {
-  if (h.schedule) MODULE_DEF.schedules.push(h.schedule);
-});
+  handles.forEach(h => {
+    if (h.schedule) MODULE_DEF.schedules.push(h.schedule);
+  });
 
   // MODULE_DEF.typespace = typespace;
   // throw new Error(

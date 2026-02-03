@@ -25,7 +25,6 @@ import { toCamelCase, toPascalCase } from './util';
 import type { CamelCase } from './type_util';
 import { Uuid } from './uuid.ts';
 import type { Random } from '../server/rng';
-import type raw_life_cycle_reducer_def_v_10_type from './autogen/raw_life_cycle_reducer_def_v_10_type.ts';
 import FunctionVisibility from './autogen/function_visibility_type.ts';
 
 /**
@@ -162,22 +161,21 @@ export function pushReducer(
   const isLifecycle = lifecycle != null;
 
   MODULE_DEF.reducers.push({
-  sourceName: name,
-  params: paramsType,
-  visibility: isLifecycle
-    ? FunctionVisibility.Internal
-    : FunctionVisibility.ClientCallable,
-  okReturnType: AlgebraicType.Product({ elements: [] }),
-  errReturnType: AlgebraicType.String,
-});
+    sourceName: name,
+    params: paramsType,
+    visibility: isLifecycle
+      ? FunctionVisibility.Internal
+      : FunctionVisibility.ClientCallable,
+    okReturnType: AlgebraicType.Product({ elements: [] }),
+    errReturnType: AlgebraicType.String,
+  });
 
   if (isLifecycle) {
-  MODULE_DEF.lifeCycleReducers.push({
-    lifecycleSpec: lifecycle,
-    functionName: name,
-  });
-}
-
+    MODULE_DEF.lifeCycleReducers.push({
+      lifecycleSpec: lifecycle,
+      functionName: name,
+    });
+  }
 
   // If the function isn't named (e.g. `function foobar() {}`), give it the same
   // name as the reducer so that it's clear what it is in in backtraces.

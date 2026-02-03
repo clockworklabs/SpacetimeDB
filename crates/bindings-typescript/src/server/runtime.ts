@@ -195,7 +195,8 @@ class AuthCtxImpl implements AuthCtx {
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
   SchemaDef extends UntypedSchemaDef,
-> implements IReducerCtx<SchemaDef> {
+> implements IReducerCtx<SchemaDef>
+{
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
@@ -432,13 +433,13 @@ function makeTableView(
 
   const integrateGeneratedColumns = hasAutoIncrement
     ? (row: RowType<any>, ret_buf: Uint8Array) => {
-      const reader = new BinaryReader(ret_buf);
-      for (const { colName, deserialize, sequenceTrigger } of sequences) {
-        if (row[colName] === sequenceTrigger) {
-          row[colName] = deserialize(reader);
+        const reader = new BinaryReader(ret_buf);
+        for (const { colName, deserialize, sequenceTrigger } of sequences) {
+          if (row[colName] === sequenceTrigger) {
+            row[colName] = deserialize(reader);
+          }
         }
       }
-    }
     : null;
 
   const tableMethods: TableMethods<any> = {
@@ -804,7 +805,7 @@ function wrapSyscall<F extends (...args: any[]) => any>(
         ) {
           const message =
             hasOwn(e, '__error_message__') &&
-              typeof e.__error_message__ === 'string'
+            typeof e.__error_message__ === 'string'
               ? e.__error_message__
               : undefined;
           throw new SpacetimeHostError(e.__code_error__, message);
@@ -837,7 +838,7 @@ const console: Console = {
       sys.console_log(console_level_error, fmtLog(...data));
     }
   },
-  clear: () => { },
+  clear: () => {},
   debug: (...data: any[]) => {
     sys.console_log(console_level_debug, fmtLog(...data));
   },
@@ -859,15 +860,15 @@ const console: Console = {
   warn: (...data: any[]) => {
     sys.console_log(console_level_warn, fmtLog(...data));
   },
-  dir: (_item: any, _options: any) => { },
-  dirxml: (..._data: any[]) => { },
+  dir: (_item: any, _options: any) => {},
+  dirxml: (..._data: any[]) => {},
   // Counting
-  count: (_label = 'default') => { },
-  countReset: (_label = 'default') => { },
+  count: (_label = 'default') => {},
+  countReset: (_label = 'default') => {},
   // Grouping
-  group: (..._data: any[]) => { },
-  groupCollapsed: (..._data: any[]) => { },
-  groupEnd: () => { },
+  group: (..._data: any[]) => {},
+  groupCollapsed: (..._data: any[]) => {},
+  groupEnd: () => {},
   // Timing
   time: (label = 'default') => {
     if (timerMap.has(label)) {
@@ -889,9 +890,9 @@ const console: Console = {
     timerMap.delete(label);
   },
   // Additional console methods to satisfy the Console interface
-  timeStamp: () => { },
-  profile: () => { },
-  profileEnd: () => { },
+  timeStamp: () => {},
+  profile: () => {},
+  profileEnd: () => {},
 };
 
 (console as any).Console = console;

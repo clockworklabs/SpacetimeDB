@@ -111,13 +111,13 @@ export function defineView<
   );
 
   MODULE_DEF.views.push({
-      sourceName: opts.name,
-      index: (anon ? ANON_VIEWS : VIEWS).length,
-      isPublic: opts.public,
-      isAnonymous: anon,
-      params: paramType,
-      returnType,
-  },);
+    sourceName: opts.name,
+    index: (anon ? ANON_VIEWS : VIEWS).length,
+    isPublic: opts.public,
+    isAnonymous: anon,
+    params: paramType,
+    returnType,
+  });
 
   // If it is an option, we wrap the function to make the return look like an array.
   if (returnType.tag == 'Sum') {

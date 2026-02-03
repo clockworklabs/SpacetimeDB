@@ -158,9 +158,15 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .combine_errors()
         .and_then(
             |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
-                let (mut reducers, mut procedures, views) = check_function_names_are_unique(reducers, procedures, views)?;
+                let (mut reducers, mut procedures, views) =
+                    check_function_names_are_unique(reducers, procedures, views)?;
 
-                change_scheduled_functions_and_lifetimes_visibility(&schedules, &lifecycles, &mut reducers, &mut procedures)?;
+                change_scheduled_functions_and_lifetimes_visibility(
+                    &schedules,
+                    &lifecycles,
+                    &mut reducers,
+                    &mut procedures,
+                )?;
                 // Attach lifecycles to their respective reducers
                 attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
 

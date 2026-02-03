@@ -8,16 +8,15 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import TableType from "./table_type_type";
-import TableAccess from "./table_access_type";
-import RawIndexDefV10 from "./raw_index_def_v_10_type";
-import RawConstraintDefV10 from "./raw_constraint_def_v_10_type";
-import RawSequenceDefV10 from "./raw_sequence_def_v_10_type";
-import RawColumnDefaultValueV10 from "./raw_column_default_value_v_10_type";
+} from '../../lib/type_builders';
+import TableType from './table_type_type';
+import TableAccess from './table_access_type';
+import RawIndexDefV10 from './raw_index_def_v_10_type';
+import RawConstraintDefV10 from './raw_constraint_def_v_10_type';
+import RawSequenceDefV10 from './raw_sequence_def_v_10_type';
+import RawColumnDefaultValueV10 from './raw_column_default_value_v_10_type';
 
-
-export default __t.object("RawTableDefV10", {
+export default __t.object('RawTableDefV10', {
   sourceName: __t.string(),
   productTypeRef: __t.u32(),
   primaryKey: __t.array(__t.u16()),
@@ -40,5 +39,3 @@ export default __t.object("RawTableDefV10", {
     return __t.array(RawColumnDefaultValueV10);
   },
 });
-
-

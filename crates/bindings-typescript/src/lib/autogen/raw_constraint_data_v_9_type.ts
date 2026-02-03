@@ -8,16 +8,14 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import RawUniqueConstraintDataV9 from "./raw_unique_constraint_data_v_9_type";
-
+} from '../../lib/type_builders';
+import RawUniqueConstraintDataV9 from './raw_unique_constraint_data_v_9_type';
 
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
-const RawConstraintDataV9 = __t.enum("RawConstraintDataV9", {get Unique() {
+const RawConstraintDataV9 = __t.enum('RawConstraintDataV9', {
+  get Unique() {
     return RawUniqueConstraintDataV9;
   },
 });
 
 export default RawConstraintDataV9;
-
-

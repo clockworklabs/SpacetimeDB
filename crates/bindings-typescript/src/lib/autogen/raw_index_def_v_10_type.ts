@@ -8,16 +8,13 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "../../lib/type_builders";
-import RawIndexAlgorithm from "./raw_index_algorithm_type";
+} from '../../lib/type_builders';
+import RawIndexAlgorithm from './raw_index_algorithm_type';
 
-
-export default __t.object("RawIndexDefV10", {
+export default __t.object('RawIndexDefV10', {
   sourceName: __t.option(__t.string()),
   accessorName: __t.option(__t.string()),
   get algorithm() {
     return RawIndexAlgorithm;
   },
 });
-
-
