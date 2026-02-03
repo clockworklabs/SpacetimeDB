@@ -99,8 +99,13 @@ pub(super) fn is_reducer_invokable(reducer: &ReducerDef) -> bool {
 pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
     module
         .reducers()
+        // `RawModuleDefV10` already marks all lifecycle reducers as private, but we keep
+        // this filter for backward compatibility with older versions where `init`
+        // reducers were not private.
         .filter(|reducer| reducer.lifecycle != Some(Lifecycle::Init))
-        .filter(|reducer| !reducer.visibility.is_internal())
+        // Prior to `RawModuleDefV10`, all reducers were public by default. Filtering out
+        // internal reducers here does not break SDKs built against older versions.
+        .filter(|reducer| !reducer.visibility.is_private())
 }
 
 /// Iterate over all the [`ProcedureDef`]s defined by the module, in alphabetical order by name.
@@ -112,7 +117,7 @@ pub(super) fn iter_procedures(module: &ModuleDef) -> impl Iterator<Item = &Proce
     module
         .procedures()
         .sorted_by_key(|procedure| &procedure.name)
-        .filter(|reducer| !reducer.visibility.is_internal())
+        .filter(|reducer| !reducer.visibility.is_private())
 }
 
 /// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.

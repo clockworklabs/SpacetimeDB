@@ -1298,17 +1298,19 @@ impl From<ViewDef> for RawMiscModuleExportV9 {
 /// The visibility of a function (reducer or procedure).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum FunctionVisibility {
-    /// Internal-only, not callable from clients.
-    /// Typically used for lifecycle reducers and scheduled functions.
-    Internal,
+    /// Not callable by arbitrary clients.
+    ///
+    /// Still callable by the module owner, collaborators,
+    /// and internal module code.
+    Private,
 
     /// Callable from client code.
     ClientCallable,
 }
 
 impl FunctionVisibility {
-    pub fn is_internal(&self) -> bool {
-        matches!(self, FunctionVisibility::Internal)
+    pub fn is_private(&self) -> bool {
+        matches!(self, FunctionVisibility::Private)
     }
 }
 
@@ -1316,7 +1318,7 @@ use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawFunctionVisibili
 impl From<RawFunctionVisibility> for FunctionVisibility {
     fn from(val: RawFunctionVisibility) -> Self {
         match val {
-            RawFunctionVisibility::Internal => FunctionVisibility::Internal,
+            RawFunctionVisibility::Private => FunctionVisibility::Private,
             RawFunctionVisibility::ClientCallable => FunctionVisibility::ClientCallable,
         }
     }
