@@ -390,7 +390,7 @@ fn register_hooks_v1_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
     // Convert `hooks` to an object.
     let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
 
-    let describe_module = get_hook_function(scope, hooks, str_from_ident!(__describe_module__))?;
+    let describe_module = get_hook_function(scope, hooks, str_from_ident!(__describe_module_v10__))?;
     let call_reducer = get_hook_function(scope, hooks, str_from_ident!(__call_reducer__))?;
 
     // Set the hooks.
