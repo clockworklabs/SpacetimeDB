@@ -4,7 +4,7 @@ use crate::client::messages::{
     SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
     TransactionUpdateMessage,
 };
-use crate::client::{ClientConnectionSender, Protocol};
+use crate::client::{ClientConnectionSender, OutboundMessage, Protocol};
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::subscription::delta::eval_delta;
@@ -14,7 +14,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use core::mem;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
-use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_data_structures::map::HashCollectionExt as _;
 use spacetimedb_data_structures::map::{
     hash_map::{Entry, OccupiedError},
@@ -45,9 +45,12 @@ type SwitchedDbUpdate =
     ws_v1::FormatSwitch<ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>, ws_v1::DatabaseUpdate<ws_v1::JsonFormat>>;
 
 /// ClientQueryId is an identifier for a query set by the client.
+type ClientQuerySetId = ws_v2::QuerySetId;
+/// ClientQueryId is an identifier for a query set by the client.
 type ClientQueryId = ws_v1::QueryId;
 /// SubscriptionId is a globally unique identifier for a subscription.
 type SubscriptionId = (ClientId, ClientQueryId);
+type SubscriptionIdV2 = (ClientId, ClientQuerySetId);
 
 #[derive(Debug)]
 pub struct Plan {
@@ -139,7 +142,8 @@ impl Plan {
 #[derive(Debug)]
 struct ClientInfo {
     outbound_ref: Client,
-    subscriptions: HashMap<SubscriptionId, HashSet<QueryHash>>,
+    v1_subscriptions: HashMap<SubscriptionId, HashSet<QueryHash>>,
+    v2_subscriptions: HashMap<SubscriptionIdV2, HashSet<QueryHash>>,
     subscription_ref_count: HashMap<QueryHash, usize>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
@@ -155,7 +159,8 @@ impl ClientInfo {
     fn new(outbound_ref: Client) -> Self {
         Self {
             outbound_ref,
-            subscriptions: HashMap::default(),
+            v1_subscriptions: HashMap::default(),
+            v2_subscriptions: HashMap::default(),
             subscription_ref_count: HashMap::default(),
             legacy_subscriptions: HashSet::default(),
             dropped: Arc::new(AtomicBool::new(false)),
@@ -166,7 +171,19 @@ impl ClientInfo {
     #[cfg(test)]
     fn assert_ref_count_consistency(&self) {
         let mut expected_ref_count = HashMap::new();
-        for query_hashes in self.subscriptions.values() {
+        for query_hashes in self.v1_subscriptions.values() {
+            for query_hash in query_hashes {
+                assert!(
+                    self.subscription_ref_count.contains_key(query_hash),
+                    "Query hash not found: {query_hash:?}"
+                );
+                expected_ref_count
+                    .entry(*query_hash)
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+            }
+        }
+        for query_hashes in self.v2_subscriptions.values() {
             for query_hash in query_hashes {
                 assert!(
                     self.subscription_ref_count.contains_key(query_hash),
@@ -193,6 +210,7 @@ struct QueryState {
     legacy_subscribers: HashSet<ClientId>,
     // For clients that subscribe to a single query, we track them here.
     subscriptions: HashSet<ClientId>,
+    v2_subscriptions: HashSet<ClientId>,
 }
 
 impl QueryState {
@@ -201,15 +219,16 @@ impl QueryState {
             query,
             legacy_subscribers: HashSet::default(),
             subscriptions: HashSet::default(),
+            v2_subscriptions: HashSet::default(),
         }
     }
     fn has_subscribers(&self) -> bool {
-        !self.subscriptions.is_empty() || !self.legacy_subscribers.is_empty()
+        !self.subscriptions.is_empty() || !self.legacy_subscribers.is_empty() || !self.v2_subscriptions.is_empty()
     }
 
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
-        itertools::chain(&self.legacy_subscribers, &self.subscriptions)
+        itertools::chain(itertools::chain(&self.legacy_subscribers, &self.subscriptions), &self.v2_subscriptions)
     }
 
     /// Return the [`Query`] for this [`QueryState`]
@@ -612,7 +631,8 @@ enum SendWorkerMessage {
     SendMessage {
         recipient: Arc<ClientConnectionSender>,
         tx_offset: Option<TransactionOffset>,
-        message: SerializableMessage,
+        // message: SerializableMessage,
+        message: OutboundMessage,
     },
 
     /// A client previously added by a [`Self::AddClient`] message has been removed from the [`SubscriptionManager`],
@@ -663,7 +683,7 @@ impl SubscriptionManager {
         let num_queries = self.queries.len();
         let num_connections = self.clients.len();
         let num_query_subscriptions = self.queries.values().map(|state| state.subscriptions.len()).sum();
-        let num_subscription_sets = self.clients.values().map(|ci| ci.subscriptions.len()).sum();
+        let num_subscription_sets = self.clients.values().map(|ci| ci.v1_subscriptions.len()).sum();
         let num_legacy_subscriptions = self
             .clients
             .values()
@@ -806,7 +826,7 @@ impl SubscriptionManager {
         #[cfg(test)]
         ci.assert_ref_count_consistency();
 
-        let Some(query_hashes) = ci.subscriptions.remove(&subscription_id) else {
+        let Some(query_hashes) = ci.v1_subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {subscription_id:?}").into());
         };
         let mut queries_to_return = Vec::new();
@@ -852,6 +872,44 @@ impl SubscriptionManager {
         self.add_subscription_multi(client, vec![query], query_id).map(|_| ())
     }
 
+    pub fn add_subscription_v2(
+        &mut self,
+        client: Client,
+        queries: Vec<Query>,
+        query_set_id: ClientQuerySetId,
+    ) -> Result<Vec<Query>, DBError> {
+        let client_id = (client.id.identity, client.id.connection_id);
+        // Clean up any dropped subscriptions
+        if self
+            .clients
+            .get(&client_id)
+            .is_some_and(|ci| ci.dropped.load(Ordering::Acquire))
+        {
+            self.remove_all_subscriptions(&client_id);
+        }
+        let ci = Self::get_or_make_client_info_and_inform_send_worker(
+            &mut self.clients,
+            &self.send_worker_queue,
+            client_id,
+            client,
+        );
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+        let subscription_id = (client_id, query_set_id);
+        let hash_set = match ci.v2_subscriptions.try_insert(subscription_id, HashSet::new()) {
+            Err(OccupiedError { .. }) => {
+                return Err(anyhow::anyhow!(
+                    "Subscription with id {query_set_id:?} already exists for client: {client_id:?}"
+                )
+                .into());
+            }
+            Ok(hash_set) => hash_set,
+        };
+
+        todo!()
+    }
+
     pub fn add_subscription_multi(
         &mut self,
         client: Client,
@@ -879,7 +937,7 @@ impl SubscriptionManager {
         #[cfg(test)]
         ci.assert_ref_count_consistency();
         let subscription_id = (client_id, query_id);
-        let hash_set = match ci.subscriptions.try_insert(subscription_id, HashSet::new()) {
+        let hash_set = match ci.v1_subscriptions.try_insert(subscription_id, HashSet::new()) {
             Err(OccupiedError { .. }) => {
                 return Err(anyhow::anyhow!(
                     "Subscription with id {query_id:?} already exists for client: {client_id:?}"
@@ -1415,7 +1473,21 @@ impl BroadcastQueue {
         Ok(())
     }
 
-    pub fn send_client_message(
+    pub fn send_client_message_v2(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        tx_offset: Option<TransactionOffset>,
+        message: impl Into<ws_v2::ServerMessage>,
+    ) -> Result<(), BroadcastError> {
+        self.0.send(SendWorkerMessage::SendMessage {
+            recipient,
+            tx_offset,
+            message: OutboundMessage::V2(message.into()),
+        })?;
+        Ok(())
+    }
+
+    pub fn send_client_message_v1(
         &self,
         recipient: Arc<ClientConnectionSender>,
         tx_offset: Option<TransactionOffset>,
@@ -1424,7 +1496,7 @@ impl BroadcastQueue {
         self.0.send(SendWorkerMessage::SendMessage {
             recipient,
             tx_offset,
-            message: message.into(),
+            message: OutboundMessage::V1(message.into()),
         })?;
         Ok(())
     }
@@ -1595,7 +1667,7 @@ impl SendWorker {
                 event: Some(event.clone()),
                 database_update,
             };
-            send_to_client(&caller, Some(tx_offset), message);
+            send_to_client_v1(&caller, Some(tx_offset), message);
         }
 
         // Send all the other updates.
@@ -1605,7 +1677,7 @@ impl SendWorker {
             // Conditionally send out a full update or a light one otherwise.
             let event = client.config.tx_update_full.then(|| event.clone());
             let message = TransactionUpdateMessage { event, database_update };
-            send_to_client(&client, Some(tx_offset), message);
+            send_to_client_v1(&client, Some(tx_offset), message);
         }
 
         // Put back the aggregation maps into the worker.
@@ -1616,7 +1688,7 @@ impl SendWorker {
         for (id, message) in errs {
             if let Some(client) = self.clients.get(&id) {
                 client.dropped.store(true, Ordering::Release);
-                send_to_client(
+                send_to_client_v1(
                     &client.outbound_ref,
                     None,
                     SubscriptionMessage {
@@ -1634,10 +1706,20 @@ impl SendWorker {
     }
 }
 
-fn send_to_client(
+fn send_to_client_v1(
     client: &ClientConnectionSender,
     tx_offset: Option<TxOffset>,
     message: impl Into<SerializableMessage>,
+) {
+    if let Err(e) = client.send_message(tx_offset, OutboundMessage::V1(message.into())) {
+        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
+}
+fn send_to_client(
+    client: &ClientConnectionSender,
+    tx_offset: Option<TxOffset>,
+    message: OutboundMessage,
+    //message: impl Into<SerializableMessage>,
 ) {
     tracing::trace!(client = %client.id, tx_offset, "send_to_client");
     if let Err(e) = client.send_message(tx_offset, message) {

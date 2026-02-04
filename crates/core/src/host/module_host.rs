@@ -40,6 +40,7 @@ use scopeguard::ScopeGuard;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, ByteListLen as _, RowListLen as _};
+use spacetimedb_client_api_messages::websocket::v2::{self as ws_v2};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
@@ -662,6 +663,12 @@ pub enum ViewCommand {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         subscribe: ws_v1::Subscribe,
+        timer: Instant,
+    },
+    AddSubscriptionV2 {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Subscribe,
         timer: Instant,
     },
     Sql {
@@ -1571,6 +1578,39 @@ impl ModuleHost {
         let res = self
             .call(
                 "call_view_add_single_subscription",
+                cmd,
+                |cmd, inst| inst.call_view(cmd),
+                |cmd, inst| inst.call_view(cmd),
+            )
+            .await
+            //TODO: handle error better
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Subscription { result } => result,
+            ViewCommandResult::Sql { .. } => {
+                unreachable!("unexpected SQL result in call_view_add_single_subscription")
+            }
+        }
+    }
+
+    pub async fn call_view_add_v2_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Subscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let cmd = ViewCommand::AddSubscriptionV2 {
+            sender,
+            auth,
+            request,
+            timer,
+        };
+
+        let res = self
+            .call(
+                "call_view_add_multi_subscription",
                 cmd,
                 |cmd, inst| inst.call_view(cmd),
                 |cmd, inst| inst.call_view(cmd),

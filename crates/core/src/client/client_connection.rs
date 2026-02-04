@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
-use super::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
-use super::{message_handlers, ClientActorId, MessageHandleError};
+use super::messages::{OneOffQueryResponseMessage, ProcedureResultMessage};
+use super::{message_handlers, ClientActorId, MessageHandleError, OutboundMessage};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
@@ -24,7 +24,7 @@ use derive_more::From;
 use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
-use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -38,6 +38,12 @@ use tracing::{trace, warn};
 pub enum Protocol {
     Text,
     Binary,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub enum WsVersion {
+    V1,
+    V2,
 }
 
 impl Protocol {
@@ -60,6 +66,8 @@ impl Protocol {
 pub struct ClientConfig {
     /// The client's desired protocol (format) when the host replies.
     pub protocol: Protocol,
+    /// The websocket protocol version negotiated during the handshake.
+    pub version: WsVersion,
     /// The client's desired (conditional) compression algorithm, if any.
     pub compression: ws_v1::Compression,
     /// Whether the client prefers full [`TransactionUpdate`]s
@@ -76,6 +84,7 @@ impl ClientConfig {
     pub fn for_test() -> ClientConfig {
         Self {
             protocol: Protocol::Binary,
+            version: WsVersion::V1,
             compression: <_>::default(),
             tx_update_full: true,
             confirmed_reads: false,
@@ -98,7 +107,7 @@ struct ClientUpdate {
     /// offset of the database is equal to or greater than `tx_offset`.
     pub tx_offset: Option<TxOffset>,
     /// Type-erased outgoing message.
-    pub message: SerializableMessage,
+    pub message: OutboundMessage,
 }
 
 /// Types with access to the [`DurableOffset`] of a database.
@@ -198,7 +207,7 @@ impl ClientConnectionReceiver {
     /// data.
     //
     // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
-    pub async fn recv(&mut self) -> Option<SerializableMessage> {
+    pub async fn recv(&mut self) -> Option<OutboundMessage> {
         let ClientUpdate { tx_offset, message } = match self.current.take() {
             None => self.channel.recv().await?,
             Some(update) => update,
@@ -366,12 +375,17 @@ impl ClientConnectionSender {
     pub fn send_message(
         &self,
         tx_offset: Option<TxOffset>,
-        message: impl Into<SerializableMessage>,
+        message: impl Into<OutboundMessage>,
     ) -> Result<(), ClientSendError> {
-        self.send(ClientUpdate {
-            tx_offset,
-            message: message.into(),
-        })
+        let message = message.into();
+        debug_assert!(
+            matches!(
+                (&self.config.version, &message),
+                (WsVersion::V1, OutboundMessage::V1(_)) | (WsVersion::V2, OutboundMessage::V2(_))
+            ),
+            "attempted to send message variant that does not match client websocket version"
+        );
+        self.send(ClientUpdate { tx_offset, message })
     }
 
     fn send(&self, message: ClientUpdate) -> Result<(), ClientSendError> {
@@ -899,6 +913,21 @@ impl ClientConnection {
         .await
     }
 
+    pub async fn subscribe_v2(
+        &self,
+        request: ws_v2::Subscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let me = self.clone();
+        self.module()
+            .on_module_thread_async("subscribe_v2", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer, None)
+                    .await
+            })
+            .await?
+    }
     pub async fn subscribe_multi(
         &self,
         request: ws_v1::SubscribeMulti,
@@ -1071,11 +1100,11 @@ mod tests {
         }
     }
 
-    async fn assert_received_update(f: impl Future<Output = Option<SerializableMessage>>) {
-        assert_matches!(f.await, Some(SerializableMessage::TxUpdate(_)));
+    async fn assert_received_update(f: impl Future<Output = Option<OutboundMessage>>) {
+        assert_matches!(f.await, Some(OutboundMessage::V1(SerializableMessage::TxUpdate(_))));
     }
 
-    async fn assert_receiver_closed(f: impl Future<Output = Option<SerializableMessage>>) {
+    async fn assert_receiver_closed(f: impl Future<Output = Option<OutboundMessage>>) {
         assert_matches!(f.await, None);
     }
 

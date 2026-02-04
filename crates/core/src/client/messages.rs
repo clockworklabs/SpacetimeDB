@@ -8,6 +8,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, RowListLen as _};
+use spacetimedb_client_api_messages::websocket::{v2 as ws_v2};
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
@@ -228,6 +229,31 @@ impl ToProtocol for SerializableMessage {
             SerializableMessage::TxUpdate(msg) => msg.to_protocol(protocol),
             SerializableMessage::Subscription(msg) => msg.to_protocol(protocol),
             SerializableMessage::ProcedureResult(msg) => msg.to_protocol(protocol),
+        }
+    }
+}
+
+#[derive(Debug, derive_more::From)]
+pub enum OutboundMessage {
+    V1(SerializableMessage),
+    V2(ws_v2::ServerMessage),
+}
+
+impl OutboundMessage {
+    pub fn num_rows(&self) -> Option<usize> {
+        match self {
+            Self::V1(message) => message.num_rows(),
+            Self::V2(_) => {
+                // TODO: add row counting for v2 messages when v2 payloads are fully defined.
+                None
+            }
+        }
+    }
+
+    pub fn workload(&self) -> Option<WorkloadType> {
+        match self {
+            Self::V1(message) => message.workload(),
+            Self::V2(_) => None,
         }
     }
 }

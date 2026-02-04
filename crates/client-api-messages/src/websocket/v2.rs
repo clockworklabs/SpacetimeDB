@@ -77,6 +77,10 @@ pub struct Unsubscribe {
 
     /// The ID used in the corresponding [`Subscribe`] message.
     pub query_set_id: QuerySetId,
+
+    /// Whether to send the client the full set of rows to be removed from its cache.
+    /// If `false`, the server will not send any rows, and the client should simply drop all its cached rows for this subscription.
+    pub send_dropped_rows: bool,
 }
 
 /// Sent by the client to perform a query at a single point in time.
@@ -157,7 +161,7 @@ pub struct CallProcedure {
 /// Server messages which are responses to client messages will contain a `request_id`.
 /// This will take the same value as the client supplied in their request.
 /// Clients can use `request_id`s to correlate requests and responses.
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, derive_more::From, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub enum ServerMessage {
     /// The first message sent upon a successful connection.
@@ -182,7 +186,7 @@ pub enum ServerMessage {
     ProcedureResult(ProcedureResult),
 }
 
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct InitialConnection {
     pub identity: Identity,
@@ -193,7 +197,7 @@ pub struct InitialConnection {
 /// Response to [`Subscribe`] containing the initial matching rows.
 ///
 /// This message's `request_id` and `query_set_id` will match those the client provided in the [`Subscribe`] message.
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct SubscribeApplied {
     /// The request_id of the corresponding [`Subscribe`] message.
@@ -207,7 +211,7 @@ pub struct SubscribeApplied {
 /// Matching rows resident in tables at the time a query ran,
 /// used in contexts where we're not sending insert/delete deltas,
 /// like [`SubscribeApplied`].
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct QueryRows {
     pub tables: Box<[SingleTableRows]>,
@@ -216,7 +220,7 @@ pub struct QueryRows {
 /// Matching rows resident in a table at the time a query ran,
 /// used in contexts where we're not sending insert/delete deltas,
 /// like the [`QueryRows`] of a [`SubscribeApplied`], and [`OneOffQueryResponse`].
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct SingleTableRows {
     pub table: Box<str>,
@@ -229,7 +233,7 @@ pub struct SingleTableRows {
 ///
 /// After receiving this message, the client will no longer receive any [`QuerySetUpdate`]s for the included [`QuerySetId`].
 /// That [`QuerySetId`] may then be re-used at the client's discretion.
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct UnsubscribeApplied {
     /// Provided by the client via the `Subscribe` message.
@@ -237,6 +241,8 @@ pub struct UnsubscribeApplied {
     pub request_id: u32,
     /// The ID included in the `SubscribeApplied` and `Unsubscribe` messages.
     pub query_set_id: QuerySetId,
+    /// Rows to be removed from the client cache. Only populated if the Unsubscribe message requested it.
+    pub rows: Option<QueryRows>, 
 }
 
 /// Server response to an error at any point of the subscription lifecycle.
@@ -254,7 +260,7 @@ pub struct UnsubscribeApplied {
 /// should discard all previously-received matching rows,
 /// and should not expect to receive any further [`QuerySetUpdate`]s for that [`QuerySetId`].
 /// That [`QuerySetId`] may then be re-used at the client's discretion.
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct SubscriptionError {
     /// Provided by the client via a [`Subscribe`] message.
@@ -285,20 +291,20 @@ pub struct SubscriptionError {
 ///
 /// If none of a client's query sets were affected by a transaction,
 /// they will not receive an empty [`TransactionUpdate`].
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct TransactionUpdate {
     pub query_sets: Box<[QuerySetUpdate]>,
 }
 
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct QuerySetUpdate {
     pub query_set_id: QuerySetId,
     pub tables: Box<[TableUpdate]>,
 }
 
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct TableUpdate {
     pub table_name: Box<str>,
@@ -314,28 +320,28 @@ pub struct TableUpdate {
 /// In particular, we may add a variant for in-place updates of rows for tables with primary keys.
 /// Note that clients will need to opt in to using this new variant,
 /// to preserve compatibility of clients which predate the new variant.
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub enum TableUpdateRows {
     PersistentTable(PersistentTableRows),
     EventTable(EventTableRows),
 }
 
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct PersistentTableRows {
     pub inserts: Box<[Bytes]>,
     pub deletes: Box<[Bytes]>,
 }
 
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct EventTableRows {
     pub events: Box<[Bytes]>,
 }
 
 /// Response to [`Subscribe`] containing the initial matching rows.
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffQueryResult {
     /// The request_id of the corresponding `SubscribeSingle` message.
@@ -348,7 +354,7 @@ pub struct OneOffQueryResult {
 
 /// The result of running a reducer, including its return value and [`TransactionUpdate`] on success,
 /// or its error on failure.
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerResult {
     /// The request_id of the corresponding `SubscribeSingle` message.
@@ -360,7 +366,7 @@ pub struct ReducerResult {
     pub result: ReducerOutcome,
 }
 
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub enum ReducerOutcome {
     /// The reducer returned successfully and its transaction committed.
@@ -385,7 +391,7 @@ pub enum ReducerOutcome {
     InternalError(Box<str>),
 }
 
-#[derive(SpacetimeType)]
+#[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerOk {
     pub ret_value: Bytes,
