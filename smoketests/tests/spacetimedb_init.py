@@ -215,7 +215,7 @@ class TestSpacetimeInit(unittest.TestCase):
         # Pack ClientSDK for client projects
         client_sdk = STDB_DIR / "sdks/csharp"
         client_sdk_proj = client_sdk / "SpacetimeDB.ClientSDK.csproj"
-        run_cmd("dotnet", "pack", str(client_sdk_proj), "-c", "Release")
+        run_cmd("dotnet", "pack", str(client_sdk_proj), "-c", "Release", "--configfile", str(nuget_config), cwd=server_path)
         client_sdk_path = client_sdk / "bin~" / "Release"
         run_cmd("dotnet", "nuget", "add", "source", str(client_sdk_path), "-n", "SpacetimeDB.ClientSDK", "--configfile", str(nuget_config), cwd=server_path)
 
