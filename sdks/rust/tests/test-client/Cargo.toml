@@ -17,12 +17,11 @@ native = [
     "dep:rand",
 ]
 
-# Builds the client for `wasm32-wasi` so it can be executed via `wasmtime`.
-wasi = [
-    "dep:test-counter",
-    "dep:tokio",
-    "dep:env_logger",
-    "dep:rand",
+# Builds the client for wasm32-unknown-unknown using the Rust SDK `web` backend.
+web = [
+    "spacetimedb-sdk/web",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
 ]
 
 [[bin]]
@@ -37,6 +36,9 @@ test-counter = { path = "../test-counter", optional = true }
 tokio = { workspace = true, optional = true }
 env_logger = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
 
 [lints]
 workspace = true

@@ -34,6 +34,7 @@ fn db_name_or_panic() -> String {
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
 /// This allows us to fail tests by panicking in callbacks.
+#[cfg(not(target_arch = "wasm32"))]
 fn exit_on_panic() {
     // The default panic hook is responsible for printing the panic message and backtrace to stderr.
     // Grab a handle on it, and invoke it in our custom hook before exiting.
@@ -63,6 +64,7 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::init();
     exit_on_panic();
