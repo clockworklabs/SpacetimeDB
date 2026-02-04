@@ -31,5 +31,5 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - run: |
-          false
+          OUT="$(false)"
           echo "ERROR: This should not be printed!"
