@@ -204,7 +204,7 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+            JobCores::without_pinned_cores(),
         )
         .await
         .unwrap();

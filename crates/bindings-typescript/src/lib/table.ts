@@ -1,3 +1,4 @@
+import type { errors } from '../server/errors';
 import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
@@ -12,7 +13,7 @@ import type {
   ReadonlyIndexes,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import { registerTypesRecursively } from './schema';
+import type { ModuleContext } from './schema';
 import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
@@ -24,9 +25,9 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import type {
+  InvalidColumnMetadata,
   Prettify,
   ValidateColumnMetadata,
-  InvalidColumnMetadata,
 } from './type_util';
 import { toPascalCase } from './util';
 
@@ -218,8 +219,8 @@ export interface TableMethods<TableDef extends UntypedTableDef>
    * Insert and return the inserted row (auto-increment fields filled).
    *
    * May throw on error:
-   * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
-   * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
+   * * If there are any unique or primary key columns in this table, may throw {@link errors.UniqueAlreadyExists}.
+   * * If there are any auto-incrementing columns in this table, may throw {@link errors.AutoIncOverflow}.
    * */
   insert(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
 
@@ -299,8 +300,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   if (row.typeName === undefined) {
     row.typeName = toPascalCase(name);
   }
-
-  const rowTypeRef = registerTypesRecursively(row);
 
   row.algebraicType.value.elements.forEach((elem, i) => {
     colIds.set(elem.name, i);
@@ -419,9 +418,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
 
-  const tableDef: Infer<typeof RawTableDefV9> = {
+  const tableDef = (ctx: ModuleContext): Infer<typeof RawTableDefV9> => ({
     name,
-    productTypeRef: rowTypeRef.ref,
+    productTypeRef: ctx.registerTypesRecursively(row).ref,
     primaryKey: pk,
     indexes,
     constraints,
@@ -436,7 +435,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         : undefined,
     tableType: { tag: 'User' },
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
-  };
+  });
 
   const productType = row.algebraicType.value as RowBuilder<
     CoerceRow<Row>
