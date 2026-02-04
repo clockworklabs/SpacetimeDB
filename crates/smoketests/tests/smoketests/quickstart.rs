@@ -190,7 +190,28 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
 
 /// Override nuget config to use a local NuGet package on a .NET project.
 fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, build_subdir: &str) -> Result<()> {
-    eprintln!("Override {package}: {project_dir:?} with {source_dir:?}");
+    println!("Override {package}: {project_dir:?} with {source_dir:?}");
+
+    let directory = source_dir.join(build_subdir);
+    if !directory.exists() {
+        bail!("NuGet package directory does not exist: {}", directory.display());
+    }
+    if !directory.is_dir() {
+        bail!(
+            "NuGet package path exists but is not a directory: {}",
+            directory.display()
+        );
+    }
+    let has_nupkg = std::fs::read_dir(&directory)
+        .with_context(|| format!("Failed to list directory: {}", directory.display()))?
+        .filter_map(|e| e.ok())
+        .any(|e| e.path().extension().is_some_and(|ext| ext == "nupkg"));
+    if !has_nupkg {
+        bail!(
+            "NuGet package directory contains no .nupkg files: {}",
+            directory.display()
+        );
+    }
 
     // Make sure the local package is built
     let workspace = workspace_root();
