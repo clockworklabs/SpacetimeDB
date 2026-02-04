@@ -65,6 +65,7 @@ pub type StrMap<T> = HashMap<RawIdentifier, T>;
 ///
 /// ```rust
 /// use spacetimedb_lib::RawModuleDef;
+/// use spacetimedb_sats::raw_identifier::RawIdentifier;
 /// use spacetimedb_schema::def::{ModuleDef, TableDef, IndexDef, TypeDef, ModuleDefLookup, ScopedTypeName};
 /// use spacetimedb_schema::identifier::Identifier;
 ///
@@ -77,11 +78,11 @@ pub type StrMap<T> = HashMap<RawIdentifier, T>;
 /// let module_def = ModuleDef::try_from(raw_module_def).expect("valid module def");
 ///
 /// let table_name = Identifier::new("my_table".into()).expect("valid table name");
-/// let index_name = "my_table_my_column_idx_btree";
+/// let index_name: RawIdentifier = "my_table_my_column_idx_btree".into();
 /// let scoped_type_name = ScopedTypeName::try_new([], "MyType").expect("valid scoped type name");
 ///
 /// let table: Option<&TableDef> = module_def.lookup(&table_name);
-/// let index: Option<&IndexDef> = module_def.lookup(index_name);
+/// let index: Option<&IndexDef> = module_def.lookup(&index_name);
 /// let type_def: Option<&TypeDef> = module_def.lookup(&scoped_type_name);
 /// // etc.
 /// ```
