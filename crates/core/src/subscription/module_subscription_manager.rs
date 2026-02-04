@@ -4,7 +4,7 @@ use crate::client::messages::{
     SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
     TransactionUpdateMessage,
 };
-use crate::client::{ClientConnectionSender, OutboundMessage, Protocol};
+use crate::client::{ClientConnectionSender, OutboundMessage, Protocol, WsVersion};
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::subscription::delta::eval_delta;
@@ -14,6 +14,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use core::mem;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
+use spacetimedb_client_api_messages::websocket::v2::TableUpdateRows;
 use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_data_structures::map::HashCollectionExt as _;
 use spacetimedb_data_structures::map::{
@@ -144,6 +145,7 @@ struct ClientInfo {
     outbound_ref: Client,
     v1_subscriptions: HashMap<SubscriptionId, HashSet<QueryHash>>,
     v2_subscriptions: HashMap<SubscriptionIdV2, HashSet<QueryHash>>,
+    // This is used to ref count for both v1 subscriptions and v2 subscriptions.
     subscription_ref_count: HashMap<QueryHash, usize>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
@@ -537,6 +539,15 @@ struct ClientUpdate {
         ws_v1::FormatSwitch<ws_v1::SingleQueryUpdate<ws_v1::BsatnFormat>, ws_v1::SingleQueryUpdate<ws_v1::JsonFormat>>,
 }
 
+/// A single update for one client and one query.
+#[derive(Debug)]
+struct V2ClientUpdate {
+    id: ClientId,
+    query_set_id: ClientQuerySetId,
+    table_name: TableName,
+    update: TableUpdateRows,
+}
+
 /// The computed incremental update queries with sufficient information
 /// to not depend on the transaction lock so that further work can be
 /// done in a separate worker: [`SubscriptionManager::send_worker`].
@@ -545,7 +556,9 @@ struct ClientUpdate {
 #[derive(Debug)]
 struct ComputedQueries {
     updates: Vec<ClientUpdate>,
+    v2_updates: Vec<V2ClientUpdate>,
     errs: Vec<(ClientId, Box<str>)>,
+    v2_errs: Vec<(SubscriptionIdV2, Box<str>)>,
     event: Arc<ModuleEvent>,
     caller: Option<Arc<ClientConnectionSender>>,
 }
@@ -907,6 +920,32 @@ impl SubscriptionManager {
             Ok(hash_set) => hash_set,
         };
 
+        // We track the queries that are being added for this client.
+        let mut new_queries: Vec<Arc<Plan>> = Vec::new();
+
+        for query in &queries {
+            let hash = query.hash();
+            // Deduping queries within this single call.
+            if !hash_set.insert(hash) {
+                continue;
+            }
+            let query_state = self
+                .queries
+                .entry(hash)
+                .or_insert_with(|| QueryState::new(query.clone()));
+
+            Self::insert_query(
+                &mut self.tables,
+                &mut self.join_edges,
+                &mut self.indexes,
+                &mut self.search_args,
+                query_state,
+            );
+            let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
+            *entry += 1;
+            let is_new_entry = *entry == 1;
+            // query_state.v2_subscriptions.insert()
+        }
         todo!()
     }
 
@@ -1373,7 +1412,9 @@ impl SubscriptionManager {
                 tx_offset,
                 queries: ComputedQueries {
                     updates,
+                    v2_updates: vec![], // TODO
                     errs,
+                    v2_errs: vec![], // TODO
                     event,
                     caller,
                 },
@@ -1577,17 +1618,16 @@ impl SendWorker {
         }
     }
 
-    fn send_one_computed_queries(
+    fn send_v1_computed_queries(
         &mut self,
         tx_offset: TxOffset,
-        ComputedQueries {
-            updates,
-            errs,
-            event,
-            caller,
-        }: ComputedQueries,
+        updates: Vec<ClientUpdate>,
+        errs: Vec<(ClientId, Box<str>)>,
+        event: Arc<ModuleEvent>,
+        caller: Option<Arc<ClientConnectionSender>>,
+
     ) {
-        use ws_v1::FormatSwitch::{Bsatn, Json};
+                use ws_v1::FormatSwitch::{Bsatn, Json};
 
         let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
@@ -1703,6 +1743,44 @@ impl SendWorker {
                 );
             }
         }
+    }
+
+    fn send_v2_computed_queries(
+        &mut self,
+        tx_offset: TxOffset,
+        v2_updates: Vec<V2ClientUpdate>,
+        v2_errs: Vec<(SubscriptionIdV2, Box<str>)>,
+        event: Arc<ModuleEvent>,
+        caller: Option<Arc<ClientConnectionSender>>,
+    ) {
+
+        // Track these just in case we also get some updates for these subscriptions.
+        let subscriptions_with_errors: HashSet<&SubscriptionIdV2> = v2_errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+
+        type UpdateMapKey = (ClientId, ClientQuerySetId, TableName);
+        let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::QueryUpdate>> = BTreeMap::new();
+        
+    }
+
+    fn send_one_computed_queries(
+        &mut self,
+        tx_offset: TxOffset,
+        ComputedQueries {
+            updates,
+            v2_updates,
+            errs,
+            v2_errs,
+            event,
+            caller,
+        }: ComputedQueries,
+    ) {
+        let (v1_caller, v2_caller) = match caller {
+            Some(caller) if caller.config.version == WsVersion::V1 => (Some(caller), None),
+            Some(caller) => (None, Some(caller)),
+            None => (None, None),
+        };
+        self.send_v1_computed_queries(tx_offset, updates, errs, event.clone(), v1_caller);
+        self.send_v2_computed_queries(tx_offset, v2_updates, v2_errs, event, v2_caller);
     }
 }
 

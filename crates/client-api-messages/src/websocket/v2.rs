@@ -78,9 +78,16 @@ pub struct Unsubscribe {
     /// The ID used in the corresponding [`Subscribe`] message.
     pub query_set_id: QuerySetId,
 
-    /// Whether to send the client the full set of rows to be removed from its cache.
-    /// If `false`, the server will not send any rows, and the client should simply drop all its cached rows for this subscription.
-    pub send_dropped_rows: bool,
+    pub flags: UnsubscribeFlags,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub enum UnsubscribeFlags {
+    #[default]
+    Default = 0,
+    // If set, the server will send the full set of rows to be removed from the client cache.
+    SendDroppedRows = 1,
 }
 
 /// Sent by the client to perform a query at a single point in time.
