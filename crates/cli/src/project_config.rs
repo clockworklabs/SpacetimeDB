@@ -523,6 +523,14 @@ impl<'a> CommandConfig<'a> {
         self.config_values.contains_key(key)
     }
 
+    /// Get a config value (from config file only, not merged with CLI).
+    ///
+    /// This is useful for filtering scenarios where you need to compare
+    /// CLI values against config file values.
+    pub fn get_config_value(&self, key: &str) -> Option<&Value> {
+        self.config_values.get(key)
+    }
+
     /// Validate that all required keys are present in the config file.
     /// Note: This only checks config file keys. CLI required validation is handled by clap.
     pub fn validate(&self) -> Result<(), CommandConfigError> {
@@ -657,6 +665,7 @@ impl SpacetimeConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Arg;
 
     #[test]
     fn test_deserialize_full_config() {
@@ -867,7 +876,8 @@ mod tests {
             .key(Key::new::<String>("module_path"))
             .key(Key::new::<String>("build_options"))
             .key(Key::new::<bool>("break_clients"))
-            .key(Key::new::<bool>("anon_identity"))
+            // Config uses "anonymous", clap uses "anon_identity"
+            .key(Key::new::<bool>("anonymous").from_clap("anon_identity"))
             .build(&cmd)
             .unwrap();
 
@@ -1702,5 +1712,190 @@ mod tests {
             command_config.get_one::<String>(&matches, "build_options").unwrap(),
             Some("--release".to_string())
         );
+    }
+
+    // CommandSchema Tests
+
+    #[test]
+    fn test_invalid_clap_reference_caught() {
+        let cmd = Command::new("test").arg(
+            Arg::new("valid_arg")
+                .long("valid-arg")
+                .value_parser(clap::value_parser!(String)),
+        );
+
+        let result = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("nonexistent_arg"))
+            .build(&cmd);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            CommandConfigError::InvalidClapReference { .. }
+        ));
+    }
+
+    #[test]
+    fn test_invalid_alias_reference_caught() {
+        let cmd = Command::new("test").arg(Arg::new("name").long("name").value_parser(clap::value_parser!(String)));
+
+        // Reference a valid arg (name) but add invalid alias (nonexistent) via .alias()
+        let result = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("my_key").from_clap("name").alias("nonexistent"))
+            .build(&cmd);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, CommandConfigError::InvalidAliasReference { .. }));
+    }
+
+    // CommandConfig Tests
+
+    #[test]
+    fn test_get_one_returns_none_when_missing_from_both_sources() {
+        let cmd = Command::new("test").arg(
+            Arg::new("some_arg")
+                .long("some-arg")
+                .value_parser(clap::value_parser!(String)),
+        );
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("some_arg"))
+            .build(&cmd)
+            .unwrap();
+
+        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+
+        assert_eq!(command_config.get_one::<String>(&matches, "some_arg").unwrap(), None);
+    }
+
+    #[test]
+    fn test_get_one_with_aliased_keys() {
+        let cmd = Command::new("test").arg(Arg::new("name|identity").value_parser(clap::value_parser!(String)));
+
+        let matches = cmd.clone().get_matches_from(vec!["test", "my-database"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("database").from_clap("name|identity"))
+            .build(&cmd)
+            .unwrap();
+
+        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+
+        assert_eq!(
+            command_config.get_one::<String>(&matches, "database").unwrap(),
+            Some("my-database".to_string())
+        );
+    }
+
+    #[test]
+    fn test_is_from_cli_identifies_sources_correctly() {
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("cli_arg")
+                    .long("cli-arg")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("default_arg")
+                    .long("default-arg")
+                    .default_value("default")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("config_arg")
+                    .long("config-arg")
+                    .value_parser(clap::value_parser!(String)),
+            );
+
+        let matches = cmd.clone().get_matches_from(vec!["test", "--cli-arg", "from-cli"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<String>("cli_arg"))
+            .key(Key::new::<String>("default_arg"))
+            .key(Key::new::<String>("config_arg"))
+            .build(&cmd)
+            .unwrap();
+
+        // CLI arg should be detected
+        assert!(schema.is_from_cli(&matches, "cli_arg"));
+
+        // Default arg should NOT be detected as CLI
+        assert!(!schema.is_from_cli(&matches, "default_arg"));
+
+        // Config arg (not provided anywhere) should NOT be detected as CLI
+        assert!(!schema.is_from_cli(&matches, "config_arg"));
+    }
+
+    // SpacetimeConfig Tests
+
+    #[test]
+    fn test_find_and_load_walks_up_directory_tree() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let subdir1 = root.join("level1");
+        let subdir2 = subdir1.join("level2");
+        fs::create_dir_all(&subdir2).unwrap();
+
+        // Create config in root
+        let config = SpacetimeConfig {
+            run: Some("test".to_string()),
+            ..Default::default()
+        };
+        config.save(&root.join("spacetime.json")).unwrap();
+
+        // Search from subdir2 - should find config in root
+        let result = SpacetimeConfig::find_and_load_from(subdir2).unwrap();
+        assert!(result.is_some());
+        let (found_path, found_config) = result.unwrap();
+        assert_eq!(found_path, root.join("spacetime.json"));
+        assert_eq!(found_config.run, Some("test".to_string()));
+    }
+
+    #[test]
+    fn test_malformed_json_returns_error() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("spacetime.json");
+
+        fs::write(&config_path, "{ invalid json }").unwrap();
+
+        let result = SpacetimeConfig::find_and_load_from(temp.path().to_path_buf());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_missing_file_returns_none() {
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+
+        let result = SpacetimeConfig::find_and_load_from(temp.path().to_path_buf()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_empty_config_file_handled() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("spacetime.json");
+
+        fs::write(&config_path, "{}").unwrap();
+
+        let result = SpacetimeConfig::find_and_load_from(temp.path().to_path_buf()).unwrap();
+        assert!(result.is_some());
+        let (_, config) = result.unwrap();
+        assert!(config.run.is_none());
+        assert!(config.publish.is_none());
+        assert!(config.generate.is_none());
     }
 }

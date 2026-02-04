@@ -82,7 +82,11 @@ fn get_filtered_generate_configs<'a>(
         all_command_configs
             .into_iter()
             .filter(|config| {
-                let config_module_path = config.get_one::<PathBuf>(args, "module_path").ok().flatten();
+                // Get module_path from CONFIG ONLY (not merged with CLI)
+                let config_module_path = config
+                    .get_config_value("module_path")
+                    .and_then(|v| v.as_str())
+                    .map(PathBuf::from);
 
                 // If we have a canonical CLI path, try to canonicalize config path and compare
                 if let Some(ref cli_canon) = cli_canonical {
@@ -202,7 +206,7 @@ pub async fn exec_ex(
 ) -> anyhow::Result<()> {
     // Build schema
     let cmd = cli();
-    let schema = build_generate_schema(&cmd)?;
+    let schema = build_generate_config_schema(&cmd)?;
 
     // Get generate configs (from spacetime.json or empty)
     let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
@@ -458,4 +462,264 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
         .with_context(|| format!("failed to spawn {}", bin_path.display()))?;
     let sats::serde::SerdeWrapper::<RawModuleDef>(module) = serde_json::from_reader(child.stdout.unwrap())?;
     Ok(module.try_into()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project_config::*;
+    use std::collections::HashMap;
+
+    // get_filtered_generate_configs Tests
+
+    #[test]
+    fn test_filter_by_module_path_from_cli() {
+        use tempfile::TempDir;
+        let temp = TempDir::new().unwrap();
+        let module1 = temp.path().join("module1");
+        let module2 = temp.path().join("module2");
+        std::fs::create_dir_all(&module1).unwrap();
+        std::fs::create_dir_all(&module2).unwrap();
+
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let mut config1 = HashMap::new();
+        config1.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
+        config1.insert(
+            "module_path".to_string(),
+            serde_json::Value::String(module1.display().to_string()),
+        );
+        config1.insert(
+            "out_dir".to_string(),
+            serde_json::Value::String("/tmp/out1".to_string()),
+        );
+
+        let mut config2 = HashMap::new();
+        config2.insert(
+            "language".to_string(),
+            serde_json::Value::String("typescript".to_string()),
+        );
+        config2.insert(
+            "module_path".to_string(),
+            serde_json::Value::String(module2.display().to_string()),
+        );
+        config2.insert(
+            "out_dir".to_string(),
+            serde_json::Value::String("/tmp/out2".to_string()),
+        );
+
+        let spacetime_config = SpacetimeConfig {
+            generate: Some(vec![config1, config2]),
+            ..Default::default()
+        };
+
+        // Filter by module1
+        let matches = cmd.clone().get_matches_from(vec![
+            "generate",
+            "--project-path",
+            module1.to_str().unwrap(),
+            "--lang",
+            "rust",
+            "--out-dir",
+            "/tmp/out",
+        ]);
+
+        let filtered = get_filtered_generate_configs(&spacetime_config, &schema, &matches).unwrap();
+
+        // The filtering should match module1 config only
+        assert_eq!(
+            filtered.len(),
+            1,
+            "Expected 1 config but got {}. Filter should only match module1.",
+            filtered.len()
+        );
+
+        // Verify it's the correct config (module1)
+        let filtered_module_path = filtered[0]
+            .get_one::<PathBuf>(&matches, "module_path")
+            .unwrap()
+            .unwrap();
+        assert_eq!(filtered_module_path, module1);
+    }
+
+    #[test]
+    fn test_no_filter_when_module_path_not_from_cli() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let mut config1 = HashMap::new();
+        config1.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
+        config1.insert(
+            "module_path".to_string(),
+            serde_json::Value::String("./module1".to_string()),
+        );
+        config1.insert(
+            "out_dir".to_string(),
+            serde_json::Value::String("/tmp/out1".to_string()),
+        );
+
+        let mut config2 = HashMap::new();
+        config2.insert(
+            "language".to_string(),
+            serde_json::Value::String("typescript".to_string()),
+        );
+        config2.insert(
+            "module_path".to_string(),
+            serde_json::Value::String("./module2".to_string()),
+        );
+        config2.insert(
+            "out_dir".to_string(),
+            serde_json::Value::String("/tmp/out2".to_string()),
+        );
+
+        let spacetime_config = SpacetimeConfig {
+            generate: Some(vec![config1, config2]),
+            ..Default::default()
+        };
+
+        // No module_path provided via CLI
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &schema, &matches).unwrap();
+
+        // Should return all configs
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_path_normalization_in_filtering() {
+        use tempfile::TempDir;
+        let temp = TempDir::new().unwrap();
+        let module_dir = temp.path().join("mymodule");
+        std::fs::create_dir_all(&module_dir).unwrap();
+
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        // Config uses absolute path
+        let mut config = HashMap::new();
+        config.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
+        config.insert(
+            "module_path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        config.insert("out_dir".to_string(), serde_json::Value::String("/tmp/out".to_string()));
+
+        let spacetime_config = SpacetimeConfig {
+            generate: Some(vec![config]),
+            ..Default::default()
+        };
+
+        // CLI uses path with ./ and ..
+        let cli_path = module_dir.join("..").join("mymodule");
+        let matches = cmd.clone().get_matches_from(vec![
+            "generate",
+            "--project-path",
+            cli_path.to_str().unwrap(),
+            "--lang",
+            "rust",
+            "--out-dir",
+            "/tmp/out",
+        ]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &schema, &matches).unwrap();
+
+        // Should match despite different path representations
+        assert_eq!(filtered.len(), 1);
+    }
+
+    // Language-Specific Validation Tests
+
+    #[tokio::test]
+    async fn test_rust_requires_out_dir() {
+        use crate::config::Config;
+        use spacetimedb_paths::cli::CliTomlPath;
+        use spacetimedb_paths::FromPathUnchecked;
+        use std::path::PathBuf;
+
+        let cmd = cli();
+        let config = Config::new_with_localhost(CliTomlPath::from_path_unchecked("/tmp/test-config.toml"));
+
+        // Missing --out-dir for rust
+        let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "rust"]);
+        let result = exec(config, &matches).await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        // The error should be about missing output directory
+        assert!(
+            err_msg.contains("--out-dir") || err_msg.contains("--uproject-dir"),
+            "Expected error about missing output directory, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unrealcpp_requires_uproject_dir_and_module_name() {
+        use crate::config::Config;
+        use spacetimedb_paths::cli::CliTomlPath;
+        use spacetimedb_paths::FromPathUnchecked;
+        use std::path::PathBuf;
+
+        let cmd = cli();
+        let config = Config::new_with_localhost(CliTomlPath::from_path_unchecked("/tmp/test-config.toml"));
+
+        // Test missing --uproject-dir
+        let matches =
+            cmd.clone()
+                .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--module-name", "MyModule"]);
+        let result = exec(config.clone(), &matches).await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("--uproject-dir is required for --lang unrealcpp"),
+            "Expected error about missing --uproject-dir, got: {}",
+            err_msg
+        );
+
+        // Test missing --module-name
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--out-dir", "/tmp/out"]);
+        let result = exec(config, &matches).await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("--module-name is required for --lang unrealcpp"),
+            "Expected error about missing --module-name, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_validation_considers_both_cli_and_config() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        // Config provides uproject_dir
+        let mut config = HashMap::new();
+        config.insert(
+            "language".to_string(),
+            serde_json::Value::String("unrealcpp".to_string()),
+        );
+        config.insert(
+            "uproject_dir".to_string(),
+            serde_json::Value::String("/config/path".to_string()),
+        );
+
+        let command_config = CommandConfig::new(&schema, config).unwrap();
+
+        // CLI provides module_name
+        let matches =
+            cmd.clone()
+                .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--module-name", "MyModule"]);
+
+        // Both should be available (one from CLI, one from config)
+        let uproject_dir = command_config.get_one::<PathBuf>(&matches, "uproject_dir").unwrap();
+        let module_name = command_config.get_one::<String>(&matches, "module_name").unwrap();
+
+        assert_eq!(uproject_dir, Some(PathBuf::from("/config/path")));
+        assert_eq!(module_name, Some("MyModule".to_string()));
+    }
 }

@@ -72,7 +72,11 @@ fn get_filtered_publish_configs<'a>(
         all_configs
             .into_iter()
             .filter(|config| {
-                let config_database = config.get_one::<String>(args, "database").ok().flatten();
+                // Get config-only value (not merged with CLI) for filtering
+                let config_database = config
+                    .get_config_value("database")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 config_database.as_deref() == cli_database.as_deref()
             })
             .collect()
@@ -609,5 +613,133 @@ mod tests {
             validate_name_and_parent(Some(&child), Some(&parent)),
             Ok(res) if res == (Some(&child), Some(&parent))
         );
+    }
+
+    #[test]
+    fn test_filter_by_database_from_cli() {
+        use crate::project_config::*;
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let mut config1 = HashMap::new();
+        config1.insert("database".to_string(), serde_json::Value::String("db1".to_string()));
+
+        let mut config2 = HashMap::new();
+        config2.insert("database".to_string(), serde_json::Value::String("db2".to_string()));
+
+        let mut parent_config = HashMap::new();
+        parent_config.insert(
+            "database".to_string(),
+            serde_json::Value::String("parent-db".to_string()),
+        );
+
+        let spacetime_config = SpacetimeConfig {
+            publish: Some(PublishConfig {
+                additional_fields: parent_config,
+                children: Some(vec![
+                    PublishConfig {
+                        additional_fields: config1,
+                        children: None,
+                    },
+                    PublishConfig {
+                        additional_fields: config2,
+                        children: None,
+                    },
+                ]),
+            }),
+            ..Default::default()
+        };
+
+        // Filter by db1 (should only match config1, not parent or config2)
+        let matches = cmd.clone().get_matches_from(vec!["publish", "db1"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 1, "Should only match db1");
+        assert_eq!(
+            filtered[0].get_one::<String>(&matches, "database").unwrap(),
+            Some("db1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_no_filter_when_database_not_from_cli() {
+        use crate::project_config::*;
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let mut config1 = HashMap::new();
+        config1.insert("database".to_string(), serde_json::Value::String("db1".to_string()));
+
+        let mut config2 = HashMap::new();
+        config2.insert("database".to_string(), serde_json::Value::String("db2".to_string()));
+
+        let mut parent_config = HashMap::new();
+        parent_config.insert(
+            "database".to_string(),
+            serde_json::Value::String("parent-db".to_string()),
+        );
+
+        let spacetime_config = SpacetimeConfig {
+            publish: Some(PublishConfig {
+                additional_fields: parent_config,
+                children: Some(vec![
+                    PublishConfig {
+                        additional_fields: config1,
+                        children: None,
+                    },
+                    PublishConfig {
+                        additional_fields: config2,
+                        children: None,
+                    },
+                ]),
+            }),
+            ..Default::default()
+        };
+
+        // No database provided via CLI
+        let matches = cmd.clone().get_matches_from(vec!["publish"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &schema, &matches).unwrap();
+
+        // Should return all configs (parent + 2 children)
+        assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_empty_result_when_filter_no_match() {
+        use crate::project_config::*;
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let mut config1 = HashMap::new();
+        config1.insert("database".to_string(), serde_json::Value::String("db1".to_string()));
+
+        let mut parent_config = HashMap::new();
+        parent_config.insert(
+            "database".to_string(),
+            serde_json::Value::String("parent-db".to_string()),
+        );
+
+        let spacetime_config = SpacetimeConfig {
+            publish: Some(PublishConfig {
+                additional_fields: parent_config,
+                children: Some(vec![PublishConfig {
+                    additional_fields: config1,
+                    children: None,
+                }]),
+            }),
+            ..Default::default()
+        };
+
+        // Filter by non-existent database
+        let matches = cmd.clone().get_matches_from(vec!["publish", "nonexistent"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 0);
     }
 }
