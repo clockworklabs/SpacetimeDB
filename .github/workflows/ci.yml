@@ -94,6 +94,14 @@ jobs:
           dotnet workload config --update-mode manifests
           dotnet workload update
 
+      - name: Override NuGet packages
+        shell: bash
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
       # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
       # ChatGPT suspects that this could be due to different build invocations using the same target dir,
       # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
