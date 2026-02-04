@@ -1,5 +1,7 @@
+import type { ProductType } from './algebraic_type';
 import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type { IndexOpts } from './indexes';
+import type { ModuleContext } from './schema';
 import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
 
 /**
@@ -28,7 +30,7 @@ export type TableSchema<
   /**
    * The {@link RawTableDefV9} of the configured table
    */
-  readonly tableDef: Infer<typeof RawTableDefV9>;
+  tableDef(ctx: ModuleContext): Infer<typeof RawTableDefV9>;
 
   /**
    * The indexes defined on the table.

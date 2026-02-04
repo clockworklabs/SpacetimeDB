@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::de::DeserializeSeed as _;
@@ -126,7 +124,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .into_iter()
                 .flatten()
                 .map(|lifecycle_def| {
-                    let function_name = ReducerName::new_from_str(&identifier(lifecycle_def.function_name.clone())?);
+                    let function_name = ReducerName::new(identifier(lifecycle_def.function_name.clone())?);
 
                     let (pos, _) = reducers_vec
                         .iter()
@@ -377,7 +375,7 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
-                    reducer_name: (&*source_name).into(),
+                    reducer_name: source_name.clone(),
                     position,
                     arg_name,
                 });
@@ -400,7 +398,7 @@ impl<'a> ModuleValidatorV10<'a> {
         let (ok_return_type, err_return_type) = return_res;
 
         Ok(ReducerDef {
-            name: ReducerName::new_from_str(&name_result),
+            name: ReducerName::new(name_result.clone()),
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -418,7 +416,7 @@ impl<'a> ModuleValidatorV10<'a> {
         &mut self,
         schedule: RawScheduleDefV10,
         tables: &HashMap<Identifier, TableDef>,
-    ) -> Result<(ScheduleDef, Box<str>)> {
+    ) -> Result<(ScheduleDef, RawIdentifier)> {
         let RawScheduleDefV10 {
             source_name,
             table_name,
@@ -481,14 +479,14 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
-                    procedure_name: Cow::Borrowed(&source_name),
+                    procedure_name: source_name.clone(),
                     position,
                     arg_name,
                 });
 
         let return_type_for_generate = self.core.validate_for_type_use(
-            &TypeLocation::ProcedureReturn {
-                procedure_name: Cow::Borrowed(&source_name),
+            || TypeLocation::ProcedureReturn {
+                procedure_name: source_name.clone(),
             },
             &return_type,
         );
@@ -556,14 +554,14 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
-                    view_name: Cow::Borrowed(&name),
+                    view_name: name.clone(),
                     position,
                     arg_name,
                 })?;
 
         let return_type_for_generate = self.core.validate_for_type_use(
-            &TypeLocation::ViewReturn {
-                view_name: Cow::Borrowed(&name),
+            || TypeLocation::ViewReturn {
+                view_name: name.clone(),
             },
             &return_type,
         );
@@ -635,7 +633,7 @@ fn attach_lifecycles_to_reducers(
 
 fn attach_schedules_to_tables(
     tables: &mut HashMap<Identifier, TableDef>,
-    schedules: Vec<(ScheduleDef, Box<str>)>,
+    schedules: Vec<(ScheduleDef, RawIdentifier)>,
 ) -> Result<()> {
     for schedule in schedules {
         let (schedule, table_name) = schedule;
@@ -1424,9 +1422,9 @@ mod tests {
         tables[0].sequences[0].source_name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
-        assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());
-        assert!(def.lookup::<IndexDef>("wacky.index()").is_some());
-        assert!(def.lookup::<SequenceDef>("wacky.sequence()").is_some());
+        assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
+        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
+        assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
     }
 
     #[test]

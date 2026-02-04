@@ -198,7 +198,7 @@ impl DurabilityWorkerActor {
 
     pub fn do_durability(durability: &Durability, reducer_context: Option<ReducerContext>, tx_data: &TxData) {
         if tx_data.tx_offset().is_none() {
-            let name = reducer_context.as_ref().map(|rcx| &*rcx.name);
+            let name = reducer_context.as_ref().map(|rcx| &rcx.name);
             debug_assert!(
                 !tx_data.has_rows_or_connect_disconnect(name),
                 "tx_data has no rows but has connect/disconnect: `{name:?}`"
@@ -318,7 +318,7 @@ mod tests {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
             // Ensure the transaction is non-empty.
-            txdata.set_inserts_for_table(4000.into(), &TableName::new_from_str("foo"), [product![42u8]].into());
+            txdata.set_inserts_for_table(4000.into(), &TableName::for_test("foo"), [product![42u8]].into());
 
             worker.request_durability(None, &Arc::new(txdata));
         }

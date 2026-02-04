@@ -710,7 +710,7 @@ pub fn register_table<T: Table>() {
         for &col in T::UNIQUE_COLUMNS {
             table = table.with_unique_constraint(col);
         }
-        for &index in T::INDEXES {
+        for index in T::INDEXES {
             table = table.with_index(index.algo.into(), index.accessor_name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
