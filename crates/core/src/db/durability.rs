@@ -6,11 +6,9 @@ use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
 };
-use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::Identity;
-use spacetimedb_primitives::TableId;
 use tokio::{
     runtime,
     sync::{
@@ -200,7 +198,7 @@ impl DurabilityWorkerActor {
 
     pub fn do_durability(durability: &Durability, reducer_context: Option<ReducerContext>, tx_data: &TxData) {
         if tx_data.tx_offset().is_none() {
-            let name = reducer_context.as_ref().map(|rcx| &*rcx.name);
+            let name = reducer_context.as_ref().map(|rcx| &rcx.name);
             debug_assert!(
                 !tx_data.has_rows_or_connect_disconnect(name),
                 "tx_data has no rows but has connect/disconnect: `{name:?}`"
@@ -208,32 +206,23 @@ impl DurabilityWorkerActor {
             return;
         }
 
-        let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
-
-        let inserts: Box<_> = tx_data
-            .inserts()
-            // Skip ephemeral tables
-            .filter(|(table_id, _)| is_persistent_table(table_id))
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
+        let mut inserts: Box<_> = tx_data
+            .persistent_inserts()
+            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
             .collect();
+        // What we get from `tx_data` is not necessarily sorted,
+        // but the durability layer expects by-table_id sorted data.
+        // Unstable sorts are valid, there will only ever be one entry per table_id.
+        inserts.sort_unstable_by_key(|ops| ops.table_id);
 
-        let truncates: IntSet<TableId> = tx_data.truncates().collect();
-
-        let deletes: Box<_> = tx_data
-            .deletes()
-            .filter(|(table_id, _)| is_persistent_table(table_id))
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            // filter out deletes for tables that are truncated in the same transaction.
-            .filter(|ops| !truncates.contains(&ops.table_id))
+        let mut deletes: Box<_> = tx_data
+            .persistent_deletes()
+            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
             .collect();
+        deletes.sort_unstable_by_key(|ops| ops.table_id);
 
-        let truncates: Box<_> = truncates.into_iter().filter(is_persistent_table).collect();
+        let mut truncates: Box<[_]> = tx_data.persistent_truncates().collect();
+        truncates.sort_unstable_by_key(|table_id| *table_id);
 
         let inputs = reducer_context.map(|rcx| rcx.into());
 
@@ -265,6 +254,7 @@ mod tests {
     use futures::FutureExt as _;
     use pretty_assertions::assert_matches;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::table_name::TableName;
     use tokio::sync::watch;
 
     use super::*;
@@ -328,7 +318,7 @@ mod tests {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
             // Ensure the transaction is non-empty.
-            txdata.set_inserts_for_table(4000.into(), "foo", [product![42u8]].into());
+            txdata.set_inserts_for_table(4000.into(), &TableName::for_test("foo"), [product![42u8]].into());
 
             worker.request_durability(None, &Arc::new(txdata));
         }

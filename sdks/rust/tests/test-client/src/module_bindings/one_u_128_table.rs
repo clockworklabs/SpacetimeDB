@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneU128`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_u128QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneU128`.
+    fn one_u128(&self) -> __sdk::__query_builder::Table<OneU128>;
+}
+
+impl one_u128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_u128(&self) -> __sdk::__query_builder::Table<OneU128> {
+        __sdk::__query_builder::Table::new("one_u128")
+    }
+}

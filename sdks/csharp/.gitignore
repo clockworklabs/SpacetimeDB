@@ -73,6 +73,11 @@ bin~
 obj~
 
 # This is used for local paths to SpacetimeDB packages.
-/nuget.config
-/nuget.config.meta
+[Nn][Uu][Gg][Ee][Tt].config
+[Nn][Uu][Gg][Ee][Tt].config.meta
 .idea/
+
+# Hydrated SDK DLLs (produced by `cargo ci dlls`)
+/packages/
+/packages.meta
+!/packages/.gitignore

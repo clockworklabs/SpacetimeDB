@@ -327,7 +327,7 @@ impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
 
 impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
     fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
-        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql))
+        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql().to_string()))
     }
 }
 
@@ -710,7 +710,7 @@ pub fn register_table<T: Table>() {
         for &col in T::UNIQUE_COLUMNS {
             table = table.with_unique_constraint(col);
         }
-        for &index in T::INDEXES {
+        for index in T::INDEXES {
             table = table.with_index(index.algo.into(), index.accessor_name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {

@@ -94,3 +94,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneEnumWithPayload`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_enum_with_payloadQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneEnumWithPayload`.
+    fn one_enum_with_payload(&self) -> __sdk::__query_builder::Table<OneEnumWithPayload>;
+}
+
+impl one_enum_with_payloadQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_enum_with_payload(&self) -> __sdk::__query_builder::Table<OneEnumWithPayload> {
+        __sdk::__query_builder::Table::new("one_enum_with_payload")
+    }
+}

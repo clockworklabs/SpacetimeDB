@@ -1,38 +1,38 @@
 {
   "version": 1,
-  "generated_at": "2026-01-21T03:05:32.938Z",
+  "generated_at": "2026-01-27T20:01:19.767Z",
   "by_language": {
     "csharp": {
       "modes": {
         "docs": {
-          "hash": "447b3a12e33c1d9e85f1443553b5d821235de535acbeafe98bfed0de775cf8c1",
+          "hash": "e3621eaacfd5238fb514ff8c09c277ccd66170773959e5b391507110bf3ac17b",
           "models": {
             "GPT-5": {
               "categories": {
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 12,
-                  "pass_pct": 44.444443,
-                  "task_pass_equiv": 7.333334,
-                  "task_pass_pct": 61.111115
+                  "passed_tests": 27,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 12.0,
+                  "task_pass_pct": 100.0
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 10,
-                  "pass_pct": 29.411764,
-                  "task_pass_equiv": 3.15,
-                  "task_pass_pct": 31.5
+                  "passed_tests": 25,
+                  "pass_pct": 73.52941,
+                  "task_pass_equiv": 7.3666663,
+                  "task_pass_pct": 73.666664
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 22,
-                "pass_pct": 36.065575,
-                "task_pass_equiv": 10.483333,
-                "task_pass_pct": 47.651512
+                "passed_tests": 52,
+                "pass_pct": 85.2459,
+                "task_pass_equiv": 19.366667,
+                "task_pass_pct": 88.030304
               }
             }
           }
@@ -42,7 +42,7 @@
     "rust": {
       "modes": {
         "docs": {
-          "hash": "1df24d7e0efd9d88ff9cc77fa5c951ac075acc22e1c3cd844adb37b87d805489",
+          "hash": "d1bf0b033db905c668d016082c762eb4b91edd1299f7b8d4bcc6def5398610f9",
           "models": {
             "GPT-5": {
               "categories": {
@@ -56,18 +56,18 @@
                 },
                 "schema": {
                   "tasks": 10,
-                  "total_tests": 34,
+                  "total_tests": 32,
                   "passed_tests": 8,
-                  "pass_pct": 23.529411,
+                  "pass_pct": 25.0,
                   "task_pass_equiv": 2.05,
                   "task_pass_pct": 20.5
                 }
               },
               "totals": {
                 "tasks": 22,
-                "total_tests": 61,
+                "total_tests": 59,
                 "passed_tests": 13,
-                "pass_pct": 21.311476,
+                "pass_pct": 22.033897,
                 "task_pass_equiv": 3.3833334,
                 "task_pass_pct": 15.378788
               }
@@ -75,34 +75,34 @@
           }
         },
         "rustdoc_json": {
-          "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+          "hash": "2a0f4ec42cac03fb3da542793b311e4b399845c688bb0660a6c231c82e96c56a",
           "models": {
             "GPT-5": {
               "categories": {
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 10,
-                  "pass_pct": 37.037037,
-                  "task_pass_equiv": 5.3333335,
-                  "task_pass_pct": 44.444447
+                  "passed_tests": 26,
+                  "pass_pct": 96.296295,
+                  "task_pass_equiv": 11.0,
+                  "task_pass_pct": 91.66667
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 9,
-                  "pass_pct": 26.470589,
-                  "task_pass_equiv": 2.65,
-                  "task_pass_pct": 26.500002
+                  "passed_tests": 23,
+                  "pass_pct": 67.64706,
+                  "task_pass_equiv": 6.5333333,
+                  "task_pass_pct": 65.33333
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 19,
-                "pass_pct": 31.147541,
-                "task_pass_equiv": 7.983334,
-                "task_pass_pct": 36.287884
+                "passed_tests": 49,
+                "pass_pct": 80.327866,
+                "task_pass_equiv": 17.533335,
+                "task_pass_pct": 79.696976
               }
             }
           }

@@ -124,3 +124,19 @@ impl<'ctx> UniqueConnectionIdAUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueConnectionId`.
+    fn unique_connection_id(&self) -> __sdk::__query_builder::Table<UniqueConnectionId>;
+}
+
+impl unique_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_connection_id(&self) -> __sdk::__query_builder::Table<UniqueConnectionId> {
+        __sdk::__query_builder::Table::new("unique_connection_id")
+    }
+}
