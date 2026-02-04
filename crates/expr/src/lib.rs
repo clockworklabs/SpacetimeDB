@@ -103,28 +103,22 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
-            let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
-            let ColumnSchema { col_pos, col_type, .. } = table_type
-                .get_column_by_name(&field)
-                .ok_or_else(|| Unresolved::var(&field))?;
-            Ok(Expr::Field(FieldProject {
-                table: table_type.table_name.clone().into(),
-                field: col_pos.idx(),
-                ty: col_type.clone(),
-            }))
-        }
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(ty)) => {
+        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), expected) => {
+            let table = RawIdentifier::new(&*table);
             let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .as_ref()
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
-            if col_type != ty {
-                return Err(UnexpectedType::new(col_type, ty).into());
+
+            if let Some(ty) = expected {
+                if col_type != ty {
+                    return Err(UnexpectedType::new(col_type, ty).into());
+                }
             }
+
             Ok(Expr::Field(FieldProject {
-                table: table_type.table_name.clone().into(),
+                table,
                 field: col_pos.idx(),
                 ty: col_type.clone(),
             }))
