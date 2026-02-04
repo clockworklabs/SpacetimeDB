@@ -9,11 +9,7 @@ on:
 
 jobs:
   upload-assets:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     permissions:
       contents: write  # needed to modify releases
 

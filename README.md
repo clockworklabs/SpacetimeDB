@@ -14,7 +14,7 @@
         <img width="250" src="./images/light/logo-text.svg" alt="SpacetimeDB">
     </a>
     <h3 align="center">
-        Multiplayer at the speed of light.
+        Development at the speed of light.
     </h3>
 </p>
 <p align="center">

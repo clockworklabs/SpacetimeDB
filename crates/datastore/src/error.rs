@@ -3,8 +3,9 @@ use enum_as_inner::EnumAsInner;
 use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::buffer::DecodeError;
-use spacetimedb_sats::{product_value::InvalidFieldError, satn::Satn};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::{
@@ -40,7 +41,7 @@ pub enum DatastoreError {
 #[derive(Error, Debug)]
 pub enum ViewError {
     #[error("view '{0}' not found")]
-    NotFound(Box<str>),
+    NotFound(RawIdentifier),
     #[error("Table backing View '{0}' not found")]
     TableNotFound(ViewId),
     #[error("failed to deserialize view arguments from row")]
@@ -63,10 +64,6 @@ pub enum ViewError {
 
 #[derive(Error, Debug, EnumAsInner)]
 pub enum TableError {
-    #[error("Table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    System(Box<str>),
-    #[error("Table with name `{0}` already exists.")]
-    Exist(String),
     #[error("Table with name `{0}` not found.")]
     NotFound(String),
     #[error("Table with ID `{1}` not found in `{0}`.")]
@@ -75,31 +72,8 @@ pub enum TableError {
     RawSqlNotFound(SystemTable, RawSql),
     #[error("Table with ID `{0}` not found in `TxState`.")]
     IdNotFoundState(TableId),
-    #[error("Column `{0}.{1}` is missing a name")]
-    ColumnWithoutName(String, ColId),
-    #[error("schema_for_table: Table has invalid schema: {0} Err: {1}")]
-    InvalidSchema(TableId, LibError),
-    #[error("Row has invalid row type for table: {0} Err: {1}", table_id, row.to_satn())]
-    RowInvalidType { table_id: TableId, row: ProductValue },
-    #[error("failed to decode row in table")]
-    RowDecodeError(DecodeError),
-    #[error("Column with name `{0}` already exists")]
-    DuplicateColumnName(String),
     #[error("Column `{0}` not found")]
     ColumnNotFound(ColId),
-    #[error(
-        "DecodeError for field `{0}.{1}`, expect `{2}` but found `{3}`",
-        table,
-        field,
-        expect,
-        found
-    )]
-    DecodeField {
-        table: String,
-        field: Box<str>,
-        expect: String,
-        found: String,
-    },
     #[error(transparent)]
     Bflatn(#[from] bflatn_to::Error),
     #[error(transparent)]

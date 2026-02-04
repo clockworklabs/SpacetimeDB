@@ -137,7 +137,7 @@ fn serialize_benchmarks<
     });
 
     let mut table_schema = TableSchema::from_product_type(T::product_type());
-    table_schema.table_name = TableName::new_from_str(name);
+    table_schema.table_name = TableName::for_test(name);
     let mut table = spacetimedb_table::table::Table::new(
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,

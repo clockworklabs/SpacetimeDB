@@ -20,7 +20,13 @@ import {
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
-import type { Identity, Infer, InferTypeOfRow } from '../';
+import type {
+  Deserializer,
+  Identity,
+  Infer,
+  InferTypeOfRow,
+  Serializer,
+} from '../';
 import type {
   IdentityTokenMessage,
   Message,
@@ -166,6 +172,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #remoteModule: RemoteModule;
   #callReducerFlags = new Map<string, CallReducerFlags>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
+  #rowDeserializers: Record<string, Deserializer<any>>;
+  #reducerArgsSerializers: Record<
+    string,
+    { serialize: Serializer<any>; deserialize: Deserializer<any> }
+  >;
+  #procedureSerializers: Record<
+    string,
+    { serializeArgs: Serializer<any>; deserializeReturn: Deserializer<any> }
+  >;
 
   // These fields are not part of the public API, but in a pinch you
   // could use JavaScript to access them by bypassing TypeScript's
@@ -204,6 +219,33 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     this.#remoteModule = remoteModule;
     this.#emitter = emitter;
+
+    this.#rowDeserializers = Object.create(null);
+    for (const table of remoteModule.tables) {
+      this.#rowDeserializers[table.name] = ProductType.makeDeserializer(
+        table.rowType
+      );
+    }
+
+    this.#reducerArgsSerializers = Object.create(null);
+    for (const reducer of remoteModule.reducers) {
+      this.#reducerArgsSerializers[reducer.name] = {
+        serialize: ProductType.makeSerializer(reducer.paramsType),
+        deserialize: ProductType.makeDeserializer(reducer.paramsType),
+      };
+    }
+
+    this.#procedureSerializers = Object.create(null);
+    for (const procedure of remoteModule.procedures) {
+      this.#procedureSerializers[procedure.name] = {
+        serializeArgs: ProductType.makeSerializer(
+          new ProductBuilder(procedure.params).algebraicType.value
+        ),
+        deserializeReturn: AlgebraicType.makeDeserializer(
+          procedure.returnType.algebraicType
+        ),
+      };
+    }
 
     const connectionId = this.connectionId.toHexString();
     url.searchParams.set('connection_id', connectionId);
@@ -276,16 +318,18 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const out: Record<string, unknown> = {};
 
     for (const reducer of def.reducers) {
-      const key = toCamelCase(reducer.name);
+      const reducerName = reducer.name;
+      const key = toCamelCase(reducerName);
+
+      const { serialize: serializeArgs } =
+        this.#reducerArgsSerializers[reducerName];
 
       (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
-        const flags = this.#callReducerFlags.get(reducer.name) ?? 'FullUpdate';
-        this.callReducerWithParams(
-          reducer.name,
-          reducer.paramsType,
-          params,
-          flags
-        );
+        const flags = this.#callReducerFlags.get(reducerName) ?? 'FullUpdate';
+        const writer = new BinaryWriter(1024);
+        serializeArgs(writer, params);
+        const argsBuffer = writer.getBuffer();
+        this.callReducer(reducerName, argsBuffer, flags);
       };
 
       const onReducerEventKey = `on${toPascalCase(reducer.name)}`;
@@ -295,17 +339,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           InferTypeOfRow<typeof reducer.params>
         >
       ) => {
-        this.onReducer(reducer.name, callback);
+        this.onReducer(reducerName, callback);
       };
 
-      const offReducerEventKey = `removeOn${toPascalCase(reducer.name)}`;
+      const offReducerEventKey = `removeOn${toPascalCase(reducerName)}`;
       (out as any)[offReducerEventKey] = (
         callback: ReducerEventCallback<
           RemoteModule,
           InferTypeOfRow<typeof reducer.params>
         >
       ) => {
-        this.offReducer(reducer.name, callback);
+        this.offReducer(reducerName, callback);
       };
     }
 
@@ -331,22 +375,22 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const out: Record<string, unknown> = {};
 
     for (const procedure of def.procedures) {
-      const key = toCamelCase(procedure.name);
+      const procedureName = procedure.name;
+      const key = toCamelCase(procedureName);
 
-      const paramsType = new ProductBuilder(procedure.params).algebraicType
-        .value;
-
-      const returnType = procedure.returnType.algebraicType;
+      const { serializeArgs, deserializeReturn } =
+        this.#procedureSerializers[procedureName];
 
       (out as any)[key] = (
         params: InferTypeOfRow<typeof procedure.params>
-      ): Promise<any> =>
-        this.callProcedureWithParams(
-          procedure.name,
-          paramsType,
-          params,
-          returnType
-        );
+      ): Promise<any> => {
+        const writer = new BinaryWriter(1024);
+        serializeArgs(writer, params);
+        const argsBuffer = writer.getBuffer();
+        return this.callProcedure(procedureName, argsBuffer).then(returnBuf => {
+          return deserializeReturn(new BinaryReader(returnBuf));
+        });
+      };
     }
 
     return out as ProceduresView<RemoteModule>;
@@ -432,16 +476,16 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       const reader = new BinaryReader(buffer);
       const rows: Operation[] = [];
 
+      const deserializeRow = this.#rowDeserializers[tableName];
       // TODO: performance
       const table = this.#remoteModule.tables.find(t => t.name === tableName);
-      const rowType = table!.rowType;
       const columnsArray = Object.entries(table!.columns);
       const primaryKeyColumnEntry = columnsArray.find(
         col => col[1].columnMetadata.isPrimaryKey
       );
       let previousOffset = 0;
       while (reader.remaining > 0) {
-        const row = ProductType.deserializeValue(reader, rowType);
+        const row = deserializeRow(reader);
         let rowId: ComparablePrimitive | undefined = undefined;
         if (primaryKeyColumnEntry !== undefined) {
           const primaryKeyColName = primaryKeyColumnEntry[0];
@@ -478,9 +522,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         let decompressed: Infer<typeof QueryUpdate>;
         if (update.tag === 'Gzip') {
           const decompressedBuffer = await decompress(update.value, 'gzip');
-          decompressed = AlgebraicType.deserializeValue(
-            new BinaryReader(decompressedBuffer),
-            QueryUpdate.algebraicType
+          decompressed = QueryUpdate.deserialize(
+            new BinaryReader(decompressedBuffer)
           );
         } else if (update.tag === 'Brotli') {
           throw new Error(
@@ -665,11 +708,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.wsPromise.then(wsResolved => {
       if (wsResolved) {
         const writer = new BinaryWriter(1024);
-        AlgebraicType.serializeValue(
-          writer,
-          ClientMessage.algebraicType,
-          message
-        );
+        ClientMessage.serialize(writer, message);
         const encoded = writer.getBuffer();
         wsResolved.send(encoded);
       }
@@ -708,10 +747,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   }
 
   async #processMessage(data: Uint8Array): Promise<void> {
-    const serverMessage = AlgebraicType.deserializeValue(
-      new BinaryReader(data),
-      ServerMessage.algebraicType
-    );
+    const serverMessage = ServerMessage.deserialize(new BinaryReader(data));
     const message = await this.#processParsedMessage(serverMessage);
     if (!message) {
       return;
@@ -751,22 +787,18 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       case 'TransactionUpdate': {
         let reducerInfo = message.reducerInfo;
 
-        const reducer: UntypedReducerDef | undefined =
+        const deserializeArgs: Deserializer<any> | undefined =
           reducerInfo === undefined
             ? undefined
-            : this.#remoteModule.reducers.find(
-                t => t.name === reducerInfo!.reducerName
-              );
+            : this.#reducerArgsSerializers[reducerInfo.reducerName]
+                ?.deserialize;
         let reducerArgs: UntypedReducerDef['params'] | undefined = undefined;
 
-        let unknownTransaction = reducer === undefined;
-        if (reducer) {
+        let unknownTransaction = deserializeArgs === undefined;
+        if (deserializeArgs) {
           try {
-            const reader = new BinaryReader(reducerInfo!.args as Uint8Array);
-            reducerArgs = ProductType.deserializeValue(
-              reader,
-              reducer.paramsType
-            );
+            const reader = new BinaryReader(reducerInfo!.args);
+            reducerArgs = deserializeArgs(reader);
           } catch {
             // This should only be printed in development, since it's
             // possible for clients to receive new reducers that they don't
@@ -971,12 +1003,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   callReducerWithParams(
     reducerName: string,
-    paramsType: ProductType,
+    // TODO: remove
+    _paramsType: ProductType,
     params: object,
     flags: CallReducerFlags
   ) {
     const writer = new BinaryWriter(1024);
-    ProductType.serializeValue(writer, paramsType, params);
+    this.#reducerArgsSerializers[reducerName].serialize(writer, params);
     const argsBuffer = writer.getBuffer();
     this.callReducer(reducerName, argsBuffer, flags);
   }
@@ -1019,18 +1052,19 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   callProcedureWithParams(
     procedureName: string,
-    paramsType: ProductType,
+    // TODO: remove
+    _paramsType: ProductType,
     params: object,
-    returnType: AlgebraicType
+    // TODO: remove
+    _returnType: AlgebraicType
   ): Promise<any> {
     const writer = new BinaryWriter(1024);
-    ProductType.serializeValue(writer, paramsType, params);
+    const { serializeArgs, deserializeReturn } =
+      this.#procedureSerializers[procedureName];
+    serializeArgs(writer, params);
     const argsBuffer = writer.getBuffer();
     return this.callProcedure(procedureName, argsBuffer).then(returnBuf => {
-      return AlgebraicType.deserializeValue(
-        new BinaryReader(returnBuf),
-        returnType
-      );
+      return deserializeReturn(new BinaryReader(returnBuf));
     });
   }
 
