@@ -319,7 +319,14 @@ unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.18.1", default-features = false }
-v8 = "145"
+
+# Pinned to a specific version rather than allowing SemVer fuzzy resolution
+# because our flake references the specific version of this library.
+# See librusty_v8.nix for more details.
+# When updating the V8 crate, either update the version and hashes in that file,
+# or ping phoebe @gefjon to do so.
+v8 = "=145.0.0"
+
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
