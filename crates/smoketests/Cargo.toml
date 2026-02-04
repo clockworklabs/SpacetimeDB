@@ -13,6 +13,7 @@ toml.workspace = true
 regex.workspace = true
 anyhow.workspace = true
 which = "8.0.0"
+chrono.workspace = true
 
 [dev-dependencies]
 cargo_metadata.workspace = true

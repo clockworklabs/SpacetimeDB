@@ -3,6 +3,7 @@
 //! code from markdown docs and running it.
 
 use anyhow::{bail, Context, Result};
+use chrono::Local;
 use regex::Regex;
 use spacetimedb_smoketests::{pnpm_path, require_dotnet, require_pnpm, workspace_root, Smoketest};
 use std::fs;
@@ -189,12 +190,13 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
 
 /// Override nuget config to use a local NuGet package on a .NET project.
 fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, build_subdir: &str) -> Result<()> {
-    println!("Override {package}: {project_dir:?} with {source_dir:?}");
+    eprintln!("Override {package}: {project_dir:?} with {source_dir:?}");
 
     // Make sure the local package is built
     let workspace = workspace_root();
     let repo_nuget_config = workspace.join("NuGet.Config");
     if repo_nuget_config.exists() {
+        println!("repo_nuget_config exists");
         let output = Command::new("dotnet")
             .args(["restore", "--configfile", repo_nuget_config.to_str().unwrap()])
             .current_dir(source_dir)
@@ -221,6 +223,7 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
             );
         }
     } else {
+        println!("repo_nuget_config does not exist");
         let output = Command::new("dotnet")
             .args(["pack", "-c", "Release"])
             .current_dir(source_dir)
@@ -489,6 +492,7 @@ impl QuickstartTest {
             "spacetimedb-project",
         ])?;
         eprintln!("spacetime init output: {}", output);
+        println!("[{}] Done spacetime init", Local::now().format("%Y-%m-%d %H:%M:%S"));
 
         let project_path = server_path.join("spacetimedb");
         self.project_path = project_path.clone();
@@ -502,6 +506,7 @@ impl QuickstartTest {
         // Read and parse the documentation
         let doc_content = fs::read_to_string(self.doc_path())?;
         let server_code = parse_quickstart(&doc_content, self.config.lang, &self.module_name(), true);
+        println!("[{}] Done parse_quickstart", Local::now().format("%Y-%m-%d %H:%M:%S"));
 
         // Write server code
         write_file(&project_path.join(self.config.server_file), &server_code)?;
@@ -509,9 +514,12 @@ impl QuickstartTest {
         // Language-specific server postprocessing
         self.server_postprocess(&project_path)?;
 
+        println!("[{}] Done server_postprocess", Local::now().format("%Y-%m-%d %H:%M:%S"));
+
         // Build the server (local operation)
         self.test
             .spacetime(&["build", "-d", "-p", project_path.to_str().unwrap()])?;
+        println!("[{}] Done spacetime build", Local::now().format("%Y-%m-%d %H:%M:%S"));
 
         Ok(project_path)
     }
@@ -551,12 +559,20 @@ log = "0.4"
                     &workspace.join("crates/bindings-csharp/Runtime"),
                     "bin/Release",
                 )?;
+                println!(
+                    "[{}] Done override_nuget_package SpacetimeDB.Runtime for server_path",
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                );
                 override_nuget_package(
                     server_path,
                     "SpacetimeDB.BSATN.Runtime",
                     &workspace.join("crates/bindings-csharp/BSATN.Runtime"),
                     "bin/Release",
                 )?;
+                println!(
+                    "[{}] Done override_nuget_package SpacetimeDB.BSATN.Runtime for server_path",
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                );
             }
             "typescript" => {
                 // Build and link the TypeScript SDK
@@ -628,30 +644,50 @@ log = "0.4"
                     &workspace.join("crates/bindings-csharp/BSATN.Runtime"),
                     "bin/Release",
                 )?;
+                println!(
+                    "[{}] Done override_nuget_package SpacetimeDB.BSATN.Runtime for sdks/csharp",
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                );
                 override_nuget_package(
                     &workspace.join("sdks/csharp"),
                     "SpacetimeDB.Runtime",
                     &workspace.join("crates/bindings-csharp/Runtime"),
                     "bin/Release",
                 )?;
+                println!(
+                    "[{}] Done override_nuget_package SpacetimeDB.Runtime for sdks/csharp",
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                );
                 override_nuget_package(
                     client_path,
                     "SpacetimeDB.BSATN.Runtime",
                     &workspace.join("crates/bindings-csharp/BSATN.Runtime"),
                     "bin/Release",
                 )?;
+                println!(
+                    "[{}] Done override_nuget_package SpacetimeDB.BSATN.Runtime for client_path",
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                );
                 override_nuget_package(
                     client_path,
                     "SpacetimeDB.ClientSDK",
                     &workspace.join("sdks/csharp"),
                     "bin~/Release",
                 )?;
+                println!(
+                    "[{}] Done override_nuget_package SpacetimeDB.ClientSDK for client_path",
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                );
 
                 run_cmd(
                     &["dotnet", "add", "package", "SpacetimeDB.ClientSDK"],
                     client_path,
                     None,
                 )?;
+                println!(
+                    "[{}] Done run_cmd dotnet add package SpacetimeDB.ClientSDK for client_path",
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                );
             }
             _ => {}
         }
@@ -677,6 +713,7 @@ log = "0.4"
         let server_path = base_path.join("server");
 
         self.generate_server(&server_path)?;
+        println!("[{}] Done generate_server", Local::now().format("%Y-%m-%d %H:%M:%S"));
 
         // Publish the module
         let project_path_str = self.project_path.to_str().unwrap().to_string();
@@ -690,6 +727,7 @@ log = "0.4"
             "--clear-database",
             &self.module_name(),
         ])?;
+        println!("[{}] Done publish", Local::now().format("%Y-%m-%d %H:%M:%S"));
 
         // Parse the identity from publish output
         let re = regex::Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
@@ -708,54 +746,16 @@ log = "0.4"
 
     /// Run the full quickstart test.
     fn run_quickstart(&mut self) -> Result<()> {
+        println!("[{}] Start test", Local::now().format("%Y-%m-%d %H:%M:%S"));
         let client_path = self.publish()?;
+        println!("[{}] Done full publish", Local::now().format("%Y-%m-%d %H:%M:%S"));
 
         self.project_init(&client_path)?;
+        println!("[{}] Done project_init", Local::now().format("%Y-%m-%d %H:%M:%S"));
         self.sdk_setup(&client_path)?;
+        println!("[{}] Done sdk_setup", Local::now().format("%Y-%m-%d %H:%M:%S"));
 
-        // Build the client
-        run_cmd(self.config.build_cmd, &client_path, None)?;
-
-        // Generate bindings (local operation)
-        let bindings_path = client_path.join(self.config.module_bindings);
-        let project_path_str = self.project_path.to_str().unwrap().to_string();
-        self.test.spacetime(&[
-            "generate",
-            "--lang",
-            self.config.client_lang,
-            "--out-dir",
-            bindings_path.to_str().unwrap(),
-            "--project-path",
-            &project_path_str,
-        ])?;
-
-        // Read and parse client code from documentation
-        let doc_content = fs::read_to_string(self.doc_path())?;
-        let mut main_code = parse_quickstart(&doc_content, self.config.client_lang, &self.module_name(), false);
-
-        // Apply replacements
-        for (src, dst) in self.config.replacements {
-            main_code = main_code.replace(src, dst);
-        }
-
-        // Add extra code
-        main_code.push('\n');
-        main_code.push_str(self.config.extra_code);
-
-        // Replace server address
-        let host = self.test.server_host();
-        let protocol = "http"; // The smoketest server uses http
-        main_code = main_code.replace("http://localhost:3000", &format!("{}://{}", protocol, host));
-
-        // Write the client code
-        write_file(&client_path.join(self.config.client_file), &main_code)?;
-
-        // Run the three test interactions
-        self.check("", &client_path, self.config.connected_str)?;
-        self.check("/name Alice", &client_path, "Alice")?;
-        self.check("Hello World", &client_path, "Hello World")?;
-
-        Ok(())
+        panic!("fail test to print output");
     }
 }
 

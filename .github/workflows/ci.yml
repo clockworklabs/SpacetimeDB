@@ -116,4 +116,4 @@ jobs:
         # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
         # build artifacts.
         # It also seemed to improve performance a fair amount (11m -> 6m)
-        run: cargo ci smoketests test_quickstart_csharp -- --test-threads=1
+        run: cargo ci smoketests -- test_quickstart_csharp --test-threads=1
