@@ -103,14 +103,14 @@ Your database will be available at `https://maincloud.spacetimedb.com`.
 
 ```json
 {
-  "run": "npm run dev"
+  "dev_run": "npm run dev"
 }
 ```
 
 The client command can be:
 - Auto-detected from your project (package.json, Cargo.toml, .csproj)
 - Configured in `spacetime.json`
-- Overridden via CLI flag: `spacetime dev --client-command "yarn dev"`
+- Overridden via CLI flag: `spacetime dev --dev-run "yarn dev"`
 - Disabled with: `spacetime dev --server-only`
 
 When you run `spacetime init` with a client template, a default client command is automatically configured in `spacetime.json` based on your project type.

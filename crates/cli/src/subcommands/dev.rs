@@ -89,8 +89,8 @@ pub fn cli() -> Command {
                 .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
         )
         .arg(
-            Arg::new("client-command")
-                .long("client-command")
+            Arg::new("dev-run")
+                .long("dev-run")
                 .value_name("COMMAND")
                 .help("Command to run the client development server (overrides spacetime.json config)"),
         )
@@ -277,15 +277,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server_only = args.get_flag("server-only");
     let client_command = if server_only {
         None
-    } else if let Some(cmd) = args.get_one::<String>("client-command") {
+    } else if let Some(cmd) = args.get_one::<String>("dev-run") {
         // Explicit CLI flag takes priority
         Some(cmd.clone())
     } else if let Some(cmd) = SpacetimeConfig::load_from_dir(&project_dir)
         .ok()
         .flatten()
-        .and_then(|c| c.run)
+        .and_then(|c| c.dev_run)
     {
-        // Config file exists with run command
+        // Config file exists with dev_run command
         Some(cmd)
     } else if let Some((detected_cmd, _detected_pm)) = detect_client_command(&project_dir) {
         // No config - detect and save for future runs

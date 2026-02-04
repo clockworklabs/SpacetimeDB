@@ -51,7 +51,7 @@ impl PackageManager {
 /// Example:
 /// ```json
 /// {
-///   "run": "pnpm dev"
+///   "dev_run": "pnpm dev"
 /// }
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -60,14 +60,14 @@ pub struct SpacetimeConfig {
     /// This is used by `spacetime dev` to start the client after publishing.
     /// Example: "npm run dev", "pnpm dev", "cargo run"
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub run: Option<String>,
+    pub dev_run: Option<String>,
 }
 
 impl SpacetimeConfig {
-    /// Create a configuration with a run command
+    /// Create a configuration with a dev_run command
     pub fn with_run_command(run_command: impl Into<String>) -> Self {
         Self {
-            run: Some(run_command.into()),
+            dev_run: Some(run_command.into()),
         }
     }
 
@@ -81,7 +81,7 @@ impl SpacetimeConfig {
             _ => "npm run dev", // default fallback
         };
         Self {
-            run: Some(run_command.to_string()),
+            dev_run: Some(run_command.to_string()),
         }
     }
 
