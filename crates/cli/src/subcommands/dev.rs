@@ -1,8 +1,8 @@
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
+use crate::spacetime_config::{detect_client_command, SpacetimeConfig};
 use crate::subcommands::init;
-use crate::subcommands::spacetime_config::{detect_client_command, SpacetimeConfig};
 use crate::util::{
     add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
     spacetime_reverse_dns, ResponseExt,

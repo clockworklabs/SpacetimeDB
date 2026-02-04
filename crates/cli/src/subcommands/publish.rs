@@ -10,7 +10,7 @@ use std::{env, fs};
 
 use crate::common_args::ClearMode;
 use crate::config::Config;
-use crate::project_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
+use crate::spacetime_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
 use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn test_filter_by_database_from_cli() {
-        use crate::project_config::*;
+        use crate::spacetime_config::*;
         use std::collections::HashMap;
 
         let cmd = cli();
@@ -665,7 +665,7 @@ mod tests {
 
     #[test]
     fn test_no_filter_when_database_not_from_cli() {
-        use crate::project_config::*;
+        use crate::spacetime_config::*;
         use std::collections::HashMap;
 
         let cmd = cli();
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn test_empty_result_when_filter_no_match() {
-        use crate::project_config::*;
+        use crate::spacetime_config::*;
         use std::collections::HashMap;
 
         let cmd = cli();

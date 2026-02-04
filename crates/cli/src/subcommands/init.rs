@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
+use crate::spacetime_config::PackageManager;
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
-use crate::subcommands::spacetime_config::PackageManager;
 
 mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
@@ -504,8 +504,7 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     // Configure client dev command if a client is present
     if !is_server_only {
         let client_lang_str = template_config.client_lang.as_ref().map(|l| l.as_str());
-        if let Some(path) =
-            crate::subcommands::spacetime_config::setup_for_project(&project_path, client_lang_str, package_manager)?
+        if let Some(path) = crate::spacetime_config::setup_for_project(&project_path, client_lang_str, package_manager)?
         {
             println!("{} Created {}", "✓".green(), path.display());
         }

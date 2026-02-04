@@ -13,7 +13,7 @@ use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::project_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
+use crate::spacetime_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
@@ -467,7 +467,7 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project_config::*;
+    use crate::spacetime_config::*;
     use std::collections::HashMap;
 
     // get_filtered_generate_configs Tests
