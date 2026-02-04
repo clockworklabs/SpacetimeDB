@@ -1,0 +1,31 @@
+Write a SpacetimeDB backend module in TypeScript that models a minimal Entity Component System with joins.
+
+TABLES
+- entity
+  - Fields:
+    - id: number (i32, primary key)
+
+- position
+  - Fields:
+    - entityId: number (i32, primary key)
+    - x: number (i32)
+    - y: number (i32)
+
+- velocity
+  - Fields:
+    - entityId: number (i32, primary key)
+    - vx: number (i32)
+    - vy: number (i32)
+
+- nextPosition
+  - Fields:
+    - entityId: number (i32, primary key)
+    - x: number (i32)
+    - y: number (i32)
+
+REDUCERS
+- seed: insert 2 entities with positions and velocities:
+  - Entity 1: position(1,0), velocity(1,0)
+  - Entity 2: position(10,0), velocity(-2,3)
+
+- step: for each position, find velocity, compute next position (x+vx, y+vy), upsert to nextPosition

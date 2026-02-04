@@ -1,0 +1,16 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates multi-column B-Tree indexes.
+
+TABLE
+- log
+  - Fields:
+    - id: number (i32, primary key)
+    - userId: number (i32)
+    - day: number (i32)
+    - message: string
+  - Index: byUserDay (btree on userId, day)
+
+REDUCERS
+- seed: insert three rows:
+  - (id=1, userId=7, day=1, message="a")
+  - (id=2, userId=7, day=2, message="b")
+  - (id=3, userId=9, day=1, message="c")

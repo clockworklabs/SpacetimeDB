@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in Rust that defines a table, a non-reducer helper function, and a reducer that uses the helper.
 
 TABLE
-- results
+- result
   - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)
@@ -11,5 +11,5 @@ HELPERS
 - add: given a:i32 and b:i32, returns i32
 
 REDUCERS
-- compute_sum: given id:i32, a:i32, b:i32, insert exactly this row into results
+- compute_sum: given id:i32, a:i32, b:i32, insert exactly this row into result
   - (id=id, sum=add(a, b))
