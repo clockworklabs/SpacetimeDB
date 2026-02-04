@@ -221,7 +221,6 @@ impl CompiledModule {
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
-                organization: None,
             },
             MigrationPolicy::Compatible,
         )
