@@ -87,6 +87,28 @@ pub fn rewrite_package_json_dependency_version_inplace(
     Ok(())
 }
 
+fn rewrite_cmake_version_inplace(path: impl AsRef<Path>, new_version: &str) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    let contents = fs::read_to_string(path)?;
+
+    // (?s) enables dotall mode so . matches newlines
+    // Matches: project(...VERSION <version>...) across multiple lines
+    let re = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([\d\.]+)").unwrap();
+
+    let mut replaced = false;
+    let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
+        replaced = true;
+        format!("{}{}", &caps[1], new_version)
+    });
+
+    if !replaced {
+        anyhow::bail!("Could not find project() VERSION to update in {}", path.display());
+    }
+
+    fs::write(path, updated.as_ref())?;
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let matches = Command::new("upgrade-version")
         .version("1.0")
@@ -121,11 +143,17 @@ fn main() -> anyhow::Result<()> {
                 .help("Also bump versions in C# SDK and templates"),
         )
         .arg(
+            Arg::new("cpp")
+                .long("cpp")
+                .action(clap::ArgAction::SetTrue)
+                .help("Also bump the version in C++ bindings (crates/bindings-cpp/CMakeLists.txt)"),
+        )
+        .arg(
             Arg::new("all")
                 .long("all")
                 .action(clap::ArgAction::SetTrue)
-                .help("Update all targets (equivalent to --typescript --rust-and-cli --csharp)")
-                .conflicts_with_all(["typescript", "rust-and-cli", "csharp"]),
+                .help("Update all targets (equivalent to --typescript --rust-and-cli --csharp --cpp)")
+                .conflicts_with_all(["typescript", "rust-and-cli", "csharp", "cpp"]),
         )
         .arg(
             Arg::new("accept-snapshots")
@@ -135,7 +163,7 @@ fn main() -> anyhow::Result<()> {
         )
         .group(
             ArgGroup::new("update-targets")
-                .args(["all", "typescript", "rust-and-cli", "csharp"])
+                .args(["all", "typescript", "rust-and-cli", "csharp", "cpp"])
                 .required(true)
                 .multiple(true),
         )
@@ -328,6 +356,8 @@ fn main() -> anyhow::Result<()> {
             &wildcard_patch,
         )?;
     }
-
+    if matches.get_flag("cpp") || matches.get_flag("all") {
+        rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
+    }
     Ok(())
 }

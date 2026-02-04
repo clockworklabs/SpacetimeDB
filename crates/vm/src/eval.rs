@@ -92,6 +92,7 @@ pub fn run_ast<const N: usize, P: ProgramVm>(
 
 /// Used internally for testing SQL JOINS.
 #[doc(hidden)]
+#[cfg(any(test, feature = "test"))]
 pub mod test_helpers {
     use crate::relation::MemTable;
     use core::hash::BuildHasher as _;
@@ -110,7 +111,7 @@ pub mod test_helpers {
 
     pub fn header_for_mem_table(table_id: TableId, fields: ProductType) -> Header {
         let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = TableName::new_from_str(&format!("mem#{hash:x}"));
+        let table_name = TableName::for_test(&format!("mem_{hash:x}"));
 
         let cols = Vec::from(fields.elements)
             .into_iter()
@@ -193,7 +194,6 @@ pub mod tests {
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_schema::def::error::RelationError;
     use spacetimedb_schema::relation::{FieldName, Header};
-    use spacetimedb_schema::table_name::TableName;
 
     /// From an original source of `result`s, applies `queries` and returns a final set of results.
     fn build_query<'a, const N: usize>(
@@ -308,6 +308,7 @@ pub mod tests {
     fn test_join_inner() {
         let table_id = 0.into();
         let table = mem_table_one_u64(table_id);
+        let table_name = table.head.table_name.clone();
         let col: ColId = 0.into();
         let field = table.head.fields[col.idx()].clone();
 
@@ -319,12 +320,7 @@ pub mod tests {
         let result = run_query(q.into(), sources);
 
         // The expected result.
-        let head = Header::new(
-            table_id,
-            TableName::new_from_str(""),
-            [field.clone(), field].into(),
-            Vec::new(),
-        );
+        let head = Header::new(table_id, table_name, [field.clone(), field].into(), Vec::new());
         let input = MemTable::from_iter(head.into(), [product!(1u64, 1u64)]);
 
         println!("{}", &result.head);

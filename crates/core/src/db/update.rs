@@ -257,7 +257,7 @@ fn auto_migrate_database(
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 
@@ -266,7 +266,7 @@ fn auto_migrate_database(
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
@@ -287,7 +287,10 @@ fn auto_migrate_database(
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).expect("table must exist");
+                let table_def = plan
+                    .new
+                    .stored_in_table_def(&table_name.clone().into())
+                    .expect("table must exist");
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 

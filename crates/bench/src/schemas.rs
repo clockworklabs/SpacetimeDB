@@ -164,7 +164,7 @@ pub fn table_name<T: BenchTable>(style: IndexStrategy) -> TableName {
     let prefix = style.name();
     let name = T::name();
 
-    TableName::new_from_str(&format!("{prefix}_{name}"))
+    TableName::for_test(&format!("{prefix}_{name}"))
 }
 
 // ---------- data synthesis ----------
