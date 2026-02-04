@@ -23,7 +23,7 @@ The script will:
 - Check that required services are running (prompts you to start them if not)
 - Seed databases with test data
 - Run benchmarks at high contention
-- Display animated results comparing your chosen systems
+- Display animated results comparing your chosen systems (SpacetimeDB and Convex by default, as both are simple to run locally)
 
 **Options:**
 

@@ -11,7 +11,7 @@ npm install
 npm run demo
 ```
 
-The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results comparing your chosen systems (SpacetimeDB vs Convex by default).
+The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results comparing your chosen systems (SpacetimeDB and Convex by default, as both are simple to run locally).
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
 
@@ -19,16 +19,16 @@ The demo checks that required services are running (prompts you to start them if
 
 All tests use 50 concurrent connections with a transfer workload (read-modify-write transaction between two accounts).
 
-| System | TPS (~0% Contention) | TPS (~80% Contention) |
-|--------|---------------------|----------------------|
-| **SpacetimeDB** | **107,850** | **103,590** |
-| SQLite + Node HTTP + Drizzle | 7,845 | 7,652 |
-| Bun + Drizzle + Postgres | 7,115 | 2,074 |
-| Postgres + Node HTTP + Drizzle | 6,429 | 2,798 |
-| Supabase + Node HTTP + Drizzle | 6,310 | 1,268 |
-| CockroachDB + Node HTTP + Drizzle | 5,129 | 197 |
-| PlanetScale + Node HTTP + Drizzle | 477 | 30 |
-| Convex | 438 | 58 |
+| System                            | TPS (~0% Contention) | TPS (~80% Contention) |
+| --------------------------------- | -------------------- | --------------------- |
+| **SpacetimeDB**                   | **107,850**          | **103,590**           |
+| SQLite + Node HTTP + Drizzle      | 7,845                | 7,652                 |
+| Bun + Drizzle + Postgres          | 7,115                | 2,074                 |
+| Postgres + Node HTTP + Drizzle    | 6,429                | 2,798                 |
+| Supabase + Node HTTP + Drizzle    | 6,310                | 1,268                 |
+| CockroachDB + Node HTTP + Drizzle | 5,129                | 197                   |
+| PlanetScale + Node HTTP + Drizzle | 477                  | 30                    |
+| Convex                            | 438                  | 58                    |
 
 **Key Finding:** SpacetimeDB achieves **~14x higher throughput** than the next best option (SQLite RPC) and maintains nearly identical performance under high contention (only ~4% drop), while traditional databases suffer significant degradation (CockroachDB drops 96%).
 
@@ -43,6 +43,7 @@ The chart above shows TPS vs Zipf Alpha (contention level). Higher alpha values 
 All systems were tested with **out-of-the-box default settings** - no custom tuning, no configuration optimization. This reflects what developers experience when they first adopt these technologies.
 
 For cloud services, we tested paid tiers to give them their best chance:
+
 - **PlanetScale**: PS-256G (32 cores, 256 GB RAM)
 - **Supabase**: Pro tier
 - **Convex**: Pro tier
@@ -89,13 +90,16 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 ### Hardware Configuration
 
 **Server Machine (Variant A - PhoenixNAP):**
+
 - s3.c3.medium (8 cores, 32 GB Memory)
 
 **Server Machine (Variant B - Google Cloud):**
+
 - c4-standard-32-lssd (32 vCPUs, 120 GB Memory)
 - RAID 0 on 5 Local SSDs
 
 **Client Machine:**
+
 - c4-standard-32 (32 vCPUs, 120 GB Memory)
 - Runs on a **separate machine** from the server
 
@@ -104,6 +108,7 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 ### Why Separate Client Machines?
 
 Running clients on separate machines ensures:
+
 - Network round-trip latency is measured (realistic production scenario)
 - Client CPU/memory doesn't compete with server resources
 - Results reflect actual deployment conditions
@@ -148,16 +153,16 @@ PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud dat
 
 ## Systems Tested
 
-| System | Architecture |
-|--------|-------------|
-| SpacetimeDB | Integrated platform (Rust) |
-| SQLite + Node HTTP + Drizzle | Node.js HTTP server → Drizzle ORM → SQLite |
-| Bun + Drizzle + Postgres | Bun HTTP server → Drizzle ORM → PostgreSQL |
-| Postgres + Node HTTP + Drizzle | Node.js HTTP server → Drizzle ORM → PostgreSQL |
-| Supabase + Node HTTP + Drizzle | Node.js HTTP server → Drizzle ORM → Supabase (Postgres) |
-| CockroachDB + Node HTTP + Drizzle | Node.js HTTP server → Drizzle ORM → CockroachDB |
+| System                            | Architecture                                            |
+| --------------------------------- | ------------------------------------------------------- |
+| SpacetimeDB                       | Integrated platform (Rust)                              |
+| SQLite + Node HTTP + Drizzle      | Node.js HTTP server → Drizzle ORM → SQLite              |
+| Bun + Drizzle + Postgres          | Bun HTTP server → Drizzle ORM → PostgreSQL              |
+| Postgres + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → PostgreSQL          |
+| Supabase + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → Supabase (Postgres) |
+| CockroachDB + Node HTTP + Drizzle | Node.js HTTP server → Drizzle ORM → CockroachDB         |
 | PlanetScale + Node HTTP + Drizzle | Node.js HTTP server → Drizzle ORM → PlanetScale (Cloud) |
-| Convex | Integrated platform |
+| Convex                            | Integrated platform                                     |
 
 ## Running the Benchmarks
 
