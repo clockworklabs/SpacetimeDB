@@ -28,8 +28,7 @@ namespace SpacetimeDB.Types
     {
         public RemoteTables(DbConnection conn)
         {
-            AddTable(Message = new(conn));
-            AddTable(User = new(conn));
+            AddTable(Person = new(conn));
         }
     }
 
@@ -582,8 +581,7 @@ namespace SpacetimeDB.Types
 
     public sealed class From
     {
-        public global::SpacetimeDB.Table<Message, MessageCols, MessageIxCols> Message() => new("Message", new MessageCols("Message"), new MessageIxCols("Message"));
-        public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new("User", new UserCols("User"), new UserIxCols("User"));
+        public global::SpacetimeDB.Table<Person, PersonCols, PersonIxCols> Person() => new("Person", new PersonCols("Person"), new PersonIxCols("Person"));
     }
 
     public sealed class TypedSubscriptionBuilder
@@ -651,10 +649,8 @@ namespace SpacetimeDB.Types
             var encodedArgs = update.ReducerCall.Args;
             return update.ReducerCall.ReducerName switch
             {
-                "ClientConnected" => BSATNHelpers.Decode<Reducer.ClientConnected>(encodedArgs),
-                "ClientDisconnected" => BSATNHelpers.Decode<Reducer.ClientDisconnected>(encodedArgs),
-                "SendMessage" => BSATNHelpers.Decode<Reducer.SendMessage>(encodedArgs),
-                "SetName" => BSATNHelpers.Decode<Reducer.SetName>(encodedArgs),
+                "Add" => BSATNHelpers.Decode<Reducer.Add>(encodedArgs),
+                "SayHello" => BSATNHelpers.Decode<Reducer.SayHello>(encodedArgs),
                 "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
                 var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
@@ -680,10 +676,8 @@ namespace SpacetimeDB.Types
             var eventContext = (ReducerEventContext)context;
             return reducer switch
             {
-                Reducer.ClientConnected args => Reducers.InvokeClientConnected(eventContext, args),
-                Reducer.ClientDisconnected args => Reducers.InvokeClientDisconnected(eventContext, args),
-                Reducer.SendMessage args => Reducers.InvokeSendMessage(eventContext, args),
-                Reducer.SetName args => Reducers.InvokeSetName(eventContext, args),
+                Reducer.Add args => Reducers.InvokeAdd(eventContext, args),
+                Reducer.SayHello args => Reducers.InvokeSayHello(eventContext, args),
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }
