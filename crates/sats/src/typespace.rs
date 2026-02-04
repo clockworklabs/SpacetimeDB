@@ -403,9 +403,10 @@ impl_primitives! {
     String => String,
 }
 
-impl_st!([](), AlgebraicType::unit());
+impl_st!([] (), AlgebraicType::unit());
 impl_st!([] str, AlgebraicType::String);
 impl_st!([T] [T], ts => AlgebraicType::array(T::make_type(ts)));
+impl_st!([T, const N: usize] [T; N], ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: ?Sized] &T, ts => T::make_type(ts));
 impl_st!([T: ?Sized] Box<T>, ts => T::make_type(ts));
 impl_st!([T: ?Sized] Rc<T>, ts => T::make_type(ts));
@@ -413,6 +414,9 @@ impl_st!([T: ?Sized] Arc<T>, ts => T::make_type(ts));
 impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
 impl_st!([T, const N: usize] SmallVec<[T; N]>, ts => <[T]>::make_type(ts));
 impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
+
+impl_st!([U] (U,), ts => AlgebraicType::product([U::make_type(ts)]));
+impl_st!([U, V: SpacetimeType] (U, V), ts => AlgebraicType::product([U::make_type(ts), V::make_type(ts)]));
 
 impl_st!([] spacetimedb_primitives::ArgId, AlgebraicType::U64);
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
