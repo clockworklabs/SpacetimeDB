@@ -236,7 +236,6 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
     }
 
     let nuget_config_path = nuget_config_path(project_dir);
-    let source_dir = std::fs::canonicalize(source_dir).unwrap_or_else(|_| source_dir.to_path_buf());
     let package_path = source_dir.join(build_subdir);
 
     // Read existing config or create new one
