@@ -144,11 +144,23 @@ fn build_typescript_sdk() -> Result<()> {
     Ok(())
 }
 
-/// Create NuGet config with proper source isolation.
-/// Uses `<clear />` to avoid inheriting sources from machine/user config.
+fn nuget_config_path(project_dir: &Path) -> PathBuf {
+    let p_upper = project_dir.join("NuGet.Config");
+    if p_upper.exists() {
+        return p_upper;
+    }
+
+    let p_lower = project_dir.join("nuget.config");
+    if p_lower.exists() {
+        return p_lower;
+    }
+
+    p_upper
+}
+
+/// Create a NuGet config.
 fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, String)]) -> String {
-    let mut source_lines = String::from("    <clear />\n");
-    source_lines.push_str("    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n");
+    let mut source_lines = String::new();
     let mut mapping_lines = String::new();
 
     for (key, path) in sources {
@@ -177,25 +189,54 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
 
 /// Override nuget config to use a local NuGet package on a .NET project.
 fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, build_subdir: &str) -> Result<()> {
-    // Clean before packing to avoid stale artifacts causing conflicts
-    let _ = Command::new("dotnet").args(["clean"]).current_dir(source_dir).output();
+    println!("Override {package}: {project_dir:?} with {source_dir:?}");
 
     // Make sure the local package is built
-    let output = Command::new("dotnet")
-        .args(["pack", "-c", "Release"])
-        .current_dir(source_dir)
-        .output()
-        .context("Failed to run dotnet pack")?;
+    let workspace = workspace_root();
+    let repo_nuget_config = workspace.join("NuGet.Config");
+    if repo_nuget_config.exists() {
+        let output = Command::new("dotnet")
+            .args(["restore", "--configfile", repo_nuget_config.to_str().unwrap()])
+            .current_dir(source_dir)
+            .output()
+            .context("Failed to run dotnet restore")?;
+        if !output.status.success() {
+            bail!(
+                "dotnet restore failed:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
 
-    if !output.status.success() {
-        bail!(
-            "dotnet pack failed:\nstdout: {}\nstderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let output = Command::new("dotnet")
+            .args(["pack", "-c", "Release", "--no-restore"])
+            .current_dir(source_dir)
+            .output()
+            .context("Failed to run dotnet pack")?;
+        if !output.status.success() {
+            bail!(
+                "dotnet pack failed:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    } else {
+        let output = Command::new("dotnet")
+            .args(["pack", "-c", "Release"])
+            .current_dir(source_dir)
+            .output()
+            .context("Failed to run dotnet pack")?;
+        if !output.status.success() {
+            bail!(
+                "dotnet pack failed:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 
-    let nuget_config_path = project_dir.join("nuget.config");
+    let nuget_config_path = nuget_config_path(project_dir);
+    let source_dir = std::fs::canonicalize(source_dir).unwrap_or_else(|_| source_dir.to_path_buf());
     let package_path = source_dir.join(build_subdir);
 
     // Read existing config or create new one
@@ -218,6 +259,12 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
     }
 
     // Ensure nuget.org fallback exists
+    if !sources.iter().any(|(k, _)| k == "nuget.org") {
+        sources.push((
+            "nuget.org".to_string(),
+            PathBuf::from("https://api.nuget.org/v3/index.json"),
+        ));
+    }
     if !mappings.iter().any(|(k, _)| k == "nuget.org") {
         mappings.push(("nuget.org".to_string(), "*".to_string()));
     }
@@ -225,6 +272,12 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
     // Write config
     let config = create_nuget_config(&sources, &mappings);
     fs::write(&nuget_config_path, config)?;
+
+    let _ = Command::new("dotnet")
+        .args(["nuget", "locals", "--clear", "all"])
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .status();
 
     Ok(())
 }
