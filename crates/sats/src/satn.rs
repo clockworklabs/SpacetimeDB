@@ -810,6 +810,7 @@ impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
             record.push((
                 field
                     .name()
+                    .map(|n| &**n)
                     .map(Cow::from)
                     .unwrap_or_else(|| Cow::from(format!("col_{idx}"))),
                 ty,
@@ -830,8 +831,12 @@ impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
             field: &product.elements[0],
             idx: 0,
         };
-        self.f
-            .write_variant(tag, ty, var_ty.name(), sum.with(&var_ty.algebraic_type, val))
+        self.f.write_variant(
+            tag,
+            ty,
+            var_ty.name().map(|n| &**n),
+            sum.with(&var_ty.algebraic_type, val),
+        )
     }
 
     fn serialize_variant<T: Serialize + ?Sized>(

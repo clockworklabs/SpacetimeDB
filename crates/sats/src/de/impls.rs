@@ -9,6 +9,7 @@ use crate::{
 };
 use crate::{i256, u256};
 use core::{iter, marker::PhantomData, ops::Bound};
+use lean_string::LeanString;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList};
 use std::{borrow::Cow, rc::Rc, sync::Arc};
@@ -168,6 +169,7 @@ impl<'de> Deserialize<'de> for u8 {
 impl_deserialize!([] F32, de => f32::deserialize(de).map(Into::into));
 impl_deserialize!([] F64, de => f64::deserialize(de).map(Into::into));
 impl_deserialize!([] String, de => de.deserialize_str(OwnedSliceVisitor));
+impl_deserialize!([] LeanString, de => <Cow<'_, str>>::deserialize(de).map(|s| (&*s).into()));
 impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
 impl_deserialize!([T: Deserialize<'de>, const N: usize] SmallVec<[T; N]>, de => {
     de.deserialize_array(BasicSmallVecVisitor)
@@ -497,7 +499,7 @@ impl VariantVisitor<'_> for WithTypespace<'_, SumType> {
 
     fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
         // Provide the names known from the `SumType`.
-        self.ty().variants.iter().filter_map(|v| v.name())
+        self.ty().variants.iter().filter_map(|v| v.name().map(|n| &**n))
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -677,7 +679,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
             let missing = elements.iter().position(|field| field.is_none()).unwrap();
-            let field_name = elems[missing].name();
+            let field_name = elems[missing].name().map(|n| &**n);
             Error::missing_field(missing, field_name, visitor)
         })?;
 
@@ -686,7 +688,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
         // By index we can select which element to deserialize a value for.
         let slot = &mut elements[index];
         if slot.is_some() {
-            return Err(Error::duplicate_field(index, element.name(), visitor));
+            return Err(Error::duplicate_field(index, element.name().map(|n| &**n), visitor));
         }
 
         // Deserialize the value for this field's type.
@@ -716,7 +718,7 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     type Output = usize;
 
     fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>> {
-        self.elems.iter().map(|f| f.name())
+        self.elems.iter().map(|f| f.name().map(|n| &**n))
     }
 
     fn kind(&self) -> ProductKind {
