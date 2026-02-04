@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["crates/smoketests/modules"]
 members = [
   "crates/auth",
   "crates/bench",
@@ -26,6 +27,7 @@ members = [
   "crates/query",
   "crates/sats",
   "crates/schema",
+  "crates/smoketests",
   "sdks/rust",
   "sdks/unreal",
   "crates/snapshot",
@@ -41,6 +43,7 @@ members = [
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
+  "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
   "modules/sdk-test",
   "modules/sdk-test-connect-disconnect",
@@ -58,6 +61,7 @@ members = [
   "tools/generate-client-api",
   "tools/gen-bindings",
   "tools/xtask-llm-benchmark",
+  "tools/xtask-smoketest",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
   "crates/query-builder",
