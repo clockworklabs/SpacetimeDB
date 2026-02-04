@@ -18,6 +18,7 @@ macro_rules! declare_tests_with_suffix {
                     .build()
             }
 
+<<<<<<< Updated upstream
             fn make_web_test(subcommand: &str) -> Test {
                 Test::builder()
                     .with_name(subcommand)
@@ -42,6 +43,32 @@ macro_rules! declare_tests_with_suffix {
                 make_web_test("insert-primitive").run();
             }
 
+||||||| Stash base
+=======
+            fn make_web_smoke_test() -> Test {
+                Test::builder()
+                    .with_name("wasm-smoke")
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command(
+                        "cargo build --target wasm32-unknown-unknown --no-default-features --features web",
+                    )
+                    .with_run_command("wasm-smoke-connect")
+                    .with_web_client(
+                        "target/wasm32-unknown-unknown/debug/test-client.wasm",
+                        "target/sdk-test-web-bindgen",
+                    )
+                    .build()
+            }
+
+            #[test]
+            fn wasm_smoke() {
+                make_web_smoke_test().run();
+            }
+
+>>>>>>> Stashed changes
             #[test]
             fn insert_primitive() {
                 make_test("insert-primitive").run();
