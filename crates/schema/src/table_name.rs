@@ -60,6 +60,6 @@ impl fmt::Debug for TableName {
 
 impl fmt::Display for TableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.0)
+        fmt::Display::fmt(&self.0, f)
     }
 }

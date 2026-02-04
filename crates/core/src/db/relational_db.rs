@@ -2235,15 +2235,16 @@ pub mod tests_utils {
         let mut builder = RawModuleDefV9Builder::new();
 
         // Add the view's product type to the typespace
+        let name = RawIdentifier::new(name);
         let type_ref = builder.add_algebraic_type(
             [],
-            RawIdentifier::new(name),
+            name.clone(),
             AlgebraicType::Product(ProductType::from_iter(schema.iter().cloned())),
             true,
         );
 
         builder.add_view(
-            RawIdentifier::new(name),
+            name.clone(),
             0,
             true,
             is_anonymous,
@@ -2252,7 +2253,7 @@ pub mod tests_utils {
         );
 
         let module_def: ModuleDef = builder.finish().try_into()?;
-        let view_def: &ViewDef = module_def.view(name).expect("view not found");
+        let view_def: &ViewDef = module_def.view(&*name).expect("view not found");
 
         // Allocate a backing table and return its table id
         db.with_auto_commit(Workload::Internal, |tx| db.create_view(tx, &module_def, view_def))

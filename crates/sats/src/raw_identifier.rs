@@ -7,8 +7,6 @@ use lean_string::LeanString;
 
 /// A not-yet-validated identifier.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-// TODO(perf): Consider `lean_string` instead for `&'static str` optimization.
-// This could be useful in e.g., `SumType` and friends.
 pub struct RawIdentifier(pub(crate) LeanString);
 
 impl_st!([] RawIdentifier, _ts => AlgebraicType::String);
@@ -57,7 +55,6 @@ impl fmt::Display for RawIdentifier {
     }
 }
 
-// This impl exists to facilitate optimizations in the future.
 impl From<&'static str> for RawIdentifier {
     fn from(s: &'static str) -> Self {
         RawIdentifier(LeanString::from_static_str(s))
