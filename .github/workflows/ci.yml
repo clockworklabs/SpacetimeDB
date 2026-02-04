@@ -21,6 +21,7 @@ jobs:
   ci-test:
     name: CI Test job (${{matrix.name}})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: Custom runner
