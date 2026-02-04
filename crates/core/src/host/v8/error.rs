@@ -615,7 +615,7 @@ pub(super) fn log_traceback(replica_ctx: &ReplicaContext, func_type: &str, func:
 }
 
 /// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
-pub(super) fn catch_exception<'scope, T>(
+pub(super) fn catch_exception_continue<'scope, T>(
     scope: &mut PinScope<'scope, '_>,
     body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
 ) -> Result<T, (ErrorOrException<JsError>, CanContinue)> {
@@ -639,6 +639,15 @@ pub(super) fn catch_exception<'scope, T>(
             (error, can_continue)
         }
     })
+}
+
+/// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
+pub(super) fn catch_exception<'scope, T>(
+    scope: &mut PinScope<'scope, '_>,
+    body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
+) -> Result<T, ErrorOrException<JsError>> {
+    tc_scope!(scope, scope);
+    catch_exception_continue(scope, body).map_err(|(e, _)| e)
 }
 
 /// Encodes whether it is safe to continue using the [`Isolate`]

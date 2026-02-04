@@ -97,6 +97,7 @@ impl HooksInfo {
 /// The actual callable module hook functions and their abi version.
 pub(in super::super) struct HookFunctions<'scope> {
     pub abi: AbiVersion,
+    pub recv: Local<'scope, v8::Value>,
     /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
     pub describe_module: Local<'scope, Function>,
     pub call_reducer: Local<'scope, Function>,
@@ -106,7 +107,9 @@ pub(in super::super) struct HookFunctions<'scope> {
 }
 
 /// Returns the hook function previously registered in [`register_hooks`].
-pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> Option<HookFunctions<'scope>> {
+pub(in super::super) fn get_registered_hooks<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+) -> Option<HookFunctions<'scope>> {
     let ctx = scope.get_current_context();
     let hooks = ctx.get_slot::<HooksInfo>()?;
 
@@ -120,6 +123,7 @@ pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> O
 
     Some(HookFunctions {
         abi: hooks.abi,
+        recv: v8::undefined(scope).into(),
         describe_module: get(ModuleHookKey::DescribeModule)?,
         call_reducer: get(ModuleHookKey::CallReducer)?,
         call_view: get(ModuleHookKey::CallView),

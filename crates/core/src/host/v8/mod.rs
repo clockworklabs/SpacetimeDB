@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
-    ExceptionThrown, Throwable,
+    catch_exception, catch_exception_continue, exception_already_thrown, log_traceback, CanContinue, ErrorOrException,
+    ExcResult, ExceptionThrown, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -31,7 +31,6 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
-use anyhow::Context as _;
 use core::any::type_name;
 use core::str;
 use enum_as_inner::EnumAsInner;
@@ -508,21 +507,25 @@ fn startup_instance_worker<'scope>(
     scope: &mut PinScope<'scope, '_>,
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
-) -> anyhow::Result<(HookFunctions<'scope>, Either<ModuleCommon, ModuleCommon>)> {
-    // Start-up the user's module.
-    eval_user_module_catch(scope, &program).map_err(DescribeError::Setup)?;
+) -> anyhow::Result<(HookFunctions<'scope>, ModuleCommon)> {
+    let hook_functions = catch_exception(scope, |scope| {
+        // Start-up the user's module.
+        let exports_obj = eval_user_module(scope, &program)?;
 
-    // Find the `__call_reducer__` function.
-    let hook_functions = get_hooks(scope).context("The `spacetimedb/server` module was never imported")?;
+        // Find the `__call_reducer__` function.
+        let hooks =
+            get_hooks(scope, exports_obj)?.ok_or_else(|| anyhow::anyhow!("must export schema as default export"))?;
+        Ok(hooks)
+    })?;
 
     // If we don't have a module, make one.
     let module_common = match module_or_mcc {
-        Either::Left(module_common) => Either::Left(module_common),
+        Either::Left(module_common) => module_common,
         Either::Right(mcc) => {
             let def = extract_description(scope, &hook_functions, &mcc.replica_ctx)?;
 
             // Validate and create a common module from the raw definition.
-            Either::Right(build_common_module_from_raw(mcc, def)?)
+            build_common_module_from_raw(mcc, def)?
         }
     };
 
@@ -578,6 +581,13 @@ async fn spawn_instance_worker(
         let mut isolate = new_isolate();
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
+        let (replica_ctx, scheduler) = match &module_or_mcc {
+            Either::Left(module) => (module.replica_ctx(), module.scheduler()),
+            Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
+        };
+        let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+        scope.set_slot(JsInstanceEnv::new(instance_env));
+
         catch_exception(scope, |scope| Ok(builtins::evalute_builtins(scope)?))
             .expect("our builtin code shouldn't error");
 
@@ -596,7 +606,6 @@ async fn spawn_instance_worker(
             }
             Ok((crf, module_common)) => {
                 // Success! Send `module_common` to the spawner.
-                let module_common = module_common.into_inner();
                 send_result(Ok(module_common.clone()));
                 (crf, module_common)
             }
@@ -606,9 +615,6 @@ async fn spawn_instance_worker(
         let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-        let scheduler = module_common.scheduler().clone();
-        let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler);
-        scope.set_slot(JsInstanceEnv::new(instance_env));
 
         // Create a zero-initialized buffer for holding reducer args.
         // Arguments needing more space will not use this.
@@ -737,7 +743,7 @@ fn eval_module<'scope>(
     resource_name: Local<'scope, Value>,
     code: Local<'_, v8::String>,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
-) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
+) -> ExcResult<Local<'scope, v8::Module>> {
     // Assemble the source. v8 figures out things like the `script_id` and
     // `source_map_url` itself, so we don't actually have to provide them.
     let origin = ScriptOrigin::new(scope, resource_name, 0, 0, false, 0, None, false, false, true, None);
@@ -763,36 +769,26 @@ fn eval_module<'scope>(
     }
 
     let value = value.cast::<v8::Promise>();
-    if value.state() == v8::PromiseState::Pending {
-        // If the user were to put top-level `await new Promise((resolve) => { /* do nothing */ })`
-        // the module value would never actually resolve. For now, reject this entirely.
-        return Err(error::TypeError("module has top-level await and is pending").throw(scope));
+    match value.state() {
+        v8::PromiseState::Pending => {
+            // If the user were to put top-level `await new Promise((resolve) => { /* do nothing */ })`
+            // the module value would never actually resolve. For now, reject this entirely.
+            Err(error::TypeError("module has top-level await and is pending").throw(scope))
+        }
+        v8::PromiseState::Rejected => Err(error::ExceptionValue(value.result(scope)).throw(scope)),
+        v8::PromiseState::Fulfilled => Ok(module),
     }
-
-    Ok((module, value))
 }
 
 /// Compiles, instantiate, and evaluate the user module with `code`.
-fn eval_user_module<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    code: &str,
-) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
+/// Returns the exports of the module.
+fn eval_user_module<'scope>(scope: &mut PinScope<'scope, '_>, code: &str) -> ExcResult<Local<'scope, v8::Object>> {
     // Convert the code to a string.
     let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
 
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
-    eval_module(scope, name, code, resolve_sys_module)
-}
-
-/// Compiles, instantiate, and evaluate the user module with `code`
-/// and catch any exceptions.
-fn eval_user_module_catch<'scope>(scope: &mut PinScope<'scope, '_>, program: &str) -> anyhow::Result<()> {
-    catch_exception(scope, |scope| {
-        eval_user_module(scope, program)?;
-        Ok(())
-    })
-    .map_err(|(e, _)| e)
-    .map_err(Into::into)
+    let module = eval_module(scope, name, code, resolve_sys_module)?;
+    Ok(module.get_module_namespace().cast())
 }
 
 /// Calls free function `fun` with `args`.
@@ -886,7 +882,7 @@ where
     // We'd like this tightly around `call`.
     env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
-    let call_result = catch_exception(scope, |scope| call(scope, op)).map_err(|(e, can_continue)| {
+    let call_result = catch_exception_continue(scope, |scope| call(scope, op)).map_err(|(e, can_continue)| {
         // Convert `can_continue` to whether the isolate has "trapped".
         // Also cancel execution termination if needed,
         // that can occur due to terminating long running reducers.
@@ -929,11 +925,10 @@ fn extract_description<'scope>(
         DESCRIBE_MODULE_DUNDER,
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
-            catch_exception(scope, |scope| {
+            Ok(catch_exception(scope, |scope| {
                 let def = call_describe_module(scope, hooks)?;
                 Ok(def)
-            })
-            .map_err(|(e, _)| e.into())
+            })?)
         },
     )
 }
@@ -951,24 +946,25 @@ mod test {
 
     fn with_module_catch<T>(
         code: &str,
-        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
+        logic: impl for<'scope> FnOnce(
+            &mut PinScope<'scope, '_>,
+            Local<v8::Object>,
+        ) -> Result<T, ErrorOrException<ExceptionThrown>>,
     ) -> anyhow::Result<T> {
         with_scope(|scope| {
-            eval_user_module_catch(scope, code).unwrap();
-            catch_exception(scope, |scope| {
-                let ret = logic(scope)?;
+            Ok(catch_exception(scope, |scope| {
+                let exports = eval_user_module(scope, code)?;
+                let ret = logic(scope, exports)?;
                 Ok(ret)
-            })
-            .map_err(|(e, _)| e)
-            .map_err(anyhow::Error::from)
+            })?)
         })
     }
 
     #[test]
     fn call_call_reducer_works() {
         let call = |code| {
-            with_module_catch(code, |scope| {
-                let hooks = get_hooks(scope).unwrap();
+            with_module_catch(code, |scope, exports| {
+                let hooks = get_hooks(scope, exports)?.unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
                     name: &ReducerName::for_test("foobar"),
@@ -1047,8 +1043,8 @@ js error Uncaught Error: foobar
                 },
             })
         "#;
-        let raw_mod = with_module_catch(code, |scope| {
-            let hooks = get_hooks(scope).unwrap();
+        let raw_mod = with_module_catch(code, |scope, exports| {
+            let hooks = get_hooks(scope, exports)?.unwrap();
             call_describe_module(scope, &hooks)
         })
         .map_err(|e| e.to_string());
