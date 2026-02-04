@@ -61,7 +61,6 @@ pub trait TypeChecker {
     fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<RelExpr> {
         match from {
             SqlFrom::Expr(SqlIdent(name), SqlIdent(alias)) => {
-                let alias = RawIdentifier::new(&*alias);
                 let schema = Self::type_relvar(tx, &name)?;
                 vars.insert(alias.clone(), schema.clone());
                 Ok(RelExpr::RelVar(Relvar {
@@ -71,7 +70,6 @@ pub trait TypeChecker {
                 }))
             }
             SqlFrom::Join(SqlIdent(name), SqlIdent(alias), joins) => {
-                let alias = RawIdentifier::new(&*alias);
                 let schema = Self::type_relvar(tx, &name)?;
                 vars.insert(alias.clone(), schema.clone());
                 let mut join = RelExpr::RelVar(Relvar {
@@ -87,7 +85,6 @@ pub trait TypeChecker {
                 } in joins
                 {
                     // Check for duplicate aliases
-                    let alias = RawIdentifier::new(&*alias);
                     if vars.contains_key(&alias) {
                         return Err(DuplicateName(alias.clone()).into());
                     }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::{
@@ -250,7 +251,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
 #[derive(Error, Debug)]
 #[error("{name} is not a valid system variable")]
 pub struct InvalidVar {
-    pub name: String,
+    pub name: RawIdentifier,
 }
 
 const VAR_ROW_LIMIT: &str = "row_limit";
@@ -281,10 +282,7 @@ const VALUE_COLUMN: &str = "value";
 pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<TableInsert> {
     let SqlSet(SqlIdent(var_name), lit) = set;
     if !is_var_valid(&var_name) {
-        return Err(InvalidVar {
-            name: var_name.into_string(),
-        }
-        .into());
+        return Err(InvalidVar { name: var_name }.into());
     }
 
     match lit {
@@ -293,7 +291,7 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
         SqlLiteral::Hex(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::bytes()).into()),
         SqlLiteral::Num(n) => {
             let table = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
-            let var_name = AlgebraicValue::String(var_name);
+            let var_name = AlgebraicValue::String(var_name.as_ref().into());
             let sum_value = StVarValue::try_from_primitive(
                 parse(&n, &AlgebraicType::U64)
                     .map_err(|_| InvalidLiteral::new(n.clone().into_string(), &AlgebraicType::U64))?,
@@ -324,10 +322,7 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
 pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResult<ProjectList> {
     let SqlShow(SqlIdent(var_name)) = show;
     if !is_var_valid(&var_name) {
-        return Err(InvalidVar {
-            name: var_name.into_string(),
-        }
-        .into());
+        return Err(InvalidVar { name: var_name }.into());
     }
 
     let table_schema = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
@@ -355,7 +350,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     // SELECT value FROM st_var WHERE name = 'var'
     //                                        ^^^
     // -------------------------------------------
-    let var_name_value = Expr::Value(AlgebraicValue::String(var_name), AlgebraicType::String);
+    let var_name_value = Expr::Value(AlgebraicValue::String(var_name.as_ref().into()), AlgebraicType::String);
 
     // -------------------------------------------
     // SELECT value FROM st_var WHERE name = 'var'
