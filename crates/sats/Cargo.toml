@@ -50,6 +50,7 @@ enum-as-inner.workspace = true
 ethnum.workspace = true
 hex.workspace = true
 itertools.workspace = true
+lean_string.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }

@@ -7,7 +7,7 @@ export default class BinaryReader {
    * This `BinaryReader`'s `#offset` field is used to track the current read position
    * relative to the start of the provided Uint8Array input.
    */
-  #view: DataView;
+  view: DataView;
 
   /**
    * Represents the offset (in bytes) relative to the start of the DataView
@@ -15,26 +15,22 @@ export default class BinaryReader {
    *
    * Note: This is *not* the absolute byte offset within the underlying ArrayBuffer.
    */
-  #offset: number = 0;
+  offset: number = 0;
 
   constructor(input: Uint8Array) {
-    this.#view = new DataView(input.buffer, input.byteOffset, input.byteLength);
-    this.#offset = 0;
-  }
-
-  get offset(): number {
-    return this.#offset;
+    this.view = new DataView(input.buffer, input.byteOffset, input.byteLength);
+    this.offset = 0;
   }
 
   get remaining(): number {
-    return this.#view.byteLength - this.#offset;
+    return this.view.byteLength - this.offset;
   }
 
   /** Ensure we have at least `n` bytes left to read */
   #ensure(n: number): void {
-    if (this.#offset + n > this.#view.byteLength) {
+    if (this.offset + n > this.view.byteLength) {
       throw new RangeError(
-        `Tried to read ${n} byte(s) at relative offset ${this.#offset}, but only ${this.remaining} byte(s) remain`
+        `Tried to read ${n} byte(s) at relative offset ${this.offset}, but only ${this.remaining} byte(s) remain`
       );
     }
   }
@@ -46,14 +42,14 @@ export default class BinaryReader {
   }
 
   readBool(): boolean {
-    const value = this.#view.getUint8(this.#offset);
-    this.#offset += 1;
+    const value = this.view.getUint8(this.offset);
+    this.offset += 1;
     return value !== 0;
   }
 
   readByte(): number {
-    const value = this.#view.getUint8(this.#offset);
-    this.#offset += 1;
+    const value = this.view.getUint8(this.offset);
+    this.offset += 1;
     return value;
   }
 
@@ -62,17 +58,17 @@ export default class BinaryReader {
     // The #view.buffer is the whole ArrayBuffer, so we need to account for the
     // #view's starting position in that buffer (#view.byteOffset) and the current #offset
     const array = new Uint8Array(
-      this.#view.buffer,
-      this.#view.byteOffset + this.#offset,
+      this.view.buffer,
+      this.view.byteOffset + this.offset,
       length
     );
-    this.#offset += length;
+    this.offset += length;
     return array;
   }
 
   readI8(): number {
-    const value = this.#view.getInt8(this.#offset);
-    this.#offset += 1;
+    const value = this.view.getInt8(this.offset);
+    this.offset += 1;
     return value;
   }
 
@@ -81,63 +77,63 @@ export default class BinaryReader {
   }
 
   readI16(): number {
-    const value = this.#view.getInt16(this.#offset, true);
-    this.#offset += 2;
+    const value = this.view.getInt16(this.offset, true);
+    this.offset += 2;
     return value;
   }
 
   readU16(): number {
-    const value = this.#view.getUint16(this.#offset, true);
-    this.#offset += 2;
+    const value = this.view.getUint16(this.offset, true);
+    this.offset += 2;
     return value;
   }
 
   readI32(): number {
-    const value = this.#view.getInt32(this.#offset, true);
-    this.#offset += 4;
+    const value = this.view.getInt32(this.offset, true);
+    this.offset += 4;
     return value;
   }
 
   readU32(): number {
-    const value = this.#view.getUint32(this.#offset, true);
-    this.#offset += 4;
+    const value = this.view.getUint32(this.offset, true);
+    this.offset += 4;
     return value;
   }
 
   readI64(): bigint {
-    const value = this.#view.getBigInt64(this.#offset, true);
-    this.#offset += 8;
+    const value = this.view.getBigInt64(this.offset, true);
+    this.offset += 8;
     return value;
   }
 
   readU64(): bigint {
-    const value = this.#view.getBigUint64(this.#offset, true);
-    this.#offset += 8;
+    const value = this.view.getBigUint64(this.offset, true);
+    this.offset += 8;
     return value;
   }
 
   readU128(): bigint {
-    const lowerPart = this.#view.getBigUint64(this.#offset, true);
-    const upperPart = this.#view.getBigUint64(this.#offset + 8, true);
-    this.#offset += 16;
+    const lowerPart = this.view.getBigUint64(this.offset, true);
+    const upperPart = this.view.getBigUint64(this.offset + 8, true);
+    this.offset += 16;
 
     return (upperPart << BigInt(64)) + lowerPart;
   }
 
   readI128(): bigint {
-    const lowerPart = this.#view.getBigUint64(this.#offset, true);
-    const upperPart = this.#view.getBigInt64(this.#offset + 8, true);
-    this.#offset += 16;
+    const lowerPart = this.view.getBigUint64(this.offset, true);
+    const upperPart = this.view.getBigInt64(this.offset + 8, true);
+    this.offset += 16;
 
     return (upperPart << BigInt(64)) + lowerPart;
   }
 
   readU256(): bigint {
-    const p0 = this.#view.getBigUint64(this.#offset, true);
-    const p1 = this.#view.getBigUint64(this.#offset + 8, true);
-    const p2 = this.#view.getBigUint64(this.#offset + 16, true);
-    const p3 = this.#view.getBigUint64(this.#offset + 24, true);
-    this.#offset += 32;
+    const p0 = this.view.getBigUint64(this.offset, true);
+    const p1 = this.view.getBigUint64(this.offset + 8, true);
+    const p2 = this.view.getBigUint64(this.offset + 16, true);
+    const p3 = this.view.getBigUint64(this.offset + 24, true);
+    this.offset += 32;
 
     return (
       (p3 << BigInt(3 * 64)) +
@@ -148,11 +144,11 @@ export default class BinaryReader {
   }
 
   readI256(): bigint {
-    const p0 = this.#view.getBigUint64(this.#offset, true);
-    const p1 = this.#view.getBigUint64(this.#offset + 8, true);
-    const p2 = this.#view.getBigUint64(this.#offset + 16, true);
-    const p3 = this.#view.getBigInt64(this.#offset + 24, true);
-    this.#offset += 32;
+    const p0 = this.view.getBigUint64(this.offset, true);
+    const p1 = this.view.getBigUint64(this.offset + 8, true);
+    const p2 = this.view.getBigUint64(this.offset + 16, true);
+    const p3 = this.view.getBigInt64(this.offset + 24, true);
+    this.offset += 32;
 
     return (
       (p3 << BigInt(3 * 64)) +
@@ -163,14 +159,14 @@ export default class BinaryReader {
   }
 
   readF32(): number {
-    const value = this.#view.getFloat32(this.#offset, true);
-    this.#offset += 4;
+    const value = this.view.getFloat32(this.offset, true);
+    this.offset += 4;
     return value;
   }
 
   readF64(): number {
-    const value = this.#view.getFloat64(this.#offset, true);
-    this.#offset += 8;
+    const value = this.view.getFloat64(this.offset, true);
+    this.offset += 8;
     return value;
   }
 

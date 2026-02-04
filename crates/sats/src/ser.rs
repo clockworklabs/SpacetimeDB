@@ -126,7 +126,7 @@ pub trait Serializer: Sized {
         assert_eq!(val.len(), value.ty().elements.len());
         let mut prod = self.serialize_named_product(val.len())?;
         for (val, el_ty) in val.iter().zip(&*value.ty().elements) {
-            prod.serialize_element(el_ty.name(), &value.with(&el_ty.algebraic_type, val))?
+            prod.serialize_element(el_ty.name().map(|n| &**n), &value.with(&el_ty.algebraic_type, val))?
         }
         prod.end()
     }
@@ -139,7 +139,7 @@ pub trait Serializer: Sized {
         let sv = sum.value();
         let (tag, val) = (sv.tag, &*sv.value);
         let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
-        self.serialize_variant(tag, var_ty.name(), &sum.with(&var_ty.algebraic_type, val))
+        self.serialize_variant(tag, var_ty.name().map(|n| &**n), &sum.with(&var_ty.algebraic_type, val))
     }
 
     /// Serialize a sum value provided the chosen `tag`, `name`, and `value`.

@@ -76,7 +76,7 @@ fn main() -> anyhow::Result<()> {
     cores.tokio.configure(&mut builder);
     let rt = builder.build().unwrap();
     cores.rayon.configure(rt.handle());
-    let database_cores = cores.databases.make_database_runners(rt.handle());
+    let database_cores = cores.databases.make_database_runners();
 
     // Keep a handle on the `database_cores` alive outside of `async_main`
     // and explicitly drop it to avoid dropping it from an `async` context -

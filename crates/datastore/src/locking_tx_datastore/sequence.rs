@@ -245,7 +245,7 @@ mod tests {
             start: params.start,
             col_pos: ColId(1),
             table_id: TableId(1),
-            sequence_name: "test_sequence".to_owned().into_boxed_str(),
+            sequence_name: "test_sequence".into(),
         };
         Sequence::new(schema, params.previous_allocation)
     }

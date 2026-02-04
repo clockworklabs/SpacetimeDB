@@ -173,7 +173,7 @@ impl BenchDatabase for SQLite {
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let statement = memo_query(BenchName::Filter, table_id, || {
-            let column: Box<str> = T::product_type().elements[col_id.into().idx()].name.take().unwrap();
+            let column = T::product_type().elements[col_id.into().idx()].name.clone().unwrap();
             format!("SELECT * FROM {table_id} WHERE {column} = ?")
         });
 
