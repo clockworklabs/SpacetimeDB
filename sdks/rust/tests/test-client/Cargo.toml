@@ -17,18 +17,17 @@ native = [
     "dep:rand",
 ]
 
-# Builds the wasm-bindgen-test based client tests.
-wasm = [
-    "spacetimedb-sdk/web",
-    "dep:wasm-bindgen-test",
-    "dep:wasm-bindgen-futures",
-    "dep:js-sys",
+# Builds the client for `wasm32-wasi` so it can be executed via `wasmtime`.
+wasi = [
+    "dep:test-counter",
+    "dep:tokio",
+    "dep:env_logger",
+    "dep:rand",
 ]
 
 [[bin]]
 name = "test-client"
 path = "src/main.rs"
-required-features = ["native"]
 
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
@@ -38,10 +37,6 @@ test-counter = { path = "../test-counter", optional = true }
 tokio = { workspace = true, optional = true }
 env_logger = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-
-wasm-bindgen-test = { version = "0.3", optional = true }
-wasm-bindgen-futures = { version = "0.4", optional = true }
-js-sys = { version = "0.3", optional = true }
 
 [lints]
 workspace = true

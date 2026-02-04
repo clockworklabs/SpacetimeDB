@@ -103,6 +103,14 @@ pub struct Test {
     /// - `SPACETIME_SDK_TEST_CLIENT_PROJECT` bound to the `client_project` path.
     /// - `SPACETIME_SDK_TEST_DB_NAME` bound to the database identity or name.
     run_command: String,
+
+    client_runner: ClientRunner,
+}
+
+#[derive(Clone)]
+enum ClientRunner {
+    Default,
+    Wasi { wasm_path: String },
 }
 
 pub const TEST_MODULE_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_MODULE_PROJECT";
@@ -135,7 +143,7 @@ impl Test {
 
         let db_name = publish_module(paths, &file, host_type);
 
-        run_client(&self.run_command, &self.client_project, &db_name);
+        run_client(&self.client_runner, &self.run_command, &self.client_project, &db_name);
     }
 }
 
@@ -376,31 +384,67 @@ fn compile_client(compile_command: &str, client_project: &str) {
     })
 }
 
-fn run_client(run_command: &str, client_project: &str, db_name: &str) {
-    let (exe, args) = split_command_string(run_command);
+fn run_client(runner: &ClientRunner, run_command: &str, client_project: &str, db_name: &str) {
+    match runner {
+        ClientRunner::Default => {
+            let (exe, args) = split_command_string(run_command);
 
-    let is_wasm32_unknown_unknown = run_command.contains("--target wasm32-unknown-unknown");
+            let is_wasm32_unknown_unknown = run_command.contains("--target wasm32-unknown-unknown");
 
-    let mut command = cmd(exe, args);
-    if is_wasm32_unknown_unknown {
-        command = command.env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER", "wasm-bindgen-test-runner");
+            let mut command = cmd(exe, args);
+            if is_wasm32_unknown_unknown {
+                command = command.env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER", "wasm-bindgen-test-runner");
+            }
+
+            let output = command
+                .dir(client_project)
+                .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
+                .env(TEST_DB_NAME_ENV_VAR, db_name)
+                .env(
+                    "RUST_LOG",
+                    "spacetimedb=debug,spacetimedb_client_api=debug,spacetimedb_lib=debug,spacetimedb_standalone=debug",
+                )
+                .stderr_to_stdout()
+                .stdout_capture()
+                .unchecked()
+                .run()
+                .expect("Error running run command");
+
+            status_ok_or_panic(output, run_command, "(running)");
+        }
+        ClientRunner::Wasi { wasm_path } => {
+            let (exe, args) = split_command_string(run_command);
+
+            let rust_log =
+                "spacetimedb=debug,spacetimedb_client_api=debug,spacetimedb_lib=debug,spacetimedb_standalone=debug";
+
+            let mut wasmtime_args: Vec<String> = vec![
+                "run".to_owned(),
+                "--dir".to_owned(),
+                client_project.to_owned(),
+                "--env".to_owned(),
+                format!("{}={}", TEST_CLIENT_PROJECT_ENV_VAR, client_project),
+                "--env".to_owned(),
+                format!("{}={}", TEST_DB_NAME_ENV_VAR, db_name),
+                "--env".to_owned(),
+                format!("RUST_LOG={rust_log}"),
+                wasm_path.clone(),
+                "--".to_owned(),
+            ];
+            wasmtime_args.push(exe);
+            wasmtime_args.extend(args);
+
+            let output = cmd("wasmtime", wasmtime_args)
+                .dir(client_project)
+                .stderr_to_stdout()
+                .stdout_capture()
+                .unchecked()
+                .run()
+                .expect("Error running WASI client via wasmtime");
+
+            status_ok_or_panic(output, run_command, "(running wasi)");
+        }
     }
-
-    let output = command
-        .dir(client_project)
-        .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
-        .env(TEST_DB_NAME_ENV_VAR, db_name)
-        .env(
-            "RUST_LOG",
-            "spacetimedb=debug,spacetimedb_client_api=debug,spacetimedb_lib=debug,spacetimedb_standalone=debug",
-        )
-        .stderr_to_stdout()
-        .stdout_capture()
-        .unchecked()
-        .run()
-        .expect("Error running run command");
-
-    status_ok_or_panic(output, run_command, "(running)");
 }
 
 #[derive(Clone, Default)]
@@ -412,6 +456,8 @@ pub struct TestBuilder {
     generate_subdir: Option<String>,
     compile_command: Option<String>,
     run_command: Option<String>,
+
+    client_runner: Option<ClientRunner>,
 }
 
 impl TestBuilder {
@@ -472,6 +518,15 @@ impl TestBuilder {
         }
     }
 
+    pub fn with_wasi_client(self, wasm_path: impl Into<String>) -> Self {
+        TestBuilder {
+            client_runner: Some(ClientRunner::Wasi {
+                wasm_path: wasm_path.into(),
+            }),
+            ..self
+        }
+    }
+
     pub fn build(self) -> Test {
         let generate_language = self
             .generate_language
@@ -502,6 +557,8 @@ impl TestBuilder {
             run_command: self
                 .run_command
                 .expect("Supply a run command using TestBuilder::with_run_command"),
+
+            client_runner: self.client_runner.unwrap_or(ClientRunner::Default),
         }
     }
 }
