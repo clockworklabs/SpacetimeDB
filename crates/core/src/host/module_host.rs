@@ -57,9 +57,11 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
@@ -181,7 +183,7 @@ impl EventStatus {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleFunctionCall {
-    pub reducer: ReducerName,
+    pub reducer: Option<ReducerName>,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
@@ -189,7 +191,7 @@ pub struct ModuleFunctionCall {
 impl ModuleFunctionCall {
     pub fn update() -> Self {
         Self {
-            reducer: ReducerName::new_from_str("update"),
+            reducer: None,
             reducer_id: u32::MAX.into(),
             args: ArgsTuple::nullary(),
         }
@@ -530,7 +532,7 @@ pub fn call_identity_connected(
     let reducer_lookup = module.module_def.lifecycle_reducer(Lifecycle::OnConnect);
     let stdb = module.relational_db();
     let workload = Workload::reducer_no_args(
-        "call_identity_connected",
+        ReducerName::new(Identifier::new_assume_valid("call_identity_connected".into())),
         caller_auth.claims.identity,
         caller_connection_id,
     );
@@ -678,11 +680,11 @@ pub enum ViewCommandResult {
 
     Sql {
         result: Result<SqlResult, DBError>,
-        head: Vec<(Box<str>, AlgebraicType)>,
+        head: Vec<(RawIdentifier, AlgebraicType)>,
     },
 }
 pub struct CallViewParams {
-    pub view_name: Box<str>,
+    pub view_name: Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1286,12 +1288,12 @@ impl ModuleHost {
         let reducer_lookup = info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
         let reducer_name = reducer_lookup
             .as_ref()
-            .map(|(_, def)| &*def.name)
-            .unwrap_or("__identity_disconnected__");
+            .map(|(_, def)| def.name.clone())
+            .unwrap_or_else(|| ReducerName::new(Identifier::new_assume_valid("__identity_disconnected__".into())));
 
         let is_client_exist = |mut_tx: &MutTxId| mut_tx.st_client_row(caller_identity, caller_connection_id).is_some();
 
-        let workload = || Workload::reducer_no_args(reducer_name, caller_identity, caller_connection_id);
+        let workload = || Workload::reducer_no_args(reducer_name.clone(), caller_identity, caller_connection_id);
 
         // Decrement the number of subscribers for each view this caller is subscribed to
         let dec_view_subscribers = |tx: &mut MutTxId| {
@@ -1327,7 +1329,7 @@ impl ModuleHost {
                 );
                 InvalidReducerArguments(InvalidFunctionArguments {
                     err: err.into(),
-                    function_name: reducer_name.into(),
+                    function_name: reducer_name.clone().into(),
                 })
                 .into()
             })
@@ -1651,7 +1653,7 @@ impl ModuleHost {
         sql_text: String,
         auth: AuthCtx,
         subs: Option<ModuleSubscriptions>,
-        head: &mut Vec<(Box<str>, AlgebraicType)>,
+        head: &mut Vec<(RawIdentifier, AlgebraicType)>,
     ) -> Result<SqlResult, DBError> {
         let cmd = ViewCommand::Sql {
             db,
@@ -1800,7 +1802,7 @@ impl ModuleHost {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name = st_view_row.view_name;
+            let view_name = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
@@ -1875,7 +1877,7 @@ impl ModuleHost {
     fn call_view<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &str,
+        view_name: &Identifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
@@ -1910,7 +1912,7 @@ impl ModuleHost {
     fn call_view_inner<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        name: &str,
+        name: &Identifier,
         view_id: ViewId,
         table_id: TableId,
         fn_ptr: ViewFnPtr,
@@ -1919,7 +1921,7 @@ impl ModuleHost {
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        let view_name = name.to_owned().into_boxed_str();
+        let view_name = name.clone();
         let params = CallViewParams {
             timestamp: Timestamp::now(),
             view_name,

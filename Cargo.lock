@@ -1915,12 +1915,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
-name = "ecow"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78e4f79b296fbaab6ce2e22d52cb4c7f010fe0ebe7a32e34fa25885fd797bd02"
-
-[[package]]
 name = "educe"
 version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3616,6 +3610,17 @@ name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
+name = "lean_string"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "962df00ba70ac8d5ca5c064e17e5c3d090c087fd8d21aa45096c716b169da514"
+dependencies = [
+ "castaway",
+ "itoa",
+ "ryu",
+]
 
 [[package]]
 name = "leb128"
@@ -8152,6 +8157,7 @@ dependencies = [
  "ethnum",
  "hex",
  "itertools 0.12.1",
+ "lean_string",
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
@@ -8174,13 +8180,13 @@ version = "1.12.0"
 dependencies = [
  "anyhow",
  "derive_more 0.99.20",
- "ecow",
  "enum-as-inner",
  "enum-map",
  "indexmap 2.12.0",
  "insta",
  "itertools 0.12.1",
  "lazy_static",
+ "lean_string",
  "petgraph 0.6.5",
  "proptest",
  "serde_json",
@@ -11077,6 +11083,14 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",
+]
+
+[[package]]
+name = "xtask-smoketest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
 ]
 
 [[package]]

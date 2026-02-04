@@ -7,7 +7,6 @@ use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
-use core::ops::Deref;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
@@ -283,7 +282,12 @@ impl ToProtocol for TransactionUpdateMessage {
                 status,
                 caller_identity: event.caller_identity,
                 reducer_call: ws::ReducerCallInfo {
-                    reducer_name: event.function_call.reducer.deref().into(),
+                    reducer_name: event
+                        .function_call
+                        .reducer
+                        .as_ref()
+                        .map(|r| (&**r).into())
+                        .unwrap_or_default(),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id,
