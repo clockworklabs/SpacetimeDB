@@ -1,7 +1,16 @@
 # SpacetimeDB C++ Module Library CMake Configuration
 
 cmake_minimum_required(VERSION 3.15)
-project(SpacetimeDBCppModuleLibrary CXX)
+project(SpacetimeDBCppModuleLibrary 
+    VERSION 1.12.0
+    LANGUAGES CXX)
+
+# Generate version header from template
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/spacetimedb/version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/spacetimedb/version.h
+    @ONLY
+)
 
 # Module Library source files
 set(LIBRARY_SOURCES
@@ -25,6 +34,7 @@ target_compile_features(spacetimedb_cpp_library PUBLIC cxx_std_20)
 target_include_directories(spacetimedb_cpp_library
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
 
