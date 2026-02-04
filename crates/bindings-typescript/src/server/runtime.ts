@@ -24,35 +24,26 @@ import {
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
-import { callProcedure as callProcedure } from './procedures';
+import { callProcedure } from './procedures';
 import {
-  REDUCERS,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
   type ReducerCtx,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
-import {
-  MODULE_DEF,
-  getRegisteredSchema,
-  type UntypedSchemaDef,
-} from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize, hasOwn, toCamelCase } from '../lib/util';
-import {
-  ANON_VIEWS,
-  VIEWS,
-  type AnonymousViewCtx,
-  type ViewCtx,
-} from '../lib/views';
+import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
 import { makeRandom, type Random } from './rng';
+import { getRegisteredSchema } from './schema';
 
 const { freeze } = Object;
 
@@ -271,13 +262,18 @@ let reducerArgsDeserializers: Deserializer<any>[];
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
-    RawModuleDef.serialize(writer, RawModuleDef.V9(MODULE_DEF));
+    RawModuleDef.serialize(
+      writer,
+      RawModuleDef.V9(getRegisteredSchema().moduleDef)
+    );
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
+    const moduleCtx = getRegisteredSchema();
     if (reducerArgsDeserializers == null) {
-      reducerArgsDeserializers = MODULE_DEF.reducers.map(({ params }) =>
-        ProductType.makeDeserializer(params, MODULE_DEF.typespace)
+      reducerArgsDeserializers = moduleCtx.moduleDef.reducers.map(
+        ({ params }) =>
+          ProductType.makeDeserializer(params, moduleCtx.typespace)
       );
     }
     const deserializeArgs = reducerArgsDeserializers[reducerId];
@@ -289,7 +285,11 @@ export const hooks: ModuleHooks = {
       ConnectionId.nullIfZero(new ConnectionId(connId))
     );
     try {
-      return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };
+      return (
+        callUserFunction(moduleCtx.reducers[reducerId], ctx, args) ?? {
+          tag: 'ok',
+        }
+      );
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
@@ -301,15 +301,16 @@ export const hooks: ModuleHooks = {
 
 export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
   __call_view__(id, sender, argsBuf) {
+    const moduleCtx = getRegisteredSchema();
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
-      VIEWS[id];
+      moduleCtx.views[id];
     const ctx: ViewCtx<any> = freeze({
       sender: new Identity(sender),
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
-      from: makeQueryBuilder(getRegisteredSchema()),
+      from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
@@ -324,14 +325,15 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     return { data: retBuf.getBuffer() };
   },
   __call_view_anon__(id, argsBuf) {
+    const moduleCtx = getRegisteredSchema();
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
-      ANON_VIEWS[id];
+      moduleCtx.anonViews[id];
     const ctx: AnonymousViewCtx<any> = freeze({
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
-      from: makeQueryBuilder(getRegisteredSchema()),
+      from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
@@ -350,6 +352,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
 export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
   __call_procedure__(id, sender, connection_id, timestamp, args) {
     return callProcedure(
+      getRegisteredSchema(),
       id,
       new Identity(sender),
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
@@ -361,7 +364,7 @@ export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
 
 let DB_VIEW: DbView<any> | null = null;
 function getDbView() {
-  DB_VIEW ??= makeDbView(MODULE_DEF);
+  DB_VIEW ??= makeDbView(getRegisteredSchema().moduleDef);
   return DB_VIEW;
 }
 
