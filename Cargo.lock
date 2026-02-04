@@ -445,6 +445,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "basic-rs-template-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb 1.12.0",
+]
+
+[[package]]
 name = "benchmarks-module"
 version = "0.1.0"
 dependencies = [
@@ -2040,6 +2048,12 @@ checksum = "1bf3c259d255ca70051b30e2e95b5446cdb8949ac4cd22c0d7fd634d89f568e2"
 dependencies = [
  "log",
 ]
+
+[[package]]
+name = "env_home"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
 
 [[package]]
 name = "env_logger"
@@ -7448,7 +7462,6 @@ name = "spacetimedb-cli"
 version = "1.12.0"
 dependencies = [
  "anyhow",
- "assert_cmd",
  "base64 0.21.7",
  "bytes",
  "cargo_metadata",
@@ -7474,7 +7487,6 @@ dependencies = [
  "names",
  "notify 7.0.0",
  "percent-encoding",
- "predicates",
  "pretty_assertions",
  "quick-xml 0.31.0",
  "regex",
@@ -7491,7 +7503,6 @@ dependencies = [
  "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
- "spacetimedb-guard",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 1.12.0",
  "spacetimedb-paths",
@@ -8224,6 +8235,24 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",
+]
+
+[[package]]
+name = "spacetimedb-smoketests"
+version = "1.12.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "cargo_metadata",
+ "predicates",
+ "regex",
+ "serde_json",
+ "spacetimedb-guard",
+ "tempfile",
+ "tokio",
+ "tokio-postgres",
+ "toml 0.8.23",
+ "which 8.0.0",
 ]
 
 [[package]]
@@ -10371,6 +10400,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fabb953106c3c8eea8306e4393700d7657561cb43122571b172bbfb7c7ba1d"
+dependencies = [
+ "env_home",
+ "rustix 1.1.2",
+ "winsafe",
+]
+
+[[package]]
 name = "whoami"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11043,6 +11083,14 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",
+]
+
+[[package]]
+name = "xtask-smoketest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
 ]
 
 [[package]]

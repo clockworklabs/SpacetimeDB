@@ -87,9 +87,6 @@ notify.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 fs_extra.workspace = true
-assert_cmd = "2"
-predicates = "3"
-spacetimedb-guard.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
