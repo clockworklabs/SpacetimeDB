@@ -136,6 +136,9 @@ fn build_precompiled_modules() -> Result<()> {
 const DEFAULT_PARALLELISM: &str = "16";
 
 fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Result<()> {
+    // 1. Build binaries first (single process, no race)
+    build_binaries()?;
+
     // 4. Detect whether to use nextest or cargo test
     let use_nextest = Command::new("cargo")
         .args(["nextest", "--version"])
