@@ -1,0 +1,25 @@
+[package]
+name = "spacetimedb-smoketests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Test utilities (needed in lib for test helpers)
+spacetimedb-guard.workspace = true
+tempfile.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+regex.workspace = true
+anyhow.workspace = true
+which = "8.0.0"
+
+[dev-dependencies]
+cargo_metadata.workspace = true
+assert_cmd = "2"
+predicates = "3"
+tokio.workspace = true
+tokio-postgres.workspace = true
+
+[lints]
+workspace = true

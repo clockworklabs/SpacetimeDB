@@ -2,6 +2,7 @@
 //!
 //! This notably excludes `Ref` types.
 
+use crate::raw_identifier::RawIdentifier;
 use crate::{i256, u256, ProductTypeElement, SumTypeVariant};
 use crate::{
     AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumType, SumValue,
@@ -71,7 +72,7 @@ fn generate_algebraic_type_from_leaves(
                     .enumerate()
                     .map(|(i, ty)| ProductTypeElement {
                         // Generate names because the validation code in the `schema` crate requires them.
-                        name: Some(format!("field_{i}").into()),
+                        name: Some(RawIdentifier::new(format!("field_{i}"))),
                         algebraic_type: ty
                     })
                     .collect())
@@ -83,7 +84,7 @@ fn generate_algebraic_type_from_leaves(
                     .into_iter()
                     .enumerate()
                     .map(|(i, ty)| SumTypeVariant {
-                        name: Some(format!("variant_{i}").into()),
+                        name: Some(RawIdentifier::new(format!("variant_{i}"))),
                         algebraic_type: ty
                     })
                     .collect::<Vec<_>>())
