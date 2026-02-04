@@ -23,6 +23,7 @@ use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
+use core::panic;
 use parking_lot::RwLock;
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use scopeguard::ScopeGuard;
@@ -41,7 +42,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
 use spacetimedb_table::static_assert_size;
-use core::panic;
 use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
@@ -867,7 +867,8 @@ impl ModuleSubscriptions {
         message: ProcedureResultMessage,
         tx_offset: Option<TransactionOffset>,
     ) -> Result<(), BroadcastError> {
-        self.broadcast_queue.send_client_message_v1(recipient, tx_offset, message)
+        self.broadcast_queue
+            .send_client_message_v1(recipient, tx_offset, message)
     }
 
     /// Add a subscription consisting of multiple queries.
@@ -884,12 +885,8 @@ impl ModuleSubscriptions {
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         match host {
-            Some(host) => {
-                host.call_view_add_v2_subscription(sender, auth, request, timer)
-                    .await
-            }
-            None => 
-            panic!("v2 subscriptions without a module host are not supported yet"),
+            Some(host) => host.call_view_add_v2_subscription(sender, auth, request, timer).await,
+            None => panic!("v2 subscriptions without a module host are not supported yet"),
             // self
             //     .add_multi_subscription_inner::<host::wasmtime::WasmtimeInstance>(
             //         None, sender, auth, request, timer, _assert,
@@ -962,12 +959,14 @@ impl ModuleSubscriptions {
         // Send an error message to the client
         // TODO: update for v2
         let send_err_msg = |message| {
-            let _ = self.broadcast_queue.send_client_message_v2(sender.clone(), None, 
+            let _ = self.broadcast_queue.send_client_message_v2(
+                sender.clone(),
+                None,
                 ws_v2::SubscriptionError {
                     request_id: Some(request.request_id),
                     query_set_id: request.query_set_id,
-                    error: message
-                }
+                    error: message,
+                },
             );
         };
         let subscription_metrics = &self.metrics.subscribe;
@@ -1003,7 +1002,6 @@ impl ModuleSubscriptions {
         };
 
         todo!()
-
     }
     fn add_multi_subscription_inner<I: WasmInstance>(
         &self,
@@ -1319,9 +1317,9 @@ impl ModuleSubscriptions {
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
 
-                    let _ = self
-                        .broadcast_queue
-                        .send_client_message_v1(client, Some(from_tx_offset(tx_offset)), message);
+                    let _ =
+                        self.broadcast_queue
+                            .send_client_message_v1(client, Some(from_tx_offset(tx_offset)), message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }

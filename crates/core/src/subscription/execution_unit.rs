@@ -7,7 +7,8 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue,
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, RowListLen as _};
+use spacetimedb_client_api_messages::websocket::common::RowListLen as _;
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;

@@ -7,8 +7,9 @@ use crate::subscription::websocket_building::{brotli_compress, decide_compressio
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
-use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, RowListLen as _};
-use spacetimedb_client_api_messages::websocket::{v2 as ws_v2};
+use spacetimedb_client_api_messages::websocket::common::RowListLen as _;
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
+use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;

@@ -5,7 +5,8 @@ use metrics::QueryMetrics;
 use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, ByteListLen as _};
+use spacetimedb_client_api_messages::websocket::common::ByteListLen as _;
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_datastore::{
     db_metrics::DB_METRICS, execution_context::WorkloadType, locking_tx_datastore::datastore::MetricsRecorder,
 };

@@ -230,7 +230,10 @@ impl QueryState {
 
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
-        itertools::chain(itertools::chain(&self.legacy_subscribers, &self.subscriptions), &self.v2_subscriptions)
+        itertools::chain(
+            itertools::chain(&self.legacy_subscribers, &self.subscriptions),
+            &self.v2_subscriptions,
+        )
     }
 
     /// Return the [`Query`] for this [`QueryState`]
@@ -1625,9 +1628,8 @@ impl SendWorker {
         errs: Vec<(ClientId, Box<str>)>,
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
-
     ) {
-                use ws_v1::FormatSwitch::{Bsatn, Json};
+        use ws_v1::FormatSwitch::{Bsatn, Json};
 
         let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
@@ -1753,13 +1755,12 @@ impl SendWorker {
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) {
-
         // Track these just in case we also get some updates for these subscriptions.
-        let subscriptions_with_errors: HashSet<&SubscriptionIdV2> = v2_errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+        let subscriptions_with_errors: HashSet<&SubscriptionIdV2> =
+            v2_errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
         type UpdateMapKey = (ClientId, ClientQuerySetId, TableName);
-        let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::QueryUpdate>> = BTreeMap::new();
-        
+        let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::TableUpdateRows>> = BTreeMap::new();
     }
 
     fn send_one_computed_queries(

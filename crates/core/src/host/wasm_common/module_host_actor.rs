@@ -1022,8 +1022,12 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-            ViewCommand::AddSubscriptionV2 { sender, auth, request, timer } => {
-
+            ViewCommand::AddSubscriptionV2 {
+                sender,
+                auth,
+                request,
+                timer,
+            } => {
                 let res = info
                     .subscriptions
                     .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);

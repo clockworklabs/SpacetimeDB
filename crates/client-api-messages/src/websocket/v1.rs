@@ -1,11 +1,13 @@
-pub use super::common::{CallProcedureFlags, Compression, QuerySetId as QueryId};
-use crate::energy::EnergyQuanta;
+pub use super::common::{
+    BsatnRowList, CallProcedureFlags, Compression, QuerySetId as QueryId, RowOffset, RowSize, RowSizeHint,
+};
+use crate::{
+    energy::EnergyQuanta,
+    websocket::common::{ByteListLen, RowListLen},
+};
 use bytes::Bytes;
 use bytestring::ByteString;
-use core::{
-    fmt::Debug,
-    ops::{Deref, Range},
-};
+use core::{fmt::Debug, ops::Deref};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
@@ -20,35 +22,6 @@ use std::sync::Arc;
 
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
 pub const BIN_PROTOCOL: &str = "v1.bsatn.spacetimedb";
-
-pub trait RowListLen {
-    /// Returns the length, in number of rows, not bytes, of the row list.
-    fn len(&self) -> usize;
-    /// Returns whether the list is empty or not.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-impl<T, L: Deref<Target = [T]>> RowListLen for L {
-    fn len(&self) -> usize {
-        self.deref().len()
-    }
-    fn is_empty(&self) -> bool {
-        self.deref().is_empty()
-    }
-}
-
-pub trait ByteListLen {
-    /// Returns the uncompressed size of the list in bytes
-    fn num_bytes(&self) -> usize;
-}
-
-impl ByteListLen for Vec<ByteString> {
-    fn num_bytes(&self) -> usize {
-        self.iter().map(|str| str.len()).sum()
-    }
-}
 
 /// A format / codec used by the websocket API.
 ///
@@ -790,129 +763,4 @@ impl WebsocketFormat for BsatnFormat {
     type Single = Box<[u8]>;
     type List = BsatnRowList;
     type QueryUpdate = CompressableQueryUpdate<Self>;
-}
-
-pub type RowSize = u16;
-pub type RowOffset = u64;
-
-/// A packed list of BSATN-encoded rows.
-#[derive(SpacetimeType, Debug, Clone, Default)]
-#[sats(crate = spacetimedb_lib)]
-pub struct BsatnRowList {
-    /// A size hint about `rows_data`
-    /// intended to facilitate parallel decode purposes on large initial updates.
-    size_hint: RowSizeHint,
-    /// The flattened byte array for a list of rows.
-    rows_data: Bytes,
-}
-
-impl BsatnRowList {
-    /// Returns a new row list where `rows_data` is the flattened byte array
-    /// containing the BSATN of each row, without any markers for where a row begins and end.
-    ///
-    /// The `size_hint` encodes the boundaries of each row in `rows_data`.
-    /// See [`RowSizeHint`] for more details on the encoding.
-    pub fn new(size_hint: RowSizeHint, rows_data: Bytes) -> Self {
-        Self { size_hint, rows_data }
-    }
-}
-
-/// NOTE(centril, 1.0): We might want to add a `None` variant to this
-/// where the client has to decode in a loop until `rows_data` has been exhausted.
-/// The use-case for this is clients who are bandwidth limited and where every byte counts.
-#[derive(SpacetimeType, Debug, Clone)]
-#[sats(crate = spacetimedb_lib)]
-pub enum RowSizeHint {
-    /// Each row in `rows_data` is of the same fixed size as specified here.
-    FixedSize(RowSize),
-    /// The offsets into `rows_data` defining the boundaries of each row.
-    /// Only stores the offset to the start of each row.
-    /// The ends of each row is inferred from the start of the next row, or `rows_data.len()`.
-    /// The behavior of this is identical to that of `PackedStr`.
-    RowOffsets(Arc<[RowOffset]>),
-}
-
-impl Default for RowSizeHint {
-    fn default() -> Self {
-        Self::RowOffsets([].into())
-    }
-}
-
-impl RowSizeHint {
-    fn index_to_range(&self, index: usize, data_end: usize) -> Option<Range<usize>> {
-        match self {
-            Self::FixedSize(size) => {
-                let size = *size as usize;
-                let start = index * size;
-                if start >= data_end {
-                    // We've reached beyond `data_end`,
-                    // so this is a row that doesn't exist, so we are beyond the count.
-                    return None;
-                }
-                let end = (index + 1) * size;
-                Some(start..end)
-            }
-            Self::RowOffsets(offsets) => {
-                let offsets = offsets.as_ref();
-                let start = *offsets.get(index)? as usize;
-                // The end is either the start of the next element or the end.
-                let end = offsets.get(index + 1).map(|e| *e as usize).unwrap_or(data_end);
-                Some(start..end)
-            }
-        }
-    }
-}
-
-impl RowListLen for BsatnRowList {
-    fn len(&self) -> usize {
-        match &self.size_hint {
-            // `size != 0` is always the case for `FixedSize`.
-            RowSizeHint::FixedSize(size) => self.rows_data.as_ref().len() / *size as usize,
-            RowSizeHint::RowOffsets(offsets) => offsets.as_ref().len(),
-        }
-    }
-}
-
-impl ByteListLen for BsatnRowList {
-    /// Returns the uncompressed size of the list in bytes
-    fn num_bytes(&self) -> usize {
-        self.rows_data.as_ref().len()
-    }
-}
-
-impl BsatnRowList {
-    /// Returns the element at `index` in the list.
-    pub fn get(&self, index: usize) -> Option<Bytes> {
-        let data_end = self.rows_data.len();
-        let data_range = self.size_hint.index_to_range(index, data_end)?;
-        Some(self.rows_data.slice(data_range))
-    }
-
-    /// Consumes the list and returns the parts.
-    pub fn into_inner(self) -> (RowSizeHint, Bytes) {
-        (self.size_hint, self.rows_data)
-    }
-}
-
-/// An iterator over all the elements in a [`BsatnRowList`].
-pub struct BsatnRowListIter<'a> {
-    list: &'a BsatnRowList,
-    index: usize,
-}
-
-impl<'a> IntoIterator for &'a BsatnRowList {
-    type IntoIter = BsatnRowListIter<'a>;
-    type Item = Bytes;
-    fn into_iter(self) -> Self::IntoIter {
-        BsatnRowListIter { list: self, index: 0 }
-    }
-}
-
-impl Iterator for BsatnRowListIter<'_> {
-    type Item = Bytes;
-    fn next(&mut self) -> Option<Self::Item> {
-        let index = self.index;
-        self.index += 1;
-        self.list.get(index)
-    }
 }

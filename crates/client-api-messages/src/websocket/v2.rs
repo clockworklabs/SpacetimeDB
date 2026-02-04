@@ -1,4 +1,4 @@
-pub use super::common::{CallProcedureFlags, QuerySetId};
+pub use super::common::{BsatnRowList, CallProcedureFlags, QuerySetId};
 use bytes::Bytes;
 use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
 pub use spacetimedb_sats::SpacetimeType;
@@ -231,7 +231,7 @@ pub struct QueryRows {
 #[sats(crate = spacetimedb_lib)]
 pub struct SingleTableRows {
     pub table: Box<str>,
-    pub rows: Box<[Bytes]>,
+    pub rows: BsatnRowList,
 }
 
 /// Server response to a client [`Unsubscribe`] request.
@@ -249,7 +249,7 @@ pub struct UnsubscribeApplied {
     /// The ID included in the `SubscribeApplied` and `Unsubscribe` messages.
     pub query_set_id: QuerySetId,
     /// Rows to be removed from the client cache. Only populated if the Unsubscribe message requested it.
-    pub rows: Option<QueryRows>, 
+    pub rows: Option<QueryRows>,
 }
 
 /// Server response to an error at any point of the subscription lifecycle.
@@ -337,14 +337,14 @@ pub enum TableUpdateRows {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct PersistentTableRows {
-    pub inserts: Box<[Bytes]>,
-    pub deletes: Box<[Bytes]>,
+    pub inserts: BsatnRowList,
+    pub deletes: BsatnRowList,
 }
 
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct EventTableRows {
-    pub events: Box<[Bytes]>,
+    pub events: BsatnRowList,
 }
 
 /// Response to [`Subscribe`] containing the initial matching rows.
