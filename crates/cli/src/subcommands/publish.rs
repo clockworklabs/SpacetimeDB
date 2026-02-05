@@ -207,7 +207,15 @@ fn confirm_and_clear(
     Ok(builder)
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    exec_with_options(config, args, false).await
+}
+
+/// This function can be used when calling publish programatically rather than straight from the
+/// CLI, like we do in `spacetime dev`. When calling from `spacetime dev` we don't want to display
+/// information about using the `spacetime.json` file as it's already announced as part of the
+/// `dev` command
+pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_config: bool) -> Result<(), anyhow::Error> {
     // Build schema
     let cmd = cli();
     let schema = build_publish_schema(&cmd)?;
@@ -215,7 +223,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Get publish configs (from spacetime.json or empty)
     let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
     let (using_config, publish_configs) = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
-        println!("Using configuration from {}", config_path.display());
+        if !quiet_config {
+            println!("Using configuration from {}", config_path.display());
+        }
         (true, get_filtered_publish_configs(spacetime_config, &schema, args)?)
     } else {
         (

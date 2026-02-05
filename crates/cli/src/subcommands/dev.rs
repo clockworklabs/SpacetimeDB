@@ -280,13 +280,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else if let Some(cmd) = args.get_one::<String>("dev-run") {
         // Explicit CLI flag takes priority
         Some(cmd.clone())
-    } else if let Some(cmd) = SpacetimeConfig::load_from_dir(&project_dir)
-        .ok()
-        .flatten()
-        .and_then(|c| c.dev_run)
-    {
-        // Config file exists with dev_run command
-        Some(cmd)
+    } else if let Some(config) = SpacetimeConfig::load_from_dir(&project_dir).ok().flatten() {
+        // Config file exists
+        let config_path = project_dir.join("spacetime.json");
+        println!("{} Using configuration from {}", "✓".green(), config_path.display());
+        config.dev_run
     } else if let Some((detected_cmd, _detected_pm)) = detect_client_command(&project_dir) {
         // No config - detect and save for future runs
         let config = SpacetimeConfig::with_run_command(&detected_cmd);
@@ -516,7 +514,13 @@ async fn generate_build_and_publish(
         "--out-dir",
         module_bindings_dir.to_str().unwrap(),
     ]);
-    generate::exec(config.clone(), &generate_args).await?;
+    generate::exec_ex(
+        config.clone(),
+        &generate_args,
+        crate::generate::extract_descriptions,
+        true,
+    )
+    .await?;
 
     println!("{}", "Publishing...".cyan());
 
@@ -542,7 +546,7 @@ async fn generate_build_and_publish(
         .try_get_matches_from(publish_args)
         .context("Failed to create publish arguments")?;
 
-    publish::exec(config.clone(), &publish_matches).await?;
+    publish::exec_with_options(config.clone(), &publish_matches, true).await?;
 
     println!("{}", "Published successfully!".green().bold());
     println!("{}", "---".dimmed());

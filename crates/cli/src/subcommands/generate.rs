@@ -195,7 +195,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
-    exec_ex(config, args, extract_descriptions).await
+    exec_ex(config, args, extract_descriptions, false).await
 }
 
 /// Like `exec`, but lets you specify a custom a function to extract a schema from a file.
@@ -203,6 +203,7 @@ pub async fn exec_ex(
     config: Config,
     args: &clap::ArgMatches,
     extract_descriptions: ExtractDescriptions,
+    quiet_config: bool,
 ) -> anyhow::Result<()> {
     // Build schema
     let cmd = cli();
@@ -211,7 +212,9 @@ pub async fn exec_ex(
     // Get generate configs (from spacetime.json or empty)
     let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
     let generate_configs = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
-        println!("Using configuration from {}", config_path.display());
+        if !quiet_config {
+            println!("Using configuration from {}", config_path.display());
+        }
         get_filtered_generate_configs(spacetime_config, &schema, args)?
     } else {
         vec![CommandConfig::new(&schema, HashMap::new())?]
@@ -452,7 +455,7 @@ impl Language {
 }
 
 pub type ExtractDescriptions = fn(&Path) -> anyhow::Result<ModuleDef>;
-fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
+pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
     let bin_path = resolve_sibling_binary("spacetimedb-standalone")?;
     let child = Command::new(&bin_path)
         .arg("extract-schema")
