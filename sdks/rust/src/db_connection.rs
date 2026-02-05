@@ -19,7 +19,7 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::{
-    Event, ReducerEvent, Status,
+    Event,
     __codegen::InternalError,
     callbacks::{
         CallbackId, DbCallbacks, ProcedureCallback, ProcedureCallbacks, ReducerCallback, ReducerCallbacks, RowCallback,
@@ -62,7 +62,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     pub(crate) inner: SharedCell<DbContextImplInner<M>>,
 
     /// None if we have disconnected.
-    pub(crate) send_chan: SharedCell<Option<mpsc::UnboundedSender<ws::v1::ClientMessage<Bytes>>>>,
+    pub(crate) send_chan: SharedCell<Option<mpsc::UnboundedSender<ws::v2::ClientMessage>>>,
 
     /// The client cache, which stores subscribed rows.
     cache: SharedCell<ClientCache<M>>,
@@ -84,12 +84,12 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     /// This connection's `Identity`.
     ///
     /// May be `None` if we connected anonymously
-    /// and have not yet received the [`ws::v1::IdentityToken`] message.
+    /// and have not yet received the [`ws::v2::InitialConnection`] message.
     identity: SharedCell<Option<Identity>>,
 
     /// This connection's `ConnectionId`.
     ///
-    /// This may be none if we have not yet received the [`ws::v1::IdentityToken`] message.
+    /// This may be none if we have not yet received the [`ws::v2::InitialConnection`] message.
     connection_id: SharedCell<Option<ConnectionId>>,
 }
 
@@ -299,26 +299,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
             PendingMutation::Subscribe {
-                on_applied,
-                queries,
-                sub_id,
-                on_error,
-            } => {
-                let mut inner = self.inner.lock().unwrap();
-                inner
-                    .subscriptions
-                    .register_legacy_subscription(sub_id, on_applied, on_error);
-                self.send_chan
-                    .lock()
-                    .unwrap()
-                    .as_mut()
-                    .ok_or(crate::Error::Disconnected)?
-                    .unbounded_send(ws::v1::ClientMessage::Subscribe(ws::v1::Subscribe {
-                        query_strings: queries,
-                        request_id: sub_id,
-                    }))
-                    .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
-            }
+                on_applied: _,
+                queries: _,
+                sub_id: _,
+                on_error: _,
+            } => unimplemented!("No longer meaningful with V2 WS format"),
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
             PendingMutation::SubscribeMulti { query_id, handle } => {
@@ -331,7 +316,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         .unwrap()
                         .as_mut()
                         .ok_or(crate::Error::Disconnected)?
-                        .unbounded_send(ws::v1::ClientMessage::SubscribeMulti(msg))
+                        .unbounded_send(ws::v2::ClientMessage::Subscribe(msg))
                         .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
                 }
                 // else, the handle was already cancelled.
@@ -355,7 +340,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                             .unwrap()
                             .as_mut()
                             .ok_or(crate::Error::Disconnected)?
-                            .unbounded_send(ws::v1::ClientMessage::UnsubscribeMulti(m))
+                            .unbounded_send(ws::v2::ClientMessage::Unsubscribe(m))
                             .expect("Unable to send unsubscribe message: WS sender loop has dropped its recv channel");
                     }
                 }
@@ -363,14 +348,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
             // CallReducer: send the `CallReducer` WS message.
             PendingMutation::CallReducer { reducer, args_bsatn } => {
-                let inner = &mut *self.inner.lock().unwrap();
-
-                let flags = inner.call_reducer_flags.get_flags(reducer);
-                let msg = ws::v1::ClientMessage::CallReducer(ws::v1::CallReducer {
+                let flags = ws::v2::CallReducerFlags::Default;
+                let msg = ws::v2::ClientMessage::CallReducer(ws::v2::CallReducer {
                     reducer: reducer.into(),
                     args: args_bsatn.into(),
-                    // We could call `next_request_id` to get a unique ID to include here,
-                    // but we don't have any use for such an ID, so we don't bother.
+                    // TODO(ws-v2): Get a request_id, record it for callbacks, and send it.
                     request_id: 0,
                     flags,
                 });
@@ -397,11 +379,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .procedure_callbacks
                     .insert(request_id, callback);
 
-                let msg = ws::v1::ClientMessage::CallProcedure(ws::v1::CallProcedure {
+                let msg = ws::v2::ClientMessage::CallProcedure(ws::v2::CallProcedure {
                     procedure: procedure.into(),
                     args: args.into(),
                     request_id,
-                    flags: ws::v1::CallProcedureFlags::Default,
+                    flags: ws::v2::CallProcedureFlags::Default,
                 });
                 self.send_chan
                     .lock()
@@ -703,9 +685,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         Ok(())
     }
 
+    // TODO(ws-v2): remove
     /// Called by autogenerated on `reducer_config` methods.
-    pub fn set_call_reducer_flags(&self, reducer: &'static str, flags: ws::v1::CallReducerFlags) {
-        self.queue_mutation(PendingMutation::SetCallReducerFlags { reducer, flags });
+    pub fn set_call_reducer_flags(&self, _reducer: &'static str, _flags: ws::v2::CallReducerFlags) {
+        unimplemented!("No longer meaningful in V2 WS API")
     }
 
     /// Called by autogenerated reducer callback methods.
@@ -799,22 +782,26 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     procedure_callbacks: ProcedureCallbacks<M>,
 }
 
+// TODO(ws-v2): remove
 /// Maps reducer names to the flags to use for `.call_reducer(..)`.
 #[derive(Default, Clone)]
+#[allow(unused)]
 struct CallReducerFlagsMap {
     // TODO(centril): consider replacing the string with a type-id based map
     // where each reducer is associated with a marker type.
-    map: HashMap<&'static str, ws::v1::CallReducerFlags>,
+    map: HashMap<&'static str, ws::v2::CallReducerFlags>,
 }
 
 impl CallReducerFlagsMap {
     /// Returns the [`CallReducerFlags`] for `reducer_name`.
-    fn get_flags(&self, reducer_name: &str) -> ws::v1::CallReducerFlags {
+    #[allow(unused)]
+    fn get_flags(&self, reducer_name: &str) -> ws::v2::CallReducerFlags {
         self.map.get(reducer_name).copied().unwrap_or_default()
     }
 
     /// Sets the [`CallReducerFlags`] for `reducer_name` to `flags`.
-    pub fn set_flags(&mut self, reducer_name: &'static str, flags: ws::v1::CallReducerFlags) {
+    #[allow(unused)]
+    pub fn set_flags(&mut self, reducer_name: &'static str, flags: ws::v2::CallReducerFlags) {
         if flags == <_>::default() {
             self.map.remove(reducer_name)
         } else {
@@ -1016,7 +1003,7 @@ but you must call one of them, or else the connection will never progress.
     /// The current threshold used by the host is 1KiB for the entire server message
     /// and for individual query updates.
     /// Note however that this threshold is not guaranteed and may change without notice.
-    pub fn with_compression(mut self, compression: ws::v1::Compression) -> Self {
+    pub fn with_compression(mut self, compression: ws::common::Compression) -> Self {
         self.params.compression = compression;
         self
     }
@@ -1136,10 +1123,13 @@ fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)
 }
 
 enum ParsedMessage<M: SpacetimeModule> {
+    // TODO(ws-v2): remove
+    #[allow(unused)]
     InitialSubscription {
         db_update: M::DbUpdate,
         sub_id: u32,
     },
+    // TODO(ws-v2): split into reducer result and txupdate
     TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
     IdentityToken(Identity, Box<str>, ConnectionId),
     SubscribeApplied {
@@ -1151,18 +1141,19 @@ enum ParsedMessage<M: SpacetimeModule> {
         initial_update: M::DbUpdate,
     },
     SubscriptionError {
+        // TODO(ws-v2): no longer optional
         query_id: Option<u32>,
         error: String,
     },
     Error(crate::Error),
     ProcedureResult {
         request_id: u32,
-        result: Result<Box<[u8]>, InternalError>,
+        result: Result<Bytes, InternalError>,
     },
 }
 
 fn spawn_parse_loop<M: SpacetimeModule>(
-    raw_message_recv: mpsc::UnboundedReceiver<ws::v1::ServerMessage<ws::v1::BsatnFormat>>,
+    raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
     handle: &runtime::Handle,
 ) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedReceiver<ParsedMessage<M>>) {
     let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
@@ -1173,75 +1164,77 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 /// A loop which reads raw WS messages from `recv`, parses them into domain types,
 /// and pushes the [`ParsedMessage`]s into `send`.
 async fn parse_loop<M: SpacetimeModule>(
-    mut recv: mpsc::UnboundedReceiver<ws::v1::ServerMessage<ws::v1::BsatnFormat>>,
+    mut recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
 ) {
     while let Some(msg) = recv.next().await {
         send.unbounded_send(match msg {
-            ws::v1::ServerMessage::InitialSubscription(sub) => M::DbUpdate::try_from(sub.database_update)
-                .map(|update| ParsedMessage::InitialSubscription {
-                    db_update: update,
-                    sub_id: sub.request_id,
-                })
-                .unwrap_or_else(|e| {
-                    ParsedMessage::Error(
-                        InternalError::failed_parse("DatabaseUpdate", "InitialSubscription")
-                            .with_cause(e)
-                            .into(),
-                    )
-                }),
-            ws::v1::ServerMessage::TransactionUpdate(ws::v1::TransactionUpdate {
-                status,
-                timestamp,
-                caller_identity,
-                caller_connection_id,
-                reducer_call,
-                energy_quanta_used,
-                ..
-            }) => match Status::parse_status_and_update::<M>(status) {
-                Err(e) => ParsedMessage::Error(
-                    InternalError::failed_parse("Status", "TransactionUpdate")
-                        .with_cause(e)
-                        .into(),
-                ),
-                Ok((status, db_update)) => {
-                    let event = M::Reducer::try_from(reducer_call)
-                        .map(|reducer| {
-                            Event::Reducer(ReducerEvent {
-                                caller_connection_id: caller_connection_id.none_if_zero(),
-                                caller_identity,
-                                energy_consumed: Some(energy_quanta_used.quanta),
-                                timestamp,
-                                reducer,
-                                status,
-                            })
-                        })
-                        .unwrap_or(Event::UnknownTransaction);
-                    ParsedMessage::TransactionUpdate(event, db_update)
-                }
-            },
-            ws::v1::ServerMessage::TransactionUpdateLight(ws::v1::TransactionUpdateLight { update, request_id: _ }) => {
-                match M::DbUpdate::parse_update(update) {
+            ws::v2::ServerMessage::TransactionUpdate(transaction_update) => {
+                match M::DbUpdate::parse_update(transaction_update) {
                     Err(e) => ParsedMessage::Error(
-                        InternalError::failed_parse("DbUpdate", "TransactionUpdateLight")
+                        InternalError::failed_parse("TransactionUpdate", "TransactionUpdate")
                             .with_cause(e)
                             .into(),
                     ),
-                    Ok(db_update) => ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update)),
+                    Ok(db_update) => {
+                        let event = Event::UnknownTransaction;
+
+                        ParsedMessage::TransactionUpdate(event, Some(db_update))
+                    }
                 }
             }
-            ws::v1::ServerMessage::IdentityToken(ws::v1::IdentityToken {
+            ws::v2::ServerMessage::ReducerResult(ws::v2::ReducerResult {
+                request_id: _,
+                result,
+                timestamp: _,
+            }) => {
+                match result {
+                    // TODO(ws-v2): ParsedMessage::ReducerOutcome
+                    ws::v2::ReducerOutcome::Okmpty => {
+                        ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(M::DbUpdate::default()))
+                    }
+                    ws::v2::ReducerOutcome::Ok(ws::v2::ReducerOk {
+                        ret_value,
+                        transaction_update,
+                    }) => {
+                        assert!(
+                            ret_value.len() == 0,
+                            "Reducer return value should be unit, i.e. 0 bytes, but got {ret_value:?}"
+                        );
+                        match M::DbUpdate::parse_update(transaction_update) {
+                            Err(e) => ParsedMessage::Error(
+                                InternalError::failed_parse("TransactionUpdate", "ReducerResult")
+                                    .with_cause(e)
+                                    .into(),
+                            ),
+                            // TODO(ws-v2): ParsedMessage::ReducerOutcome
+                            Ok(db_update) => {
+                                ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update))
+                            }
+                        }
+                    }
+                    ws::v2::ReducerOutcome::Err(error_return) => {
+                        let _error_message = bsatn::from_slice::<String>(&error_return)
+                            .expect("Reducer return value should be a string");
+                        todo!("Yield a ParsedMessage with a reducer outcome here")
+                    }
+                    ws::v2::ReducerOutcome::InternalError(_error_message) => {
+                        todo!("Yield a ParsedMessage with a reducer outcome here")
+                    }
+                }
+            }
+            ws::v2::ServerMessage::InitialConnection(ws::v2::InitialConnection {
                 identity,
                 token,
                 connection_id,
             }) => ParsedMessage::IdentityToken(identity, token, connection_id),
-            ws::v1::ServerMessage::OneOffQueryResponse(_) => {
+            ws::v2::ServerMessage::OneOffQueryResult(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
-            ws::v1::ServerMessage::SubscribeMultiApplied(subscribe_applied) => {
-                let db_update = subscribe_applied.update;
-                let query_id = subscribe_applied.query_id.id;
-                match M::DbUpdate::parse_update(db_update) {
+            ws::v2::ServerMessage::SubscribeApplied(subscribe_applied) => {
+                let db_update = subscribe_applied.rows;
+                let query_id = subscribe_applied.query_set_id.id;
+                match M::DbUpdate::parse_initial_rows(db_update) {
                     Err(e) => ParsedMessage::Error(
                         InternalError::failed_parse("DbUpdate", "SubscribeApplied")
                             .with_cause(e)
@@ -1253,10 +1246,16 @@ async fn parse_loop<M: SpacetimeModule>(
                     },
                 }
             }
-            ws::v1::ServerMessage::UnsubscribeMultiApplied(unsubscribe_applied) => {
-                let db_update = unsubscribe_applied.update;
-                let query_id = unsubscribe_applied.query_id.id;
-                match M::DbUpdate::parse_update(db_update) {
+            ws::v2::ServerMessage::UnsubscribeApplied(ws::v2::UnsubscribeApplied {
+                query_set_id,
+                rows: db_update,
+                ..
+            }) => {
+                let Some(db_update) = db_update else {
+                    unreachable!("The Rust SDK always requests rows to delete when unsubscribing")
+                };
+                let query_id = query_set_id.id;
+                match M::DbUpdate::parse_unsubscribe_rows(db_update) {
                     Err(e) => ParsedMessage::Error(
                         InternalError::failed_parse("DbUpdate", "UnsubscribeApplied")
                             .with_cause(e)
@@ -1268,19 +1267,16 @@ async fn parse_loop<M: SpacetimeModule>(
                     },
                 }
             }
-            ws::v1::ServerMessage::SubscriptionError(e) => ParsedMessage::SubscriptionError {
-                query_id: e.query_id,
+            ws::v2::ServerMessage::SubscriptionError(e) => ParsedMessage::SubscriptionError {
+                query_id: Some(e.query_set_id.id),
                 error: e.error.to_string(),
             },
-            ws::v1::ServerMessage::SubscribeApplied(_) => unreachable!("Rust client SDK never sends `SubscribeSingle`, but received a `SubscribeApplied` from the host... huh?"),
-            ws::v1::ServerMessage::UnsubscribeApplied(_) => unreachable!("Rust client SDK never sends `UnsubscribeSingle`, but received a `UnsubscribeApplied` from the host... huh?"),
-            ws::v1::ServerMessage::ProcedureResult(procedure_result) => ParsedMessage::ProcedureResult {
+            ws::v2::ServerMessage::ProcedureResult(procedure_result) => ParsedMessage::ProcedureResult {
                 request_id: procedure_result.request_id,
                 result: match procedure_result.status {
-                    ws::v1::ProcedureStatus::InternalError(msg) => Err(InternalError::new(msg)),
-                    ws::v1::ProcedureStatus::OutOfEnergy => Err(InternalError::new("Procedure execution aborted due to insufficient energy")),
-                    ws::v1::ProcedureStatus::Returned(val) =>  Ok(val),
-                }
+                    ws::v2::ProcedureStatus::InternalError(msg) => Err(InternalError::new(msg)),
+                    ws::v2::ProcedureStatus::Returned(val) => Ok(val),
+                },
             },
         })
         .expect("Failed to send ParsedMessage to main thread");
@@ -1289,7 +1285,8 @@ async fn parse_loop<M: SpacetimeModule>(
 
 /// Operations a user can make to a `DbContext` which must be postponed
 pub(crate) enum PendingMutation<M: SpacetimeModule> {
-    // TODO: Rename to `SubscribeLegacy`, or replace with `SubscribeToAllTables`.
+    // TODO(ws-v2): remove
+    #[allow(unused)]
     Subscribe {
         on_applied: Option<OnAppliedCallback<M>>,
         on_error: Option<OnErrorCallback<M>>,
@@ -1303,6 +1300,7 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         query_id: u32,
         handle: SubscriptionHandleImpl<M>,
     },
+    // TODO(ws-v2): replace with `InvokeReducerWithCallback`
     CallReducer {
         reducer: &'static str,
         args_bsatn: Vec<u8>,
@@ -1334,19 +1332,23 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         table: &'static str,
         callback_id: CallbackId,
     },
+    // TODO(ws-v2): remove
     AddReducerCallback {
         reducer: &'static str,
         callback_id: CallbackId,
         callback: ReducerCallback<M>,
     },
+    // TODO(ws-v2): remove
     RemoveReducerCallback {
         reducer: &'static str,
         callback_id: CallbackId,
     },
     Disconnect,
+    // TODO(ws-v2): remove
+    #[allow(unused)]
     SetCallReducerFlags {
         reducer: &'static str,
-        flags: ws::v1::CallReducerFlags,
+        flags: ws::v2::CallReducerFlags,
     },
     InvokeProcedureWithCallback {
         procedure: &'static str,

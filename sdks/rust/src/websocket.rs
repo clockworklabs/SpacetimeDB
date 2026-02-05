@@ -104,7 +104,7 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme, UriError> {
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct WsParams {
-    pub compression: ws::v1::Compression,
+    pub compression: ws::common::Compression,
     pub light: bool,
     /// `Some(true)` to enable confirmed reads for the connection,
     /// `Some(false)` to disable them.
@@ -136,11 +136,11 @@ fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, param
 
     // Specify the desired compression for host->client replies.
     match params.compression {
-        ws::v1::Compression::None => path.push_str("?compression=None"),
-        ws::v1::Compression::Gzip => path.push_str("?compression=Gzip"),
+        ws::common::Compression::None => path.push_str("?compression=None"),
+        ws::common::Compression::Gzip => path.push_str("?compression=Gzip"),
         // The host uses the same default as the sdk,
         // but in case this changes, we prefer to be explicit now.
-        ws::v1::Compression::Brotli => path.push_str("?compression=Brotli"),
+        ws::common::Compression::Brotli => path.push_str("?compression=Brotli"),
     };
 
     // Provide the connection ID if the client provided one.
@@ -198,7 +198,7 @@ fn make_request(
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
     req.headers_mut().insert(
         http::header::SEC_WEBSOCKET_PROTOCOL,
-        const { http::HeaderValue::from_static(ws::v1::BIN_PROTOCOL) },
+        const { http::HeaderValue::from_static(ws::v2::BIN_PROTOCOL) },
     );
 }
 
@@ -252,19 +252,19 @@ impl WsConnection {
         })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ws::v1::ServerMessage<ws::v1::BsatnFormat>, WsError> {
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ws::v2::ServerMessage, WsError> {
         let bytes = &*decompress_server_message(bytes)?;
         bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })
     }
 
-    pub(crate) fn encode_message(msg: ws::v1::ClientMessage<Bytes>) -> WebSocketMessage {
+    pub(crate) fn encode_message(msg: ws::v2::ClientMessage) -> WebSocketMessage {
         WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap().into())
     }
 
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<ws::v1::ServerMessage<ws::v1::BsatnFormat>>,
-        outgoing_messages: mpsc::UnboundedReceiver<ws::v1::ClientMessage<Bytes>>,
+        incoming_messages: mpsc::UnboundedSender<ws::v2::ServerMessage>,
+        outgoing_messages: mpsc::UnboundedReceiver<ws::v2::ClientMessage>,
     ) {
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
         let websocket_received_msg_size = CLIENT_METRICS
@@ -403,8 +403,8 @@ impl WsConnection {
         runtime: &runtime::Handle,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<ws::v1::ServerMessage<ws::v1::BsatnFormat>>,
-        mpsc::UnboundedSender<ws::v1::ClientMessage<Bytes>>,
+        mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+        mpsc::UnboundedSender<ws::v2::ClientMessage>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
         let (incoming_send, incoming_recv) = mpsc::unbounded();

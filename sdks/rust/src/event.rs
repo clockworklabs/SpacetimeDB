@@ -10,8 +10,6 @@
 //! You can inspect its `event` field
 //! to determine what change in your connection's state caused the callback to run.
 
-use crate::spacetime_module::{DbUpdate as _, SpacetimeModule};
-use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 
 #[non_exhaustive]
@@ -22,6 +20,7 @@ pub enum Event<R> {
     ///
     /// This event is passed to reducer callbacks,
     /// and to row callbacks resulting from modifications by the reducer.
+    // TODO(ws-v2): remove
     Reducer(ReducerEvent<R>),
     /// Event when one of our subscriptions is applied.
     ///
@@ -53,6 +52,7 @@ pub enum Event<R> {
     /// This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
     ///
     /// This event is passed to row callbacks resulting from modifications by the transaction.
+    // TODO(ws-v2): rename
     UnknownTransaction,
 }
 
@@ -97,16 +97,4 @@ pub enum Status {
 
     /// The reducer was aborted due to insufficient energy, and its mutations were discarded or rolled back.
     OutOfEnergy,
-}
-
-impl Status {
-    pub(crate) fn parse_status_and_update<M: SpacetimeModule>(
-        status: ws::v1::UpdateStatus<ws::v1::BsatnFormat>,
-    ) -> crate::Result<(Self, Option<M::DbUpdate>)> {
-        Ok(match status {
-            ws::v1::UpdateStatus::Committed(update) => (Self::Committed, Some(M::DbUpdate::parse_update(update)?)),
-            ws::v1::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),
-            ws::v1::UpdateStatus::OutOfEnergy => (Self::OutOfEnergy, None),
-        })
-    }
 }

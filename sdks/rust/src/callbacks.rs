@@ -20,6 +20,7 @@ use crate::{
     error::InternalError,
     spacetime_module::{AbstractEventContext, Reducer, SpacetimeModule},
 };
+use bytes::Bytes;
 use spacetimedb_data_structures::map::HashMap;
 use std::{
     any::Any,
@@ -268,7 +269,7 @@ impl<M: SpacetimeModule> ReducerCallbacks<M> {
 ///
 /// Procedure return values are deserialized within this function by code injected by the SDK.
 pub(crate) type ProcedureCallback<M> =
-    Box<dyn FnOnce(&<M as SpacetimeModule>::ProcedureEventContext, Result<Box<[u8]>, InternalError>) + Send + 'static>;
+    Box<dyn FnOnce(&<M as SpacetimeModule>::ProcedureEventContext, Result<Bytes, InternalError>) + Send + 'static>;
 
 pub struct ProcedureCallbacks<M: SpacetimeModule> {
     request_id_to_callback: HashMap<u32, ProcedureCallback<M>>,
@@ -293,7 +294,7 @@ impl<M: SpacetimeModule> ProcedureCallbacks<M> {
         &mut self,
         ctx: &<M as SpacetimeModule>::ProcedureEventContext,
         request_id: u32,
-        result: Result<Box<[u8]>, InternalError>,
+        result: Result<Bytes, InternalError>,
     ) {
         let callback = self
             .request_id_to_callback
