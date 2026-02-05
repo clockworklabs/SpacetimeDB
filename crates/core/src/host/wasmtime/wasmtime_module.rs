@@ -164,7 +164,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         store.epoch_deadline_callback(|store| {
             let env = store.data();
             let database = env.instance_env().replica_ctx.database_identity;
-            let funcall = env.funcall_name();
+            let funcall = env.log_record_function().unwrap_or_default();
             let dur = env.funcall_start().elapsed();
             // TODO(procedure-timing): This measurement is not super meaningful for procedures,
             // which may (will) suspend execution and therefore may not have been continuously running since `env.funcall_start`.
@@ -352,16 +352,27 @@ pub struct WasmtimeInstance {
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
-        let describer_func_name = DESCRIBE_MODULE_DUNDER;
+        let mut describer_res = None;
+        for &describe_func_name in describe_dunders() {
+            match self
+                .instance
+                .get_typed_func::<u32, ()>(&mut self.store, describe_func_name)
+            {
+                Ok(describer) => {
+                    describer_res = Some(Ok((describe_func_name, describer)));
+                    break;
+                }
+                Err(e) => describer_res = Some(Err(DescribeError::Signature(e))),
+            }
+        }
 
-        let describer = self
-            .instance
-            .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
-            .map_err(DescribeError::Signature)?;
+        let (describer_func_name, describer) = describer_res
+            .transpose()?
+            .ok_or_else(|| DescribeError::Signature(anyhow::anyhow!("no describer function found")))?;
 
         let sink = self.store.data_mut().setup_standard_bytes_sink();
 
-        run_describer(log_traceback, || {
+        run_describer(describer_func_name, log_traceback, || {
             call_sync_typed_func(&describer, &mut self.store, sink)
         })?;
 
@@ -394,10 +405,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
+        let reducer_name = op.name.clone().into();
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name, args_bytes, op.timestamp, op.call_type());
+                .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -437,7 +449,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name, args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
 
         let Some(call_view) = self.call_view.as_ref() else {
             return module_host_actor::ViewExecuteResult {
@@ -487,7 +499,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name, args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
 
         let Some(call_view_anon) = self.call_view_anon.as_ref() else {
             return module_host_actor::ViewExecuteResult {
@@ -532,7 +544,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, result_sink) =
             store
                 .data_mut()
-                .start_funcall(&op.name, op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {

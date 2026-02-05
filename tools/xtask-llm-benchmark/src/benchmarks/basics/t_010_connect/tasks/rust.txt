@@ -1,12 +1,12 @@
 ﻿Write a SpacetimeDB backend module in Rust that defines one table and two reducers for client lifecycle events.
 
 TABLE
-- events
+- event
   - Struct: Event
   - Fields:
     - id: i32 (primary key, auto-increment)
     - kind: String
 
 REDUCERS
-- client_connected: when a client connects, insert exactly one row into events with kind="connected"
-- client_disconnected: when a client disconnects, insert exactly one row into events with kind="disconnected"
+- client_connected: when a client connects, insert exactly one row into event with kind="connected"
+- client_disconnected: when a client disconnects, insert exactly one row into event with kind="disconnected"

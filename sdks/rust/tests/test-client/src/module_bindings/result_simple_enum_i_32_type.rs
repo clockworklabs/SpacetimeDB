@@ -15,3 +15,31 @@ pub struct ResultSimpleEnumI32 {
 impl __sdk::InModule for ResultSimpleEnumI32 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `ResultSimpleEnumI32`.
+///
+/// Provides typed access to columns for query building.
+pub struct ResultSimpleEnumI32Cols {
+    pub r: __sdk::__query_builder::Col<ResultSimpleEnumI32, Result<SimpleEnum, i32>>,
+}
+
+impl __sdk::__query_builder::HasCols for ResultSimpleEnumI32 {
+    type Cols = ResultSimpleEnumI32Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ResultSimpleEnumI32Cols {
+            r: __sdk::__query_builder::Col::new(table_name, "r"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `ResultSimpleEnumI32`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct ResultSimpleEnumI32IxCols {}
+
+impl __sdk::__query_builder::HasIxCols for ResultSimpleEnumI32 {
+    type IxCols = ResultSimpleEnumI32IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        ResultSimpleEnumI32IxCols {}
+    }
+}

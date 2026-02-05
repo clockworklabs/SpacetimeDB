@@ -17,6 +17,7 @@ pub fn materialize_project(
     let src = tmpl_root().join(match lang {
         "rust" => "rust/server",
         "csharp" => "csharp/server",
+        "typescript" => "typescript/server",
         _ => bail!("unsupported lang `{}`", lang),
     });
 
@@ -29,6 +30,7 @@ pub fn materialize_project(
     match lang {
         "rust" => inject_rust(&out, llm_code)?,
         "csharp" => inject_csharp(&out, llm_code)?,
+        "typescript" => inject_typescript(&out, llm_code)?,
         _ => {}
     }
 
@@ -115,6 +117,24 @@ fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         contents.push_str(&cleaned);
     }
     fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))
+}
+
+fn inject_typescript(root: &Path, llm_code: &str) -> anyhow::Result<()> {
+    let lib = root.join("src/index.ts");
+    ensure_parent(&lib)?;
+    let mut contents = fs::read_to_string(&lib).unwrap_or_default();
+    let marker = "/*__LLM_CODE__*/";
+    let cleaned = normalize_source(llm_code);
+
+    if let Some(idx) = contents.find(marker) {
+        contents.replace_range(idx..idx + marker.len(), &cleaned);
+    } else {
+        if !contents.ends_with('\n') {
+            contents.push('\n');
+        }
+        contents.push_str(&cleaned);
+    }
+    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))
 }
 
 /// Remove leading/trailing Markdown fences like ```rust ... ``` or ~~~

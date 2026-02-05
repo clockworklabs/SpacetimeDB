@@ -2,7 +2,8 @@ use super::Index;
 use core::mem;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::{
-    algebraic_value::Packed, i256, u256, AlgebraicValue, ArrayValue, ProductValue, SumValue, F32, F64,
+    algebraic_value::Packed, i256, sum_value::SumTag, u256, AlgebraicValue, ArrayValue, ProductValue, SumValue, F32,
+    F64,
 };
 
 /// Storage for memoizing `KeySize` statistics.
@@ -87,6 +88,7 @@ macro_rules! impl_key_size_primitive {
 impl_key_size_primitive!(
     bool,
     u8,
+    SumTag,
     i8,
     u16,
     i16,
