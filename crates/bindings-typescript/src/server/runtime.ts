@@ -206,7 +206,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   get identity() {
-    return (this.#identity ??= new Identity(sys.identity().__identity__));
+    return (this.#identity ??= new Identity(sys.identity()));
   }
 
   get senderAuth() {

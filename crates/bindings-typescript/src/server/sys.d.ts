@@ -77,7 +77,7 @@ declare module 'spacetime:sys@2.0' {
   export function console_log(level: u8, message: string): void;
   export function console_timer_start(name: string): u32;
   export function console_timer_end(span_id: u32): void;
-  export function identity(): { __identity__: u256 };
+  export function identity(): u256;
   export function get_jwt_payload(connection_id: u128): Uint8Array;
 
   export function procedure_http_request(
