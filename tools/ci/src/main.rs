@@ -299,15 +299,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn infer_python() -> String {
-    let py3_available = cmd!("python3", "--version").run().is_ok();
-    if py3_available {
-        "python3".to_string()
-    } else {
-        "python".to_string()
-    }
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -317,8 +308,20 @@ fn main() -> Result<()> {
         Some(CiCmd::Test) => {
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
-            // cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
-            cmd!("cargo", "test", "--all", "--", "--test-threads=2", "--skip", "unreal").run()?;
+            // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
+            // Smoketests have their own dedicated command: `cargo ci smoketests`
+            cmd!(
+                "cargo",
+                "test",
+                "--all",
+                "--exclude",
+                "spacetimedb-smoketests",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -479,13 +482,16 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            let python = infer_python();
+            // Use cargo smoketest (alias for xtask-smoketest) which handles:
+            // - Building binaries first (prevents race conditions)
+            // - Building precompiled modules
+            // - Using nextest if available, falling back to cargo test
+            // - Running in release mode with optimal parallelism
             cmd(
-                python,
-                ["-m", "smoketests"]
+                "cargo",
+                ["smoketest", "--"]
                     .into_iter()
-                    .map(|s| s.to_string())
-                    .chain(smoketest_args),
+                    .chain(smoketest_args.iter().map(|s| s.as_str()).clone()),
             )
             .run()?;
         }
