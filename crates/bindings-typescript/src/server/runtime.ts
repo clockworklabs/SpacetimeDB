@@ -737,7 +737,7 @@ function* tableIterator<T>(
   try {
     let amt;
     while ((amt = advanceIter(iter, iterBuf))) {
-      const reader = new BinaryReader(new Uint8Array(iterBuf.buffer, amt));
+      const reader = new BinaryReader(new Uint8Array(iterBuf.buffer, 0, amt));
       while (reader.offset < amt) {
         yield deserialize(reader);
       }
