@@ -45,7 +45,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
-    table::{IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
+    table::{IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
