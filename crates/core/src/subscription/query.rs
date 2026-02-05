@@ -205,7 +205,7 @@ mod tests {
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: TableName::new_from_str(table_name),
+            table_name: TableName::for_test(table_name),
             deletes: [].into(),
             inserts: [row].into(),
         }
@@ -214,7 +214,7 @@ mod tests {
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: TableName::new_from_str(table_name),
+            table_name: TableName::for_test(table_name),
             deletes: [row].into(),
             inserts: [].into(),
         }
@@ -242,7 +242,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: TableName::new_from_str(table_name),
+            table_name: TableName::for_test(table_name),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -449,7 +449,7 @@ mod tests {
         let update = DatabaseUpdate {
             tables: [DatabaseTableUpdate {
                 table_id,
-                table_name: TableName::new_from_str("test"),
+                table_name: TableName::for_test("test"),
                 deletes: deletes.into(),
                 inserts: [].into(),
             }]
@@ -532,7 +532,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: TableName::new_from_str("inventory"),
+            table_name: TableName::for_test("inventory"),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -646,14 +646,14 @@ mod tests {
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
-            table_name: TableName::new_from_str("inventory"),
+            table_name: TableName::for_test("inventory"),
             deletes: [row_1].into(),
             inserts: [].into(),
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
-            table_name: TableName::new_from_str("player"),
+            table_name: TableName::for_test("player"),
             deletes: [].into(),
             inserts: [row_2].into(),
         };
@@ -1016,7 +1016,7 @@ mod tests {
                 result.tables[0],
                 DatabaseTableUpdate {
                     table_id: lhs_id,
-                    table_name: TableName::new_from_str("lhs"),
+                    table_name: TableName::for_test("lhs"),
                     deletes: [lhs_old].into(),
                     inserts: [lhs_new].into(),
                 },
@@ -1437,7 +1437,7 @@ mod tests {
             result.tables[0],
             DatabaseTableUpdate {
                 table_id: lhs_id,
-                table_name: TableName::new_from_str("lhs"),
+                table_name: TableName::for_test("lhs"),
                 deletes: [lhs_old].into(),
                 inserts: [lhs_new].into(),
             },

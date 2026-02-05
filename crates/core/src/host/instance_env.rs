@@ -26,6 +26,7 @@ use spacetimedb_sats::{
     buffer::{CountWriter, TeeWriter},
     AlgebraicValue, ProductValue,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
@@ -46,7 +47,7 @@ pub struct InstanceEnv {
     /// The type of the last, including current, function to be executed by this environment.
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
-    pub func_name: String,
+    pub func_name: Option<Identifier>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -232,7 +233,7 @@ impl InstanceEnv {
             // arbitrary - change if we need to recognize that an `InstanceEnv` has never
             // run a function
             func_type: FuncCallType::Reducer,
-            func_name: String::from("<initializing>"),
+            func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
         }
@@ -244,11 +245,17 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
-        name.clone_into(&mut self.func_name);
+        self.func_name = Some(name);
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.func_name.as_deref()
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -775,7 +782,7 @@ impl InstanceEnv {
             Ok(()) => {
                 let message = format!(
                     "aborting dangling anonymous transaction in procedure {}",
-                    self.func_name
+                    self.func_name.as_deref().unwrap_or("<unknown>")
                 );
                 self.console_log_simple_message(LogLevel::Error, None, &message);
             }
