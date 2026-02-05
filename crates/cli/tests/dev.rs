@@ -70,3 +70,46 @@ fn cli_init_with_template_creates_project() {
     );
     assert!(project_dir.join("src").exists(), "src directory should exist");
 }
+
+#[test]
+fn config_with_snake_case_field_shows_error() {
+    // Test that using snake_case field names (dev_run) instead of kebab-case (dev-run)
+    // shows a helpful error message
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+
+    // Create a config with snake_case field name
+    let config_content = r#"{
+  "dev_run": "npm run dev",
+  "publish": {
+    "database": "test-db"
+  }
+}"#;
+    std::fs::write(temp_dir.path().join("spacetime.json"), config_content).expect("failed to write config");
+
+    // Create minimal spacetimedb module
+    std::fs::create_dir(temp_dir.path().join("spacetimedb")).expect("failed to create spacetimedb dir");
+    std::fs::create_dir(temp_dir.path().join("spacetimedb/src")).expect("failed to create src dir");
+    std::fs::write(
+        temp_dir.path().join("spacetimedb/Cargo.toml"),
+        r#"[package]
+name = "test"
+version = "0.1.0"
+
+[dependencies]
+spacetimedb = "1.0"
+
+[lib]
+crate-type = ["cdylib"]
+"#,
+    )
+    .expect("failed to write Cargo.toml");
+    std::fs::write(temp_dir.path().join("spacetimedb/src/lib.rs"), "").expect("failed to write lib.rs");
+
+    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
+    cmd.current_dir(temp_dir.path())
+        .args(["dev", "test-db"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to load spacetime.json"))
+        .stderr(predicate::str::contains("unknown field `dev_run`"));
+}

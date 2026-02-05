@@ -91,11 +91,11 @@ pub enum CommandConfigError {
 /// Example:
 /// ```json
 /// {
-///   "dev_run": "pnpm dev",
+///   "dev-run": "pnpm dev",
 ///   "generate": [
 ///     {
 ///       "language": "typescript",
-///       "out_dir": "./src/module_bindings"
+///       "out-dir": "./src/module_bindings"
 ///     }
 ///   ],
 ///   "publish": {
@@ -105,7 +105,7 @@ pub enum CommandConfigError {
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SpacetimeConfig {
     /// The command to run the client development server.
     /// This is used by `spacetime dev` to start the client after publishing.
@@ -697,8 +697,8 @@ impl SpacetimeConfig {
         let content =
             std::fs::read_to_string(path).with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
-        let config = json5::from_str(&content)
-            .with_context(|| format!("Failed to parse config file as JSON: {}", path.display()))?;
+        let config: Self = json5::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
 
         Ok(config)
     }
@@ -851,7 +851,7 @@ mod tests {
     #[test]
     fn test_deserialize_full_config() {
         let json = r#"{
-            "dev_run": "pnpm dev",
+            "dev-run": "pnpm dev",
             "generate": [
                 {
                     "out-dir": "./foobar",
@@ -916,7 +916,7 @@ mod tests {
     fn test_deserialize_with_comments() {
         let json = r#"{
             // This is a comment
-            "dev_run": "npm start",
+            "dev-run": "npm start",
             /* Multi-line comment */
             "generate": [
                 {
@@ -2025,7 +2025,7 @@ mod tests {
 
         // Create config in root
         let config = SpacetimeConfig {
-            run: Some("test".to_string()),
+            dev_run: Some("test".to_string()),
             ..Default::default()
         };
         config.save(&root.join("spacetime.json")).unwrap();

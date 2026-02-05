@@ -275,29 +275,37 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Determine client command: CLI flag > config file > auto-detect (and save)
     let server_only = args.get_flag("server-only");
+
     let client_command = if server_only {
         None
     } else if let Some(cmd) = args.get_one::<String>("dev-run") {
         // Explicit CLI flag takes priority
         Some(cmd.clone())
-    } else if let Some(config) = SpacetimeConfig::load_from_dir(&project_dir).ok().flatten() {
-        // Config file exists
-        let config_path = project_dir.join("spacetime.json");
-        println!("{} Using configuration from {}", "✓".green(), config_path.display());
-        config.dev_run
-    } else if let Some((detected_cmd, _detected_pm)) = detect_client_command(&project_dir) {
-        // No config - detect and save for future runs
-        let config = SpacetimeConfig::with_run_command(&detected_cmd);
-        if let Ok(path) = config.save_to_dir(&project_dir) {
-            println!(
-                "{} Detected client command and saved to {}",
-                "✓".green(),
-                path.display()
-            );
-        }
-        Some(detected_cmd)
     } else {
-        None
+        // Try to load config, handling errors properly
+        match SpacetimeConfig::load_from_dir(&project_dir) {
+            Ok(Some(config)) => {
+                // Config file exists and parsed successfully
+                let config_path = project_dir.join("spacetime.json");
+                println!("{} Using configuration from {}", "✓".green(), config_path.display());
+
+                // If config exists but dev_run is None, try to detect and update
+                if config.dev_run.is_none() {
+                    detect_and_save_client_command(&project_dir, Some(config))
+                } else {
+                    config.dev_run
+                }
+            }
+            Ok(None) => {
+                // No config file - try to detect and create new
+                detect_and_save_client_command(&project_dir, None)
+            }
+            Err(e) => {
+                // Config file exists but failed to parse - show error and exit
+                eprintln!("{} Failed to load spacetime.json: {}", "✗".red(), e);
+                std::process::exit(1);
+            }
+        }
     };
 
     println!("\n{}", "Starting development mode...".green().bold());
@@ -824,6 +832,30 @@ fn generate_database_name() -> String {
     generator.next().unwrap()
 }
 
+/// Detect client command and save to config (updating existing config if present)
+fn detect_and_save_client_command(project_dir: &Path, existing_config: Option<SpacetimeConfig>) -> Option<String> {
+    if let Some((detected_cmd, _detected_pm)) = detect_client_command(project_dir) {
+        // Update existing config or create new one
+        let config_to_save = if let Some(mut config) = existing_config {
+            config.dev_run = Some(detected_cmd.clone());
+            config
+        } else {
+            SpacetimeConfig::with_run_command(&detected_cmd)
+        };
+
+        if let Ok(path) = config_to_save.save_to_dir(project_dir) {
+            println!(
+                "{} Detected client command and saved to {}",
+                "✓".green(),
+                path.display()
+            );
+        }
+        Some(detected_cmd)
+    } else {
+        None
+    }
+}
+
 /// Start the client development server as a child process.
 /// The process inherits stdout/stderr so the user can see the output.
 /// Sets SPACETIMEDB_DB_NAME and SPACETIMEDB_HOST environment variables for the client.
@@ -867,4 +899,70 @@ fn start_client_process(
         .with_context(|| format!("Failed to start client command: {}", command))?;
 
     Ok(child)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_detect_and_save_preserves_existing_config() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a config with generate and publish but no dev-run
+        let initial_config = r#"{
+            "generate": [
+                { "out-dir": "./foo-client/src/module_bindings", "module-path": "foo", "language": "rust" }
+            ],
+            "publish": {
+                "database": "test-db",
+                "server": "maincloud"
+            }
+        }"#;
+
+        let config_path = temp.path().join("spacetime.json");
+        fs::write(&config_path, initial_config).unwrap();
+
+        // Create a package.json to enable detection
+        let package_json = r#"{
+            "name": "test",
+            "scripts": {
+                "dev": "vite"
+            }
+        }"#;
+        fs::write(temp.path().join("package.json"), package_json).unwrap();
+
+        // Load the config
+        let loaded_config = SpacetimeConfig::load(&config_path).unwrap();
+        assert!(loaded_config.dev_run.is_none());
+        assert!(loaded_config.generate.is_some());
+        assert!(loaded_config.publish.is_some());
+
+        // Call detect_and_save_client_command which should detect "npm run dev"
+        let detected = detect_and_save_client_command(temp.path(), Some(loaded_config));
+        assert!(detected.is_some(), "Should detect client command from package.json");
+
+        // Load again and verify all fields are preserved
+        let reloaded_config = SpacetimeConfig::load(&config_path).unwrap();
+        assert!(reloaded_config.dev_run.is_some(), "dev-run should be set");
+        assert!(reloaded_config.generate.is_some(), "generate field should be preserved");
+        assert!(reloaded_config.publish.is_some(), "publish field should be preserved");
+
+        // Verify the generate array has the expected content
+        let generate = reloaded_config.generate.unwrap();
+        assert_eq!(generate.len(), 1);
+        assert_eq!(
+            generate[0].get("out-dir").unwrap().as_str().unwrap(),
+            "./foo-client/src/module_bindings"
+        );
+
+        // Verify the publish object has the expected content
+        let publish = reloaded_config.publish.unwrap();
+        assert_eq!(
+            publish.additional_fields.get("database").unwrap().as_str().unwrap(),
+            "test-db"
+        );
+    }
 }

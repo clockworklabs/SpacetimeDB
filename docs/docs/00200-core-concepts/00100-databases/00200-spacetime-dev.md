@@ -103,7 +103,7 @@ Your database will be available at `https://maincloud.spacetimedb.com`.
 
 ```json
 {
-  "dev_run": "npm run dev"
+  "dev-run": "npm run dev"
 }
 ```
 
