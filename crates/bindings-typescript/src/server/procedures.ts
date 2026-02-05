@@ -4,6 +4,7 @@ import {
   type Deserializer,
   type Serializer,
 } from '../lib/algebraic_type';
+import FunctionVisibility from '../lib/autogen/function_visibility_type';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
@@ -69,13 +70,11 @@ export function procedure<
   };
   const returnType = ctx.registerTypesRecursively(ret).algebraicType;
 
-  ctx.moduleDef.miscExports.push({
-    tag: 'Procedure',
-    value: {
-      name,
-      params: paramsType,
-      returnType,
-    },
+  ctx.moduleDef.procedures.push({
+    sourceName: name,
+    params: paramsType,
+    returnType,
+    visibility: FunctionVisibility.ClientCallable,
   });
 
   const { typespace } = ctx;

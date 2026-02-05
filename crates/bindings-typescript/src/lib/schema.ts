@@ -5,8 +5,9 @@ import {
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
-import type RawModuleDefV9 from './autogen/raw_module_def_v_9_type';
-import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
+import type RawModuleDefV10Section from './autogen/raw_module_def_v_10_section_type';
+import type RawModuleDefV10 from './autogen/raw_module_def_v_10_type';
+import type RawScopedTypeNameV10 from './autogen/raw_scoped_type_name_v_10_type';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
@@ -85,7 +86,7 @@ function tableToSchema<T extends UntypedTableSchema>(
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     constraints: tableDef.constraints.map(c => ({
-      name: c.name,
+      name: c.sourceName,
       constraint: 'unique',
       columns: c.data.value.columns.map(getColName) as [string],
     })),
@@ -115,10 +116,17 @@ type CompoundTypeCache = Map<
   RefBuilder<any, any>
 >;
 
-type ModuleDef = Infer<typeof RawModuleDefV9>;
+export type ModuleDef = {
+  [S in Infer<typeof RawModuleDefV10Section> as Uncapitalize<
+    S['tag']
+  >]: S['value'];
+};
+
+type Section = Infer<typeof RawModuleDefV10Section>;
 
 export class ModuleContext {
   #compoundTypes: CompoundTypeCache = new Map();
+
   /**
    * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
    */
@@ -127,12 +135,29 @@ export class ModuleContext {
     tables: [],
     reducers: [],
     types: [],
-    miscExports: [],
     rowLevelSecurity: [],
+    schedules: [],
+    procedures: [],
+    views: [],
+    lifeCycleReducers: [],
   };
 
-  get moduleDef() {
+  get moduleDef(): ModuleDef {
     return this.#moduleDef;
+  }
+
+  get RawModuleDefV10(): Infer<typeof RawModuleDefV10> {
+    const sections: Section[] = [];
+
+    for (const [key, value] of Object.entries(this.#moduleDef)) {
+      const tag = key.charAt(0).toUpperCase() + key.slice(1);
+      sections.push({
+        tag,
+        value,
+      } as Section);
+    }
+
+    return { sections };
   }
 
   get typespace() {
@@ -256,7 +281,7 @@ export class ModuleContext {
     }
 
     this.#moduleDef.types.push({
-      name: splitName(name),
+      sourceName: splitName(name),
       ty: r.ref,
       customOrdering: true,
     });
@@ -272,7 +297,7 @@ function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
   );
 }
 
-export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
+export function splitName(name: string): Infer<typeof RawScopedTypeNameV10> {
   const scope = name.split('.');
-  return { name: scope.pop()!, scope };
+  return { sourceName: scope.pop()!, scope };
 }
