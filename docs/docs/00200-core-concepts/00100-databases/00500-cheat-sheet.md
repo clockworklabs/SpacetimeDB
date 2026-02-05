@@ -523,7 +523,7 @@ ctx.Rng                 // Random number generator
 ```rust
 ctx.db                  // Database access
 ctx.sender()            // Identity of caller
-ctx.connection_id       // Option<ConnectionId>
+ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
 ctx.identity()          // Module's identity
 ctx.rng()               // Random number generator

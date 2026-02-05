@@ -133,8 +133,8 @@ public static void OnConnect(ReducerContext ctx)
 pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Client connected: {}", ctx.sender());
     
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
+    // ctx.connection_id() is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id().unwrap();
     
     // Initialize client session
     ctx.db.sessions().try_insert(Session {
@@ -152,7 +152,7 @@ pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
 
 The `client_connected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id` is guaranteed to be present
+- `ctx.connection_id()` is guaranteed to be present
 - Failure disconnects the client
 - Runs for each distinct connection (WebSocket, HTTP call)
 
@@ -200,8 +200,8 @@ public static void OnDisconnect(ReducerContext ctx)
 pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Client disconnected: {}", ctx.sender());
     
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
+    // ctx.connection_id() is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id().unwrap();
     
     // Clean up client session
     ctx.db.sessions().connection_id().delete(&conn_id);
@@ -215,7 +215,7 @@ pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
 
 The `client_disconnected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id` is guaranteed to be present
+- `ctx.connection_id()` is guaranteed to be present
 - Failure is logged but doesn't prevent disconnection
 - Runs when connection ends (close, timeout, error)
 
@@ -231,5 +231,5 @@ Reducers can be triggered at specific times using schedule tables. See [Schedule
 :::info Scheduled Reducer Context
 Scheduled reducer calls originate from SpacetimeDB itself, not from a client. Therefore:
 - `ctx.sender()` will be the module's own identity
-- `ctx.connection_id` will be `None`/`null`/`undefined`
+- `ctx.connection_id()` will be `None`/`null`/`undefined`
 :::
