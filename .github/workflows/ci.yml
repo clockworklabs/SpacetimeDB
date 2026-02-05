@@ -315,7 +315,7 @@ jobs:
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
-          source /opt/emsdk/emsdk_env.sh
+          source ~/emsdk/emsdk_env.sh
           cargo ci test
 
   lints:
