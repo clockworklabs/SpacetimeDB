@@ -308,6 +308,7 @@ pub struct TransactionUpdate {
 #[sats(crate = spacetimedb_lib)]
 pub struct QuerySetUpdate {
     pub query_set_id: QuerySetId,
+    // Updates are grouped by table, but the server may send multiple TableUpdates for the same table.
     pub tables: Box<[TableUpdate]>,
 }
 
@@ -315,7 +316,7 @@ pub struct QuerySetUpdate {
 #[sats(crate = spacetimedb_lib)]
 pub struct TableUpdate {
     pub table_name: Box<str>,
-    pub rows: TableUpdateRows,
+    pub rows: Box<[TableUpdateRows]>,
 }
 
 /// The rows of a [`TableUpdate`], separated based on the kind of table.

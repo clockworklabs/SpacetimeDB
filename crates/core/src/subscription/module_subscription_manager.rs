@@ -12,6 +12,7 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::worker_metrics::WORKER_METRICS;
 use core::mem;
+use itertools::Itertools;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::v2::TableUpdateRows;
@@ -547,8 +548,9 @@ struct ClientUpdate {
 struct V2ClientUpdate {
     id: ClientId,
     query_set_id: ClientQuerySetId,
+    //table_update: ws_v2::TableUpdate,
     table_name: TableName,
-    update: TableUpdateRows,
+    rows: TableUpdateRows,
 }
 
 /// The computed incremental update queries with sufficient information
@@ -1761,6 +1763,94 @@ impl SendWorker {
 
         type UpdateMapKey = (ClientId, ClientQuerySetId, TableName);
         let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::TableUpdateRows>> = BTreeMap::new();
+
+        for V2ClientUpdate {
+            id: client_id,
+            query_set_id,
+            // table_update,
+            table_name,
+            rows,
+        } in v2_updates
+        {
+            if subscriptions_with_errors.contains(&(client_id, query_set_id)) {
+                continue;
+            }
+            grouped_updates
+                .entry((client_id, query_set_id, table_name))
+                .or_default()
+                // .push(table_update);
+                .push(rows);
+        }
+
+        let grouped_by_client = grouped_updates.into_iter().group_by(|((client_id, ..), _)| *client_id);
+
+        for (client, updates) in &grouped_by_client {
+            if self.is_client_dropped_or_cancelled(&client) {
+                continue;
+            }
+
+            let mut query_set_updates: Vec<ws_v2::QuerySetUpdate> = vec![];
+
+            let grouped_by_query_set = updates.group_by(|((_, query_set_id, _), _)| *query_set_id);
+
+            for (query_set_id, qs_updates) in &grouped_by_query_set {
+                let table_updates: Vec<ws_v2::TableUpdate> = qs_updates
+                    .into_iter()
+                    .map(|((_, _, table_name), rows)| ws_v2::TableUpdate {
+                        table_name: table_name.to_string().into_boxed_str(),
+                        rows: rows.into_boxed_slice(),
+                    })
+                    .collect();
+                query_set_updates.push(ws_v2::QuerySetUpdate {
+                    query_set_id,
+                    tables: table_updates.into_boxed_slice(),
+                });
+            }
+
+            let transaction_update: ws_v2::TransactionUpdate = ws_v2::TransactionUpdate {
+                query_sets: query_set_updates.into_boxed_slice(),
+            };
+            match caller {
+                Some(ref caller) if (caller.id.identity, caller.id.connection_id) == client => {
+                    // Don't send the update to the caller, since they already have the most up-to-date information.
+                    continue;
+                }
+                _ => {
+                    // Send the update to the client.
+                    send_to_client(
+                        &self.clients[&client].outbound_ref.clone(),
+                        Some(tx_offset),
+                        OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(transaction_update)),
+                    );
+                }
+            }
+
+            /*
+            let client = self.clients[client].outbound_ref.clone();
+            let message = ws_v2::ServerMessage::TransactionUpdate {
+                event: Some(event.clone()),
+                query_set_id: None, // TODO: we should probably include this in the message
+                database_update: ws_v2::DatabaseUpdate { table_updates: updates.clone() },
+            };
+            send_to_client(&client, Some(tx_offset), OutboundMessage::V2(message));
+            */
+        }
+        // grouped_updates.iter().group_by(|((client_id, _, _), _)| *client_id).into_iter().for_each(|(client_id, group)| {
+
+        // if let Some(caller) = caller {
+        //         let caller_id = (caller.id.identity, caller.id.connection_id);
+        //         let iter = grouped_updates.range((caller_id, ..)..).take_while(|((cid, _, _), _)| *cid == caller_id);
+        //         for ((_, query_set_id, table_name), updates) in iter {
+        //             ws_v2::ServerMessage::ReducerResult
+        //             let message = ws_v2::ServerMessage::TransactionUpdate {
+        //                 event: Some(event.clone()),
+        //                 query_set_id: *query_set_id,
+        //                 database_update: ws_v2::DatabaseUpdate { table_updates: updates.clone() },
+        //             };
+        //             send_to_client(&caller, Some(tx_offset), OutboundMessage::V2(message));
+        //         }
+        // }
+        // grouped_updates.range()
     }
 
     fn send_one_computed_queries(
