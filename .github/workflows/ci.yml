@@ -301,8 +301,8 @@ jobs:
       # Install cmake and emscripten for C++ module compilation tests.
       - name: Install cmake and emscripten
         run: |
-          apt-get update
-          apt-get install -y cmake
+          sudo apt-get update
+          sudo apt-get install -y cmake
           git clone https://github.com/emscripten-core/emsdk.git /opt/emsdk
           cd /opt/emsdk
           ./emsdk install 4.0.21
