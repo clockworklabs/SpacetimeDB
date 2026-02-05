@@ -69,12 +69,10 @@ handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)
 logging.getLogger().addHandler(handler)
 logging.getLogger().setLevel(logging.DEBUG)
 
-
 def requires_dotnet(item):
     if HAVE_DOTNET:
         return item
     return unittest.skip("dotnet 8.0 not available")(item)
-
 
 def requires_anonymous_login(item):
     if USE_SPACETIME_LOGIN:

@@ -401,5 +401,3 @@ class TypeScript(Rust):
     def test_quickstart(self):
         """Run the TypeScript quickstart guides for server."""
         self._test_quickstart()
-
-
