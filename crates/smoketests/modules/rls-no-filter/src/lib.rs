@@ -10,6 +10,6 @@ pub struct Users {
 pub fn add_user(ctx: &ReducerContext, name: String) {
     ctx.db.users().insert(Users {
         name,
-        identity: ctx.sender,
+        identity: ctx.sender(),
     });
 }
