@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, catch_exception_continue, exception_already_thrown, log_traceback, CanContinue, ErrorOrException,
-    ExcResult, ExceptionThrown, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -34,6 +34,7 @@ use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
 use core::any::type_name;
 use core::str;
 use enum_as_inner::EnumAsInner;
+use error::PinTryCatch;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
@@ -596,7 +597,7 @@ async fn spawn_instance_worker(
         let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
         scope.set_slot(JsInstanceEnv::new(instance_env));
 
-        catch_exception(scope, |scope| Ok(builtins::evalute_builtins(scope)?))
+        catch_exception(scope, |scope| Ok(builtins::evaluate_builtins(scope)?))
             .expect("our builtin code shouldn't error");
 
         // Setup the JS module, find call_reducer, and maybe build the module.
@@ -618,6 +619,12 @@ async fn spawn_instance_worker(
                 (crf, module_common)
             }
         };
+
+        if let Some(get_error_constructor) = hooks.get_error_constructor {
+            scope
+                .get_current_context()
+                .set_embedder_data(GET_ERROR_CONSTRUCTOR_SLOT, get_error_constructor.into());
+        }
 
         // Setup the instance common.
         let info = &module_common.info();
@@ -744,6 +751,8 @@ async fn spawn_instance_worker(
         (opt_mc, inst)
     })
 }
+
+const GET_ERROR_CONSTRUCTOR_SLOT: i32 = 5;
 
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
@@ -891,7 +900,7 @@ fn common_call<'scope, R, O, F>(
 ) -> ExecutionResult<R, ExecutionError>
 where
     O: InstanceOp,
-    F: FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
+    F: FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
 {
     // TODO(v8): Start the budget timeout and long-running logger.
     let env = env_on_isolate_unwrap(scope);
@@ -900,7 +909,15 @@ where
     // We'd like this tightly around `call`.
     env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
-    let call_result = catch_exception_continue(scope, |scope| call(scope, op)).map_err(|(e, can_continue)| {
+    let mut can_continue = CanContinue::Yes;
+    let call_result = catch_exception(scope, |scope| {
+        let res = call(scope, op);
+        if let Err(ErrorOrException::Exception(_)) = res {
+            can_continue = CanContinue::from_catch(scope);
+        }
+        res
+    })
+    .map_err(|e| {
         // Convert `can_continue` to whether the isolate has "trapped".
         // Also cancel execution termination if needed,
         // that can occur due to terminating long running reducers.
@@ -963,7 +980,7 @@ mod test {
     fn with_module_catch<T>(
         code: &str,
         logic: impl for<'scope> FnOnce(
-            &mut PinScope<'scope, '_>,
+            &mut PinTryCatch<'scope, '_, '_, '_>,
             Local<v8::Object>,
         ) -> Result<T, ErrorOrException<ExceptionThrown>>,
     ) -> anyhow::Result<T> {
@@ -980,6 +997,7 @@ mod test {
     fn call_call_reducer_works() {
         let call = |code| {
             with_module_catch(code, |scope, exports| {
+                builtins::evaluate_builtins(scope).unwrap();
                 let hooks = get_hooks(scope, exports)?.unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),

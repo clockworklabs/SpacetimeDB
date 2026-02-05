@@ -36,7 +36,7 @@ import { hasOwn, toCamelCase } from '../lib/util';
 import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
-import { SenderError, SpacetimeHostError } from './errors';
+import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
 import { makeRandom, type Random } from './rng';
@@ -44,7 +44,7 @@ import type { SchemaInner } from './schema';
 
 const { freeze } = Object;
 
-export const sys = freeze(wrapSyscalls(_syscalls2_0));
+export const sys = _syscalls2_0;
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -312,13 +312,21 @@ class ModuleHooksImpl implements ModuleHooks {
     return writer.getBuffer();
   }
 
+  getErrorConstructor(code: number): new (msg: string) => Error {
+    return getErrorConstructor(code);
+  }
+
+  get senderErrorClass() {
+    return SenderError;
+  }
+
   __call_reducer__(
     reducerId: u32,
     sender: u256,
     connId: u128,
     timestamp: bigint,
     argsBuf: DataView
-  ): undefined | { tag: 'err'; value: string } {
+  ): void {
     const moduleCtx = this.#schema;
     const deserializeArgs = this.#reducerArgsDeserializers[reducerId];
     BINARY_READER.reset(argsBuf);
@@ -331,14 +339,7 @@ class ModuleHooksImpl implements ModuleHooks {
       new Timestamp(timestamp),
       ConnectionId.nullIfZero(new ConnectionId(connId))
     );
-    try {
-      callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
-    } catch (e) {
-      if (e instanceof SenderError) {
-        return { tag: 'err', value: e.message };
-      }
-      throw e;
-    }
+    callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
   }
 
   __call_view__(
@@ -904,51 +905,6 @@ class IteratorHandle implements Disposable {
       sys.row_iter_bsatn_close(id);
     }
   }
-}
-
-type Intersections<Ts extends readonly any[]> = Ts extends [
-  infer T,
-  ...infer Rest,
-]
-  ? T & Intersections<Rest>
-  : unknown;
-
-function wrapSyscalls<
-  Modules extends Record<string, symbol | ((...args: any[]) => any)>[],
->(...modules: Modules): Intersections<Modules> {
-  return Object.fromEntries(
-    modules
-      .flatMap(Object.entries)
-      .map(([k, v]) => [k, typeof v === 'function' ? wrapSyscall(v) : v])
-  ) as Intersections<Modules>;
-}
-
-function wrapSyscall<F extends (...args: any[]) => any>(
-  func: F
-): (...args: Parameters<F>) => ReturnType<F> {
-  const name = func.name;
-  return {
-    [name](...args: Parameters<F>) {
-      try {
-        return func(...args);
-      } catch (e) {
-        if (
-          e !== null &&
-          typeof e === 'object' &&
-          hasOwn(e, '__code_error__') &&
-          typeof e.__code_error__ == 'number'
-        ) {
-          const message =
-            hasOwn(e, '__error_message__') &&
-            typeof e.__error_message__ === 'string'
-              ? e.__error_message__
-              : undefined;
-          throw new SpacetimeHostError(e.__code_error__, message);
-        }
-        throw e;
-      }
-    },
-  }[name];
 }
 
 function fmtLog(...data: any[]) {

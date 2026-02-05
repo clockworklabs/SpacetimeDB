@@ -5,7 +5,7 @@ use super::error::{exception_already_thrown, ExcResult, StringTooLongError, Thro
 use super::string::{str_from_ident, StringConst};
 use super::{FnRet, IntoJsString};
 
-pub(super) fn evalute_builtins(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
+pub(super) fn evaluate_builtins<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<()> {
     macro_rules! eval_builtin {
         ($file:literal) => {
             eval_builtin(
@@ -17,18 +17,18 @@ pub(super) fn evalute_builtins(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
     }
     eval_builtin!("text_encoding.js")?;
     eval_builtin!("delete_math_random.js")?;
+
     Ok(())
 }
 
-fn eval_builtin(
-    scope: &mut PinScope<'_, '_>,
+fn eval_builtin<'scope>(
+    scope: &mut PinScope<'scope, '_>,
     resource_name: &'static StringConst,
     code: &'static StringConst,
-) -> ExcResult<()> {
+) -> ExcResult<Local<'scope, v8::Module>> {
     let resource_name = resource_name.string(scope);
     let code = code.string(scope);
-    super::eval_module(scope, resource_name.into(), code, resolve_builtins_module)?;
-    Ok(())
+    super::eval_module(scope, resource_name.into(), code, resolve_builtins_module)
 }
 
 macro_rules! create_synthetic_module {

@@ -222,6 +222,20 @@ pub type SysCallResult<T> = Result<T, SysCallError>;
 /// If the flag is set, the call is prevented.
 struct TerminationFlag;
 
+pub(super) fn terminate_execution<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    err: &anyhow::Error,
+) -> ExcResult<ExceptionValue<'scope>> {
+    // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
+    // Unfortunately, JS execution won't be terminated once the callback returns,
+    // so we set a slot that all callbacks immediately check
+    // to ensure that the module won't be able to do anything to the host
+    // while it's being terminated (eventually).
+    scope.terminate_execution();
+    scope.set_slot(TerminationFlag);
+    TerminationError::from_error(scope, err)
+}
+
 /// Checks the termination flag and throws a `TerminationError` if set.
 ///
 /// Returns whether the flag was set.
@@ -244,16 +258,7 @@ fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: Nod
     let res = match err_to_errno_and_log::<u16>(abi_call, error) {
         Ok((code, None)) => CodeError::from_code(scope, code),
         Ok((code, Some(message))) => CodeMessageError::from_code(scope, code, message),
-        Err(err) => {
-            // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
-            // Unfortunately, JS execution won't be terminated once the callback returns,
-            // so we set a slot that all callbacks immediately check
-            // to ensure that the module won't be able to do anything to the host
-            // while it's being terminated (eventually).
-            scope.terminate_execution();
-            scope.set_slot(TerminationFlag);
-            TerminationError::from_error(scope, &err)
-        }
+        Err(err) => terminate_execution(scope, &err),
     };
     collapse_exc_thrown(scope, res)
 }
@@ -572,7 +577,7 @@ fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnc
 
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    fn from_caught(scope: &mut PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
+    fn from_caught(scope: &mut PinTryCatch<'_, '_, '_, '_>) -> Self {
         match scope.message() {
             Some(message) => Self {
                 trace: message
@@ -615,39 +620,18 @@ pub(super) fn log_traceback(replica_ctx: &ReplicaContext, func_type: &str, func:
 }
 
 /// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
-pub(super) fn catch_exception_continue<'scope, T>(
+pub(super) fn catch_exception<'scope, T>(
     scope: &mut PinScope<'scope, '_>,
-    body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
-) -> Result<T, (ErrorOrException<JsError>, CanContinue)> {
+    body: impl FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
+) -> Result<T, ErrorOrException<JsError>> {
     tc_scope!(scope, scope);
     body(scope).map_err(|e| match e {
-        ErrorOrException::Err(e) => (ErrorOrException::Err(e), CanContinue::Yes),
-        ErrorOrException::Exception(_) => {
-            let error = ErrorOrException::Exception(JsError::from_caught(scope));
-
-            let can_continue = if scope.can_continue() {
-                // We can continue.
-                CanContinue::Yes
-            } else if scope.has_terminated() {
-                // We can continue if we do `Isolate::cancel_terminate_execution`.
-                CanContinue::YesCancelTermination
-            } else {
-                // We cannot.
-                CanContinue::No
-            };
-
-            (error, can_continue)
-        }
+        ErrorOrException::Err(e) => ErrorOrException::Err(e),
+        ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
     })
 }
 
-/// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
-pub(super) fn catch_exception<'scope, T>(
-    scope: &mut PinScope<'scope, '_>,
-    body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
-) -> Result<T, ErrorOrException<JsError>> {
-    catch_exception_continue(scope, body).map_err(|(e, _)| e)
-}
+pub(super) type PinTryCatch<'scope, 'iso, 'x, 's> = PinnedRef<'x, TryCatch<'s, 'scope, HandleScope<'iso>>>;
 
 /// Encodes whether it is safe to continue using the [`Isolate`]
 /// for further execution after [`catch_exception`] has happened.
@@ -656,4 +640,19 @@ pub(super) enum CanContinue {
     Yes,
     YesCancelTermination,
     No,
+}
+
+impl CanContinue {
+    pub(super) fn from_catch(scope: &PinTryCatch<'_, '_, '_, '_>) -> Self {
+        if scope.can_continue() {
+            // We can continue.
+            CanContinue::Yes
+        } else if scope.has_terminated() {
+            // We can continue if we do `Isolate::cancel_terminate_execution`.
+            CanContinue::YesCancelTermination
+        } else {
+            // We cannot.
+            CanContinue::No
+        }
+    }
 }
