@@ -8,7 +8,7 @@ use crate::{
     spacetime_module::{SpacetimeModule, SubscriptionHandle},
 };
 use futures_channel::mpsc;
-use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_data_structures::map::HashMap;
 use std::sync::{atomic::AtomicU32, Arc, Mutex};
 
@@ -39,7 +39,7 @@ pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::Subscripti
 /// When handling a pending unsubscribe, there are three cases the caller must handle.
 pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
     // The unsubscribe message should be sent to the server.
-    SendUnsubscribe(ws_v1::UnsubscribeMulti),
+    SendUnsubscribe(ws::v1::UnsubscribeMulti),
     // The subscription is immediately being cancelled, so the callback should be run.
     RunCallback(OnEndedCallback<M>),
     // No action is required.
@@ -137,8 +137,8 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
             self.new_subscriptions.remove(&sub_id);
             return PendingUnsubscribeResult::DoNothing;
         }
-        PendingUnsubscribeResult::SendUnsubscribe(ws_v1::UnsubscribeMulti {
-            query_id: ws_v1::QueryId::new(sub_id),
+        PendingUnsubscribeResult::SendUnsubscribe(ws::v1::UnsubscribeMulti {
+            query_id: ws::v1::QueryId::new(sub_id),
             request_id: next_request_id(),
         })
     }
@@ -367,7 +367,7 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
     /// Start the subscription.
     /// This updates the state in the handle, and returns the message to be sent to the server.
     /// The caller is responsible for sending the message to the server.
-    pub(crate) fn start(&mut self) -> Option<ws_v1::SubscribeMulti> {
+    pub(crate) fn start(&mut self) -> Option<ws::v1::SubscribeMulti> {
         if self.unsubscribe_called {
             // This means that the subscription was cancelled before it was started.
             // We skip sending the subscription start message.
@@ -380,8 +380,8 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
             unreachable!("Subscription already started");
         }
         self.status = SubscriptionServerState::Sent;
-        Some(ws_v1::SubscribeMulti {
-            query_id: ws_v1::QueryId::new(self.query_id),
+        Some(ws::v1::SubscribeMulti {
+            query_id: ws::v1::QueryId::new(self.query_id),
             query_strings: self.query_sql.clone(),
             request_id: next_request_id(),
         })
@@ -483,7 +483,7 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
         }
     }
 
-    pub(crate) fn start(&self) -> Option<ws_v1::SubscribeMulti> {
+    pub(crate) fn start(&self) -> Option<ws::v1::SubscribeMulti> {
         let mut inner = self.inner.lock().unwrap();
         inner.start()
     }
