@@ -1522,6 +1522,11 @@ impl ModuleHost {
             if let Some(lifecycle) = reducer_def.lifecycle {
                 return Err(ReducerCallError::LifecycleReducer(lifecycle));
             }
+
+            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
+
             self.call_reducer_inner(
                 caller_identity,
                 caller_connection_id,
@@ -1698,6 +1703,11 @@ impl ModuleHost {
                 .module_def
                 .procedure_full(procedure_name)
                 .ok_or(ProcedureCallError::NoSuchProcedure)?;
+
+            if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ProcedureCallError::NoSuchProcedure);
+            }
+
             self.call_procedure_inner(
                 caller_identity,
                 caller_connection_id,
@@ -1755,6 +1765,11 @@ impl ModuleHost {
         };
 
         Ok(self.call_procedure_with_params(&procedure_def.name, params).await?)
+    }
+
+    //TODO(shub) #4195: Also allow for collaborators along with owner
+    fn is_database_owner(&self, caller_identity: Identity) -> bool {
+        self.info.owner_identity == caller_identity
     }
 
     pub async fn call_procedure_with_params(
