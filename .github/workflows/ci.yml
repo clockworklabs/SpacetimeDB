@@ -52,6 +52,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -160,6 +162,8 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
