@@ -200,7 +200,11 @@ where
         // There's no need to compress the inner table update too.
         let update = F::into_query_update(qu, ws_v1::Compression::None);
         (
-            ws_v1::TableUpdate::new(table_id, table_name.to_boxed_str(), ws_v1::SingleQueryUpdate { update, num_rows }),
+            ws_v1::TableUpdate::new(
+                table_id,
+                table_name.to_boxed_str(),
+                ws_v1::SingleQueryUpdate { update, num_rows },
+            ),
             metrics,
         )
     })
@@ -232,7 +236,11 @@ pub fn collect_table_update<F: BuildableWebsocketFormat>(
         // There's no need to compress the inner table update too.
         let update = F::into_query_update(qu, ws_v1::Compression::None);
         (
-            ws_v1::TableUpdate::new(table_id, table_name.to_boxed_str(), ws_v1::SingleQueryUpdate { update, num_rows }),
+            ws_v1::TableUpdate::new(
+                table_id,
+                table_name.to_boxed_str(),
+                ws_v1::SingleQueryUpdate { update, num_rows },
+            ),
             metrics,
         )
     })

@@ -1610,8 +1610,8 @@ impl ModuleHost {
             .call(
                 "call_view_add_multi_subscription",
                 cmd,
-                |cmd, inst| inst.call_view(cmd),
-                |cmd, inst| inst.call_view(cmd),
+                async |cmd, inst| inst.call_view(cmd),
+                async |cmd, inst| inst.call_view(cmd).await,
             )
             .await
             //TODO: handle error better
