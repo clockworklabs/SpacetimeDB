@@ -36,4 +36,24 @@ namespace SpacetimeDB.Types
 
         public readonly FoodHandle Food;
     }
+
+    public sealed class FoodCols
+    {
+        public global::SpacetimeDB.Col<Food, int> EntityId { get; }
+
+        public FoodCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.Col<Food, int>(tableName, "entity_id");
+        }
+    }
+
+    public sealed class FoodIxCols
+    {
+        public global::SpacetimeDB.IxCol<Food, int> EntityId { get; }
+
+        public FoodIxCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.IxCol<Food, int>(tableName, "entity_id");
+        }
+    }
 }

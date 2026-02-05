@@ -151,7 +151,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             }
         };
         impl #func_name {
-            fn invoke(__ctx: spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
+            fn invoke(__ctx: &spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
                 spacetimedb::rt::invoke_reducer(#func_name, __ctx, __args)
             }
         }

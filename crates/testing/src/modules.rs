@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
+use futures::TryStreamExt as _;
 use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
@@ -18,7 +19,6 @@ use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
-use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::host::FunctionArgs;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
@@ -87,8 +87,17 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let logs_dir = self._env.data_dir().replica(self.client.replica_id).module_logs();
-        DatabaseLogger::read_latest(logs_dir, size).await
+        let bytes = self
+            .client
+            .module()
+            .database_logger()
+            .tail(size, false)
+            .await
+            .unwrap()
+            .try_collect::<BytesMut>()
+            .await
+            .expect("failed to collect log stream");
+        String::from_utf8(bytes.into()).unwrap()
     }
 }
 
@@ -113,7 +122,7 @@ impl CompiledModule {
             mode == CompilationMode::Debug,
             None,
         )
-        .unwrap();
+        .expect("Module compilation failed");
         Self {
             name: name.to_owned(),
             path,
@@ -195,7 +204,7 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+            JobCores::without_pinned_cores(),
         )
         .await
         .unwrap();
@@ -212,6 +221,7 @@ impl CompiledModule {
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
+                organization: None,
             },
             MigrationPolicy::Compatible,
         )
@@ -227,11 +237,7 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let host = env
-            .leader(database.id)
-            .await
-            .expect("host should be running")
-            .expect("host should be running");
+        let host = env.leader(database.id).await.expect("host should be running");
         let module_rx = host.module_watcher().await.unwrap();
 
         // TODO: it might be neat to add some functionality to module handle to make

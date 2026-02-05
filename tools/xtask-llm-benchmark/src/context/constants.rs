@@ -6,6 +6,7 @@ pub const RUSTDOC_CRATE_ROOT_DEFAULT: &str = "../../crates/bindings";
 // Docs benchmark files (CI - single "best" model to test documentation quality)
 pub const DOCS_BENCHMARK_DETAILS_DEFAULT: &str = "../../docs/llms/docs-benchmark-details.json";
 pub const DOCS_BENCHMARK_SUMMARY_DEFAULT: &str = "../../docs/llms/docs-benchmark-summary.json";
+pub const DOCS_BENCHMARK_COMMENT_DEFAULT: &str = "../../docs/llms/docs-benchmark-comment.md";
 
 // LLM comparison files (manual runs - all models to compare LLM performance)
 pub const LLM_COMPARISON_DETAILS_DEFAULT: &str = "../../docs/llms/llm-comparison-details.json";
@@ -26,6 +27,10 @@ pub fn docs_benchmark_details() -> PathBuf {
 #[inline]
 pub fn docs_benchmark_summary() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DOCS_BENCHMARK_SUMMARY_DEFAULT)
+}
+#[inline]
+pub fn docs_benchmark_comment() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DOCS_BENCHMARK_COMMENT_DEFAULT)
 }
 
 // LLM comparison paths (manual)

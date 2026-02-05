@@ -9,12 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: --privileged
-
-
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,7 +17,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - uses: pnpm/action-setup@v4
         with:

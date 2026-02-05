@@ -99,5 +99,9 @@ fn find_tasks_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
             let p = dir.join("rust.txt");
             p.exists().then_some(p)
         }
+        Lang::TypeScript => {
+            let p = dir.join("typescript.txt");
+            p.exists().then_some(p)
+        }
     }
 }

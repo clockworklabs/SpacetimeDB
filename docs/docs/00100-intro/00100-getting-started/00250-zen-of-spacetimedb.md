@@ -26,13 +26,17 @@ Traditional stack:        SpacetimeDB:
 
 ## Everything is Persistent
 
-You will ask, does everything need to be persistent? Won't that be a lot of data? Won't that be slow. The answers are yes, no, and no. SpacetimeDB persists everything by default, even the full history of everything that has every changed. It should be **your choice** to delete data, not the databases. SpacetimeDB gives you that choice.
+SpacetimeDB persists everything by default, including the full history of any rows that have ever changed.
+
+You will ask, does everything need to be persistent? Won't that be a lot of data? Well, you would be surprised! For example, updating 1 million player transforms 10 times per second for a year uses roughly 10 petabytes of data, uncompressed. SpacetimeDB can compress that sort of data by about 5-10x, meaning that keeping every position for every player for a game with a million concurrent players uses only about 1-2 petabytes per year. Storing that much data in Amazon S3 would only cost you between $2,300 and $5,600 per month. A fraction of the cost of a single engineer or data scientist!
+
+You can of course choose to delete the historical data, but it should be **your choice** to delete data, not the database's. SpacetimeDB gives you that choice.
+
+Won't it be slow to persist everything? No. SpacetimeDB is designed so that persistence guarantees only ever increase latency and never decrease throughput! Modern SSDs can write upwards of 15 GB/s of data to disk. DRAM can only do about 4x more. Let's actually use that Samsung-given bandwidth.
 
 SpacetimeDB holds all your data in memory for blazing-fast access, but automatically persists everything to disk. You get the speed of in-memory computing with the durability of a traditional database.
 
 You will be tempted to ask for "ephemeral state". This is a mistake. Persistent everything allows your app to recover to the *exact* state it was in. In principle, you could even debug your production app in the state it was in in the past with a time-traveling debugger.
-
-SpacetimeDB is designed so that persistence guarantees only ever increase latency and never decrease throughput! Modern SSDs can write upwards of 15 GB/s of data to disk. DRAM can only do about 4x more. Let's actually use that Samsung-given bandwidth.
 
 Write your code as if memory were infinite and permanent. Insert rows freely. Query without fear. SpacetimeDB handles the persistence, you handle the logic.
 

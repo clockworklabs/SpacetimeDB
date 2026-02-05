@@ -336,9 +336,9 @@ impl ClientConnectionSender {
         let cancelled = AtomicBool::new(false);
         let dummy_claims = SpacetimeIdentityClaims {
             identity: id.identity,
-            subject: "".to_string(),
-            issuer: "".to_string(),
-            audience: vec![],
+            subject: "".into(),
+            issuer: "".into(),
+            audience: [].into(),
             iat: SystemTime::now(),
             exp: None,
             extra: None,

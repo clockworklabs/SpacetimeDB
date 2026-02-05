@@ -2,6 +2,7 @@
 //!
 //! This notably excludes `Ref` types.
 
+use crate::raw_identifier::RawIdentifier;
 use crate::{i256, u256, ProductTypeElement, SumTypeVariant};
 use crate::{
     AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumType, SumValue,
@@ -71,7 +72,7 @@ fn generate_algebraic_type_from_leaves(
                     .enumerate()
                     .map(|(i, ty)| ProductTypeElement {
                         // Generate names because the validation code in the `schema` crate requires them.
-                        name: Some(format!("field_{i}").into()),
+                        name: Some(RawIdentifier::new(format!("field_{i}"))),
                         algebraic_type: ty
                     })
                     .collect())
@@ -83,7 +84,7 @@ fn generate_algebraic_type_from_leaves(
                     .into_iter()
                     .enumerate()
                     .map(|(i, ty)| SumTypeVariant {
-                        name: Some(format!("variant_{i}").into()),
+                        name: Some(RawIdentifier::new(format!("variant_{i}"))),
                         algebraic_type: ty
                     })
                     .collect::<Vec<_>>())
@@ -169,10 +170,7 @@ fn generate_sum_value(ty: SumType) -> impl Strategy<Value = SumValue> {
     (0..ty.variants.len()).prop_flat_map(move |tag: usize| {
         let variant_ty = ty.variants[tag].clone();
         let gen_variant = generate_algebraic_value(variant_ty.algebraic_type);
-        gen_variant.prop_map(move |value| SumValue {
-            tag: tag as u8,
-            value: Box::new(value),
-        })
+        gen_variant.prop_map(move |value| SumValue::new(tag as u8, value))
     })
 }
 

@@ -14,7 +14,7 @@ use spacetimedb::auth::token_validation::{
 use spacetimedb::auth::JwtKeys;
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
-use std::collections::HashMap;
+use spacetimedb_data_structures::map::HashMap;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
@@ -87,14 +87,15 @@ pub struct SpacetimeAuth {
     pub creds: SpacetimeCreds,
     pub claims: SpacetimeIdentityClaims,
     /// The JWT payload as a json string (after base64 decoding).
-    pub jwt_payload: String,
+    pub jwt_payload: Box<str>,
 }
 
 impl SpacetimeAuth {
     pub fn new(creds: SpacetimeCreds, claims: SpacetimeIdentityClaims) -> Result<Self, anyhow::Error> {
         let payload = creds
             .extract_jwt_payload_string()
-            .ok_or_else(|| anyhow!("Failed to extract JWT payload"))?;
+            .ok_or_else(|| anyhow!("Failed to extract JWT payload"))?
+            .into_boxed_str();
         Ok(Self {
             creds,
             claims,
@@ -115,10 +116,10 @@ impl From<SpacetimeAuth> for ConnectionAuthCtx {
 use jsonwebtoken;
 
 pub struct TokenClaims {
-    pub issuer: String,
-    pub subject: String,
-    pub audience: Vec<String>,
-    pub extra: Option<HashMap<String, serde_json::Value>>,
+    pub issuer: Box<str>,
+    pub subject: Box<str>,
+    pub audience: Box<[Box<str>]>,
+    pub extra: Option<HashMap<Box<str>, serde_json::Value>>,
 }
 
 impl From<SpacetimeAuth> for TokenClaims {
@@ -133,11 +134,11 @@ impl From<SpacetimeAuth> for TokenClaims {
 }
 
 impl TokenClaims {
-    pub fn new(issuer: String, subject: String) -> Self {
+    pub fn new(issuer: Box<str>, subject: Box<str>) -> Self {
         Self {
             issuer,
             subject,
-            audience: Vec::new(),
+            audience: [].into(),
             extra: None,
         }
     }
@@ -182,12 +183,12 @@ impl SpacetimeAuth {
     /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
         // Generate claims with a random subject.
-        let subject = Uuid::new_v4().to_string();
+        let subject = Uuid::new_v4().to_string().into();
         let claims = TokenClaims {
-            issuer: ctx.jwt_auth_provider().local_issuer().to_owned(),
-            subject: subject.clone(),
+            issuer: ctx.jwt_auth_provider().local_issuer().into(),
+            subject,
             // Placeholder audience.
-            audience: vec!["spacetimedb".to_string()],
+            audience: ["spacetimedb".into()].into(),
             extra: None,
         };
 
@@ -234,20 +235,20 @@ pub trait JwtAuthProvider: Sync + Send + TokenSigner {
 
 pub struct JwtKeyAuthProvider<TV: TokenValidator + Send + Sync> {
     keys: JwtKeys,
-    local_issuer: String,
+    local_issuer: Box<str>,
     validator: TV,
 }
 
 pub type DefaultJwtAuthProvider = JwtKeyAuthProvider<DefaultValidator>;
 
 // Create a new AuthEnvironment using the default caching validator.
-pub fn default_auth_environment(keys: JwtKeys, local_issuer: String) -> JwtKeyAuthProvider<DefaultValidator> {
+pub fn default_auth_environment(keys: JwtKeys, local_issuer: Box<str>) -> JwtKeyAuthProvider<DefaultValidator> {
     let validator = new_validator(keys.public.clone(), local_issuer.clone());
     JwtKeyAuthProvider::new(keys, local_issuer, validator)
 }
 
 impl<TV: TokenValidator + Send + Sync> JwtKeyAuthProvider<TV> {
-    fn new(keys: JwtKeys, local_issuer: String, validator: TV) -> Self {
+    fn new(keys: JwtKeys, local_issuer: Box<str>, validator: TV) -> Self {
         Self {
             keys,
             local_issuer,
@@ -285,7 +286,7 @@ mod tests {
     use anyhow::Ok;
 
     use spacetimedb::auth::{token_validation::TokenValidator, JwtKeys};
-    use std::collections::{HashMap, HashSet};
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 
     // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
     #[tokio::test]
@@ -293,9 +294,9 @@ mod tests {
         let kp = JwtKeys::generate()?;
 
         let claims = TokenClaims {
-            issuer: "localhost".to_string(),
-            subject: "test-subject".to_string(),
-            audience: vec!["spacetimedb".to_string()],
+            issuer: "localhost".into(),
+            subject: "test-subject".into(),
+            audience: ["spacetimedb".into()].into(),
             extra: None,
         };
         let id = claims.id();
@@ -306,10 +307,10 @@ mod tests {
         Ok(())
     }
 
-    fn to_hashmap(value: serde_json::Value) -> HashMap<String, serde_json::Value> {
+    fn to_hashmap(value: serde_json::Value) -> HashMap<Box<str>, serde_json::Value> {
         let mut map = HashMap::new();
         value.as_object().unwrap().iter().for_each(|(k, v)| {
-            map.insert(k.clone(), v.clone());
+            map.insert(k.clone().into(), v.clone());
         });
         map
     }
@@ -320,9 +321,9 @@ mod tests {
         let kp = JwtKeys::generate()?;
 
         let claims = TokenClaims {
-            issuer: "localhost".to_string(),
-            subject: "test-subject".to_string(),
-            audience: vec!["spacetimedb".to_string()],
+            issuer: "localhost".into(),
+            subject: "test-subject".into(),
+            audience: ["spacetimedb".into()].into(),
             extra: Some(to_hashmap(serde_json::json!({"custom_claim": "value"}))),
         };
         let id = claims.id();
@@ -340,11 +341,11 @@ mod tests {
     async fn extract_payload() -> Result<(), anyhow::Error> {
         let kp = JwtKeys::generate()?;
 
-        let dummy_audience = "spacetimedb".to_string();
+        let dummy_audience: Box<str> = "spacetimedb".into();
         let claims = TokenClaims {
-            issuer: "localhost".to_string(),
-            subject: "test-subject".to_string(),
-            audience: vec![dummy_audience.clone()],
+            issuer: "localhost".into(),
+            subject: "test-subject".into(),
+            audience: [dummy_audience.clone()].into(),
             extra: None,
         };
         let (_, token) = claims.encode_and_sign(&kp.private)?;
@@ -354,11 +355,11 @@ mod tests {
             .ok_or_else(|| anyhow::anyhow!("Failed to extract JWT payload"))?;
         // Make sure it is valid json.
         let parsed: serde_json::Value = serde_json::from_str(&payload)?;
-        assert_eq!(parsed.get("iss").unwrap().as_str().unwrap(), claims.issuer);
-        assert_eq!(parsed.get("sub").unwrap().as_str().unwrap(), claims.subject);
+        assert_eq!(parsed.get("iss").unwrap().as_str().unwrap(), &*claims.issuer);
+        assert_eq!(parsed.get("sub").unwrap().as_str().unwrap(), &*claims.subject);
         assert_eq!(
             parsed.get("aud").unwrap().as_array().unwrap()[0].as_str().unwrap(),
-            dummy_audience
+            &*dummy_audience
         );
         let as_object = parsed
             .as_object()
@@ -402,7 +403,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
         let auth = SpacetimeAuth {
             creds,
             claims,
-            jwt_payload: payload,
+            jwt_payload: payload.into(),
         };
         Ok(Self { auth: Some(auth) })
     }

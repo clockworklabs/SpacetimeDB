@@ -16,6 +16,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -314,7 +315,12 @@ impl ToProtocol for TransactionUpdateMessage {
                 status,
                 caller_identity: event.caller_identity,
                 reducer_call: ws_v1::ReducerCallInfo {
-                    reducer_name: event.function_call.reducer.to_owned().into(),
+                    reducer_name: event
+                        .function_call
+                        .reducer
+                        .as_ref()
+                        .map(|r| (&**r).into())
+                        .unwrap_or_default(),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id,
@@ -413,7 +419,7 @@ pub struct SubscriptionData {
 #[derive(Debug, Clone)]
 pub struct SubscriptionRows {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_rows: ws_v1::FormatSwitch<ws_v1::TableUpdate<ws_v1::BsatnFormat>, ws_v1::TableUpdate<ws_v1::JsonFormat>>,
 }
 
@@ -484,7 +490,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -497,7 +503,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -515,7 +521,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -528,7 +534,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }

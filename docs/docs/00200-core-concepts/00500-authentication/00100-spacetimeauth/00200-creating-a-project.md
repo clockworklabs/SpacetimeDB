@@ -1,6 +1,5 @@
 ---
 title: Creating a project
-slug: /spacetimeauth/creating-a-project
 ---
 
 :::warning
@@ -48,6 +47,6 @@ your project:
 ## 4. Next Steps
 
 Now that you have created a SpacetimeAuth project, you can start configuring it
-to suit your application's needs. Check out our [configuration guide](/spacetimeauth/configuring-a-project)
+to suit your application's needs. Check out our [configuration guide](./00300-configuring-a-project.md)
 for more information on setting up identity providers, customizing templates,
 and managing users and roles.
