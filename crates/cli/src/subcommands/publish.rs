@@ -226,7 +226,16 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         if !quiet_config {
             println!("Using configuration from {}", config_path.display());
         }
-        (true, get_filtered_publish_configs(spacetime_config, &schema, args)?)
+        let filtered = get_filtered_publish_configs(spacetime_config, &schema, args)?;
+        // If filtering resulted in no matches, use CLI args with empty config
+        if filtered.is_empty() {
+            (
+                false,
+                vec![CommandConfig::new(&schema, std::collections::HashMap::new())?],
+            )
+        } else {
+            (true, filtered)
+        }
     } else {
         (
             false,

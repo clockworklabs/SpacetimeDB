@@ -215,7 +215,13 @@ pub async fn exec_ex(
         if !quiet_config {
             println!("Using configuration from {}", config_path.display());
         }
-        get_filtered_generate_configs(spacetime_config, &schema, args)?
+        let filtered = get_filtered_generate_configs(spacetime_config, &schema, args)?;
+        // If filtering resulted in no matches, use CLI args with empty config
+        if filtered.is_empty() {
+            vec![CommandConfig::new(&schema, HashMap::new())?]
+        } else {
+            filtered
+        }
     } else {
         vec![CommandConfig::new(&schema, HashMap::new())?]
     };

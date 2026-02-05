@@ -178,8 +178,6 @@ pub struct CommandConfig<'a> {
 pub struct CommandSchema {
     /// Key definitions
     keys: Vec<Key>,
-    /// Keys excluded from config file
-    excluded_keys: HashSet<String>,
     /// Type information for validation (keyed by config name)
     type_map: HashMap<String, TypeId>,
     /// Map from config name to clap arg name (for from_clap mapping)
@@ -301,7 +299,6 @@ impl CommandSchemaBuilder {
 
         Ok(CommandSchema {
             keys: self.keys,
-            excluded_keys: self.excluded_keys,
             type_map,
             config_to_clap: config_to_clap_map,
             config_to_alias: config_to_alias_map,
