@@ -4,7 +4,7 @@
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
-use spacetimedb_smoketests::{pnpm_path, require_dotnet, require_pnpm, workspace_root, Smoketest};
+use spacetimedb_smoketests::{pnpm_path, require_dotnet, require_emscripten, require_pnpm, workspace_root, Smoketest};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -442,6 +442,37 @@ fn user_input_direct(ctx: &DbConnection) {
             connected_str: "connected",
         }
     }
+
+    fn cpp() -> Self {
+        // C++ server uses Rust client (same as TypeScript pattern)
+        Self {
+            lang: "cpp",
+            client_lang: "rust",
+            server_file: "src/lib.cpp",
+            client_file: "src/main.rs",
+            module_bindings: "src/module_bindings",
+            run_cmd: &["cargo", "run"],
+            build_cmd: &["cargo", "build"],
+            replacements: &[
+                ("user_input_loop(&ctx)", "user_input_direct(&ctx)"),
+                (".with_token(creds_store()", "//.with_token(creds_store()"),
+            ],
+            extra_code: r#"
+fn user_input_direct(ctx: &DbConnection) {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).expect("Failed to read from stdin.");
+    if let Some(name) = line.strip_prefix("/name ") {
+        ctx.reducers.set_name(name.to_string()).unwrap();
+    } else {
+        ctx.reducers.send_message(line).unwrap();
+    }
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::process::exit(0);
+}
+"#,
+            connected_str: "connected",
+        }
+    }
 }
 
 /// Quickstart test runner.
@@ -781,4 +812,13 @@ fn test_quickstart_typescript() {
 
     let mut qt = QuickstartTest::new(QuickstartConfig::typescript());
     qt.run_quickstart().expect("TypeScript quickstart test failed");
+}
+
+/// Run the C++ quickstart for server (with Rust client).
+#[test]
+fn test_quickstart_cpp() {
+    require_emscripten!();
+
+    let mut qt = QuickstartTest::new(QuickstartConfig::cpp());
+    qt.run_quickstart().expect("C++ quickstart test failed");
 }

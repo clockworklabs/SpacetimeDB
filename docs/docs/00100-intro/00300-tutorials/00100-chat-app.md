@@ -250,7 +250,7 @@ Open `spacetimedb/src/lib.cpp` and add the SpacetimeDB header:
 ```cpp server
 #include <spacetimedb.h>
 
-using namespace SpacetimeDb;
+using namespace SpacetimeDB;
 ```
 
 This gives us access to:

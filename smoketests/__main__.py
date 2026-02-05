@@ -107,10 +107,6 @@ def main():
             print("no suitable dotnet installation found")
             exit(1)
 
-    smoketests.check_emscripten()
-    if not smoketests.HAVE_EMSCRIPTEN:
-        logging.info("emscripten not available, skipping C++ smoketests")
-
     add_prefix = lambda testlist: [TESTPREFIX + test for test in testlist]
     import fnmatch
     excludelist = add_prefix(args.exclude)

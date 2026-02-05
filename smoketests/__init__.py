@@ -38,8 +38,6 @@ HAVE_DOCKER = False
 # this is set to true when the --skip-dotnet flag is not passed to the cli,
 # and a dotnet installation is detected
 HAVE_DOTNET = False
-# this is set to true when emscripten is detected
-HAVE_EMSCRIPTEN = False
 
 # When we pass --spacetime-login, we are running against a server that requires "real" spacetime logins (rather than `--server-issued-login`).
 # This is used to skip tests that don't work with that.
@@ -71,20 +69,12 @@ handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)
 logging.getLogger().addHandler(handler)
 logging.getLogger().setLevel(logging.DEBUG)
 
-def check_emscripten():
-    """Check if emscripten is available."""
-    global HAVE_EMSCRIPTEN
-    HAVE_EMSCRIPTEN = shutil.which("emcc") is not None
 
 def requires_dotnet(item):
     if HAVE_DOTNET:
         return item
     return unittest.skip("dotnet 8.0 not available")(item)
 
-def requires_emscripten(item):
-    if HAVE_EMSCRIPTEN:
-        return item
-    return unittest.skip("emscripten not available")(item)
 
 def requires_anonymous_login(item):
     if USE_SPACETIME_LOGIN:
