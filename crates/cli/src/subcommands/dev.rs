@@ -1,7 +1,7 @@
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
-use crate::spacetime_config::{detect_client_command, SpacetimeConfig};
+use crate::spacetime_config::{detect_client_command, CommandConfig, SpacetimeConfig};
 use crate::subcommands::init;
 use crate::util::{
     add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
@@ -126,11 +126,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // If you don't specify a server, we default to your default server
     // If you don't have one of those, we default to "maincloud"
-    let server = args.get_one::<String>("server").map(|s| s.as_str());
+    let server_from_cli = args.get_one::<String>("server").map(|s| s.as_str());
 
     let default_server_name = config.default_server_name().map(|s| s.to_string());
 
-    let mut resolved_server = server
+    let mut resolved_server = server_from_cli
         .or(default_server_name.as_deref())
         .ok_or_else(|| anyhow::anyhow!("Server not specified and no default server configured."))?;
 
@@ -187,6 +187,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         );
     }
 
+    // Load spacetime.json config early for potential filtering
+    // If the file exists but fails to parse, we should error immediately
+    let spacetime_config = match SpacetimeConfig::load_from_dir(&project_dir) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("{} Failed to load spacetime.json: {}", "✗".red(), e);
+            std::process::exit(1);
+        }
+    };
+
     if !module_bindings_dir.exists() {
         // Create the module bindings directory if it doesn't exist
         std::fs::create_dir_all(&module_bindings_dir).with_context(|| {
@@ -202,12 +212,30 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         );
     }
 
-    if resolved_server == "maincloud" && config.spacetimedb_token().is_none() {
+    // Check if we need to login to maincloud
+    // Either because --server maincloud was provided, or because any of the publish configs use maincloud
+    let needs_maincloud_login = resolved_server == "maincloud"
+        || spacetime_config
+            .as_ref()
+            .and_then(|c| c.publish.as_ref())
+            .map(|publish| {
+                publish.iter_all_targets().any(|target| {
+                    target
+                        .additional_fields
+                        .get("server")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s == "maincloud")
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+
+    if needs_maincloud_login && config.spacetimedb_token().is_none() {
         let should_login = Confirm::new()
             .with_prompt("Would you like to sign in now?")
             .default(true)
             .interact()?;
-        if !should_login && server.is_some() {
+        if !should_login && server_from_cli.is_some() {
             // The user explicitly provided --server maincloud but doesn't want to log in
             anyhow::bail!("Login required to publish to maincloud server");
         } else if !should_login {
@@ -227,8 +255,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     let use_local = resolved_server == "local";
 
-    // Check positional argument first, then deprecated --database flag
-    let database_name = if let Some(name) = args
+    // Check positional argument first, then deprecated --database flag, then config file
+    let database_name: Option<String> = if let Some(name) = args
         .get_one::<String>("database")
         .or_else(|| args.get_one::<String>("database-flag"))
     {
@@ -239,12 +267,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 "--database flag is deprecated. Use positional argument instead: spacetime dev <database>".dimmed()
             );
         }
-        name.clone()
+        Some(name.clone())
+    } else if spacetime_config.as_ref().and_then(|c| c.publish.as_ref()).is_some() {
+        // If we have publish configs in spacetime.json, skip the database prompt
+        // The actual database names will be taken from the configs during publish
+        None
     } else {
         println!("\n{}", "Found existing SpacetimeDB project.".green());
         println!("Now we need to select a database to publish to.\n");
 
-        if use_local {
+        let selected = if use_local {
             generate_database_name()
         } else {
             // If not logged in before, but login was successful just now, this will have the token
@@ -261,17 +293,77 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             } else {
                 select_database(&config, resolved_server, &token).await?
             }
-        }
-    };
+        };
 
-    if args.get_one::<String>("database").is_none() && args.get_one::<String>("database-flag").is_none() {
-        println!("\n{} {}", "Selected database:".green().bold(), database_name.cyan());
+        println!("\n{} {}", "Selected database:".green().bold(), selected.cyan());
         println!(
             "{} {}",
             "Tip:".yellow().bold(),
-            format!("Use `spacetime dev {}` to skip this question next time", database_name).dimmed()
+            format!("Use `spacetime dev {}` to skip this question next time", selected).dimmed()
         );
-    }
+
+        Some(selected)
+    };
+
+    // Build unified publish configs
+    // Either from spacetime.json (filtered by database_name if provided),
+    // or create a single config from database_name CLI argument
+    let publish_cmd = publish::cli();
+    let publish_schema = publish::build_publish_schema(&publish_cmd)?;
+
+    let publish_configs: Vec<CommandConfig> = if let Some(ref config) = spacetime_config {
+        if config.publish.is_some() {
+            // Create minimal ArgMatches with database and server args for filtering
+            let mut publish_argv = vec!["publish"];
+            let db_str;
+            let server_str;
+            if let Some(ref db) = database_name {
+                db_str = db.clone();
+                publish_argv.push(&db_str);
+            }
+            if let Some(srv) = args.get_one::<String>("server") {
+                publish_argv.push("--server");
+                server_str = srv.clone();
+                publish_argv.push(&server_str);
+            }
+
+            let publish_args = publish_cmd
+                .clone()
+                .try_get_matches_from(publish_argv)
+                .context("Failed to create publish arguments for filtering")?;
+
+            // Filter publish configs based on database arg (if provided)
+            let filtered = publish::get_filtered_publish_configs(config, &publish_schema, &publish_args)?;
+
+            if filtered.is_empty() {
+                anyhow::bail!("No publish configurations found in spacetime.json");
+            }
+
+            filtered
+        } else if let Some(ref db_name) = database_name {
+            // No publish config in file, create from database_name
+            use serde_json::json;
+            use std::collections::HashMap;
+
+            let mut config_map = HashMap::new();
+            config_map.insert("database".to_string(), json!(db_name));
+
+            vec![CommandConfig::new(&publish_schema, config_map)?]
+        } else {
+            anyhow::bail!("No database name provided and no publish configurations found");
+        }
+    } else if let Some(ref db_name) = database_name {
+        // No config file at all, create from database_name
+        use serde_json::json;
+        use std::collections::HashMap;
+
+        let mut config_map = HashMap::new();
+        config_map.insert("database".to_string(), json!(db_name));
+
+        vec![CommandConfig::new(&publish_schema, config_map)?]
+    } else {
+        anyhow::bail!("No database name provided and no publish configurations found");
+    };
 
     // Determine client command: CLI flag > config file > auto-detect (and save)
     let server_only = args.get_flag("server-only");
@@ -308,12 +400,45 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     };
 
+    // Extract database names from publish configs for log streaming
+    let db_names_for_logging: Vec<String> = publish_configs
+        .iter()
+        .map(|config| {
+            config
+                .get_config_value("database")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .ok_or_else(|| anyhow::anyhow!("Publish config missing database name"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Use first database for client process
+    let db_name_for_client = &db_names_for_logging[0];
+
+    // Extract watch directories from publish configs
+    let watch_dirs = extract_watch_dirs(&publish_configs, &spacetimedb_dir);
+
     println!("\n{}", "Starting development mode...".green().bold());
-    println!("Database: {}", database_name.cyan());
-    println!(
-        "Watching for changes in: {}",
-        spacetimedb_dir.display().to_string().cyan()
-    );
+    if db_names_for_logging.len() == 1 {
+        println!("Database: {}", db_names_for_logging[0].cyan());
+    } else {
+        println!("Databases: {}", db_names_for_logging.join(", ").cyan());
+    }
+
+    // Announce watch directories
+    if watch_dirs.len() == 1 {
+        println!(
+            "Watching for changes in: {}",
+            watch_dirs.iter().next().unwrap().display().to_string().cyan()
+        );
+    } else {
+        let watch_dirs_vec: Vec<_> = watch_dirs.iter().collect();
+        println!("Watching for changes in {} directories:", watch_dirs.len());
+        for dir in &watch_dirs_vec {
+            println!("  - {}", dir.display().to_string().cyan());
+        }
+    }
+
     if let Some(ref cmd) = client_command {
         println!("Client command: {}", cmd.cyan());
     }
@@ -325,23 +450,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         &project_dir,
         &spacetimedb_dir,
         &module_bindings_dir,
-        &database_name,
         client_language,
-        resolved_server,
         clear_database,
+        &publish_configs,
+        server_from_cli,
     )
     .await?;
 
     // Sleep for a second to allow the database to be published on Maincloud
     sleep(Duration::from_secs(1)).await;
 
-    let db_identity = database_identity(&config, &database_name, Some(resolved_server)).await?;
-    let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), Some(resolved_server)).await?;
+    // Start log streams for all targets
+    let use_prefix = db_names_for_logging.len() > 1;
+    let mut log_handles = Vec::new();
+    for db_name in &db_names_for_logging {
+        let db_identity = database_identity(&config, db_name, Some(resolved_server)).await?;
+        let prefix = if use_prefix { Some(db_name.clone()) } else { None };
+        let handle = start_log_stream(
+            config.clone(),
+            db_identity.to_hex().to_string(),
+            Some(resolved_server),
+            prefix,
+        )
+        .await?;
+        log_handles.push(handle);
+    }
 
     // Start the client development server if configured
     let server_host_url = config.get_host_url(Some(resolved_server))?;
     let _client_handle = if let Some(ref cmd) = client_command {
-        let mut child = start_client_process(cmd, &project_dir, &database_name, &server_host_url)?;
+        let mut child = start_client_process(cmd, &project_dir, db_name_for_client, &server_host_url)?;
 
         // Give the process a moment to fail fast (e.g., command not found, missing deps)
         sleep(Duration::from_millis(200)).await;
@@ -381,17 +519,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
     )?;
 
-    // Watch the appropriate directory based on project structure
-    // Rust/TypeScript modules have source in `src/`, C# modules have `*.cs` directly in the module dir
-    let src_dir = spacetimedb_dir.join("src");
-    let watch_dir = if src_dir.exists() && src_dir.is_dir() {
-        src_dir
-    } else {
-        spacetimedb_dir.to_path_buf()
-    };
-    watcher.watch(&watch_dir, RecursiveMode::Recursive)?;
-
-    println!("{}", "Watching for file changes...".dimmed());
+    // Watch all directories
+    for watch_dir in &watch_dirs {
+        watcher.watch(watch_dir, RecursiveMode::Recursive)?;
+    }
 
     let mut debounce_timer;
     loop {
@@ -409,10 +540,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 &project_dir,
                 &spacetimedb_dir,
                 &module_bindings_dir,
-                &database_name,
                 client_language,
-                resolved_server,
                 clear_database,
+                &publish_configs,
+                server_from_cli,
             )
             .await
             {
@@ -477,10 +608,10 @@ async fn generate_build_and_publish(
     project_dir: &Path,
     spacetimedb_dir: &Path,
     module_bindings_dir: &Path,
-    database_name: &str,
     client_language: Option<&Language>,
-    server: &str,
     clear_database: ClearMode,
+    publish_configs: &[CommandConfig<'_>],
+    server: Option<&str>,
 ) -> Result<(), anyhow::Error> {
     let module_language = detect_module_language(spacetimedb_dir)?;
     let client_language = client_language.unwrap_or(match module_language {
@@ -495,16 +626,22 @@ async fn generate_build_and_publish(
         Language::UnrealCpp => "unrealcpp",
     };
 
+    // For TypeScript client, update .env.local with first database name
     if client_language == &Language::TypeScript {
-        // Update SPACETIMEDB_DBNAME environment variables in `.env.local` for TypeScript client
+        let first_db_name = publish_configs
+            .first()
+            .and_then(|c| c.get_config_value("database"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("First publish config missing database name"))?;
+
         println!(
             "{} {}...",
             "Updating .env.local with database name".cyan(),
-            database_name
+            first_db_name
         );
         let env_path = project_dir.join(".env.local");
-        let server_host_url = config.get_host_url(Some(server))?;
-        upsert_env_db_names_and_hosts(&env_path, &server_host_url, database_name)?;
+        let server_host_url = config.get_host_url(server)?;
+        upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
     }
 
     println!("{}", "Building...".cyan());
@@ -533,28 +670,44 @@ async fn generate_build_and_publish(
     println!("{}", "Publishing...".cyan());
 
     let project_path_str = spacetimedb_dir.to_str().unwrap();
-
     let clear_flag = match clear_database {
         ClearMode::Always => "always",
         ClearMode::Never => "never",
         ClearMode::OnConflict => "on-conflict",
     };
-    let mut publish_args = vec![
-        "publish".to_string(),
-        database_name.to_string(),
-        "--project-path".to_string(),
-        project_path_str.to_string(),
-        "--yes".to_string(),
-        format!("--delete-data={}", clear_flag),
-    ];
-    publish_args.extend_from_slice(&["--server".to_string(), server.to_string()]);
 
-    let publish_cmd = publish::cli();
-    let publish_matches = publish_cmd
-        .try_get_matches_from(publish_args)
-        .context("Failed to create publish arguments")?;
+    // Loop through all publish configs
+    for config_entry in publish_configs {
+        let db_name = config_entry
+            .get_config_value("database")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Publish config missing database name"))?;
 
-    publish::exec_with_options(config.clone(), &publish_matches, true).await?;
+        if publish_configs.len() > 1 {
+            println!("{} {}...", "Publishing to".cyan(), db_name.cyan().bold());
+        }
+
+        let mut publish_args = vec![
+            "publish".to_string(),
+            db_name.to_string(),
+            "--project-path".to_string(),
+            project_path_str.to_string(),
+            "--yes".to_string(),
+            format!("--delete-data={}", clear_flag),
+        ];
+
+        // Only pass --server if it was explicitly provided via CLI
+        if let Some(srv) = server {
+            publish_args.extend_from_slice(&["--server".to_string(), srv.to_string()]);
+        }
+
+        let publish_cmd = publish::cli();
+        let publish_matches = publish_cmd
+            .try_get_matches_from(publish_args)
+            .context("Failed to create publish arguments")?;
+
+        publish::exec_with_options(config.clone(), &publish_matches, true).await?;
+    }
 
     println!("{}", "Published successfully!".green().bold());
     println!("{}", "---".dimmed());
@@ -675,6 +828,7 @@ async fn start_log_stream(
     mut config: Config,
     database_identity: String,
     server: Option<&str>,
+    prefix: Option<String>,
 ) -> Result<JoinHandle<()>, anyhow::Error> {
     let server = server.map(|s| s.to_string());
     let host_url = config.get_host_url(server.as_deref())?;
@@ -682,7 +836,7 @@ async fn start_log_stream(
 
     let handle = tokio::spawn(async move {
         loop {
-            if let Err(e) = stream_logs(&host_url, &database_identity, &auth_header).await {
+            if let Err(e) = stream_logs(&host_url, &database_identity, &auth_header, prefix.as_deref()).await {
                 eprintln!("\n{} Log streaming error: {}", "Error:".red().bold(), e);
                 eprintln!("{}", "Reconnecting in 10 seconds...".yellow());
                 tokio::time::sleep(Duration::from_secs(10)).await;
@@ -697,6 +851,7 @@ async fn stream_logs(
     host_url: &str,
     database_identity: &str,
     auth_header: &crate::util::AuthHeader,
+    prefix: Option<&str>,
 ) -> Result<(), anyhow::Error> {
     let client = reqwest::Client::new();
     let builder = client.get(format!("{host_url}/v1/database/{database_identity}/logs"));
@@ -721,7 +876,7 @@ async fn stream_logs(
         let record = serde_json::from_str::<LogRecord<'_>>(&line)?;
         let out = termcolor::StandardStream::stdout(term_color);
         let mut out = out.lock();
-        format_log_record(&mut out, &record)?;
+        format_log_record(&mut out, &record, prefix)?;
         drop(out);
         line.clear();
     }
@@ -759,7 +914,18 @@ struct LogRecord<'a> {
     message: Cow<'a, str>,
 }
 
-fn format_log_record<W: WriteColor>(out: &mut W, record: &LogRecord<'_>) -> Result<(), std::io::Error> {
+fn format_log_record<W: WriteColor>(
+    out: &mut W,
+    record: &LogRecord<'_>,
+    prefix: Option<&str>,
+) -> Result<(), std::io::Error> {
+    // Write prefix if provided
+    if let Some(prefix) = prefix {
+        out.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_bold(true))?;
+        write!(out, "[{}] ", prefix)?;
+        out.reset()?;
+    }
+
     if let Some(ts) = record.ts {
         out.set_color(ColorSpec::new().set_dimmed(true))?;
         write!(out, "{ts:?} ")?;
@@ -830,6 +996,30 @@ fn format_log_record<W: WriteColor>(out: &mut W, record: &LogRecord<'_>) -> Resu
 fn generate_database_name() -> String {
     let mut generator = names::Generator::with_naming(names::Name::Numbered);
     generator.next().unwrap()
+}
+
+/// Extract unique watch directories from publish configs
+fn extract_watch_dirs(
+    publish_configs: &[CommandConfig<'_>],
+    default_spacetimedb_dir: &Path,
+) -> std::collections::HashSet<PathBuf> {
+    use std::collections::HashSet;
+    let mut watch_dirs = HashSet::new();
+
+    for config_entry in publish_configs {
+        let module_path = config_entry
+            .get_config_value("module_path")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| default_spacetimedb_dir.to_path_buf());
+
+        // Canonicalize to handle relative paths
+        let canonical_path = module_path.canonicalize().unwrap_or(module_path);
+
+        watch_dirs.insert(canonical_path);
+    }
+
+    watch_dirs
 }
 
 /// Detect client command and save to config (updating existing config if present)

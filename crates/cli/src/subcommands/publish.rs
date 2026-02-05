@@ -16,7 +16,7 @@ use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
 /// Build the CommandSchema for publish command
-fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
+pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
     CommandSchemaBuilder::new()
         .key(Key::new::<String>("database").from_clap("name|identity").required())
         .key(Key::new::<String>("server"))
@@ -39,7 +39,7 @@ fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow
 }
 
 /// Get filtered publish configs based on CLI arguments
-fn get_filtered_publish_configs<'a>(
+pub fn get_filtered_publish_configs<'a>(
     spacetime_config: &'a SpacetimeConfig,
     schema: &'a CommandSchema,
     args: &ArgMatches,
