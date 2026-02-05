@@ -72,14 +72,15 @@ fn cli_init_with_template_creates_project() {
 }
 
 #[test]
-fn config_with_snake_case_field_shows_error() {
-    // Test that using snake_case field names (dev_run) instead of kebab-case (dev-run)
-    // shows a helpful error message
+fn config_with_invalid_field_shows_error() {
+    // Test that using invalid field names shows a helpful error message
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Create a config with snake_case field name
+    // Create a config with an invalid field name in dev
     let config_content = r#"{
-  "dev_run": "npm run dev",
+  "dev": {
+    "run_command": "npm run dev"
+  },
   "publish": {
     "database": "test-db"
   }
@@ -111,5 +112,5 @@ crate-type = ["cdylib"]
         .assert()
         .failure()
         .stderr(predicate::str::contains("Failed to load spacetime.json"))
-        .stderr(predicate::str::contains("unknown field `dev_run`"));
+        .stderr(predicate::str::contains("unknown field `run_command`"));
 }

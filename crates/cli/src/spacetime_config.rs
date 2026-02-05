@@ -91,7 +91,9 @@ pub enum CommandConfigError {
 /// Example:
 /// ```json
 /// {
-///   "dev-run": "pnpm dev",
+///   "dev": {
+///     "run": "pnpm dev"
+///   },
 ///   "generate": [
 ///     {
 ///       "language": "typescript",
@@ -107,11 +109,9 @@ pub enum CommandConfigError {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SpacetimeConfig {
-    /// The command to run the client development server.
-    /// This is used by `spacetime dev` to start the client after publishing.
-    /// Example: "npm run dev", "pnpm dev", "cargo run"
+    /// Configuration for the dev command.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dev_run: Option<String>,
+    pub dev: Option<DevConfig>,
 
     /// List of generate configurations for creating client bindings.
     /// Each entry configures code generation for a specific language.
@@ -122,6 +122,17 @@ pub struct SpacetimeConfig {
     /// Can include nested children for multi-database configurations.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub publish: Option<PublishConfig>,
+}
+
+/// Configuration for `spacetime dev` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct DevConfig {
+    /// The command to run the client development server.
+    /// This is used by `spacetime dev` to start the client after publishing.
+    /// Example: "npm run dev", "pnpm dev", "cargo run"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
 }
 
 /// Configuration for `spacetime publish` command.
@@ -718,10 +729,12 @@ impl SpacetimeConfig {
         Ok(config_path)
     }
 
-    /// Create a configuration with a dev_run command
+    /// Create a configuration with a run command for dev
     pub fn with_run_command(run_command: impl Into<String>) -> Self {
         Self {
-            dev_run: Some(run_command.into()),
+            dev: Some(DevConfig {
+                run: Some(run_command.into()),
+            }),
             ..Default::default()
         }
     }
@@ -736,7 +749,9 @@ impl SpacetimeConfig {
             _ => "npm run dev", // default fallback
         };
         Self {
-            dev_run: Some(run_command.to_string()),
+            dev: Some(DevConfig {
+                run: Some(run_command.to_string()),
+            }),
             ..Default::default()
         }
     }
@@ -848,7 +863,9 @@ mod tests {
     #[test]
     fn test_deserialize_full_config() {
         let json = r#"{
-            "dev-run": "pnpm dev",
+            "dev": {
+                "run": "pnpm dev"
+            },
             "generate": [
                 {
                     "out-dir": "./foobar",
@@ -880,7 +897,7 @@ mod tests {
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
 
-        assert_eq!(config.dev_run.as_deref(), Some("pnpm dev"));
+        assert_eq!(config.dev.as_ref().and_then(|d| d.run.as_deref()), Some("pnpm dev"));
 
         let generate = config.generate.as_ref().unwrap();
         assert_eq!(generate.len(), 2);
@@ -913,7 +930,9 @@ mod tests {
     fn test_deserialize_with_comments() {
         let json = r#"{
             // This is a comment
-            "dev-run": "npm start",
+            "dev": {
+                "run": "npm start"
+            },
             /* Multi-line comment */
             "generate": [
                 {
@@ -924,7 +943,7 @@ mod tests {
         }"#;
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
-        assert_eq!(config.dev_run.as_deref(), Some("npm start"));
+        assert_eq!(config.dev.as_ref().and_then(|d| d.run.as_deref()), Some("npm start"));
     }
 
     #[test]
@@ -932,7 +951,7 @@ mod tests {
         let json = r#"{}"#;
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
 
-        assert!(config.dev_run.is_none());
+        assert!(config.dev.is_none());
         assert!(config.generate.is_none());
         assert!(config.publish.is_none());
     }
@@ -2022,7 +2041,9 @@ mod tests {
 
         // Create config in root
         let config = SpacetimeConfig {
-            dev_run: Some("test".to_string()),
+            dev: Some(DevConfig {
+                run: Some("test".to_string()),
+            }),
             ..Default::default()
         };
         config.save(&root.join("spacetime.json")).unwrap();
@@ -2032,7 +2053,7 @@ mod tests {
         assert!(result.is_some());
         let (found_path, found_config) = result.unwrap();
         assert_eq!(found_path, root.join("spacetime.json"));
-        assert_eq!(found_config.dev_run, Some("test".to_string()));
+        assert_eq!(found_config.dev.as_ref().and_then(|d| d.run.as_deref()), Some("test"));
     }
 
     #[test]
@@ -2072,7 +2093,7 @@ mod tests {
         let result = SpacetimeConfig::find_and_load_from(temp.path().to_path_buf()).unwrap();
         assert!(result.is_some());
         let (_, config) = result.unwrap();
-        assert!(config.dev_run.is_none());
+        assert!(config.dev.is_none());
         assert!(config.publish.is_none());
         assert!(config.generate.is_none());
     }

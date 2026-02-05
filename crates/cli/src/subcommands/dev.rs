@@ -89,8 +89,8 @@ pub fn cli() -> Command {
                 .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
         )
         .arg(
-            Arg::new("dev-run")
-                .long("dev-run")
+            Arg::new("run")
+                .long("run")
                 .value_name("COMMAND")
                 .help("Command to run the client development server (overrides spacetime.json config)"),
         )
@@ -278,7 +278,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let client_command = if server_only {
         None
-    } else if let Some(cmd) = args.get_one::<String>("dev-run") {
+    } else if let Some(cmd) = args.get_one::<String>("run") {
         // Explicit CLI flag takes priority
         Some(cmd.clone())
     } else {
@@ -289,11 +289,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 let config_path = project_dir.join("spacetime.json");
                 println!("{} Using configuration from {}", "✓".green(), config_path.display());
 
-                // If config exists but dev_run is None, try to detect and update
-                if config.dev_run.is_none() {
+                // If config exists but dev.run is None, try to detect and update
+                if config.dev.as_ref().and_then(|d| d.run.as_ref()).is_none() {
                     detect_and_save_client_command(&project_dir, Some(config))
                 } else {
-                    config.dev_run
+                    config.dev.and_then(|d| d.run)
                 }
             }
             Ok(None) => {
@@ -837,7 +837,9 @@ fn detect_and_save_client_command(project_dir: &Path, existing_config: Option<Sp
     if let Some((detected_cmd, _detected_pm)) = detect_client_command(project_dir) {
         // Update existing config or create new one
         let config_to_save = if let Some(mut config) = existing_config {
-            config.dev_run = Some(detected_cmd.clone());
+            config.dev = Some(crate::spacetime_config::DevConfig {
+                run: Some(detected_cmd.clone()),
+            });
             config
         } else {
             SpacetimeConfig::with_run_command(&detected_cmd)
@@ -936,7 +938,7 @@ mod tests {
 
         // Load the config
         let loaded_config = SpacetimeConfig::load(&config_path).unwrap();
-        assert!(loaded_config.dev_run.is_none());
+        assert!(loaded_config.dev.is_none());
         assert!(loaded_config.generate.is_some());
         assert!(loaded_config.publish.is_some());
 
@@ -946,7 +948,10 @@ mod tests {
 
         // Load again and verify all fields are preserved
         let reloaded_config = SpacetimeConfig::load(&config_path).unwrap();
-        assert!(reloaded_config.dev_run.is_some(), "dev-run should be set");
+        assert!(
+            reloaded_config.dev.as_ref().and_then(|d| d.run.as_ref()).is_some(),
+            "dev.run should be set"
+        );
         assert!(reloaded_config.generate.is_some(), "generate field should be preserved");
         assert!(reloaded_config.publish.is_some(), "publish field should be preserved");
 
