@@ -1,6 +1,27 @@
 cmake_minimum_required(VERSION 3.20)
 project(spacetime_cpp_module LANGUAGES C CXX)
 
+# ------------------------------------------------------------------------------
+# SpacetimeDB C++ Bindings Configuration
+#
+# Default: Fetches from GitHub using SPACETIMEDB_CPP_VERSION
+#   - MAJOR.MINOR (e.g., "1.12") → fetches release/MAJOR.MINOR branch, gets latest patch
+#   - MAJOR.MINOR.PATCH (e.g., "1.12.0") → fetches vMAJOR.MINOR.PATCH tag, exact version
+#
+# Advanced options:
+#   - SPACETIMEDB_CPP_REF: Override Git ref directly 
+#     (e.g., "release/latest", "main", "v1.12.0")
+#
+#   - SPACETIMEDB_CPP_DIR: Use local bindings clone (for bindings development)
+#     PowerShell: $env:SPACETIMEDB_CPP_DIR="E:\SpacetimeDB\crates\bindings-cpp"
+#     Bash:       export SPACETIMEDB_CPP_DIR=/path/to/SpacetimeDB/crates/bindings-cpp
+#     The directory should contain the bindings' CMakeLists.txt at its root.
+# ------------------------------------------------------------------------------
+
+set(SPACETIMEDB_CPP_VERSION "1.12.0" CACHE STRING "Version selector: MAJOR.MINOR (uses release/MAJOR.MINOR) or MAJOR.MINOR.PATCH (uses tag vMAJOR.MINOR.PATCH)")
+set(SPACETIMEDB_CPP_REF "" CACHE STRING "Override Git ref directly (e.g. release/1.0, release/latest, v1.0.0)")  
+set(SPACETIMEDB_CPP_DIR "" CACHE PATH "Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)")
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,50 +37,38 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 endif()
 
-# ------------------------------------------------------------------------------
-# SpacetimeDB C++ SDK
-#
-# Default: Fetch a pinned hosted SDK release (reproducible builds).
-# Dev override: point at a local SDK clone:
-#
-# PowerShell:
-#   $env:SPACETIMEDB_CPP_SDK_DIR="E:\SpacetimeDB\crates\bindings-cpp"
-#   spacetime build -p .\spacetimedb 
-#
-# bash
-#   export SPACETIMEDB_CPP_SDK_DIR=/SpacetimeDB/crates/bindings-cpp
-#   spacetime build -p .\spacetimedb
-#
-# The directory should contain the SDK's CMakeLists.txt at its root.
-# ------------------------------------------------------------------------------
-
-set(SPACETIMEDB_CPP_SDK_DIR "" CACHE PATH "Path to a local clone of spacetime cpp sdk (overrides FetchContent)")
-
-if(NOT SPACETIMEDB_CPP_SDK_DIR AND DEFINED ENV{SPACETIMEDB_CPP_SDK_DIR})
-  set(SPACETIMEDB_CPP_SDK_DIR "$ENV{SPACETIMEDB_CPP_SDK_DIR}")
+if(NOT SPACETIMEDB_CPP_DIR AND DEFINED ENV{SPACETIMEDB_CPP_DIR})
+  set(SPACETIMEDB_CPP_DIR "$ENV{SPACETIMEDB_CPP_DIR}")
 endif()
 
-if(SPACETIMEDB_CPP_SDK_DIR)
-  message(STATUS "Using local SpacetimeDB C++ SDK: ${SPACETIMEDB_CPP_SDK_DIR}")
-  add_subdirectory("${SPACETIMEDB_CPP_SDK_DIR}" "${CMAKE_BINARY_DIR}/_deps/spacetime_cpp_sdk-build")
+if (SPACETIMEDB_CPP_REF STREQUAL "")
+  if (SPACETIMEDB_CPP_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    set(SPACETIMEDB_CPP_REF "v${SPACETIMEDB_CPP_VERSION}")
+  elseif (SPACETIMEDB_CPP_VERSION MATCHES "^[0-9]+\\.[0-9]+$")
+    set(SPACETIMEDB_CPP_REF "release/${SPACETIMEDB_CPP_VERSION}")
+  else()
+    message(FATAL_ERROR "SPACETIMEDB_CPP_VERSION must be MAJOR.MINOR or MAJOR.MINOR.PATCH")
+  endif()
+endif()
+
+if(SPACETIMEDB_CPP_DIR)
+  message(STATUS "Using local SpacetimeDB C++ bindings: ${SPACETIMEDB_CPP_DIR}")
+  add_subdirectory("${SPACETIMEDB_CPP_DIR}" "${CMAKE_BINARY_DIR}/_deps/spacetimedb_cpp-build")
 else()
   include(FetchContent)
 
   FetchContent_Declare(
-    spacetime_cpp_sdk
-    #URL "https://www.spacetimedb.com/cpp/spacetimedb-cpp-sdk-1.11.2.zip"
-    URL "https://www.rodentgames.com/spacetimedb/spacetimedb-cpp-sdk-1.11.2.zip"
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    #URL_HASH SHA256=E10503F57AA3ADB10ADD82ECF2E0F3C1107B5C141FA5E157D174C30B71071434
+    spacetimedb_cpp_sdk
+    GIT_REPOSITORY https://github.com/clockworklabs/spacetimedb-bindings-cpp.git
+    GIT_TAG ${SPACETIMEDB_CPP_REF}
   )
-
-  FetchContent_MakeAvailable(spacetime_cpp_sdk)
+  FetchContent_MakeAvailable(spacetimedb_cpp_sdk)
 endif()
 
 # Create the main module executable
 add_executable(lib ${MODULE_SOURCE})
 
-# Link against the SDK target (preferred alias)
+# Link against the bindings target (preferred alias)
 target_link_libraries(lib PRIVATE spacetimedb_cpp_library)
 
 # Configure Emscripten-specific settings for WASM output
@@ -67,7 +76,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__','___call_view__','___call_view_anon__','___call_procedure__']")
 
   # Compile options/defines for WASM
-  # (apply to both the module and the SDK, so everything sees the same feature flags)
+  # (apply to both the module and the bindings, so everything sees the same feature flags)
   target_compile_options(lib PRIVATE -fno-exceptions)
   target_compile_options(spacetimedb_cpp_library PRIVATE -fno-exceptions)
 

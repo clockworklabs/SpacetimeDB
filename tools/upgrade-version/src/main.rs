@@ -91,21 +91,31 @@ fn rewrite_cmake_version_inplace(path: impl AsRef<Path>, new_version: &str) -> a
     let path = path.as_ref();
     let contents = fs::read_to_string(path)?;
 
+    let mut updated = contents.clone();
+    let mut replaced_any = false;
+
     // (?s) enables dotall mode so . matches newlines
     // Matches: project(...VERSION <version>...) across multiple lines
-    let re = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([\d\.]+)").unwrap();
-
-    let mut replaced = false;
-    let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
-        replaced = true;
+    let re_project = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([\d\.]+)").unwrap();
+    let replaced_project = re_project.replacen(&updated, 1, |caps: &regex::Captures| {
+        replaced_any = true;
         format!("{}{}", &caps[1], new_version)
     });
+    updated = replaced_project.to_string();
 
-    if !replaced {
-        anyhow::bail!("Could not find project() VERSION to update in {}", path.display());
+    // Matches: set(SPACETIMEDB_CPP_VERSION "1.12.0" ...)
+    let re_set = Regex::new(r#"(?m)(\bset\(SPACETIMEDB_CPP_VERSION\s+\")(.*?)(\"\s+CACHE\s+STRING)"#).unwrap();
+    let replaced_set = re_set.replacen(&updated, 1, |caps: &regex::Captures| {
+        replaced_any = true;
+        format!("{}{}{}", &caps[1], new_version, &caps[3])
+    });
+    updated = replaced_set.to_string();
+
+    if !replaced_any {
+        anyhow::bail!("Could not find CMake version to update in {}", path.display());
     }
 
-    fs::write(path, updated.as_ref())?;
+    fs::write(path, updated)?;
     Ok(())
 }
 
@@ -358,6 +368,7 @@ fn main() -> anyhow::Result<()> {
     }
     if matches.get_flag("cpp") || matches.get_flag("all") {
         rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
+        rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &full_version)?;
     }
     Ok(())
 }
