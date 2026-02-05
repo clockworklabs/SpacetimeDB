@@ -177,6 +177,7 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
+/** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
 let REDUCER_CTX: InstanceType<typeof ReducerCtxImpl> | undefined;
 
 // Using a class expression rather than declaration keeps the class out of the
@@ -206,6 +207,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.db = getDbView();
   }
 
+  /** Reset the `ReducerCtx` to be used for a new transaction */
   static reset(
     me: InstanceType<typeof this>,
     sender: Identity,
