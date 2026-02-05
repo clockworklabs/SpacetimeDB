@@ -1776,7 +1776,7 @@ impl SendWorker {
         let subscriptions_with_errors: HashSet<&SubscriptionIdV2> =
             v2_errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
-        type UpdateMapKey = (ClientId, ClientQuerySetId, Box<str>);
+        type UpdateMapKey = (ClientId, ClientQuerySetId, TableName);
         let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::TableUpdateRows>> = BTreeMap::new();
 
         for V2ClientUpdate {
@@ -1791,7 +1791,7 @@ impl SendWorker {
                 continue;
             }
             grouped_updates
-                .entry((client_id, query_set_id, table_name.to_boxed_str()))
+                .entry((client_id, query_set_id, table_name))
                 .or_default()
                 // .push(table_update);
                 .push(rows);
@@ -1812,7 +1812,7 @@ impl SendWorker {
                 let table_updates: Vec<ws_v2::TableUpdate> = qs_updates
                     .into_iter()
                     .map(|((_, _, table_name), rows)| ws_v2::TableUpdate {
-                        table_name,
+                        table_name: table_name.to_boxed_str(),
                         rows: rows.into_boxed_slice(),
                     })
                     .collect();
