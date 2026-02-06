@@ -432,7 +432,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_error_sink_code(code, error));
+            .and_then(|code| handle_error_sink_code(code, error))
+            .map(|_| None);
 
         module_host_actor::ReducerExecuteResult { stats, call_result }
     }

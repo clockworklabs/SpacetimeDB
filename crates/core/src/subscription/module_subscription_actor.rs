@@ -1758,6 +1758,7 @@ mod tests {
             caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             energy_quanta_used: EnergyQuanta { quanta: 0 },
             host_execution_duration: Duration::from_millis(0),
             request_id: None,

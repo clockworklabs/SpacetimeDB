@@ -30,6 +30,7 @@ use crate::util::jobs::SingleCoreExecutor;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
+use bytes::Bytes;
 use derive_more::From;
 use futures::lock::Mutex;
 use indexmap::IndexSet;
@@ -205,6 +206,7 @@ pub struct ModuleEvent {
     pub caller_connection_id: Option<ConnectionId>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
+    pub reducer_return_value: Option<Bytes>,
     pub energy_quanta_used: EnergyQuanta,
     pub host_execution_duration: Duration,
     pub request_id: Option<RequestId>,

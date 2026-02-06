@@ -2791,6 +2791,7 @@ mod tests {
                 args: ArgsTuple::nullary(),
             },
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::default(),
             request_id: None,

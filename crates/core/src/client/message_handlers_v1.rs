@@ -177,6 +177,7 @@ impl MessageExecutionError {
                 args: Default::default(),
             },
             status: EventStatus::Failed(format!("{:#}", err)),
+            reducer_return_value: None,
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::ZERO,
             request_id: Some(RequestId::default()),
