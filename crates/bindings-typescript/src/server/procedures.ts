@@ -132,7 +132,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   ) {}
 
   get identity() {
-    return (this.#identity ??= new Identity(sys.identity().__identity__));
+    return (this.#identity ??= new Identity(sys.identity()));
   }
 
   get random() {
