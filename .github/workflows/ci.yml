@@ -846,6 +846,12 @@ jobs:
       - name: Check v8 outputs
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
           if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
             echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
             cargo clean --release -p v8 || true
