@@ -1,13 +1,11 @@
 use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
-use super::{ClientConnection, DataMessage, Protocol};
+use super::{ClientConnection, DataMessage, MessageHandleError, Protocol};
 use crate::energy::EnergyQuanta;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{FunctionArgs, ReducerId};
 use crate::identity::Identity;
 use crate::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api_messages::websocket::v1::{
-    self as ws_v1, CallProcedure, CallReducer, ClientMessage, OneOffQuery,
-};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
@@ -19,8 +17,6 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::message_handlers::MessageHandleError;
-
 pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Instant) -> Result<(), MessageHandleError> {
     client.observe_websocket_request_message(&message);
 
@@ -28,7 +24,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         DataMessage::Text(text) => {
             // TODO(breaking): this should ideally be &serde_json::RawValue, not json-nested-in-string
             let DeserializeWrapper(message) =
-                serde_json::from_str::<DeserializeWrapper<ClientMessage<Cow<str>>>>(&text)?;
+                serde_json::from_str::<DeserializeWrapper<ws_v1::ClientMessage<Cow<str>>>>(&text)?;
             message.map_args(|s| {
                 FunctionArgs::Json(match s {
                     Cow::Borrowed(s) => text.slice_ref(s),
@@ -36,7 +32,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 })
             })
         }
-        DataMessage::Binary(message_buf) => bsatn::from_slice::<ClientMessage<&[u8]>>(&message_buf)?
+        DataMessage::Binary(message_buf) => bsatn::from_slice::<ws_v1::ClientMessage<&[u8]>>(&message_buf)?
             .map_args(|b| FunctionArgs::Bsatn(message_buf.slice_ref(b))),
     };
 
@@ -55,8 +51,8 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let sub_metrics = record_metrics(WorkloadType::Subscribe);
     let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
 
-    let res = match message {
-        ClientMessage::CallReducer(CallReducer {
+    let res: Result<(), (Option<&Box<str>>, Option<ReducerId>, anyhow::Error)> = match message {
+        ws_v1::ClientMessage::CallReducer(ws_v1::CallReducer {
             ref reducer,
             args,
             request_id,
@@ -75,42 +71,42 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 )
             })
         }
-        ClientMessage::SubscribeMulti(subscription) => {
+        ws_v1::ClientMessage::SubscribeMulti(subscription) => {
             let res = client.subscribe_multi(subscription, timer).await.map(sub_metrics);
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::UnsubscribeMulti(request) => {
+        ws_v1::ClientMessage::UnsubscribeMulti(request) => {
             let res = client.unsubscribe_multi(request, timer).await.map(unsub_metrics);
             mod_metrics
                 .request_round_trip_unsubscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::SubscribeSingle(subscription) => {
+        ws_v1::ClientMessage::SubscribeSingle(subscription) => {
             let res = client.subscribe_single(subscription, timer).await.map(sub_metrics);
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::Unsubscribe(request) => {
+        ws_v1::ClientMessage::Unsubscribe(request) => {
             let res = client.unsubscribe(request, timer).await.map(unsub_metrics);
             mod_metrics
                 .request_round_trip_unsubscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::Subscribe(subscription) => {
+        ws_v1::ClientMessage::Subscribe(subscription) => {
             let res = client.subscribe(subscription, timer).await.map(Some).map(sub_metrics);
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::OneOffQuery(OneOffQuery {
+        ws_v1::ClientMessage::OneOffQuery(ws_v1::OneOffQuery {
             query_string: query,
             message_id,
         }) => {
@@ -123,7 +119,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|err| (None, None, err))
         }
-        ClientMessage::CallProcedure(CallProcedure {
+        ws_v1::ClientMessage::CallProcedure(ws_v1::CallProcedure {
             ref procedure,
             args,
             request_id,
@@ -166,31 +162,32 @@ pub struct MessageExecutionError {
 
 impl MessageExecutionError {
     fn into_event(self) -> ModuleEvent {
-        let reducer = self
-            .reducer
-            .as_deref()
-            .map(RawIdentifier::new)
-            .map(Identifier::new)
-            .transpose()
-            .unwrap()
-            .map(ReducerName::new);
-
+        let reducer = self.reducer.as_deref().and_then(parse_reducer_name);
+        let reducer_id = self.reducer_id;
+        let caller_identity = self.caller_identity;
+        let caller_connection_id = self.caller_connection_id;
+        let err = self.err;
         ModuleEvent {
             timestamp: Timestamp::now(),
-            caller_identity: self.caller_identity,
-            caller_connection_id: self.caller_connection_id,
+            caller_identity,
+            caller_connection_id,
             function_call: ModuleFunctionCall {
                 reducer,
-                reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
+                reducer_id: reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },
-            status: EventStatus::Failed(format!("{:#}", self.err)),
+            status: EventStatus::Failed(format!("{:#}", err)),
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::ZERO,
             request_id: Some(RequestId::default()),
             timer: None,
         }
     }
+}
+
+fn parse_reducer_name(name: &str) -> Option<ReducerName> {
+    let raw = RawIdentifier::new(name);
+    Identifier::new(raw).ok().map(ReducerName::new)
 }
 
 impl ToProtocol for MessageExecutionError {
