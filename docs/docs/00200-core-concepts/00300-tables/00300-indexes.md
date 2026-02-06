@@ -349,12 +349,26 @@ for (const user of ctx.db.user.age.filter(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-// Find users aged 18 or older
-foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>.Inclusive(18), null))
+// Find users aged 18 to 65 (inclusive)
+foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>(18, 65)))
+{
+    Log.Info($"{user.Name} is {user.Age}");
+}
+
+// Find users aged 18 or older (inclusive, unbounded above)
+foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>(18, byte.MaxValue)))
 {
     Log.Info($"{user.Name} is an adult");
 }
+
+// Find users younger than 18 (unbounded below, to 17 inclusive)
+foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>(byte.MinValue, 17)))
+{
+    Log.Info($"{user.Name} is a minor");
+}
 ```
+
+You can also use the implicit tuple conversion, like `ctx.Db.User.Age.Filter((18, byte.MaxValue))`, which is functionally identical.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
