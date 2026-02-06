@@ -36,21 +36,55 @@ impl<K: KeySize + Eq + Hash + MemoryUsage> MemoryUsage for UniqueHashIndex<K> {
     }
 }
 
-impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
+// SAFETY: The implementations of all constructing
+// and mutating methods uphold the invariant,
+// assuming the caller requirements of the `unsafe` methods are upheld,
+// that every `key -> ptr` pair only ever occurs once.
+// In fact, given that this is a unique index,
+// this is statically guaranteed as one `key` only has one slot for one `ptr`.
+unsafe impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
     type Key = K;
+
+    // =========================================================================
+    // Construction
+    // =========================================================================
 
     fn clone_structure(&self) -> Self {
         <_>::default()
     }
 
-    fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
+    // =========================================================================
+    // Mutation
+    // =========================================================================
+
+    unsafe fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
         match self.map.entry(key) {
+            // `key` not found in index, let's add it.
             Entry::Vacant(e) => {
                 self.num_key_bytes.add_to_key_bytes::<Self>(e.key());
                 e.insert(ptr);
                 Ok(())
             }
+            // Unique constraint violation!
             Entry::Occupied(e) => Err(*e.into_mut()),
+        }
+    }
+
+    unsafe fn merge_from(&mut self, src_index: Self, mut translate: impl FnMut(RowPointer) -> RowPointer) {
+        // Merge `num_key_bytes`.
+        self.num_key_bytes.merge(src_index.num_key_bytes);
+
+        // Move over the `key -> ptr` pairs
+        // and translate all row pointers in `src` to fit `self`.
+        let src = src_index.map;
+        self.map.reserve(src.len());
+        for (key, src) in src {
+            // SAFETY: Given `(key, ptr)` in `src`,
+            // `(key, translate(ptr))` does not exist in `self`.
+            // As each index is a unique index,
+            // it follows that if `key` exist in `src`
+            // it does not also exist in `self`.
+            unsafe { self.map.insert_unique_unchecked(key, translate(src)) };
         }
     }
 
@@ -66,6 +100,10 @@ impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
         self.map.clear();
         self.num_key_bytes.reset_to_zero();
     }
+
+    // =========================================================================
+    // Querying
+    // =========================================================================
 
     fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
         let Some(found) = other

@@ -184,7 +184,8 @@ impl Index for IBTree {
         Self(<_>::default())
     }
     fn insert(&mut self, key: K, val: RowPointer) -> Result<(), RowPointer> {
-        self.0.insert(key, val)
+        // SAFETY: we never insert `(key, val)` twice in benchmarks.
+        unsafe { self.0.insert(key, val) }
     }
     fn seek(&self, key: K) -> impl Iterator<Item = RowPointer> {
         self.0.seek_range(&(key..=key))
@@ -250,7 +251,8 @@ impl Index for IDirectIndex {
         Self(<_>::default())
     }
     fn insert(&mut self, key: K, val: RowPointer) -> Result<(), RowPointer> {
-        self.0.insert(key, val)
+        // SAFETY: we never insert `(key, val)` twice in benchmarks.
+        unsafe { self.0.insert(key, val) }
     }
     fn seek(&self, key: K) -> impl Iterator<Item = RowPointer> {
         self.0.seek_point(&key)

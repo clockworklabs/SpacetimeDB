@@ -599,11 +599,16 @@ impl Table {
         let row_ptr = row_ref.pointer();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
-        // SAFETY: We just inserted `ptr`, so it must be present.
+        //
         // Re. `CHECK_SAME_ROW = true`,
         // where `insert` is called, we are not dealing with transactions,
         // and we already know there cannot be a duplicate row error,
         // but we check just in case it isn't.
+        //
+        // SAFETY: We just inserted `row_ptr`,
+        // so it must be present
+        // and we haven't done any other mutation
+        // so `row_ptr` couldn't be in any of `table`'s indexes yet.
         let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row_ptr) };
@@ -798,7 +803,8 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// `self.is_row_present(row)` must hold.
+    /// - `self.is_row_present(row)` must hold.
+    /// - `new_ptr` must not be present in any of the indices yet.
     pub unsafe fn confirm_insertion<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
@@ -807,7 +813,9 @@ impl Table {
     ) -> Result<(Option<RowHash>, RowPointer), InsertError> {
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
         let hash = unsafe { self.insert_into_pointer_map(blob_store, ptr) }?;
-        // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
+        // SAFETY:
+        // - Caller promised that `self.is_row_present(ptr)` holds.
+        // - Caller promised that `ptr` is not present in any of the indices yet.
         unsafe { self.insert_into_indices::<CHECK_SAME_ROW>(blob_store, ptr) }?;
 
         self.update_statistics_added_row(blob_bytes);
@@ -826,7 +834,8 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// `self.is_row_present(new_row)` and `self.is_row_present(old_row)`  must hold.
+    /// - `self.is_row_present(new_row)` and `self.is_row_present(old_row)`  must hold.
+    /// - `new_ptr` must not be present in any of the indices yet.
     pub unsafe fn confirm_update<'a>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
@@ -839,10 +848,14 @@ impl Table {
         unsafe { self.delete_from_indices(blob_store, old_ptr) };
 
         // Insert new row into indices.
-        // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
+        // SAFETY:
+        // - Caller promised that `self.is_row_present(ptr)` holds.
+        // - Caller promised that `new_ptr` is not present in any of the indices yet.
         let res = unsafe { self.insert_into_indices::<true>(blob_store, new_ptr) };
         if let Err(e) = res {
             // Undo (1).
+            // SAFETY: In `(1)`, we removed `old_ptr` from the indices,
+            // so it cannot exist in any of them.
             unsafe { self.insert_into_indices::<true>(blob_store, old_ptr) }
                 .expect("re-inserting the old row into indices should always work");
             return Err(e);
@@ -882,6 +895,8 @@ impl Table {
     ///
     /// SAFETY: `self.is_row_present(new)` must hold.
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
+    ///
+    /// SAFETY: `new` must not be present in any of the indices yet.
     unsafe fn insert_into_indices<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
@@ -1412,12 +1427,18 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// Caller must promise that `index` was constructed with the same row type/layout as this table.
+    /// 1. Caller must promise that `index` was constructed with the same row type/layout as this table.
+    /// 2. Caller promises that `index.is_empty()`.
     pub unsafe fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: TableIndex) {
         let rows = self.scan_rows(blob_store);
-        // SAFETY: Caller promised that table's row type/layout
+        // SAFETY:
+        //
+        // 1. Caller promised that table's row type/layout
         // matches that which `index` was constructed with.
         // It follows that this applies to any `rows`, as required.
+        //
+        // 2. Caller promised that the index was empty,
+        // so none of the `rows` could've already existed in `index`.
         let violation = unsafe { index.build_from_rows(rows) };
         violation.unwrap_or_else(|ptr| {
             let index_schema = &self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id).expect("Index should exist");
@@ -2414,7 +2435,9 @@ pub(crate) mod test {
         let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
         let index = table.new_index(&algo, true).unwrap();
-        // SAFETY: Index was derived from `table`.
+        // SAFETY:
+        // 1. Index was derived from `table`.
+        // 2. Index is empty before this call.
         unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) };
 
         // Reserve a page so that we can check the hash.
@@ -2533,7 +2556,8 @@ pub(crate) mod test {
         let index = TableIndex::new(&ty, indexed_columns.clone(), IndexKind::BTree, false).unwrap();
         // Add an index on column 0.
         // Safety:
-        // We're using `ty` as the row type for both `table` and the new index.
+        // 1. We're using `ty` as the row type for both `table` and the new index.
+        // 2. The index is empty before this call.
         unsafe { table.insert_index(&blob_store, index_id, index) };
 
         // We have one index, which should be fully populated,
@@ -2564,7 +2588,8 @@ pub(crate) mod test {
         let index = TableIndex::new(&ty, indexed_columns, IndexKind::BTree, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
-        // As above, we're using `ty` as the row type for both `table` and the new index.
+        // 1. We're using `ty` as the row type for both `table` and the new index.
+        // 2. The index is empty before this call.
         unsafe { table.insert_index(&blob_store, IndexId(1), index) };
 
         prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows() * 2);
@@ -2709,7 +2734,10 @@ pub(crate) mod test {
         let row_ptr = row_ref.pointer();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
-        // SAFETY: We just inserted `ptr`, so it must be present.
+        // SAFETY: We just inserted `row_ptr`,
+        // so it must be present
+        // and we haven't done any other mutation
+        // so `row_ptr` couldn't be in any of `table`'s indexes yet.
         let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, row_ptr) };
