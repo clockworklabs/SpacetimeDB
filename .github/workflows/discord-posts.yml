@@ -80,7 +80,7 @@ jobs:
               owner: 'clockworklabs',
               repo: 'SpacetimeDBPrivate',
               workflow_id: 'public-pr-merge.yml',
-              ref: 'master',
+              ref: 'bfops/smarter-internal-tests',
               inputs: {
                 public_pr_number: String(context.payload.pull_request.number),
               }
