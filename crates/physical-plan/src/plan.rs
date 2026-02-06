@@ -1510,6 +1510,7 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
+            false,
         )))
     }
 

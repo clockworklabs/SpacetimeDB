@@ -80,6 +80,8 @@ pub const ST_VIEW_COLUMN_ID: TableId = TableId(14);
 pub const ST_VIEW_SUB_ID: TableId = TableId(15);
 /// The static ID of the table that tracks view arguments
 pub const ST_VIEW_ARG_ID: TableId = TableId(16);
+/// The static ID of the table that tracks which tables are event tables
+pub const ST_EVENT_TABLE_ID: TableId = TableId(17);
 
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
@@ -97,6 +99,7 @@ pub(crate) const ST_VIEW_PARAM_NAME: &str = "st_view_param";
 pub(crate) const ST_VIEW_COLUMN_NAME: &str = "st_view_column";
 pub(crate) const ST_VIEW_SUB_NAME: &str = "st_view_sub";
 pub(crate) const ST_VIEW_ARG_NAME: &str = "st_view_arg";
+pub(crate) const ST_EVENT_TABLE_NAME: &str = "st_event_table";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
@@ -166,6 +169,10 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
         ST_CONNECTION_CREDENTIALS_ID => false,
         // We don't define any system views, so none of the view-related tables can be system meta-descriptors.
         ST_VIEW_ID | ST_VIEW_PARAM_ID | ST_VIEW_COLUMN_ID | ST_VIEW_SUB_ID | ST_VIEW_ARG_ID => false,
+        ST_EVENT_TABLE_ID => {
+            let row: StEventTableRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -187,7 +194,7 @@ pub enum SystemTable {
     st_row_level_security,
 }
 
-pub fn system_tables() -> [TableSchema; 16] {
+pub fn system_tables() -> [TableSchema; 17] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -206,6 +213,7 @@ pub fn system_tables() -> [TableSchema; 16] {
         st_view_column_schema(),
         st_view_sub_schema(),
         st_view_arg_schema(),
+        st_event_table_schema(),
     ]
 }
 
@@ -250,6 +258,7 @@ pub(crate) const ST_VIEW_PARAM_IDX: usize = 12;
 pub(crate) const ST_VIEW_COLUMN_IDX: usize = 13;
 pub(crate) const ST_VIEW_SUB_IDX: usize = 14;
 pub(crate) const ST_VIEW_ARG_IDX: usize = 15;
+pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -402,6 +411,10 @@ st_fields_enum!(enum StScheduledFields {
     "reducer_name", ReducerName = 2,
     "schedule_name", ScheduleName = 3,
     "at_column", AtColumn = 4,
+});
+
+st_fields_enum!(enum StEventTableFields {
+    "table_id", TableId = 0,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -567,6 +580,14 @@ fn system_module_def() -> ModuleDef {
         .with_index_no_accessor_name(btree(StVarFields::Name))
         .with_primary_key(StVarFields::Name);
 
+    let st_event_table_type = builder.add_type::<StEventTableRow>();
+    builder
+        .build_table(ST_EVENT_TABLE_NAME, *st_event_table_type.as_ref().expect("should be ref"))
+        .with_type(TableType::System)
+        .with_primary_key(StEventTableFields::TableId)
+        .with_unique_constraint(StEventTableFields::TableId)
+        .with_index_no_accessor_name(btree(StEventTableFields::TableId));
+
     let result = builder
         .finish()
         .try_into()
@@ -588,6 +609,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StViewColumnFields>(&result, ST_VIEW_COLUMN_NAME);
     validate_system_table::<StViewSubFields>(&result, ST_VIEW_SUB_NAME);
     validate_system_table::<StViewArgFields>(&result, ST_VIEW_ARG_NAME);
+    validate_system_table::<StEventTableFields>(&result, ST_EVENT_TABLE_NAME);
 
     result
 }
@@ -629,6 +651,7 @@ lazy_static::lazy_static! {
         m.insert("st_view_column_view_id_col_pos_key", ConstraintId(16));
         m.insert("st_view_arg_id_key", ConstraintId(17));
         m.insert("st_view_arg_bytes_key", ConstraintId(18));
+        m.insert("st_event_table_table_id_key", ConstraintId(19));
         m
     };
 }
@@ -660,6 +683,7 @@ lazy_static::lazy_static! {
         m.insert("st_view_sub_view_id_arg_id_identity_idx_btree", IndexId(20));
         m.insert("st_view_arg_id_idx_btree", IndexId(21));
         m.insert("st_view_arg_bytes_idx_btree", IndexId(22));
+        m.insert("st_event_table_table_id_idx_btree", IndexId(23));
         m
     };
 }
@@ -796,6 +820,10 @@ pub fn st_view_arg_schema() -> TableSchema {
     st_schema(ST_VIEW_ARG_NAME, ST_VIEW_ARG_ID)
 }
 
+fn st_event_table_schema() -> TableSchema {
+    st_schema(ST_EVENT_TABLE_NAME, ST_EVENT_TABLE_ID)
+}
+
 /// If `table_id` refers to a known system table, return its schema.
 ///
 /// Used when restoring from a snapshot; system tables are reinstantiated with this schema,
@@ -820,6 +848,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_VIEW_COLUMN_ID => Some(st_view_column_schema()),
         ST_VIEW_SUB_ID => Some(st_view_sub_schema()),
         ST_VIEW_ARG_ID => Some(st_view_arg_schema()),
+        ST_EVENT_TABLE_ID => Some(st_event_table_schema()),
         _ => None,
     }
 }
@@ -1633,6 +1662,33 @@ impl From<StScheduledRow> for ScheduleSchema {
             schedule_name: row.schedule_name,
             at_column: row.at_column,
         }
+    }
+}
+
+/// System Table [ST_EVENT_TABLE_NAME]
+///
+/// Tracks which tables are event tables.
+/// Event tables persist to commitlog but are not merged into committed state.
+///
+/// | table_id |
+/// |----------|
+/// | 4097     |
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StEventTableRow {
+    pub(crate) table_id: TableId,
+}
+
+impl TryFrom<RowRef<'_>> for StEventTableRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StEventTableRow> for ProductValue {
+    fn from(x: StEventTableRow) -> Self {
+        to_product_value(&x)
     }
 }
 
