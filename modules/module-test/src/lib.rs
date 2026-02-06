@@ -165,6 +165,12 @@ pub struct HasSpecialStuff {
     connection_id: ConnectionId,
 }
 
+#[table(name = my_event, public, event)]
+pub struct MyEvent {
+    name: String,
+    value: u64,
+}
+
 /// These two tables defined with the same row type
 /// verify that we can define multiple tables with the same type.
 ///
@@ -371,6 +377,11 @@ pub fn delete_players_by_name(ctx: &ReducerContext, name: String) -> Result<(), 
             Ok(())
         }
     }
+}
+
+#[spacetimedb::reducer]
+pub fn emit_event(ctx: &ReducerContext, name: String, value: u64) {
+    ctx.db.my_event().insert(MyEvent { name, value });
 }
 
 #[spacetimedb::reducer(client_connected)]
