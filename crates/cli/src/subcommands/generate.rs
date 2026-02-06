@@ -52,7 +52,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
 fn get_filtered_generate_configs<'a>(
     spacetime_config: &'a SpacetimeConfig,
     schema: &'a CommandSchema,
-    args: &clap::ArgMatches,
+    args: &'a clap::ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
     // Get all generate configs from spacetime.json
     let all_configs: Vec<HashMap<String, Value>> = spacetime_config.generate.as_ref().cloned().unwrap_or_default();
@@ -67,7 +67,7 @@ fn get_filtered_generate_configs<'a>(
     let all_command_configs: Vec<CommandConfig> = all_configs
         .into_iter()
         .map(|config| {
-            let command_config = CommandConfig::new(schema, config)?;
+            let command_config = CommandConfig::new(schema, config, args)?;
             command_config.validate()?;
             Ok(command_config)
         })
@@ -218,25 +218,25 @@ pub async fn exec_ex(
         let filtered = get_filtered_generate_configs(spacetime_config, &schema, args)?;
         // If filtering resulted in no matches, use CLI args with empty config
         if filtered.is_empty() {
-            vec![CommandConfig::new(&schema, HashMap::new())?]
+            vec![CommandConfig::new(&schema, HashMap::new(), args)?]
         } else {
             filtered
         }
     } else {
-        vec![CommandConfig::new(&schema, HashMap::new())?]
+        vec![CommandConfig::new(&schema, HashMap::new(), args)?]
     };
 
     // Execute generate for each config
     for command_config in generate_configs {
         // Get values using command_config.get_one() which merges CLI + config
         let project_path = command_config
-            .get_one::<PathBuf>(args, "module_path")?
+            .get_one::<PathBuf>("module_path")?
             .unwrap_or_else(|| PathBuf::from("."));
-        let wasm_file = command_config.get_one::<PathBuf>(args, "wasm_file")?;
-        let js_file = command_config.get_one::<PathBuf>(args, "js_file")?;
+        let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
+        let js_file = command_config.get_one::<PathBuf>("js_file")?;
         let json_module = args.get_many::<PathBuf>("json_module");
         let lang = command_config
-            .get_one::<Language>(args, "language")?
+            .get_one::<Language>("language")?
             .ok_or_else(|| anyhow::anyhow!("Language is required (use --lang or add to config)"))?;
 
         println!(
@@ -246,12 +246,12 @@ pub async fn exec_ex(
         );
 
         let namespace = command_config
-            .get_one::<String>(args, "namespace")?
+            .get_one::<String>("namespace")?
             .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
-        let module_name = command_config.get_one::<String>(args, "module_name")?;
+        let module_name = command_config.get_one::<String>("module_name")?;
         let force = args.get_flag("force");
         let build_options = command_config
-            .get_one::<String>(args, "build_options")?
+            .get_one::<String>("build_options")?
             .unwrap_or_else(|| String::new());
 
         // Validate namespace is only used with csharp
@@ -261,15 +261,15 @@ pub async fn exec_ex(
 
         // Get output directory (either out_dir or uproject_dir)
         let out_dir = command_config
-            .get_one::<PathBuf>(args, "out_dir")?
-            .or_else(|| command_config.get_one::<PathBuf>(args, "uproject_dir").ok().flatten())
+            .get_one::<PathBuf>("out_dir")?
+            .or_else(|| command_config.get_one::<PathBuf>("uproject_dir").ok().flatten())
             .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
 
         // Validate language-specific requirements
         match lang {
             Language::Rust | Language::Csharp | Language::TypeScript => {
                 // These languages require out_dir (not uproject_dir)
-                if command_config.get_one::<PathBuf>(args, "out_dir")?.is_none() {
+                if command_config.get_one::<PathBuf>("out_dir")?.is_none() {
                     return Err(anyhow::anyhow!(
                         "--out-dir is required for --lang {}",
                         match lang {
@@ -283,7 +283,7 @@ pub async fn exec_ex(
             }
             Language::UnrealCpp => {
                 // UnrealCpp requires uproject_dir and module_name
-                if command_config.get_one::<PathBuf>(args, "uproject_dir")?.is_none() {
+                if command_config.get_one::<PathBuf>("uproject_dir")?.is_none() {
                     return Err(anyhow::anyhow!("--uproject-dir is required for --lang unrealcpp"));
                 }
                 if module_name.is_none() {
@@ -545,10 +545,7 @@ mod tests {
         );
 
         // Verify it's the correct config (module1)
-        let filtered_module_path = filtered[0]
-            .get_one::<PathBuf>(&matches, "module_path")
-            .unwrap()
-            .unwrap();
+        let filtered_module_path = filtered[0].get_one::<PathBuf>("module_path").unwrap().unwrap();
         assert_eq!(filtered_module_path, module1);
     }
 
@@ -717,16 +714,16 @@ mod tests {
             serde_json::Value::String("/config/path".to_string()),
         );
 
-        let command_config = CommandConfig::new(&schema, config).unwrap();
-
         // CLI provides module_name
         let matches =
             cmd.clone()
                 .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--module-name", "MyModule"]);
 
+        let command_config = CommandConfig::new(&schema, config, &matches).unwrap();
+
         // Both should be available (one from CLI, one from config)
-        let uproject_dir = command_config.get_one::<PathBuf>(&matches, "uproject_dir").unwrap();
-        let module_name = command_config.get_one::<String>(&matches, "module_name").unwrap();
+        let uproject_dir = command_config.get_one::<PathBuf>("uproject_dir").unwrap();
+        let module_name = command_config.get_one::<String>("module_name").unwrap();
 
         assert_eq!(uproject_dir, Some(PathBuf::from("/config/path")));
         assert_eq!(module_name, Some("MyModule".to_string()));

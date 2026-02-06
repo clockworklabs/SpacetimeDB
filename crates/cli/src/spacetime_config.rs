@@ -181,6 +181,8 @@ pub struct CommandConfig<'a> {
     schema: &'a CommandSchema,
     /// Config file values
     config_values: HashMap<String, Value>,
+    /// CLI arguments
+    matches: &'a ArgMatches,
 }
 
 /// Schema that defines the contract between CLI arguments and config file keys.
@@ -513,11 +515,16 @@ impl<'a> CommandConfig<'a> {
     /// # Arguments
     /// * `schema` - The command schema that defines valid keys and types
     /// * `config_values` - Values from the config file
+    /// * `matches` - CLI arguments
     ///
     /// # Errors
     /// Returns an error if any config keys are not defined in the schema.
     /// Note: Required key validation happens when get_one() is called, not during construction.
-    pub fn new(schema: &'a CommandSchema, config_values: HashMap<String, Value>) -> Result<Self, CommandConfigError> {
+    pub fn new(
+        schema: &'a CommandSchema,
+        config_values: HashMap<String, Value>,
+        matches: &'a ArgMatches,
+    ) -> Result<Self, CommandConfigError> {
         // Normalize keys from kebab-case to snake_case to match clap's Arg::new() convention
         let normalized_values: HashMap<String, Value> = config_values
             .into_iter()
@@ -544,6 +551,7 @@ impl<'a> CommandConfig<'a> {
         Ok(CommandConfig {
             schema,
             config_values: normalized_values,
+            matches,
         })
     }
 
@@ -555,13 +563,9 @@ impl<'a> CommandConfig<'a> {
     /// - Ok(Some(T)) if the value exists and can be converted
     /// - Ok(None) if the value doesn't exist in either clap or config
     /// - Err if the type doesn't match or conversion fails
-    pub fn get_one<T: Clone + Send + Sync + 'static>(
-        &self,
-        matches: &ArgMatches,
-        key: &str,
-    ) -> Result<Option<T>, CommandConfigError> {
+    pub fn get_one<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Result<Option<T>, CommandConfigError> {
         // Try clap arguments first (CLI takes precedence) via schema
-        let from_cli = self.schema.get_clap_arg::<T>(matches, key)?;
+        let from_cli = self.schema.get_clap_arg::<T>(self.matches, key)?;
         if let Some(ref value) = from_cli {
             return Ok(Some(value.clone()));
         }
@@ -984,19 +988,19 @@ mod tests {
         config_values.insert("server".to_string(), Value::String("local".to_string()));
 
         // Create CommandConfig with schema
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // CLI args should override config values
         assert_eq!(
-            command_config.get_one::<String>(&matches, "out-dir").unwrap(),
+            command_config.get_one::<String>("out-dir").unwrap(),
             Some("./bindings".to_string())
         );
         assert_eq!(
-            command_config.get_one::<String>(&matches, "language").unwrap(),
+            command_config.get_one::<String>("language").unwrap(),
             Some("typescript".to_string())
         ); // CLI overrides (use config name, not clap name)
         assert_eq!(
-            command_config.get_one::<String>(&matches, "server").unwrap(),
+            command_config.get_one::<String>("server").unwrap(),
             Some("local".to_string())
         ); // from config
     }
@@ -1079,26 +1083,26 @@ mod tests {
             .unwrap();
 
         // Just pass the additional_fields directly - they will be normalized from kebab to snake_case
-        let command_config = CommandConfig::new(&schema, publish_config.additional_fields).unwrap();
+        let command_config = CommandConfig::new(&schema, publish_config.additional_fields, &matches).unwrap();
 
         // database comes from config
         assert_eq!(
-            command_config.get_one::<String>(&matches, "database").unwrap(),
+            command_config.get_one::<String>("database").unwrap(),
             Some("my-database".to_string())
         );
         // server comes from CLI (overrides config)
         assert_eq!(
-            command_config.get_one::<String>(&matches, "server").unwrap(),
+            command_config.get_one::<String>("server").unwrap(),
             Some("maincloud".to_string())
         );
         // module_path comes from config (kebab-case in JSON was normalized to snake_case)
         assert_eq!(
-            command_config.get_one::<String>(&matches, "module_path").unwrap(),
+            command_config.get_one::<String>("module_path").unwrap(),
             Some("./my-module".to_string())
         );
         // build_options comes from config
         assert_eq!(
-            command_config.get_one::<String>(&matches, "build_options").unwrap(),
+            command_config.get_one::<String>("build_options").unwrap(),
             Some("--features extra".to_string())
         );
     }
@@ -1120,10 +1124,10 @@ mod tests {
             .build(&cmd)
             .unwrap();
 
-        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
         // Trying to get as i64 when it's defined as String should error
-        let result = command_config.get_one::<i64>(&matches, "server");
+        let result = command_config.get_one::<i64>("server");
         assert!(matches!(
             result.unwrap_err(),
             CommandConfigError::TypeMismatch { key, requested_type, expected_type }
@@ -1184,11 +1188,11 @@ mod tests {
         let mut config_values = HashMap::new();
         config_values.insert("module-path".to_string(), Value::String("./config-project".to_string()));
 
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // CLI should override config, accessed via config name "module_path" (snake_case)
         assert_eq!(
-            command_config.get_one::<String>(&matches, "module_path").unwrap(),
+            command_config.get_one::<String>("module_path").unwrap(),
             Some("./my-project".to_string())
         );
     }
@@ -1215,11 +1219,11 @@ mod tests {
             .build(&cmd)
             .unwrap();
 
-        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
         // Should be accessible via the primary name
         assert_eq!(
-            command_config.get_one::<String>(&matches, "module-path").unwrap(),
+            command_config.get_one::<String>("module-path").unwrap(),
             Some("./my-project".to_string())
         );
     }
@@ -1241,10 +1245,10 @@ mod tests {
             .build(&cmd)
             .unwrap();
 
-        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
         // Should return Ok(None) when optional argument not provided
-        assert_eq!(command_config.get_one::<String>(&matches, "server").unwrap(), None);
+        assert_eq!(command_config.get_one::<String>("server").unwrap(), None);
     }
 
     #[test]
@@ -1274,11 +1278,11 @@ mod tests {
             .build(&cmd)
             .unwrap();
 
-        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
         // Should be able to get the value via the canonical name
         assert_eq!(
-            command_config.get_one::<String>(&matches, "module-path").unwrap(),
+            command_config.get_one::<String>("module-path").unwrap(),
             Some("./deprecated".to_string())
         );
     }
@@ -1314,11 +1318,11 @@ mod tests {
             .build(&cmd)
             .unwrap();
 
-        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
         // Canonical name should take precedence
         assert_eq!(
-            command_config.get_one::<String>(&matches, "module-path").unwrap(),
+            command_config.get_one::<String>("module-path").unwrap(),
             Some("./canonical".to_string())
         );
     }
@@ -1352,11 +1356,11 @@ mod tests {
         let mut config_values = HashMap::new();
         config_values.insert("module-path".to_string(), Value::String("./from-config".to_string()));
 
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // Should fall back to config
         assert_eq!(
-            command_config.get_one::<String>(&matches, "module_path").unwrap(),
+            command_config.get_one::<String>("module_path").unwrap(),
             Some("./from-config".to_string())
         );
     }
@@ -1432,7 +1436,7 @@ mod tests {
         config_values.insert("server".to_string(), Value::String("local".to_string()));
         config_values.insert("undefined-key".to_string(), Value::String("value".to_string()));
 
-        let result = CommandConfig::new(&schema, config_values);
+        let result = CommandConfig::new(&schema, config_values, &matches);
 
         // After normalization, "undefined-key" becomes "undefined_key"
         assert!(matches!(
@@ -1485,7 +1489,7 @@ mod tests {
         config_values.insert("yes".to_string(), Value::Bool(true));
         config_values.insert("server".to_string(), Value::String("local".to_string()));
 
-        let result = CommandConfig::new(&schema, config_values);
+        let result = CommandConfig::new(&schema, config_values, &matches);
 
         // Should error because "yes" is excluded and shouldn't be in config
         assert!(matches!(
@@ -1681,10 +1685,10 @@ mod tests {
         let mut config_values = HashMap::new();
         config_values.insert("port".to_string(), Value::String("not-a-number".to_string()));
 
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // Should error when trying to convert invalid value
-        let result = command_config.get_one::<i64>(&matches, "port");
+        let result = command_config.get_one::<i64>("port");
         assert!(matches!(
             result.unwrap_err(),
             CommandConfigError::ConversionError { key, target_type, .. }
@@ -1708,6 +1712,8 @@ mod tests {
                     .value_parser(clap::value_parser!(String)),
             );
 
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
         let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("database").required())
             .key(Key::new::<String>("server"))
@@ -1716,7 +1722,7 @@ mod tests {
 
         // Config is missing the required "database" key
         let config_values = HashMap::new();
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // Should error on validation
         let result = command_config.validate();
@@ -1743,6 +1749,8 @@ mod tests {
                     .value_parser(clap::value_parser!(String)),
             );
 
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
         let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("database").required())
             .key(Key::new::<String>("server"))
@@ -1753,7 +1761,7 @@ mod tests {
         let mut config_values = HashMap::new();
         config_values.insert("database".to_string(), Value::String("my-db".to_string()));
 
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // Should succeed on validation
         assert!(command_config.validate().is_ok());
@@ -1769,6 +1777,8 @@ mod tests {
                 .value_parser(clap::value_parser!(String)),
         );
 
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
         let schema = CommandSchemaBuilder::new()
             .key(Key::new::<String>("server"))
             .build(&cmd)
@@ -1776,7 +1786,7 @@ mod tests {
 
         // No required keys, empty config should be fine
         let config_values = HashMap::new();
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // Should succeed on validation
         assert!(command_config.validate().is_ok());
@@ -1816,15 +1826,15 @@ mod tests {
         config_values.insert("project_path".to_string(), Value::String("./my-module".to_string()));
         config_values.insert("build_options".to_string(), Value::String("--release".to_string()));
 
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // Default values should NOT override config values
         assert_eq!(
-            command_config.get_one::<PathBuf>(&matches, "project_path").unwrap(),
+            command_config.get_one::<PathBuf>("project_path").unwrap(),
             Some(PathBuf::from("./my-module"))
         );
         assert_eq!(
-            command_config.get_one::<String>(&matches, "build_options").unwrap(),
+            command_config.get_one::<String>("build_options").unwrap(),
             Some("--release".to_string())
         );
 
@@ -1902,11 +1912,11 @@ mod tests {
         config_values.insert("build-options".to_string(), Value::String("--release".to_string()));
 
         // The normalization in CommandConfig::new should convert build-options to build_options
-        let command_config = CommandConfig::new(&schema, config_values).unwrap();
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
         // Should be able to access via snake_case key
         assert_eq!(
-            command_config.get_one::<String>(&matches, "build_options").unwrap(),
+            command_config.get_one::<String>("build_options").unwrap(),
             Some("--release".to_string())
         );
     }
@@ -1963,9 +1973,9 @@ mod tests {
             .build(&cmd)
             .unwrap();
 
-        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
-        assert_eq!(command_config.get_one::<String>(&matches, "some_arg").unwrap(), None);
+        assert_eq!(command_config.get_one::<String>("some_arg").unwrap(), None);
     }
 
     #[test]
@@ -1979,10 +1989,10 @@ mod tests {
             .build(&cmd)
             .unwrap();
 
-        let command_config = CommandConfig::new(&schema, HashMap::new()).unwrap();
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
         assert_eq!(
-            command_config.get_one::<String>(&matches, "database").unwrap(),
+            command_config.get_one::<String>("database").unwrap(),
             Some("my-database".to_string())
         );
     }

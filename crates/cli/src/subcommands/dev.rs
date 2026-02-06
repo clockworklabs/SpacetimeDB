@@ -348,7 +348,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             let mut config_map = HashMap::new();
             config_map.insert("database".to_string(), json!(db_name));
 
-            vec![CommandConfig::new(&publish_schema, config_map)?]
+            vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?]
         } else {
             anyhow::bail!("No database name provided and no publish configurations found");
         }
@@ -360,7 +360,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let mut config_map = HashMap::new();
         config_map.insert("database".to_string(), json!(db_name));
 
-        vec![CommandConfig::new(&publish_schema, config_map)?]
+        vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?]
     } else {
         anyhow::bail!("No database name provided and no publish configurations found");
     };
@@ -469,7 +469,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .and_then(|v| v.as_str())
             .expect("database is a required field");
 
-        let server_opt = config_entry.get_one::<String>(&publish_args, "server")?;
+        let server_opt = config_entry.get_one::<String>("server")?;
         let server_for_db = server_opt.as_deref().unwrap_or(resolved_server);
 
         let db_identity = database_identity(&config, db_name, Some(server_for_db)).await?;
@@ -487,7 +487,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Start the client development server if configured
     let server_opt_client = publish_configs
         .first()
-        .and_then(|c| c.get_one::<String>(&publish_args, "server").ok().flatten());
+        .and_then(|c| c.get_one::<String>("server").ok().flatten());
     let server_for_client = server_opt_client.as_deref().unwrap_or(resolved_server);
     let server_host_url = config.get_host_url(Some(server_for_client))?;
     let _client_handle = if let Some(ref cmd) = client_command {

@@ -42,7 +42,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
 pub fn get_filtered_publish_configs<'a>(
     spacetime_config: &'a SpacetimeConfig,
     schema: &'a CommandSchema,
-    args: &ArgMatches,
+    args: &'a ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
     // Get all publish targets from config
     let all_targets: Vec<_> = spacetime_config
@@ -60,7 +60,7 @@ pub fn get_filtered_publish_configs<'a>(
     let all_configs: Vec<CommandConfig> = all_targets
         .into_iter()
         .map(|target| {
-            let config = CommandConfig::new(schema, target.additional_fields.clone())?;
+            let config = CommandConfig::new(schema, target.additional_fields.clone(), args)?;
             config.validate()?;
             Ok(config)
         })
@@ -231,7 +231,7 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         if filtered.is_empty() {
             (
                 false,
-                vec![CommandConfig::new(&schema, std::collections::HashMap::new())?],
+                vec![CommandConfig::new(&schema, std::collections::HashMap::new(), args)?],
             )
         } else {
             (true, filtered)
@@ -239,19 +239,19 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
     } else {
         (
             false,
-            vec![CommandConfig::new(&schema, std::collections::HashMap::new())?],
+            vec![CommandConfig::new(&schema, std::collections::HashMap::new(), args)?],
         )
     };
 
     // Execute publish for each config
     for command_config in publish_configs {
         // Get values using command_config.get_one() which merges CLI + config
-        let server_opt = command_config.get_one::<String>(args, "server")?;
+        let server_opt = command_config.get_one::<String>("server")?;
         let server = server_opt.as_deref();
-        let name_or_identity_opt = command_config.get_one::<String>(args, "database")?;
+        let name_or_identity_opt = command_config.get_one::<String>("database")?;
         let name_or_identity = name_or_identity_opt.as_deref();
         let path_to_project = command_config
-            .get_one::<PathBuf>(args, "module_path")?
+            .get_one::<PathBuf>("module_path")?
             .unwrap_or_else(|| PathBuf::from("."));
 
         if using_config {
@@ -266,16 +266,16 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
             .copied()
             .unwrap_or(ClearMode::Never);
         let force = args.get_flag("force");
-        let anon_identity = command_config.get_one::<bool>(args, "anon_identity")?.unwrap_or(false);
-        let wasm_file = command_config.get_one::<PathBuf>(args, "wasm_file")?;
-        let js_file = command_config.get_one::<PathBuf>(args, "js_file")?;
+        let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
+        let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
+        let js_file = command_config.get_one::<PathBuf>("js_file")?;
         let database_host = config.get_host_url(server)?;
         let build_options = command_config
-            .get_one::<String>(args, "build_options")?
+            .get_one::<String>("build_options")?
             .unwrap_or_else(|| String::new());
-        let num_replicas = command_config.get_one::<u8>(args, "num_replicas")?;
-        let force_break_clients = command_config.get_one::<bool>(args, "break_clients")?.unwrap_or(false);
-        let parent_opt = command_config.get_one::<String>(args, "parent")?;
+        let num_replicas = command_config.get_one::<u8>("num_replicas")?;
+        let force_break_clients = command_config.get_one::<bool>("break_clients")?.unwrap_or(false);
+        let parent_opt = command_config.get_one::<String>("parent")?;
         let parent = parent_opt.as_deref();
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
@@ -677,7 +677,7 @@ mod tests {
 
         assert_eq!(filtered.len(), 1, "Should only match db1");
         assert_eq!(
-            filtered[0].get_one::<String>(&matches, "database").unwrap(),
+            filtered[0].get_one::<String>("database").unwrap(),
             Some("db1".to_string())
         );
     }
