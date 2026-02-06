@@ -31,6 +31,11 @@ use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
+use spacetimedb_lib::db::raw_def::v10::{
+    RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
+    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
+    RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+};
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
     RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
@@ -468,6 +473,97 @@ impl TryFrom<raw_def::v10::RawModuleDefV10> for ModuleDef {
     }
 }
 
+impl From<ModuleDef> for RawModuleDefV10 {
+    fn from(val: ModuleDef) -> Self {
+        let ModuleDef {
+            tables,
+            views,
+            reducers,
+            lifecycle_reducers,
+            types,
+            typespace,
+            stored_in_table_def: _,
+            typespace_for_generate: _,
+            refmap: _,
+            row_level_security_raw,
+            procedures,
+            raw_module_def_version: _,
+        } = val;
+
+        let mut sections = Vec::new();
+
+        sections.push(RawModuleDefV10Section::Typespace(typespace));
+
+        // Extract lifecycle reducer names before consuming reducers.
+        let raw_lifecycle: Vec<RawLifeCycleReducerDefV10> = lifecycle_reducers
+            .into_iter()
+            .filter_map(|(lifecycle, reducer_id)| {
+                let id = reducer_id?;
+                let (name, _) = reducers.get_index(id.idx())?;
+                Some(RawLifeCycleReducerDefV10 {
+                    lifecycle_spec: lifecycle,
+                    function_name: name.clone().into(),
+                })
+            })
+            .collect();
+
+        let raw_types: Vec<RawTypeDefV10> = types.into_values().map(Into::into).collect();
+        if !raw_types.is_empty() {
+            sections.push(RawModuleDefV10Section::Types(raw_types));
+        }
+
+        // Collect schedules from tables (V10 stores them in a separate section).
+        let mut schedules = Vec::new();
+        let raw_tables: Vec<RawTableDefV10> = tables
+            .into_values()
+            .map(|td| {
+                if let Some(sched) = td.schedule.clone() {
+                    schedules.push(RawScheduleDefV10 {
+                        source_name: Some(sched.name.into()),
+                        table_name: td.name.clone().into(),
+                        schedule_at_col: sched.at_column,
+                        function_name: sched.function_name.into(),
+                    });
+                }
+                td.into()
+            })
+            .collect();
+        if !raw_tables.is_empty() {
+            sections.push(RawModuleDefV10Section::Tables(raw_tables));
+        }
+
+        let raw_reducers: Vec<RawReducerDefV10> = reducers.into_values().map(Into::into).collect();
+        if !raw_reducers.is_empty() {
+            sections.push(RawModuleDefV10Section::Reducers(raw_reducers));
+        }
+
+        let raw_procedures: Vec<RawProcedureDefV10> = procedures.into_values().map(Into::into).collect();
+        if !raw_procedures.is_empty() {
+            sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
+        }
+
+        let raw_views: Vec<RawViewDefV10> = views.into_values().map(Into::into).collect();
+        if !raw_views.is_empty() {
+            sections.push(RawModuleDefV10Section::Views(raw_views));
+        }
+
+        if !schedules.is_empty() {
+            sections.push(RawModuleDefV10Section::Schedules(schedules));
+        }
+
+        if !raw_lifecycle.is_empty() {
+            sections.push(RawModuleDefV10Section::LifeCycleReducers(raw_lifecycle));
+        }
+
+        let raw_rls: Vec<RawRowLevelSecurityDefV10> = row_level_security_raw.into_values().collect();
+        if !raw_rls.is_empty() {
+            sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
+        }
+
+        RawModuleDefV10 { sections }
+    }
+}
+
 /// Implemented by definitions stored in a `ModuleDef`.
 /// Allows looking definitions up in a `ModuleDef`, and across
 /// `ModuleDef`s during migrations.
@@ -589,6 +685,37 @@ impl From<TableDef> for RawTableDefV9 {
     }
 }
 
+impl From<TableDef> for RawTableDefV10 {
+    fn from(val: TableDef) -> Self {
+        let TableDef {
+            name,
+            product_type_ref,
+            primary_key,
+            columns: _, // will be reconstructed from the product type.
+            indexes,
+            constraints,
+            sequences,
+            schedule: _, // V10 stores schedules in a separate section; handled in From<ModuleDef>.
+            table_type,
+            table_access,
+            is_event,
+        } = val;
+
+        RawTableDefV10 {
+            source_name: name.into(),
+            product_type_ref,
+            primary_key: ColList::from_iter(primary_key),
+            indexes: indexes.into_values().map(Into::into).collect(),
+            constraints: constraints.into_values().map(Into::into).collect(),
+            sequences: sequences.into_values().map(Into::into).collect(),
+            table_type,
+            table_access,
+            default_values: Vec::new(),
+            is_event,
+        }
+    }
+}
+
 impl From<ViewDef> for TableDef {
     fn from(def: ViewDef) -> Self {
         use TableAccess::*;
@@ -657,6 +784,19 @@ impl From<SequenceDef> for RawSequenceDefV9 {
     }
 }
 
+impl From<SequenceDef> for RawSequenceDefV10 {
+    fn from(val: SequenceDef) -> Self {
+        RawSequenceDefV10 {
+            source_name: Some(val.name),
+            column: val.column,
+            start: val.start,
+            min_value: val.min_value,
+            max_value: val.max_value,
+            increment: val.increment,
+        }
+    }
+}
+
 /// A struct representing the validated definition of a database index.
 ///
 /// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
@@ -700,6 +840,16 @@ impl From<IndexDef> for RawIndexDefV9 {
                 IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
             accessor_name: val.accessor_name.map(Into::into),
+        }
+    }
+}
+
+impl From<IndexDef> for RawIndexDefV10 {
+    fn from(val: IndexDef) -> Self {
+        RawIndexDefV10 {
+            source_name: Some(val.name),
+            accessor_name: val.accessor_name.map(Into::into),
+            algorithm: val.algorithm.into(),
         }
     }
 }
@@ -964,6 +1114,15 @@ impl From<ConstraintDef> for RawConstraintDefV9 {
     }
 }
 
+impl From<ConstraintDef> for RawConstraintDefV10 {
+    fn from(val: ConstraintDef) -> Self {
+        RawConstraintDefV10 {
+            source_name: Some(val.name),
+            data: val.data.into(),
+        }
+    }
+}
+
 /// Data for a constraint attached to a table.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
@@ -1121,6 +1280,16 @@ impl From<TypeDef> for RawTypeDefV9 {
     }
 }
 
+impl From<TypeDef> for RawTypeDefV10 {
+    fn from(val: TypeDef) -> Self {
+        RawTypeDefV10 {
+            source_name: val.name.into(),
+            ty: val.ty,
+            custom_ordering: val.custom_ordering,
+        }
+    }
+}
+
 /// A scoped type name, in the form `scope0::scope1::...::scopeN::name`.
 ///
 /// These are the names that will be used *in client code generation*, NOT the names used for types
@@ -1213,6 +1382,15 @@ impl From<ScopedTypeName> for RawScopedTypeNameV9 {
         RawScopedTypeNameV9 {
             scope: val.scope.into_vec().into_iter().map(|id| id.into()).collect(),
             name: val.name.into(),
+        }
+    }
+}
+
+impl From<ScopedTypeName> for RawScopedTypeNameV10 {
+    fn from(val: ScopedTypeName) -> Self {
+        RawScopedTypeNameV10 {
+            scope: val.scope.into_vec().into_iter().map(|id| id.into()).collect(),
+            source_name: val.name.into(),
         }
     }
 }
@@ -1314,6 +1492,28 @@ impl From<ViewDef> for RawViewDefV9 {
     }
 }
 
+impl From<ViewDef> for RawViewDefV10 {
+    fn from(val: ViewDef) -> Self {
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            return_type,
+            fn_ptr,
+            ..
+        } = val;
+        RawViewDefV10 {
+            source_name: name.into(),
+            index: fn_ptr.into(),
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+        }
+    }
+}
+
 impl From<ViewDef> for RawMiscModuleExportV9 {
     fn from(def: ViewDef) -> Self {
         Self::View(def.into())
@@ -1345,6 +1545,15 @@ impl From<RawFunctionVisibility> for FunctionVisibility {
         match val {
             RawFunctionVisibility::Private => FunctionVisibility::Private,
             RawFunctionVisibility::ClientCallable => FunctionVisibility::ClientCallable,
+        }
+    }
+}
+
+impl From<FunctionVisibility> for RawFunctionVisibility {
+    fn from(val: FunctionVisibility) -> Self {
+        match val {
+            FunctionVisibility::Private => RawFunctionVisibility::Private,
+            FunctionVisibility::ClientCallable => RawFunctionVisibility::ClientCallable,
         }
     }
 }
@@ -1389,6 +1598,18 @@ impl From<ReducerDef> for RawReducerDefV9 {
     }
 }
 
+impl From<ReducerDef> for RawReducerDefV10 {
+    fn from(val: ReducerDef) -> Self {
+        RawReducerDefV10 {
+            source_name: val.name.into(),
+            params: val.params,
+            visibility: val.visibility.into(),
+            ok_return_type: val.ok_return_type,
+            err_return_type: val.err_return_type,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ProcedureDef {
@@ -1429,6 +1650,17 @@ impl From<ProcedureDef> for RawProcedureDefV9 {
             name: val.name.into(),
             params: val.params,
             return_type: val.return_type,
+        }
+    }
+}
+
+impl From<ProcedureDef> for RawProcedureDefV10 {
+    fn from(val: ProcedureDef) -> Self {
+        RawProcedureDefV10 {
+            source_name: val.name.into(),
+            params: val.params,
+            return_type: val.return_type,
+            visibility: val.visibility.into(),
         }
     }
 }
