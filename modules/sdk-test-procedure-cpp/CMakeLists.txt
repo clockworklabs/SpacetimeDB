@@ -27,7 +27,7 @@ target_include_directories(${OUTPUT_NAME} PRIVATE
 
 # Compile options for WASM
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    target_compile_options(${OUTPUT_NAME} PRIVATE -fno-exceptions)
+    target_compile_options(${OUTPUT_NAME} PRIVATE -fno-exceptions -O2 -g0)
     # Enable unstable features for transaction support
     target_compile_definitions(${OUTPUT_NAME} PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
     # Also define for the library so it includes unstable features
@@ -62,6 +62,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # C++20 and O2 at link step (Emscripten accepts them here too)
     "SHELL:-std=c++20"
     "SHELL:-O2"
+    "SHELL:-g0"
   )
 
   # Name the output lib.wasm

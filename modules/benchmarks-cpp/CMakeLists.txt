@@ -32,6 +32,8 @@ target_include_directories(${OUTPUT_NAME} PRIVATE
 add_subdirectory(${SPACETIMEDB_CPP_LIBRARY_PATH} ${CMAKE_CURRENT_BINARY_DIR}/spacetimedb_cpp_library)
 target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
 
+target_compile_options(${OUTPUT_NAME} PRIVATE -fno-exceptions -O2 -g0)
+
 # Emscripten specific settings
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # Export list as a single variable (no extra quoting per-platform)
@@ -56,6 +58,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # C++20 and O2 at link step (Emscripten accepts them here too)
     "SHELL:-std=c++20"
     "SHELL:-O2"
+    "SHELL:-g0"
   )
 
   # Name the output lib.wasm

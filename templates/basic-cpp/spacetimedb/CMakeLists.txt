@@ -77,8 +77,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   # Compile options/defines for WASM
   # (apply to both the module and the bindings, so everything sees the same feature flags)
-  target_compile_options(lib PRIVATE -fno-exceptions)
-  target_compile_options(spacetimedb_cpp_library PRIVATE -fno-exceptions)
+  target_compile_options(lib PRIVATE -fno-exceptions -O2 -g0)
+  target_compile_options(spacetimedb_cpp_library PRIVATE -fno-exceptions -O2 -g0)
 
   # Uncomment the following to allow unstable features of SpacetimeDB
   #target_compile_definitions(lib PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
@@ -98,6 +98,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     "SHELL:-sSUPPORT_ERRNO=0"
     "SHELL:-std=c++20"
     "SHELL:-O2"
+    "SHELL:-g0"
   )
 
   set_target_properties(lib PROPERTIES OUTPUT_NAME "lib" SUFFIX ".wasm")
