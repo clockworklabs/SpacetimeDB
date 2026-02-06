@@ -4,28 +4,26 @@
 
 use crate::spacetime_module::AbstractEventContext;
 use crate::{
-    db_connection::{next_request_id, next_subscription_id, DbContextImpl, PendingMutation},
+    db_connection::{next_query_set_id, next_request_id, DbContextImpl, PendingMutation},
     spacetime_module::{SpacetimeModule, SubscriptionHandle},
 };
 use futures_channel::mpsc;
-use spacetimedb_client_api_messages::websocket as ws;
+use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
 use spacetimedb_data_structures::map::HashMap;
-use std::sync::{atomic::AtomicU32, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 
 // TODO: Rewrite for subscription manipulation, once we get that.
 // Currently race conditions abound, as you may resubscribe before the prev sub was applied,
 // clobbering your previous callback.
 
 pub struct SubscriptionManager<M: SpacetimeModule> {
-    legacy_subscriptions: HashMap<u32, SubscribedQuery<M>>,
-    new_subscriptions: HashMap<u32, SubscriptionHandleImpl<M>>,
+    subscriptions: HashMap<QuerySetId, SubscriptionHandleImpl<M>>,
 }
 
 impl<M: SpacetimeModule> Default for SubscriptionManager<M> {
     fn default() -> Self {
         Self {
-            legacy_subscriptions: HashMap::default(),
-            new_subscriptions: HashMap::default(),
+            subscriptions: HashMap::default(),
         }
     }
 }
@@ -69,45 +67,15 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
 
     /// Register a new subscription. This does not send the subscription to the server.
     /// Rather, it makes the subscription available for the next `apply_subscriptions` call.
-    // TODO(ws-v2): remove
-    #[allow(unused)]
-    pub(crate) fn register_legacy_subscription(
-        &mut self,
-        sub_id: u32,
-        on_applied: Option<OnAppliedCallback<M>>,
-        on_error: Option<OnErrorCallback<M>>,
-    ) {
-        self.legacy_subscriptions
-            .try_insert(
-                sub_id,
-                SubscribedQuery {
-                    on_applied,
-                    on_error,
-                    is_applied: false,
-                },
-            )
-            .unwrap_or_else(|_| unreachable!("Duplicate subscription id {sub_id}"));
-    }
-
-    pub(crate) fn legacy_subscription_applied(&mut self, ctx: &M::SubscriptionEventContext, sub_id: u32) {
-        let sub = self.legacy_subscriptions.get_mut(&sub_id).unwrap();
-        sub.is_applied = true;
-        if let Some(callback) = sub.on_applied.take() {
-            callback(ctx);
-        }
-    }
-
-    /// Register a new subscription. This does not send the subscription to the server.
-    /// Rather, it makes the subscription available for the next `apply_subscriptions` call.
-    pub(crate) fn register_subscription(&mut self, query_id: u32, handle: SubscriptionHandleImpl<M>) {
-        self.new_subscriptions
-            .try_insert(query_id, handle.clone())
-            .unwrap_or_else(|_| unreachable!("Duplicate subscription id {query_id}"));
+    pub(crate) fn register_subscription(&mut self, query_set_id: QuerySetId, handle: SubscriptionHandleImpl<M>) {
+        self.subscriptions
+            .try_insert(query_set_id, handle.clone())
+            .unwrap_or_else(|_| unreachable!("Duplicate subscription id {query_set_id:?}"));
     }
 
     /// This should be called when we get a subscription applied message from the server.
-    pub(crate) fn subscription_applied(&mut self, ctx: &M::SubscriptionEventContext, sub_id: u32) {
-        let Some(sub) = self.new_subscriptions.get_mut(&sub_id) else {
+    pub(crate) fn subscription_applied(&mut self, ctx: &M::SubscriptionEventContext, query_set_id: QuerySetId) {
+        let Some(sub) = self.subscriptions.get_mut(&query_set_id) else {
             // TODO: log or double check error handling.
             return;
         };
@@ -117,8 +85,8 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
     }
 
     /// This should be called when we get a subscription applied message from the server.
-    pub(crate) fn handle_pending_unsubscribe(&mut self, sub_id: u32) -> PendingUnsubscribeResult<M> {
-        let Some(sub) = self.new_subscriptions.get(&sub_id) else {
+    pub(crate) fn handle_pending_unsubscribe(&mut self, query_set_id: QuerySetId) -> PendingUnsubscribeResult<M> {
+        let Some(sub) = self.subscriptions.get(&query_set_id) else {
             // TODO: log or double check error handling.
             return PendingUnsubscribeResult::DoNothing;
         };
@@ -126,7 +94,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
         if sub.is_cancelled() {
             // This means that the subscription was cancelled before it was started.
             // We skip sending the subscription start message.
-            self.new_subscriptions.remove(&sub_id);
+            self.subscriptions.remove(&query_set_id);
             if let Some(callback) = sub.on_ended() {
                 return PendingUnsubscribeResult::RunCallback(callback);
             } else {
@@ -136,21 +104,21 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
         if sub.is_ended() {
             // This should only happen if the subscription was ended due to an error.
             // We don't need to send an unsubscribe message in this case.
-            self.new_subscriptions.remove(&sub_id);
+            self.subscriptions.remove(&query_set_id);
             return PendingUnsubscribeResult::DoNothing;
         }
         PendingUnsubscribeResult::SendUnsubscribe(ws::v2::Unsubscribe {
-            query_set_id: ws::v2::QuerySetId::new(sub_id),
+            query_set_id,
             request_id: next_request_id(),
             flags: ws::v2::UnsubscribeFlags::SendDroppedRows,
         })
     }
 
     /// This should be called when we get an unsubscribe applied message from the server.
-    pub(crate) fn unsubscribe_applied(&mut self, ctx: &M::SubscriptionEventContext, sub_id: u32) {
-        let Some(mut sub) = self.new_subscriptions.remove(&sub_id) else {
+    pub(crate) fn unsubscribe_applied(&mut self, ctx: &M::SubscriptionEventContext, query_set_id: QuerySetId) {
+        let Some(mut sub) = self.subscriptions.remove(&query_set_id) else {
             // TODO: double check error handling.
-            log::debug!("Unsubscribe applied called for missing query {sub_id:?}");
+            log::debug!("Unsubscribe applied called for missing query {query_set_id:?}");
             return;
         };
         if let Some(callback) = sub.on_ended() {
@@ -159,23 +127,16 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
     }
 
     /// This should be called when we get an unsubscribe applied message from the server.
-    pub(crate) fn subscription_error(&mut self, ctx: &M::ErrorContext, sub_id: u32) {
-        let Some(mut sub) = self.new_subscriptions.remove(&sub_id) else {
+    pub(crate) fn subscription_error(&mut self, ctx: &M::ErrorContext, query_set_id: QuerySetId) {
+        let Some(mut sub) = self.subscriptions.remove(&query_set_id) else {
             // TODO: double check error handling.
-            log::warn!("Unsubscribe applied called for missing query {sub_id:?}");
+            log::warn!("Unsubscribe applied called for missing query {query_set_id:?}");
             return;
         };
         if let Some(callback) = sub.on_error() {
             callback(ctx, ctx.event().clone().unwrap());
         }
     }
-}
-
-struct SubscribedQuery<M: SpacetimeModule> {
-    on_applied: Option<OnAppliedCallback<M>>,
-    #[allow(unused)]
-    on_error: Option<OnErrorCallback<M>>,
-    is_applied: bool,
 }
 
 /// Builder-pattern constructor for subscription queries.
@@ -214,9 +175,9 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     }
 
     pub fn subscribe<Queries: IntoQueries>(self, query_sql: Queries) -> M::SubscriptionHandle {
-        let qid = next_subscription_id();
+        let query_set_id = next_query_set_id();
         let handle = SubscriptionHandleImpl::new(SubscriptionState::new(
-            qid,
+            query_set_id,
             query_sql.into_queries(),
             self.conn.pending_mutations_send.clone(),
             self.on_applied,
@@ -224,8 +185,8 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
         ));
         self.conn
             .pending_mutations_send
-            .unbounded_send(PendingMutation::SubscribeMulti {
-                query_id: qid,
+            .unbounded_send(PendingMutation::Subscribe {
+                query_set_id,
                 handle: handle.clone(),
             })
             .unwrap();
@@ -240,24 +201,7 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// should register more precise queries via [`Self::subscribe`]
     /// in order to replicate only the subset of data which the client needs to function.
     pub fn subscribe_to_all_tables(self) {
-        static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(0);
-
-        let sub_id = NEXT_SUB_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let query = "SELECT * FROM *";
-
-        let Self {
-            on_applied,
-            on_error,
-            conn,
-        } = self;
-        conn.pending_mutations_send
-            .unbounded_send(PendingMutation::Subscribe {
-                on_applied,
-                on_error,
-                queries: [query].into_queries(),
-                sub_id,
-            })
-            .unwrap();
+        todo!("Repair or remove")
     }
 }
 
@@ -335,7 +279,7 @@ enum SubscriptionServerState {
 /// A reference to this is held by the `SubscriptionHandle` that clients use to unsubscribe,
 /// and by the `SubscriptionManager` that handles updates from the server.
 pub(crate) struct SubscriptionState<M: SpacetimeModule> {
-    query_id: u32,
+    query_set_id: QuerySetId,
     query_sql: Box<[Box<str>]>,
     unsubscribe_called: bool,
     status: SubscriptionServerState,
@@ -349,14 +293,14 @@ pub(crate) struct SubscriptionState<M: SpacetimeModule> {
 
 impl<M: SpacetimeModule> SubscriptionState<M> {
     pub(crate) fn new(
-        query_id: u32,
+        query_set_id: QuerySetId,
         query_sql: Box<[Box<str>]>,
         pending_mutation_sender: mpsc::UnboundedSender<PendingMutation<M>>,
         on_applied: Option<OnAppliedCallback<M>>,
         on_error: Option<OnErrorCallback<M>>,
     ) -> Self {
         Self {
-            query_id,
+            query_set_id,
             query_sql,
             unsubscribe_called: false,
             status: SubscriptionServerState::Pending,
@@ -384,7 +328,7 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         }
         self.status = SubscriptionServerState::Sent;
         Some(ws::v2::Subscribe {
-            query_set_id: ws::v2::QuerySetId::new(self.query_id),
+            query_set_id: self.query_set_id,
             query_strings: self.query_sql.clone(),
             request_id: next_request_id(),
         })
@@ -406,7 +350,7 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         // We send this even if the status is still Pending, so we can remove it from the manager.
         self.pending_mutation_sender
             .unbounded_send(PendingMutation::Unsubscribe {
-                query_id: self.query_id,
+                query_set_id: self.query_set_id,
             })
             .unwrap();
         Ok(())
@@ -436,12 +380,12 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
             // Potentially log a warning. This might make sense if we are shutting down.
             log::debug!(
                 "on_applied called for query {:?} with status: {:?}",
-                self.query_id,
+                self.query_set_id,
                 self.status
             );
             return None;
         }
-        log::debug!("on_applied called for query {:?}", self.query_id);
+        log::debug!("on_applied called for query {:?}", self.query_set_id);
         self.status = SubscriptionServerState::Applied;
         self.on_applied.take()
     }

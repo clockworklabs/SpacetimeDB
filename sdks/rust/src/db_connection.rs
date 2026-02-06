@@ -27,16 +27,14 @@ use crate::{
     },
     client_cache::{ClientCache, TableHandle},
     spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
-    subscription::{
-        OnAppliedCallback, OnErrorCallback, PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager,
-    },
+    subscription::{PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager},
     websocket::{WsConnection, WsParams},
 };
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
-use spacetimedb_client_api_messages::websocket as ws;
+use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
 use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity};
 use spacetimedb_sats::Deserialize;
 use std::{
@@ -158,19 +156,6 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 Ok(())
             }
 
-            // Subscription applied:
-            // set the received state to store all the rows,
-            // then invoke the on-applied and row callbacks.
-            // We only use this for `subscribe_from_all_tables`
-            ParsedMessage::InitialSubscription { db_update, sub_id } => {
-                self.apply_update(db_update, |inner| {
-                    let sub_event_ctx = self.make_event_ctx(());
-                    inner.subscriptions.legacy_subscription_applied(&sub_event_ctx, sub_id);
-                    Event::SubscribeApplied
-                });
-                Ok(())
-            }
-
             // Successful transaction update:
             // apply the received diff to the client cache,
             // then invoke on-reducer and row callbacks.
@@ -196,37 +181,32 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 Ok(())
             }
             ParsedMessage::SubscribeApplied {
-                query_id,
+                query_set_id,
                 initial_update,
             } => {
                 self.apply_update(initial_update, |inner| {
                     let sub_event_ctx = self.make_event_ctx(());
-                    inner.subscriptions.subscription_applied(&sub_event_ctx, query_id);
+                    inner.subscriptions.subscription_applied(&sub_event_ctx, query_set_id);
                     Event::SubscribeApplied
                 });
                 Ok(())
             }
             ParsedMessage::UnsubscribeApplied {
-                query_id,
+                query_set_id,
                 initial_update,
             } => {
                 self.apply_update(initial_update, |inner| {
                     let sub_event_ctx = self.make_event_ctx(());
-                    inner.subscriptions.unsubscribe_applied(&sub_event_ctx, query_id);
+                    inner.subscriptions.unsubscribe_applied(&sub_event_ctx, query_set_id);
                     Event::UnsubscribeApplied
                 });
                 Ok(())
             }
-            ParsedMessage::SubscriptionError { query_id, error } => {
+            ParsedMessage::SubscriptionError { query_set_id, error } => {
                 let error = crate::Error::SubscriptionError { error };
                 let ctx = self.make_event_ctx(Some(error));
-                let Some(query_id) = query_id else {
-                    // A subscription error that isn't specific to a query is a fatal error.
-                    self.invoke_disconnected(&ctx);
-                    return Ok(());
-                };
                 let mut inner = self.inner.lock().unwrap();
-                inner.subscriptions.subscription_error(&ctx, query_id);
+                inner.subscriptions.subscription_error(&ctx, query_set_id);
                 Ok(())
             }
             ParsedMessage::ProcedureResult { request_id, result } => {
@@ -298,18 +278,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         match mutation {
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
-            PendingMutation::Subscribe {
-                on_applied: _,
-                queries: _,
-                sub_id: _,
-                on_error: _,
-            } => unimplemented!("No longer meaningful with V2 WS format"),
-            // Subscribe: register the subscription in the [`SubscriptionManager`]
-            // and send the `Subscribe` WS message.
-            PendingMutation::SubscribeMulti { query_id, handle } => {
+            PendingMutation::Subscribe { query_set_id, handle } => {
                 let mut inner = self.inner.lock().unwrap();
                 // Register the subscription, so we can handle related messages from the server.
-                inner.subscriptions.register_subscription(query_id, handle.clone());
+                inner.subscriptions.register_subscription(query_set_id, handle.clone());
                 if let Some(msg) = handle.start() {
                     self.send_chan
                         .lock()
@@ -322,9 +294,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 // else, the handle was already cancelled.
             }
 
-            PendingMutation::Unsubscribe { query_id } => {
+            PendingMutation::Unsubscribe { query_set_id } => {
                 let mut inner = self.inner.lock().unwrap();
-                match inner.subscriptions.handle_pending_unsubscribe(query_id) {
+                match inner.subscriptions.handle_pending_unsubscribe(query_set_id) {
                     PendingUnsubscribeResult::DoNothing =>
                     // The subscription was already unsubscribed, so we don't need to send an unsubscribe message.
                     {
@@ -1123,26 +1095,19 @@ fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)
 }
 
 enum ParsedMessage<M: SpacetimeModule> {
-    // TODO(ws-v2): remove
-    #[allow(unused)]
-    InitialSubscription {
-        db_update: M::DbUpdate,
-        sub_id: u32,
-    },
     // TODO(ws-v2): split into reducer result and txupdate
     TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
     IdentityToken(Identity, Box<str>, ConnectionId),
     SubscribeApplied {
-        query_id: u32,
+        query_set_id: QuerySetId,
         initial_update: M::DbUpdate,
     },
     UnsubscribeApplied {
-        query_id: u32,
+        query_set_id: QuerySetId,
         initial_update: M::DbUpdate,
     },
     SubscriptionError {
-        // TODO(ws-v2): no longer optional
-        query_id: Option<u32>,
+        query_set_id: QuerySetId,
         error: String,
     },
     Error(crate::Error),
@@ -1233,7 +1198,7 @@ async fn parse_loop<M: SpacetimeModule>(
             }
             ws::v2::ServerMessage::SubscribeApplied(subscribe_applied) => {
                 let db_update = subscribe_applied.rows;
-                let query_id = subscribe_applied.query_set_id.id;
+                let query_set_id = subscribe_applied.query_set_id;
                 match M::DbUpdate::parse_initial_rows(db_update) {
                     Err(e) => ParsedMessage::Error(
                         InternalError::failed_parse("DbUpdate", "SubscribeApplied")
@@ -1241,7 +1206,7 @@ async fn parse_loop<M: SpacetimeModule>(
                             .into(),
                     ),
                     Ok(initial_update) => ParsedMessage::SubscribeApplied {
-                        query_id,
+                        query_set_id,
                         initial_update,
                     },
                 }
@@ -1254,7 +1219,6 @@ async fn parse_loop<M: SpacetimeModule>(
                 let Some(db_update) = db_update else {
                     unreachable!("The Rust SDK always requests rows to delete when unsubscribing")
                 };
-                let query_id = query_set_id.id;
                 match M::DbUpdate::parse_unsubscribe_rows(db_update) {
                     Err(e) => ParsedMessage::Error(
                         InternalError::failed_parse("DbUpdate", "UnsubscribeApplied")
@@ -1262,13 +1226,13 @@ async fn parse_loop<M: SpacetimeModule>(
                             .into(),
                     ),
                     Ok(initial_update) => ParsedMessage::UnsubscribeApplied {
-                        query_id,
+                        query_set_id,
                         initial_update,
                     },
                 }
             }
             ws::v2::ServerMessage::SubscriptionError(e) => ParsedMessage::SubscriptionError {
-                query_id: Some(e.query_set_id.id),
+                query_set_id: e.query_set_id,
                 error: e.error.to_string(),
             },
             ws::v2::ServerMessage::ProcedureResult(procedure_result) => ParsedMessage::ProcedureResult {
@@ -1285,19 +1249,11 @@ async fn parse_loop<M: SpacetimeModule>(
 
 /// Operations a user can make to a `DbContext` which must be postponed
 pub(crate) enum PendingMutation<M: SpacetimeModule> {
-    // TODO(ws-v2): remove
-    #[allow(unused)]
-    Subscribe {
-        on_applied: Option<OnAppliedCallback<M>>,
-        on_error: Option<OnErrorCallback<M>>,
-        queries: Box<[Box<str>]>,
-        sub_id: u32,
-    },
     Unsubscribe {
-        query_id: u32,
+        query_set_id: QuerySetId,
     },
-    SubscribeMulti {
-        query_id: u32,
+    Subscribe {
+        query_set_id: QuerySetId,
         handle: SubscriptionHandleImpl<M>,
     },
     // TODO(ws-v2): replace with `InvokeReducerWithCallback`
@@ -1373,9 +1329,11 @@ pub(crate) fn next_request_id() -> u32 {
     NEXT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-static NEXT_SUBSCRIPTION_ID: AtomicU32 = AtomicU32::new(1);
+static NEXT_QUERY_SET_ID: AtomicU32 = AtomicU32::new(1);
 
 // Get the next request ID to use for a WebSocket message.
-pub(crate) fn next_subscription_id() -> u32 {
-    NEXT_SUBSCRIPTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+pub(crate) fn next_query_set_id() -> QuerySetId {
+    QuerySetId {
+        id: NEXT_QUERY_SET_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+    }
 }
