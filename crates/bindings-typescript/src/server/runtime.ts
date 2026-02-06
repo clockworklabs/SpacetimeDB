@@ -27,7 +27,6 @@ import {
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
-  type ReducerCtx,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
@@ -178,6 +177,9 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
+/** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
+let REDUCER_CTX: InstanceType<typeof ReducerCtxImpl> | undefined;
+
 // Using a class expression rather than declaration keeps the class out of the
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
@@ -203,6 +205,20 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.timestamp = timestamp;
     this.connectionId = connectionId;
     this.db = getDbView();
+  }
+
+  /** Reset the `ReducerCtx` to be used for a new transaction */
+  static reset(
+    me: InstanceType<typeof this>,
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    me.sender = sender;
+    me.timestamp = timestamp;
+    me.connectionId = connectionId;
+    me.#uuidCounter = undefined;
+    me.#senderAuth = undefined;
   }
 
   get identity() {
@@ -273,19 +289,27 @@ export const hooks: ModuleHooks = {
       );
     }
     const deserializeArgs = reducerArgsDeserializers[reducerId];
-    const args = deserializeArgs(new BinaryReader(argsBuf));
+    BINARY_READER.reset(argsBuf);
+    const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = new ReducerCtxImpl(
-      senderIdentity,
-      new Timestamp(timestamp),
-      ConnectionId.nullIfZero(new ConnectionId(connId))
-    );
-    try {
-      return (
-        callUserFunction(moduleCtx.reducers[reducerId], ctx, args) ?? {
-          tag: 'ok',
-        }
+    let ctx;
+    if (REDUCER_CTX == null) {
+      ctx = REDUCER_CTX = new ReducerCtxImpl(
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
       );
+    } else {
+      ctx = REDUCER_CTX;
+      ReducerCtxImpl.reset(
+        REDUCER_CTX,
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      );
+    }
+    try {
+      callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
@@ -369,6 +393,9 @@ function makeDbView(moduleDef: Infer<typeof RawModuleDefV9>): DbView<any> {
   );
 }
 
+const BINARY_WRITER = new BinaryWriter(0);
+const BINARY_READER = new BinaryReader(new Uint8Array());
+
 function makeTableView(
   typespace: Infer<typeof Typespace>,
   table: Infer<typeof RawTableDefV9>
@@ -423,11 +450,11 @@ function makeTableView(
     tableIterator(sys.datastore_table_scan_bsatn(table_id), deserializeRow);
 
   const integrateGeneratedColumns = hasAutoIncrement
-    ? (row: RowType<any>, ret_buf: Uint8Array) => {
-        const reader = new BinaryReader(ret_buf);
+    ? (row: RowType<any>, ret_buf: DataView) => {
+        BINARY_READER.reset(ret_buf);
         for (const { colName, deserialize, sequenceTrigger } of sequences) {
           if (row[colName] === sequenceTrigger) {
-            row[colName] = deserialize(reader);
+            row[colName] = deserialize(BINARY_READER);
           }
         }
       }
@@ -439,23 +466,23 @@ function makeTableView(
     [Symbol.iterator]: () => iter(),
     insert: row => {
       const buf = LEAF_BUF;
-      const writer = new BinaryWriter(buf);
-      serializeRow(writer, row);
-      sys.datastore_insert_bsatn(table_id, buf.buffer, writer.offset);
+      BINARY_WRITER.reset(buf);
+      serializeRow(BINARY_WRITER, row);
+      sys.datastore_insert_bsatn(table_id, buf.buffer, BINARY_WRITER.offset);
       const ret = { ...row };
-      integrateGeneratedColumns?.(ret, new Uint8Array(buf.buffer));
+      integrateGeneratedColumns?.(ret, buf.view);
 
       return ret;
     },
     delete: (row: RowType<any>): boolean => {
       const buf = LEAF_BUF;
-      const writer = new BinaryWriter(buf);
-      writer.writeU32(1);
-      serializeRow(writer, row);
+      BINARY_WRITER.reset(buf);
+      BINARY_WRITER.writeU32(1);
+      serializeRow(BINARY_WRITER, row);
       const count = sys.datastore_delete_all_by_eq_bsatn(
         table_id,
         buf.buffer,
-        writer.offset
+        BINARY_WRITER.offset
       );
       return count > 0;
     },
@@ -495,11 +522,11 @@ function makeTableView(
     );
 
     const serializePoint = (buffer: ResizableBuffer, colVal: any[]): number => {
-      const writer = new BinaryWriter(buffer);
+      BINARY_WRITER.reset(buffer);
       for (let i = 0; i < numColumns; i++) {
-        indexSerializers[i](writer, colVal[i]);
+        indexSerializers[i](BINARY_WRITER, colVal[i]);
       }
-      return writer.offset;
+      return BINARY_WRITER.offset;
     };
 
     const serializeSingleElement =
@@ -508,9 +535,9 @@ function makeTableView(
     const serializeSinglePoint =
       serializeSingleElement &&
       ((buffer: ResizableBuffer, colVal: any): number => {
-        const writer = new BinaryWriter(buffer);
-        serializeSingleElement(writer, colVal);
-        return writer.offset;
+        BINARY_WRITER.reset(buffer);
+        serializeSingleElement(BINARY_WRITER, colVal);
+        return BINARY_WRITER.offset;
       });
 
     type IndexScanArgs = [
@@ -532,14 +559,7 @@ function makeTableView(
             buf.buffer,
             point_len
           );
-          const iter = tableIterator(iter_id, deserializeRow);
-          const { value, done } = iter.next();
-          if (done) return null;
-          if (!iter.next().done)
-            throw new Error(
-              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
-            );
-          return value;
+          return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           const buf = LEAF_BUF;
@@ -553,15 +573,15 @@ function makeTableView(
         },
         update: (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
-          const writer = new BinaryWriter(buf);
-          serializeRow(writer, row);
+          BINARY_WRITER.reset(buf);
+          serializeRow(BINARY_WRITER, row);
           sys.datastore_update_bsatn(
             table_id,
             index_id,
             buf.buffer,
-            writer.offset
+            BINARY_WRITER.offset
           );
-          integrateGeneratedColumns?.(row, new Uint8Array(buf.buffer));
+          integrateGeneratedColumns?.(row, buf.view);
           return row;
         },
       } as UniqueIndex<any, any>;
@@ -579,14 +599,7 @@ function makeTableView(
             buf.buffer,
             point_len
           );
-          const iter = tableIterator(iter_id, deserializeRow);
-          const { value, done } = iter.next();
-          if (done) return null;
-          if (!iter.next().done)
-            throw new Error(
-              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
-            );
-          return value;
+          return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           if (colVal.length !== numColumns)
@@ -603,15 +616,15 @@ function makeTableView(
         },
         update: (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
-          const writer = new BinaryWriter(buf);
-          serializeRow(writer, row);
+          BINARY_WRITER.reset(buf);
+          serializeRow(BINARY_WRITER, row);
           sys.datastore_update_bsatn(
             table_id,
             index_id,
             buf.buffer,
-            writer.offset
+            BINARY_WRITER.offset
           );
-          integrateGeneratedColumns?.(row, new Uint8Array(buf.buffer));
+          integrateGeneratedColumns?.(row, buf.view);
           return row;
         },
       } as UniqueIndex<any, any>;
@@ -646,7 +659,8 @@ function makeTableView(
       ): IndexScanArgs => {
         if (range.length > numColumns) throw new TypeError('too many elements');
 
-        const writer = new BinaryWriter(buffer);
+        BINARY_WRITER.reset(buffer);
+        const writer = BINARY_WRITER;
         const prefix_elems = range.length - 1;
         for (let i = 0; i < prefix_elems; i++) {
           indexSerializers[i](writer, range[i]);
@@ -736,8 +750,8 @@ function* tableIterator<T>(
   const iterBuf = takeBuf();
   try {
     let amt;
-    while ((amt = advanceIter(iter, iterBuf))) {
-      const reader = new BinaryReader(new Uint8Array(iterBuf.buffer, 0, amt));
+    while ((amt = iter.advance(iterBuf))) {
+      const reader = new BinaryReader(iterBuf.view);
       while (reader.offset < amt) {
         yield deserialize(reader);
       }
@@ -747,10 +761,27 @@ function* tableIterator<T>(
   }
 }
 
-function advanceIter(iter: IteratorHandle, buf: ResizableBuffer): number {
+function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
+  const buf = LEAF_BUF;
+  // we only need to check for the `<= 0` case, since this function is only used
+  // with iterators that should only have zero or one element.
+  const ret = advanceIterRaw(id, buf);
+  if (ret !== 0) {
+    BINARY_READER.reset(buf.view);
+    return deserialize(BINARY_READER);
+  }
+  return null;
+}
+
+/**
+ * `ret < 0` means the iterator yielded elements but is now exhausted and has been destroyed.
+ * `ret === 0` means the iterator was empty and has been destroyed.
+ * `ret > 0` means the iterator yielded elements and has more to give.
+ */
+function advanceIterRaw(id: u32, buf: ResizableBuffer): number {
   while (true) {
     try {
-      return iter.advance(buf.buffer);
+      return 0 | sys.row_iter_bsatn_advance(id, buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
         buf.grow(e.__buffer_too_small__ as number);
@@ -809,11 +840,9 @@ class IteratorHandle implements Disposable {
   }
 
   /** Call `row_iter_bsatn_advance`, returning 0 if this iterator has been exhausted. */
-  advance(buf: ArrayBuffer): number {
+  advance(buf: ResizableBuffer): number {
     if (this.#id === -1) return 0;
-    // coerce to int32
-    const ret = 0 | sys.row_iter_bsatn_advance(this.#id, buf);
-    // ret <= 0 means the iterator is exhausted
+    const ret = advanceIterRaw(this.#id, buf);
     if (ret <= 0) this.#detach();
     return ret < 0 ? -ret : ret;
   }

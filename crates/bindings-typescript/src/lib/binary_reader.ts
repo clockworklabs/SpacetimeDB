@@ -25,6 +25,11 @@ export default class BinaryReader {
     this.offset = 0;
   }
 
+  reset(view: DataView) {
+    this.view = view;
+    this.offset = 0;
+  }
+
   get remaining(): number {
     return this.view.byteLength - this.offset;
   }
