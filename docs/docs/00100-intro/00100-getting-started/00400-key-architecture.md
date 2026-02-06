@@ -439,7 +439,7 @@ A view can be written in C# like so:
 [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
-    return ctx.Db.Player.Identity.Find(ctx.Sender) as Player;
+    return ctx.Db.Player.Identity.Find(ctx.Sender()) as Player;
 }
 ```
 
@@ -451,7 +451,7 @@ A view can be written in Rust like so:
 ```rust
 #[spacetimedb::view(name = my_player, public)]
 fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 ```
 

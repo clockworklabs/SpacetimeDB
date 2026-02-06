@@ -457,7 +457,7 @@ using SpacetimeDB;
 [SpacetimeDB.View(Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
-    return ctx.Db.Player.Identity.Find(ctx.Sender);
+    return ctx.Db.Player.Identity.Find(ctx.Sender());
 }
 
 // Return multiple rows
@@ -477,7 +477,7 @@ use spacetimedb::{view, ViewContext};
 // Return single row
 #[view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // Return multiple rows
@@ -510,7 +510,7 @@ ctx.identity            // Module's identity
 
 ```csharp
 ctx.Db                  // Database access
-ctx.Sender              // Identity of caller
+ctx.Sender()              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
 ctx.Identity            // Module's identity
@@ -522,8 +522,8 @@ ctx.Rng                 // Random number generator
 
 ```rust
 ctx.db                  // Database access
-ctx.sender              // Identity of caller
-ctx.connection_id       // Option<ConnectionId>
+ctx.sender()            // Identity of caller
+ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
 ctx.identity()          // Module's identity
 ctx.rng()               // Random number generator

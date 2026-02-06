@@ -173,13 +173,13 @@ public static partial class Module
     [SpacetimeDB.View(Name = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
-        return ctx.Db.player.Identity.Find(ctx.Sender);
+        return ctx.Db.player.Identity.Find(ctx.Sender());
     }
 
     [SpacetimeDB.View(Name = "my_account", Public = true)]
     public static Account? MyAccount(ViewContext ctx)
     {
-        return ctx.Db.account.Identity.Find(ctx.Sender) as Account;
+        return ctx.Db.account.Identity.Find(ctx.Sender()) as Account;
     }
 
     [SpacetimeDB.View(Name = "my_account_missing", Public = true)]
@@ -391,23 +391,23 @@ public static partial class Module
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
-        Log.Info($"Connect {ctx.Sender}");
+        Log.Info($"Connect {ctx.Sender()}");
 
-        if (ctx.Db.player.Identity.Find(ctx.Sender) is Player player)
+        if (ctx.Db.player.Identity.Find(ctx.Sender()) is Player player)
         {
             // We are not logging player login status, so do nothing
         }
         else
         {
             // Lets setup a new player with a level of 1
-            ctx.Db.player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer" });
-            var playerId = (ctx.Db.player.Identity.Find(ctx.Sender)!).Value.Id;
+            ctx.Db.player.Insert(new Player { Identity = ctx.Sender(), Name = "NewPlayer" });
+            var playerId = (ctx.Db.player.Identity.Find(ctx.Sender())!).Value.Id;
             ctx.Db.player_level.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
         }
 
-        if (ctx.Db.account.Identity.Find(ctx.Sender) is null)
+        if (ctx.Db.account.Identity.Find(ctx.Sender()) is null)
         {
-            ctx.Db.account.Insert(new Account { Identity = ctx.Sender, Name = "Account" });
+            ctx.Db.account.Insert(new Account { Identity = ctx.Sender(), Name = "Account" });
         }
 
         if (ctx.Db.nullable_vec.Id.Find(1) is null)
@@ -781,10 +781,10 @@ public static partial class Module
             }
 
             // Test 3: Verify transaction context properties are accessible
-            var txSender = tx.Sender;
+            var txSender = tx.Sender();
             var txTimestamp = tx.Timestamp;
 
-            if (txSender.Equals(ctx.Sender) == false)
+            if (txSender.Equals(ctx.Sender()) == false)
             {
                 throw new InvalidOperationException(
                     "Transaction sender should match procedure sender"
@@ -825,14 +825,14 @@ public static partial class Module
     {
         // Test 1: Verify authentication context is accessible from procedure context
         var procAuth = ctx.SenderAuth;
-        var procSender = ctx.Sender;
+        var procSender = ctx.Sender();
         var procConnectionId = ctx.ConnectionId;
 
         var result = ctx.WithTx(tx =>
         {
             // Test 2: Verify authentication context is accessible from transaction context
             var txAuth = tx.SenderAuth;
-            var txSender = tx.Sender;
+            var txSender = tx.Sender();
             var txConnectionId = tx.ConnectionId;
 
             // Test 3: Authentication contexts should be consistent

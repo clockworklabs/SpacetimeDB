@@ -219,7 +219,7 @@ static partial class Module
     [View(Name = "my_player", Public = true)]
     public static Player? my_player(ViewContext ctx)
     {
-        return (Player?)ctx.Db.player.identity.Find(ctx.Sender);
+        return (Player?)ctx.Db.player.identity.Find(ctx.Sender());
     }
 
     // This reducer is run at module initialization.
@@ -278,7 +278,7 @@ static partial class Module
     public static void test(ReducerContext ctx, TestAlias arg, TestB arg2, TestC arg3, TestF arg4)
     {
         Log.Info("BEGIN");
-        Log.Info($"sender: {ctx.Sender}");
+        Log.Info($"sender: {ctx.Sender()}");
         Log.Info($"timestamp: {ctx.Timestamp}");
         Log.Info($"bar: {arg2.foo}");
 
@@ -462,7 +462,7 @@ static partial class Module
     [Reducer]
     public static void assert_caller_identity_is_module_identity(ReducerContext ctx)
     {
-        var caller = ctx.Sender;
+        var caller = ctx.Sender();
         var owner = ctx.Identity;
         if (!caller.Equals(owner))
         {

@@ -1,4 +1,3 @@
-import { AlgebraicType } from '../src/lib/algebraic_type';
 import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
@@ -33,7 +32,7 @@ export function encodeCreatePlayerArgs(
   location: Infer<typeof Point>
 ): Uint8Array {
   const writer = new BinaryWriter(1024);
-  AlgebraicType.serializeValue(writer, AlgebraicType.String, name);
+  writer.writeString(name);
   Point.serialize(writer, location);
   return writer.getBuffer();
 }
