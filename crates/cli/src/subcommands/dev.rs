@@ -311,27 +311,27 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let publish_cmd = publish::cli();
     let publish_schema = publish::build_publish_schema(&publish_cmd)?;
 
+    // Create ArgMatches for publish command to use with get_one()
+    let mut publish_argv = vec!["publish"];
+    let db_str;
+    let server_str;
+    if let Some(ref db) = database_name {
+        db_str = db.clone();
+        publish_argv.push(&db_str);
+    }
+    if let Some(srv) = args.get_one::<String>("server") {
+        publish_argv.push("--server");
+        server_str = srv.clone();
+        publish_argv.push(&server_str);
+    }
+
+    let publish_args = publish_cmd
+        .clone()
+        .try_get_matches_from(publish_argv)
+        .context("Failed to create publish arguments")?;
+
     let publish_configs: Vec<CommandConfig> = if let Some(ref config) = spacetime_config {
         if config.publish.is_some() {
-            // Create minimal ArgMatches with database and server args for filtering
-            let mut publish_argv = vec!["publish"];
-            let db_str;
-            let server_str;
-            if let Some(ref db) = database_name {
-                db_str = db.clone();
-                publish_argv.push(&db_str);
-            }
-            if let Some(srv) = args.get_one::<String>("server") {
-                publish_argv.push("--server");
-                server_str = srv.clone();
-                publish_argv.push(&server_str);
-            }
-
-            let publish_args = publish_cmd
-                .clone()
-                .try_get_matches_from(publish_argv)
-                .context("Failed to create publish arguments for filtering")?;
-
             // Filter publish configs based on database arg (if provided)
             let filtered = publish::get_filtered_publish_configs(config, &publish_schema, &publish_args)?;
 
@@ -407,10 +407,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             config
                 .get_config_value("database")
                 .and_then(|v| v.as_str())
-                .map(String::from)
-                .ok_or_else(|| anyhow::anyhow!("Publish config missing database name"))
+                .expect("database is a required field")
+                .to_string()
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
 
     // Use first database for client process
     let db_name_for_client = &db_names_for_logging[0];
@@ -463,13 +463,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Start log streams for all targets
     let use_prefix = db_names_for_logging.len() > 1;
     let mut log_handles = Vec::new();
-    for db_name in &db_names_for_logging {
-        let db_identity = database_identity(&config, db_name, Some(resolved_server)).await?;
-        let prefix = if use_prefix { Some(db_name.clone()) } else { None };
+    for config_entry in &publish_configs {
+        let db_name = config_entry
+            .get_config_value("database")
+            .and_then(|v| v.as_str())
+            .expect("database is a required field");
+
+        let server_opt = config_entry.get_one::<String>(&publish_args, "server")?;
+        let server_for_db = server_opt.as_deref().unwrap_or(resolved_server);
+
+        let db_identity = database_identity(&config, db_name, Some(server_for_db)).await?;
+        let prefix = if use_prefix { Some(db_name.to_string()) } else { None };
         let handle = start_log_stream(
             config.clone(),
             db_identity.to_hex().to_string(),
-            Some(resolved_server),
+            Some(server_for_db),
             prefix,
         )
         .await?;
@@ -477,7 +485,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     // Start the client development server if configured
-    let server_host_url = config.get_host_url(Some(resolved_server))?;
+    let server_opt_client = publish_configs
+        .first()
+        .and_then(|c| c.get_one::<String>(&publish_args, "server").ok().flatten());
+    let server_for_client = server_opt_client.as_deref().unwrap_or(resolved_server);
+    let server_host_url = config.get_host_url(Some(server_for_client))?;
     let _client_handle = if let Some(ref cmd) = client_command {
         let mut child = start_client_process(cmd, &project_dir, db_name_for_client, &server_host_url)?;
 
@@ -628,11 +640,14 @@ async fn generate_build_and_publish(
 
     // For TypeScript client, update .env.local with first database name
     if client_language == &Language::TypeScript {
-        let first_db_name = publish_configs
-            .first()
-            .and_then(|c| c.get_config_value("database"))
+        let first_config = publish_configs.first().expect("publish_configs cannot be empty");
+        let first_db_name = first_config
+            .get_config_value("database")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("First publish config missing database name"))?;
+            .expect("database is a required field");
+
+        // CLI server takes precedence, otherwise use server from config
+        let server_for_env = server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
 
         println!(
             "{} {}...",
@@ -640,7 +655,7 @@ async fn generate_build_and_publish(
             first_db_name
         );
         let env_path = project_dir.join(".env.local");
-        let server_host_url = config.get_host_url(server)?;
+        let server_host_url = config.get_host_url(server_for_env)?;
         upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
     }
 
@@ -681,7 +696,7 @@ async fn generate_build_and_publish(
         let db_name = config_entry
             .get_config_value("database")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Publish config missing database name"))?;
+            .expect("database is a required field");
 
         if publish_configs.len() > 1 {
             println!("{} {}...", "Publishing to".cyan(), db_name.cyan().bold());
