@@ -22,10 +22,10 @@ pub struct Disconnected {
 
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: &ReducerContext) {
-    ctx.db.connected().insert(Connected { identity: ctx.sender });
+    ctx.db.connected().insert(Connected { identity: ctx.sender() });
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn identity_disconnected(ctx: &ReducerContext) {
-    ctx.db.disconnected().insert(Disconnected { identity: ctx.sender });
+    ctx.db.disconnected().insert(Disconnected { identity: ctx.sender() });
 }

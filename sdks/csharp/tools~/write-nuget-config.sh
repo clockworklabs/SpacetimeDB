@@ -1,6 +1,6 @@
 set -ueo pipefail
 
-SPACETIMEDB_REPO_PATH="$1"
+SPACETIMEDB_REPO_PATH="$(readlink -f "$1")"
 
 cd "$(dirname "$(readlink -f "$0")")"
 cd ..

@@ -18,9 +18,117 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docker_smoketests:
+  smoketests:
     needs: [lints]
     name: Smoketests (${{ matrix.name }})
+    strategy:
+      matrix:
+        include:
+          - name: Linux
+            runner: spacetimedb-new-runner-2
+          - name: Windows
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          cache-on-failure: false
+          cache-all-crates: true
+          cache-workspace-crates: true
+          prefix-key: v1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # nodejs and pnpm are required for the typescript quickstart smoketest
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Install psql (Windows)
+        if: runner.os == 'Windows'
+        run: choco install psql -y --no-progress
+        shell: powershell
+
+      - name: Update dotnet workloads
+        if: runner.os == 'Windows'
+        run: |
+          # Fail properly if any individual command fails
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
+          dotnet workload config --update-mode manifests
+          dotnet workload update
+
+      - name: Override NuGet packages
+        shell: bash
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        shell: bash
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Run smoketests
+        # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
+        # build artifacts.
+        # It also seemed to improve performance a fair amount (11m -> 6m)
+        run: cargo ci smoketests -- --test-threads=1
+
+  smoketests-python:
+    needs: [lints]
+    name: Smoketests (Python Legacy) (${{matrix.name}})
     strategy:
       matrix:
         include:
@@ -103,14 +211,17 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: |
           # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
           docker compose -f .github/docker-compose.yml up -d
+
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -123,14 +234,18 @@ jobs:
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
         if: runner.os == 'Windows'
+
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
-      - name: Run smoketests
+
+      - name: Run Python smoketests
         # Note: clear_database and replication only work in private
-        run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
+
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down
@@ -587,6 +702,20 @@ jobs:
           save-if: false
           prefix-key: v1
 
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean --release -p v8 || true
+            cargo build --release -p v8
+          fi
+
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
           cargo install --force --path crates/cli --locked --message-format=short
@@ -717,10 +846,10 @@ jobs:
       - name: Check v8 outputs
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
             echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
+            cargo clean --release -p v8 || true
+            cargo build --release -p v8
           fi
 
       - name: Install SpacetimeDB CLI from the local checkout
@@ -921,3 +1050,33 @@ jobs:
 
       - name: Check global.json policy
         run: cargo ci global-json-policy
+
+  warn-python-smoketests:
+    name: Check for Python smoketest edits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail if Python smoketests were modified
+        run: |
+          MERGE_BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
+          PYTHON_SMOKETEST_CHANGES="$(git diff --name-only "$MERGE_BASE" HEAD -- 'smoketests/**.py')"
+
+          if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
+            echo "::error::This PR modifies legacy Python smoketests. Please add new tests to the Rust smoketests in crates/smoketests/ instead."
+            echo ""
+            echo "Changed files:"
+            echo "$PYTHON_SMOKETEST_CHANGES"
+            echo ""
+            echo "The Python smoketests are being replaced by Rust smoketests."
+            echo "See crates/smoketests/DEVELOP.md for instructions on adding Rust smoketests."
+            exit 1
+          fi
+
+          echo "No Python smoketest changes detected."
