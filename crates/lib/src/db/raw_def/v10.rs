@@ -181,9 +181,13 @@ pub struct RawReducerDefV10 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub enum FunctionVisibility {
-    /// Internal-only, not callable from clients.
-    /// Typically used for lifecycle reducers and scheduled functions.
-    Internal,
+    /// Not callable by arbitrary clients.
+    ///
+    /// Still callable by the module owner, collaborators,
+    /// and internal module code.
+    ///
+    /// Enabled for lifecycle reducers and scheduled functions by default.
+    Private,
 
     /// Callable from client code.
     ClientCallable,
@@ -870,7 +874,7 @@ impl RawModuleDefV10Builder {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: function_name,
             params,
-            visibility: FunctionVisibility::Internal,
+            visibility: FunctionVisibility::Private,
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         });
@@ -934,7 +938,7 @@ impl RawModuleDefV10Builder {
                 .iter_mut()
                 .find(|r| r.source_name == internal_function)
             {
-                r.visibility = FunctionVisibility::Internal;
+                r.visibility = FunctionVisibility::Private;
             }
 
             if let Some(p) = self
@@ -942,7 +946,7 @@ impl RawModuleDefV10Builder {
                 .iter_mut()
                 .find(|p| p.source_name == internal_function)
             {
-                p.visibility = FunctionVisibility::Internal;
+                p.visibility = FunctionVisibility::Private;
             }
         }
         self.module
