@@ -146,6 +146,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     let mut spacetimedb_dir = project_dir.join(spacetimedb_project_path);
 
+    // Load spacetime.json config early so we can use it for determining project
+    // directories
+    let spacetime_config = match SpacetimeConfig::load_from_dir(&project_dir) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("{} Failed to load spacetime.json: {}", "✗".red(), e);
+            std::process::exit(1);
+        }
+    };
+
     // Check if we are in a SpacetimeDB project directory
     if !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir() {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
@@ -186,16 +196,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
         );
     }
-
-    // Load spacetime.json config early for potential filtering
-    // If the file exists but fails to parse, we should error immediately
-    let spacetime_config = match SpacetimeConfig::load_from_dir(&project_dir) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("{} Failed to load spacetime.json: {}", "✗".red(), e);
-            std::process::exit(1);
-        }
-    };
 
     if !module_bindings_dir.exists() {
         // Create the module bindings directory if it doesn't exist
@@ -305,65 +305,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         Some(selected)
     };
 
-    // Build unified publish configs
-    // Either from spacetime.json (filtered by database_name if provided),
-    // or create a single config from database_name CLI argument
-    let publish_cmd = publish::cli();
-    let publish_schema = publish::build_publish_schema(&publish_cmd)?;
-
-    // Create ArgMatches for publish command to use with get_one()
-    let mut publish_argv = vec!["publish"];
-    let db_str;
-    let server_str;
-    if let Some(ref db) = database_name {
-        db_str = db.clone();
-        publish_argv.push(&db_str);
-    }
-    if let Some(srv) = args.get_one::<String>("server") {
-        publish_argv.push("--server");
-        server_str = srv.clone();
-        publish_argv.push(&server_str);
-    }
-
-    let publish_args = publish_cmd
-        .clone()
-        .try_get_matches_from(publish_argv)
-        .context("Failed to create publish arguments")?;
-
-    let publish_configs: Vec<CommandConfig> = if let Some(ref config) = spacetime_config {
-        if config.publish.is_some() {
-            // Filter publish configs based on database arg (if provided)
-            let filtered = publish::get_filtered_publish_configs(config, &publish_schema, &publish_args)?;
-
-            if filtered.is_empty() {
-                anyhow::bail!("No publish configurations found in spacetime.json");
-            }
-
-            filtered
-        } else if let Some(ref db_name) = database_name {
-            // No publish config in file, create from database_name
-            use serde_json::json;
-            use std::collections::HashMap;
-
-            let mut config_map = HashMap::new();
-            config_map.insert("database".to_string(), json!(db_name));
-
-            vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?]
-        } else {
-            anyhow::bail!("No database name provided and no publish configurations found");
-        }
-    } else if let Some(ref db_name) = database_name {
-        // No config file at all, create from database_name
-        use serde_json::json;
-        use std::collections::HashMap;
-
-        let mut config_map = HashMap::new();
-        config_map.insert("database".to_string(), json!(db_name));
-
-        vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?]
-    } else {
-        anyhow::bail!("No database name provided and no publish configurations found");
-    };
+    let publish_configs = determine_publish_configs(database_name, args, spacetime_config)?;
 
     // Determine client command: CLI flag > config file > auto-detect (and save)
     let server_only = args.get_flag("server-only");
@@ -566,6 +508,59 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 }
             }
         }
+    }
+}
+
+fn determine_publish_configs(
+    database_name: Option<String>,
+    args: &ArgMatches,
+    spacetime_config: Option<SpacetimeConfig>,
+) -> anyhow::Result<Vec<CommandConfig>> {
+    // Build publish configs. It is easier to work with one type of data,
+    // so if we don't have publish configs from the config file, we build a single
+    // publish config based on the CLI args
+    let publish_cmd = publish::cli();
+    let publish_schema = publish::build_publish_schema(&publish_cmd)?;
+
+    // Create ArgMatches for publish command to use with get_one()
+    let mut publish_argv = vec!["publish".to_string()];
+    if let Some(ref db) = database_name {
+        publish_argv.push(db.clone());
+    }
+    if let Some(srv) = args.get_one::<String>("server") {
+        publish_argv.push(srv.clone());
+    }
+
+    let publish_args = publish_cmd
+        .clone()
+        .try_get_matches_from(publish_argv)
+        .context("Failed to create publish arguments")?;
+
+    let mut publish_configs: Vec<CommandConfig> = vec![];
+
+    if let Some(ref config) = spacetime_config {
+        // Get and filter publish configs
+        if config.publish.is_some() {
+            publish_configs = publish::get_filtered_publish_configs(config, &publish_schema, &publish_args)?;
+        }
+    }
+
+    if !publish_configs.is_empty() {
+        return Ok(publish_configs);
+    }
+
+    // If we still have no configs, it means that filtering by the database name filtered out
+    // all configs, we assume the user wants to run with a different DB
+    if let Some(ref db_name) = database_name {
+        use serde_json::json;
+        use std::collections::HashMap;
+
+        let mut config_map = HashMap::new();
+        config_map.insert("database".to_string(), json!(db_name));
+
+        return Ok(vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?]);
+    } else {
+        anyhow::bail!("No database name provided and no publish configurations found");
     }
 }
 
