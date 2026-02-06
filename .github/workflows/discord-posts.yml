@@ -74,8 +74,6 @@ jobs:
   invokePrivate:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Dispatch private merge workflow
         uses: actions/github-script@v7
