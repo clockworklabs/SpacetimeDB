@@ -897,7 +897,7 @@ jobs:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           script: |
             const workflowId = 'ci.yml';
-            const targetRef = 'master';
+            const targetRef = 'bfops/smarter-internal-tests';
             const targetOwner = process.env.TARGET_OWNER;
             const targetRepo = process.env.TARGET_REPO;
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
