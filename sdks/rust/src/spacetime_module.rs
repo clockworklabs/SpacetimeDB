@@ -12,7 +12,8 @@ use crate::{
     compression::maybe_decompress_cqu,
 };
 use bytes::Bytes;
-use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, RowListLen as _};
+use spacetimedb_client_api_messages::websocket::common::RowListLen as _;
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_lib::{bsatn, de::DeserializeOwned};
 use std::fmt::Debug;
 
