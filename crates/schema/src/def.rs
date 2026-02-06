@@ -525,6 +525,12 @@ pub struct TableDef {
 
     /// Whether this table is public or private.
     pub table_access: TableAccess,
+
+    /// Whether this is an event table.
+    ///
+    /// Event tables persist to the commitlog but are not merged into committed state.
+    /// Their rows are only visible to V2 subscribers in the transaction that inserted them.
+    pub is_event: bool,
 }
 
 impl TableDef {
@@ -551,6 +557,7 @@ impl From<TableDef> for RawTableDefV9 {
             schedule,
             table_type,
             table_access,
+            is_event: _, // V9 does not support event tables; ignore when converting back
         } = val;
 
         RawTableDefV9 {
@@ -588,6 +595,7 @@ impl From<ViewDef> for TableDef {
             schedule: None,
             table_type: TableType::User,
             table_access: if is_public { Public } else { Private },
+            is_event: false,
         }
     }
 }
