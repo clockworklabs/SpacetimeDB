@@ -11,6 +11,7 @@ pub use self::csharp::Csharp;
 pub use self::rust::Rust;
 pub use self::typescript::TypeScript;
 pub use self::unrealcpp::UnrealCpp;
+pub use util::private_table_names;
 pub use util::AUTO_GENERATED_PREFIX;
 
 pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<OutputFile> {

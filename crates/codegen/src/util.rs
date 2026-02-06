@@ -119,6 +119,16 @@ pub(super) fn iter_tables(module: &ModuleDef, include_private: bool) -> impl Ite
         .sorted_by_key(|table| &table.name)
 }
 
+/// Return the names of all private tables, in alphabetical order.
+pub fn private_table_names(module: &ModuleDef) -> Vec<String> {
+    module
+        .tables()
+        .filter(|table| table.table_access == TableAccess::Private)
+        .sorted_by_key(|table| &table.name)
+        .map(|table| table.name.to_string())
+        .collect()
+}
+
 /// Iterate over all the [`ViewDef`]s defined by the module, in alphabetical order by name.
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.

@@ -5,7 +5,9 @@ use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
 use fs_err as fs;
-use spacetimedb_codegen::{generate, Csharp, Lang, OutputFile, Rust, TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::{
+    generate, private_table_names, Csharp, Lang, OutputFile, Rust, TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
+};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
@@ -170,6 +172,12 @@ pub async fn exec_ex(
         spinner.set_message(format!("Extracting schema from {}...", path.display()));
         extract_descriptions(&path).context("could not extract schema")?
     };
+
+    // TODO: Update this to work with --include-private once that flag exists.
+    let private_tables = private_table_names(&module);
+    if !private_tables.is_empty() {
+        println!("Skipping private tables during codegen: {}.", private_tables.join(", "));
+    }
 
     fs::create_dir_all(out_dir)?;
 
