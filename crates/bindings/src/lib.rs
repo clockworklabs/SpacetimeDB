@@ -938,7 +938,7 @@ pub struct ReducerContext {
     ///
     /// Will be `None` for certain reducers invoked automatically by the host,
     /// including `init` and scheduled reducers.
-    pub connection_id: Option<ConnectionId>,
+    connection_id: Option<ConnectionId>,
 
     sender_auth: AuthCtx,
 
@@ -1022,6 +1022,14 @@ impl ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
     pub fn sender(&self) -> Identity {
         self.sender
+    }
+
+    /// The `ConnectionId` of the client that invoked the reducer.
+    ///
+    /// Will be `None` for certain reducers invoked automatically by the host,
+    /// including `init` and scheduled reducers.
+    pub fn connection_id(&self) -> Option<ConnectionId> {
+        self.connection_id
     }
 
     /// Returns the authorization information for the caller of this reducer.
@@ -1142,7 +1150,7 @@ pub struct ProcedureContext {
     /// The `ConnectionId` of the client that invoked the procedure.
     ///
     /// Will be `None` for certain scheduled procedures.
-    pub connection_id: Option<ConnectionId>,
+    connection_id: Option<ConnectionId>,
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
@@ -1176,6 +1184,13 @@ impl ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
     pub fn sender(&self) -> Identity {
         self.sender
+    }
+
+    /// The `ConnectionId` of the client that invoked the procedure.
+    ///
+    /// Will be `None` for certain scheduled procedures.
+    pub fn connection_id(&self) -> Option<ConnectionId> {
+        self.connection_id
     }
 
     /// Read the current module's [`Identity`].
