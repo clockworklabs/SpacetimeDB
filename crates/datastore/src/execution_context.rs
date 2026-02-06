@@ -140,22 +140,17 @@ impl Workload {
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
 /// It can also be an internal operation that is not associated with a reducer or sql request.
-#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, strum::AsRefStr, enum_map::Enum)]
+#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, Default, strum::AsRefStr, enum_map::Enum)]
 pub enum WorkloadType {
     Reducer,
     Sql,
     Subscribe,
     Unsubscribe,
     Update,
+    #[default]
     Internal,
     View,
     Procedure,
-}
-
-impl Default for WorkloadType {
-    fn default() -> Self {
-        Self::Internal
-    }
 }
 
 impl ExecutionContext {
