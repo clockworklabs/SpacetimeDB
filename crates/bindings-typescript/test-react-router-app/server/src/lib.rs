@@ -22,23 +22,23 @@ fn init(ctx: &ReducerContext) {
 
 #[reducer(client_connected)]
 fn client_connected(ctx: &ReducerContext) {
-    let existing_user = ctx.db.offline_user().identity().find(ctx.sender);
+    let existing_user = ctx.db.offline_user().identity().find(ctx.sender());
     if let Some(user) = existing_user {
         ctx.db.user().insert(user);
-        ctx.db.offline_user().identity().delete(ctx.sender);
+        ctx.db.offline_user().identity().delete(ctx.sender());
         return;
     }
     ctx.db.offline_user().insert(User {
-        identity: ctx.sender,
+        identity: ctx.sender(),
         has_incremented_count: 0,
     });
 }
 
 #[reducer(client_disconnected)]
 fn client_disconnected(ctx: &ReducerContext) -> Result<(), String> {
-    let existing_user = ctx.db.user().identity().find(ctx.sender).ok_or("User not found")?;
+    let existing_user = ctx.db.user().identity().find(ctx.sender()).ok_or("User not found")?;
     ctx.db.offline_user().insert(existing_user);
-    ctx.db.user().identity().delete(ctx.sender);
+    ctx.db.user().identity().delete(ctx.sender());
     Ok(())
 }
 
@@ -48,7 +48,7 @@ fn increment_counter(ctx: &ReducerContext) -> Result<(), String> {
     counter.count += 1;
     ctx.db.counter().id().update(counter);
 
-    let mut user = ctx.db.user().identity().find(ctx.sender).ok_or("User not found")?;
+    let mut user = ctx.db.user().identity().find(ctx.sender()).ok_or("User not found")?;
     user.has_incremented_count += 1;
     ctx.db.user().identity().update(user);
 

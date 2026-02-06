@@ -115,7 +115,7 @@ export function callProcedure(
     // **Note:** must be 0..=u32::MAX
     counter_uuid: { value: Number(0) },
     get identity() {
-      return new Identity(sys.identity().__identity__);
+      return new Identity(sys.identity());
     },
     withTx(body) {
       const run = () => {
