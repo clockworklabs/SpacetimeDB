@@ -5,7 +5,7 @@ rustflags = ["--cfg", "tokio_unstable"]
 bump-versions = "run -p upgrade-version --"
 llm = "run --package xtask-llm-benchmark --bin llm_benchmark --"
 ci = "run -p ci --"
-smoketest = "run -p xtask-smoketest -- smoketest"
+smoketest = "ci smoketests --"
 smoketests = "smoketest"
 
 [target.x86_64-pc-windows-msvc]

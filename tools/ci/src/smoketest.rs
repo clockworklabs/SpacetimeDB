@@ -1,44 +1,32 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{ensure, Result};
-use clap::{Parser, Subcommand};
+use clap::{Args, Subcommand};
 use std::env;
 use std::process::{Command, Stdio};
 
-/// SpacetimeDB development tasks
-#[derive(Parser)]
-#[command(name = "cargo xtask")]
-struct Cli {
+#[derive(Args)]
+/// This command first builds the spacetimedb-cli and spacetimedb-standalone binaries,
+/// then runs the smoketests. This prevents race conditions when running tests in parallel
+/// with nextest, where multiple test processes might try to build the same binaries
+/// simultaneously.
+pub struct SmoketestsArgs {
     #[command(subcommand)]
-    cmd: XtaskCmd,
-}
+    cmd: Option<SmoketestCmd>,
 
-#[derive(Subcommand)]
-enum XtaskCmd {
-    /// Run smoketests with pre-built binaries
+    /// Run tests against a remote server instead of spawning local servers.
     ///
-    /// This command first builds the spacetimedb-cli and spacetimedb-standalone binaries,
-    /// then runs the smoketests. This prevents race conditions when running tests in parallel
-    /// with nextest, where multiple test processes might try to build the same binaries
-    /// simultaneously.
-    Smoketest {
-        #[command(subcommand)]
-        cmd: Option<SmoketestCmd>,
+    /// When specified, tests will connect to the given URL instead of starting
+    /// local server instances. Tests that require local server control (like
+    /// restart tests) will be skipped.
+    #[arg(long)]
+    server: Option<String>,
 
-        /// Run tests against a remote server instead of spawning local servers.
-        ///
-        /// When specified, tests will connect to the given URL instead of starting
-        /// local server instances. Tests that require local server control (like
-        /// restart tests) will be skipped.
-        #[arg(long)]
-        server: Option<String>,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    dotnet: bool,
 
-        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
-        dotnet: bool,
-
-        /// Additional arguments to pass to the test runner
-        #[arg(trailing_var_arg = true)]
-        args: Vec<String>,
-    },
+    /// Additional arguments to pass to the test runner
+    #[arg(trailing_var_arg = true)]
+    args: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -49,24 +37,14 @@ enum SmoketestCmd {
     Prepare,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    match cli.cmd {
-        XtaskCmd::Smoketest {
-            cmd: Some(SmoketestCmd::Prepare),
-            ..
-        } => {
+pub fn run(args: SmoketestsArgs) -> Result<()> {
+    match args.cmd {
+        Some(SmoketestCmd::Prepare) => {
             build_binaries()?;
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
             Ok(())
         }
-        XtaskCmd::Smoketest {
-            cmd: None,
-            server,
-            args,
-            dotnet: use_dotnet,
-        } => run_smoketest(server, use_dotnet, args),
+        None => run_smoketest(args.server, args.dotnet, args.args),
     }
 }
 
