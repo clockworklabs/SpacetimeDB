@@ -410,6 +410,8 @@ export function schema<const H extends readonly UntypedTableSchema[]>(
   const ctx = new SchemaInner(ctx => {
     const tableDefs = handles.map(h => h.tableDef(ctx));
     ctx.moduleDef.tables.push(...tableDefs);
+    const schedules = handles.map(h => h.schedule).filter(s => s !== undefined);
+    ctx.moduleDef.schedules.push(...schedules);
 
     return tablesToSchema(ctx, handles);
   });
