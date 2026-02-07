@@ -35,20 +35,18 @@ type ShutdownReply = oneshot::Sender<OwnedNotified>;
 /// This exists to avoid holding a transaction lock while
 /// preparing the [TxData] for processing by the [Durability] layer.
 pub struct DurabilityWorker {
+    database: Identity,
     request_tx: UnboundedSender<DurabilityRequest>,
     shutdown: Sender<ShutdownReply>,
     durability: Arc<Durability>,
     runtime: runtime::Handle,
 }
 
-/// Those who run seem to have all the fun... 🎶
-const HUNG_UP: &str = "durability actor hung up / panicked";
-
 impl DurabilityWorker {
     /// Create a new [`DurabilityWorker`] using the given `durability` policy.
     ///
     /// Background tasks will be spawned onto to provided tokio `runtime`.
-    pub fn new(durability: Arc<Durability>, runtime: runtime::Handle) -> Self {
+    pub fn new(database: Identity, durability: Arc<Durability>, runtime: runtime::Handle) -> Self {
         let (request_tx, request_rx) = unbounded_channel();
         let (shutdown_tx, shutdown_rx) = channel(1);
 
@@ -61,6 +59,7 @@ impl DurabilityWorker {
         tokio::spawn(actor.run());
 
         Self {
+            database,
             request_tx,
             shutdown: shutdown_tx,
             durability,
@@ -94,7 +93,7 @@ impl DurabilityWorker {
                 reducer_context,
                 tx_data: tx_data.clone(),
             })
-            .expect(HUNG_UP);
+            .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
     }
 
     /// Get the [`DurableOffset`] of this database.
@@ -312,7 +311,7 @@ mod tests {
     #[tokio::test]
     async fn shutdown_waits_until_durable() {
         let durability = Arc::new(CountingDurability::default());
-        let worker = DurabilityWorker::new(durability.clone(), runtime::Handle::current());
+        let worker = DurabilityWorker::new(Identity::ONE, durability.clone(), runtime::Handle::current());
 
         for i in 0..=10 {
             let mut txdata = TxData::default();

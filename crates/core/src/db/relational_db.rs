@@ -156,7 +156,7 @@ impl RelationalDB {
         let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
         let durability = durability
             .zip(rt)
-            .map(|(durability, rt)| DurabilityWorker::new(durability, rt));
+            .map(|(durability, rt)| DurabilityWorker::new(database_identity, durability, rt));
 
         Self {
             inner,
