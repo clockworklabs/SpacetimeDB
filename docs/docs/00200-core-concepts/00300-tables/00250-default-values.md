@@ -86,6 +86,27 @@ Default values in Rust must be const-evaluable. This means you **cannot** use `S
 :::
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Player {
+  uint64_t id;
+  std::string name;
+  uint32_t score;
+  bool is_active;
+  std::string bio;
+};
+SPACETIMEDB_STRUCT(Player, id, name, score, is_active, bio)
+SPACETIMEDB_TABLE(Player, player, Public)
+FIELD_PrimaryKeyAutoInc(player, id)
+FIELD_Default(player, score, 0u)
+FIELD_Default(player, is_active, true)
+FIELD_Default(player, bio, std::string(""))
+```
+
+Use `FIELD_Default(table, field, value)` after table registration to specify default values. These defaults are applied during schema migration when new columns are added.
+
+</TabItem>
 </Tabs>
 
 ## Restrictions
