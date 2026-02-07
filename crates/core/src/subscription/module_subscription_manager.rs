@@ -16,6 +16,7 @@ use core::mem;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
+use spacetimedb_client_api_messages::websocket::common::ByteListLen as _;
 use spacetimedb_client_api_messages::websocket::v2::TableUpdateRows;
 use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_data_structures::map::HashCollectionExt as _;
@@ -27,7 +28,7 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
+use spacetimedb_lib::{query, AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
@@ -215,7 +216,7 @@ struct QueryState {
     legacy_subscribers: HashSet<ClientId>,
     // For clients that subscribe to a single query, we track them here.
     subscriptions: HashSet<ClientId>,
-    v2_subscriptions: HashSet<ClientId>,
+    v2_subscriptions: HashSet<SubscriptionIdV2>,
 }
 
 impl QueryState {
@@ -232,11 +233,8 @@ impl QueryState {
     }
 
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
-    fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
-        itertools::chain(
-            itertools::chain(&self.legacy_subscribers, &self.subscriptions),
-            &self.v2_subscriptions,
-        )
+    fn all_v1_clients(&self) -> impl Iterator<Item = &ClientId> {
+        itertools::chain(&self.legacy_subscribers, &self.subscriptions)
     }
 
     /// Return the [`Query`] for this [`QueryState`]
@@ -950,10 +948,10 @@ impl SubscriptionManager {
             );
             let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
             *entry += 1;
-            let is_new_entry = *entry == 1;
-            // query_state.v2_subscriptions.insert()
+            query_state.v2_subscriptions.insert(subscription_id);
+            new_queries.push(query.clone());
         }
-        todo!()
+        Ok(new_queries)
     }
 
     pub fn add_subscription_multi(
@@ -1260,11 +1258,19 @@ impl SubscriptionManager {
             self.eval_updates_sequential_inner(tx, bsatn_rlb_pool, tables)
         };
 
+        let (v2_updates, v2_errs, metrics) = if self.queries.is_empty() {
+            // We have no queries, so do nothing.
+            <_>::default()
+        } else {
+            let tables = &event.status.database_update().unwrap().tables;
+            self.eval_updates_sequential_inner_v2(tx, bsatn_rlb_pool, tables)
+        };
+
         let queries = ComputedQueries {
             updates,
-            v2_updates: vec![], // TODO
+            v2_updates,
             errs,
-            v2_errs: vec![], // TODO
+            v2_errs,
             event,
             caller,
         };
@@ -1280,6 +1286,120 @@ impl SubscriptionManager {
         //drop(span);
 
         metrics
+    }
+
+    fn eval_updates_sequential_inner_v2(
+        &self,
+        tx: &DeltaTx,
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        tables: &[DatabaseTableUpdate],
+    ) -> (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics) {
+        #[derive(Default)]
+        struct FoldState {
+            updates: Vec<V2ClientUpdate>,
+            errs: Vec<(SubscriptionIdV2, Box<str>)>,
+            metrics: ExecutionMetrics,
+        }
+
+        /// Returns the value pointed to by this join edge
+        fn find_rhs_val(edge: &JoinEdge, row: &ProductValue, tx: &DeltaTx) -> Option<AlgebraicValue> {
+            tx.iter_by_col_eq(
+                edge.rhs_table,
+                edge.rhs_join_col,
+                &row.elements[edge.lhs_join_col.idx()],
+            )
+            .expect("This read should always succeed, and it's a bug if it doesn't")
+            .next()
+            .map(|row| {
+                row.read_col(edge.rhs_col)
+                    .expect("This read should always succeed, and it's a bug if it doesn't")
+            })
+        }
+
+        fn encode_v2_rows(
+            updates: &UpdatesRelValue<'_>,
+            metrics: &mut ExecutionMetrics,
+            rlb_pool: &impl RowListBuilderSource<ws_v1::BsatnFormat>,
+        ) -> TableUpdateRows {
+            let (deletes, nr_del) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
+                rlb_pool.take_row_list_builder(),
+                updates.deletes.iter(),
+            );
+            let (inserts, nr_ins) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
+                rlb_pool.take_row_list_builder(),
+                updates.inserts.iter(),
+            );
+            // TODO: Fix metrics. We only encode once, then we clone for other clients, so this isn't the place
+            // to report the metrics.
+            let _num_rows = nr_del + nr_ins;
+            let num_bytes = deletes.num_bytes() + inserts.num_bytes();
+            metrics.bytes_scanned += num_bytes;
+            metrics.bytes_sent_to_clients += num_bytes;
+            TableUpdateRows::PersistentTable(ws_v2::PersistentTableRows { inserts, deletes })
+        }
+
+        let FoldState { updates, errs, metrics } = tables
+            .iter()
+            .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
+            .flat_map(|table_update| {
+                self.queries_for_table_update(table_update, &|edge, row| find_rhs_val(edge, row, tx))
+            })
+            // deduplicate queries by their hash
+            .filter({
+                let mut seen = HashSet::new();
+                move |&hash| seen.insert(hash)
+            })
+            .copied()
+            // Ignore queries that only have v1 subscriptions.
+            .filter(|&hash| !self.queries[&hash].v2_subscriptions.is_empty())
+            .flat_map(|hash| {
+                let qstate = &self.queries[&hash];
+                qstate
+                    .query
+                    .plans_fragments()
+                    .map(move |plan_fragment| (qstate, plan_fragment, hash))
+            })
+            .fold(FoldState::default(), |mut acc, (qstate, plan, hash)| {
+                let table_name = plan.subscribed_table_name().clone();
+                // let subscriptions_for_query = qstate.v2_subscriptions
+
+                match eval_delta(tx, &mut acc.metrics, plan) {
+                    Err(err) => {
+                        tracing::error!(
+                            message = "Query errored during tx update",
+                            sql = qstate.query.sql,
+                            reason = ?err,
+                        );
+                        let err = DBError::WithSql {
+                            sql: qstate.query.sql.as_str().into(),
+                            error: Box::new(err.into()),
+                        }
+                        .to_string()
+                        .into_boxed_str();
+
+                        // TODO: Remove these subscriptions from the subscription manager.
+                        acc.errs
+                            .extend(qstate.v2_subscriptions.iter().map(|id| (*id, err.clone())));
+                    }
+                    Ok(None) => {}
+                    Ok(Some(delta_updates)) => {
+                        let rows = encode_v2_rows(&delta_updates, &mut acc.metrics, bsatn_rlb_pool);
+                        for &(client_id, query_set_id) in qstate.v2_subscriptions.iter() {
+                            acc.updates.push(V2ClientUpdate {
+                                id: client_id,
+                                query_set_id,
+                                table_name: table_name.clone(),
+                                // This clone is cheap, since it is just cloning a reference to the row data.
+                                rows: rows.clone(),
+                            });
+                        }
+                    }
+                }
+
+                acc
+            });
+
+        (updates, errs, metrics)
     }
 
     #[allow(clippy::type_complexity)]
@@ -1393,7 +1513,7 @@ impl SubscriptionManager {
                     ws_v1::SingleQueryUpdate { update, num_rows }
                 }
 
-                let clients_for_query = qstate.all_clients();
+                let clients_for_query = qstate.all_v1_clients();
 
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {

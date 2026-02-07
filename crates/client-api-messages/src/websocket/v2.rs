@@ -328,21 +328,21 @@ pub struct TableUpdate {
 /// In particular, we may add a variant for in-place updates of rows for tables with primary keys.
 /// Note that clients will need to opt in to using this new variant,
 /// to preserve compatibility of clients which predate the new variant.
-#[derive(SpacetimeType, Debug)]
+#[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub enum TableUpdateRows {
     PersistentTable(PersistentTableRows),
     EventTable(EventTableRows),
 }
 
-#[derive(SpacetimeType, Debug)]
+#[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct PersistentTableRows {
     pub inserts: BsatnRowList,
     pub deletes: BsatnRowList,
 }
 
-#[derive(SpacetimeType, Debug)]
+#[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct EventTableRows {
     pub events: BsatnRowList,
