@@ -4,8 +4,9 @@ use crate::query_builder::Query;
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType, ViewResultHeader};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
@@ -677,7 +678,7 @@ pub trait RowLevelSecurityInfo {
 }
 
 /// A function which will be registered by [`register_describer`] into [`DESCRIBERS`],
-/// which will be called by [`__describe_module__`] to construct a module definition.
+/// which will be called by [`__describe_module_v10__`] to construct a module definition.
 ///
 /// May be a closure over static data, so that e.g.
 /// [`register_row_level_security`] doesn't need to take a type parameter.
@@ -703,6 +704,13 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: Table>() {
     register_describer(|module| {
         let product_type_ref = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
+        if let Some(schedule) = T::SCHEDULE {
+            module.inner.add_schedule(
+                T::TABLE_NAME,
+                schedule.scheduled_at_column,
+                schedule.reducer_or_procedure_name,
+            );
+        }
 
         let mut table = module
             .inner
@@ -722,10 +730,6 @@ pub fn register_table<T: Table>() {
         for &col in T::SEQUENCES {
             table = table.with_column_sequence(col);
         }
-        if let Some(schedule) = T::SCHEDULE {
-            table = table.with_schedule(schedule.reducer_or_procedure_name, schedule.scheduled_at_column);
-        }
-
         for col in T::get_default_col_values().iter_mut() {
             table = table.with_default_column_value(col.col_id, col.value.clone())
         }
@@ -752,7 +756,11 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
 pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
-        module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
+        if let Some(lifecycle) = I::LIFECYCLE {
+            module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
+        } else {
+            module.inner.add_reducer(I::NAME, params);
+        }
         module.reducers.push(I::INVOKE);
     })
 }
@@ -817,7 +825,7 @@ pub fn register_row_level_security(sql: &'static str) {
 #[derive(Default)]
 pub struct ModuleBuilder {
     /// The module definition.
-    inner: RawModuleDefV9Builder,
+    inner: RawModuleDefV10Builder,
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
     /// The procedures of the module.
@@ -866,7 +874,7 @@ static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 /// including when modules are updated (re-publishing).
 /// After initialization, the module cannot alter the schema.
 #[no_mangle]
-extern "C" fn __describe_module__(description: BytesSink) {
+extern "C" fn __describe_module_v10__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
     for describer in &mut *DESCRIBERS.lock().unwrap() {
@@ -875,7 +883,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();
-    let module_def = RawModuleDef::V9(module_def);
+    let module_def = RawModuleDef::V10(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the sets of reducers, procedures and views.
