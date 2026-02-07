@@ -11,4 +11,3 @@ export { type Uuid } from '../lib/uuid';
 export { type Random } from './rng';
 
 import './polyfills'; // Ensure polyfills are loaded
-import './register_hooks'; // Ensure module hooks are registered
