@@ -1,14 +1,14 @@
 #include "Connection/DbConnectionBuilder.h"
 #include "Connection/Websocket.h"
 #include "Connection/DbConnectionBase.h"
-
+#include "Connection/LogCategory.h"
 
 UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithUriBase(const FString& InUri)
 {
 	// Check if the URI contains "localhost:" and replace it with adress
 	if (InUri.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("WithUriBase called with empty URI, not allowed"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("WithUriBase called with empty URI, not allowed"));
 		return this;
 	}
 	if (InUri.Contains("localhost:"))
@@ -28,7 +28,7 @@ UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithModuleNameBase(const FSt
 {
 	if (InName.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("WithModuleNameBase called with empty module name, not allowd"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("WithModuleNameBase called with empty module name, not allowd"));
 	}
 	ModuleName = InName;
 	return this;
@@ -45,7 +45,7 @@ UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithCompressionBase(const ES
 {
 	if (InCompression == ESpacetimeDBCompression::Brotli)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Brotli compression is not available in this version of SDK. Defaulting to Gzip."));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Brotli compression is not available in this version of SDK. Defaulting to Gzip."));
 		Compression = ESpacetimeDBCompression::Gzip;
 	}
 	else
@@ -79,13 +79,13 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 
 	if (!Connection)
 	{
-		UE_LOG(LogTemp, Error, TEXT("BuildConnection called with null connection object"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("BuildConnection called with null connection object"));
 		return nullptr;
 	}
 
 	if (Uri.IsEmpty() || ModuleName.IsEmpty())
 	{
-		UE_LOG(LogTemp, Error, TEXT("BuildConnection missing required Uri or ModuleName"));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("BuildConnection missing required Uri or ModuleName"));
 		return nullptr;
 	}
 

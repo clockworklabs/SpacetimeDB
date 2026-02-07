@@ -1,6 +1,8 @@
 use super::statement::InvalidVar;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::parser::errors::SqlParseError;
 use thiserror::Error;
@@ -12,7 +14,7 @@ pub enum Unresolved {
     #[error("no such table: `{0}`. If the table exists, it may be marked private.")]
     Table(String),
     #[error("`{0}` does not have a field `{1}`")]
-    Field(String, String),
+    Field(TableName, String),
     #[error("Cannot resolve type for literal expression")]
     Literal,
 }
@@ -29,8 +31,8 @@ impl Unresolved {
     }
 
     /// Cannot resolve field name within table
-    pub fn field(table: &str, field: &str) -> Self {
-        Self::Field(table.to_owned(), field.to_owned())
+    pub fn field(table: TableName, field: &str) -> Self {
+        Self::Field(table, field.to_owned())
     }
 }
 
@@ -52,7 +54,7 @@ pub enum Unsupported {
 #[derive(Error, Debug)]
 #[error("Inserting a row with {values} values into `{table}` which has {fields} fields")]
 pub struct InsertValuesError {
-    pub table: String,
+    pub table: TableName,
     pub values: usize,
     pub fields: usize,
 }
@@ -61,7 +63,7 @@ pub struct InsertValuesError {
 #[derive(Error, Debug)]
 #[error("The number of fields ({nfields}) in the INSERT does not match the number of columns ({ncols}) of the table `{table}`")]
 pub struct InsertFieldsError {
-    pub table: String,
+    pub table: TableName,
     pub ncols: usize,
     pub nfields: usize,
 }
@@ -116,7 +118,7 @@ impl UnexpectedType {
 
 #[derive(Debug, Error)]
 #[error("Duplicate name `{0}`")]
-pub struct DuplicateName(pub String);
+pub struct DuplicateName(pub RawIdentifier);
 
 #[derive(Debug, Error)]
 #[error("`filter!` does not support column projections; Must return table rows")]
@@ -125,7 +127,7 @@ pub struct FilterReturnType;
 #[derive(Debug, Error)]
 #[error("`{view_name}` is a view; DML on views is not supported")]
 pub struct DmlOnView {
-    pub view_name: Box<str>,
+    pub view_name: TableName,
 }
 
 #[derive(Error, Debug)]

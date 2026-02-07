@@ -1,4 +1,4 @@
-import { schema } from '../lib/schema';
+import { schema } from './schema';
 import { table } from '../lib/table';
 import t from '../lib/type_builders';
 

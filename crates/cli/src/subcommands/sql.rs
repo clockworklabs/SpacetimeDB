@@ -201,13 +201,12 @@ fn build_table<E>(
     rows: impl Iterator<Item = Result<ProductValue, E>>,
 ) -> Result<tabled::Table, E> {
     let mut builder = tabled::builder::Builder::default();
-    builder.set_header(
-        schema
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
-    );
+    builder.set_header(schema.elements.iter().enumerate().map(|(i, e)| {
+        e.name
+            .as_ref()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("column {i}"))
+    }));
 
     let ty = Typespace::EMPTY.with_type(schema);
     for row in rows {

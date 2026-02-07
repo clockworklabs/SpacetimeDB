@@ -267,7 +267,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             None => {
                 let program = Program::from_bytes(&spec.program_bytes[..]);
 
-                let mut database = Database {
+                let database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
@@ -287,8 +287,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
                 debug_assert_eq!(_hash_for_assert, program_hash);
 
-                let database_id = self.control_db.insert_database(database.clone())?;
-                database.id = database_id;
+                let database_id = self.control_db.insert_database(database)?;
 
                 self.schedule_replicas(database_id, num_replicas).await?;
 
@@ -478,6 +477,13 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
         database: Identity,
         action: spacetimedb_client_api::Action,
     ) -> Result<(), spacetimedb_client_api::Unauthorized> {
+        // Creating a database is always allowed.
+        if let spacetimedb_client_api::Action::CreateDatabase { .. } = action {
+            return Ok(());
+        }
+
+        // Otherwise, the database must already exist,
+        // and the `subject` equal to `database.owner_identity`.
         let database = self
             .get_database_by_identity(&database)
             .await?
@@ -597,7 +603,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args, JobCores::without_pinned_cores(tokio::runtime::Handle::current())).await
+    start::exec(&args, JobCores::without_pinned_cores()).await
 }
 
 #[cfg(test)]
@@ -637,22 +643,13 @@ mod tests {
             websocket: WebSocketOptions::default(),
         };
 
-        let _env = StandaloneEnv::init(
-            config,
-            &ca,
-            data_dir.clone(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
-        )
-        .await?;
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(
-            config,
-            &ca,
-            data_dir.clone(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current())
-        )
-        .await
-        .is_err());
+        assert!(
+            StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores())
+                .await
+                .is_err()
+        );
 
         Ok(())
     }

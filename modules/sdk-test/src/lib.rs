@@ -637,32 +637,34 @@ fn delete_pk_u32_insert_pk_u32_two(ctx: &ReducerContext, n: u32, data: i32) -> a
 
 #[spacetimedb::reducer]
 fn insert_caller_one_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender });
+    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender() });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_vec_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender] });
+    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender()] });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_unique_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.unique_identity().insert(UniqueIdentity { i: ctx.sender, data });
+    ctx.db
+        .unique_identity()
+        .insert(UniqueIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_pk_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender, data });
+    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.one_connection_id().insert(OneConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
     });
     Ok(())
 }
@@ -670,7 +672,7 @@ fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.vec_connection_id().insert(VecConnectionId {
-        a: vec![ctx.connection_id.context("No connection id in reducer context")?],
+        a: vec![ctx.connection_id().context("No connection id in reducer context")?],
     });
     Ok(())
 }
@@ -678,7 +680,7 @@ fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.unique_connection_id().insert(UniqueConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
@@ -687,7 +689,7 @@ fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow
 #[spacetimedb::reducer]
 fn insert_caller_pk_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.pk_connection_id().insert(PkConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
