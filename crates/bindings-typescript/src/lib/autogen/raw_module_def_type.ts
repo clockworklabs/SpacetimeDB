@@ -11,6 +11,7 @@ import {
 } from '../../lib/type_builders';
 import RawModuleDefV8 from './raw_module_def_v_8_type';
 import RawModuleDefV9 from './raw_module_def_v_9_type';
+import RawModuleDefV10 from './raw_module_def_v_10_type';
 
 // The tagged union or sum type for the algebraic type `RawModuleDef`.
 const RawModuleDef = __t.enum('RawModuleDef', {
@@ -19,6 +20,9 @@ const RawModuleDef = __t.enum('RawModuleDef', {
   },
   get V9() {
     return RawModuleDefV9;
+  },
+  get V10() {
+    return RawModuleDefV10;
   },
 });
 
