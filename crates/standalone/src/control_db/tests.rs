@@ -135,15 +135,14 @@ fn test_decode() -> ResultTest<()> {
     assert_eq!(dbs.len(), 1);
     assert_eq!(dbs[0].owner_identity, id);
 
-    let mut new_replica = Replica {
+    let new_replica = Replica {
         id: 0,
         database_id: 1,
         node_id: 0,
         leader: true,
     };
 
-    let id = cdb.insert_replica(new_replica.clone())?;
-    new_replica.id = id;
+    let id = cdb.insert_replica(new_replica)?;
 
     let dbs = cdb.get_replicas()?;
 
