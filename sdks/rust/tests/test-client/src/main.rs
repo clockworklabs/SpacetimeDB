@@ -70,8 +70,11 @@ fn main() {
     let test = std::env::args()
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
+    dispatch(&test);
+}
 
-    match &*test {
+pub(crate) fn dispatch(test: &str) {
+    match test {
         "insert-primitive" => exec_insert_primitive(),
         "subscribe-and-cancel" => exec_subscribe_and_cancel(),
         "subscribe-and-unsubscribe" => exec_subscribe_and_unsubscribe(),

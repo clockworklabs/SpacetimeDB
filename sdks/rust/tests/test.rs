@@ -18,6 +18,26 @@ macro_rules! declare_tests_with_suffix {
                     .build()
             }
 
+            fn make_wasi_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build --target wasm32-wasi --no-default-features --features wasi")
+                    // The WASI runner uses this string as argv passed to the wasm module.
+                    // `test-client` expects the test name as argv[1].
+                    .with_run_command(format!("test-client {}", subcommand))
+                    .with_wasi_client("target/wasm32-wasi/debug/test-client.wasm")
+                    .build()
+            }
+
+            #[test]
+            fn wasm_smoke() {
+                make_wasi_test("insert-primitive").run();
+            }
+
             #[test]
             fn insert_primitive() {
                 make_test("insert-primitive").run();

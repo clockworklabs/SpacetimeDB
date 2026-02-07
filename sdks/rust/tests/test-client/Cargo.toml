@@ -6,13 +6,37 @@ license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["native"]
+
+# Builds the existing CLI test client.
+native = [
+    "dep:test-counter",
+    "dep:tokio",
+    "dep:env_logger",
+    "dep:rand",
+]
+
+# Builds the client for `wasm32-wasi` so it can be executed via `wasmtime`.
+wasi = [
+    "dep:test-counter",
+    "dep:tokio",
+    "dep:env_logger",
+    "dep:rand",
+]
+
+[[bin]]
+name = "test-client"
+path = "src/main.rs"
+
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
-test-counter = { path = "../test-counter" }
-tokio.workspace = true
 anyhow.workspace = true
-env_logger.workspace = true
-rand.workspace = true
+
+test-counter = { path = "../test-counter", optional = true }
+tokio = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 
 [lints]
 workspace = true
