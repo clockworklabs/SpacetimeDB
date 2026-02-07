@@ -168,9 +168,9 @@ interface SubscriptionBuilder {
   // or later during the subscription's lifetime if the module's interface changes.
   onError(callback: (ctx: ErrorContext, error: Error) => void): SubscriptionBuilder;
 
-  // Subscribe to the following SQL queries.
+  // Subscribe to the following SQL or typed queries.
   // Returns immediately; callbacks are invoked when data arrives from the server.
-  subscribe(querySqls: string[]): SubscriptionHandle;
+  subscribe(query_sql:string | RowTypedQuery<any, any> | Array<string | RowTypedQuery<any, any>>): SubscriptionHandle;
 
   // Subscribe to all rows from all tables.
   // Intended for applications where memory and bandwidth are not concerns.
@@ -227,6 +227,31 @@ public sealed class SubscriptionBuilder
     /// in order to replicate only the subset of data which the client needs to function.
     /// </summary>
     public void SubscribeToAllTables();
+
+    /// <summary>
+    /// Add a typed query to this subscription.
+    ///
+    /// This is the entry point for building subscriptions without writing SQL by hand.
+    /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
+    /// </summary>
+    public TypedSubscriptionBuilder AddQuery<TRow>(
+        Func<QueryBuilder, Query<TRow>> build
+    );
+}
+
+public sealed class TypedSubscriptionBuilder
+{
+    /// <summary>
+    /// Add a typed query to this subscription.
+    /// </summary>
+    public TypedSubscriptionBuilder AddQuery<TRow>(
+        Func<QueryBuilder, Query<TRow>> build
+    );
+
+    /// <summary>
+    /// Subscribe to all typed queries that have been added to this subscription.
+    /// </summary>
+    public SubscriptionHandle Subscribe();
 }
 ```
 
@@ -261,6 +286,17 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// should register more precise queries via [`Self::subscribe`]
     /// in order to replicate only the subset of data which the client needs to function.
     pub fn subscribe_to_all_tables(self);
+
+    /// Build a query and invoke `subscribe` in order to subscribe to its results.
+    pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> TypedSubscriptionBuilder<M>;
+}
+
+impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+    /// Build a query and invoke `subscribe` in order to subscribe to its results.
+    pub fn add_query<T>(mut self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> Self;
+
+    /// Subscribe to the queries that have been built with `add_query`.
+    pub fn subscribe(self) -> M::SubscriptionHandle;
 }
 
 /// Types which specify a list of query strings.
