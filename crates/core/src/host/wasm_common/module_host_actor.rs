@@ -1028,6 +1028,21 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
+            ViewCommand::AddSubscriptionV2 {
+                sender,
+                auth,
+                request,
+                timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
             ViewCommand::AddMultiSubscription {
                 sender,
                 auth,
@@ -1043,7 +1058,6 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-
             ViewCommand::Sql {
                 db,
                 sql_text,

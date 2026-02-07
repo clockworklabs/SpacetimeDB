@@ -4,7 +4,7 @@ use core::ops::Deref;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 
 /// The name of a reducer.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReducerName(pub Identifier);
 
 impl ReducerName {

@@ -1,8 +1,5 @@
 use bytes::Bytes;
-use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, BsatnRowList, CompressableQueryUpdate, DatabaseUpdate, OneOffQueryResponse, QueryUpdate,
-    ServerMessage, TableUpdate, UpdateStatus,
-};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 
 /// Moves each buffer in `self` into a closure.
 pub trait ConsumeEachBuffer {
@@ -10,9 +7,9 @@ pub trait ConsumeEachBuffer {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes));
 }
 
-impl ConsumeEachBuffer for ServerMessage<BsatnFormat> {
+impl ConsumeEachBuffer for ws_v1::ServerMessage<ws_v1::BsatnFormat> {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
-        use ServerMessage::*;
+        use ws_v1::ServerMessage::*;
         match self {
             InitialSubscription(x) => x.database_update.consume_each_list(each),
             TransactionUpdate(x) => x.status.consume_each_list(each),
@@ -27,7 +24,7 @@ impl ConsumeEachBuffer for ServerMessage<BsatnFormat> {
     }
 }
 
-impl ConsumeEachBuffer for OneOffQueryResponse<BsatnFormat> {
+impl ConsumeEachBuffer for ws_v1::OneOffQueryResponse<ws_v1::BsatnFormat> {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
         Vec::from(self.tables)
             .into_iter()
@@ -35,28 +32,28 @@ impl ConsumeEachBuffer for OneOffQueryResponse<BsatnFormat> {
     }
 }
 
-impl ConsumeEachBuffer for UpdateStatus<BsatnFormat> {
+impl ConsumeEachBuffer for ws_v1::UpdateStatus<ws_v1::BsatnFormat> {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
         match self {
             Self::Committed(x) => x.consume_each_list(each),
-            Self::Failed(_) | UpdateStatus::OutOfEnergy => {}
+            Self::Failed(_) | ws_v1::UpdateStatus::OutOfEnergy => {}
         }
     }
 }
 
-impl ConsumeEachBuffer for DatabaseUpdate<BsatnFormat> {
+impl ConsumeEachBuffer for ws_v1::DatabaseUpdate<ws_v1::BsatnFormat> {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
         self.tables.into_iter().for_each(|x| x.consume_each_list(each));
     }
 }
 
-impl ConsumeEachBuffer for TableUpdate<BsatnFormat> {
+impl ConsumeEachBuffer for ws_v1::TableUpdate<ws_v1::BsatnFormat> {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
         self.updates.into_iter().for_each(|x| x.consume_each_list(each));
     }
 }
 
-impl ConsumeEachBuffer for CompressableQueryUpdate<BsatnFormat> {
+impl ConsumeEachBuffer for ws_v1::CompressableQueryUpdate<ws_v1::BsatnFormat> {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
         match self {
             Self::Uncompressed(x) => x.consume_each_list(each),
@@ -65,14 +62,14 @@ impl ConsumeEachBuffer for CompressableQueryUpdate<BsatnFormat> {
     }
 }
 
-impl ConsumeEachBuffer for QueryUpdate<BsatnFormat> {
+impl ConsumeEachBuffer for ws_v1::QueryUpdate<ws_v1::BsatnFormat> {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
         self.deletes.consume_each_list(each);
         self.inserts.consume_each_list(each);
     }
 }
 
-impl ConsumeEachBuffer for BsatnRowList {
+impl ConsumeEachBuffer for ws_v1::BsatnRowList {
     fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
         let (_, buffer) = self.into_inner();
         each(buffer);
