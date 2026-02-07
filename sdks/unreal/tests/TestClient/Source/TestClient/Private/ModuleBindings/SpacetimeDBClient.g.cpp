@@ -6,8 +6,6 @@
 #include "BSATN/UEBSATNHelpers.h"
 #include "ModuleBindings/Tables/BtreeU32Table.g.h"
 #include "ModuleBindings/Tables/IndexedSimpleEnumTable.g.h"
-#include "ModuleBindings/Tables/IndexedTableTable.g.h"
-#include "ModuleBindings/Tables/IndexedTable2Table.g.h"
 #include "ModuleBindings/Tables/LargeTableTable.g.h"
 #include "ModuleBindings/Tables/OneBoolTable.g.h"
 #include "ModuleBindings/Tables/OneByteStructTable.g.h"
@@ -1325,8 +1323,6 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 
 	RegisterTable<FBTreeU32Type, UBtreeU32Table, FEventContext>(TEXT("btree_u32"), Db->BtreeU32);
 	RegisterTable<FIndexedSimpleEnumType, UIndexedSimpleEnumTable, FEventContext>(TEXT("indexed_simple_enum"), Db->IndexedSimpleEnum);
-	RegisterTable<FIndexedTableType, UIndexedTableTable, FEventContext>(TEXT("indexed_table"), Db->IndexedTable);
-	RegisterTable<FIndexedTable2Type, UIndexedTable2Table, FEventContext>(TEXT("indexed_table_2"), Db->IndexedTable2);
 	RegisterTable<FLargeTableType, ULargeTableTable, FEventContext>(TEXT("large_table"), Db->LargeTable);
 	RegisterTable<FOneBoolType, UOneBoolTable, FEventContext>(TEXT("one_bool"), Db->OneBool);
 	RegisterTable<FOneByteStructType, UOneByteStructTable, FEventContext>(TEXT("one_byte_struct"), Db->OneByteStruct);
@@ -1469,8 +1465,6 @@ void URemoteTables::Initialize()
 	/** Creating tables */
 	BtreeU32 = NewObject<UBtreeU32Table>(this);
 	IndexedSimpleEnum = NewObject<UIndexedSimpleEnumTable>(this);
-	IndexedTable = NewObject<UIndexedTableTable>(this);
-	IndexedTable2 = NewObject<UIndexedTable2Table>(this);
 	LargeTable = NewObject<ULargeTableTable>(this);
 	OneBool = NewObject<UOneBoolTable>(this);
 	OneByteStruct = NewObject<UOneByteStructTable>(this);
@@ -1581,8 +1575,6 @@ void URemoteTables::Initialize()
 	/** Initialization */
 	BtreeU32->PostInitialize();
 	IndexedSimpleEnum->PostInitialize();
-	IndexedTable->PostInitialize();
-	IndexedTable2->PostInitialize();
 	LargeTable->PostInitialize();
 	OneBool->PostInitialize();
 	OneByteStruct->PostInitialize();

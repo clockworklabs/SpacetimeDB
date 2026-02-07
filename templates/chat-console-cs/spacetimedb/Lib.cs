@@ -24,7 +24,7 @@ public static partial class Module
     {
         name = ValidateName(name);
 
-        if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
+        if (ctx.Db.User.Identity.Find(ctx.Sender()) is User user)
         {
             user.Name = name;
             ctx.Db.User.Identity.Update(user);
@@ -49,7 +49,7 @@ public static partial class Module
         ctx.Db.Message.Insert(
             new Message
             {
-                Sender = ctx.Sender,
+                Sender = ctx.Sender(),
                 Text = text,
                 Sent = ctx.Timestamp,
             }
@@ -69,9 +69,9 @@ public static partial class Module
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
-        Log.Info($"Connect {ctx.Sender}");
+        Log.Info($"Connect {ctx.Sender()}");
 
-        if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
+        if (ctx.Db.User.Identity.Find(ctx.Sender()) is User user)
         {
             // If this is a returning user, i.e., we already have a `User` with this `Identity`,
             // set `Online: true`, but leave `Name` and `Identity` unchanged.
@@ -86,7 +86,7 @@ public static partial class Module
                 new User
                 {
                     Name = null,
-                    Identity = ctx.Sender,
+                    Identity = ctx.Sender(),
                     Online = true,
                 }
             );
@@ -96,7 +96,7 @@ public static partial class Module
     [Reducer(ReducerKind.ClientDisconnected)]
     public static void ClientDisconnected(ReducerContext ctx)
     {
-        if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
+        if (ctx.Db.User.Identity.Find(ctx.Sender()) is User user)
         {
             // This user should exist, so set `Online: false`.
             user.Online = false;

@@ -12,11 +12,12 @@ pub use self::csharp::Csharp;
 pub use self::rust::Rust;
 pub use self::typescript::TypeScript;
 pub use self::unrealcpp::UnrealCpp;
+pub use util::private_table_names;
 pub use util::AUTO_GENERATED_PREFIX;
 
 pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<OutputFile> {
     itertools::chain!(
-        module.tables().map(|tbl| lang.generate_table_file(module, tbl)),
+        util::iter_tables(module, util::CodegenVisibility::OnlyPublic).map(|tbl| lang.generate_table_file(module, tbl)),
         module.views().map(|view| lang.generate_view_file(module, view)),
         module.types().flat_map(|typ| lang.generate_type_files(module, typ)),
         util::iter_reducers(module).map(|reducer| lang.generate_reducer_file(module, reducer)),

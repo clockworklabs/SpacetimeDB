@@ -1887,25 +1887,25 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_identity(ReducerContext ctx)
     {
-        ctx.Db.one_identity.Insert(new OneIdentity { i = ctx.Sender });
+        ctx.Db.one_identity.Insert(new OneIdentity { i = ctx.Sender() });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_vec_identity(ReducerContext ctx)
     {
-        ctx.Db.vec_identity.Insert(new VecIdentity { i = new List<Identity> { ctx.Sender } });
+        ctx.Db.vec_identity.Insert(new VecIdentity { i = new List<Identity> { ctx.Sender() } });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_identity(ReducerContext ctx, int data)
     {
-        ctx.Db.unique_identity.Insert(new UniqueIdentity { i = ctx.Sender, data = data });
+        ctx.Db.unique_identity.Insert(new UniqueIdentity { i = ctx.Sender(), data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_identity(ReducerContext ctx, int data)
     {
-        ctx.Db.pk_identity.Insert(new PkIdentity { i = ctx.Sender, data = data });
+        ctx.Db.pk_identity.Insert(new PkIdentity { i = ctx.Sender(), data = data });
     }
 
     [SpacetimeDB.Reducer]
