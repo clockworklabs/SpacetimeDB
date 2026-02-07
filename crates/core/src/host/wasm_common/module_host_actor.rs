@@ -1269,6 +1269,12 @@ impl InstanceCommon {
             if phys.reads_from_view(true) || phys.reads_from_view(false) {
                 bail!("view definition cannot read from other views");
             }
+            if source_schema.is_event {
+                bail!(
+                    "view definition cannot select from event table `{}`",
+                    source_schema.table_name
+                );
+            }
             if source_schema.row_type != *expected_row_type {
                 bail!(
                     "query returns `{}` but view expects `{}`",

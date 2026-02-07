@@ -58,3 +58,4 @@ impl __sdk::__query_builder::HasIxCols for ScheduledProcTable {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for ScheduledProcTable {}

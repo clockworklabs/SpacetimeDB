@@ -44,3 +44,4 @@ impl __sdk::__query_builder::HasIxCols for MyTable {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for MyTable {}

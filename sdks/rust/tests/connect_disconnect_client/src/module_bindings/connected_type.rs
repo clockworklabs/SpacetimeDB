@@ -42,3 +42,4 @@ impl __sdk::__query_builder::HasIxCols for Connected {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for Connected {}

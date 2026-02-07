@@ -168,7 +168,41 @@ impl {accessor_trait} for super::RemoteTables {{
 }}
 
 pub struct {insert_callback_id}(__sdk::CallbackId);
-pub struct {delete_callback_id}(__sdk::CallbackId);
+"
+        );
+
+        if table.is_event {
+            // Event tables: implement `EventTable` (insert-only, no delete).
+            write!(
+                out,
+                "
+impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
+    type Row = {row_type};
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {{ self.imp.count() }}
+    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
+
+    type InsertCallbackId = {insert_callback_id};
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> {insert_callback_id} {{
+        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
+    }}
+
+    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
+        self.imp.remove_on_insert(callback.0)
+    }}
+}}
+"
+            );
+        } else {
+            // Persistent tables: implement `Table` (insert + delete).
+            write!(
+                out,
+                "pub struct {delete_callback_id}(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
     type Row = {row_type};
@@ -204,7 +238,8 @@ impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
     }}
 }}
 "
-        );
+            );
+        }
 
         out.delimited_block(
             "
@@ -213,19 +248,21 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 ",
             |out| {
                 writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
-                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(module.typespace_for_generate(), &schema, product_def) {
-                    let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                    let unique_field_type = type_name(module, unique_field_type_use);
-                    writeln!(
-                        out,
-                        "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name});",
-                    );
+                if !table.is_event {
+                    for (unique_field_ident, unique_field_type_use) in iter_unique_cols(module.typespace_for_generate(), &schema, product_def) {
+                        let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+                        let unique_field_type = type_name(module, unique_field_type_use);
+                        writeln!(
+                            out,
+                            "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name});",
+                        );
+                    }
                 }
             },
             "}",
         );
 
-        if table.primary_key.is_some() {
+        if table.primary_key.is_some() && !table.is_event {
             let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
             write!(
                 out,
@@ -270,7 +307,7 @@ pub(super) fn parse_table_update(
         );
 
         for (unique_field_ident, unique_field_type_use) in
-            iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
+            iter_unique_cols(module.typespace_for_generate(), &schema, product_def).filter(|_| !table.is_event)
         {
             let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
             let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
@@ -727,7 +764,16 @@ impl __sdk::__query_builder::HasIxCols for {struct_name} {{
         }}
     }}
 }}"#
-    )
+    )?;
+
+    if !table.is_event {
+        writeln!(
+            out,
+            "\nimpl __sdk::__query_builder::CanBeLookupTable for {struct_name} {{}}"
+        )?;
+    }
+
+    Ok(())
 }
 
 pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, struct_name: &String) -> fmt::Result {
@@ -1319,21 +1365,29 @@ impl __sdk::InModule for DbUpdate {{
                 ",
                 |out| {
                     for table in iter_tables(module) {
-                        let with_updates = table
-                            .primary_key
-                            .map(|col| {
-                                let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
-                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
-                            })
-                            .unwrap_or_default();
-
                         let field_name = table_method_name(&table.name);
-                        writeln!(
-                            out,
-                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
-                            type_ref_name(module, table.product_type_ref),
-                            table.name.deref(),
-                        );
+                        if table.is_event {
+                            // Event tables: fire on_insert callbacks without persisting to cache.
+                            writeln!(
+                                out,
+                                "diff.{field_name} = self.{field_name}.into_event_diff();",
+                            );
+                        } else {
+                            let with_updates = table
+                                .primary_key
+                                .map(|col| {
+                                    let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
+                                    format!(".with_updates_by_pk(|row| &row.{pk_field})")
+                                })
+                                .unwrap_or_default();
+
+                            writeln!(
+                                out,
+                                "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
+                                type_ref_name(module, table.product_type_ref),
+                                table.name.deref(),
+                            );
+                        }
                     }
                     for view in iter_views(module) {
                         let field_name = table_method_name(&view.name);

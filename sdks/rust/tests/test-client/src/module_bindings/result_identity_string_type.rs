@@ -2,31 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ResultIdentityString {
-    pub r: Result::<__sdk::Identity, String>,
+    pub r: Result<__sdk::Identity, String>,
 }
-
 
 impl __sdk::InModule for ResultIdentityString {
     type Module = super::RemoteModule;
 }
 
-
 /// Column accessor struct for the table `ResultIdentityString`.
 ///
 /// Provides typed access to columns for query building.
 pub struct ResultIdentityStringCols {
-    pub r: __sdk::__query_builder::Col<ResultIdentityString, Result::<__sdk::Identity, String>>,
+    pub r: __sdk::__query_builder::Col<ResultIdentityString, Result<__sdk::Identity, String>>,
 }
 
 impl __sdk::__query_builder::HasCols for ResultIdentityString {
@@ -34,7 +26,6 @@ impl __sdk::__query_builder::HasCols for ResultIdentityString {
     fn cols(table_name: &'static str) -> Self::Cols {
         ResultIdentityStringCols {
             r: __sdk::__query_builder::Col::new(table_name, "r"),
-
         }
     }
 }
@@ -42,16 +33,13 @@ impl __sdk::__query_builder::HasCols for ResultIdentityString {
 /// Indexed column accessor struct for the table `ResultIdentityString`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct ResultIdentityStringIxCols {
-}
+pub struct ResultIdentityStringIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for ResultIdentityString {
     type IxCols = ResultIdentityStringIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        ResultIdentityStringIxCols {
-
-        }
+        ResultIdentityStringIxCols {}
     }
 }
 
-
+impl __sdk::__query_builder::CanBeLookupTable for ResultIdentityString {}

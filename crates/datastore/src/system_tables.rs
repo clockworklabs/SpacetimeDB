@@ -582,7 +582,10 @@ fn system_module_def() -> ModuleDef {
 
     let st_event_table_type = builder.add_type::<StEventTableRow>();
     builder
-        .build_table(ST_EVENT_TABLE_NAME, *st_event_table_type.as_ref().expect("should be ref"))
+        .build_table(
+            ST_EVENT_TABLE_NAME,
+            *st_event_table_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_primary_key(StEventTableFields::TableId)
         .with_unique_constraint(StEventTableFields::TableId)

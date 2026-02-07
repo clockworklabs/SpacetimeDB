@@ -2,31 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct OptionI32 {
-    pub n: Option::<i32>,
+    pub n: Option<i32>,
 }
-
 
 impl __sdk::InModule for OptionI32 {
     type Module = super::RemoteModule;
 }
 
-
 /// Column accessor struct for the table `OptionI32`.
 ///
 /// Provides typed access to columns for query building.
 pub struct OptionI32Cols {
-    pub n: __sdk::__query_builder::Col<OptionI32, Option::<i32>>,
+    pub n: __sdk::__query_builder::Col<OptionI32, Option<i32>>,
 }
 
 impl __sdk::__query_builder::HasCols for OptionI32 {
@@ -34,7 +26,6 @@ impl __sdk::__query_builder::HasCols for OptionI32 {
     fn cols(table_name: &'static str) -> Self::Cols {
         OptionI32Cols {
             n: __sdk::__query_builder::Col::new(table_name, "n"),
-
         }
     }
 }
@@ -42,16 +33,13 @@ impl __sdk::__query_builder::HasCols for OptionI32 {
 /// Indexed column accessor struct for the table `OptionI32`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OptionI32IxCols {
-}
+pub struct OptionI32IxCols {}
 
 impl __sdk::__query_builder::HasIxCols for OptionI32 {
     type IxCols = OptionI32IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OptionI32IxCols {
-
-        }
+        OptionI32IxCols {}
     }
 }
 
-
+impl __sdk::__query_builder::CanBeLookupTable for OptionI32 {}
