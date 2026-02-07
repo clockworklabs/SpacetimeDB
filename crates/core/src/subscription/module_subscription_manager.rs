@@ -1798,6 +1798,8 @@ impl SendWorker {
         type UpdateMapKey = (ClientId, ClientQuerySetId, TableName);
         let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::TableUpdateRows>> = BTreeMap::new();
 
+        let mut sent_to_caller = false;
+
         for V2ClientUpdate {
             id: client_id,
             query_set_id,
@@ -1857,6 +1859,7 @@ impl SendWorker {
                         result: ws_v2::ReducerOutcome::Ok(rok),
                     });
                     send_to_client(caller, Some(tx_offset), OutboundMessage::V2(server_message));
+                    sent_to_caller = true;
                     continue;
                 }
                 _ => {
@@ -1867,6 +1870,21 @@ impl SendWorker {
                         OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(transaction_update)),
                     );
                 }
+            }
+        }
+        if !sent_to_caller {
+            if let Some(caller) = caller {
+                let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                    request_id: event.request_id.unwrap(), // TODO: Handle error here.
+                    timestamp: event.timestamp,
+                    result: ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
+                        ret_value: event.reducer_return_value.clone().unwrap_or(Bytes::new()),
+                        transaction_update: ws_v2::TransactionUpdate {
+                            query_sets: vec![].into_boxed_slice(),
+                        },
+                    }),
+                });
+                send_to_client(&caller, Some(tx_offset), OutboundMessage::V2(server_message));
             }
         }
     }
