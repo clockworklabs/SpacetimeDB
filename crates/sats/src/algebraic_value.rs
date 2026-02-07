@@ -48,7 +48,7 @@ pub enum AlgebraicValue {
     /// a product value stores a value `v_i` of type `T_i` for each field `N_i`.
     Product(ProductValue),
     /// A homogeneous array of `AlgebraicValue`s.
-    /// The array has the type [`AlgebraicType::Array(elem_ty)`].
+    /// The array has the type [`AlgebraicType::Array(elem_ty)`][AlgebraicType::Array].
     ///
     /// The contained values are stored packed in a representation appropriate for their type.
     /// See [`ArrayValue`] for details on the representation.
