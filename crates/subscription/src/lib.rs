@@ -513,6 +513,9 @@ impl SubscriptionPlan {
             if has_non_index_join(&plan_opt) {
                 bail!("Subscriptions require indexes on join columns")
             }
+            if plan_opt.reads_from_event_table() {
+                bail!("Event tables cannot be used as the lookup table in subscription joins")
+            }
 
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);
 

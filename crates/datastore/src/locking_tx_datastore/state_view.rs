@@ -4,10 +4,10 @@ use crate::error::{DatastoreError, TableError};
 use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
-    StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewRow,
-    StEventTableFields, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID,
-    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    StConstraintFields, StConstraintRow, StEventTableFields, StIndexFields, StIndexRow, StScheduledFields,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields,
+    StViewRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID,
+    ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;

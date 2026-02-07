@@ -848,7 +848,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     );
 
     let table_access = args.access.iter().map(|acc| acc.to_value());
-    let is_event = args.event.iter().map(|_| quote!(const IS_EVENT: bool = true;));
+    let is_event = args.event.iter().map(|_| {
+        quote!(
+            const IS_EVENT: bool = true;
+        )
+    });
     let can_be_lookup_impl = if args.event.is_none() {
         quote! {
             impl spacetimedb::query_builder::CanBeLookupTable for #original_struct_ident {}

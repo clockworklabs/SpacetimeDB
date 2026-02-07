@@ -21,9 +21,9 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields,
-        StConstraintRow, StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StEventTableRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow,
-        SystemTable, ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ID,
+        StConstraintRow, StEventTableRow, StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields,
+        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields,
+        StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ID,
         ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
