@@ -8,7 +8,7 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
-    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
+    CodegenVisibility, collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
     print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{indent_scope, OutputFile};
@@ -1048,7 +1048,7 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output| {
             writeln!(output, "public RemoteTables(DbConnection conn)");
             indented_block(output, |output| {
-                for (table_name, _) in iter_table_names_and_types(module, false) {
+                for (table_name, _) in iter_table_names_and_types(module, CodegenVisibility::OnlyPublic) {
                     writeln!(
                         output,
                         "AddTable({} = new(conn));",
@@ -1071,7 +1071,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed class From");
         indented_block(&mut output, |output| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module, false) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module, CodegenVisibility::OnlyPublic) {
                 let method_name = table_name.deref().to_case(Case::Pascal);
                 let row_type = type_ref_name(module, product_type_ref);
                 let table_name_lit = format!("{:?}", table_name.deref());
