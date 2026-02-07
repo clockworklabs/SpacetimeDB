@@ -1,6 +1,6 @@
 use crate::util::{
-    CodegenVisibility, is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers,
-    iter_table_names_and_types, iter_tables, iter_types, iter_views, print_auto_generated_version_comment,
+    is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
+    iter_tables, iter_types, iter_views, print_auto_generated_version_comment, CodegenVisibility,
 };
 use crate::OutputFile;
 

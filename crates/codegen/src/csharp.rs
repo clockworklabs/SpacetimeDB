@@ -8,8 +8,8 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
-    CodegenVisibility, collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
-    print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
+    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
+    print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name, CodegenVisibility,
 };
 use crate::{indent_scope, OutputFile};
 use convert_case::{Case, Casing};
