@@ -34,6 +34,8 @@ use crate::{
 };
 use bytes::Bytes;
 use futures::StreamExt;
+#[cfg(feature = "web")]
+use futures::{pin_mut, FutureExt};
 use futures_channel::mpsc;
 use http::Uri;
 use spacetimedb_client_api_messages::websocket as ws;
@@ -44,6 +46,7 @@ use std::{
     collections::HashMap,
     sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
 };
+#[cfg(not(feature = "web"))]
 use tokio::{
     runtime::{self, Runtime},
     sync::Mutex as TokioMutex,
@@ -51,12 +54,18 @@ use tokio::{
 
 pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
 
+#[cfg(not(feature = "web"))]
+type SharedAsyncCell<T> = Arc<TokioMutex<T>>;
+#[cfg(feature = "web")]
+type SharedAsyncCell<T> = SharedCell<T>;
+
 /// Implementation of `DbConnection`, `EventContext`,
 /// and anything else that provides access to the database connection.
 ///
 /// This must be relatively cheaply `Clone`-able, and have internal sharing,
 /// as numerous operations will clone it to get new handles on the connection.
 pub struct DbContextImpl<M: SpacetimeModule> {
+    #[cfg(not(feature = "web"))]
     runtime: runtime::Handle,
 
     /// All the state which is safe to hold a lock on while running callbacks.
@@ -70,7 +79,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// Receiver channel for WebSocket messages,
     /// which are pre-parsed in the background by [`parse_loop`].
-    recv: Arc<TokioMutex<mpsc::UnboundedReceiver<ParsedMessage<M>>>>,
+    recv: SharedAsyncCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
 
     /// Channel into which operations which apparently mutate SDK state,
     /// e.g. registering callbacks, push [`PendingMutation`] messages,
@@ -80,7 +89,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// Receive end of `pending_mutations_send`,
     /// from which [Self::apply_pending_mutations] and friends read mutations.
-    pending_mutations_recv: Arc<TokioMutex<mpsc::UnboundedReceiver<PendingMutation<M>>>>,
+    pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
 
     /// This connection's `Identity`.
     ///
@@ -97,6 +106,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
     fn clone(&self) -> Self {
         Self {
+            #[cfg(not(feature = "web"))]
             runtime: self.runtime.clone(),
             // Being very explicit with `Arc::clone` here,
             // since we'll be doing `DbContextImpl::clone` very frequently,
@@ -288,9 +298,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Apply all queued [`PendingMutation`]s.
     fn apply_pending_mutations(&self) -> crate::Result<()> {
-        while let Ok(Some(pending_mutation)) = self.pending_mutations_recv.blocking_lock().try_next() {
+        while let Ok(Some(pending_mutation)) = get_lock_sync(&self.pending_mutations_recv).try_next() {
             self.apply_mutation(pending_mutation)?;
         }
+
         Ok(())
     }
 
@@ -535,7 +546,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // returns `Err(_)`. Similar behavior as `Iterator::next` and
         // `Stream::poll_next`. No comment on whether this is a good mental
         // model or not.
-        let res = match self.recv.blocking_lock().try_next() {
+        let res = match get_lock_sync(&self.recv).try_next() {
             Ok(None) => {
                 let disconnect_ctx = self.make_event_ctx(None);
                 self.invoke_disconnected(&disconnect_ctx);
@@ -558,8 +569,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // We call this out as an incorrect and unsupported thing to do.
         #![allow(clippy::await_holding_lock)]
 
-        let mut pending_mutations = self.pending_mutations_recv.lock().await;
-        let mut recv = self.recv.lock().await;
+        let mut pending_mutations = get_lock_async(&self.pending_mutations_recv).await;
+        let mut recv = get_lock_async(&self.recv).await;
 
         // Always process pending mutations before WS messages, if they're available,
         // so that newly registered callbacks run on messages.
@@ -570,15 +581,28 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             return Message::Local(pending_mutation.unwrap());
         }
 
+        #[cfg(not(feature = "web"))]
         tokio::select! {
             pending_mutation = pending_mutations.next() => Message::Local(pending_mutation.unwrap()),
             incoming_message = recv.next() => Message::Ws(incoming_message),
+        }
+
+        #[cfg(feature = "web")]
+        {
+            let (pending_fut, recv_fut) = (pending_mutations.next().fuse(), recv.next().fuse());
+            pin_mut!(pending_fut, recv_fut);
+
+            futures::select! {
+                pending_mutation = pending_fut => Message::Local(pending_mutation.unwrap()),
+                incoming_message = recv_fut => Message::Ws(incoming_message),
+            }
         }
     }
 
     /// Like [`Self::advance_one_message`], but sleeps the thread until a message is available.
     ///
     /// Called by the autogenerated `DbConnection` method of the same name.
+    #[cfg(not(feature = "web"))]
     pub fn advance_one_message_blocking(&self) -> crate::Result<()> {
         match self.runtime.block_on(self.get_message()) {
             Message::Local(pending) => self.apply_mutation(pending),
@@ -617,6 +641,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     /// Spawn a thread which does [`Self::advance_one_message_blocking`] in a loop.
     ///
     /// Called by the autogenerated `DbConnection` method of the same name.
+    #[cfg(not(feature = "web"))]
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {
         let this = self.clone();
         std::thread::spawn(move || loop {
@@ -624,6 +649,23 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 Ok(()) => (),
                 Err(e) if error_is_normal_disconnect(&e) => return,
                 Err(e) => panic!("{e:?}"),
+            }
+        })
+    }
+
+    /// Spawn a background task which does [`Self::advance_one_message_async`] in a loop.
+    ///
+    /// Called by the autogenerated `DbConnection` method of the same name.
+    #[cfg(feature = "web")]
+    pub fn run_background_task(&self) {
+        let this = self.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            loop {
+                match this.advance_one_message_async().await {
+                    Ok(()) => (),
+                    Err(e) if error_is_normal_disconnect(&e) => return,
+                    Err(e) => panic!("{e:?}"),
+                }
             }
         })
     }
@@ -783,6 +825,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     /// `Some` if not within the context of an outer runtime. The `Runtime` must
     /// then live as long as `Self`.
     #[allow(unused)]
+    #[cfg(not(feature = "web"))]
     runtime: Option<Runtime>,
 
     db_callbacks: DbCallbacks<M>,
@@ -909,6 +952,7 @@ You must explicitly advance the connection by calling any one of:
 
 - `DbConnection::frame_tick`.
 - `DbConnection::run_threaded`.
+- `DbConnection::run_background_task`.
 - `DbConnection::run_async`.
 - `DbConnection::advance_one_message`.
 - `DbConnection::advance_one_message_blocking`.
@@ -917,18 +961,23 @@ You must explicitly advance the connection by calling any one of:
 Which of these methods you should call depends on the specific needs of your application,
 but you must call one of them, or else the connection will never progress.
 "]
+    #[cfg(not(feature = "web"))]
     pub fn build(self) -> crate::Result<M::DbConnection> {
         let imp = self.build_impl()?;
         Ok(<M::DbConnection as DbConnection>::new(imp))
     }
 
+    #[cfg(feature = "web")]
+    pub async fn build(self) -> crate::Result<M::DbConnection> {
+        let imp = self.build_impl().await?;
+        Ok(<M::DbConnection as DbConnection>::new(imp))
+    }
+
     /// Open a WebSocket connection, build an empty client cache, &c,
     /// to construct a [`DbContextImpl`].
+    #[cfg(not(feature = "web"))]
     fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
         let (runtime, handle) = enter_or_create_runtime()?;
-        let db_callbacks = DbCallbacks::default();
-        let reducer_callbacks = ReducerCallbacks::default();
-        let procedure_callbacks = ProcedureCallbacks::default();
 
         let connection_id_override = get_connection_id_override();
         let ws_connection = tokio::task::block_in_place(|| {
@@ -946,40 +995,56 @@ but you must call one of them, or else the connection will never progress.
 
         let (_websocket_loop_handle, raw_msg_recv, raw_msg_send) = ws_connection.spawn_message_loop(&handle);
         let (_parse_loop_handle, parsed_recv_chan) = spawn_parse_loop::<M>(raw_msg_recv, &handle);
-
-        let inner = Arc::new(StdMutex::new(DbContextImplInner {
-            runtime,
-
-            db_callbacks,
-            reducer_callbacks,
-            subscriptions: SubscriptionManager::default(),
-
-            on_connect: self.on_connect,
-            on_connect_error: self.on_connect_error,
-            on_disconnect: self.on_disconnect,
-            call_reducer_flags: <_>::default(),
-            procedure_callbacks,
-        }));
-
-        let mut cache = ClientCache::default();
-        M::register_tables(&mut cache);
-        let cache = Arc::new(StdMutex::new(cache));
-        let send_chan = Arc::new(StdMutex::new(Some(raw_msg_send)));
+        let parsed_recv_chan = Arc::new(TokioMutex::new(parsed_recv_chan));
 
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
-        let ctx_imp = DbContextImpl {
-            runtime: handle,
-            inner,
-            send_chan,
-            cache,
-            recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
-            pending_mutations_send,
-            pending_mutations_recv: Arc::new(TokioMutex::new(pending_mutations_recv)),
-            identity: Arc::new(StdMutex::new(None)),
-            connection_id: Arc::new(StdMutex::new(connection_id_override)),
-        };
+        let pending_mutations_recv = Arc::new(TokioMutex::new(pending_mutations_recv));
 
-        Ok(ctx_imp)
+        let inner_ctx = build_db_ctx_inner(runtime, self.on_connect, self.on_connect_error, self.on_disconnect);
+        Ok(build_db_ctx(
+            handle,
+            inner_ctx,
+            raw_msg_send,
+            parsed_recv_chan,
+            pending_mutations_send,
+            pending_mutations_recv,
+            connection_id_override,
+        ))
+    }
+
+    /// Open a WebSocket connection, build an empty client cache, &c,
+    /// to construct a [`DbContextImpl`].
+    #[cfg(feature = "web")]
+    async fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+        let connection_id_override = get_connection_id_override();
+        let ws_connection = WsConnection::connect(
+            self.uri.clone().unwrap(),
+            self.module_name.as_ref().unwrap(),
+            self.token.as_deref(),
+            connection_id_override,
+            self.params,
+        )
+        .await
+        .map_err(|source| crate::Error::FailedToConnect {
+            source: InternalError::new("Failed to initiate WebSocket connection").with_cause(source),
+        })?;
+
+        let (raw_msg_recv, raw_msg_send) = ws_connection.spawn_message_loop();
+        let parsed_recv_chan = spawn_parse_loop::<M>(raw_msg_recv);
+        let parsed_recv_chan = Arc::new(StdMutex::new(parsed_recv_chan));
+
+        let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
+        let pending_mutations_recv = Arc::new(StdMutex::new(pending_mutations_recv));
+
+        let inner_ctx = build_db_ctx_inner(self.on_connect, self.on_connect_error, self.on_disconnect);
+        Ok(build_db_ctx(
+            inner_ctx,
+            raw_msg_send,
+            parsed_recv_chan,
+            pending_mutations_send,
+            pending_mutations_recv,
+            connection_id_override,
+        ))
     }
 
     /// Set the URI of the SpacetimeDB host which is running the remote module.
@@ -1111,9 +1176,64 @@ Instead of registering multiple `on_disconnect` callbacks, register a single cal
     }
 }
 
+/// Create a [`DbContextImplInner`] wrapped in `Arc<Mutex<...>>`.
+fn build_db_ctx_inner<M: SpacetimeModule>(
+    #[cfg(not(feature = "web"))] runtime: Option<Runtime>,
+
+    on_connect_cb: Option<OnConnectCallback<M>>,
+    on_connect_error_cb: Option<OnConnectErrorCallback<M>>,
+    on_disconnect_cb: Option<OnDisconnectCallback<M>>,
+) -> Arc<StdMutex<DbContextImplInner<M>>> {
+    Arc::new(StdMutex::new(DbContextImplInner {
+        #[cfg(not(feature = "web"))]
+        runtime,
+
+        db_callbacks: DbCallbacks::default(),
+        reducer_callbacks: ReducerCallbacks::default(),
+        subscriptions: SubscriptionManager::default(),
+
+        on_connect: on_connect_cb,
+        on_connect_error: on_connect_error_cb,
+        on_disconnect: on_disconnect_cb,
+        call_reducer_flags: <_>::default(),
+
+        procedure_callbacks: ProcedureCallbacks::default(),
+    }))
+}
+
+/// Assemble and return a [`DbContextImpl`] from the provided [`DbContextImplInner`], and channels.
+fn build_db_ctx<M: SpacetimeModule>(
+    #[cfg(not(feature = "web"))] runtime_handle: runtime::Handle,
+
+    inner_ctx: Arc<StdMutex<DbContextImplInner<M>>>,
+    raw_msg_send: mpsc::UnboundedSender<ws::ClientMessage<Bytes>>,
+    parsed_msg_recv: SharedAsyncCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
+    pending_mutations_send: mpsc::UnboundedSender<PendingMutation<M>>,
+    pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
+    connection_id: Option<ConnectionId>,
+) -> DbContextImpl<M> {
+    let mut cache = ClientCache::default();
+    M::register_tables(&mut cache);
+    let cache = Arc::new(StdMutex::new(cache));
+
+    DbContextImpl {
+        #[cfg(not(feature = "web"))]
+        runtime: runtime_handle,
+        inner: inner_ctx,
+        send_chan: Arc::new(StdMutex::new(Some(raw_msg_send))),
+        cache,
+        recv: parsed_msg_recv,
+        pending_mutations_send,
+        pending_mutations_recv,
+        identity: Arc::new(StdMutex::new(None)),
+        connection_id: Arc::new(StdMutex::new(connection_id)),
+    }
+}
+
 // When called from within an async context, return a handle to it (and no
 // `Runtime`), otherwise create a fresh `Runtime` and return it along with a
 // handle to it.
+#[cfg(not(feature = "web"))]
 fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)> {
     match runtime::Handle::try_current() {
         Err(e) if e.is_missing_context() => {
@@ -1134,6 +1254,31 @@ fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)
                 .into(),
         ),
     }
+}
+
+/// Synchronous lock helper: native = blocking_lock, web = lock().unwrap()
+#[cfg(not(feature = "web"))]
+fn get_lock_sync<T>(mutex: &TokioMutex<T>) -> tokio::sync::MutexGuard<'_, T> {
+    mutex.blocking_lock()
+}
+
+/// Synchronous lock helper: native = blocking_lock, web = lock().unwrap()
+#[cfg(feature = "web")]
+fn get_lock_sync<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap()
+}
+
+// Async‐lock helper: native = .lock().await, web = lock().unwrap() inside async fn
+#[cfg(not(feature = "web"))]
+async fn get_lock_async<T>(mutex: &TokioMutex<T>) -> tokio::sync::MutexGuard<'_, T> {
+    mutex.lock().await
+}
+
+// Async‐lock helper: native = .lock().await, web = lock().unwrap() inside async fn
+#[cfg(feature = "web")]
+pub async fn get_lock_async<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
+    // still async, but does the sync lock immediately
+    mutex.lock().unwrap()
 }
 
 enum ParsedMessage<M: SpacetimeModule> {
@@ -1162,6 +1307,7 @@ enum ParsedMessage<M: SpacetimeModule> {
     },
 }
 
+#[cfg(not(feature = "web"))]
 fn spawn_parse_loop<M: SpacetimeModule>(
     raw_message_recv: mpsc::UnboundedReceiver<ws::ServerMessage<BsatnFormat>>,
     handle: &runtime::Handle,
@@ -1169,6 +1315,15 @@ fn spawn_parse_loop<M: SpacetimeModule>(
     let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
     let handle = handle.spawn(parse_loop(raw_message_recv, parsed_message_send));
     (handle, parsed_message_recv)
+}
+
+#[cfg(feature = "web")]
+fn spawn_parse_loop<M: SpacetimeModule>(
+    raw_message_recv: mpsc::UnboundedReceiver<ws::ServerMessage<BsatnFormat>>,
+) -> mpsc::UnboundedReceiver<ParsedMessage<M>> {
+    let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
+    wasm_bindgen_futures::spawn_local(parse_loop(raw_message_recv, parsed_message_send));
+    parsed_message_recv
 }
 
 /// A loop which reads raw WS messages from `recv`, parses them into domain types,
