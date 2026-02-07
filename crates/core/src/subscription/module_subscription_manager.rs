@@ -11,6 +11,7 @@ use crate::subscription::delta::eval_delta;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
 use core::mem;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -1772,6 +1773,24 @@ impl SendWorker {
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) {
+        // Send subscription errors first so clients can discard state before updates arrive.
+        for ((client_id, query_set_id), error) in &v2_errs {
+            if self.is_client_dropped_or_cancelled(client_id) {
+                continue;
+            }
+            if let Some(client) = self.clients.get(client_id) {
+                send_to_client(
+                    &client.outbound_ref,
+                    Some(tx_offset),
+                    OutboundMessage::V2(ws_v2::ServerMessage::SubscriptionError(ws_v2::SubscriptionError {
+                        request_id: None,
+                        query_set_id: *query_set_id,
+                        error: error.clone(),
+                    })),
+                );
+            }
+        }
+
         // Track these just in case we also get some updates for these subscriptions.
         let subscriptions_with_errors: HashSet<&SubscriptionIdV2> =
             v2_errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
@@ -1828,6 +1847,16 @@ impl SendWorker {
             match caller {
                 Some(ref caller) if (caller.id.identity, caller.id.connection_id) == client => {
                     // Don't send the update to the caller, since they already have the most up-to-date information.
+                    let rok = ws_v2::ReducerOk {
+                        ret_value: event.reducer_return_value.clone().unwrap_or(Bytes::new()),
+                        transaction_update,
+                    };
+                    let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                        request_id: event.request_id.unwrap(), // TODO: Handle error here.
+                        timestamp: event.timestamp,
+                        result: ws_v2::ReducerOutcome::Ok(rok),
+                    });
+                    send_to_client(caller, Some(tx_offset), OutboundMessage::V2(server_message));
                     continue;
                 }
                 _ => {
@@ -1839,33 +1868,7 @@ impl SendWorker {
                     );
                 }
             }
-
-            /*
-            let client = self.clients[client].outbound_ref.clone();
-            let message = ws_v2::ServerMessage::TransactionUpdate {
-                event: Some(event.clone()),
-                query_set_id: None, // TODO: we should probably include this in the message
-                database_update: ws_v2::DatabaseUpdate { table_updates: updates.clone() },
-            };
-            send_to_client(&client, Some(tx_offset), OutboundMessage::V2(message));
-            */
         }
-        // grouped_updates.iter().group_by(|((client_id, _, _), _)| *client_id).into_iter().for_each(|(client_id, group)| {
-
-        // if let Some(caller) = caller {
-        //         let caller_id = (caller.id.identity, caller.id.connection_id);
-        //         let iter = grouped_updates.range((caller_id, ..)..).take_while(|((cid, _, _), _)| *cid == caller_id);
-        //         for ((_, query_set_id, table_name), updates) in iter {
-        //             ws_v2::ServerMessage::ReducerResult
-        //             let message = ws_v2::ServerMessage::TransactionUpdate {
-        //                 event: Some(event.clone()),
-        //                 query_set_id: *query_set_id,
-        //                 database_update: ws_v2::DatabaseUpdate { table_updates: updates.clone() },
-        //             };
-        //             send_to_client(&caller, Some(tx_offset), OutboundMessage::V2(message));
-        //         }
-        // }
-        // grouped_updates.range()
     }
 
     fn send_one_computed_queries(
