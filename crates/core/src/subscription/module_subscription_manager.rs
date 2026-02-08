@@ -885,6 +885,65 @@ impl SubscriptionManager {
         Ok(queries_to_return)
     }
 
+    pub fn remove_subscription_v2(
+        &mut self,
+        client_id: ClientId,
+        query_set_id: ClientQuerySetId,
+    ) -> Result<Vec<Query>, DBError> {
+        let subscription_id = (client_id, query_set_id);
+        let Some(ci) = self
+            .clients
+            .get_mut(&client_id)
+            .filter(|ci| !ci.dropped.load(Ordering::Acquire))
+        else {
+            return Err(anyhow::anyhow!("Client not found: {client_id:?}").into());
+        };
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+
+        let Some(query_hashes) = ci.v2_subscriptions.remove(&subscription_id) else {
+            return Err(anyhow::anyhow!("Subscription not found: {subscription_id:?}").into());
+        };
+
+        let mut queries_to_return = Vec::new();
+        for hash in query_hashes {
+            let Some(query_state) = self.queries.get_mut(&hash) else {
+                return Err(anyhow::anyhow!("Query state not found for query hash: {hash:?}").into());
+            };
+            queries_to_return.push(query_state.query.clone());
+            query_state.v2_subscriptions.remove(&subscription_id);
+
+            let remaining_refs = {
+                let Some(count) = ci.subscription_ref_count.get_mut(&hash) else {
+                    return Err(anyhow::anyhow!("Query count not found for query hash: {hash:?}").into());
+                };
+                *count -= 1;
+                *count
+            };
+            if remaining_refs > 0 {
+                continue;
+            }
+
+            ci.subscription_ref_count.remove(&hash);
+            if !query_state.has_subscribers() {
+                SubscriptionManager::remove_query_from_tables(
+                    &mut self.tables,
+                    &mut self.join_edges,
+                    &mut self.indexes,
+                    &mut self.search_args,
+                    &query_state.query,
+                );
+                self.queries.remove(&hash);
+            }
+        }
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+
+        Ok(queries_to_return)
+    }
+
     /// Adds a single subscription for a client.
     pub fn add_subscription(&mut self, client: Client, query: Query, query_id: ClientQueryId) -> Result<(), DBError> {
         self.add_subscription_multi(client, vec![query], query_id).map(|_| ())
@@ -1247,7 +1306,7 @@ impl SubscriptionManager {
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
-    ) -> ExecutionMetrics {
+    ) -> (ExecutionMetrics, Vec<SubscriptionIdV2>) {
         //let span = tracing::info_span!("eval_incr").entered();
 
         let (updates, errs, mut metrics) = if self.queries.is_empty() {
@@ -1267,6 +1326,7 @@ impl SubscriptionManager {
         };
         metrics.merge(metrics_v2);
 
+        let failed_v2_subscriptions: HashSet<SubscriptionIdV2> = v2_errs.iter().map(|(id, _)| *id).collect();
         let queries = ComputedQueries {
             updates,
             v2_updates,
@@ -1286,7 +1346,7 @@ impl SubscriptionManager {
 
         //drop(span);
 
-        metrics
+        (metrics, failed_v2_subscriptions.into_iter().collect())
     }
 
     fn eval_updates_sequential_inner_v2(
@@ -3024,7 +3084,7 @@ mod tests {
             });
             let delta_tx = DeltaTx::from(&*tx);
             let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
-            subscriptions.eval_updates_sequential(
+            let _ = subscriptions.eval_updates_sequential(
                 (&delta_tx, offset_rx),
                 &bsatn_rlb_pool,
                 event,

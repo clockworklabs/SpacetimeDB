@@ -1340,12 +1340,25 @@ impl ModuleSubscriptions {
         );
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
-        let update_metrics = subscriptions.eval_updates_sequential(
+        let (update_metrics, failed_v2_subscriptions) = subscriptions.eval_updates_sequential(
             (&delta_read_tx, tx_offset),
             &self.bsatn_rlb_pool,
             event.clone(),
             caller,
         );
+        drop(subscriptions);
+        if !failed_v2_subscriptions.is_empty() {
+            let mut subscriptions = {
+                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+                self.subscriptions.write()
+            };
+            for (client_id, query_set_id) in failed_v2_subscriptions {
+                if let Err(err) = subscriptions.remove_subscription_v2(client_id, query_set_id) {
+                    tracing::warn!(?client_id, ?query_set_id, "failed to remove v2 subscription: {err}");
+                }
+            }
+        }
         read_tx.metrics.merge(update_metrics);
         Ok(Ok(CommitAndBroadcastEventSuccess {
             tx_offset: extra_tx_offset,
