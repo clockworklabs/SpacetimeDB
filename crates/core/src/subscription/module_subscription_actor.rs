@@ -624,6 +624,17 @@ impl ModuleSubscriptions {
             send_err_msg
         );
 
+        // V1 clients must not subscribe to event tables.
+        // Old codegen doesn't understand event tables and would accumulate rows in the client cache.
+        if query.returns_event_table() {
+            let _ = send_err_msg(
+                "Subscribing to event tables requires WebSocket v2. \
+                 Please upgrade your client SDK and regenerate your module bindings."
+                    .into(),
+            );
+            return Ok((None, false));
+        }
+
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
 
         let (tx, tx_offset, trapped) =
@@ -1287,6 +1298,18 @@ impl ModuleSubscriptions {
             send_err_msg,
             (None, false)
         );
+
+        // V1 clients must not subscribe to event tables.
+        // Old codegen doesn't understand event tables and would accumulate rows in the client cache.
+        if queries.iter().any(|q| q.returns_event_table()) {
+            let _ = send_err_msg(
+                "Subscribing to event tables requires WebSocket v2. \
+                 Please upgrade your client SDK and regenerate your module bindings."
+                    .into(),
+            );
+            return Ok((None, false));
+        }
+
         let (mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
 
         // We minimize locking so that other clients can add subscriptions concurrently.
@@ -1425,6 +1448,15 @@ impl ModuleSubscriptions {
             num_queries,
             subscription_metrics,
         )?;
+
+        // V1 clients must not subscribe to event tables.
+        // Old codegen doesn't understand event tables and would accumulate rows in the client cache.
+        if queries.iter().any(|q| q.returns_event_table()) {
+            return Err(DBError::Other(anyhow::anyhow!(
+                "Subscribing to event tables requires WebSocket v2. \
+                 Please upgrade your client SDK and regenerate your module bindings."
+            )));
+        }
 
         let (tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;

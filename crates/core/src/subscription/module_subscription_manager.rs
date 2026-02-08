@@ -126,6 +126,11 @@ impl Plan {
         args.into_iter()
     }
 
+    /// Does this subscription return rows from an event table?
+    pub fn returns_event_table(&self) -> bool {
+        self.plans.iter().any(|p| p.returns_event_table())
+    }
+
     /// Returns the plan fragments that comprise this subscription.
     /// Will only return one element unless there is a table with multiple RLS rules.
     pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
