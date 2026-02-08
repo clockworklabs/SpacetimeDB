@@ -2297,6 +2297,41 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_subscription_v2_returns_queries_and_keeps_shared_query() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0, &db));
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
+        subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(1))?;
+        subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(2))?;
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let removed = subscriptions.remove_subscription_v2(client_id, ws_v2::QuerySetId::new(1))?;
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].hash, hash);
+
+        let query_state = &subscriptions.queries[&hash];
+        assert!(!query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(1))));
+        assert!(query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(2))));
+        assert_eq!(subscriptions.clients[&client_id].subscription_ref_count[&hash], 1);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_unsubscribe_from_the_only_subscription() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
