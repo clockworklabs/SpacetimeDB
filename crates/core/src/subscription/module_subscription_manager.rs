@@ -2057,7 +2057,7 @@ fn send_to_client(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+    use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_lib::AlgebraicValue;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
@@ -2161,6 +2161,77 @@ mod tests {
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_v2_adds_table_mapping() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0, &db));
+
+        let query_set_id: ws_v2::QuerySetId = ws_v2::QuerySetId::new(1);
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
+        let added = subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], query_set_id)?;
+        assert_eq!(added.len(), 1);
+        assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let subscription_id = (client_id, query_set_id);
+        let ci = subscriptions.clients.get(&client_id).expect("client not found");
+        let query_hashes = ci
+            .v2_subscriptions
+            .get(&subscription_id)
+            .expect("subscription not found");
+        assert!(query_hashes.contains(&hash));
+        assert!(subscriptions.queries[&hash].v2_subscriptions.contains(&subscription_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_v2_allows_same_query_multiple_query_sets() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0, &db));
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
+        let added =
+            subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(1))?;
+        assert_eq!(added.len(), 1);
+        let added =
+            subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(2))?;
+        assert_eq!(added.len(), 1);
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let query_state = &subscriptions.queries[&hash];
+        assert!(query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(1))));
+        assert!(query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(2))));
+
+        let ci = subscriptions.clients.get(&client_id).expect("client not found");
+        assert_eq!(ci.subscription_ref_count[&hash], 2);
 
         Ok(())
     }
