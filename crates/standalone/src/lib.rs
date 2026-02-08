@@ -477,13 +477,6 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
         database: Identity,
         action: spacetimedb_client_api::Action,
     ) -> Result<(), spacetimedb_client_api::Unauthorized> {
-        // Creating a database is always allowed.
-        if let spacetimedb_client_api::Action::CreateDatabase { .. } = action {
-            return Ok(());
-        }
-
-        // Otherwise, the database must already exist,
-        // and the `subject` equal to `database.owner_identity`.
         let database = self
             .get_database_by_identity(&database)
             .await?
