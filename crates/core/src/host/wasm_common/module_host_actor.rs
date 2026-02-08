@@ -1295,7 +1295,6 @@ impl InstanceCommon {
     ) -> (ViewCallResult, bool) {
         let view_calls = tx
             .view_for_update()
-            .cloned()
             .map(|info| {
                 let view_def = module_def
                     .get_view_by_id(info.fn_ptr, info.sender.is_none())

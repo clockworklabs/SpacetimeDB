@@ -2600,9 +2600,10 @@ mod tests {
     }
 
     fn expect_index_err(res: Result<impl fmt::Debug>) -> IndexError {
-        res.expect_err("`res` should be an error")
-            .into_index()
-            .expect("the error should be an `IndexError`")
+        match res.expect_err("`res` should be an error") {
+            DatastoreError::Index(err) => err,
+            _ => panic!("the error should be an `IndexError`"),
+        }
     }
 
     fn test_under_tx_and_commit(
@@ -2630,14 +2631,12 @@ mod tests {
             let _ = row.pop().expect("there should be an element to remove");
             let row = row.into();
             // Now attempt the update.
-            let err = update(&datastore, tx, table_id, index_id, &row)
-                .expect_err("the update should fail")
-                .into_table()
-                .expect("the error should be a `TableError`")
-                .into_bflatn()
-                .expect("the error should be a bflatn error");
+            let err = update(&datastore, tx, table_id, index_id, &row).expect_err("the update should fail");
 
-            assert_matches!(err, spacetimedb_table::bflatn_to::Error::Decode(..));
+            assert_matches!(
+                err,
+                DatastoreError::Table(TableError::Bflatn(spacetimedb_table::bflatn_to::Error::Decode(..)))
+            );
             Ok(())
         })
     }
