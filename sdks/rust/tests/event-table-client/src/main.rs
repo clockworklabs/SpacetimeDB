@@ -53,6 +53,7 @@ fn main() {
         "event-table" => exec_event_table(),
         "multiple-events" => exec_multiple_events(),
         "events-dont-persist" => exec_events_dont_persist(),
+        "v1-rejects-event-table" => exec_v1_rejects_event_table(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -209,6 +210,37 @@ fn exec_events_dont_persist() {
                 ctx.reducers.emit_test_event("hello".to_string(), 42).unwrap();
                 ctx.reducers.noop().unwrap();
             });
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+/// Test that v1 WebSocket clients are rejected when subscribing to event tables.
+/// The server should return a subscription error directing the developer to upgrade.
+fn exec_v1_rejects_event_table() {
+    let test_counter = TestCounter::new();
+
+    connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            let error_result = test_counter.add_test("v1-rejects-event-table");
+
+            ctx.subscription_builder()
+                .on_applied(move |_ctx: &SubscriptionEventContext| {
+                    panic!("Subscription to event table should not succeed over v1");
+                })
+                .on_error(move |_ctx, error| {
+                    let msg = format!("{error:?}");
+                    if msg.contains("v2") || msg.contains("upgrade") || msg.contains("Upgrade") {
+                        error_result(Ok(()));
+                    } else {
+                        error_result(Err(anyhow::anyhow!(
+                            "Expected error about v2/upgrade, got: {msg}"
+                        )));
+                    }
+                })
+                .subscribe(["SELECT * FROM test_event;"]);
         }
     });
 
