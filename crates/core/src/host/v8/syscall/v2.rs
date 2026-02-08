@@ -335,9 +335,10 @@ pub(super) fn call_call_reducer<'scope>(
 
     // Deserialize the user result.
     let user_res = if ret.is_undefined() {
-        Ok(())
+        Ok(None)
     } else {
-        deserialize_js(scope, ret)?
+        let res: Result<(), Box<str>> = deserialize_js(scope, ret)?;
+        res.map(|_| None)
     };
 
     Ok(user_res)

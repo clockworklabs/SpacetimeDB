@@ -437,8 +437,9 @@ pub(super) fn call_call_reducer(
     // Call the function.
     let ret = call_free_fun(scope, hooks.call_reducer, args)?;
 
-    // Deserialize the user result.
-    let user_res = deserialize_js(scope, ret)?;
+    // Deserialize the user result, discarding any OK payload for now.
+    let res: Result<(), Box<str>> = deserialize_js(scope, ret)?;
+    let user_res = res.map(|_| None);
 
     Ok(user_res)
 }
