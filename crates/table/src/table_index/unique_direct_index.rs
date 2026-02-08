@@ -163,17 +163,31 @@ impl InnerIndex {
     }
 }
 
-impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
+// SAFETY: The implementations of all constructing
+// and mutating methods uphold the invariant,
+// assuming the caller requirements of the `unsafe` methods are upheld,
+// that every `key -> ptr` pair only ever occurs once.
+// In fact, given that this is a unique index,
+// this is statically guaranteed as one `key` only has one slot for one `ptr`.
+unsafe impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
     type Key = K;
+
+    // =========================================================================
+    // Construction
+    // =========================================================================
 
     fn clone_structure(&self) -> Self {
         Self::default()
     }
 
+    // =========================================================================
+    // Mutation
+    // =========================================================================
+
     fn insert_maybe_despecialize(
         &mut self,
         key: Self::Key,
-        val: RowPointer,
+        ptr: RowPointer,
     ) -> Result<Result<(), RowPointer>, Despecialize> {
         let key = key.to_usize();
         if key > const { u32::MAX as usize } {
@@ -203,12 +217,54 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
         let in_slot = *slot;
         Ok(if in_slot == NONE_PTR {
             // We have `NONE_PTR`, so not set yet.
-            *slot = injest(val);
+            *slot = injest(ptr);
             self.len += 1;
             Ok(())
         } else {
             Err(expose(in_slot))
         })
+    }
+
+    unsafe fn merge_from(&mut self, src: Self, translate: impl Fn(RowPointer) -> RowPointer) {
+        self.len += src.len;
+
+        // Fetch the `self`'s outer index and ensure it can house at least `src.outer.len()`.
+        let dst_outer = &mut self.outer;
+        dst_outer.resize(dst_outer.len().max(src.outer.len()), None);
+
+        for (key_outer, mut src_inner) in src
+            .outer
+            .into_iter()
+            .enumerate()
+            // Ignore unused outer slots.
+            .filter_map(|(pos, o)| o.map(|o| (pos, o)))
+        {
+            // Fetch `self`'s inner index.
+            // SAFETY: ensured in `.resize(_)` that `key_outer < dst_outer.len()`, making indexing to `key_outer` valid.
+            let dst_inner = unsafe { dst_outer.get_unchecked_mut(key_outer) };
+
+            match dst_inner {
+                // `self` doesn't have this inner index, so move it over but translate first.
+                None => {
+                    // Translate all used slots in `src_inner`.
+                    src_inner
+                        .inner
+                        .iter_mut()
+                        .filter(|s| **s != NONE_PTR)
+                        .for_each(|slot| *slot = injest(translate(*slot)));
+                    *dst_inner = Some(src_inner);
+                }
+                // `self` does have the inner index, so write each ptr in `src_inner` to `dst_inner`.
+                Some(dst_inner) => {
+                    dst_inner
+                        .inner
+                        .iter_mut()
+                        .zip(src_inner.inner.iter().copied())
+                        .filter(|(_, src)| *src != NONE_PTR)
+                        .for_each(|(dst, src)| *dst = injest(translate(src)));
+                }
+            }
+        }
     }
 
     fn delete(&mut self, key: &Self::Key, _: RowPointer) -> bool {
@@ -224,6 +280,16 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
         }
         false
     }
+
+    fn clear(&mut self) {
+        // This will not deallocate the outer index.
+        self.outer.clear();
+        self.len = 0;
+    }
+
+    // =========================================================================
+    // Querying
+    // =========================================================================
 
     type PointIter<'a>
         = UniqueDirectIndexPointIter
@@ -244,13 +310,6 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
 
     fn num_keys(&self) -> usize {
         self.len
-    }
-
-    /// Deletes all entries from the index, leaving it empty.
-    /// This will not deallocate the outer index.
-    fn clear(&mut self) {
-        self.outer.clear();
-        self.len = 0;
     }
 
     /// Returns whether `other` can be merged into `self`
@@ -395,9 +454,9 @@ impl<K: KeySize + Ord + ToFromUsize> UniqueDirectIndex<K> {
 
                 let key = key_outer * KEYS_PER_INNER + key_inner;
                 let key = K::from_usize(key);
-                new_index
-                    .insert(key, expose(slot))
-                    .expect("insertions from one unique index to another cannot fail")
+                let ptr = expose(slot);
+                // SAFETY:
+                unsafe { new_index.insert(key, ptr) }.expect("insertions from one unique index to another cannot fail")
             }
         }
 
@@ -436,7 +495,7 @@ pub(super) mod test {
 
         let mut index = UniqueDirectIndex::default();
         for (key, ptr) in keys.iter().zip(&ptrs) {
-            index.insert(*key, *ptr).unwrap();
+            index.insert_for_test(*key, *ptr).unwrap();
         }
         assert_eq!(index.num_rows(), 4);
 
@@ -451,11 +510,11 @@ pub(super) mod test {
 
         let mut index = UniqueDirectIndex::default();
         for (key, ptr) in keys.iter().zip(&ptrs) {
-            index.insert(*key, *ptr).unwrap();
+            index.insert_for_test(*key, *ptr).unwrap();
         }
 
         for (key, ptr) in keys.iter().zip(&ptrs) {
-            assert_eq!(index.insert(*key, *ptr).unwrap_err(), *ptr)
+            assert_eq!(index.insert_for_test(*key, *ptr).unwrap_err(), *ptr)
         }
     }
 
@@ -466,7 +525,7 @@ pub(super) mod test {
 
         let mut index = UniqueDirectIndex::default();
         for (key, ptr) in keys.iter().zip(&ptrs) {
-            index.insert(*key, *ptr).unwrap();
+            index.insert_for_test(*key, *ptr).unwrap();
         }
         assert_eq!(index.num_rows(), 4);
 
@@ -476,7 +535,17 @@ pub(super) mod test {
         assert!(!index.delete(&key, ptr));
         assert_eq!(index.num_rows(), 3);
 
-        index.insert(key, ptr).unwrap();
+        index.insert_for_test(key, ptr).unwrap();
         assert_eq!(index.num_rows(), 4);
+    }
+
+    #[test]
+    fn too_large_key() {
+        let mut index = UniqueDirectIndex::default();
+        let whatever = RowPointer(0);
+        assert_eq!(
+            index.insert_maybe_despecialize(u32::MAX as u64 + 1, whatever),
+            Err(Despecialize)
+        );
     }
 }

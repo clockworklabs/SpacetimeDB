@@ -11,6 +11,9 @@ pub trait KeyBytesStorage: Default + MemoryUsage {
     /// Add `key.key_size_in_bytes()` to the statistics.
     fn add_to_key_bytes<I: Index>(&mut self, key: &I::Key);
 
+    /// Merges `src` into `self`.
+    fn merge(&mut self, src: Self);
+
     /// Subtract `key.key_size_in_bytes()` from the statistics.
     fn sub_from_key_bytes<I: Index>(&mut self, key: &I::Key);
 
@@ -23,6 +26,7 @@ pub trait KeyBytesStorage: Default + MemoryUsage {
 
 impl KeyBytesStorage for () {
     fn add_to_key_bytes<I: Index>(&mut self, _: &I::Key) {}
+    fn merge(&mut self, _: Self) {}
     fn sub_from_key_bytes<I: Index>(&mut self, _: &I::Key) {}
     fn reset_to_zero(&mut self) {}
     fn get<I: Index>(&self, index: &I) -> u64 {
@@ -33,6 +37,9 @@ impl KeyBytesStorage for () {
 impl KeyBytesStorage for u64 {
     fn add_to_key_bytes<I: Index>(&mut self, key: &I::Key) {
         *self += key.key_size_in_bytes() as u64;
+    }
+    fn merge(&mut self, src: Self) {
+        *self += src;
     }
     fn sub_from_key_bytes<I: Index>(&mut self, key: &I::Key) {
         *self -= key.key_size_in_bytes() as u64;

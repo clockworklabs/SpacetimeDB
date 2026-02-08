@@ -4,6 +4,7 @@ use core::{ops::RangeBounds, option::IntoIter};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Entry, Range};
 
+// TODO(centril): rename this to `UniqueBTreeIndex`.
 /// A "unique map" that relates a `K` to a `RowPointer`.
 ///
 /// (This is just a `BTreeMap<K, RowPointer>`) with a slightly modified interface.
@@ -31,22 +32,49 @@ impl<K: KeySize + MemoryUsage> MemoryUsage for UniqueMap<K> {
     }
 }
 
-impl<K: Ord + KeySize> Index for UniqueMap<K> {
+// SAFETY: The implementations of all constructing
+// and mutating methods uphold the invariant,
+// assuming the caller requirements of the `unsafe` methods are upheld,
+// that every `key -> ptr` pair only ever occurs once.
+// In fact, given that this is a unique index,
+// this is statically guaranteed as one `key` only has one slot for one `ptr`.
+unsafe impl<K: Ord + KeySize> Index for UniqueMap<K> {
     type Key = K;
+
+    // =========================================================================
+    // Construction
+    // =========================================================================
 
     fn clone_structure(&self) -> Self {
         Self::default()
     }
 
-    fn insert(&mut self, key: K, val: RowPointer) -> Result<(), RowPointer> {
+    // =========================================================================
+    // Mutation
+    // =========================================================================
+
+    unsafe fn insert(&mut self, key: K, ptr: RowPointer) -> Result<(), RowPointer> {
         match self.map.entry(key) {
+            // `key` not found in index, let's add it.
             Entry::Vacant(e) => {
                 self.num_key_bytes.add_to_key_bytes::<Self>(e.key());
-                e.insert(val);
+                e.insert(ptr);
                 Ok(())
             }
+            // Unique constraint violation!
             Entry::Occupied(e) => Err(*e.into_mut()),
         }
+    }
+
+    unsafe fn merge_from(&mut self, mut src: Self, translate: impl Fn(RowPointer) -> RowPointer) {
+        // Merge `num_key_bytes`.
+        self.num_key_bytes.merge(src.num_key_bytes);
+
+        // Translate all row pointers in `src` to fit `self`.
+        src.map.values_mut().for_each(|ptr| *ptr = translate(*ptr));
+
+        // Move over the `key -> ptr` pairs.
+        self.map.append(&mut src.map);
     }
 
     fn delete(&mut self, key: &K, _: RowPointer) -> bool {
@@ -56,6 +84,16 @@ impl<K: Ord + KeySize> Index for UniqueMap<K> {
         }
         ret
     }
+
+    fn clear(&mut self) {
+        // Unfortunately, this will drop the existing allocation.
+        self.map.clear();
+        self.num_key_bytes.reset_to_zero();
+    }
+
+    // =========================================================================
+    // Querying
+    // =========================================================================
 
     fn num_keys(&self) -> usize {
         self.map.len()
@@ -73,14 +111,6 @@ impl<K: Ord + KeySize> Index for UniqueMap<K> {
     fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
         let iter = self.map.get(key).into_iter();
         UniqueMapPointIter { iter }
-    }
-
-    /// Deletes all entries from the map, leaving it empty.
-    ///
-    /// Unfortunately, this will drop the existing allocation.
-    fn clear(&mut self) {
-        self.map.clear();
-        self.num_key_bytes.reset_to_zero();
     }
 
     fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {

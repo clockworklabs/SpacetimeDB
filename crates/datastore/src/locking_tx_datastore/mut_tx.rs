@@ -1228,8 +1228,12 @@ impl MutTxId {
         // due to the existing rows having the same value for some column(s).
         let build_from_rows = |index: &mut TableIndex, table: &Table, bs: &dyn BlobStore| -> Result<()> {
             let rows = table.scan_rows(bs);
-            // SAFETY: (1) `tx_index` / `commit_index` was derived from `table` / `commit_table`
+            // SAFETY:
+            //
+            // (1) `tx_index` / `commit_index` was derived from `table` / `commit_table`
             // which in turn was derived from `commit_table`.
+            //
+            // (2) Both `tx_index` and `commit_index` are empty before this call.
             let violation = unsafe { index.build_from_rows(rows) };
             violation.map_err(|v| map_violation(v, index, table, bs))
         };
@@ -2720,8 +2724,13 @@ pub(super) fn insert<'a, const GENERATE: bool>(
     let ok = |row_ref| Ok((gen_cols, row_ref, insert_flags));
 
     // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
-    // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
+    // SAFETY:
+    //
+    // - `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
     // in particular, the `write_gen_val_to_col` call does not remove the row.
+    //
+    // - `tx_row_ptr` was freshly made
+    // so we couldn't have inserted it into any of the indices yet.
     let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
 
     match res {
@@ -2946,9 +2955,14 @@ impl MutTxId {
                 // but it cannot, as the committed state already has `X` for `C`.
                 // So we don't need to check the tx state for a duplicate row.
                 //
-                // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
+                // SAFETY:
+                //
+                // - `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
+                //
+                // - `tx_row_ptr` was freshly made
+                // so we couldn't have inserted it into any of the indices yet.
                 let (_, tx_row_ptr) =
                     unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
 
@@ -2965,9 +2979,14 @@ impl MutTxId {
                 // This ensures that the old row is removed from the indices
                 // before attempting to insert the new row into the indices.
                 //
-                // SAFETY: `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
+                // SAFETY:
+                //
+                // - `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
                 // as we've deleted neither.
                 // In particular, the `write_gen_val_to_col` call does not remove the row.
+                //
+                // - `tx_row_ptr` was freshly made
+                // so we couldn't have inserted it into any of the indices yet.
                 let tx_row_ptr = unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
 
                 if let Some(old_commit_del_ptr) = old_commit_del_ptr {

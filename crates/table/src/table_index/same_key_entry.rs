@@ -1,8 +1,11 @@
 use crate::{indexes::RowPointer, static_assert_size};
-use core::slice;
+use core::{mem, slice};
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{hash_set, HashCollectionExt, HashSet};
 use spacetimedb_memory_usage::MemoryUsage;
+
+type Small = SmallVec<[RowPointer; 2]>;
+type Large = HashSet<RowPointer>;
 
 /// A supporting type for multimap implementations
 /// that handles all the values for the same key,
@@ -28,7 +31,10 @@ pub(super) enum SameKeyEntry {
     /// Up to two values are represented inline here.
     /// It's not profitable to represent this as a separate variant
     /// as that would increase `size_of::<SameKeyEntry>()` by 8 bytes.
-    Small(SmallVec<[RowPointer; 2]>),
+    ///
+    /// Invariant: The callers of [`SameKeyEntry::push`] and [`SameKeyEntry::merge_from`]
+    /// ensure that this will never contain duplicates.
+    Small(Small),
 
     /// A large number of values.
     ///
@@ -38,7 +44,7 @@ pub(super) enum SameKeyEntry {
     /// Note that using a `HashSet`, with `S = RandomState`,
     /// entails that the iteration order is not deterministic.
     /// This is observed when doing queries against the index.
-    Large(HashSet<RowPointer>),
+    Large(Large),
 }
 
 static_assert_size!(SameKeyEntry, 32);
@@ -63,28 +69,104 @@ impl SameKeyEntry {
     /// beyond which the strategy is changed from small to large storage.
     const LARGE_AFTER_LEN: usize = 4096 / size_of::<RowPointer>();
 
+    /// Extends `set` with `elems`.
+    ///
+    // SAFETY: `elems` must not be contained in `set`.
+    #[inline]
+    unsafe fn extend_unique(set: &mut Large, elems: impl IntoIterator<Item = RowPointer>) {
+        for val in elems.into_iter() {
+            // SAFETY: caller promised that `small` contains no duplicates.
+            unsafe { set.insert_unique_unchecked(val) };
+        }
+    }
+
     /// Pushes `val` as an entry for the key.
     ///
     /// This assumes that `val` was previously not recorded.
     /// The structure does not check whether it was previously resident.
     /// As a consequence, the time complexity is `O(k)` amortized.
-    pub(super) fn push(&mut self, val: RowPointer) {
+    ///
+    /// # Safety
+    ///
+    /// - `val` does not occur in `self`.
+    pub(super) unsafe fn push(&mut self, val: RowPointer) {
         match self {
-            Self::Small(list) if list.len() <= Self::LARGE_AFTER_LEN => {
-                list.push(val);
+            Self::Small(set) if set.len() <= Self::LARGE_AFTER_LEN => {
+                // SAFETY: The caller promised that `val` is not in `set`,
+                // so this preserves our invariant that `set` is a set.
+                set.push(val);
             }
             Self::Small(list) => {
-                // Reconstruct into a set.
+                // Reconstruct into a hash set.
                 let mut set = HashSet::with_capacity(list.len() + 1);
-                set.extend(list.drain(..));
+                // SAFETY: Before `.push`, `list` was a set and contained no duplicates.
+                unsafe { Self::extend_unique(&mut set, mem::take(list)) };
 
                 // Add `val`.
-                set.insert(val);
+                // SAFETY: Caller promised that `set` did not include `val`.
+                unsafe { set.insert_unique_unchecked(val) };
 
                 *self = Self::Large(set);
             }
             Self::Large(set) => {
-                set.insert(val);
+                // SAFETY: Caller promised that `set` did not include `val`.
+                unsafe { set.insert_unique_unchecked(val) };
+            }
+        }
+    }
+
+    /// Merges all values in `src` into `self`,
+    /// translating all the former via `by` first.
+    ///
+    /// # Safety
+    ///
+    /// - The intersection of `dst` and `by(src)` is empty.
+    ///   That is, `self ∩ by(src) = ∅` holds.
+    pub(super) unsafe fn merge_from(&mut self, src: Self, mut by: impl FnMut(RowPointer) -> RowPointer) {
+        match src {
+            Self::Small(mut src) => {
+                // Translate the source.
+                for ptr in &mut src {
+                    *ptr = by(*ptr);
+                }
+
+                // Insert into `self`.
+                match self {
+                    Self::Small(dst) => {
+                        // SAFETY: The intersection is empty, so `dst ++ src` is also a set.
+                        dst.append(&mut src);
+                    }
+                    Self::Large(dst) => {
+                        for val in src.into_iter() {
+                            // SAFETY: The intersection is empty, so the union is also a set.
+                            unsafe { dst.insert_unique_unchecked(val) };
+                        }
+                    }
+                }
+            }
+            Self::Large(src) => {
+                // Translate the source.
+                let src = src.into_iter().map(by);
+
+                match self {
+                    Self::Small(dst) => {
+                        // Reconstruct into a hash set with combined size.
+                        let mut set = HashSet::with_capacity(dst.len() + src.len());
+                        let dst = mem::take(dst).into_iter();
+                        // SAFETY: `dst` is a set by `Self`'s invariant and `set` is empty.
+                        unsafe { Self::extend_unique(&mut set, dst) };
+
+                        // Merge `src` into `set`.
+                        // SAFETY: The intersection is empty, so the union is also a set.
+                        unsafe { Self::extend_unique(&mut set, src) };
+                    }
+                    Self::Large(dst) => {
+                        // Merge `src` into `set`.
+                        dst.reserve(src.len());
+                        // SAFETY: The intersection is empty, so the union is also a set.
+                        unsafe { Self::extend_unique(dst, src) };
+                    }
+                }
             }
         }
     }
