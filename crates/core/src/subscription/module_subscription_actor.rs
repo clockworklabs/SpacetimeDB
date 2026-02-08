@@ -949,11 +949,11 @@ impl ModuleSubscriptions {
 
     fn add_v2_subscription_inner<I: WasmInstance>(
         &self,
-        instance: Option<&mut RefInstance<I>>,
+        _instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: ws_v2::Subscribe,
-        timer: Instant,
+        _timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
         // Send an error message to the client
@@ -973,7 +973,7 @@ impl ModuleSubscriptions {
         let num_queries = request.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
-        let (queries, auth, mut_tx, compile_timer) = return_on_err!(
+        let (queries, _auth, mut_tx, _compile_timer) = return_on_err!(
             self.compile_queries(
                 sender.id.identity,
                 auth,
@@ -984,13 +984,13 @@ impl ModuleSubscriptions {
             send_err_msg,
             (None, false)
         );
-        let (mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
+        let (_mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
         // an `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still has a
         // write lock on the db.
-        let queries = {
+        let _queries = {
             let mut subscriptions = {
                 // How contended is the lock?
                 let _wait_guard = subscription_metrics.lock_waiters.inc_scope();

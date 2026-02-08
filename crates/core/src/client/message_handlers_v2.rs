@@ -3,7 +3,7 @@ use crate::client::MessageExecutionError;
 use super::{ClientConnection, DataMessage, MessageHandleError};
 use core::panic;
 use serde::de::Error as _;
-use spacetimedb_client_api_messages::websocket::v2::{self as ws_v2, Subscribe};
+use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::bsatn;
 use spacetimedb_primitives::ReducerId;
@@ -22,7 +22,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let module = client.module();
     let mod_info = module.info();
     let mod_metrics = &mod_info.metrics;
-    let database_identity = mod_info.database_identity;
+    let _database_identity = mod_info.database_identity;
     let db = &module.replica_ctx().relational_db;
     let record_metrics = |wl| {
         move |metrics| {

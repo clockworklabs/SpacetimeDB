@@ -28,7 +28,7 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{query, AlgebraicValue, ConnectionId, Identity, ProductValue};
+use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
@@ -1250,7 +1250,7 @@ impl SubscriptionManager {
     ) -> ExecutionMetrics {
         //let span = tracing::info_span!("eval_incr").entered();
 
-        let (updates, errs, metrics) = if self.queries.is_empty() {
+        let (updates, errs, mut metrics) = if self.queries.is_empty() {
             // We have no queries, so do nothing.
             <_>::default()
         } else {
@@ -1258,13 +1258,14 @@ impl SubscriptionManager {
             self.eval_updates_sequential_inner(tx, bsatn_rlb_pool, tables)
         };
 
-        let (v2_updates, v2_errs, metrics) = if self.queries.is_empty() {
+        let (v2_updates, v2_errs, metrics_v2) = if self.queries.is_empty() {
             // We have no queries, so do nothing.
             <_>::default()
         } else {
             let tables = &event.status.database_update().unwrap().tables;
             self.eval_updates_sequential_inner_v2(tx, bsatn_rlb_pool, tables)
         };
+        metrics.merge(metrics_v2);
 
         let queries = ComputedQueries {
             updates,
@@ -1359,7 +1360,7 @@ impl SubscriptionManager {
                     .plans_fragments()
                     .map(move |plan_fragment| (qstate, plan_fragment, hash))
             })
-            .fold(FoldState::default(), |mut acc, (qstate, plan, hash)| {
+            .fold(FoldState::default(), |mut acc, (qstate, plan, _hash)| {
                 let table_name = plan.subscribed_table_name().clone();
                 // let subscriptions_for_query = qstate.v2_subscriptions
 

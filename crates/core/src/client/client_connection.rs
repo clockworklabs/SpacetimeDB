@@ -1023,7 +1023,7 @@ mod tests {
     use pretty_assertions::assert_matches;
 
     use super::*;
-    use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+    use crate::client::messages::{SerializableMessage, SubscriptionUpdateMessage, TransactionUpdateMessage};
 
     #[derive(Clone)]
     struct FakeDurableOffset {
@@ -1093,11 +1093,12 @@ mod tests {
         }
     }
 
-    fn empty_tx_update() -> TransactionUpdateMessage {
-        TransactionUpdateMessage {
+    fn empty_tx_update() -> SerializableMessage {
+        let msg = TransactionUpdateMessage {
             event: None,
             database_update: SubscriptionUpdateMessage::default_for_protocol(Protocol::Binary, None),
-        }
+        };
+        SerializableMessage::TxUpdate(msg)
     }
 
     async fn assert_received_update(f: impl Future<Output = Option<OutboundMessage>>) {
