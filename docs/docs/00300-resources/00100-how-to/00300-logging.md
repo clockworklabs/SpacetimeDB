@@ -69,7 +69,7 @@ public static partial class Module
             throw new ArgumentException("Value cannot be zero");
         }
         
-        Log.Debug($"Debug information: ctx.Sender() = {ctx.Sender()}");
+        Log.Debug($"Debug information: ctx.Sender = {ctx.Sender}");
     }
 }
 ```
@@ -202,7 +202,7 @@ Include relevant context in your log messages:
 [SpacetimeDB.Reducer]
 public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
 {
-    Log.Info($"Credit transfer: from={ctx.Sender()}, to={toUser}, amount={amount}");
+    Log.Info($"Credit transfer: from={ctx.Sender}, to={toUser}, amount={amount}");
     
     // ... transfer logic
 }

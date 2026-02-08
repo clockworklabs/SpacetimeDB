@@ -322,7 +322,7 @@ public static void SetName(ReducerContext ctx, string name)
 {
     name = ValidateName(name);
 
-    if (ctx.Db.User.Identity.Find(ctx.Sender()) is User user)
+    if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
     {
         user.Name = name;
         ctx.Db.User.Identity.Update(user);
@@ -411,7 +411,7 @@ public static void SendMessage(ReducerContext ctx, string text)
     ctx.Db.Message.Insert(
         new Message
         {
-            Sender = ctx.Sender(),
+            Sender = ctx.Sender,
             Text = text,
             Sent = ctx.Timestamp,
         }
@@ -504,9 +504,9 @@ In `spacetimedb/Lib.cs`, add to the `Module` class:
 [Reducer(ReducerKind.ClientConnected)]
 public static void ClientConnected(ReducerContext ctx)
 {
-    Log.Info($"Connect {ctx.Sender()}");
+    Log.Info($"Connect {ctx.Sender}");
 
-    if (ctx.Db.User.Identity.Find(ctx.Sender()) is User user)
+    if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
     {
         user.Online = true;
         ctx.Db.User.Identity.Update(user);
@@ -517,7 +517,7 @@ public static void ClientConnected(ReducerContext ctx)
             new User
             {
                 Name = null,
-                Identity = ctx.Sender(),
+                Identity = ctx.Sender,
                 Online = true,
             }
         );
@@ -527,7 +527,7 @@ public static void ClientConnected(ReducerContext ctx)
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void ClientDisconnected(ReducerContext ctx)
 {
-    if (ctx.Db.User.Identity.Find(ctx.Sender()) is User user)
+    if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
     {
         user.Online = false;
         ctx.Db.User.Identity.Update(user);

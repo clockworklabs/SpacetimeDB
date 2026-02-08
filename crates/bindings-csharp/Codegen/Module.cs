@@ -1743,6 +1743,7 @@ public class Module : IIncrementalGenerator
 
                     namespace SpacetimeDB {
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
+                            public readonly Identity Sender;
                             public readonly ConnectionId? ConnectionId;
                             public readonly Random Rng;
                             public readonly Timestamp Timestamp;
@@ -1752,24 +1753,16 @@ public class Module : IIncrementalGenerator
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-                            private readonly Identity _sender;
-
                             internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random,
                                             Timestamp time, AuthCtx? senderAuth = null)
                             {
-                                _sender = identity;
+                                Sender = identity;
                                 ConnectionId = connectionId;
                                 Rng = random;
                                 Timestamp = time;
                                 SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
                                 CounterUuid = 0;
                             }
-
-                            /// <summary>
-                            /// The identity of the client that invoked the reducer.
-                            /// </summary>
-                            public Identity Sender() => _sender;
-
                             /// <summary>
                             /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
                             /// </summary>
@@ -1904,18 +1897,13 @@ public class Module : IIncrementalGenerator
                         
                         public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
                         {
-                            private readonly Identity _sender;
+                            public Identity Sender { get; }
                         
                             internal ViewContext(Identity sender, Internal.LocalReadOnly db)
                                 : base(db)
                             {
-                                _sender = sender;
+                                Sender = sender;
                             }
-
-                            /// <summary>
-                            /// The identity of the client that invoked the view.
-                            /// </summary>
-                            public Identity Sender() => _sender;
                         }
                         
                         public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext 

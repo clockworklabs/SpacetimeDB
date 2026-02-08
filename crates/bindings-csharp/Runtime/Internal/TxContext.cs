@@ -9,16 +9,13 @@ public sealed class TxContext(
     Random rng
 )
 {
-    private readonly Identity _sender = sender;
-
     public Local Db { get; } = db;
+    public Identity Sender { get; } = sender;
     public ConnectionId? ConnectionId { get; } = connectionId;
     public Timestamp Timestamp { get; } = timestamp;
     public AuthCtx SenderAuth { get; } = senderAuth;
     public Random Rng { get; } = rng;
 
-    public Identity Sender() => _sender;
-
     public TxContext WithTimestamp(Timestamp ts) =>
-        new(Db, _sender, ConnectionId, ts, SenderAuth, Rng);
+        new(Db, Sender, ConnectionId, ts, SenderAuth, Rng);
 }

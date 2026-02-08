@@ -110,7 +110,7 @@ spacetimedb.clientConnected((ctx) => {
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
 public static void OnConnect(ReducerContext ctx)
 {
-    Log.Info($"Client connected: {ctx.Sender()}");
+    Log.Info($"Client connected: {ctx.Sender}");
     
     // ctx.ConnectionId is guaranteed to be non-null
     var connId = ctx.ConnectionId!.Value;
@@ -119,7 +119,7 @@ public static void OnConnect(ReducerContext ctx)
     ctx.Db.Session.Insert(new Session
     {
         ConnectionId = connId,
-        Identity = ctx.Sender(),
+        Identity = ctx.Sender,
         ConnectedAt = ctx.Timestamp
     });
 }
@@ -182,7 +182,7 @@ spacetimedb.clientDisconnected((ctx) => {
 [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
 public static void OnDisconnect(ReducerContext ctx)
 {
-    Log.Info($"Client disconnected: {ctx.Sender()}");
+    Log.Info($"Client disconnected: {ctx.Sender}");
     
     // ctx.ConnectionId is guaranteed to be non-null
     var connId = ctx.ConnectionId!.Value;

@@ -393,8 +393,8 @@ public partial class Module
     public static List<Message> MyMessages(ViewContext ctx)
     {
         // Look up messages by index where caller is sender or recipient
-        var sent = ctx.Db.Message.Sender.Filter(ctx.Sender()).ToList();
-        var received = ctx.Db.Message.Recipient.Filter(ctx.Sender()).ToList();
+        var sent = ctx.Db.Message.Sender.Filter(ctx.Sender).ToList();
+        var received = ctx.Db.Message.Recipient.Filter(ctx.Sender).ToList();
         sent.AddRange(received);
         return sent;
     }
@@ -526,7 +526,7 @@ public partial class Module
     public static PublicUserProfile? MyProfile(ViewContext ctx)
     {
         // Look up the caller's account by their identity (unique index)
-        if (ctx.Db.UserAccount.Identity.Find(ctx.Sender()) is not UserAccount user)
+        if (ctx.Db.UserAccount.Identity.Find(ctx.Sender) is not UserAccount user)
         {
             return null;
         }
@@ -676,7 +676,7 @@ public partial class Module
     public static List<Colleague> MyColleagues(ViewContext ctx)
     {
         // Find the caller's employee record by identity (unique index)
-        if (ctx.Db.Employee.Identity.Find(ctx.Sender()) is not Employee me)
+        if (ctx.Db.Employee.Identity.Find(ctx.Sender) is not Employee me)
         {
             return new List<Colleague>();
         }

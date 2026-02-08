@@ -1449,7 +1449,7 @@ Reducers are the functions within your server module responsible for atomically 
 - **Return Type:** Reducers should typically return `void`. Errors are signaled by throwing exceptions.
 - **Reducer Context:** The `ReducerContext` (`ctx`) provides access to:
   - `ctx.Db`: Handles for interacting with database tables.
-  - `ctx.Sender()`: The `Identity` of the caller.
+  - `ctx.Sender`: The `Identity` of the caller.
   - `ctx.Identity`: The `Identity` of the module itself.
   - `ctx.Timestamp`: The `Timestamp` of the invocation.
   - `ctx.ConnectionId`: The nullable `ConnectionId` of the caller.
@@ -1478,7 +1478,7 @@ public static partial class Module
     [Reducer]
     public static void UpdatePlayerData(ReducerContext ctx, string? newName)
     {
-        var playerId = ctx.Sender();
+        var playerId = ctx.Sender;
 
         // Find player by primary key
         var player = ctx.Db.player_state.PlayerId.Find(playerId);
@@ -1521,10 +1521,10 @@ public static partial class Module
         if (string.IsNullOrWhiteSpace(name)) {
              throw new ArgumentException("Name cannot be empty.");
         }
-        Log.Info($"Attempting to register player: {name} ({ctx.Sender()})");
+        Log.Info($"Attempting to register player: {name} ({ctx.Sender})");
 
         // Check if player identity or name already exists
-        if (ctx.Db.player_state.PlayerId.Find(ctx.Sender()) != null || ctx.Db.player_state.Name.Find(name) != null)
+        if (ctx.Db.player_state.PlayerId.Find(ctx.Sender) != null || ctx.Db.player_state.Name.Find(name) != null)
         {
              throw new Exception("Player already registered or name taken.");
         }
@@ -1532,7 +1532,7 @@ public static partial class Module
         // Create new player instance
         var newPlayer = new PlayerState
         {
-            PlayerId = ctx.Sender(),
+            PlayerId = ctx.Sender,
             Name = name,
             Health = 100,
             Level = 1,
@@ -1541,14 +1541,14 @@ public static partial class Module
 
         // Insert the new player. This will throw on constraint violation.
             ctx.Db.player_state.Insert(newPlayer);
-            Log.Info($"Player registered successfully: {ctx.Sender()}");
+            Log.Info($"Player registered successfully: {ctx.Sender}");
     }
 
     // Example: Basic reducer showing deletion
     [Reducer]
     public static void DeleteMyItems(ReducerContext ctx)
     {
-        var ownerId = ctx.Sender();
+        var ownerId = ctx.Sender;
         int deletedCount = 0;
 
         // Find items by owner (Requires an index on OwnerId for efficiency)
@@ -1632,13 +1632,13 @@ These reducers cannot take arguments beyond `&ReducerContext`.
 // Example init reducer is shown in Scheduled Reducers section
 [Reducer(ReducerKind.ClientConnected)]
 public static void HandleConnect(ReducerContext ctx) {
-    Log.Info($"Client connected: {ctx.Sender()}");
+    Log.Info($"Client connected: {ctx.Sender}");
     // ... setup initial state for ctx.sender ...
 }
 
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void HandleDisconnect(ReducerContext ctx) {
-    Log.Info($"Client disconnected: {ctx.Sender()}");
+    Log.Info($"Client disconnected: {ctx.Sender}");
     // ... cleanup state for ctx.sender ...
 }
 ```
@@ -1692,7 +1692,7 @@ public static partial class Module
     public static void SendMessage(ReducerContext ctx, SendMessageSchedule scheduleArgs)
     {
         // Security check is important!
-        if (!ctx.Sender().Equals(ctx.Identity))
+        if (!ctx.Sender.Equals(ctx.Identity))
         {
             throw new Exception("Reducer SendMessage may not be invoked by clients, only via scheduling.");
         }
@@ -1740,12 +1740,12 @@ public static partial class Module
 
 - **Best-Effort Scheduling:** Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution when a database is under heavy load.
 
-- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.Sender()`) to the module's own identity (`ctx.Identity`).
+- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.Sender`) to the module's own identity (`ctx.Identity`).
   ```csharp
   [Reducer] // Assuming linked via [Table(Scheduled=...)]
   public static void MyScheduledTask(ReducerContext ctx, MyScheduleArgs args)
   {
-      if (!ctx.Sender().Equals(ctx.Identity))
+      if (!ctx.Sender.Equals(ctx.Identity))
       {
           throw new Exception("Reducer MyScheduledTask may not be invoked by clients, only via scheduling.");
       }
@@ -1757,7 +1757,7 @@ public static partial class Module
   ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.Sender()` will be the module's own identity, and `ctx.ConnectionId` will be `null`.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.Sender` will be the module's own identity, and `ctx.ConnectionId` will be `null`.
 :::
 
 ##### Error Handling: Exceptions
@@ -1827,7 +1827,7 @@ public static partial class Module
     [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
-        return ctx.Db.Player.Identity.Find(ctx.Sender());
+        return ctx.Db.Player.Identity.Find(ctx.Sender);
     }
 
     // View that returns all players at a specific level (same for all callers)
@@ -1858,7 +1858,7 @@ public static partial class Module
 
 Views use one of two context types:
 
-- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.Sender()`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.Sender`. Use this when the view depends on who is querying it (e.g., "get my player").
 - **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
 Both contexts provide read-only access to tables and indexes through `ctx.Db`.
@@ -1887,7 +1887,7 @@ The query builder provides a fluent API for constructing type-safe SQL queries:
 public static Query<Message> MyMessages(ViewContext ctx)
 {
     return ctx.Db.Message
-        .Filter(msg => msg.Sender == ctx.Sender())
+        .Filter(msg => msg.Sender == ctx.Sender)
         .Build();
 }
 

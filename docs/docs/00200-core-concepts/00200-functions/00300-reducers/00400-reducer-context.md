@@ -145,7 +145,7 @@ public static partial class Module
     public static void UpdateScore(ReducerContext ctx, uint newScore)
     {
         // Get the caller's identity
-        Identity caller = ctx.Sender();
+        Identity caller = ctx.Sender;
         
         // Find and update their player record
         if (ctx.Db.Player.Identity.Find(caller) is Player player)
@@ -262,7 +262,7 @@ public static partial class Module
     public static void SendReminder(ReducerContext ctx, ScheduledTask task)
     {
         // Only allow the scheduler (module identity) to call this
-        if (ctx.Sender() != ctx.Identity)
+        if (ctx.Sender != ctx.Identity)
         {
             throw new Exception("This reducer can only be called by the scheduler");
         }
