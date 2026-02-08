@@ -239,7 +239,6 @@ export const ReducerCtxImpl = class ReducerCtx<
    * Create a new random {@link Uuid} `v4` using this `ReducerCtx`'s RNG.
    */
   newUuidV4(): Uuid {
-    // TODO: Use a spacetime RNG when available
     const bytes = this.random.fill(new Uint8Array(16));
     return Uuid.fromRandomBytesV4(bytes);
   }

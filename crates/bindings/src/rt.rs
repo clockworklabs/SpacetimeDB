@@ -68,6 +68,7 @@ pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
 }
 
 /// A trait for types representing the *execution logic* of a reducer.
+#[expect(clippy::duplicated_attributes, reason = "false positive")]
 #[diagnostic::on_unimplemented(
     message = "invalid reducer signature",
     label = "this reducer signature is not valid",
@@ -96,6 +97,7 @@ pub fn invoke_view<'a, A: Args<'a>, T: ViewReturn>(
     std::mem::take(&mut *buf)
 }
 /// A trait for types representing the execution logic of a caller-specific view.
+#[expect(clippy::duplicated_attributes, reason = "false positive")]
 #[diagnostic::on_unimplemented(
     message = "invalid view signature",
     label = "this view signature is not valid",
@@ -124,6 +126,7 @@ pub fn invoke_anonymous_view<'a, A: Args<'a>, T: ViewReturn>(
     std::mem::take(&mut *buf)
 }
 /// A trait for types representing the execution logic of an anonymous view.
+#[expect(clippy::duplicated_attributes, reason = "false positive")]
 #[diagnostic::on_unimplemented(
     message = "invalid anonymous view signature",
     label = "this view signature is not valid",
