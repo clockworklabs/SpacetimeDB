@@ -1,13 +1,13 @@
 use crate::client::MessageExecutionError;
 
 use super::{ClientConnection, DataMessage, MessageHandleError};
+use crate::worker_metrics::WORKER_METRICS;
 use serde::de::Error as _;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::bsatn;
 use spacetimedb_primitives::ReducerId;
 use std::time::Instant;
-use crate::worker_metrics::WORKER_METRICS;
 
 pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Instant) -> Result<(), MessageHandleError> {
     client.observe_websocket_request_message(&message);
@@ -48,7 +48,10 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ws_v2::ClientMessage::OneOffQuery(ws_v2::OneOffQuery { request_id, query_string }) => {
+        ws_v2::ClientMessage::OneOffQuery(ws_v2::OneOffQuery {
+            request_id,
+            query_string,
+        }) => {
             let res = client.one_off_query_v2(&query_string, request_id, timer).await;
             mod_metrics
                 .request_round_trip_sql
@@ -80,7 +83,9 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             request_id,
             flags,
         }) => {
-            let res = client.call_procedure_v2(procedure, args, request_id, timer, flags).await;
+            let res = client
+                .call_procedure_v2(procedure, args, request_id, timer, flags)
+                .await;
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Procedure, &database_identity, procedure)

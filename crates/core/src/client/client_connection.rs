@@ -1102,12 +1102,7 @@ impl ClientConnection {
             .await
     }
 
-    pub async fn one_off_query_v2(
-        &self,
-        query: &str,
-        request_id: u32,
-        timer: Instant,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn one_off_query_v2(&self, query: &str, request_id: u32, timer: Instant) -> Result<(), anyhow::Error> {
         let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
         self.module()
             .one_off_query_v2(
