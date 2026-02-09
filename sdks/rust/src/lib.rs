@@ -56,8 +56,8 @@ pub mod __codegen {
     pub use crate::spacetime_module::{
         parse_row_list_as_deletes, parse_row_list_as_inserts, transaction_update_iter_table_updates,
         AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, ErrorContext, EventContext, InModule,
-        ProcedureEventContext, QueryBuilder, Reducer, ReducerEventContext, SpacetimeModule, SubscriptionEventContext,
-        SubscriptionHandle, TableUpdate,
+        ProcedureEventContext, QueryBuilder, QueryTableAccessor, Reducer, ReducerEventContext, SpacetimeModule,
+        SubscriptionEventContext, SubscriptionHandle, TableUpdate,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{
