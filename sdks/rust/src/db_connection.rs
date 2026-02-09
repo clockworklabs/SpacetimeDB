@@ -19,8 +19,8 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::{
-    Event,
-    __codegen::InternalError,
+    Event, ReducerEvent, Status,
+    __codegen::{InternalError, Reducer},
     callbacks::{
         CallbackId, DbCallbacks, ProcedureCallback, ProcedureCallbacks, ReducerCallback, ReducerCallbacks, RowCallback,
         UpdateCallback,
@@ -35,7 +35,7 @@ use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
-use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity};
+use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity, Timestamp};
 use spacetimedb_sats::Deserialize;
 use std::sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock};
 use tokio::{
@@ -153,30 +153,75 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 Ok(())
             }
 
-            // Successful transaction update:
+            // Transaction update:
             // apply the received diff to the client cache,
-            // then invoke on-reducer and row callbacks.
-            ParsedMessage::TransactionUpdate(event, Some(update)) => {
-                self.apply_update(update, |inner| {
-                    if let Event::Reducer(reducer_event) = &event {
-                        let reducer_event_ctx = self.make_event_ctx(reducer_event.clone());
-                        inner.reducer_callbacks.invoke_on_reducer(&reducer_event_ctx);
-                    }
-                    event
-                });
+            // then invoke row callbacks.
+            ParsedMessage::TransactionUpdate(update) => {
+                self.apply_update(update, |_| Event::Transaction);
                 Ok(())
             }
 
-            // Failed transaction update:
-            // invoke on-reducer callbacks.
-            ParsedMessage::TransactionUpdate(event, None) => {
-                if let Event::Reducer(reducer_event) = event {
-                    let reducer_event_ctx = self.make_event_ctx(reducer_event);
+            // Successful reducer run:
+            // apply the received diff to the client cache,
+            // construct an event with the reducer information,
+            // then invoke row callbacks and the reducer's callback.
+            ParsedMessage::ReducerResult {
+                request_id,
+                timestamp,
+                result: Ok(Ok(update)),
+            } => {
+                let (reducer, callback) = {
                     let mut inner = self.inner.lock().unwrap();
-                    inner.reducer_callbacks.invoke_on_reducer(&reducer_event_ctx);
-                }
+                    inner.reducer_callbacks.pop_call_info(request_id).ok_or_else(|| {
+                        InternalError::new(format!("Reducer result for unknown request_id {request_id}"))
+                    })?
+                };
+                let reducer_event = ReducerEvent {
+                    reducer,
+                    timestamp,
+                    status: Status::Committed,
+                };
+
+                self.apply_update(update, |_| Event::Reducer(reducer_event.clone()));
+
+                let reducer_event_ctx = self.make_event_ctx(reducer_event);
+                callback(&reducer_event_ctx, Ok(Ok(())));
                 Ok(())
             }
+
+            // Failed reducer run (note that previous pattern excludes `result: Ok(Ok(_))`):
+            // construct an event with the reducer information,
+            // then invoke the reducer's callback.
+            ParsedMessage::ReducerResult {
+                request_id,
+                timestamp,
+                result,
+            } => {
+                let (status, result) = match result {
+                    Ok(Ok(_)) => {
+                        unreachable!("This pattern handled by an earlier branch in the match on the `ParsedMessage`")
+                    }
+                    Ok(Err(message)) => (Status::Err(message.clone()), Ok(Err(message))),
+                    Err(internal_error) => (Status::Panic(internal_error.clone()), Err(internal_error)),
+                };
+                let (reducer, callback) = {
+                    let mut inner = self.inner.lock().unwrap();
+                    inner.reducer_callbacks.pop_call_info(request_id).ok_or_else(|| {
+                        InternalError::new(format!("Reducer result for unknown request_id {request_id}"))
+                    })?
+                };
+
+                let reducer_event = ReducerEvent {
+                    reducer,
+                    timestamp,
+                    status,
+                };
+
+                let reducer_event_ctx = self.make_event_ctx(reducer_event);
+                callback(&reducer_event_ctx, result);
+                Ok(())
+            }
+
             ParsedMessage::SubscribeApplied {
                 query_set_id,
                 initial_update,
@@ -316,11 +361,24 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
 
             // CallReducer: send the `CallReducer` WS message.
-            PendingMutation::CallReducer { reducer, args_bsatn } => {
+            PendingMutation::InvokeReducerWithCallback { reducer, callback } => {
+                let request_id = next_request_id();
+
+                let reducer_name = reducer.reducer_name();
+                let args = reducer
+                    .args_bsatn()
+                    .map_err(|e| InternalError::new("Failed to BSATN-serialize reducer arguments").with_cause(e))?;
+
+                self.inner
+                    .lock()
+                    .unwrap()
+                    .reducer_callbacks
+                    .store_call_info(request_id, reducer, callback);
+
                 let flags = ws::v2::CallReducerFlags::Default;
                 let msg = ws::v2::ClientMessage::CallReducer(ws::v2::CallReducer {
-                    reducer: reducer.into(),
-                    args: args_bsatn.into(),
+                    reducer: reducer_name.into(),
+                    args: args.into(),
                     // TODO(ws-v2): Get a request_id, record it for callbacks, and send it.
                     request_id: 0,
                     flags,
@@ -409,17 +467,6 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .get_table_callbacks(table)
                     .register_on_update(callback_id, callback);
             }
-            PendingMutation::AddReducerCallback {
-                reducer,
-                callback_id,
-                callback,
-            } => {
-                self.inner
-                    .lock()
-                    .unwrap()
-                    .reducer_callbacks
-                    .register_on_reducer(reducer, callback_id, callback);
-            }
             PendingMutation::RemoveInsertCallback { table, callback_id } => {
                 self.inner
                     .lock()
@@ -443,13 +490,6 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .db_callbacks
                     .get_table_callbacks(table)
                     .remove_on_update(callback_id);
-            }
-            PendingMutation::RemoveReducerCallback { reducer, callback_id } => {
-                self.inner
-                    .lock()
-                    .unwrap()
-                    .reducer_callbacks
-                    .remove_on_reducer(reducer, callback_id);
             }
         };
         Ok(())
@@ -622,47 +662,21 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 
     /// Called by autogenerated reducer invocation methods.
-    pub fn call_reducer<Args: Serialize + InModule<Module = M>>(
+    pub fn invoke_reducer_with_callback<Args>(
         &self,
-        reducer_name: &'static str,
-        args: Args,
-    ) -> crate::Result<()> {
-        // TODO(centril, perf): consider using a thread local pool to avoid allocating each time.
-        let args_bsatn = bsatn::to_vec(&args).map_err(|source| {
-            InternalError::new(format!(
-                "Failed to serialize {} as arguments for reducer {}",
-                std::any::type_name::<Args>(),
-                reducer_name,
-            ))
-            .with_cause(source)
-        })?;
-
-        self.queue_mutation(PendingMutation::CallReducer {
-            reducer: reducer_name,
-            args_bsatn,
+        reducer: Args,
+        callback: impl FnOnce(&<M as SpacetimeModule>::ReducerEventContext, Result<Result<(), String>, InternalError>)
+            + Send
+            + 'static,
+    ) -> crate::Result<()>
+    where
+        <M as SpacetimeModule>::Reducer: From<Args>,
+    {
+        self.queue_mutation(PendingMutation::InvokeReducerWithCallback {
+            reducer: reducer.into(),
+            callback: Box::new(callback),
         });
         Ok(())
-    }
-
-    // TODO(ws-v2): remove
-    /// Called by autogenerated reducer callback methods.
-    pub fn on_reducer(&self, reducer_name: &'static str, callback: ReducerCallback<M>) -> CallbackId {
-        let callback_id = CallbackId::get_next();
-        self.queue_mutation(PendingMutation::AddReducerCallback {
-            reducer: reducer_name,
-            callback_id,
-            callback,
-        });
-        callback_id
-    }
-
-    // TODO(ws-v2): remove
-    /// Called by autogenerated reducer callback methods.
-    pub fn remove_on_reducer(&self, reducer_name: &'static str, callback: CallbackId) {
-        self.queue_mutation(PendingMutation::RemoveReducerCallback {
-            reducer: reducer_name,
-            callback_id: callback,
-        });
     }
 
     /// Called by the autogenerated `DbConnection` method of the same name.
@@ -1047,8 +1061,7 @@ fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)
 }
 
 enum ParsedMessage<M: SpacetimeModule> {
-    // TODO(ws-v2): split into reducer result and txupdate
-    TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
+    TransactionUpdate(M::DbUpdate),
     IdentityToken(Identity, Box<str>, ConnectionId),
     SubscribeApplied {
         query_set_id: QuerySetId,
@@ -1063,6 +1076,11 @@ enum ParsedMessage<M: SpacetimeModule> {
         error: String,
     },
     Error(crate::Error),
+    ReducerResult {
+        request_id: u32,
+        timestamp: Timestamp,
+        result: Result<Result<M::DbUpdate, String>, InternalError>,
+    },
     ProcedureResult {
         request_id: u32,
         result: Result<Bytes, InternalError>,
@@ -1093,51 +1111,67 @@ async fn parse_loop<M: SpacetimeModule>(
                             .with_cause(e)
                             .into(),
                     ),
-                    Ok(db_update) => {
-                        let event = Event::UnknownTransaction;
-
-                        ParsedMessage::TransactionUpdate(event, Some(db_update))
-                    }
+                    Ok(db_update) => ParsedMessage::TransactionUpdate(db_update),
                 }
             }
             ws::v2::ServerMessage::ReducerResult(ws::v2::ReducerResult {
-                request_id: _,
+                request_id,
                 result,
-                timestamp: _,
+                timestamp,
             }) => {
                 match result {
                     // TODO(ws-v2): ParsedMessage::ReducerOutcome
-                    ws::v2::ReducerOutcome::Okmpty => {
-                        ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(M::DbUpdate::default()))
-                    }
+                    ws::v2::ReducerOutcome::Okmpty => ParsedMessage::ReducerResult {
+                        request_id,
+                        timestamp,
+                        result: Ok(Ok(M::DbUpdate::default())),
+                    },
                     ws::v2::ReducerOutcome::Ok(ws::v2::ReducerOk {
                         ret_value,
                         transaction_update,
                     }) => {
                         assert!(
-                            ret_value.len() == 0,
+                            ret_value.is_empty(),
                             "Reducer return value should be unit, i.e. 0 bytes, but got {ret_value:?}"
                         );
                         match M::DbUpdate::parse_update(transaction_update) {
+                            Ok(db_update) => ParsedMessage::ReducerResult {
+                                request_id,
+                                timestamp,
+                                result: Ok(Ok(db_update)),
+                            },
+                            // Parse errors are not errors with the reducer call itself,
+                            // so they don't go to `ParsedMessage::ReducerResult`.
+                            // Instead, they go to `ParsedMessage::Error`, as they represent bugs in the SDK.
                             Err(e) => ParsedMessage::Error(
                                 InternalError::failed_parse("TransactionUpdate", "ReducerResult")
                                     .with_cause(e)
                                     .into(),
                             ),
-                            // TODO(ws-v2): ParsedMessage::ReducerOutcome
-                            Ok(db_update) => {
-                                ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update))
-                            }
                         }
                     }
-                    ws::v2::ReducerOutcome::Err(error_return) => {
-                        let _error_message = bsatn::from_slice::<String>(&error_return)
-                            .expect("Reducer return value should be a string");
-                        todo!("Yield a ParsedMessage with a reducer outcome here")
-                    }
-                    ws::v2::ReducerOutcome::InternalError(_error_message) => {
-                        todo!("Yield a ParsedMessage with a reducer outcome here")
-                    }
+                    ws::v2::ReducerOutcome::Err(error_return) => match bsatn::from_slice::<String>(&error_return) {
+                        Ok(error_message) => ParsedMessage::ReducerResult {
+                            request_id,
+                            timestamp,
+                            result: Ok(Err(error_message)),
+                        },
+                        // Parse errors are not errors with the reducer call itself,
+                        // so they don't go to `ParsedMessage::ReducerResult`.
+                        // Instead, they go to `ParsedMessage::Error`, as they represent bugs in the SDK.
+                        Err(e) => ParsedMessage::Error(
+                            InternalError::failed_parse("String", "ReducerResult")
+                                .with_cause(e)
+                                .into(),
+                        ),
+                    },
+                    // If the server returns an `InternalError`, that's a module bug, not an SDK bug,
+                    // so report it as a `ParsedMessage::ReducerResult`.
+                    ws::v2::ReducerOutcome::InternalError(error_message) => ParsedMessage::ReducerResult {
+                        request_id,
+                        timestamp,
+                        result: Err(InternalError::new(error_message)),
+                    },
                 }
             }
             ws::v2::ServerMessage::InitialConnection(ws::v2::InitialConnection {
@@ -1208,11 +1242,6 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         query_set_id: QuerySetId,
         handle: SubscriptionHandleImpl<M>,
     },
-    // TODO(ws-v2): replace with `InvokeReducerWithCallback`
-    CallReducer {
-        reducer: &'static str,
-        args_bsatn: Vec<u8>,
-    },
     AddInsertCallback {
         table: &'static str,
         callback_id: CallbackId,
@@ -1240,18 +1269,11 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         table: &'static str,
         callback_id: CallbackId,
     },
-    // TODO(ws-v2): remove
-    AddReducerCallback {
-        reducer: &'static str,
-        callback_id: CallbackId,
+    Disconnect,
+    InvokeReducerWithCallback {
+        reducer: M::Reducer,
         callback: ReducerCallback<M>,
     },
-    // TODO(ws-v2): remove
-    RemoveReducerCallback {
-        reducer: &'static str,
-        callback_id: CallbackId,
-    },
-    Disconnect,
     InvokeProcedureWithCallback {
         procedure: &'static str,
         args: Vec<u8>,
