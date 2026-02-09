@@ -17,7 +17,7 @@ Runs once when the module is first published or when the database is cleared.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.init((ctx) => {
+export const init = spacetimedb.init((ctx) => {
   console.log('Database initializing...');
   
   // Set up default data
@@ -88,7 +88,7 @@ Runs when a client establishes a connection.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.clientConnected((ctx) => {
+export const onConnect = spacetimedb.clientConnected((ctx) => {
   console.log(`Client connected: ${ctx.sender}`);
   
   // ctx.connectionId is guaranteed to be defined
@@ -164,7 +164,7 @@ Runs when a client connection terminates.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.clientDisconnected((ctx) => {
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   console.log(`Client disconnected: ${ctx.sender}`);
   
   // ctx.connectionId is guaranteed to be defined

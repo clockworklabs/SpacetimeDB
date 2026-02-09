@@ -32,7 +32,7 @@ const reminder = table(
   }
 );
 
-spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (_ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ctx, { arg }) => {
   // Invoked automatically by the scheduler
   // arg.message, arg.scheduled_at, arg.scheduled_id
 });
@@ -107,8 +107,9 @@ Use intervals for periodic tasks like game ticks, heartbeats, or recurring maint
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 const spacetimedb = schema();
+export default spacetimedb;
 
-spacetimedb.reducer('schedule_periodic_tasks', (ctx) => {
+export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
   // Schedule to run every 5 seconds (5,000,000 microseconds)
   ctx.db.reminder.insert({
     scheduled_id: 0n,
@@ -190,8 +191,9 @@ Use specific times for one-shot actions like sending a reminder at a particular 
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 const spacetimedb = schema();
+export default spacetimedb;
 
-spacetimedb.reducer('schedule_timed_tasks', (ctx) => {
+export const schedule_timed_tasks = spacetimedb.reducer((ctx) => {
   // Schedule for 10 seconds from now
   const tenSecondsFromNow = ctx.timestamp.microsSinceUnixEpoch + 10_000_000n;
   ctx.db.reminder.insert({
@@ -285,7 +287,7 @@ Scheduled reducers are normal reducers that can also be invoked by external clie
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: Reminder.rowType }, (ctx, { arg }) => {
   if (!ctx.senderAuth.isInternal) {
     throw new SenderError('This reducer can only be called by the scheduler');
   }

@@ -107,7 +107,7 @@ Reducers receive a `ReducerContext` which provides full read-write access to all
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('example', {}, (ctx) => {
+export const example = spacetimedb.reducer({}, (ctx) => {
   // Insert
   ctx.db.user.insert({ id: 0, name: 'Alice', email: 'alice@example.com' });
 
@@ -201,7 +201,7 @@ Procedures receive a `ProcedureContext` and can access tables through transactio
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.string() }, t.unit(), (ctx, { userId, newName }) => {
+export const updateUserProcedure = spacetimedb.procedure({ userId: t.u64(), newName: t.string() }, t.unit(), (ctx, { userId, newName }) => {
   // Must explicitly open a transaction
   ctx.withTx(ctx => {
     // Full read-write access within the transaction
@@ -274,7 +274,7 @@ See the [Procedures documentation](/functions/procedures) for more details on us
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.view(
+export const findUsersByName = spacetimedb.view(
   { name: 'findUsersByName', public: true },
   t.array(user.rowType),
   (ctx) => {
@@ -351,9 +351,10 @@ const message = table(
 );
 
 const spacetimedb = schema(message);
+export default spacetimedb;
 
 // Public view that only returns messages the caller can see
-spacetimedb.view(
+export const my_messages = spacetimedb.view(
   { name: 'my_messages', public: true },
   t.array(message.rowType),
   (ctx) => {
@@ -462,6 +463,7 @@ const userAccount = table(
 );
 
 const spacetimedb = schema(userAccount);
+export default spacetimedb;
 
 // Public type without sensitive columns
 const publicUserProfile = t.row('PublicUserProfile', {
@@ -471,7 +473,7 @@ const publicUserProfile = t.row('PublicUserProfile', {
 });
 
 // Public view that returns the caller's profile without sensitive data
-spacetimedb.view(
+export const my_profile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(publicUserProfile),
   (ctx) => {
@@ -612,6 +614,7 @@ const employee = table(
 );
 
 const spacetimedb = schema(employee);
+export default spacetimedb;
 
 // Public type for colleagues (no salary)
 const colleague = t.row('Colleague', {
@@ -621,7 +624,7 @@ const colleague = t.row('Colleague', {
 });
 
 // View that returns colleagues in the caller's department, without salary info
-spacetimedb.view(
+export const my_colleagues = spacetimedb.view(
   { name: 'my_colleagues', public: true },
   t.array(colleague),
   (ctx) => {

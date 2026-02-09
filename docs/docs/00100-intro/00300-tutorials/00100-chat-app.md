@@ -234,6 +234,7 @@ const Message = table(
 
 // Compose the schema (gives us ctx.db.user and ctx.db.message, etc.)
 const spacetimedb = schema(User, Message);
+export default spacetimedb;
 ```
 
 </TabItem>
@@ -301,7 +302,7 @@ function validateName(name: string) {
   }
 }
 
-spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
+export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -386,7 +387,7 @@ function validateMessage(text: string) {
   }
 }
 
-spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
+export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   validateMessage(text);
   console.info(`User ${ctx.sender}: ${text}`);
   ctx.db.message.insert({
@@ -468,9 +469,9 @@ SpacetimeDB can invoke lifecycle reducers when clients connect/disconnect. We'll
 Add:
 
 ```ts server
-spacetimedb.init(_ctx => {});
+export const init = spacetimedb.init(_ctx => {});
 
-spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: true });
@@ -483,7 +484,7 @@ spacetimedb.clientConnected(ctx => {
   }
 });
 
-spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });

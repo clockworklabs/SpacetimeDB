@@ -19,7 +19,7 @@ Use the standard `console` API to write logs from your reducers:
 ```typescript
 import { spacetimedb } from 'spacetimedb/server';
 
-spacetimedb.reducer('process_data', { value: t.u32() }, (ctx, { value }) => {
+export const process_data = spacetimedb.reducer({ value: t.u32() }, (ctx, { value }) => {
   console.log(`Processing data with value: ${value}`);
   
   if (value > 100) {
@@ -183,7 +183,7 @@ Use appropriate log levels for different types of messages:
 Include relevant context in your log messages:
 
 ```typescript
-spacetimedb.reducer('transfer_credits', 
+export const transfer_credits = spacetimedb.reducer(
   { to_user: t.u64(), amount: t.u32() },
   (ctx, { to_user, amount }) => {
     console.log(`Credit transfer: from=${ctx.sender}, to=${to_user}, amount=${amount}`);
