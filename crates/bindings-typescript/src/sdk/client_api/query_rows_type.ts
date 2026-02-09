@@ -9,10 +9,10 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import SingleTableRows from './single_table_rows_type';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('QueryRows', {
+  get tables() {
+    return __t.array(SingleTableRows);
+  },
 });

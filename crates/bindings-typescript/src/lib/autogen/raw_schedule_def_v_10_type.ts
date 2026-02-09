@@ -10,9 +10,9 @@ import {
   type Infer as __Infer,
 } from '../../lib/type_builders';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('RawScheduleDefV10', {
+  sourceName: __t.option(__t.string()),
+  tableName: __t.string(),
+  scheduleAtCol: __t.u16(),
+  functionName: __t.string(),
 });

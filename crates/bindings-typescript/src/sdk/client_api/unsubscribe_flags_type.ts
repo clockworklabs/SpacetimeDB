@@ -10,9 +10,10 @@ import {
   type Infer as __Infer,
 } from '../../lib/type_builders';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+// The tagged union or sum type for the algebraic type `UnsubscribeFlags`.
+const UnsubscribeFlags = __t.enum('UnsubscribeFlags', {
+  Default: __t.unit(),
+  SendDroppedRows: __t.unit(),
 });
+
+export default UnsubscribeFlags;

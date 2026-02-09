@@ -9,10 +9,13 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import BsatnRowList from './bsatn_row_list_type';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('PersistentTableRows', {
+  get inserts() {
+    return BsatnRowList;
+  },
+  get deletes() {
+    return BsatnRowList;
+  },
 });

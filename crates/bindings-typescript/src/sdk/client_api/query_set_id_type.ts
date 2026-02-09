@@ -10,9 +10,6 @@ import {
   type Infer as __Infer,
 } from '../../lib/type_builders';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('QuerySetId', {
+  id: __t.u32(),
 });

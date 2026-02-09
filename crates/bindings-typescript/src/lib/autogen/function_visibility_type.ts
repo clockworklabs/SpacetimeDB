@@ -10,9 +10,10 @@ import {
   type Infer as __Infer,
 } from '../../lib/type_builders';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+// The tagged union or sum type for the algebraic type `FunctionVisibility`.
+const FunctionVisibility = __t.enum('FunctionVisibility', {
+  Private: __t.unit(),
+  ClientCallable: __t.unit(),
 });
+
+export default FunctionVisibility;

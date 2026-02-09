@@ -9,34 +9,19 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import InitialSubscription from './initial_subscription_type';
-import TransactionUpdate from './transaction_update_type';
-import TransactionUpdateLight from './transaction_update_light_type';
-import IdentityToken from './identity_token_type';
-import OneOffQueryResponse from './one_off_query_response_type';
+import InitialConnection from './initial_connection_type';
 import SubscribeApplied from './subscribe_applied_type';
 import UnsubscribeApplied from './unsubscribe_applied_type';
 import SubscriptionError from './subscription_error_type';
-import SubscribeMultiApplied from './subscribe_multi_applied_type';
-import UnsubscribeMultiApplied from './unsubscribe_multi_applied_type';
+import TransactionUpdate from './transaction_update_type';
+import OneOffQueryResult from './one_off_query_result_type';
+import ReducerResult from './reducer_result_type';
 import ProcedureResult from './procedure_result_type';
 
 // The tagged union or sum type for the algebraic type `ServerMessage`.
 const ServerMessage = __t.enum('ServerMessage', {
-  get InitialSubscription() {
-    return InitialSubscription;
-  },
-  get TransactionUpdate() {
-    return TransactionUpdate;
-  },
-  get TransactionUpdateLight() {
-    return TransactionUpdateLight;
-  },
-  get IdentityToken() {
-    return IdentityToken;
-  },
-  get OneOffQueryResponse() {
-    return OneOffQueryResponse;
+  get InitialConnection() {
+    return InitialConnection;
   },
   get SubscribeApplied() {
     return SubscribeApplied;
@@ -47,11 +32,14 @@ const ServerMessage = __t.enum('ServerMessage', {
   get SubscriptionError() {
     return SubscriptionError;
   },
-  get SubscribeMultiApplied() {
-    return SubscribeMultiApplied;
+  get TransactionUpdate() {
+    return TransactionUpdate;
   },
-  get UnsubscribeMultiApplied() {
-    return UnsubscribeMultiApplied;
+  get OneOffQueryResult() {
+    return OneOffQueryResult;
+  },
+  get ReducerResult() {
+    return ReducerResult;
   },
   get ProcedureResult() {
     return ProcedureResult;

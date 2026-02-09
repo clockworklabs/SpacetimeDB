@@ -83,11 +83,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   }
 
   withWSFn(
-    createWSFn: (args: {
-      url: URL;
-      wsProtocol: string;
-      authToken?: string;
-    }) => Promise<WebsocketDecompressAdapter>
+    createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn
   ): this {
     this.#createWSFn = createWSFn;
     return this;
@@ -139,6 +135,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
     this.#confirmedReads = confirmedReads;
     return this;
   }
+
 
   /**
    * Register a callback to be invoked upon authentication with the database.
@@ -209,7 +206,8 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    * Note that this does not trigger if `build` fails
    * or in cases where {@link DbConnectionBuilder.onConnectError} would trigger.
    * This callback only triggers if the connection closes after `build` returns successfully
-   * and {@link DbConnectionBuilder.onConnect} is invoked, i.e., after the `IdentityToken` is received.
+   * and {@link DbConnectionBuilder.onConnect} is invoked, i.e., after the initial connection
+   * message is received.
    *
    * To simplify SDK implementation, at most one such callback can be registered.
    * Calling `onDisconnect` on the same `DbConnectionBuilder` multiple times throws an error.

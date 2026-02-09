@@ -9,10 +9,18 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import AlgebraicType from './algebraic_type_type';
+import ProductType from './product_type_type';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('RawViewDefV10', {
+  sourceName: __t.string(),
+  index: __t.u32(),
+  isPublic: __t.bool(),
+  isAnonymous: __t.bool(),
+  get params() {
+    return ProductType;
+  },
+  get returnType() {
+    return AlgebraicType;
+  },
 });

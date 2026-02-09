@@ -9,10 +9,14 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import QuerySetId from './query_set_id_type';
+import TableUpdate from './table_update_type';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('QuerySetUpdate', {
+  get querySetId() {
+    return QuerySetId;
+  },
+  get tables() {
+    return __t.array(TableUpdate);
+  },
 });

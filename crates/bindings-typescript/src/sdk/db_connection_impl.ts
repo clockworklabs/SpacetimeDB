@@ -4,10 +4,11 @@ import { BinaryReader } from '../';
 import { BinaryWriter } from '../';
 import BsatnRowList from './client_api/bsatn_row_list_type.ts';
 import ClientMessage from './client_api/client_message_type.ts';
-import DatabaseUpdate from './client_api/database_update_type.ts';
-import QueryUpdate from './client_api/query_update_type.ts';
+import QueryRows from './client_api/query_rows_type.ts';
+import QuerySetUpdate from './client_api/query_set_update_type.ts';
 import ServerMessage from './client_api/server_message_type.ts';
-import RawTableUpdate from './client_api/table_update_type.ts';
+import TableUpdateRows from './client_api/table_update_rows_type.ts';
+import UnsubscribeFlags from './client_api/unsubscribe_flags_type.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { type DbContext } from './db_context.ts';
@@ -19,7 +20,6 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import { decompress } from './decompress.ts';
 import type {
   Deserializer,
   Identity,
@@ -27,13 +27,7 @@ import type {
   InferTypeOfRow,
   Serializer,
 } from '../';
-import type {
-  IdentityTokenMessage,
-  Message,
-  ProcedureResultMessage,
-  SubscribeAppliedMessage,
-  UnsubscribeAppliedMessage,
-} from './message_types.ts';
+import type { ProcedureResultMessage } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
 import {
@@ -86,15 +80,10 @@ export type {
 };
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
-export type CallReducerFlags = 'FullUpdate' | 'NoSuccessNotify';
+export type CallReducerFlags = 'Default';
 
-function callReducerFlagsToNumber(flags: CallReducerFlags): number {
-  switch (flags) {
-    case 'FullUpdate':
-      return 0;
-    case 'NoSuccessNotify':
-      return 1;
-  }
+function callReducerFlagsToNumber(_flags: CallReducerFlags): number {
+  return 0;
 }
 
 export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
@@ -166,12 +155,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #emitter: EventEmitter<ConnectionEvent>;
   #reducerEmitter: EventEmitter<string, ReducerEventCallback<RemoteModule>> =
     new EventEmitter();
-  #onApplied?: SubscriptionEventCallback<RemoteModule>;
   #messageQueue = Promise.resolve();
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #callReducerFlags = new Map<string, CallReducerFlags>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
+  #pendingReducerCalls = new Map<number, { name: string; args: Uint8Array }>();
   #rowDeserializers: Record<string, Deserializer<any>>;
   #reducerArgsSerializers: Record<
     string,
@@ -259,7 +248,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.wsPromise = createWSFn({
       url,
       nameOrAddress,
-      wsProtocol: 'v1.bsatn.spacetimedb',
+      wsProtocol: 'v2.bsatn.spacetimedb',
       authToken: token,
       compression: compression,
       lightMode: lightMode,
@@ -325,7 +314,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#reducerArgsSerializers[reducerName];
 
       (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
-        const flags = this.#callReducerFlags.get(reducerName) ?? 'FullUpdate';
+        const flags = this.#callReducerFlags.get(reducerName) ?? 'Default';
         const writer = new BinaryWriter(1024);
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
@@ -435,273 +424,152 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     >,
     querySql: string[]
   ): number {
-    const queryId = this.#getNextQueryId();
-    this.#subscriptionManager.subscriptions.set(queryId, {
+    const querySetId = this.#getNextQueryId();
+    this.#subscriptionManager.subscriptions.set(querySetId, {
       handle,
       emitter: handleEmitter,
     });
+    const requestId = this.#getNextRequestId();
     this.#sendMessage(
-      ClientMessage.SubscribeMulti({
+      ClientMessage.Subscribe({
         queryStrings: querySql,
-        queryId: { id: queryId },
-        // The TypeScript SDK doesn't currently track `request_id`s,
-        // so always use 0.
-        requestId: 0,
+        querySetId: { id: querySetId },
+        requestId,
       })
     );
-    return queryId;
+    return querySetId;
   }
 
-  unregisterSubscription(queryId: number): void {
+  unregisterSubscription(querySetId: number): void {
+    const requestId = this.#getNextRequestId();
     this.#sendMessage(
-      ClientMessage.UnsubscribeMulti({
-        queryId: { id: queryId },
-        // The TypeScript SDK doesn't currently track `request_id`s,
-        // so always use 0.
-        requestId: 0,
+      ClientMessage.Unsubscribe({
+        querySetId: { id: querySetId },
+        requestId,
+        flags: UnsubscribeFlags.Default,
       })
     );
   }
 
-  // This function is async because we decompress the message async
-  async #processParsedMessage(
-    message: Infer<typeof ServerMessage>
-  ): Promise<Message | undefined> {
-    const parseRowList = (
-      type: 'insert' | 'delete',
-      tableName: string,
-      rowList: Infer<typeof BsatnRowList>
-    ): Operation[] => {
-      const buffer = rowList.rowsData;
-      const reader = new BinaryReader(buffer);
-      const rows: Operation[] = [];
+  #parseRowList(
+    type: 'insert' | 'delete',
+    tableName: string,
+    rowList: Infer<typeof BsatnRowList>
+  ): Operation[] {
+    const buffer = rowList.rowsData;
+    const reader = new BinaryReader(buffer);
+    const rows: Operation[] = [];
 
-      const deserializeRow = this.#rowDeserializers[tableName];
-      // TODO: performance
-      const table = this.#remoteModule.tables.find(t => t.name === tableName);
-      const columnsArray = Object.entries(table!.columns);
-      const primaryKeyColumnEntry = columnsArray.find(
-        col => col[1].columnMetadata.isPrimaryKey
-      );
-      let previousOffset = 0;
-      while (reader.remaining > 0) {
-        const row = deserializeRow(reader);
-        let rowId: ComparablePrimitive | undefined = undefined;
-        if (primaryKeyColumnEntry !== undefined) {
-          const primaryKeyColName = primaryKeyColumnEntry[0];
-          const primaryKeyColType =
-            primaryKeyColumnEntry[1].typeBuilder.algebraicType;
-          rowId = AlgebraicType.intoMapKey(
-            primaryKeyColType,
-            row[primaryKeyColName]
-          );
-        } else {
-          // Get a view of the bytes for this row.
-          const rowBytes = buffer.subarray(previousOffset, reader.offset);
-          // Convert it to a base64 string, so we can use it as a map key.
-          const asBase64 = fromByteArray(rowBytes);
-          rowId = asBase64;
-        }
-        previousOffset = reader.offset;
-
-        rows.push({
-          type,
-          rowId,
-          row,
-        });
-      }
-      return rows;
-    };
-
-    const parseTableUpdate = async (
-      rawTableUpdate: Infer<typeof RawTableUpdate>
-    ): Promise<CacheTableUpdate<UntypedTableDef>> => {
-      const tableName = rawTableUpdate.tableName;
-      let operations: Operation[] = [];
-      for (const update of rawTableUpdate.updates) {
-        let decompressed: Infer<typeof QueryUpdate>;
-        if (update.tag === 'Gzip') {
-          const decompressedBuffer = await decompress(update.value, 'gzip');
-          decompressed = QueryUpdate.deserialize(
-            new BinaryReader(decompressedBuffer)
-          );
-        } else if (update.tag === 'Brotli') {
-          throw new Error(
-            'Brotli compression not supported. Please use gzip or none compression in withCompression method on DbConnection.'
-          );
-        } else {
-          decompressed = update.value;
-        }
-        operations = operations.concat(
-          parseRowList('insert', tableName, decompressed.inserts)
+    const deserializeRow = this.#rowDeserializers[tableName];
+    // TODO: performance
+    const table = this.#remoteModule.tables.find(t => t.name === tableName);
+    const columnsArray = Object.entries(table!.columns);
+    const primaryKeyColumnEntry = columnsArray.find(
+      col => col[1].columnMetadata.isPrimaryKey
+    );
+    let previousOffset = 0;
+    while (reader.remaining > 0) {
+      const row = deserializeRow(reader);
+      let rowId: ComparablePrimitive | undefined = undefined;
+      if (primaryKeyColumnEntry !== undefined) {
+        const primaryKeyColName = primaryKeyColumnEntry[0];
+        const primaryKeyColType =
+          primaryKeyColumnEntry[1].typeBuilder.algebraicType;
+        rowId = AlgebraicType.intoMapKey(
+          primaryKeyColType,
+          row[primaryKeyColName]
         );
-        operations = operations.concat(
-          parseRowList('delete', tableName, decompressed.deletes)
-        );
+      } else {
+        // Get a view of the bytes for this row.
+        const rowBytes = buffer.subarray(previousOffset, reader.offset);
+        // Convert it to a base64 string, so we can use it as a map key.
+        const asBase64 = fromByteArray(rowBytes);
+        rowId = asBase64;
       }
-      return {
-        tableName,
-        operations,
-      };
-    };
+      previousOffset = reader.offset;
 
-    const parseDatabaseUpdate = async (
-      dbUpdate: Infer<typeof DatabaseUpdate>
-    ): Promise<CacheTableUpdate<UntypedTableDef>[]> => {
-      const tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
-      for (const rawTableUpdate of dbUpdate.tables) {
-        tableUpdates.push(await parseTableUpdate(rawTableUpdate));
-      }
-      return tableUpdates;
-    };
+      rows.push({
+        type,
+        rowId,
+        row,
+      });
+    }
+    return rows;
+  }
 
-    switch (message.tag) {
-      case 'InitialSubscription': {
-        const dbUpdate = message.value.databaseUpdate;
-        const tableUpdates = await parseDatabaseUpdate(dbUpdate);
-        const subscriptionUpdate: Message = {
-          tag: 'InitialSubscription',
-          tableUpdates,
-        };
-        return subscriptionUpdate;
-      }
-
-      case 'TransactionUpdateLight': {
-        const dbUpdate = message.value.update;
-        const tableUpdates = await parseDatabaseUpdate(dbUpdate);
-        const subscriptionUpdate: Message = {
-          tag: 'TransactionUpdateLight',
-          tableUpdates,
-        };
-        return subscriptionUpdate;
-      }
-
-      case 'TransactionUpdate': {
-        const txUpdate = message.value;
-        const identity = txUpdate.callerIdentity;
-        const connectionId = ConnectionId.nullIfZero(
-          txUpdate.callerConnectionId
-        );
-        const reducerName: string = txUpdate.reducerCall.reducerName;
-        const args = txUpdate.reducerCall.args;
-        const energyQuantaUsed = txUpdate.energyQuantaUsed;
-
-        let tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
-        let errMessage = '';
-        switch (txUpdate.status.tag) {
-          case 'Committed':
-            tableUpdates = await parseDatabaseUpdate(txUpdate.status.value);
-            break;
-          case 'Failed':
-            tableUpdates = [];
-            errMessage = txUpdate.status.value;
-            break;
-          case 'OutOfEnergy':
-            tableUpdates = [];
-            break;
-        }
-
-        // TODO: Can `reducerName` be '<none>'?
-        // See: https://github.com/clockworklabs/SpacetimeDB/blob/a2a1b5d9b2e0ebaaf753d074db056d319952d442/crates/core/src/client/message_handlers.rs#L155
-        if (reducerName === '<none>') {
-          const errorMessage = errMessage;
-          console.error(`Received an error from the database: ${errorMessage}`);
-          return;
-        }
-
-        let reducerInfo:
-          | {
-              reducerName: string;
-              args: Uint8Array;
-            }
-          | undefined;
-        if (reducerName !== '') {
-          reducerInfo = {
-            reducerName,
-            args,
-          };
-        }
-
-        const transactionUpdate: Message = {
-          tag: 'TransactionUpdate',
-          tableUpdates,
-          identity,
-          connectionId,
-          reducerInfo,
-          status: txUpdate.status,
-          energyConsumed: energyQuantaUsed.quanta,
-          message: errMessage,
-          timestamp: txUpdate.timestamp,
-        };
-        return transactionUpdate;
-      }
-
-      case 'IdentityToken': {
-        const identityTokenMessage: IdentityTokenMessage = {
-          tag: 'IdentityToken',
-          identity: message.value.identity,
-          token: message.value.token,
-          connectionId: message.value.connectionId,
-        };
-        return identityTokenMessage;
-      }
-
-      case 'OneOffQueryResponse': {
-        throw new Error(
-          `TypeScript SDK never sends one-off queries, but got OneOffQueryResponse ${message}`
-        );
-      }
-
-      case 'SubscribeMultiApplied': {
-        const parsedTableUpdates = await parseDatabaseUpdate(
-          message.value.update
-        );
-        const subscribeAppliedMessage: SubscribeAppliedMessage = {
-          tag: 'SubscribeApplied',
-          queryId: message.value.queryId.id,
-          tableUpdates: parsedTableUpdates,
-        };
-        return subscribeAppliedMessage;
-      }
-
-      case 'UnsubscribeMultiApplied': {
-        const parsedTableUpdates = await parseDatabaseUpdate(
-          message.value.update
-        );
-        const unsubscribeAppliedMessage: UnsubscribeAppliedMessage = {
-          tag: 'UnsubscribeApplied',
-          queryId: message.value.queryId.id,
-          tableUpdates: parsedTableUpdates,
-        };
-        return unsubscribeAppliedMessage;
-      }
-
-      case 'SubscriptionError': {
-        return {
-          tag: 'SubscriptionError',
-          queryId: message.value.queryId,
-          error: message.value.error,
-        };
-      }
-
-      case 'ProcedureResult': {
-        const { status, requestId } = message.value;
-        return {
-          tag: 'ProcedureResult',
-          requestId,
-          result:
-            status.tag === 'Returned'
-              ? { tag: 'Ok', value: status.value }
-              : status.tag === 'OutOfEnergy'
-                ? {
-                    tag: 'Err',
-                    value:
-                      'Procedure execution aborted due to insufficient energy',
-                  }
-                : { tag: 'Err', value: status.value },
-        };
+  #mergeTableUpdates(
+    updates: CacheTableUpdate<UntypedTableDef>[]
+  ): CacheTableUpdate<UntypedTableDef>[] {
+    const merged = new Map<string, Operation[]>();
+    for (const update of updates) {
+      const ops = merged.get(update.tableName);
+      if (ops) {
+        ops.push(...update.operations);
+      } else {
+        merged.set(update.tableName, [...update.operations]);
       }
     }
+    return Array.from(merged, ([tableName, operations]) => ({
+      tableName,
+      operations,
+    }));
+  }
+
+  #queryRowsToTableUpdates(
+    rows: Infer<typeof QueryRows>,
+    opType: 'insert' | 'delete'
+  ): CacheTableUpdate<UntypedTableDef>[] {
+    const updates: CacheTableUpdate<UntypedTableDef>[] = [];
+    for (const tableRows of rows.tables) {
+      updates.push({
+        tableName: tableRows.table,
+        operations: this.#parseRowList(opType, tableRows.table, tableRows.rows),
+      });
+    }
+    return this.#mergeTableUpdates(updates);
+  }
+
+  #tableUpdateRowsToOperations(
+    tableName: string,
+    rows: Infer<typeof TableUpdateRows>
+  ): Operation[] {
+    if (rows.tag === 'PersistentTable') {
+      const inserts = this.#parseRowList(
+        'insert',
+        tableName,
+        rows.value.inserts
+      );
+      const deletes = this.#parseRowList(
+        'delete',
+        tableName,
+        rows.value.deletes
+      );
+      return inserts.concat(deletes);
+    }
+    if (rows.tag === 'EventTable') {
+      // TODO: Decide how event tables should be merged into the cache.
+      return this.#parseRowList('insert', tableName, rows.value.events);
+    }
+    return [];
+  }
+
+  #querySetUpdateToTableUpdates(
+    querySetUpdate: Infer<typeof QuerySetUpdate>
+  ): CacheTableUpdate<UntypedTableDef>[] {
+    const updates: CacheTableUpdate<UntypedTableDef>[] = [];
+    for (const tableUpdate of querySetUpdate.tables) {
+      let operations: Operation[] = [];
+      for (const rows of tableUpdate.rows) {
+        operations = operations.concat(
+          this.#tableUpdateRowsToOperations(tableUpdate.tableName, rows)
+        );
+      }
+      updates.push({
+        tableName: tableUpdate.tableName,
+        operations,
+      });
+    }
+    return this.#mergeTableUpdates(updates);
   }
 
   #sendMessage(message: Infer<typeof ClientMessage>): void {
@@ -748,212 +616,186 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   async #processMessage(data: Uint8Array): Promise<void> {
     const serverMessage = ServerMessage.deserialize(new BinaryReader(data));
-    const message = await this.#processParsedMessage(serverMessage);
-    if (!message) {
-      return;
-    }
-    switch (message.tag) {
-      case 'InitialSubscription': {
-        const event: Event<never> = { tag: 'SubscribeApplied' };
-        const eventContext = this.#makeEventContext(event);
-        // Remove the event from the subscription event context
-        // It is not a field in the type narrowed SubscriptionEventContext
-        const { event: _, ...subscriptionEventContext } = eventContext;
-        const callbacks = this.#applyTableUpdates(
-          message.tableUpdates,
-          eventContext
-        );
-
-        if (this.#emitter) {
-          this.#onApplied?.(subscriptionEventContext);
+    switch (serverMessage.tag) {
+      case 'InitialConnection': {
+        this.identity = serverMessage.value.identity;
+        if (!this.token && serverMessage.value.token) {
+          this.token = serverMessage.value.token;
         }
-        for (const callback of callbacks) {
-          callback.cb();
-        }
-        break;
-      }
-      case 'TransactionUpdateLight': {
-        const event: Event<never> = { tag: 'UnknownTransaction' };
-        const eventContext = this.#makeEventContext(event);
-        const callbacks = this.#applyTableUpdates(
-          message.tableUpdates,
-          eventContext
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
-        break;
-      }
-      case 'TransactionUpdate': {
-        let reducerInfo = message.reducerInfo;
-
-        const deserializeArgs: Deserializer<any> | undefined =
-          reducerInfo === undefined
-            ? undefined
-            : this.#reducerArgsSerializers[reducerInfo.reducerName]
-                ?.deserialize;
-        let reducerArgs: UntypedReducerDef['params'] | undefined = undefined;
-
-        let unknownTransaction = deserializeArgs === undefined;
-        if (deserializeArgs) {
-          try {
-            const reader = new BinaryReader(reducerInfo!.args);
-            reducerArgs = deserializeArgs(reader);
-          } catch {
-            // This should only be printed in development, since it's
-            // possible for clients to receive new reducers that they don't
-            // know about.
-            console.debug('Failed to deserialize reducer arguments');
-            unknownTransaction = true;
-          }
-        }
-
-        if (unknownTransaction) {
-          const event: Event<never> = { tag: 'UnknownTransaction' };
-          const eventContext = this.#makeEventContext(event);
-          const callbacks = this.#applyTableUpdates(
-            message.tableUpdates,
-            eventContext
-          );
-
-          for (const callback of callbacks) {
-            callback.cb();
-          }
-          return;
-        }
-        // At this point, we know that `reducerInfo` is not null because
-        // we return if `unknownTransaction` is true.
-        reducerInfo = reducerInfo!;
-        reducerArgs = reducerArgs!;
-
-        // Thus this must be a reducer event create it and emit it.
-        const reducerEvent = {
-          callerIdentity: message.identity,
-          status: message.status,
-          callerConnectionId: message.connectionId as ConnectionId,
-          timestamp: message.timestamp,
-          energyConsumed: message.energyConsumed,
-          reducer: {
-            name: reducerInfo.reducerName,
-            args: reducerArgs,
-          },
-        };
-        const event: Event<typeof reducerEvent.reducer> = {
-          tag: 'Reducer',
-          value: reducerEvent,
-        };
-        const eventContext = this.#makeEventContext(event as any);
-        const reducerEventContext = {
-          ...eventContext,
-          event: reducerEvent,
-        };
-
-        const callbacks = this.#applyTableUpdates(
-          message.tableUpdates,
-          eventContext
-        );
-
-        this.#reducerEmitter.emit(
-          reducerInfo.reducerName,
-          reducerEventContext,
-          reducerArgs
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
-        break;
-      }
-      case 'IdentityToken': {
-        this.identity = message.identity;
-        if (!this.token && message.token) {
-          this.token = message.token;
-        }
-        this.connectionId = message.connectionId;
+        this.connectionId = serverMessage.value.connectionId;
         this.#emitter.emit('connect', this, this.identity, this.token);
         break;
       }
       case 'SubscribeApplied': {
+        const querySetId = serverMessage.value.querySetId.id;
         const subscription = this.#subscriptionManager.subscriptions.get(
-          message.queryId
+          querySetId
         );
-        if (subscription === undefined) {
+        if (!subscription) {
           stdbLogger(
             'error',
-            `Received SubscribeApplied for unknown queryId ${message.queryId}.`
+            `Received SubscribeApplied for unknown querySetId ${querySetId}.`
           );
-          // If we don't know about the subscription, we won't apply the table updates.
-          break;
+          return;
         }
         const event: Event<never> = { tag: 'SubscribeApplied' };
         const eventContext = this.#makeEventContext(event);
-        const { event: _, ...subscriptionEventContext } = eventContext;
+        const tableUpdates = this.#queryRowsToTableUpdates(
+          serverMessage.value.rows,
+          'insert'
+        );
         const callbacks = this.#applyTableUpdates(
-          message.tableUpdates,
+          tableUpdates,
           eventContext
         );
-        subscription?.emitter.emit('applied', subscriptionEventContext);
+        const { event: _, ...subscriptionEventContext } = eventContext;
+        subscription.emitter.emit('applied', subscriptionEventContext);
         for (const callback of callbacks) {
           callback.cb();
         }
         break;
       }
       case 'UnsubscribeApplied': {
+        const querySetId = serverMessage.value.querySetId.id;
         const subscription = this.#subscriptionManager.subscriptions.get(
-          message.queryId
+          querySetId
         );
-        if (subscription === undefined) {
+        if (!subscription) {
           stdbLogger(
             'error',
-            `Received UnsubscribeApplied for unknown queryId ${message.queryId}.`
+            `Received UnsubscribeApplied for unknown querySetId ${querySetId}.`
           );
-          // If we don't know about the subscription, we won't apply the table updates.
-          break;
+          return;
         }
         const event: Event<never> = { tag: 'UnsubscribeApplied' };
         const eventContext = this.#makeEventContext(event);
-        const { event: _, ...subscriptionEventContext } = eventContext;
+        const tableUpdates = serverMessage.value.rows
+          ? this.#queryRowsToTableUpdates(serverMessage.value.rows, 'delete')
+          : [];
         const callbacks = this.#applyTableUpdates(
-          message.tableUpdates,
+          tableUpdates,
           eventContext
         );
-        subscription?.emitter.emit('end', subscriptionEventContext);
-        this.#subscriptionManager.subscriptions.delete(message.queryId);
+        const { event: _, ...subscriptionEventContext } = eventContext;
+        subscription.emitter.emit('end', subscriptionEventContext);
+        this.#subscriptionManager.subscriptions.delete(querySetId);
         for (const callback of callbacks) {
           callback.cb();
         }
         break;
       }
       case 'SubscriptionError': {
-        const error = Error(message.error);
+        const querySetId = serverMessage.value.querySetId.id;
+        const error = Error(serverMessage.value.error);
         const event: Event<never> = { tag: 'Error', value: error };
         const eventContext = this.#makeEventContext(event);
         const errorContext = {
           ...eventContext,
           event: error,
         };
-        if (message.queryId !== undefined) {
-          this.#subscriptionManager.subscriptions
-            .get(message.queryId)
-            ?.emitter.emit('error', errorContext, error);
-          this.#subscriptionManager.subscriptions.delete(message.queryId);
+        const subscription = this.#subscriptionManager.subscriptions.get(
+          querySetId
+        );
+        if (subscription) {
+          subscription.emitter.emit('error', errorContext, error);
+          this.#subscriptionManager.subscriptions.delete(querySetId);
         } else {
-          console.error('Received an error message without a queryId: ', error);
-          // TODO: This should actually kill the connection.
-          // A subscription error without a specific subscription means we aren't receiving
-          // updates for all of our subscriptions, so our cache is out of sync.
+          console.error(
+            `Received SubscriptionError for unknown querySetId ${querySetId}:`,
+            error
+          );
+        }
+        break;
+      }
+      case 'TransactionUpdate': {
+        const event: Event<never> = { tag: 'UnknownTransaction' };
+        const eventContext = this.#makeEventContext(event);
+        for (const querySetUpdate of serverMessage.value.querySets) {
+          const tableUpdates =
+            this.#querySetUpdateToTableUpdates(querySetUpdate);
+          const callbacks = this.#applyTableUpdates(
+            tableUpdates,
+            eventContext
+          );
+          for (const callback of callbacks) {
+            callback.cb();
+          }
+        }
+        break;
+      }
+      case 'ReducerResult': {
+        const { requestId, result, timestamp } = serverMessage.value;
+        const pending = this.#pendingReducerCalls.get(requestId);
+        if (pending) {
+          this.#pendingReducerCalls.delete(requestId);
+        }
+        const reducerName = pending?.name ?? '<unknown>';
+        const deserializeArgs = this.#reducerArgsSerializers[reducerName]
+          ?.deserialize;
+        let reducerArgs: UntypedReducerDef['params'] | undefined = undefined;
+        if (deserializeArgs && pending?.args) {
+          try {
+            reducerArgs = deserializeArgs(new BinaryReader(pending.args));
+          } catch {
+            console.debug('Failed to deserialize reducer arguments');
+          }
+        }
 
-          // Send it to all of them:
-          this.#subscriptionManager.subscriptions.forEach(({ emitter }) => {
-            emitter.emit('error', errorContext, error);
-          });
+        if (result.tag === 'Ok') {
+          const tableUpdates = result.value.transactionUpdate.querySets.flatMap(
+            qs => this.#querySetUpdateToTableUpdates(qs)
+          );
+          const event: Event<never> = { tag: 'UnknownTransaction' };
+          const eventContext = this.#makeEventContext(event);
+          const callbacks = this.#applyTableUpdates(
+            tableUpdates,
+            eventContext
+          );
+          for (const callback of callbacks) {
+            callback.cb();
+          }
+        }
+
+        if (pending && reducerArgs !== undefined) {
+          const reducerEvent = {
+            timestamp,
+            outcome: result,
+            reducer: {
+              name: reducerName,
+              args: reducerArgs,
+            },
+          };
+          const event: Event<typeof reducerEvent.reducer> = {
+            tag: 'Reducer',
+            value: reducerEvent,
+          };
+          const reducerEventContext = {
+            ...this.#makeEventContext(event as any),
+            event: reducerEvent,
+          };
+          this.#reducerEmitter.emit(
+            reducerName,
+            reducerEventContext,
+            reducerArgs
+          );
         }
         break;
       }
       case 'ProcedureResult': {
-        const { requestId, result } = message;
+        const { status, requestId } = serverMessage.value;
+        const result: ProcedureResultMessage['result'] =
+          status.tag === 'Returned'
+            ? { tag: 'Ok', value: status.value }
+            : { tag: 'Err', value: status.value };
         const cb = this.#procedureCallbacks.get(requestId);
         this.#procedureCallbacks.delete(requestId);
         cb?.(result);
+        break;
+      }
+      case 'OneOffQueryResult': {
+        console.warn(
+          'Received OneOffQueryResult but SDK does not expose one-off query APIs yet.'
+        );
         break;
       }
     }
@@ -984,12 +826,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     flags: CallReducerFlags
   ): void {
+    const requestId = this.#getNextRequestId();
+    this.#pendingReducerCalls.set(requestId, {
+      name: reducerName,
+      args: argsBuffer,
+    });
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
       args: argsBuffer,
-      // The TypeScript SDK doesn't currently track `request_id`s,
-      // so always use 0.
-      requestId: 0,
+      requestId,
       flags: callReducerFlagsToNumber(flags),
     });
     this.#sendMessage(message);

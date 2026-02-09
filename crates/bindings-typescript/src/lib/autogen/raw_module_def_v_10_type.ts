@@ -9,10 +9,10 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import RawModuleDefV10Section from './raw_module_def_v_10_section_type';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('RawModuleDefV10', {
+  get sections() {
+    return __t.array(RawModuleDefV10Section);
+  },
 });

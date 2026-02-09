@@ -10,9 +10,11 @@ import {
   type Infer as __Infer,
 } from '../../lib/type_builders';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+export default __t.object('RawSequenceDefV10', {
+  sourceName: __t.option(__t.string()),
+  column: __t.u16(),
+  start: __t.option(__t.i128()),
+  minValue: __t.option(__t.i128()),
+  maxValue: __t.option(__t.i128()),
+  increment: __t.i128(),
 });
