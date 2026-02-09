@@ -347,9 +347,10 @@ Run `spacetime help publish` for more detailed information.
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: ``
+* `--include-private` — Include private tables and functions in generated code (types are always included).
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 
-* `--include-private` — Include private tables and functions in generated code (types are always included).
+
 
 ## `spacetime list`
 
