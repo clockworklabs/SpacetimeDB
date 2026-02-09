@@ -323,7 +323,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR>]`
+**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
 
 Run `spacetime help publish` for more detailed information.
 
@@ -349,7 +349,7 @@ Run `spacetime help publish` for more detailed information.
   Default value: ``
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 
-
+* `--include-private` — Include private tables and functions in generated code (types are always included).
 
 ## `spacetime list`
 

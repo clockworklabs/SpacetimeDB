@@ -3,9 +3,12 @@
 use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
-use clap::ArgAction::Set;
+use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
-use spacetimedb_codegen::{generate, Csharp, Lang, OutputFile, Rust, TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::{
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
+    UnrealCpp, AUTO_GENERATED_PREFIX,
+};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
@@ -25,7 +28,7 @@ use std::io::Read;
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR>]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -109,6 +112,12 @@ pub fn cli() -> clap::Command {
                 .default_value("")
                 .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
         )
+        .arg(
+            Arg::new("include_private")
+                .long("include-private")
+                .action(SetTrue)
+                .help("Include private tables and functions in generated code (types are always included)."),
+        )
         .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")
         .group(
@@ -137,6 +146,7 @@ pub async fn exec_ex(
     let module_name = args.get_one::<String>("module_name");
     let force = args.get_flag("force");
     let build_options = args.get_one::<String>("build_options").unwrap();
+    let include_private = args.get_flag("include_private");
 
     if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
         return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
@@ -171,6 +181,16 @@ pub async fn exec_ex(
         extract_descriptions(&path).context("could not extract schema")?
     };
 
+    let private_tables = private_table_names(&module);
+    if !private_tables.is_empty() && !include_private {
+        println!("Skipping private tables during codegen: {}.", private_tables.join(", "));
+    }
+
+    let mut options = CodegenOptions::default();
+    if include_private {
+        options.visibility = CodegenVisibility::IncludePrivate;
+    }
+
     fs::create_dir_all(out_dir)?;
 
     let mut paths = BTreeSet::new();
@@ -193,7 +213,7 @@ pub async fn exec_ex(
         Language::TypeScript => &TypeScript,
     };
 
-    for OutputFile { filename, code } in generate(&module, gen_lang) {
+    for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
         let fname = Path::new(&filename);
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
         if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
