@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, ErrorOrException, ExcResult,
-    ExceptionThrown, JsStackTrace, TerminationError, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -53,8 +53,8 @@ use tokio::sync::oneshot;
 use tracing::Instrument;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope_with_context, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope, ResolveModuleCallback,
-    ScriptOrigin, Value,
+    scope_with_context, ArrayBuffer, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
+    ResolveModuleCallback, ScriptOrigin, Value,
 };
 
 mod budget;
@@ -610,10 +610,16 @@ async fn spawn_instance_worker(
         let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler);
         scope.set_slot(JsInstanceEnv::new(instance_env));
 
+        // Create a zero-initialized buffer for holding reducer args.
+        // Arguments needing more space will not use this.
+        const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096; // 1 page.
+        let reducer_args_buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+
         let mut inst = V8Instance {
             scope,
             replica_ctx,
             hooks: &hooks,
+            reducer_args_buf,
         };
 
         // Process requests to the worker.
@@ -802,7 +808,8 @@ fn call_free_fun<'scope>(
 struct V8Instance<'a, 'scope, 'isolate> {
     scope: &'a mut PinScope<'scope, 'isolate>,
     replica_ctx: &'a Arc<ReplicaContext>,
-    hooks: &'a HookFunctions<'a>,
+    hooks: &'a HookFunctions<'scope>,
+    reducer_args_buf: Local<'scope, ArrayBuffer>,
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
@@ -820,7 +827,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
         common_call(self.scope, budget, op, |scope, op| {
-            Ok(call_call_reducer(scope, self.hooks, op)?)
+            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
@@ -970,7 +977,8 @@ mod test {
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };
-                Ok(call_call_reducer(scope, &hooks, op)?)
+                let buffer = v8::ArrayBuffer::new(scope, 4096);
+                Ok(call_call_reducer(scope, &hooks, op, buffer)?)
             })
         };
 
