@@ -19,6 +19,7 @@ import BinaryWriter, { ResizableBuffer } from '../lib/binary_writer';
 import {
   type Index,
   type IndexVal,
+  type PointIndex,
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
@@ -496,12 +497,15 @@ function makeTableView(
     const index_id = sys.index_id_from_name(indexDef.name!);
 
     let column_ids: number[];
+    let isHashIndex = false;
     switch (indexDef.algorithm.tag) {
+      case 'Hash':
+        isHashIndex = true;
+        column_ids = indexDef.algorithm.value;
+        break;
       case 'BTree':
         column_ids = indexDef.algorithm.value;
         break;
-      case 'Hash':
-        throw new Error('impossible');
       case 'Direct':
         column_ids = [indexDef.algorithm.value];
         break;
@@ -629,7 +633,7 @@ function makeTableView(
       } as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
       // numColumns == 1
-      index = {
+      const rawIndex = {
         filter: (range: any): IteratorObject<RowType<any>> => {
           const buf = LEAF_BUF;
           const point_len = serializeSinglePoint(buf, range);
@@ -649,7 +653,35 @@ function makeTableView(
             point_len
           );
         },
-      } as RangedIndex<any, any>;
+      };
+      if (isHashIndex) {
+        index = rawIndex as PointIndex<any, any>;
+      } else {
+        index = rawIndex as RangedIndex<any, any>;
+      }
+    } else if (isHashIndex) {
+      // numColumns != 1
+      index = {
+        filter: (range: any[]): IteratorObject<RowType<any>> => {
+          const buf = LEAF_BUF;
+          const point_len = serializePoint(buf, range);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+          return tableIterator(iter_id, deserializeRow);
+        },
+        delete: (range: any[]): u32 => {
+          const buf = LEAF_BUF;
+          const point_len = serializePoint(buf, range);
+          return sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+        },
+      } as PointIndex<any, any>;
     } else {
       // numColumns != 1
       const serializeRange = (
