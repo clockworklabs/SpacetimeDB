@@ -52,8 +52,8 @@ function isOverlapping(entity1: Entity, entity2: Entity): boolean {
 
 // ---------- insert bulk ----------
 
-const insertBulkEntity = spacetimedb.reducer(
-  'insert_bulk_entity',
+export const insertBulkEntity = spacetimedb.reducer(
+  { name: 'insert_bulk_entity' },
   { count: t.u32() },
   (ctx, { count }) => {
     for (let id = 0; id < count; id++) {
@@ -63,8 +63,8 @@ const insertBulkEntity = spacetimedb.reducer(
   }
 );
 
-const insertBulkCircle = spacetimedb.reducer(
-  'insert_bulk_circle',
+export const insertBulkCircle = spacetimedb.reducer(
+  { name: 'insert_bulk_circle' },
   { count: t.u32() },
   (ctx, { count }) => {
     for (let id = 0; id < count; id++) {
@@ -76,8 +76,8 @@ const insertBulkCircle = spacetimedb.reducer(
   }
 );
 
-const insertBulkFood = spacetimedb.reducer(
-  'insert_bulk_food',
+export const insertBulkFood = spacetimedb.reducer(
+  { name: 'insert_bulk_food' },
   { count: t.u32() },
   (ctx, { count }) => {
     for (let id = 1; id <= count; id++) {
@@ -91,8 +91,8 @@ const insertBulkFood = spacetimedb.reducer(
 // ```
 // SELECT * FROM Circle, Entity, Food
 // ```
-const crossJoinAll = spacetimedb.reducer(
-  'cross_join_all',
+export const crossJoinAll = spacetimedb.reducer(
+  { name: 'cross_join_all' },
   { expected: t.u32() },
   (ctx, { expected }) => {
     let count: number = 0;
@@ -116,8 +116,8 @@ const crossJoinAll = spacetimedb.reducer(
 // ```
 // SELECT * FROM Circle JOIN ENTITY USING(entity_id), Food JOIN ENTITY USING(entity_id)
 // ```
-const crossJoinCircleFood = spacetimedb.reducer(
-  'cross_join_circle_food',
+export const crossJoinCircleFood = spacetimedb.reducer(
+  { name: 'cross_join_circle_food' },
   { expected: t.u32() },
   (ctx, { expected }) => {
     let count: number = 0;
@@ -147,8 +147,8 @@ const crossJoinCircleFood = spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'init_game_circles',
+export const initGameCircles = spacetimedb.reducer(
+  { name: 'init_game_circles' },
   { initial_load: t.u32() },
   (ctx, { initial_load }) => {
     const load = newLoad(initial_load);
@@ -159,8 +159,8 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'run_game_circles',
+export const runGameCircles = spacetimedb.reducer(
+  { name: 'run_game_circles' },
   { initial_load: t.u32() },
   (ctx, { initial_load }) => {
     const load = newLoad(initial_load);
