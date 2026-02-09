@@ -79,6 +79,18 @@ jobs:
         with:
           run_install: true
 
+      # Install cmake and emscripten for C++ module compilation tests.
+      - name: Install cmake and emscripten (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
@@ -126,7 +138,12 @@ jobs:
         # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
         # build artifacts.
         # It also seemed to improve performance a fair amount (11m -> 6m)
-        run: cargo ci smoketests -- --test-threads=1
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            source ~/emsdk/emsdk_env.sh
+          fi
+          cargo ci smoketests -- --test-threads=1
 
   smoketests-python:
     needs: [lints]

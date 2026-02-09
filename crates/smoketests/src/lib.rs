@@ -139,6 +139,15 @@ macro_rules! require_pnpm {
     };
 }
 
+#[macro_export]
+macro_rules! require_emscripten {
+    () => {
+        if !$crate::have_emscripten() {
+            panic!("emcc (Emscripten) not found");
+        }
+    };
+}
+
 /// Helper macro for timing operations and printing results
 macro_rules! timed {
     ($label:expr, $expr:expr) => {{
@@ -240,6 +249,12 @@ pub fn have_psql() -> bool {
 pub fn pnpm_path() -> Option<PathBuf> {
     static PNPM_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
     PNPM_PATH.get_or_init(|| which("pnpm").ok()).clone()
+}
+
+/// Returns true if Emscripten (emcc) is available on the system.
+pub fn have_emscripten() -> bool {
+    static HAVE_EMSCRIPTEN: OnceLock<bool> = OnceLock::new();
+    *HAVE_EMSCRIPTEN.get_or_init(|| which("emcc").is_ok() || which("emcc.bat").is_ok())
 }
 
 /// A smoketest instance that manages a SpacetimeDB server and module project.
