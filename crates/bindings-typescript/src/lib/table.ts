@@ -38,15 +38,20 @@ type ColList = ColId[];
 /**
  * Check if any column in the row has invalid metadata.
  */
-type HasInvalidColumn<Row extends RowObj> = {
-  [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
-    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
-      ? true
-      : false
-    : false;
-}[keyof Row] extends false
-  ? false
-  : true;
+type HasInvalidColumn<Row extends RowObj> =
+  // this checks if Row exactly equals RowObj - if it does, we can't
+  // do type-system-level checking, so just let it pass
+  (<G>() => G extends Row ? 1 : 2) extends <G>() => G extends RowObj ? 1 : 2
+    ? false
+    : {
+          [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
+            ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+              ? true
+              : false
+            : false;
+        }[keyof Row] extends false
+      ? false
+      : true;
 
 /**
  * Extract the names of columns that have invalid metadata.

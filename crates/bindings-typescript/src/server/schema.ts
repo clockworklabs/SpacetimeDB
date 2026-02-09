@@ -120,12 +120,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
           'exporting something that is not a spacetime export'
         );
       }
-      if (
-        moduleExport[exportContext] != null &&
-        moduleExport[exportContext] !== registeredSchema
-      ) {
-        throw new TypeError('multiple schemas are not supported');
-      }
+      checkExportContext(moduleExport, registeredSchema);
       moduleExport[registerExport](registeredSchema, name);
     }
     return makeHooks(registeredSchema);
@@ -433,6 +428,22 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     return makeProcedureExport(this.#ctx, opts, params, ret, fn);
   }
 
+  /**
+   * Bundle multiple reducers, procedures, etc into one value to export.
+   * The name they will be exported with is their corresponding key in the `exports` argument.
+   */
+  exportGroup(exports: Record<string, ModuleExport>): ModuleExport {
+    return {
+      [exportContext]: this.#ctx,
+      [registerExport](ctx, _exportName) {
+        for (const [exportName, moduleExport] of Object.entries(exports)) {
+          checkExportContext(moduleExport, ctx);
+          moduleExport[registerExport](ctx, exportName);
+        }
+      },
+    };
+  }
+
   clientVisibilityFilter = {
     sql: (filter: string): ModuleExport => ({
       [exportContext]: this.#ctx,
@@ -457,6 +468,13 @@ function isModuleExport(x: unknown): x is ModuleExport {
     x !== null &&
     registerExport in x
   );
+}
+
+/** Verify that the ModuleContext that `exp` comes from is the same as `schema` */
+function checkExportContext(exp: ModuleExport, schema: SchemaInner) {
+  if (exp[exportContext] != null && exp[exportContext] !== schema) {
+    throw new TypeError('multiple schemas are not supported');
+  }
 }
 
 /**
