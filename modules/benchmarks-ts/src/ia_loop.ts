@@ -10,10 +10,7 @@ import {
   type Position,
   type Velocity,
 } from './schema';
-import {
-  t,
-  type ReducerCtx,
-} from 'spacetimedb/server';
+import { t, type ReducerCtx } from 'spacetimedb/server';
 
 function newPosition(
   entity_id: number,
@@ -32,7 +29,12 @@ function newPosition(
   };
 }
 
-function newVelocity(entity_id: number, x: number, y: number, z: number): Velocity {
+function newVelocity(
+  entity_id: number,
+  x: number,
+  y: number,
+  z: number
+): Velocity {
   return {
     entity_id,
     x,
@@ -227,8 +229,7 @@ function moveAgent(
     });
   }
 
-  const mobileEntityRes =
-    ctx.db.gameMobileEntityState.entity_id.find(entityId);
+  const mobileEntityRes = ctx.db.gameMobileEntityState.entity_id.find(entityId);
   if (mobileEntityRes == null) {
     throw new Error('GameMobileEntityState Entity ID not found');
   }

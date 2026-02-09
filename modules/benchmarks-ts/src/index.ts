@@ -1,3 +1,3 @@
-import "./circles";
-import "./ia_loop";
-import "./synthetic";
+import './circles';
+import './ia_loop';
+import './synthetic';

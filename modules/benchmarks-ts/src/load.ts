@@ -1,9 +1,9 @@
 export type Load = {
-  initialLoad: number,
-  smallTable: number,
-  numPlayers: number,
-  bigTable: number,
-  biggestTable: number,
+  initialLoad: number;
+  smallTable: number;
+  numPlayers: number;
+  bigTable: number;
+  biggestTable: number;
 };
 
 export function newLoad(initialLoad: number): Load {

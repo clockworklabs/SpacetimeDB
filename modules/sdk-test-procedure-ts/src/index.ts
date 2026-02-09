@@ -28,7 +28,7 @@ const MyTable = table(
 
 const PkTable = table(
   { name: 'pk_uuid', public: true },
-  {u: t.uuid().primaryKey(), data: t.i32()}
+  { u: t.uuid().primaryKey(), data: t.i32() }
 );
 
 const ScheduledProcTable = t.row({
@@ -54,7 +54,12 @@ const ProcInsertsIntoTable = table(
   ProcInsertsInto
 );
 
-const spacetimedb = schema(MyTable, PkTable, ScheduledProcTableTable, ProcInsertsIntoTable);
+const spacetimedb = schema(
+  MyTable,
+  PkTable,
+  ScheduledProcTableTable,
+  ProcInsertsIntoTable
+);
 
 spacetimedb.procedure(
   'return_primitive',
@@ -156,24 +161,29 @@ spacetimedb.reducer('schedule_proc', {}, ctx => {
     reducer_ts: ctx.timestamp,
     x: 42,
     y: 24,
-  })
+  });
 });
 
-spacetimedb.procedure('scheduled_proc', { data: ScheduledProcTable }, t.unit(), (ctx, { data }) => {
-  const reducer_ts = data.reducer_ts;
-  const x = data.x;
-  const y = data.y;
-  const procedure_ts = ctx.timestamp;
-  ctx.withTx(ctx => {
-    ctx.db.procInsertsInto.insert({
-      reducer_ts,
-      procedure_ts,
-      x,
-      y
+spacetimedb.procedure(
+  'scheduled_proc',
+  { data: ScheduledProcTable },
+  t.unit(),
+  (ctx, { data }) => {
+    const reducer_ts = data.reducer_ts;
+    const x = data.x;
+    const y = data.y;
+    const procedure_ts = ctx.timestamp;
+    ctx.withTx(ctx => {
+      ctx.db.procInsertsInto.insert({
+        reducer_ts,
+        procedure_ts,
+        x,
+        y,
+      });
     });
-  });
-  return {};
-});
+    return {};
+  }
+);
 
 spacetimedb.procedure('sorted_uuids_insert', t.unit(), ctx => {
   ctx.withTx(ctx => {
@@ -187,7 +197,7 @@ spacetimedb.procedure('sorted_uuids_insert', t.unit(), ctx => {
 
     for (const row of ctx.db.pkUuid.iter()) {
       if (lastUuid !== null && lastUuid >= row.u) {
-        throw new Error("UUIDs are not sorted correctly");
+        throw new Error('UUIDs are not sorted correctly');
       }
       lastUuid = row.u;
     }
