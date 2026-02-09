@@ -948,7 +948,7 @@ jobs:
               repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
-              inputs: { public_ref: publicRef, public_pr_number: (String)publicPrNumber }
+              inputs: { public_ref: publicRef, public_pr_number: String(publicPrNumber) }
             });
   
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
