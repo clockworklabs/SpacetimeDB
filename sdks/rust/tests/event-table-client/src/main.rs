@@ -4,7 +4,7 @@ mod module_bindings;
 
 use module_bindings::*;
 
-use spacetimedb_sdk::{Event, EventTable};
+use spacetimedb_sdk::{DbContext, Event, EventTable};
 use std::sync::atomic::{AtomicU32, Ordering};
 use test_counter::TestCounter;
 
