@@ -211,6 +211,10 @@ crates/bench/spacetime.svg
 crates/bench/sqlite.svg
 .vs/
 
+# .NET build artifacts
+**/obj/
+**/bin/
+
 # benchmark files
 out.json
 old.json
@@ -227,6 +231,10 @@ new.json
 # Temporary templates dir for CLI's init command
 /crates/cli/.templates
 
+# C++ build data
+modules/benchmarks-cpp/build/
+modules/module-test-cpp/build/
+
 # Symlinked output from `nix build`
 result
 
@@ -241,3 +249,7 @@ nul
 
 [Nn][Uu][Gg][Ee][Tt].[Cc][Oo][Nn][Ff][Ii][Gg]
 [Nn][Uu][Gg][Ee][Tt].[Cc][Oo][Nn][Ff][Ii][Gg].meta
+ 
+# csharp SDK packages
+/sdks/csharp/packages/
+/sdks/csharp/packages.meta

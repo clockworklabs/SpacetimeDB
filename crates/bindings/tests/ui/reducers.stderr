@@ -44,8 +44,13 @@ error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
  --> tests/ui/reducers.rs:6:40
   |
 6 | fn bad_type(_ctx: &ReducerContext, _a: Test) {}
-  |                                        ^^^^ the trait `SpacetimeType` is not implemented for `Test`
+  |                                        ^^^^ unsatisfied trait bound
   |
+help: the trait `SpacetimeType` is not implemented for `Test`
+ --> tests/ui/reducers.rs:3:1
+  |
+3 | struct Test;
+  | ^^^^^^^^^^^
   = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
   = help: the following other types implement trait `SpacetimeType`:
             &T
@@ -55,7 +60,7 @@ error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
             Arc<T>
             ArrayType
             Box<T>
-            ColId
+            ColumnAttribute
           and $N others
   = note: required for `Test` to implement `ReducerArg`
 
@@ -105,12 +110,22 @@ error[E0277]: `Test` is not a valid reducer return type
  --> tests/ui/reducers.rs:9:46
   |
 9 | fn bad_return_type(_ctx: &ReducerContext) -> Test {
-  |                                              ^^^^ the trait `IntoReducerResult` is not implemented for `Test`
+  |                                              ^^^^ unsatisfied trait bound
   |
+help: the trait `IntoReducerResult` is not implemented for `Test`
+ --> tests/ui/reducers.rs:3:1
+  |
+3 | struct Test;
+  | ^^^^^^^^^^^
   = note: reducers cannot return values -- you can only return `()` or `Result<(), impl Display>`
-  = help: the following other types implement trait `IntoReducerResult`:
-            ()
-            Result<(), E>
+help: the following other types implement trait `IntoReducerResult`
+ --> src/rt.rs
+  |
+  | impl IntoReducerResult for () {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `()`
+...
+  | impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Result<(), E>`
 
 error[E0277]: invalid reducer signature
  --> tests/ui/reducers.rs:9:4
@@ -161,7 +176,11 @@ error[E0277]: the first argument of a reducer must be `&ReducerContext`
    |                    ^^ first argument must be `&ReducerContext`
    |
    = help: the trait `ReducerContextArg` is not implemented for `u8`
-   = help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
+help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
+  --> src/rt.rs
+   |
+   | impl ReducerContextArg for &ReducerContext {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0277]: invalid reducer signature
   --> tests/ui/reducers.rs:23:4
@@ -212,7 +231,11 @@ error[E0277]: the first argument of a reducer must be `&ReducerContext`
    |                     ^^^^^^^^^^^^^^ first argument must be `&ReducerContext`
    |
    = help: the trait `ReducerContextArg` is not implemented for `ReducerContext`
-   = help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
+help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
+  --> src/rt.rs
+   |
+   | impl ReducerContextArg for &ReducerContext {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0277]: invalid reducer signature
   --> tests/ui/reducers.rs:26:4
