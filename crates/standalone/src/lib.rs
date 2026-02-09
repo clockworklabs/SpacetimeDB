@@ -267,7 +267,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             None => {
                 let program = Program::from_bytes(&spec.program_bytes[..]);
 
-                let mut database = Database {
+                let database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
@@ -287,8 +287,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
                 debug_assert_eq!(_hash_for_assert, program_hash);
 
-                let database_id = self.control_db.insert_database(database.clone())?;
-                database.id = database_id;
+                let database_id = self.control_db.insert_database(database)?;
 
                 self.schedule_replicas(database_id, num_replicas).await?;
 

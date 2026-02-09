@@ -82,8 +82,10 @@ pub struct BsatnRowListBuilder {
 }
 
 /// A [`RowSizeHint`] under construction.
+#[derive(Default)]
 pub enum RowSizeHintBuilder {
     /// We haven't seen any rows yet.
+    #[default]
     Empty,
     /// Each row in `rows_data` is of the same fixed size as specified here
     /// but we don't know whether the size fits in `RowSize`
@@ -104,12 +106,6 @@ impl BsatnRowListBuilder {
     pub fn new_from_bytes(rows_data: BytesMut) -> Self {
         let size_hint = <_>::default();
         Self { size_hint, rows_data }
-    }
-}
-
-impl Default for RowSizeHintBuilder {
-    fn default() -> Self {
-        Self::Empty
     }
 }
 
