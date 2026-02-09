@@ -652,24 +652,30 @@ pub enum ViewCommand {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: ws_v1::SubscribeSingle,
-        timer: Instant,
+        _timer: Instant,
     },
     AddMultiSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: ws_v1::SubscribeMulti,
-        timer: Instant,
+        _timer: Instant,
     },
     AddLegacySubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         subscribe: ws_v1::Subscribe,
-        timer: Instant,
+        _timer: Instant,
     },
     AddSubscriptionV2 {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: ws_v2::Subscribe,
+        _timer: Instant,
+    },
+    RemoveSubscriptionV2 {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Unsubscribe,
         timer: Instant,
     },
     Sql {
@@ -1572,7 +1578,7 @@ impl ModuleHost {
             sender,
             auth,
             request,
-            timer,
+            _timer: timer,
         };
 
         let res = self
@@ -1605,7 +1611,7 @@ impl ModuleHost {
             sender,
             auth,
             request,
-            timer,
+            _timer: timer,
         };
 
         let res = self
@@ -1627,6 +1633,38 @@ impl ModuleHost {
         }
     }
 
+    pub async fn call_view_remove_v2_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Unsubscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let cmd = ViewCommand::RemoveSubscriptionV2 {
+            sender,
+            auth,
+            request,
+            timer,
+        };
+
+        let res = self
+            .call(
+                "call_view_remove_v2_subscription",
+                cmd,
+                async |cmd, inst| inst.call_view(cmd),
+                async |cmd, inst| inst.call_view(cmd).await,
+            )
+            .await
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Subscription { result } => result,
+            ViewCommandResult::Sql { .. } => {
+                unreachable!("unexpected SQL result in call_view_remove_v2_subscription")
+            }
+        }
+    }
+
     pub async fn call_view_add_multi_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
@@ -1638,7 +1676,7 @@ impl ModuleHost {
             sender,
             auth,
             request,
-            timer,
+            _timer: timer,
         };
 
         let res = self
@@ -1671,7 +1709,7 @@ impl ModuleHost {
             sender,
             auth,
             subscribe,
-            timer,
+            _timer: timer,
         };
 
         let res = self
@@ -2161,6 +2199,119 @@ impl ModuleHost {
 
         if let Some(metrics) = metrics {
             // Record the metrics for the one-off query
+            replica_ctx
+                .relational_db
+                .exec_counters_for(WorkloadType::Sql)
+                .record(&metrics);
+        }
+
+        Ok(())
+    }
+
+    /// Execute a one-off query for v2 clients and send the results to the given client.
+    ///
+    /// This only returns an error if there is a db-level problem.
+    /// An error with the query itself will be sent to the client.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn one_off_query_v2(
+        &self,
+        auth: AuthCtx,
+        query: String,
+        client: Arc<ClientConnectionSender>,
+        request_id: u32,
+        _timer: Instant,
+        rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
+    ) -> Result<(), anyhow::Error> {
+        let replica_ctx = self.replica_ctx();
+        let db = replica_ctx.relational_db.clone();
+        let subscriptions = replica_ctx.subscriptions.clone();
+        log::debug!("One-off query: {query}");
+        let metrics = self
+            .on_module_thread("one_off_query_v2", move || {
+                let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+                    let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+                    let _ = tx_offset_sender.send(tx_offset);
+                    db.report_read_tx_metrics(reducer, tx_metrics);
+                });
+
+                let result: Result<(ws_v2::SingleTableRows, ExecutionMetrics), anyhow::Error> = (|| {
+                    let tx = SchemaViewer::new(&*tx, &auth);
+
+                    let (plans, _, table_name, _) = compile_subscription(&query, &tx, &auth)?;
+
+                    let optimized = plans
+                        .into_iter()
+                        .map(|plan| plan.optimize(&auth))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    check_row_limit(
+                        &optimized,
+                        &db,
+                        &tx,
+                        |plan, tx| estimate_rows_scanned(tx, plan),
+                        &auth,
+                    )?;
+
+                    let return_table = || optimized.first().and_then(|plan| plan.return_table());
+
+                    let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
+                    let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
+                    let num_private_cols = return_table()
+                        .map(|schema| schema.num_private_cols())
+                        .unwrap_or_default();
+
+                    let optimized = optimized
+                        .into_iter()
+                        .map(PipelinedProject::from)
+                        .collect::<Vec<_>>();
+
+                    let table_name = table_name.to_boxed_str();
+
+                    if returns_view_table && num_private_cols > 0 {
+                        let optimized = optimized
+                            .into_iter()
+                            .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
+                            .collect::<Vec<_>>();
+                        return execute_plan_for_view::<ws_v1::BsatnFormat>(
+                            &optimized,
+                            &DeltaTx::from(&*tx),
+                            &rlb_pool,
+                        )
+                        .map(|(rows, _, metrics)| (ws_v2::SingleTableRows { table: table_name, rows }, metrics))
+                        .context("One-off queries are not allowed to modify the database");
+                    }
+
+                    execute_plan::<ws_v1::BsatnFormat>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
+                        .map(|(rows, _, metrics)| (ws_v2::SingleTableRows { table: table_name, rows }, metrics))
+                        .context("One-off queries are not allowed to modify the database")
+                })();
+
+                let (message, metrics) = match result {
+                    Ok((rows, metrics)) => (
+                        ws_v2::OneOffQueryResult {
+                            request_id,
+                            result: Ok(ws_v2::QueryRows {
+                                tables: vec![rows].into_boxed_slice(),
+                            }),
+                        },
+                        Some(metrics),
+                    ),
+                    Err(err) => (
+                        ws_v2::OneOffQueryResult {
+                            request_id,
+                            result: Err(err.to_string().into()),
+                        },
+                        None,
+                    ),
+                };
+
+                subscriptions.send_one_off_query_message_v2(client, message, tx_offset_receiver)?;
+                Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
+            })
+            .await??;
+
+        if let Some(metrics) = metrics {
             replica_ctx
                 .relational_db
                 .exec_counters_for(WorkloadType::Sql)
