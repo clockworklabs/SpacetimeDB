@@ -274,7 +274,7 @@ export const hooks: ModuleHooks = {
     const writer = new BinaryWriter(128);
     RawModuleDef.serialize(
       writer,
-      RawModuleDef.V10(getRegisteredSchema().RawModuleDefV10)
+      RawModuleDef.V10(getRegisteredSchema().rawModuleDefV10())
     );
     return writer.getBuffer();
   },

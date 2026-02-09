@@ -146,17 +146,34 @@ export class ModuleContext {
     return this.#moduleDef;
   }
 
-  get RawModuleDefV10(): Infer<typeof RawModuleDefV10> {
+  rawModuleDefV10(): Infer<typeof RawModuleDefV10> {
     const sections: Section[] = [];
 
-    for (const [key, value] of Object.entries(this.#moduleDef)) {
-      const tag = key.charAt(0).toUpperCase() + key.slice(1);
-      sections.push({
-        tag,
-        value,
-      } as Section);
-    }
+    const push = <T extends Section>(s: T | undefined) => {
+      if (s) sections.push(s);
+    };
 
+    const module = this.#moduleDef;
+
+    push(module.typespace && { tag: 'Typespace', value: module.typespace });
+    push(module.types && { tag: 'Types', value: module.types });
+    push(module.tables && { tag: 'Tables', value: module.tables });
+    push(module.reducers && { tag: 'Reducers', value: module.reducers });
+    push(module.procedures && { tag: 'Procedures', value: module.procedures });
+    push(module.views && { tag: 'Views', value: module.views });
+    push(module.schedules && { tag: 'Schedules', value: module.schedules });
+    push(
+      module.lifeCycleReducers && {
+        tag: 'LifeCycleReducers',
+        value: module.lifeCycleReducers,
+      }
+    );
+    push(
+      module.rowLevelSecurity && {
+        tag: 'RowLevelSecurity',
+        value: module.rowLevelSecurity,
+      }
+    );
     return { sections };
   }
 
