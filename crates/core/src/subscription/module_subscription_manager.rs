@@ -2274,11 +2274,9 @@ mod tests {
         let _rt = runtime.enter();
 
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
-        let added =
-            subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(1))?;
+        let added = subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(1))?;
         assert_eq!(added.len(), 1);
-        let added =
-            subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(2))?;
+        let added = subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(2))?;
         assert_eq!(added.len(), 1);
 
         let client_id = (client.id.identity, client.id.connection_id);

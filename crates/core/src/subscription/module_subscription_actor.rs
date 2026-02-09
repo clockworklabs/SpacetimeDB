@@ -23,12 +23,14 @@ use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::BytesMut;
 use core::panic;
 use parking_lot::RwLock;
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
+use spacetimedb_client_api_messages::websocket::common::ByteListLen as _;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
@@ -949,7 +951,7 @@ impl ModuleSubscriptions {
 
     fn add_v2_subscription_inner<I: WasmInstance>(
         &self,
-        _instance: Option<&mut RefInstance<I>>,
+        instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: ws_v2::Subscribe,
@@ -973,7 +975,7 @@ impl ModuleSubscriptions {
         let num_queries = request.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
-        let (queries, _auth, mut_tx, _compile_timer) = return_on_err!(
+        let (queries, auth, mut_tx, _compile_timer) = return_on_err!(
             self.compile_queries(
                 sender.id.identity,
                 auth,
@@ -984,13 +986,13 @@ impl ModuleSubscriptions {
             send_err_msg,
             (None, false)
         );
-        let (_mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
+        let (mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
         // an `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still has a
         // write lock on the db.
-        let _queries = {
+        let queries = {
             let mut subscriptions = {
                 // How contended is the lock?
                 let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
@@ -998,10 +1000,103 @@ impl ModuleSubscriptions {
                 self.subscriptions.write()
             };
 
-            subscriptions.add_subscription_multi(sender.clone(), queries, request.query_set_id)?
+            subscriptions.add_subscription_v2(sender.clone(), queries, request.query_set_id)?
         };
 
-        todo!()
+        let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
+
+        let (tx, tx_offset, trapped) =
+            self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
+
+        let (update, metrics) =
+            self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)?;
+
+        subscription_metrics.num_queries_evaluated.inc_by(queries.len() as _);
+
+        fn merge_bsatn_row_lists(lists: Vec<ws_v1::BsatnRowList>) -> ws_v1::BsatnRowList {
+            if lists.is_empty() {
+                return ws_v1::BsatnRowList::default();
+            }
+            if lists.len() == 1 {
+                return lists.into_iter().next().unwrap();
+            }
+            let total_len: usize = lists.iter().map(|list| list.num_bytes()).sum();
+            let mut rows_data = BytesMut::with_capacity(total_len);
+            let mut offsets: Vec<ws_v1::RowOffset> = Vec::new();
+            let mut base: usize = 0;
+
+            for list in lists {
+                let (hint, bytes) = list.into_inner();
+                let data_len = bytes.len();
+                rows_data.extend_from_slice(&bytes);
+
+                match hint {
+                    ws_v1::RowSizeHint::FixedSize(size) => {
+                        let size = size as usize;
+                        let count = data_len / size;
+                        for i in 0..count {
+                            offsets.push((base + i * size) as u64);
+                        }
+                    }
+                    ws_v1::RowSizeHint::RowOffsets(offs) => {
+                        offsets.extend(offs.iter().map(|o| (base + *o as usize) as u64));
+                    }
+                }
+                base += data_len;
+            }
+
+            ws_v1::BsatnRowList::new(ws_v1::RowSizeHint::RowOffsets(offsets.into()), rows_data.freeze())
+        }
+
+        fn query_rows_from_update(
+            update: ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>,
+        ) -> Result<ws_v2::QueryRows, DBError> {
+            // TODO: Group by table name so each table appears once with merged rows.
+            let tables = update
+                .tables
+                .into_iter()
+                .map(|table_update| {
+                    let mut inserts = Vec::new();
+                    for single_update in table_update.updates {
+                        let ws_v1::CompressableQueryUpdate::Uncompressed(query_update) = single_update else {
+                            return Err(DBError::Other(anyhow::anyhow!(
+                                "unexpected compressed v1 update for v2 subscribe"
+                            )));
+                        };
+                        inserts.push(query_update.inserts);
+                    }
+                    Ok(ws_v2::SingleTableRows {
+                        table: table_update.table_name,
+                        rows: merge_bsatn_row_lists(inserts),
+                    })
+                })
+                .collect::<Result<Vec<_>, DBError>>()?;
+
+            Ok(ws_v2::QueryRows {
+                tables: tables.into_boxed_slice(),
+            })
+        }
+
+        let ws_v2::QueryRows { tables } = match update {
+            ws_v1::FormatSwitch::Bsatn(update) => query_rows_from_update(update)?,
+            ws_v1::FormatSwitch::Json(_) => {
+                return Err(DBError::Other(anyhow::anyhow!(
+                    "v2 subscriptions require binary protocol"
+                )))
+            }
+        };
+
+        let _ = self.broadcast_queue.send_client_message_v2(
+            sender.clone(),
+            Some(tx_offset),
+            ws_v2::SubscribeApplied {
+                request_id: request.request_id,
+                query_set_id: request.query_set_id,
+                rows: ws_v2::QueryRows { tables },
+            },
+        );
+
+        Ok((Some(metrics), trapped))
     }
     fn add_multi_subscription_inner<I: WasmInstance>(
         &self,
