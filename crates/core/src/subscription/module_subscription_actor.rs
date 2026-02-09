@@ -23,12 +23,15 @@ use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::BytesMut;
 use core::panic;
 use parking_lot::RwLock;
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use scopeguard::ScopeGuard;
+use spacetimedb_client_api_messages::websocket::common::ByteListLen as _;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
@@ -42,7 +45,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
 use spacetimedb_table::static_assert_size;
-use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
 
@@ -202,6 +204,76 @@ type SubscriptionUpdate =
 type FullSubscriptionUpdate =
     ws_v1::FormatSwitch<ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>, ws_v1::DatabaseUpdate<ws_v1::JsonFormat>>;
 
+fn merge_bsatn_row_lists(lists: Vec<ws_v1::BsatnRowList>) -> ws_v1::BsatnRowList {
+    if lists.is_empty() {
+        return ws_v1::BsatnRowList::default();
+    }
+    if lists.len() == 1 {
+        return lists.into_iter().next().unwrap();
+    }
+    let total_len: usize = lists.iter().map(|list| list.num_bytes()).sum();
+    let mut rows_data = BytesMut::with_capacity(total_len);
+    let mut offsets: Vec<ws_v1::RowOffset> = Vec::new();
+    let mut base: usize = 0;
+
+    for list in lists {
+        let (hint, bytes) = list.into_inner();
+        let data_len = bytes.len();
+        rows_data.extend_from_slice(&bytes);
+
+        match hint {
+            ws_v1::RowSizeHint::FixedSize(size) => {
+                let size = size as usize;
+                let count = data_len / size;
+                for i in 0..count {
+                    offsets.push((base + i * size) as u64);
+                }
+            }
+            ws_v1::RowSizeHint::RowOffsets(offs) => {
+                offsets.extend(offs.iter().map(|o| (base + *o as usize) as u64));
+            }
+        }
+        base += data_len;
+    }
+
+    ws_v1::BsatnRowList::new(ws_v1::RowSizeHint::RowOffsets(offsets.into()), rows_data.freeze())
+}
+
+fn query_rows_from_update(
+    update: ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>,
+    use_deletes: bool,
+) -> Result<ws_v2::QueryRows, DBError> {
+    // TODO: Group by table name so each table appears once with merged rows.
+    let tables = update
+        .tables
+        .into_iter()
+        .map(|table_update| {
+            let mut inserts = Vec::new();
+            for single_update in table_update.updates {
+                let ws_v1::CompressableQueryUpdate::Uncompressed(query_update) = single_update else {
+                    return Err(DBError::Other(anyhow::anyhow!(
+                        "unexpected compressed v1 update for v2 subscribe"
+                    )));
+                };
+                let rows = if use_deletes {
+                    query_update.deletes
+                } else {
+                    query_update.inserts
+                };
+                inserts.push(rows);
+            }
+            Ok(ws_v2::SingleTableRows {
+                table: table_update.table_name,
+                rows: merge_bsatn_row_lists(inserts),
+            })
+        })
+        .collect::<Result<Vec<_>, DBError>>()?;
+
+    Ok(ws_v2::QueryRows {
+        tables: tables.into_boxed_slice(),
+    })
+}
+
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err {
     ($expr:expr, $handler:expr, $metrics:expr) => {
@@ -332,7 +404,7 @@ impl ModuleSubscriptions {
         )?;
 
         let table_id = query.subscribed_table_id();
-        let table_name = query.subscribed_table_name();
+        let table_name = query.subscribed_table_name().clone();
 
         let plans = query
             .plans_fragments()
@@ -367,7 +439,7 @@ impl ModuleSubscriptions {
                 collect_table_update_for_view(
                     &plans,
                     table_id,
-                    table_name.into(),
+                    table_name.clone(),
                     &tx,
                     update_type,
                     &self.bsatn_rlb_pool,
@@ -379,7 +451,7 @@ impl ModuleSubscriptions {
                 collect_table_update(
                     &plans,
                     table_id,
-                    table_name.into(),
+                    table_name.clone(),
                     &tx,
                     update_type,
                     &self.bsatn_rlb_pool,
@@ -395,7 +467,7 @@ impl ModuleSubscriptions {
                 collect_table_update_for_view(
                     &plans,
                     table_id,
-                    table_name.into(),
+                    table_name,
                     &tx,
                     update_type,
                     &JsonRowListBuilderFakePool,
@@ -407,7 +479,7 @@ impl ModuleSubscriptions {
                 collect_table_update(
                     &plans,
                     table_id,
-                    table_name.into(),
+                    table_name,
                     &tx,
                     update_type,
                     &JsonRowListBuilderFakePool,
@@ -590,7 +662,7 @@ impl ModuleSubscriptions {
                 timer: Some(timer),
                 result: SubscriptionResult::Subscribe(SubscriptionRows {
                     table_id: query.subscribed_table_id(),
-                    table_name: query.subscribed_table_name().into(),
+                    table_name: query.subscribed_table_name().clone(),
                     table_rows,
                 }),
             },
@@ -663,7 +735,7 @@ impl ModuleSubscriptions {
                 timer: Some(timer),
                 result: SubscriptionResult::Unsubscribe(SubscriptionRows {
                     table_id: query.subscribed_table_id(),
-                    table_name: query.subscribed_table_name().into(),
+                    table_name: query.subscribed_table_name().clone(),
                     table_rows,
                 }),
             },
@@ -757,6 +829,126 @@ impl ModuleSubscriptions {
         );
 
         Ok(Some(metrics))
+    }
+
+    pub async fn remove_v2_subscription(
+        &self,
+        host: Option<&ModuleHost>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Unsubscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        match host {
+            Some(host) => {
+                host.call_view_remove_v2_subscription(sender, auth, request, timer)
+                    .await
+            }
+            None => self
+                .remove_v2_subscription_inner::<host::wasmtime::WasmtimeInstance>(
+                    None, sender, auth, request, timer, None,
+                )
+                .map(|(metrics, _)| metrics),
+        }
+    }
+
+    pub(crate) fn remove_v2_subscription_with_instance<I: WasmInstance>(
+        &self,
+        instance: &mut RefInstance<I>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Unsubscribe,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
+        self.remove_v2_subscription_inner(Some(instance), sender, auth, request, timer, _assert)
+    }
+
+    fn remove_v2_subscription_inner<I: WasmInstance>(
+        &self,
+        _instance: Option<&mut RefInstance<I>>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Unsubscribe,
+        _timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
+        let send_err_msg = |message| {
+            let _ = self.broadcast_queue.send_client_message_v2(
+                sender.clone(),
+                None,
+                ws_v2::SubscriptionError {
+                    request_id: Some(request.request_id),
+                    query_set_id: request.query_set_id,
+                    error: message,
+                },
+            );
+        };
+
+        let subscription_metrics = &self.metrics.unsubscribe;
+
+        // Always lock the db before the subscription lock to avoid deadlocks.
+        let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
+
+        let removed_queries = {
+            let _compile_timer = subscription_metrics.compilation_time.start_timer();
+            let mut subscriptions = {
+                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+                self.subscriptions.write()
+            };
+
+            return_on_err!(
+                subscriptions
+                    .remove_subscription_v2((sender.id.identity, sender.id.connection_id), request.query_set_id,),
+                send_err_msg,
+                (None, false)
+            )
+        };
+
+        let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
+        let (tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, &removed_queries, auth.caller())?;
+
+        let (rows, metrics) = if request.flags == ws_v2::UnsubscribeFlags::SendDroppedRows {
+            let (update, metrics) = return_on_err!(
+                self.evaluate_queries(
+                    sender.clone(),
+                    &removed_queries,
+                    &tx,
+                    &auth,
+                    TableUpdateType::Unsubscribe,
+                ),
+                send_err_msg,
+                (None, false)
+            );
+            subscription_metrics
+                .num_queries_evaluated
+                .inc_by(removed_queries.len() as _);
+
+            let query_rows = match update {
+                ws_v1::FormatSwitch::Bsatn(update) => query_rows_from_update(update, true)?,
+                ws_v1::FormatSwitch::Json(_) => {
+                    return Err(DBError::Other(anyhow::anyhow!(
+                        "v2 unsubscribe requires binary protocol"
+                    )))
+                }
+            };
+            (Some(query_rows), Some(metrics))
+        } else {
+            (None, None)
+        };
+
+        let _ = self.broadcast_queue.send_client_message_v2(
+            sender.clone(),
+            Some(tx_offset),
+            ws_v2::UnsubscribeApplied {
+                request_id: request.request_id,
+                query_set_id: request.query_set_id,
+                rows,
+            },
+        );
+
+        Ok((metrics, false))
     }
 
     /// Compiles the queries in a [Subscribe] or [SubscribeMulti] message.
@@ -871,6 +1063,27 @@ impl ModuleSubscriptions {
             .send_client_message_v1(recipient, tx_offset, message)
     }
 
+    /// Like [`Self::send_procedure_message`], but for v2 protocol messages.
+    pub fn send_procedure_message_v2(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: ws_v2::ProcedureResult,
+        tx_offset: Option<TransactionOffset>,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue
+            .send_client_message_v2(recipient, tx_offset, message)
+    }
+
+    pub fn send_one_off_query_message_v2(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: ws_v2::OneOffQueryResult,
+        tx_offset: TransactionOffset,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue
+            .send_client_message_v2(recipient, Some(tx_offset), message)
+    }
+
     /// Add a subscription consisting of multiple queries.
     ///
     /// Read more in [`Self::add_single_subscription`].
@@ -953,7 +1166,7 @@ impl ModuleSubscriptions {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: ws_v2::Subscribe,
-        timer: Instant,
+        _timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
         // Send an error message to the client
@@ -973,7 +1186,7 @@ impl ModuleSubscriptions {
         let num_queries = request.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
-        let (queries, auth, mut_tx, compile_timer) = return_on_err!(
+        let (queries, auth, mut_tx, _compile_timer) = return_on_err!(
             self.compile_queries(
                 sender.id.identity,
                 auth,
@@ -998,10 +1211,39 @@ impl ModuleSubscriptions {
                 self.subscriptions.write()
             };
 
-            subscriptions.add_subscription_multi(sender.clone(), queries, request.query_set_id)?
+            subscriptions.add_subscription_v2(sender.clone(), queries, request.query_set_id)?
         };
 
-        todo!()
+        let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
+
+        let (tx, tx_offset, trapped) =
+            self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
+
+        let (update, metrics) =
+            self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)?;
+
+        subscription_metrics.num_queries_evaluated.inc_by(queries.len() as _);
+
+        let ws_v2::QueryRows { tables } = match update {
+            ws_v1::FormatSwitch::Bsatn(update) => query_rows_from_update(update, false)?,
+            ws_v1::FormatSwitch::Json(_) => {
+                return Err(DBError::Other(anyhow::anyhow!(
+                    "v2 subscriptions require binary protocol"
+                )))
+            }
+        };
+
+        let _ = self.broadcast_queue.send_client_message_v2(
+            sender.clone(),
+            Some(tx_offset),
+            ws_v2::SubscribeApplied {
+                request_id: request.request_id,
+                query_set_id: request.query_set_id,
+                rows: ws_v2::QueryRows { tables },
+            },
+        );
+
+        Ok((Some(metrics), trapped))
     }
     fn add_multi_subscription_inner<I: WasmInstance>(
         &self,
@@ -1340,12 +1582,25 @@ impl ModuleSubscriptions {
         );
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
-        let update_metrics = subscriptions.eval_updates_sequential(
+        let (update_metrics, failed_v2_subscriptions) = subscriptions.eval_updates_sequential(
             (&delta_read_tx, tx_offset),
             &self.bsatn_rlb_pool,
             event.clone(),
             caller,
         );
+        drop(subscriptions);
+        if !failed_v2_subscriptions.is_empty() {
+            let mut subscriptions = {
+                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+                self.subscriptions.write()
+            };
+            for (client_id, query_set_id) in failed_v2_subscriptions {
+                if let Err(err) = subscriptions.remove_subscription_v2(client_id, query_set_id) {
+                    tracing::warn!(?client_id, ?query_set_id, "failed to remove v2 subscription: {err}");
+                }
+            }
+        }
         read_tx.metrics.merge(update_metrics);
         Ok(Ok(CommitAndBroadcastEventSuccess {
             tx_offset: extra_tx_offset,
@@ -1554,7 +1809,7 @@ mod tests {
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
-    use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+    use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
@@ -1758,6 +2013,7 @@ mod tests {
             caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             energy_quanta_used: EnergyQuanta { quanta: 0 },
             host_execution_duration: Duration::from_millis(0),
             request_id: None,
@@ -1914,6 +2170,215 @@ mod tests {
         query_id: u32,
     ) -> anyhow::Result<()> {
         subs.remove_single_subscription(sender, auth, single_unsubscribe(query_id), Instant::now())?;
+        Ok(())
+    }
+
+    /// Test that clients receive v2 unsubscribe applied without rows.
+    #[tokio::test]
+    async fn unsubscribe_v2_default_no_rows() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (sender, mut rx) = client_connection_with_config(
+            client_id,
+            &db,
+            ClientConfig {
+                protocol: Protocol::Binary,
+                version: WsVersion::V2,
+                compression: ws_v1::Compression::None,
+                tx_update_full: true,
+                confirmed_reads: false,
+            },
+        );
+
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+        with_auto_commit(&db, |tx| -> anyhow::Result<_> {
+            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u8])?)?;
+            Ok(())
+        })?;
+
+        subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+            None,
+            sender.clone(),
+            auth.clone(),
+            ws_v2::Subscribe {
+                request_id: 1,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                query_strings: ["select * from t".into()].into(),
+            },
+            Instant::now(),
+            None,
+        )?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(_))) => {}
+            other => panic!("Expected v2 SubscribeApplied, got: {other:?}"),
+        }
+
+        subs.remove_v2_subscription(
+            None,
+            sender.clone(),
+            auth,
+            ws_v2::Unsubscribe {
+                request_id: 2,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                flags: ws_v2::UnsubscribeFlags::Default,
+            },
+            Instant::now(),
+        )
+        .await?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::UnsubscribeApplied(msg))) => {
+                assert_eq!(msg.request_id, 2);
+                assert_eq!(msg.query_set_id, ws_v2::QuerySetId::new(1));
+                assert!(msg.rows.is_none());
+            }
+            other => panic!("Expected v2 UnsubscribeApplied, got: {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    /// Test that v2 unsubscribe can return dropped rows when requested.
+    #[tokio::test]
+    async fn unsubscribe_v2_send_dropped_rows() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (sender, mut rx) = client_connection_with_config(
+            client_id,
+            &db,
+            ClientConfig {
+                protocol: Protocol::Binary,
+                version: WsVersion::V2,
+                compression: ws_v1::Compression::None,
+                tx_update_full: true,
+                confirmed_reads: false,
+            },
+        );
+
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+        with_auto_commit(&db, |tx| -> anyhow::Result<_> {
+            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u8])?)?;
+            Ok(())
+        })?;
+
+        subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+            None,
+            sender.clone(),
+            auth.clone(),
+            ws_v2::Subscribe {
+                request_id: 1,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                query_strings: ["select * from t".into()].into(),
+            },
+            Instant::now(),
+            None,
+        )?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(_))) => {}
+            other => panic!("Expected v2 SubscribeApplied, got: {other:?}"),
+        }
+
+        subs.remove_v2_subscription(
+            None,
+            sender.clone(),
+            auth,
+            ws_v2::Unsubscribe {
+                request_id: 2,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                flags: ws_v2::UnsubscribeFlags::SendDroppedRows,
+            },
+            Instant::now(),
+        )
+        .await?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::UnsubscribeApplied(msg))) => {
+                assert_eq!(msg.request_id, 2);
+                assert_eq!(msg.query_set_id, ws_v2::QuerySetId::new(1));
+                let rows = msg.rows.expect("expected dropped rows");
+                assert_eq!(rows.tables.len(), 1);
+                assert!(rows.tables[0].rows.len() > 0);
+            }
+            other => panic!("Expected v2 UnsubscribeApplied, got: {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    /// Test that updates are no longer delivered after v2 unsubscribe.
+    #[tokio::test]
+    async fn unsubscribe_v2_stops_updates() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (sender, mut rx) = client_connection_with_config(
+            client_id,
+            &db,
+            ClientConfig {
+                protocol: Protocol::Binary,
+                version: WsVersion::V2,
+                compression: ws_v1::Compression::None,
+                tx_update_full: true,
+                confirmed_reads: false,
+            },
+        );
+
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+
+        subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+            None,
+            sender.clone(),
+            auth.clone(),
+            ws_v2::Subscribe {
+                request_id: 1,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                query_strings: ["select * from t".into()].into(),
+            },
+            Instant::now(),
+            None,
+        )?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(_))) => {}
+            other => panic!("Expected v2 SubscribeApplied, got: {other:?}"),
+        }
+
+        subs.remove_v2_subscription(
+            None,
+            sender.clone(),
+            auth,
+            ws_v2::Unsubscribe {
+                request_id: 2,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                flags: ws_v2::UnsubscribeFlags::Default,
+            },
+            Instant::now(),
+        )
+        .await?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::UnsubscribeApplied(_))) => {}
+            other => panic!("Expected v2 UnsubscribeApplied, got: {other:?}"),
+        }
+
+        let _ = commit_tx(&db, &subs, [], [(table_id, product![2_u8])])?;
+
+        let recv = tokio::time::timeout(Duration::from_millis(20), rx.recv()).await;
+        assert!(recv.is_err(), "expected no updates after unsubscribe");
+
         Ok(())
     }
 

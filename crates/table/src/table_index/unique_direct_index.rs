@@ -1,10 +1,54 @@
-use super::index::Index;
+use super::index::{Despecialize, Index, RangedIndex};
+use super::{BtreeUniqueIndex, KeySize};
 use crate::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
-use crate::table_index::index::RangedIndex;
+use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use core::option::IntoIter;
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_sats::sum_value::SumTag;
+
+pub trait ToFromUsize: Copy {
+    /// Converts value to `usize`.
+    fn to_usize(self) -> usize;
+
+    /// Converts `value` to `Self`.
+    fn from_usize(x: usize) -> Self;
+}
+
+macro_rules! impl_to_from_usize {
+    ($ty:ty) => {
+        impl ToFromUsize for $ty {
+            #[inline]
+            fn to_usize(self) -> usize {
+                self as usize
+            }
+
+            #[inline]
+            fn from_usize(x: usize) -> Self {
+                x as Self
+            }
+        }
+    };
+}
+
+impl_to_from_usize!(u8);
+impl_to_from_usize!(u16);
+impl_to_from_usize!(u32);
+impl_to_from_usize!(u64);
+impl_to_from_usize!(usize);
+
+impl ToFromUsize for SumTag {
+    #[inline]
+    fn to_usize(self) -> usize {
+        self.0.to_usize()
+    }
+
+    #[inline]
+    fn from_usize(x: usize) -> Self {
+        Self(u8::from_usize(x))
+    }
+}
 
 /// A direct index for relating unsigned integer keys [`u8`..`u64`] to [`RowPointer`].
 ///
@@ -12,18 +56,29 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 /// where keys are dense and not far apart as well as starting near zero.
 /// Conversely, it performs worse than a btree index in the case of highly random inserts
 /// and with sparse keys and where the first key inserted is large.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct UniqueDirectIndex {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UniqueDirectIndex<K> {
+    marker: PhantomData<K>,
     /// The outer index.
     outer: Vec<Option<InnerIndex>>,
     /// The number of keys indexed.
     len: usize,
 }
 
-impl MemoryUsage for UniqueDirectIndex {
+impl<K> MemoryUsage for UniqueDirectIndex<K> {
     fn heap_usage(&self) -> usize {
-        let Self { outer, len } = self;
+        let Self { marker: _, outer, len } = self;
         outer.heap_usage() + len.heap_usage()
+    }
+}
+
+impl<K> Default for UniqueDirectIndex<K> {
+    fn default() -> Self {
+        Self {
+            marker: PhantomData,
+            outer: Vec::new(),
+            len: 0,
+        }
     }
 }
 
@@ -50,11 +105,25 @@ impl MemoryUsage for InnerIndex {
 /// The reserved bit set to `false` is used to indicate absence.
 pub(super) const NONE_PTR: RowPointer = RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::TX_STATE);
 
+#[derive(Debug)]
 struct InnerIndexKey(usize);
 
 /// Splits the `key` into an outer and inner key.
+#[inline]
 fn split_key(key: usize) -> (usize, InnerIndexKey) {
     (key / KEYS_PER_INNER, InnerIndexKey(key % KEYS_PER_INNER))
+}
+
+/// Converts a row poiner into one for inside consumption.
+#[inline]
+pub(super) fn injest(ptr: RowPointer) -> RowPointer {
+    ptr.with_reserved_bit(true)
+}
+
+/// Returns a row pointer for outside consumption.
+#[inline]
+pub(super) fn expose(ptr: RowPointer) -> RowPointer {
+    ptr.with_reserved_bit(false)
 }
 
 impl InnerIndex {
@@ -94,14 +163,30 @@ impl InnerIndex {
     }
 }
 
-impl Index for UniqueDirectIndex {
-    type Key = usize;
+impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
+    type Key = K;
 
     fn clone_structure(&self) -> Self {
         Self::default()
     }
 
-    fn insert(&mut self, key: Self::Key, val: RowPointer) -> Result<(), RowPointer> {
+    fn insert_maybe_despecialize(
+        &mut self,
+        key: Self::Key,
+        val: RowPointer,
+    ) -> Result<Result<(), RowPointer>, Despecialize> {
+        let key = key.to_usize();
+        if key > const { u32::MAX as usize } {
+            // For large `u64`, this can cause OOM.
+            //
+            // TODO(perf, centril): do not pay for this cost when `key = u8..u32`.
+            //
+            // TODO(perf, centril): in the future,
+            // collect stats for when too many far apart keys are inserted,
+            // and despecialize in that case as well.
+            return Err(Despecialize);
+        }
+
         let (key_outer, key_inner) = split_key(key);
 
         // Fetch the outer index and ensure it can house `key_outer`.
@@ -116,17 +201,18 @@ impl Index for UniqueDirectIndex {
         // Fetch the slot.
         let slot = inner.get_mut(key_inner);
         let in_slot = *slot;
-        if in_slot == NONE_PTR {
+        Ok(if in_slot == NONE_PTR {
             // We have `NONE_PTR`, so not set yet.
-            *slot = val.with_reserved_bit(true);
+            *slot = injest(val);
             self.len += 1;
             Ok(())
         } else {
-            Err(in_slot.with_reserved_bit(false))
-        }
+            Err(expose(in_slot))
+        })
     }
 
-    fn delete(&mut self, &key: &Self::Key, _: RowPointer) -> bool {
+    fn delete(&mut self, key: &Self::Key, _: RowPointer) -> bool {
+        let key = key.to_usize();
         let (key_outer, key_inner) = split_key(key);
         let outer = &mut self.outer;
         if let Some(Some(inner)) = outer.get_mut(key_outer) {
@@ -144,7 +230,8 @@ impl Index for UniqueDirectIndex {
     where
         Self: 'a;
 
-    fn seek_point(&self, &key: &Self::Key) -> Self::PointIter<'_> {
+    fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
+        let key = key.to_usize();
         let (outer_key, inner_key) = split_key(key);
         let point = self
             .outer
@@ -177,7 +264,7 @@ impl Index for UniqueDirectIndex {
             };
 
             for (slot_s, slot_o) in inner_s.inner.iter().zip(inner_o.inner.iter()) {
-                let ptr_s = slot_s.with_reserved_bit(false);
+                let ptr_s = expose(*slot_s);
                 if *slot_s != NONE_PTR && *slot_o != NONE_PTR && !ignore(&ptr_s) {
                     // For the same key, we found both slots occupied, so we cannot merge.
                     return Err(ptr_s);
@@ -189,11 +276,14 @@ impl Index for UniqueDirectIndex {
     }
 }
 
-impl RangedIndex for UniqueDirectIndex {
-    type RangeIter<'a> = UniqueDirectIndexRangeIter<'a>;
+impl<K: ToFromUsize + KeySize> RangedIndex for UniqueDirectIndex<K> {
+    type RangeIter<'a>
+        = UniqueDirectIndexRangeIter<'a>
+    where
+        K: 'a;
 
     /// Returns an iterator yielding all the [`RowPointer`] that correspond to the provided `range`.
-    fn seek_range(&self, range: &impl RangeBounds<usize>) -> Self::RangeIter<'_> {
+    fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
         // The upper bound of possible key.
         // This isn't necessarily the real max key actually present in the index,
         // due to possible deletions.
@@ -201,13 +291,13 @@ impl RangedIndex for UniqueDirectIndex {
 
         // Translate `range` to `start..end`.
         let start = match range.start_bound() {
-            Bound::Included(&s) => s,
-            Bound::Excluded(&s) => s + 1, // If this wraps, we will clamp to `max_key` later.
+            Bound::Included(&s) => s.to_usize(),
+            Bound::Excluded(&s) => s.to_usize() + 1, // If this wraps, we will clamp to `max_key` later.
             Bound::Unbounded => 0,
         };
         let end = match range.end_bound() {
-            Bound::Included(&e) => e + 1, // If this wraps, we will clamp to `max_key` later.
-            Bound::Excluded(&e) => e,
+            Bound::Included(&e) => e.to_usize() + 1, // If this wraps, we will clamp to `max_key` later.
+            Bound::Excluded(&e) => e.to_usize(),
             Bound::Unbounded => max_key,
         };
 
@@ -232,7 +322,7 @@ pub struct UniqueDirectIndexPointIter {
 
 impl UniqueDirectIndexPointIter {
     pub(super) fn new(point: Option<RowPointer>) -> Self {
-        let iter = point.map(|ptr| ptr.with_reserved_bit(false)).into_iter();
+        let iter = point.map(expose).into_iter();
         Self { iter }
     }
 }
@@ -282,9 +372,36 @@ impl Iterator for UniqueDirectIndexRangeIter<'_> {
 
             if ptr != NONE_PTR {
                 // The row actually exists, so we've found something to return.
-                return Some(ptr.with_reserved_bit(false));
+                return Some(expose(ptr));
             }
         }
+    }
+}
+
+impl<K: KeySize + Ord + ToFromUsize> UniqueDirectIndex<K> {
+    /// Convert this Direct index into a B-Tree index.
+    pub fn into_btree(&self) -> BtreeUniqueIndex<K> {
+        let mut new_index: BtreeUniqueIndex<K> = <_>::default();
+
+        for (key_outer, inner) in self.outer.iter().enumerate() {
+            let Some(inner) = inner else {
+                continue;
+            };
+
+            for (key_inner, &slot) in inner.inner.iter().enumerate() {
+                if slot == NONE_PTR {
+                    continue;
+                }
+
+                let key = key_outer * KEYS_PER_INNER + key_inner;
+                let key = K::from_usize(key);
+                new_index
+                    .insert(key, expose(slot))
+                    .expect("insertions from one unique index to another cannot fail")
+            }
+        }
+
+        new_index
     }
 }
 

@@ -9,7 +9,7 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 use toml_edit::{value, DocumentMut, Item};
@@ -18,6 +18,7 @@ use xmltree::{Element, XMLNode};
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 mod embedded {
+    use spacetimedb_data_structures::map::HashCollectionExt as _;
     include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
 }
 
@@ -57,6 +58,7 @@ pub enum ServerLanguage {
     Rust,
     Csharp,
     TypeScript,
+    Cpp,
 }
 
 impl ServerLanguage {
@@ -65,6 +67,7 @@ impl ServerLanguage {
             ServerLanguage::Rust => "rust",
             ServerLanguage::Csharp => "csharp",
             ServerLanguage::TypeScript => "typescript",
+            ServerLanguage::Cpp => "cpp",
         }
     }
 
@@ -73,6 +76,7 @@ impl ServerLanguage {
             "rust" => Ok(Some(ServerLanguage::Rust)),
             "csharp" | "c#" => Ok(Some(ServerLanguage::Csharp)),
             "typescript" => Ok(Some(ServerLanguage::TypeScript)),
+            "cpp" | "c++" | "cxx" => Ok(Some(ServerLanguage::Cpp)),
             _ => Err(anyhow!("Unknown server language: {}", s)),
         }
     }
@@ -132,11 +136,9 @@ pub fn cli() -> clap::Command {
                 .help("Initialize server only from the template (no client)")
                 .action(clap::ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("lang").long("lang").value_name("LANG").help(
-                "Server language: rust, csharp, typescript (it can only be used when --template is not specified)",
-            ),
-        )
+        .arg(Arg::new("lang").long("lang").value_name("LANG").help(
+            "Server language: rust, csharp, typescript, cpp (it can only be used when --template is not specified)",
+        ))
         .arg(
             Arg::new("template")
                 .short('t')
@@ -181,7 +183,7 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
 
     if should_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false).await?;
+        spacetimedb_login_force(config, &host, false, true).await?;
         println!("{}", "Successfully logged in!".green());
         Ok(true)
     } else {
@@ -1211,6 +1213,9 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         Some(ServerLanguage::Csharp) => {
             update_csproj_server_to_nuget(&server_dir)?;
         }
+        Some(ServerLanguage::Cpp) => {
+            // No name update needed for C++ at the moment
+        }
         None => {}
     }
 
@@ -1268,6 +1273,11 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
             let server_dir = project_path.join("spacetimedb");
             init_empty_typescript_server(&server_dir, &config.project_name)?;
         }
+        Some(ServerLanguage::Cpp) => {
+            println!("Setting up C++ server...");
+            let server_dir = project_path.join("spacetimedb");
+            init_empty_cpp_server(&server_dir, &config.project_name)?;
+        }
         None => {}
     }
 
@@ -1288,6 +1298,10 @@ fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow
     init_typescript_project(server_dir)?;
     update_package_json(server_dir, project_name)?;
     Ok(())
+}
+
+fn init_empty_cpp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
+    init_cpp_project(server_dir)
 }
 
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
@@ -1484,11 +1498,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
 pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-rust/spacetimedb/Cargo.toml"),
+            include_str!("../../../../templates/basic-rs/spacetimedb/Cargo.toml"),
             "Cargo.toml",
         ),
         (
-            include_str!("../../../../templates/basic-rust/spacetimedb/src/lib.rs"),
+            include_str!("../../../../templates/basic-rs/spacetimedb/src/lib.rs"),
             "src/lib.rs",
         ),
     ];
@@ -1508,15 +1522,15 @@ pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
 pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-c-sharp/spacetimedb/StdbModule.csproj"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
             "StdbModule.csproj",
         ),
         (
-            include_str!("../../../../templates/basic-c-sharp/spacetimedb/Lib.cs"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/Lib.cs"),
             "Lib.cs",
         ),
         (
-            include_str!("../../../../templates/basic-c-sharp/spacetimedb/global.json"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/global.json"),
             "global.json",
         ),
     ];
@@ -1536,15 +1550,15 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
 pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-typescript/spacetimedb/package.json"),
+            include_str!("../../../../templates/basic-ts/spacetimedb/package.json"),
             "package.json",
         ),
         (
-            include_str!("../../../../templates/basic-typescript/spacetimedb/tsconfig.json"),
+            include_str!("../../../../templates/basic-ts/spacetimedb/tsconfig.json"),
             "tsconfig.json",
         ),
         (
-            include_str!("../../../../templates/basic-typescript/spacetimedb/src/index.ts"),
+            include_str!("../../../../templates/basic-ts/spacetimedb/src/index.ts"),
             "src/index.ts",
         ),
     ];
@@ -1556,6 +1570,34 @@ pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
+
+    Ok(())
+}
+
+pub fn init_cpp_project(project_path: &Path) -> anyhow::Result<()> {
+    let export_files = vec![
+        (
+            include_str!("../../../../templates/basic-cpp/spacetimedb/CMakeLists.txt"),
+            "CMakeLists.txt",
+        ),
+        (
+            include_str!("../../../../templates/basic-cpp/spacetimedb/src/lib.cpp"),
+            "src/lib.cpp",
+        ),
+        (
+            include_str!("../../../../templates/basic-cpp/spacetimedb/.gitignore"),
+            ".gitignore",
+        ),
+    ];
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    check_for_emscripten_and_cmake();
+    check_for_git();
 
     Ok(())
 }
@@ -1667,15 +1709,22 @@ fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
 /// Writes rules to:
 /// - .cursor/rules/ (Cursor)
 /// - CLAUDE.md (Claude Code)
+/// - AGENTS.md (Opencode)
 /// - .windsurfrules (Windsurf)
 /// - .github/copilot-instructions.md (VS Code Copilot)
 fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
     let base_rules = embedded::get_ai_rules_base();
     let ts_rules = embedded::get_ai_rules_typescript();
+    let rust_rules = embedded::get_ai_rules_rust();
+    let csharp_rules = embedded::get_ai_rules_csharp();
 
-    // Check if TypeScript is used in either server or client
+    // Check which languages are used in server or client
     let uses_typescript = config.server_lang == Some(ServerLanguage::TypeScript)
         || config.client_lang == Some(ClientLanguage::TypeScript);
+    let uses_rust =
+        config.server_lang == Some(ServerLanguage::Rust) || config.client_lang == Some(ClientLanguage::Rust);
+    let uses_csharp =
+        config.server_lang == Some(ServerLanguage::Csharp) || config.client_lang == Some(ClientLanguage::Csharp);
 
     // 1. Cursor: .cursor/rules/ directory with separate files
     let cursor_dir = project_path.join(".cursor/rules");
@@ -1684,24 +1733,44 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
     if uses_typescript {
         fs::write(cursor_dir.join("spacetimedb-typescript.mdc"), ts_rules)?;
     }
+    if uses_rust {
+        fs::write(cursor_dir.join("spacetimedb-rust.mdc"), rust_rules)?;
+    }
+    if uses_csharp {
+        fs::write(cursor_dir.join("spacetimedb-csharp.mdc"), csharp_rules)?;
+    }
 
     // Build combined content for single-file AI assistants
     // Strip the YAML frontmatter from the .mdc files for non-Cursor tools
     let base_content = strip_mdc_frontmatter(base_rules);
-    let combined_content = if uses_typescript {
+    let mut combined_content = base_content.to_string();
+
+    if uses_typescript {
         let ts_content = strip_mdc_frontmatter(ts_rules);
-        format!("{}\n\n{}", base_content, ts_content)
-    } else {
-        base_content.to_string()
-    };
+        combined_content.push_str("\n\n");
+        combined_content.push_str(ts_content);
+    }
+    if uses_rust {
+        let rust_content = strip_mdc_frontmatter(rust_rules);
+        combined_content.push_str("\n\n");
+        combined_content.push_str(rust_content);
+    }
+    if uses_csharp {
+        let csharp_content = strip_mdc_frontmatter(csharp_rules);
+        combined_content.push_str("\n\n");
+        combined_content.push_str(csharp_content);
+    }
 
     // 2. Claude Code: CLAUDE.md
     fs::write(project_path.join("CLAUDE.md"), &combined_content)?;
 
-    // 3. Windsurf: .windsurfrules
+    // 3. Opencode: AGENTS.md
+    fs::write(project_path.join("AGENTS.md"), &combined_content)?;
+
+    // 4. Windsurf: .windsurfrules
     fs::write(project_path.join(".windsurfrules"), &combined_content)?;
 
-    // 4. VS Code Copilot: .github/copilot-instructions.md
+    // 5. VS Code Copilot: .github/copilot-instructions.md
     let github_dir = project_path.join(".github");
     fs::create_dir_all(&github_dir)?;
     fs::write(github_dir.join("copilot-instructions.md"), &combined_content)?;
@@ -1721,4 +1790,51 @@ fn strip_mdc_frontmatter(content: &str) -> &str {
         }
     }
     content
+}
+
+/// Check if Emscripten and CMake tooling are available in PATH.
+///
+/// On Windows, looks for emcc.bat and cmake.exe.
+/// On Unix-like systems, looks for emcc and cmake.
+///
+/// Returns true if both tools are found, false otherwise with helpful warnings.
+fn check_for_emscripten_and_cmake() -> bool {
+    // Check for emcc with platform-specific extension
+    #[cfg(windows)]
+    let emcc_ok = find_executable("emcc.bat").is_some();
+    #[cfg(not(windows))]
+    let emcc_ok = find_executable("emcc").is_some();
+
+    // Check for cmake with platform-specific extension
+    #[cfg(windows)]
+    let cmake_ok = find_executable("cmake.exe").is_some();
+    #[cfg(not(windows))]
+    let cmake_ok = find_executable("cmake").is_some();
+
+    if emcc_ok && cmake_ok {
+        return true;
+    }
+
+    // Print helpful warnings about missing tools
+    println!(
+        "{}",
+        "Warning: You have created a C++ project, but you are missing emcc (Emscripten) or cmake.".yellow()
+    );
+
+    if !emcc_ok {
+        println!(
+            "{}",
+            "Install Emscripten from: https://emscripten.org/docs/getting_started/downloads.html".yellow()
+        );
+        println!(
+            "{}",
+            "Note: After installing, activate the environment with: emsdk_env.bat (Windows) or source emsdk_env.sh (Unix)".yellow()
+        );
+    }
+
+    if !cmake_ok {
+        println!("{}", "Install CMake from: https://cmake.org/download/".yellow());
+    }
+
+    false
 }

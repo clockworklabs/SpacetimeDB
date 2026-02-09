@@ -526,6 +526,14 @@ impl<T: Encode> Commitlog<T> {
     {
         self.inner.read().unwrap().fold_transactions_from(offset, de)
     }
+
+    pub fn fold_transactions_range<D>(&self, range: impl RangeBounds<u64>, de: D) -> Result<(), D::Error>
+    where
+        D: Decoder,
+        D::Error: From<error::Traversal>,
+    {
+        self.inner.read().unwrap().fold_transaction_range(range, de)
+    }
 }
 
 /// Extract the most recently written [`segment::Metadata`] from the commitlog

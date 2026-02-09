@@ -1,24 +1,101 @@
+use crate::context::constants::docs_dir;
 use crate::context::paths::resolve_mode_paths;
-use anyhow::{anyhow, Context, Result};
+use crate::eval::lang::Lang;
+use anyhow::{anyhow, bail, Context, Result};
+use regex::Regex;
 use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
-pub fn build_context(mode: &str) -> Result<String> {
+/// Get the base directory for a given mode (used for stripping prefixes to get relative paths).
+fn base_for_mode(mode: &str) -> Result<PathBuf> {
+    Ok(match mode {
+        "docs" | "llms.md" | "cursor_rules" => docs_dir(),
+        // rustdoc_json is handled separately in build_context_from_rustdoc_json
+        _ => bail!("unknown mode `{mode}` for base_for_mode"),
+    })
+}
+
+/// Produce a consistent, forward-slash relative path for inclusion in context.
+/// This strips the base directory prefix so paths are stable across different machines/environments.
+fn stable_rel_path(base: &Path, p: &Path) -> String {
+    let rel = p.strip_prefix(base).unwrap_or(p);
+    let s = rel.to_string_lossy();
+    if cfg!(windows) {
+        s.replace('\\', "/")
+    } else {
+        s.into_owned()
+    }
+}
+
+/// Build context for the given mode, optionally filtering tabs for a specific language.
+pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
     if mode == "rustdoc_json" {
         return build_context_from_rustdoc_json();
     }
 
+    let base = base_for_mode(mode)?;
     let files = resolve_mode_paths(mode)?;
     let mut out = String::with_capacity(1024 * 1024);
     for p in files {
-        let rel = rel_display(&p);
+        let rel = stable_rel_path(&base, &p);
         let contents = fs::read_to_string(&p).with_context(|| format!("read {}", rel))?;
+
+        // Filter tabs if a language is specified
+        let contents = if let Some(lang) = lang {
+            filter_tabs_for_lang(&contents, lang)
+        } else {
+            contents
+        };
+
         out.push_str("\n\n---\n");
         out.push_str(&format!("// file: {}\n\n", rel));
         out.push_str(&contents);
     }
     Ok(out)
+}
+
+/// Filter `<Tabs>` blocks to only include the tab matching the target language.
+/// This removes noise from other languages and helps the LLM focus on relevant examples.
+/// Filters both `server-language` and `client-language` tabs.
+fn filter_tabs_for_lang(content: &str, lang: Lang) -> String {
+    // Map Lang to the tab value used in docs for server and client tabs
+    let tab_value = match lang {
+        Lang::CSharp => "csharp",
+        Lang::Rust => "rust",
+        Lang::TypeScript => "typescript",
+    };
+
+    // Regex to match <Tabs groupId="server-language" or "client-language">...</Tabs> blocks
+    static LANG_TABS_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?s)<Tabs\s+groupId="(?:server-language|client-language)"[^>]*>(.+?)</Tabs>"#).unwrap()
+    });
+
+    // Regex to extract individual <TabItem> blocks
+    static TAB_ITEM_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?s)<TabItem\s+value="([^"]+)"[^>]*>(.+?)</TabItem>"#).unwrap());
+
+    LANG_TABS_RE
+        .replace_all(content, |caps: &regex::Captures| {
+            let tabs_inner = &caps[1];
+
+            // Find the TabItem matching our target language
+            for tab_cap in TAB_ITEM_RE.captures_iter(tabs_inner) {
+                let value = &tab_cap[1];
+                let tab_content = &tab_cap[2];
+
+                if value == tab_value {
+                    // Return just the content, stripping the TabItem wrapper
+                    return tab_content.trim().to_string();
+                }
+            }
+
+            // If no matching tab found, remove the entire tabs block
+            // (e.g., client-language tabs with only cpp/blueprint for Unreal)
+            String::new()
+        })
+        .into_owned()
 }
 
 fn build_context_from_rustdoc_json() -> Result<String> {

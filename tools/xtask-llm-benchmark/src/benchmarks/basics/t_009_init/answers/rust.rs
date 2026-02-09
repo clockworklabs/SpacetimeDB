@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
-#[table(name = users)]
+#[table(name = user)]
 pub struct User {
     #[primary_key]
     pub id: i32,
@@ -11,6 +11,6 @@ pub struct User {
 
 #[reducer(init)]
 pub fn init(ctx: &ReducerContext) {
-    ctx.db.users().insert(User { id: 1, name: "Alice".into(), age: 30, active: true });
-    ctx.db.users().insert(User { id: 2, name: "Bob".into(),   age: 22, active: false });
+    ctx.db.user().insert(User { id: 1, name: "Alice".into(), age: 30, active: true });
+    ctx.db.user().insert(User { id: 2, name: "Bob".into(),   age: 22, active: false });
 }

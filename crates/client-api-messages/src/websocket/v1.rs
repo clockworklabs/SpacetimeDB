@@ -7,7 +7,7 @@ use crate::{
 };
 use bytes::Bytes;
 use bytestring::ByteString;
-use core::{fmt::Debug, ops::Deref};
+use core::fmt::Debug;
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
@@ -18,7 +18,6 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicType, SpacetimeType,
 };
-use std::sync::Arc;
 
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
 pub const BIN_PROTOCOL: &str = "v1.bsatn.spacetimedb";

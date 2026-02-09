@@ -12,7 +12,10 @@ use super::{message_handlers, ClientActorId, MessageHandleError, OutboundMessage
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
-use crate::host::{CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
+use crate::host::{
+    CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
+    ReducerCallResult,
+};
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
 use crate::util::asyncify;
@@ -28,7 +31,7 @@ use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -336,9 +339,9 @@ impl ClientConnectionSender {
         let cancelled = AtomicBool::new(false);
         let dummy_claims = SpacetimeIdentityClaims {
             identity: id.identity,
-            subject: "".to_string(),
-            issuer: "".to_string(),
-            audience: vec![],
+            subject: "".into(),
+            issuer: "".into(),
+            audience: [].into(),
             iat: SystemTime::now(),
             exp: None,
             extra: None,
@@ -858,6 +861,27 @@ impl ClientConnection {
             .await
     }
 
+    pub async fn call_reducer_v2(
+        &self,
+        reducer: &str,
+        args: Bytes,
+        request_id: RequestId,
+        timer: Instant,
+        _flags: ws_v2::CallReducerFlags,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.module()
+            .call_reducer(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(self.sender()),
+                Some(request_id),
+                Some(timer),
+                reducer,
+                FunctionArgs::Bsatn(args),
+            )
+            .await
+    }
+
     pub async fn call_procedure(
         &self,
         procedure: &str,
@@ -881,6 +905,58 @@ impl ClientConnection {
         self.module()
             .subscriptions()
             .send_procedure_message(self.sender(), message, tx_offset)
+    }
+
+    pub async fn call_procedure_v2(
+        &self,
+        procedure: &str,
+        args: Bytes,
+        request_id: RequestId,
+        timer: Instant,
+        _flags: ws_v2::CallProcedureFlags,
+    ) -> Result<(), BroadcastError> {
+        let CallProcedureReturn { result, tx_offset } = self
+            .module()
+            .call_procedure(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(timer),
+                procedure,
+                FunctionArgs::Bsatn(args),
+            )
+            .await;
+
+        let (status, timestamp, execution_duration) = match result {
+            Ok(ProcedureCallResult {
+                return_val,
+                execution_duration,
+                start_timestamp,
+            }) => (
+                ws_v2::ProcedureStatus::Returned(
+                    bsatn::to_vec(&return_val)
+                        .expect("Procedure return value failed to serialize to BSATN")
+                        .into(),
+                ),
+                start_timestamp,
+                TimeDuration::from(execution_duration),
+            ),
+            Err(err) => (
+                ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
+                Timestamp::UNIX_EPOCH,
+                TimeDuration::ZERO,
+            ),
+        };
+
+        let message = ws_v2::ProcedureResult {
+            status,
+            timestamp,
+            total_host_execution_duration: execution_duration,
+            request_id,
+        };
+
+        self.module()
+            .subscriptions()
+            .send_procedure_message_v2(self.sender(), message, tx_offset)
     }
 
     pub async fn subscribe_single(
@@ -959,6 +1035,22 @@ impl ClientConnection {
             .await?
     }
 
+    pub async fn unsubscribe_v2(
+        &self,
+        request: ws_v2::Unsubscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let me = self.clone();
+        self.module()
+            .on_module_thread_async("unsubscribe_v2", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .remove_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer)
+                    .await
+            })
+            .await?
+    }
+
     pub async fn subscribe(&self, subscription: ws_v1::Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
         self.module()
@@ -1010,6 +1102,20 @@ impl ClientConnection {
             .await
     }
 
+    pub async fn one_off_query_v2(&self, query: &str, request_id: u32, timer: Instant) -> Result<(), anyhow::Error> {
+        let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
+        self.module()
+            .one_off_query_v2(
+                self.auth.clone(),
+                query.to_owned(),
+                self.sender.clone(),
+                request_id,
+                timer,
+                bsatn_rlb_pool,
+            )
+            .await
+    }
+
     pub async fn disconnect(self) {
         self.module().disconnect_client(self.id).await
     }
@@ -1023,7 +1129,7 @@ mod tests {
     use pretty_assertions::assert_matches;
 
     use super::*;
-    use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+    use crate::client::messages::{SerializableMessage, SubscriptionUpdateMessage, TransactionUpdateMessage};
 
     #[derive(Clone)]
     struct FakeDurableOffset {
@@ -1093,11 +1199,12 @@ mod tests {
         }
     }
 
-    fn empty_tx_update() -> TransactionUpdateMessage {
-        TransactionUpdateMessage {
+    fn empty_tx_update() -> SerializableMessage {
+        let msg = TransactionUpdateMessage {
             event: None,
             database_update: SubscriptionUpdateMessage::default_for_protocol(Protocol::Binary, None),
-        }
+        };
+        SerializableMessage::TxUpdate(msg)
     }
 
     async fn assert_received_update(f: impl Future<Output = Option<OutboundMessage>>) {

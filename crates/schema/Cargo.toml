@@ -11,9 +11,10 @@ test = []
 
 [dependencies]
 spacetimedb-lib = { workspace = true, features = ["enum-map"] }
-spacetimedb-primitives.workspace = true
-spacetimedb-sats.workspace = true
+spacetimedb-primitives = { workspace = true, features = ["memory-usage"] }
+spacetimedb-sats = { workspace = true, features = ["memory-usage"] }
 spacetimedb-data-structures.workspace = true
+spacetimedb-memory-usage.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 anyhow.workspace = true
@@ -21,6 +22,7 @@ derive_more.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
+lean_string.workspace = true
 thiserror.workspace = true
 unicode-ident.workspace = true
 unicode-normalization.workspace = true

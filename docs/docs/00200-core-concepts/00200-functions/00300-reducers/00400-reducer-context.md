@@ -15,7 +15,7 @@ The reducer context is required for accessing tables, executing database operati
 
 The primary purpose of the reducer context is to provide access to the module's database tables.
 
-<Tabs groupId="language">
+<Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -92,7 +92,7 @@ The context provides information about who invoked the reducer and when.
 
 Every reducer invocation has an associated caller identity.
 
-<Tabs groupId="language">
+<Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -174,7 +174,7 @@ pub struct Player {
 #[reducer]
 fn update_score(ctx: &ReducerContext, new_score: u32) {
     // Get the caller's identity
-    let caller = ctx.sender;
+    let caller = ctx.sender();
     
     // Find and update their player record
     if let Some(mut player) = ctx.db.player().identity().find(caller) {
@@ -213,7 +213,7 @@ The context provides access to the module's own identity, which is useful for di
 
 This is particularly important for [scheduled reducers](/functions/reducers) that should only be invoked by the system, not by external clients.
 
-<Tabs groupId="language">
+<Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -248,7 +248,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "scheduled_task", Scheduled = nameof(SendReminder))]
+    [SpacetimeDB.Table(Name = "ScheduledTask", Scheduled = nameof(SendReminder))]
     public partial struct ScheduledTask
     {
         [SpacetimeDB.PrimaryKey]
@@ -290,7 +290,7 @@ pub struct ScheduledTask {
 #[reducer]
 fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
     // Only allow the scheduler (module identity) to call this
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         panic!("This reducer can only be called by the scheduler");
     }
     
@@ -303,7 +303,7 @@ fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
 
 ## Context Properties Reference
 
-<Tabs groupId="language">
+<Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 | Property       | Type                       | Description                                     |

@@ -40,9 +40,9 @@ public static void Init(ReducerContext ctx)
     Log.Info("Database initializing...");
     
     // Set up default data
-    if (ctx.Db.settings.Count == 0)
+    if (ctx.Db.Settings.Count == 0)
     {
-        ctx.Db.settings.Insert(new Settings
+        ctx.Db.Settings.Insert(new Settings
         {
             Key = "welcome_message",
             Value = "Hello, SpacetimeDB!"
@@ -116,7 +116,7 @@ public static void OnConnect(ReducerContext ctx)
     var connId = ctx.ConnectionId!.Value;
     
     // Initialize client session
-    ctx.Db.sessions.Insert(new Session
+    ctx.Db.Session.Insert(new Session
     {
         ConnectionId = connId,
         Identity = ctx.Sender,
@@ -131,15 +131,15 @@ public static void OnConnect(ReducerContext ctx)
 ```rust
 #[reducer(client_connected)]
 pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client connected: {}", ctx.sender);
+    log::info!("Client connected: {}", ctx.sender());
     
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
+    // ctx.connection_id() is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id().unwrap();
     
     // Initialize client session
     ctx.db.sessions().try_insert(Session {
         connection_id: conn_id,
-        identity: ctx.sender,
+        identity: ctx.sender(),
         connected_at: ctx.timestamp,
     })?;
     
@@ -152,7 +152,7 @@ pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
 
 The `client_connected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id` is guaranteed to be present
+- `ctx.connection_id()` is guaranteed to be present
 - Failure disconnects the client
 - Runs for each distinct connection (WebSocket, HTTP call)
 
@@ -188,7 +188,7 @@ public static void OnDisconnect(ReducerContext ctx)
     var connId = ctx.ConnectionId!.Value;
     
     // Clean up client session
-    ctx.Db.sessions.ConnectionId.Delete(connId);
+    ctx.Db.Session.ConnectionId.Delete(connId);
 }
 ```
 
@@ -198,10 +198,10 @@ public static void OnDisconnect(ReducerContext ctx)
 ```rust
 #[reducer(client_disconnected)]
 pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client disconnected: {}", ctx.sender);
+    log::info!("Client disconnected: {}", ctx.sender());
     
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
+    // ctx.connection_id() is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id().unwrap();
     
     // Clean up client session
     ctx.db.sessions().connection_id().delete(&conn_id);
@@ -215,21 +215,21 @@ pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
 
 The `client_disconnected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id` is guaranteed to be present
+- `ctx.connection_id()` is guaranteed to be present
 - Failure is logged but doesn't prevent disconnection
 - Runs when connection ends (close, timeout, error)
 
 ## Scheduled Reducers
 
-Reducers can be triggered at specific times using scheduled tables. See [Scheduled Tables](/tables/scheduled-tables) for details on:
+Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](/tables/schedule-tables) for details on:
 
-- Defining scheduled tables
+- Defining schedule tables
 - Triggering reducers at specific timestamps
 - Running reducers periodically
 - Canceling scheduled executions
 
 :::info Scheduled Reducer Context
 Scheduled reducer calls originate from SpacetimeDB itself, not from a client. Therefore:
-- `ctx.sender` will be the module's own identity
-- `ctx.connection_id` will be `None`/`null`/`undefined`
+- `ctx.sender()` will be the module's own identity
+- `ctx.connection_id()` will be `None`/`null`/`undefined`
 :::

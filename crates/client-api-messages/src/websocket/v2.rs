@@ -308,6 +308,7 @@ pub struct TransactionUpdate {
 #[sats(crate = spacetimedb_lib)]
 pub struct QuerySetUpdate {
     pub query_set_id: QuerySetId,
+    // Updates are grouped by table, but the server may send multiple TableUpdates for the same table.
     pub tables: Box<[TableUpdate]>,
 }
 
@@ -315,7 +316,7 @@ pub struct QuerySetUpdate {
 #[sats(crate = spacetimedb_lib)]
 pub struct TableUpdate {
     pub table_name: Box<str>,
-    pub rows: TableUpdateRows,
+    pub rows: Box<[TableUpdateRows]>,
 }
 
 /// The rows of a [`TableUpdate`], separated based on the kind of table.
@@ -327,21 +328,21 @@ pub struct TableUpdate {
 /// In particular, we may add a variant for in-place updates of rows for tables with primary keys.
 /// Note that clients will need to opt in to using this new variant,
 /// to preserve compatibility of clients which predate the new variant.
-#[derive(SpacetimeType, Debug)]
+#[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub enum TableUpdateRows {
     PersistentTable(PersistentTableRows),
     EventTable(EventTableRows),
 }
 
-#[derive(SpacetimeType, Debug)]
+#[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct PersistentTableRows {
     pub inserts: BsatnRowList,
     pub deletes: BsatnRowList,
 }
 
-#[derive(SpacetimeType, Debug)]
+#[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct EventTableRows {
     pub events: BsatnRowList,

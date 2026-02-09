@@ -42,6 +42,7 @@ use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::def::error::AuthError;
 use spacetimedb_schema::relation::DbTable;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -80,8 +81,8 @@ impl SupportedQuery {
         self.expr.source.get_db_table().unwrap().table_id
     }
 
-    pub fn return_name(&self) -> String {
-        self.expr.source.table_name().to_owned()
+    pub fn return_name(&self) -> &TableName {
+        self.expr.source.table_name()
     }
 
     /// This is the same as the return table unless this is a join.
@@ -710,7 +711,7 @@ mod tests {
             panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -725,7 +726,7 @@ mod tests {
         let (expr, _sources) = with_delta_table(join, Some(delta), None);
         let expr: QueryExpr = expr.into();
         let mut expr = expr.optimize(&|_, _| i64::MAX);
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -790,7 +791,7 @@ mod tests {
             panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -806,7 +807,7 @@ mod tests {
         let expr = QueryExpr::from(expr);
         let mut expr = expr.optimize(&|_, _| i64::MAX);
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
         assert!(expr.source.is_db_table());
 
@@ -877,7 +878,7 @@ mod tests {
             panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let src_join = &expr.query[0];

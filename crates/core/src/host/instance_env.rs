@@ -10,6 +10,7 @@ use crate::subscription::module_subscription_manager::{from_tx_offset, Transacti
 use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
+use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -25,6 +26,7 @@ use spacetimedb_sats::{
     buffer::{CountWriter, TeeWriter},
     AlgebraicValue, ProductValue,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
@@ -45,15 +47,49 @@ pub struct InstanceEnv {
     /// The type of the last, including current, function to be executed by this environment.
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
-    pub func_name: String,
+    pub func_name: Option<Identifier>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
 }
 
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+///
+/// # Safety
+///
+/// `InstanceEnv` doesn't auto-derive `Send` because it may hold a `MutTxId`,
+/// which we've manually made `!Send` to preserve logical invariants.
+/// As described above, sending an `InstanceEnv` while it holds a `MutTxId` will violate logical invariants,
+/// but this is not a safety concern.
+/// Transferring a `MutTxId` between threads will never cause Undefined Behavior,
+/// though it is likely to lead to deadlocks.
+unsafe impl Send for InstanceEnv {}
+
 #[derive(Clone, Default)]
 pub struct TxSlot {
+    // Wrapped in Mutex for interior mutability.
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
@@ -197,7 +233,7 @@ impl InstanceEnv {
             // arbitrary - change if we need to recognize that an `InstanceEnv` has never
             // run a function
             func_type: FuncCallType::Reducer,
-            func_name: String::from("<initializing>"),
+            func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
         }
@@ -209,11 +245,17 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
-        name.clone_into(&mut self.func_name);
+        self.func_name = Some(name);
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.func_name.as_deref()
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -702,6 +744,7 @@ impl InstanceEnv {
             caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.
@@ -740,7 +783,7 @@ impl InstanceEnv {
             Ok(()) => {
                 let message = format!(
                     "aborting dangling anonymous transaction in procedure {}",
-                    self.func_name
+                    self.func_name.as_deref().unwrap_or("<unknown>")
                 );
                 self.console_log_simple_message(LogLevel::Error, None, &message);
             }
@@ -831,7 +874,8 @@ impl InstanceEnv {
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
         let execute_fut = reqwest::Client::new().execute(reqwest);
 
-        let response_fut = async {
+        // Run the future that does IO work on a tokio worker thread, where it's more efficent.
+        let response_fut = tokio::spawn(async {
             // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
             // We'll strip those with `strip_query_params_from_eqwest_error`
             // after `await`ing `response_fut` below.
@@ -846,7 +890,8 @@ impl InstanceEnv {
             let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
 
             Ok((response, body))
-        };
+        })
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
 
         let database_identity = *self.database_identity();
 
@@ -1056,23 +1101,22 @@ mod test {
     use anyhow::{anyhow, Result};
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
-    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
-    use tempfile::TempDir;
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
-    fn temp_logger() -> Result<DatabaseLogger> {
-        let temp = TempDir::new()?;
-        let path = ModuleLogsDir::from_path_unchecked(temp.keep());
-        let path = path.today();
-        Ok(DatabaseLogger::open(path))
+    fn temp_logger() -> DatabaseLogger {
+        DatabaseLogger::in_memory(64 * 1024)
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
         let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        let logger = {
+            let _rt = runtime.enter();
+            Arc::new(temp_logger())
+        };
         Ok((
             ReplicaContext {
                 database: Database {
@@ -1083,7 +1127,7 @@ mod test {
                     initial_program: Hash::ZERO,
                 },
                 replica_id: 0,
-                logger: Arc::new(temp_logger()?),
+                logger,
                 subscriptions: subs,
                 relational_db,
             },

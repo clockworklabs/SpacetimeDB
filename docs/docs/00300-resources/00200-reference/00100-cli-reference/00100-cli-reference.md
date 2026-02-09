@@ -108,6 +108,10 @@ Run `spacetime help publish` for more detailed information.
 
    If a parent is given, the new database inherits the team permissions from the parent.
    A parent can only be set when a database is created, not when it is updated.
+* `--organization <ORGANIZATION>` — The name or identity of an existing organization this database should be created under.
+
+   If an organization is given, the organization member's permissions apply to the new database.
+   An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 
@@ -378,6 +382,7 @@ Manage your login to the SpacetimeDB CLI
   Default value: `https://spacetimedb.com`
 * `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
 * `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
+* `--no-browser` — Do not open a browser window
 
 
 
@@ -419,7 +424,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 
 * `--project-path <PATH>` — Directory where the project will be created (defaults to `./<PROJECT_NAME>`)
 * `--server-only` — Initialize server only from the template (no client)
-* `--lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
+* `--lang <LANG>` — Server language: rust, csharp, typescript, cpp (it can only be used when --template is not specified)
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode

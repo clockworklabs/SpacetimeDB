@@ -143,7 +143,7 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer(client_connected)]
 pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
-    if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
+    if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender()) {
         ctx.db.player().insert(player.clone());
         ctx.db.logged_out_player().identity().delete(&player.identity);
 
@@ -157,7 +157,7 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
         }
     } else {
         ctx.db.player().try_insert(Player {
-            identity: ctx.sender,
+            identity: ctx.sender(),
             player_id: 0,
             name: String::new(),
         })?;
@@ -167,10 +167,15 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender())
+        .ok_or("Player not found")?;
     let player_id = player.player_id;
     ctx.db.logged_out_player().insert(player);
-    ctx.db.player().identity().delete(&ctx.sender);
+    ctx.db.player().identity().delete(&ctx.sender());
 
     // Move any circles from the arena into logged out tables
     for circle in ctx.db.circle().player_id().filter(&player_id) {
@@ -187,7 +192,7 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
 #[spacetimedb::reducer]
 pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
     log::info!("Creating player with name {}", name);
-    let mut player: Player = ctx.db.player().identity().find(ctx.sender).ok_or("")?;
+    let mut player: Player = ctx.db.player().identity().find(ctx.sender()).ok_or("")?;
     let player_id = player.player_id;
     player.name = name;
     ctx.db.player().identity().update(player);
@@ -234,7 +239,7 @@ pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
         .db
         .player()
         .identity()
-        .find(&ctx.sender)
+        .find(&ctx.sender())
         .ok_or("No such player found")?;
 
     spawn_player_initial_circle(ctx, player.player_id)?;
@@ -248,7 +253,7 @@ pub fn suicide(ctx: &ReducerContext) -> Result<(), String> {
         .db
         .player()
         .identity()
-        .find(&ctx.sender)
+        .find(&ctx.sender())
         .ok_or("No such player found")?;
 
     for circle in ctx.db.circle().player_id().filter(&player.player_id) {
@@ -260,7 +265,12 @@ pub fn suicide(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer]
 pub fn update_player_input(ctx: &ReducerContext, direction: DbVector2) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender())
+        .ok_or("Player not found")?;
     for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
         circle.direction = direction.normalized();
         circle.speed = direction.magnitude().clamp(0.0, 1.0);
@@ -467,7 +477,7 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
         .db
         .player()
         .identity()
-        .find(&ctx.sender)
+        .find(&ctx.sender())
         .ok_or("Sender has no player")?;
     let circles: Vec<Circle> = ctx.db.circle().player_id().filter(&player.player_id).collect();
     let mut circle_count = circles.len() as i32;

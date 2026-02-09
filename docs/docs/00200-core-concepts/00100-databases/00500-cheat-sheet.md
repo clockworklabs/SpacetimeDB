@@ -293,7 +293,7 @@ pub fn on_disconnect(ctx: &ReducerContext) { /* ... */ }
 </TabItem>
 </Tabs>
 
-## Scheduled Tables
+## Schedule Tables
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -383,7 +383,24 @@ spacetimedb.procedure(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-// C# procedure support coming soon
+// Add #pragma warning disable STDB_UNSTABLE at file top
+
+[SpacetimeDB.Procedure]
+public static string FetchData(ProcedureContext ctx, string url)
+{
+    var result = ctx.Http.Get(url);
+    if (result is Result<HttpResponse, HttpError>.OkR(var response))
+    {
+        var data = response.Body.ToStringUtf8Lossy();
+        ctx.WithTx(txCtx =>
+        {
+            txCtx.Db.Cache.Insert(new Cache { Data = data });
+            return 0;
+        });
+        return data;
+    }
+    return "";
+}
 ```
 
 </TabItem>
@@ -460,7 +477,7 @@ use spacetimedb::{view, ViewContext};
 // Return single row
 #[view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // Return multiple rows
@@ -505,8 +522,8 @@ ctx.Rng                 // Random number generator
 
 ```rust
 ctx.db                  // Database access
-ctx.sender              // Identity of caller
-ctx.connection_id       // Option<ConnectionId>
+ctx.sender()            // Identity of caller
+ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
 ctx.identity()          // Module's identity
 ctx.rng()               // Random number generator

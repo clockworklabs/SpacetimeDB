@@ -10,6 +10,7 @@ use crate::{
 use futures_channel::mpsc;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_query_builder::Query;
 use std::sync::{Arc, Mutex};
 
 // TODO: Rewrite for subscription manipulation, once we get that.
@@ -202,6 +203,34 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// in order to replicate only the subset of data which the client needs to function.
     pub fn subscribe_to_all_tables(self) {
         todo!("Repair or remove")
+    }
+
+    pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> TypedSubscriptionBuilder<M> {
+        let query = build(M::QueryBuilder::default());
+        TypedSubscriptionBuilder {
+            builder: self,
+            queries: vec![query.sql().to_string()],
+        }
+    }
+}
+
+// Wrapper around `SubscriptionBuilder` that tracks typed queries
+pub struct TypedSubscriptionBuilder<M: SpacetimeModule> {
+    builder: SubscriptionBuilder<M>,
+    queries: Vec<String>,
+}
+
+impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+    /// Build a query and invoke `subscribe` in order to subscribe to its results.
+    pub fn add_query<T>(mut self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> Self {
+        let query = build(M::QueryBuilder::default());
+        self.queries.push(query.sql().to_string());
+        self
+    }
+
+    /// Subscribe to the queries that have been built with `add_query`.
+    pub fn subscribe(self) -> M::SubscriptionHandle {
+        self.builder.subscribe(self.queries)
     }
 }
 
