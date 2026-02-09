@@ -7,7 +7,6 @@
 #include "ModuleBindings/Tables/MyTableTable.g.h"
 #include "ModuleBindings/Tables/PkUuidTable.g.h"
 #include "ModuleBindings/Tables/ProcInsertsIntoTable.g.h"
-#include "ModuleBindings/Tables/ScheduledProcTableTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
@@ -39,7 +38,6 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FMyTableType, UMyTableTable, FEventContext>(TEXT("my_table"), Db->MyTable);
 	RegisterTable<FPkUuidType, UPkUuidTable, FEventContext>(TEXT("pk_uuid"), Db->PkUuid);
 	RegisterTable<FProcInsertsIntoType, UProcInsertsIntoTable, FEventContext>(TEXT("proc_inserts_into"), Db->ProcInsertsInto);
-	RegisterTable<FScheduledProcTableType, UScheduledProcTableTable, FEventContext>(TEXT("scheduled_proc_table"), Db->ScheduledProcTable);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -78,14 +76,12 @@ void URemoteTables::Initialize()
 	MyTable = NewObject<UMyTableTable>(this);
 	PkUuid = NewObject<UPkUuidTable>(this);
 	ProcInsertsInto = NewObject<UProcInsertsIntoTable>(this);
-	ScheduledProcTable = NewObject<UScheduledProcTableTable>(this);
 	/**/
 
 	/** Initialization */
 	MyTable->PostInitialize();
 	PkUuid->PostInitialize();
 	ProcInsertsInto->PostInitialize();
-	ScheduledProcTable->PostInitialize();
 	/**/
 }
 

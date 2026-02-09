@@ -457,7 +457,7 @@ using SpacetimeDB;
 [SpacetimeDB.View(Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
-    return ctx.Db.Player.Identity.Find(ctx.Sender);
+    return ctx.Db.Player.Identity.Find(ctx.Sender());
 }
 
 // Return multiple rows
@@ -510,7 +510,7 @@ ctx.identity            // Module's identity
 
 ```csharp
 ctx.Db                  // Database access
-ctx.Sender              // Identity of caller
+ctx.Sender()              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
 ctx.Identity            // Module's identity
