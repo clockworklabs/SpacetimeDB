@@ -429,14 +429,29 @@ impl From<ModuleDef> for RawModuleDefV9 {
             raw_module_def_version: _,
         } = val;
 
+        // Extract column defaults from tables before consuming tables
+        let column_defaults: Vec<_> = tables
+            .iter()
+            .flat_map(|(table_name, table_def)| {
+                table_def.columns.iter().enumerate().filter_map(|(col_id, col)| {
+                    col.default_value.as_ref().map(|default_val| {
+                        RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {
+                            table: table_name.clone().into(),
+                            col_id: ColId(col_id as u16),
+                            value: spacetimedb_sats::bsatn::to_vec(default_val).unwrap().into(),
+                        })
+                    })
+                })
+            })
+            .collect();
+
         RawModuleDefV9 {
             tables: to_raw(tables),
             reducers: reducers.into_iter().map(|(_, def)| def.into()).collect(),
             types: to_raw(types),
-            // TODO: Do we need to include default values here?
-            misc_exports: procedures
+            misc_exports: column_defaults
                 .into_iter()
-                .map(|(_, def)| def.into())
+                .chain(procedures.into_iter().map(|(_, def)| def.into()))
                 .chain(views.into_iter().map(|(_, def)| def.into()))
                 .collect(),
             typespace,
@@ -1300,19 +1315,27 @@ impl From<ViewDef> for RawMiscModuleExportV9 {
 /// The visibility of a function (reducer or procedure).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum FunctionVisibility {
-    /// Internal-only, not callable from clients.
-    /// Typically used for lifecycle reducers and scheduled functions.
-    Internal,
+    /// Not callable by arbitrary clients.
+    ///
+    /// Still callable by the module owner, collaborators,
+    /// and internal module code.
+    Private,
 
     /// Callable from client code.
     ClientCallable,
+}
+
+impl FunctionVisibility {
+    pub fn is_private(&self) -> bool {
+        matches!(self, FunctionVisibility::Private)
+    }
 }
 
 use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawFunctionVisibility;
 impl From<RawFunctionVisibility> for FunctionVisibility {
     fn from(val: RawFunctionVisibility) -> Self {
         match val {
-            RawFunctionVisibility::Internal => FunctionVisibility::Internal,
+            RawFunctionVisibility::Private => FunctionVisibility::Private,
             RawFunctionVisibility::ClientCallable => FunctionVisibility::ClientCallable,
         }
     }
