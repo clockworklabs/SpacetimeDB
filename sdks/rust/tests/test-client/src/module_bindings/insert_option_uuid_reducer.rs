@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertOptionUuidArgs {
-    pub u: Option::<__sdk::Uuid>,
+    pub u: Option<__sdk::Uuid>,
 }
 
 impl From<InsertOptionUuidArgs> for super::Reducer {
     fn from(args: InsertOptionUuidArgs) -> Self {
-        Self::InsertOptionUuid {
-            u: args.u,
-}
-}
+        Self::InsertOptionUuid { u: args.u }
+    }
 }
 
 impl __sdk::InModule for InsertOptionUuidArgs {
@@ -39,9 +31,8 @@ pub trait insert_option_uuid {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_option_uuid:insert_option_uuid_then`] to run a callback after the reducer completes.
-    fn insert_option_uuid(&self, u: Option::<__sdk::Uuid>,
-) -> __sdk::Result<()> {
-        self.insert_option_uuid_then(u,  |_, _| {})
+    fn insert_option_uuid(&self, u: Option<__sdk::Uuid>) -> __sdk::Result<()> {
+        self.insert_option_uuid_then(u, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_option_uuid` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait insert_option_uuid {
     ///  and its status can be observed with the `callback`.
     fn insert_option_uuid_then(
         &self,
-        u: Option::<__sdk::Uuid>,
+        u: Option<__sdk::Uuid>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,13 @@ pub trait insert_option_uuid {
 impl insert_option_uuid for super::RemoteReducers {
     fn insert_option_uuid_then(
         &self,
-        u: Option::<__sdk::Uuid>,
+        u: Option<__sdk::Uuid>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertOptionUuidArgs { u,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertOptionUuidArgs { u }, callback)
     }
 }
-

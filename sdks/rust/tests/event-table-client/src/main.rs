@@ -194,20 +194,20 @@ fn exec_events_dont_persist() {
 
                 // After the noop reducer completes, the insert count should
                 // still be 1 from the emit_test_event call — no stale events.
-                ctx.reducers.noop_then({
-                    let insert_count = insert_count.clone();
-                    move |_ctx, _result| {
-                        let set_result = noop_result.lock().unwrap().take().unwrap();
-                        let count = insert_count.load(Ordering::SeqCst);
-                        if count == 1 {
-                            set_result(Ok(()));
-                        } else {
-                            set_result(Err(anyhow::anyhow!(
-                                "Expected 1 event insert, but got {count}"
-                            )));
+                ctx.reducers
+                    .noop_then({
+                        let insert_count = insert_count.clone();
+                        move |_ctx, _result| {
+                            let set_result = noop_result.lock().unwrap().take().unwrap();
+                            let count = insert_count.load(Ordering::SeqCst);
+                            if count == 1 {
+                                set_result(Ok(()));
+                            } else {
+                                set_result(Err(anyhow::anyhow!("Expected 1 event insert, but got {count}")));
+                            }
                         }
-                    }
-                }).unwrap();
+                    })
+                    .unwrap();
             });
         }
     });
@@ -234,9 +234,7 @@ fn exec_v1_rejects_event_table() {
                     if msg.contains("v2") || msg.contains("upgrade") || msg.contains("Upgrade") {
                         error_result(Ok(()));
                     } else {
-                        error_result(Err(anyhow::anyhow!(
-                            "Expected error about v2/upgrade, got: {msg}"
-                        )));
+                        error_result(Err(anyhow::anyhow!("Expected error about v2/upgrade, got: {msg}")));
                     }
                 })
                 .subscribe(["SELECT * FROM test_event;"]);

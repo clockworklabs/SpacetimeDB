@@ -4,128 +4,11 @@
 // This was generated using spacetimedb cli version 1.12.0 (commit c63169838eff3d5c486ea11a3eb1610f80518e0e).
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod b_tree_u_32_type;
+pub mod btree_u_32_table;
 pub mod byte_struct_type;
-pub mod enum_with_payload_type;
-pub mod every_primitive_struct_type;
-pub mod every_vec_struct_type;
-pub mod indexed_simple_enum_type;
-pub mod indexed_table_type;
-pub mod indexed_table_2_type;
-pub mod large_table_type;
-pub mod one_bool_type;
-pub mod one_byte_struct_type;
-pub mod one_connection_id_type;
-pub mod one_enum_with_payload_type;
-pub mod one_every_primitive_struct_type;
-pub mod one_every_vec_struct_type;
-pub mod one_f_32_type;
-pub mod one_f_64_type;
-pub mod one_i_128_type;
-pub mod one_i_16_type;
-pub mod one_i_256_type;
-pub mod one_i_32_type;
-pub mod one_i_64_type;
-pub mod one_i_8_type;
-pub mod one_identity_type;
-pub mod one_simple_enum_type;
-pub mod one_string_type;
-pub mod one_timestamp_type;
-pub mod one_u_128_type;
-pub mod one_u_16_type;
-pub mod one_u_256_type;
-pub mod one_u_32_type;
-pub mod one_u_64_type;
-pub mod one_u_8_type;
-pub mod one_unit_struct_type;
-pub mod one_uuid_type;
-pub mod option_every_primitive_struct_type;
-pub mod option_i_32_type;
-pub mod option_identity_type;
-pub mod option_simple_enum_type;
-pub mod option_string_type;
-pub mod option_uuid_type;
-pub mod option_vec_option_i_32_type;
-pub mod pk_bool_type;
-pub mod pk_connection_id_type;
-pub mod pk_i_128_type;
-pub mod pk_i_16_type;
-pub mod pk_i_256_type;
-pub mod pk_i_32_type;
-pub mod pk_i_64_type;
-pub mod pk_i_8_type;
-pub mod pk_identity_type;
-pub mod pk_simple_enum_type;
-pub mod pk_string_type;
-pub mod pk_u_128_type;
-pub mod pk_u_16_type;
-pub mod pk_u_256_type;
-pub mod pk_u_32_type;
-pub mod pk_u_32_two_type;
-pub mod pk_u_64_type;
-pub mod pk_u_8_type;
-pub mod pk_uuid_type;
-pub mod result_every_primitive_struct_string_type;
-pub mod result_i_32_string_type;
-pub mod result_identity_string_type;
-pub mod result_simple_enum_i_32_type;
-pub mod result_string_i_32_type;
-pub mod result_vec_i_32_string_type;
-pub mod scheduled_table_type;
-pub mod simple_enum_type;
-pub mod table_holds_table_type;
-pub mod unique_bool_type;
-pub mod unique_connection_id_type;
-pub mod unique_i_128_type;
-pub mod unique_i_16_type;
-pub mod unique_i_256_type;
-pub mod unique_i_32_type;
-pub mod unique_i_64_type;
-pub mod unique_i_8_type;
-pub mod unique_identity_type;
-pub mod unique_string_type;
-pub mod unique_u_128_type;
-pub mod unique_u_16_type;
-pub mod unique_u_256_type;
-pub mod unique_u_32_type;
-pub mod unique_u_64_type;
-pub mod unique_u_8_type;
-pub mod unique_uuid_type;
-pub mod unit_struct_type;
-pub mod users_type;
-pub mod vec_bool_type;
-pub mod vec_byte_struct_type;
-pub mod vec_connection_id_type;
-pub mod vec_enum_with_payload_type;
-pub mod vec_every_primitive_struct_type;
-pub mod vec_every_vec_struct_type;
-pub mod vec_f_32_type;
-pub mod vec_f_64_type;
-pub mod vec_i_128_type;
-pub mod vec_i_16_type;
-pub mod vec_i_256_type;
-pub mod vec_i_32_type;
-pub mod vec_i_64_type;
-pub mod vec_i_8_type;
-pub mod vec_identity_type;
-pub mod vec_simple_enum_type;
-pub mod vec_string_type;
-pub mod vec_timestamp_type;
-pub mod vec_u_128_type;
-pub mod vec_u_16_type;
-pub mod vec_u_256_type;
-pub mod vec_u_32_type;
-pub mod vec_u_64_type;
-pub mod vec_u_8_type;
-pub mod vec_unit_struct_type;
-pub mod vec_uuid_type;
 pub mod delete_from_btree_u_32_reducer;
 pub mod delete_large_table_reducer;
 pub mod delete_pk_bool_reducer;
@@ -141,8 +24,8 @@ pub mod delete_pk_string_reducer;
 pub mod delete_pk_u_128_reducer;
 pub mod delete_pk_u_16_reducer;
 pub mod delete_pk_u_256_reducer;
-pub mod delete_pk_u_32_reducer;
 pub mod delete_pk_u_32_insert_pk_u_32_two_reducer;
+pub mod delete_pk_u_32_reducer;
 pub mod delete_pk_u_32_two_reducer;
 pub mod delete_pk_u_64_reducer;
 pub mod delete_pk_u_8_reducer;
@@ -164,6 +47,15 @@ pub mod delete_unique_u_32_reducer;
 pub mod delete_unique_u_64_reducer;
 pub mod delete_unique_u_8_reducer;
 pub mod delete_unique_uuid_reducer;
+pub mod enum_with_payload_type;
+pub mod every_primitive_struct_type;
+pub mod every_vec_struct_type;
+pub mod indexed_simple_enum_table;
+pub mod indexed_simple_enum_type;
+pub mod indexed_table_2_table;
+pub mod indexed_table_2_type;
+pub mod indexed_table_table;
+pub mod indexed_table_type;
 pub mod insert_call_timestamp_reducer;
 pub mod insert_call_uuid_v_4_reducer;
 pub mod insert_call_uuid_v_7_reducer;
@@ -284,8 +176,166 @@ pub mod insert_vec_u_64_reducer;
 pub mod insert_vec_u_8_reducer;
 pub mod insert_vec_unit_struct_reducer;
 pub mod insert_vec_uuid_reducer;
+pub mod large_table_table;
+pub mod large_table_type;
 pub mod no_op_succeeds_reducer;
+pub mod one_bool_table;
+pub mod one_bool_type;
+pub mod one_byte_struct_table;
+pub mod one_byte_struct_type;
+pub mod one_connection_id_table;
+pub mod one_connection_id_type;
+pub mod one_enum_with_payload_table;
+pub mod one_enum_with_payload_type;
+pub mod one_every_primitive_struct_table;
+pub mod one_every_primitive_struct_type;
+pub mod one_every_vec_struct_table;
+pub mod one_every_vec_struct_type;
+pub mod one_f_32_table;
+pub mod one_f_32_type;
+pub mod one_f_64_table;
+pub mod one_f_64_type;
+pub mod one_i_128_table;
+pub mod one_i_128_type;
+pub mod one_i_16_table;
+pub mod one_i_16_type;
+pub mod one_i_256_table;
+pub mod one_i_256_type;
+pub mod one_i_32_table;
+pub mod one_i_32_type;
+pub mod one_i_64_table;
+pub mod one_i_64_type;
+pub mod one_i_8_table;
+pub mod one_i_8_type;
+pub mod one_identity_table;
+pub mod one_identity_type;
+pub mod one_simple_enum_table;
+pub mod one_simple_enum_type;
+pub mod one_string_table;
+pub mod one_string_type;
+pub mod one_timestamp_table;
+pub mod one_timestamp_type;
+pub mod one_u_128_table;
+pub mod one_u_128_type;
+pub mod one_u_16_table;
+pub mod one_u_16_type;
+pub mod one_u_256_table;
+pub mod one_u_256_type;
+pub mod one_u_32_table;
+pub mod one_u_32_type;
+pub mod one_u_64_table;
+pub mod one_u_64_type;
+pub mod one_u_8_table;
+pub mod one_u_8_type;
+pub mod one_unit_struct_table;
+pub mod one_unit_struct_type;
+pub mod one_uuid_table;
+pub mod one_uuid_type;
+pub mod option_every_primitive_struct_table;
+pub mod option_every_primitive_struct_type;
+pub mod option_i_32_table;
+pub mod option_i_32_type;
+pub mod option_identity_table;
+pub mod option_identity_type;
+pub mod option_simple_enum_table;
+pub mod option_simple_enum_type;
+pub mod option_string_table;
+pub mod option_string_type;
+pub mod option_uuid_table;
+pub mod option_uuid_type;
+pub mod option_vec_option_i_32_table;
+pub mod option_vec_option_i_32_type;
+pub mod pk_bool_table;
+pub mod pk_bool_type;
+pub mod pk_connection_id_table;
+pub mod pk_connection_id_type;
+pub mod pk_i_128_table;
+pub mod pk_i_128_type;
+pub mod pk_i_16_table;
+pub mod pk_i_16_type;
+pub mod pk_i_256_table;
+pub mod pk_i_256_type;
+pub mod pk_i_32_table;
+pub mod pk_i_32_type;
+pub mod pk_i_64_table;
+pub mod pk_i_64_type;
+pub mod pk_i_8_table;
+pub mod pk_i_8_type;
+pub mod pk_identity_table;
+pub mod pk_identity_type;
+pub mod pk_simple_enum_table;
+pub mod pk_simple_enum_type;
+pub mod pk_string_table;
+pub mod pk_string_type;
+pub mod pk_u_128_table;
+pub mod pk_u_128_type;
+pub mod pk_u_16_table;
+pub mod pk_u_16_type;
+pub mod pk_u_256_table;
+pub mod pk_u_256_type;
+pub mod pk_u_32_table;
+pub mod pk_u_32_two_table;
+pub mod pk_u_32_two_type;
+pub mod pk_u_32_type;
+pub mod pk_u_64_table;
+pub mod pk_u_64_type;
+pub mod pk_u_8_table;
+pub mod pk_u_8_type;
+pub mod pk_uuid_table;
+pub mod pk_uuid_type;
+pub mod result_every_primitive_struct_string_table;
+pub mod result_every_primitive_struct_string_type;
+pub mod result_i_32_string_table;
+pub mod result_i_32_string_type;
+pub mod result_identity_string_table;
+pub mod result_identity_string_type;
+pub mod result_simple_enum_i_32_table;
+pub mod result_simple_enum_i_32_type;
+pub mod result_string_i_32_table;
+pub mod result_string_i_32_type;
+pub mod result_vec_i_32_string_table;
+pub mod result_vec_i_32_string_type;
+pub mod scheduled_table_table;
+pub mod scheduled_table_type;
+pub mod simple_enum_type;
 pub mod sorted_uuids_insert_reducer;
+pub mod table_holds_table_table;
+pub mod table_holds_table_type;
+pub mod unique_bool_table;
+pub mod unique_bool_type;
+pub mod unique_connection_id_table;
+pub mod unique_connection_id_type;
+pub mod unique_i_128_table;
+pub mod unique_i_128_type;
+pub mod unique_i_16_table;
+pub mod unique_i_16_type;
+pub mod unique_i_256_table;
+pub mod unique_i_256_type;
+pub mod unique_i_32_table;
+pub mod unique_i_32_type;
+pub mod unique_i_64_table;
+pub mod unique_i_64_type;
+pub mod unique_i_8_table;
+pub mod unique_i_8_type;
+pub mod unique_identity_table;
+pub mod unique_identity_type;
+pub mod unique_string_table;
+pub mod unique_string_type;
+pub mod unique_u_128_table;
+pub mod unique_u_128_type;
+pub mod unique_u_16_table;
+pub mod unique_u_16_type;
+pub mod unique_u_256_table;
+pub mod unique_u_256_type;
+pub mod unique_u_32_table;
+pub mod unique_u_32_type;
+pub mod unique_u_64_table;
+pub mod unique_u_64_type;
+pub mod unique_u_8_table;
+pub mod unique_u_8_type;
+pub mod unique_uuid_table;
+pub mod unique_uuid_type;
+pub mod unit_struct_type;
 pub mod update_indexed_simple_enum_reducer;
 pub mod update_pk_bool_reducer;
 pub mod update_pk_connection_id_reducer;
@@ -323,340 +373,64 @@ pub mod update_unique_u_32_reducer;
 pub mod update_unique_u_64_reducer;
 pub mod update_unique_u_8_reducer;
 pub mod update_unique_uuid_reducer;
-pub mod btree_u_32_table;
-pub mod indexed_simple_enum_table;
-pub mod indexed_table_table;
-pub mod indexed_table_2_table;
-pub mod large_table_table;
-pub mod one_bool_table;
-pub mod one_byte_struct_table;
-pub mod one_connection_id_table;
-pub mod one_enum_with_payload_table;
-pub mod one_every_primitive_struct_table;
-pub mod one_every_vec_struct_table;
-pub mod one_f_32_table;
-pub mod one_f_64_table;
-pub mod one_i_128_table;
-pub mod one_i_16_table;
-pub mod one_i_256_table;
-pub mod one_i_32_table;
-pub mod one_i_64_table;
-pub mod one_i_8_table;
-pub mod one_identity_table;
-pub mod one_simple_enum_table;
-pub mod one_string_table;
-pub mod one_timestamp_table;
-pub mod one_u_128_table;
-pub mod one_u_16_table;
-pub mod one_u_256_table;
-pub mod one_u_32_table;
-pub mod one_u_64_table;
-pub mod one_u_8_table;
-pub mod one_unit_struct_table;
-pub mod one_uuid_table;
-pub mod option_every_primitive_struct_table;
-pub mod option_i_32_table;
-pub mod option_identity_table;
-pub mod option_simple_enum_table;
-pub mod option_string_table;
-pub mod option_uuid_table;
-pub mod option_vec_option_i_32_table;
-pub mod pk_bool_table;
-pub mod pk_connection_id_table;
-pub mod pk_i_128_table;
-pub mod pk_i_16_table;
-pub mod pk_i_256_table;
-pub mod pk_i_32_table;
-pub mod pk_i_64_table;
-pub mod pk_i_8_table;
-pub mod pk_identity_table;
-pub mod pk_simple_enum_table;
-pub mod pk_string_table;
-pub mod pk_u_128_table;
-pub mod pk_u_16_table;
-pub mod pk_u_256_table;
-pub mod pk_u_32_table;
-pub mod pk_u_32_two_table;
-pub mod pk_u_64_table;
-pub mod pk_u_8_table;
-pub mod pk_uuid_table;
-pub mod result_every_primitive_struct_string_table;
-pub mod result_i_32_string_table;
-pub mod result_identity_string_table;
-pub mod result_simple_enum_i_32_table;
-pub mod result_string_i_32_table;
-pub mod result_vec_i_32_string_table;
-pub mod scheduled_table_table;
-pub mod table_holds_table_table;
-pub mod unique_bool_table;
-pub mod unique_connection_id_table;
-pub mod unique_i_128_table;
-pub mod unique_i_16_table;
-pub mod unique_i_256_table;
-pub mod unique_i_32_table;
-pub mod unique_i_64_table;
-pub mod unique_i_8_table;
-pub mod unique_identity_table;
-pub mod unique_string_table;
-pub mod unique_u_128_table;
-pub mod unique_u_16_table;
-pub mod unique_u_256_table;
-pub mod unique_u_32_table;
-pub mod unique_u_64_table;
-pub mod unique_u_8_table;
-pub mod unique_uuid_table;
 pub mod users_table;
+pub mod users_type;
 pub mod vec_bool_table;
+pub mod vec_bool_type;
 pub mod vec_byte_struct_table;
+pub mod vec_byte_struct_type;
 pub mod vec_connection_id_table;
+pub mod vec_connection_id_type;
 pub mod vec_enum_with_payload_table;
+pub mod vec_enum_with_payload_type;
 pub mod vec_every_primitive_struct_table;
+pub mod vec_every_primitive_struct_type;
 pub mod vec_every_vec_struct_table;
+pub mod vec_every_vec_struct_type;
 pub mod vec_f_32_table;
+pub mod vec_f_32_type;
 pub mod vec_f_64_table;
+pub mod vec_f_64_type;
 pub mod vec_i_128_table;
+pub mod vec_i_128_type;
 pub mod vec_i_16_table;
+pub mod vec_i_16_type;
 pub mod vec_i_256_table;
+pub mod vec_i_256_type;
 pub mod vec_i_32_table;
+pub mod vec_i_32_type;
 pub mod vec_i_64_table;
+pub mod vec_i_64_type;
 pub mod vec_i_8_table;
+pub mod vec_i_8_type;
 pub mod vec_identity_table;
+pub mod vec_identity_type;
 pub mod vec_simple_enum_table;
+pub mod vec_simple_enum_type;
 pub mod vec_string_table;
+pub mod vec_string_type;
 pub mod vec_timestamp_table;
+pub mod vec_timestamp_type;
 pub mod vec_u_128_table;
+pub mod vec_u_128_type;
 pub mod vec_u_16_table;
+pub mod vec_u_16_type;
 pub mod vec_u_256_table;
+pub mod vec_u_256_type;
 pub mod vec_u_32_table;
+pub mod vec_u_32_type;
 pub mod vec_u_64_table;
+pub mod vec_u_64_type;
 pub mod vec_u_8_table;
+pub mod vec_u_8_type;
 pub mod vec_unit_struct_table;
+pub mod vec_unit_struct_type;
 pub mod vec_uuid_table;
+pub mod vec_uuid_type;
 
 pub use b_tree_u_32_type::BTreeU32;
-pub use byte_struct_type::ByteStruct;
-pub use enum_with_payload_type::EnumWithPayload;
-pub use every_primitive_struct_type::EveryPrimitiveStruct;
-pub use every_vec_struct_type::EveryVecStruct;
-pub use indexed_simple_enum_type::IndexedSimpleEnum;
-pub use indexed_table_type::IndexedTable;
-pub use indexed_table_2_type::IndexedTable2;
-pub use large_table_type::LargeTable;
-pub use one_bool_type::OneBool;
-pub use one_byte_struct_type::OneByteStruct;
-pub use one_connection_id_type::OneConnectionId;
-pub use one_enum_with_payload_type::OneEnumWithPayload;
-pub use one_every_primitive_struct_type::OneEveryPrimitiveStruct;
-pub use one_every_vec_struct_type::OneEveryVecStruct;
-pub use one_f_32_type::OneF32;
-pub use one_f_64_type::OneF64;
-pub use one_i_128_type::OneI128;
-pub use one_i_16_type::OneI16;
-pub use one_i_256_type::OneI256;
-pub use one_i_32_type::OneI32;
-pub use one_i_64_type::OneI64;
-pub use one_i_8_type::OneI8;
-pub use one_identity_type::OneIdentity;
-pub use one_simple_enum_type::OneSimpleEnum;
-pub use one_string_type::OneString;
-pub use one_timestamp_type::OneTimestamp;
-pub use one_u_128_type::OneU128;
-pub use one_u_16_type::OneU16;
-pub use one_u_256_type::OneU256;
-pub use one_u_32_type::OneU32;
-pub use one_u_64_type::OneU64;
-pub use one_u_8_type::OneU8;
-pub use one_unit_struct_type::OneUnitStruct;
-pub use one_uuid_type::OneUuid;
-pub use option_every_primitive_struct_type::OptionEveryPrimitiveStruct;
-pub use option_i_32_type::OptionI32;
-pub use option_identity_type::OptionIdentity;
-pub use option_simple_enum_type::OptionSimpleEnum;
-pub use option_string_type::OptionString;
-pub use option_uuid_type::OptionUuid;
-pub use option_vec_option_i_32_type::OptionVecOptionI32;
-pub use pk_bool_type::PkBool;
-pub use pk_connection_id_type::PkConnectionId;
-pub use pk_i_128_type::PkI128;
-pub use pk_i_16_type::PkI16;
-pub use pk_i_256_type::PkI256;
-pub use pk_i_32_type::PkI32;
-pub use pk_i_64_type::PkI64;
-pub use pk_i_8_type::PkI8;
-pub use pk_identity_type::PkIdentity;
-pub use pk_simple_enum_type::PkSimpleEnum;
-pub use pk_string_type::PkString;
-pub use pk_u_128_type::PkU128;
-pub use pk_u_16_type::PkU16;
-pub use pk_u_256_type::PkU256;
-pub use pk_u_32_type::PkU32;
-pub use pk_u_32_two_type::PkU32Two;
-pub use pk_u_64_type::PkU64;
-pub use pk_u_8_type::PkU8;
-pub use pk_uuid_type::PkUuid;
-pub use result_every_primitive_struct_string_type::ResultEveryPrimitiveStructString;
-pub use result_i_32_string_type::ResultI32String;
-pub use result_identity_string_type::ResultIdentityString;
-pub use result_simple_enum_i_32_type::ResultSimpleEnumI32;
-pub use result_string_i_32_type::ResultStringI32;
-pub use result_vec_i_32_string_type::ResultVecI32String;
-pub use scheduled_table_type::ScheduledTable;
-pub use simple_enum_type::SimpleEnum;
-pub use table_holds_table_type::TableHoldsTable;
-pub use unique_bool_type::UniqueBool;
-pub use unique_connection_id_type::UniqueConnectionId;
-pub use unique_i_128_type::UniqueI128;
-pub use unique_i_16_type::UniqueI16;
-pub use unique_i_256_type::UniqueI256;
-pub use unique_i_32_type::UniqueI32;
-pub use unique_i_64_type::UniqueI64;
-pub use unique_i_8_type::UniqueI8;
-pub use unique_identity_type::UniqueIdentity;
-pub use unique_string_type::UniqueString;
-pub use unique_u_128_type::UniqueU128;
-pub use unique_u_16_type::UniqueU16;
-pub use unique_u_256_type::UniqueU256;
-pub use unique_u_32_type::UniqueU32;
-pub use unique_u_64_type::UniqueU64;
-pub use unique_u_8_type::UniqueU8;
-pub use unique_uuid_type::UniqueUuid;
-pub use unit_struct_type::UnitStruct;
-pub use users_type::Users;
-pub use vec_bool_type::VecBool;
-pub use vec_byte_struct_type::VecByteStruct;
-pub use vec_connection_id_type::VecConnectionId;
-pub use vec_enum_with_payload_type::VecEnumWithPayload;
-pub use vec_every_primitive_struct_type::VecEveryPrimitiveStruct;
-pub use vec_every_vec_struct_type::VecEveryVecStruct;
-pub use vec_f_32_type::VecF32;
-pub use vec_f_64_type::VecF64;
-pub use vec_i_128_type::VecI128;
-pub use vec_i_16_type::VecI16;
-pub use vec_i_256_type::VecI256;
-pub use vec_i_32_type::VecI32;
-pub use vec_i_64_type::VecI64;
-pub use vec_i_8_type::VecI8;
-pub use vec_identity_type::VecIdentity;
-pub use vec_simple_enum_type::VecSimpleEnum;
-pub use vec_string_type::VecString;
-pub use vec_timestamp_type::VecTimestamp;
-pub use vec_u_128_type::VecU128;
-pub use vec_u_16_type::VecU16;
-pub use vec_u_256_type::VecU256;
-pub use vec_u_32_type::VecU32;
-pub use vec_u_64_type::VecU64;
-pub use vec_u_8_type::VecU8;
-pub use vec_unit_struct_type::VecUnitStruct;
-pub use vec_uuid_type::VecUuid;
 pub use btree_u_32_table::*;
-pub use indexed_simple_enum_table::*;
-pub use indexed_table_table::*;
-pub use indexed_table_2_table::*;
-pub use large_table_table::*;
-pub use one_bool_table::*;
-pub use one_byte_struct_table::*;
-pub use one_connection_id_table::*;
-pub use one_enum_with_payload_table::*;
-pub use one_every_primitive_struct_table::*;
-pub use one_every_vec_struct_table::*;
-pub use one_f_32_table::*;
-pub use one_f_64_table::*;
-pub use one_i_128_table::*;
-pub use one_i_16_table::*;
-pub use one_i_256_table::*;
-pub use one_i_32_table::*;
-pub use one_i_64_table::*;
-pub use one_i_8_table::*;
-pub use one_identity_table::*;
-pub use one_simple_enum_table::*;
-pub use one_string_table::*;
-pub use one_timestamp_table::*;
-pub use one_u_128_table::*;
-pub use one_u_16_table::*;
-pub use one_u_256_table::*;
-pub use one_u_32_table::*;
-pub use one_u_64_table::*;
-pub use one_u_8_table::*;
-pub use one_unit_struct_table::*;
-pub use one_uuid_table::*;
-pub use option_every_primitive_struct_table::*;
-pub use option_i_32_table::*;
-pub use option_identity_table::*;
-pub use option_simple_enum_table::*;
-pub use option_string_table::*;
-pub use option_uuid_table::*;
-pub use option_vec_option_i_32_table::*;
-pub use pk_bool_table::*;
-pub use pk_connection_id_table::*;
-pub use pk_i_128_table::*;
-pub use pk_i_16_table::*;
-pub use pk_i_256_table::*;
-pub use pk_i_32_table::*;
-pub use pk_i_64_table::*;
-pub use pk_i_8_table::*;
-pub use pk_identity_table::*;
-pub use pk_simple_enum_table::*;
-pub use pk_string_table::*;
-pub use pk_u_128_table::*;
-pub use pk_u_16_table::*;
-pub use pk_u_256_table::*;
-pub use pk_u_32_table::*;
-pub use pk_u_32_two_table::*;
-pub use pk_u_64_table::*;
-pub use pk_u_8_table::*;
-pub use pk_uuid_table::*;
-pub use result_every_primitive_struct_string_table::*;
-pub use result_i_32_string_table::*;
-pub use result_identity_string_table::*;
-pub use result_simple_enum_i_32_table::*;
-pub use result_string_i_32_table::*;
-pub use result_vec_i_32_string_table::*;
-pub use scheduled_table_table::*;
-pub use table_holds_table_table::*;
-pub use unique_bool_table::*;
-pub use unique_connection_id_table::*;
-pub use unique_i_128_table::*;
-pub use unique_i_16_table::*;
-pub use unique_i_256_table::*;
-pub use unique_i_32_table::*;
-pub use unique_i_64_table::*;
-pub use unique_i_8_table::*;
-pub use unique_identity_table::*;
-pub use unique_string_table::*;
-pub use unique_u_128_table::*;
-pub use unique_u_16_table::*;
-pub use unique_u_256_table::*;
-pub use unique_u_32_table::*;
-pub use unique_u_64_table::*;
-pub use unique_u_8_table::*;
-pub use unique_uuid_table::*;
-pub use users_table::*;
-pub use vec_bool_table::*;
-pub use vec_byte_struct_table::*;
-pub use vec_connection_id_table::*;
-pub use vec_enum_with_payload_table::*;
-pub use vec_every_primitive_struct_table::*;
-pub use vec_every_vec_struct_table::*;
-pub use vec_f_32_table::*;
-pub use vec_f_64_table::*;
-pub use vec_i_128_table::*;
-pub use vec_i_16_table::*;
-pub use vec_i_256_table::*;
-pub use vec_i_32_table::*;
-pub use vec_i_64_table::*;
-pub use vec_i_8_table::*;
-pub use vec_identity_table::*;
-pub use vec_simple_enum_table::*;
-pub use vec_string_table::*;
-pub use vec_timestamp_table::*;
-pub use vec_u_128_table::*;
-pub use vec_u_16_table::*;
-pub use vec_u_256_table::*;
-pub use vec_u_32_table::*;
-pub use vec_u_64_table::*;
-pub use vec_u_8_table::*;
-pub use vec_unit_struct_table::*;
-pub use vec_uuid_table::*;
+pub use byte_struct_type::ByteStruct;
 pub use delete_from_btree_u_32_reducer::delete_from_btree_u_32;
 pub use delete_large_table_reducer::delete_large_table;
 pub use delete_pk_bool_reducer::delete_pk_bool;
@@ -672,8 +446,8 @@ pub use delete_pk_string_reducer::delete_pk_string;
 pub use delete_pk_u_128_reducer::delete_pk_u_128;
 pub use delete_pk_u_16_reducer::delete_pk_u_16;
 pub use delete_pk_u_256_reducer::delete_pk_u_256;
-pub use delete_pk_u_32_reducer::delete_pk_u_32;
 pub use delete_pk_u_32_insert_pk_u_32_two_reducer::delete_pk_u_32_insert_pk_u_32_two;
+pub use delete_pk_u_32_reducer::delete_pk_u_32;
 pub use delete_pk_u_32_two_reducer::delete_pk_u_32_two;
 pub use delete_pk_u_64_reducer::delete_pk_u_64;
 pub use delete_pk_u_8_reducer::delete_pk_u_8;
@@ -695,6 +469,15 @@ pub use delete_unique_u_32_reducer::delete_unique_u_32;
 pub use delete_unique_u_64_reducer::delete_unique_u_64;
 pub use delete_unique_u_8_reducer::delete_unique_u_8;
 pub use delete_unique_uuid_reducer::delete_unique_uuid;
+pub use enum_with_payload_type::EnumWithPayload;
+pub use every_primitive_struct_type::EveryPrimitiveStruct;
+pub use every_vec_struct_type::EveryVecStruct;
+pub use indexed_simple_enum_table::*;
+pub use indexed_simple_enum_type::IndexedSimpleEnum;
+pub use indexed_table_2_table::*;
+pub use indexed_table_2_type::IndexedTable2;
+pub use indexed_table_table::*;
+pub use indexed_table_type::IndexedTable;
 pub use insert_call_timestamp_reducer::insert_call_timestamp;
 pub use insert_call_uuid_v_4_reducer::insert_call_uuid_v_4;
 pub use insert_call_uuid_v_7_reducer::insert_call_uuid_v_7;
@@ -815,8 +598,166 @@ pub use insert_vec_u_64_reducer::insert_vec_u_64;
 pub use insert_vec_u_8_reducer::insert_vec_u_8;
 pub use insert_vec_unit_struct_reducer::insert_vec_unit_struct;
 pub use insert_vec_uuid_reducer::insert_vec_uuid;
+pub use large_table_table::*;
+pub use large_table_type::LargeTable;
 pub use no_op_succeeds_reducer::no_op_succeeds;
+pub use one_bool_table::*;
+pub use one_bool_type::OneBool;
+pub use one_byte_struct_table::*;
+pub use one_byte_struct_type::OneByteStruct;
+pub use one_connection_id_table::*;
+pub use one_connection_id_type::OneConnectionId;
+pub use one_enum_with_payload_table::*;
+pub use one_enum_with_payload_type::OneEnumWithPayload;
+pub use one_every_primitive_struct_table::*;
+pub use one_every_primitive_struct_type::OneEveryPrimitiveStruct;
+pub use one_every_vec_struct_table::*;
+pub use one_every_vec_struct_type::OneEveryVecStruct;
+pub use one_f_32_table::*;
+pub use one_f_32_type::OneF32;
+pub use one_f_64_table::*;
+pub use one_f_64_type::OneF64;
+pub use one_i_128_table::*;
+pub use one_i_128_type::OneI128;
+pub use one_i_16_table::*;
+pub use one_i_16_type::OneI16;
+pub use one_i_256_table::*;
+pub use one_i_256_type::OneI256;
+pub use one_i_32_table::*;
+pub use one_i_32_type::OneI32;
+pub use one_i_64_table::*;
+pub use one_i_64_type::OneI64;
+pub use one_i_8_table::*;
+pub use one_i_8_type::OneI8;
+pub use one_identity_table::*;
+pub use one_identity_type::OneIdentity;
+pub use one_simple_enum_table::*;
+pub use one_simple_enum_type::OneSimpleEnum;
+pub use one_string_table::*;
+pub use one_string_type::OneString;
+pub use one_timestamp_table::*;
+pub use one_timestamp_type::OneTimestamp;
+pub use one_u_128_table::*;
+pub use one_u_128_type::OneU128;
+pub use one_u_16_table::*;
+pub use one_u_16_type::OneU16;
+pub use one_u_256_table::*;
+pub use one_u_256_type::OneU256;
+pub use one_u_32_table::*;
+pub use one_u_32_type::OneU32;
+pub use one_u_64_table::*;
+pub use one_u_64_type::OneU64;
+pub use one_u_8_table::*;
+pub use one_u_8_type::OneU8;
+pub use one_unit_struct_table::*;
+pub use one_unit_struct_type::OneUnitStruct;
+pub use one_uuid_table::*;
+pub use one_uuid_type::OneUuid;
+pub use option_every_primitive_struct_table::*;
+pub use option_every_primitive_struct_type::OptionEveryPrimitiveStruct;
+pub use option_i_32_table::*;
+pub use option_i_32_type::OptionI32;
+pub use option_identity_table::*;
+pub use option_identity_type::OptionIdentity;
+pub use option_simple_enum_table::*;
+pub use option_simple_enum_type::OptionSimpleEnum;
+pub use option_string_table::*;
+pub use option_string_type::OptionString;
+pub use option_uuid_table::*;
+pub use option_uuid_type::OptionUuid;
+pub use option_vec_option_i_32_table::*;
+pub use option_vec_option_i_32_type::OptionVecOptionI32;
+pub use pk_bool_table::*;
+pub use pk_bool_type::PkBool;
+pub use pk_connection_id_table::*;
+pub use pk_connection_id_type::PkConnectionId;
+pub use pk_i_128_table::*;
+pub use pk_i_128_type::PkI128;
+pub use pk_i_16_table::*;
+pub use pk_i_16_type::PkI16;
+pub use pk_i_256_table::*;
+pub use pk_i_256_type::PkI256;
+pub use pk_i_32_table::*;
+pub use pk_i_32_type::PkI32;
+pub use pk_i_64_table::*;
+pub use pk_i_64_type::PkI64;
+pub use pk_i_8_table::*;
+pub use pk_i_8_type::PkI8;
+pub use pk_identity_table::*;
+pub use pk_identity_type::PkIdentity;
+pub use pk_simple_enum_table::*;
+pub use pk_simple_enum_type::PkSimpleEnum;
+pub use pk_string_table::*;
+pub use pk_string_type::PkString;
+pub use pk_u_128_table::*;
+pub use pk_u_128_type::PkU128;
+pub use pk_u_16_table::*;
+pub use pk_u_16_type::PkU16;
+pub use pk_u_256_table::*;
+pub use pk_u_256_type::PkU256;
+pub use pk_u_32_table::*;
+pub use pk_u_32_two_table::*;
+pub use pk_u_32_two_type::PkU32Two;
+pub use pk_u_32_type::PkU32;
+pub use pk_u_64_table::*;
+pub use pk_u_64_type::PkU64;
+pub use pk_u_8_table::*;
+pub use pk_u_8_type::PkU8;
+pub use pk_uuid_table::*;
+pub use pk_uuid_type::PkUuid;
+pub use result_every_primitive_struct_string_table::*;
+pub use result_every_primitive_struct_string_type::ResultEveryPrimitiveStructString;
+pub use result_i_32_string_table::*;
+pub use result_i_32_string_type::ResultI32String;
+pub use result_identity_string_table::*;
+pub use result_identity_string_type::ResultIdentityString;
+pub use result_simple_enum_i_32_table::*;
+pub use result_simple_enum_i_32_type::ResultSimpleEnumI32;
+pub use result_string_i_32_table::*;
+pub use result_string_i_32_type::ResultStringI32;
+pub use result_vec_i_32_string_table::*;
+pub use result_vec_i_32_string_type::ResultVecI32String;
+pub use scheduled_table_table::*;
+pub use scheduled_table_type::ScheduledTable;
+pub use simple_enum_type::SimpleEnum;
 pub use sorted_uuids_insert_reducer::sorted_uuids_insert;
+pub use table_holds_table_table::*;
+pub use table_holds_table_type::TableHoldsTable;
+pub use unique_bool_table::*;
+pub use unique_bool_type::UniqueBool;
+pub use unique_connection_id_table::*;
+pub use unique_connection_id_type::UniqueConnectionId;
+pub use unique_i_128_table::*;
+pub use unique_i_128_type::UniqueI128;
+pub use unique_i_16_table::*;
+pub use unique_i_16_type::UniqueI16;
+pub use unique_i_256_table::*;
+pub use unique_i_256_type::UniqueI256;
+pub use unique_i_32_table::*;
+pub use unique_i_32_type::UniqueI32;
+pub use unique_i_64_table::*;
+pub use unique_i_64_type::UniqueI64;
+pub use unique_i_8_table::*;
+pub use unique_i_8_type::UniqueI8;
+pub use unique_identity_table::*;
+pub use unique_identity_type::UniqueIdentity;
+pub use unique_string_table::*;
+pub use unique_string_type::UniqueString;
+pub use unique_u_128_table::*;
+pub use unique_u_128_type::UniqueU128;
+pub use unique_u_16_table::*;
+pub use unique_u_16_type::UniqueU16;
+pub use unique_u_256_table::*;
+pub use unique_u_256_type::UniqueU256;
+pub use unique_u_32_table::*;
+pub use unique_u_32_type::UniqueU32;
+pub use unique_u_64_table::*;
+pub use unique_u_64_type::UniqueU64;
+pub use unique_u_8_table::*;
+pub use unique_u_8_type::UniqueU8;
+pub use unique_uuid_table::*;
+pub use unique_uuid_type::UniqueUuid;
+pub use unit_struct_type::UnitStruct;
 pub use update_indexed_simple_enum_reducer::update_indexed_simple_enum;
 pub use update_pk_bool_reducer::update_pk_bool;
 pub use update_pk_connection_id_reducer::update_pk_connection_id;
@@ -854,6 +795,60 @@ pub use update_unique_u_32_reducer::update_unique_u_32;
 pub use update_unique_u_64_reducer::update_unique_u_64;
 pub use update_unique_u_8_reducer::update_unique_u_8;
 pub use update_unique_uuid_reducer::update_unique_uuid;
+pub use users_table::*;
+pub use users_type::Users;
+pub use vec_bool_table::*;
+pub use vec_bool_type::VecBool;
+pub use vec_byte_struct_table::*;
+pub use vec_byte_struct_type::VecByteStruct;
+pub use vec_connection_id_table::*;
+pub use vec_connection_id_type::VecConnectionId;
+pub use vec_enum_with_payload_table::*;
+pub use vec_enum_with_payload_type::VecEnumWithPayload;
+pub use vec_every_primitive_struct_table::*;
+pub use vec_every_primitive_struct_type::VecEveryPrimitiveStruct;
+pub use vec_every_vec_struct_table::*;
+pub use vec_every_vec_struct_type::VecEveryVecStruct;
+pub use vec_f_32_table::*;
+pub use vec_f_32_type::VecF32;
+pub use vec_f_64_table::*;
+pub use vec_f_64_type::VecF64;
+pub use vec_i_128_table::*;
+pub use vec_i_128_type::VecI128;
+pub use vec_i_16_table::*;
+pub use vec_i_16_type::VecI16;
+pub use vec_i_256_table::*;
+pub use vec_i_256_type::VecI256;
+pub use vec_i_32_table::*;
+pub use vec_i_32_type::VecI32;
+pub use vec_i_64_table::*;
+pub use vec_i_64_type::VecI64;
+pub use vec_i_8_table::*;
+pub use vec_i_8_type::VecI8;
+pub use vec_identity_table::*;
+pub use vec_identity_type::VecIdentity;
+pub use vec_simple_enum_table::*;
+pub use vec_simple_enum_type::VecSimpleEnum;
+pub use vec_string_table::*;
+pub use vec_string_type::VecString;
+pub use vec_timestamp_table::*;
+pub use vec_timestamp_type::VecTimestamp;
+pub use vec_u_128_table::*;
+pub use vec_u_128_type::VecU128;
+pub use vec_u_16_table::*;
+pub use vec_u_16_type::VecU16;
+pub use vec_u_256_table::*;
+pub use vec_u_256_type::VecU256;
+pub use vec_u_32_table::*;
+pub use vec_u_32_type::VecU32;
+pub use vec_u_64_table::*;
+pub use vec_u_64_type::VecU64;
+pub use vec_u_8_table::*;
+pub use vec_u_8_type::VecU8;
+pub use vec_unit_struct_table::*;
+pub use vec_unit_struct_type::VecUnitStruct;
+pub use vec_uuid_table::*;
+pub use vec_uuid_type::VecUuid;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -863,9 +858,9 @@ pub use update_unique_uuid_reducer::update_unique_uuid;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-        DeleteFromBtreeU32 {
-        rows: Vec::<BTreeU32>,
-}    ,
+    DeleteFromBtreeU32 {
+        rows: Vec<BTreeU32>,
+    },
     DeleteLargeTable {
         a: u8,
         b: u16,
@@ -889,145 +884,145 @@ pub enum Reducer {
         t: ByteStruct,
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
-}    ,
+    },
     DeletePkBool {
         b: bool,
-}    ,
+    },
     DeletePkConnectionId {
         a: __sdk::ConnectionId,
-}    ,
+    },
     DeletePkI128 {
         n: i128,
-}    ,
+    },
     DeletePkI16 {
         n: i16,
-}    ,
+    },
     DeletePkI256 {
         n: __sats::i256,
-}    ,
+    },
     DeletePkI32 {
         n: i32,
-}    ,
+    },
     DeletePkI64 {
         n: i64,
-}    ,
+    },
     DeletePkI8 {
         n: i8,
-}    ,
+    },
     DeletePkIdentity {
         i: __sdk::Identity,
-}    ,
+    },
     DeletePkString {
         s: String,
-}    ,
+    },
     DeletePkU128 {
         n: u128,
-}    ,
+    },
     DeletePkU16 {
         n: u16,
-}    ,
+    },
     DeletePkU256 {
         n: __sats::u256,
-}    ,
+    },
     DeletePkU32 {
         n: u32,
-}    ,
+    },
     DeletePkU32InsertPkU32Two {
         n: u32,
         data: i32,
-}    ,
+    },
     DeletePkU32Two {
         n: u32,
-}    ,
+    },
     DeletePkU64 {
         n: u64,
-}    ,
+    },
     DeletePkU8 {
         n: u8,
-}    ,
+    },
     DeletePkUuid {
         u: __sdk::Uuid,
-}    ,
+    },
     DeleteUniqueBool {
         b: bool,
-}    ,
+    },
     DeleteUniqueConnectionId {
         a: __sdk::ConnectionId,
-}    ,
+    },
     DeleteUniqueI128 {
         n: i128,
-}    ,
+    },
     DeleteUniqueI16 {
         n: i16,
-}    ,
+    },
     DeleteUniqueI256 {
         n: __sats::i256,
-}    ,
+    },
     DeleteUniqueI32 {
         n: i32,
-}    ,
+    },
     DeleteUniqueI64 {
         n: i64,
-}    ,
+    },
     DeleteUniqueI8 {
         n: i8,
-}    ,
+    },
     DeleteUniqueIdentity {
         i: __sdk::Identity,
-}    ,
+    },
     DeleteUniqueString {
         s: String,
-}    ,
+    },
     DeleteUniqueU128 {
         n: u128,
-}    ,
+    },
     DeleteUniqueU16 {
         n: u16,
-}    ,
+    },
     DeleteUniqueU256 {
         n: __sats::u256,
-}    ,
+    },
     DeleteUniqueU32 {
         n: u32,
-}    ,
+    },
     DeleteUniqueU64 {
         n: u64,
-}    ,
+    },
     DeleteUniqueU8 {
         n: u8,
-}    ,
+    },
     DeleteUniqueUuid {
         u: __sdk::Uuid,
-}    ,
-    InsertCallTimestamp ,
-    InsertCallUuidV4 ,
-    InsertCallUuidV7 ,
-    InsertCallerOneConnectionId ,
-    InsertCallerOneIdentity ,
+    },
+    InsertCallTimestamp,
+    InsertCallUuidV4,
+    InsertCallUuidV7,
+    InsertCallerOneConnectionId,
+    InsertCallerOneIdentity,
     InsertCallerPkConnectionId {
         data: i32,
-}    ,
+    },
     InsertCallerPkIdentity {
         data: i32,
-}    ,
+    },
     InsertCallerUniqueConnectionId {
         data: i32,
-}    ,
+    },
     InsertCallerUniqueIdentity {
         data: i32,
-}    ,
-    InsertCallerVecConnectionId ,
-    InsertCallerVecIdentity ,
+    },
+    InsertCallerVecConnectionId,
+    InsertCallerVecIdentity,
     InsertIntoBtreeU32 {
-        rows: Vec::<BTreeU32>,
-}    ,
+        rows: Vec<BTreeU32>,
+    },
     InsertIntoIndexedSimpleEnum {
         n: SimpleEnum,
-}    ,
+    },
     InsertIntoPkBtreeU32 {
-        pk_u_32: Vec::<PkU32>,
-        bt_u_32: Vec::<BTreeU32>,
-}    ,
+        pk_u_32: Vec<PkU32>,
+        bt_u_32: Vec<BTreeU32>,
+    },
     InsertLargeTable {
         a: u8,
         b: u16,
@@ -1051,514 +1046,513 @@ pub enum Reducer {
         t: ByteStruct,
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
-}    ,
+    },
     InsertOneBool {
         b: bool,
-}    ,
+    },
     InsertOneByteStruct {
         s: ByteStruct,
-}    ,
+    },
     InsertOneConnectionId {
         a: __sdk::ConnectionId,
-}    ,
+    },
     InsertOneEnumWithPayload {
         e: EnumWithPayload,
-}    ,
+    },
     InsertOneEveryPrimitiveStruct {
         s: EveryPrimitiveStruct,
-}    ,
+    },
     InsertOneEveryVecStruct {
         s: EveryVecStruct,
-}    ,
+    },
     InsertOneF32 {
         f: f32,
-}    ,
+    },
     InsertOneF64 {
         f: f64,
-}    ,
+    },
     InsertOneI128 {
         n: i128,
-}    ,
+    },
     InsertOneI16 {
         n: i16,
-}    ,
+    },
     InsertOneI256 {
         n: __sats::i256,
-}    ,
+    },
     InsertOneI32 {
         n: i32,
-}    ,
+    },
     InsertOneI64 {
         n: i64,
-}    ,
+    },
     InsertOneI8 {
         n: i8,
-}    ,
+    },
     InsertOneIdentity {
         i: __sdk::Identity,
-}    ,
+    },
     InsertOneSimpleEnum {
         e: SimpleEnum,
-}    ,
+    },
     InsertOneString {
         s: String,
-}    ,
+    },
     InsertOneTimestamp {
         t: __sdk::Timestamp,
-}    ,
+    },
     InsertOneU128 {
         n: u128,
-}    ,
+    },
     InsertOneU16 {
         n: u16,
-}    ,
+    },
     InsertOneU256 {
         n: __sats::u256,
-}    ,
+    },
     InsertOneU32 {
         n: u32,
-}    ,
+    },
     InsertOneU64 {
         n: u64,
-}    ,
+    },
     InsertOneU8 {
         n: u8,
-}    ,
+    },
     InsertOneUnitStruct {
         s: UnitStruct,
-}    ,
+    },
     InsertOneUuid {
         u: __sdk::Uuid,
-}    ,
+    },
     InsertOptionEveryPrimitiveStruct {
-        s: Option::<EveryPrimitiveStruct>,
-}    ,
+        s: Option<EveryPrimitiveStruct>,
+    },
     InsertOptionI32 {
-        n: Option::<i32>,
-}    ,
+        n: Option<i32>,
+    },
     InsertOptionIdentity {
-        i: Option::<__sdk::Identity>,
-}    ,
+        i: Option<__sdk::Identity>,
+    },
     InsertOptionSimpleEnum {
-        e: Option::<SimpleEnum>,
-}    ,
+        e: Option<SimpleEnum>,
+    },
     InsertOptionString {
-        s: Option::<String>,
-}    ,
+        s: Option<String>,
+    },
     InsertOptionUuid {
-        u: Option::<__sdk::Uuid>,
-}    ,
+        u: Option<__sdk::Uuid>,
+    },
     InsertOptionVecOptionI32 {
-        v: Option::<Vec::<Option::<i32>>>,
-}    ,
+        v: Option<Vec<Option<i32>>>,
+    },
     InsertPkBool {
         b: bool,
         data: i32,
-}    ,
+    },
     InsertPkConnectionId {
         a: __sdk::ConnectionId,
         data: i32,
-}    ,
+    },
     InsertPkI128 {
         n: i128,
         data: i32,
-}    ,
+    },
     InsertPkI16 {
         n: i16,
         data: i32,
-}    ,
+    },
     InsertPkI256 {
         n: __sats::i256,
         data: i32,
-}    ,
+    },
     InsertPkI32 {
         n: i32,
         data: i32,
-}    ,
+    },
     InsertPkI64 {
         n: i64,
         data: i32,
-}    ,
+    },
     InsertPkI8 {
         n: i8,
         data: i32,
-}    ,
+    },
     InsertPkIdentity {
         i: __sdk::Identity,
         data: i32,
-}    ,
+    },
     InsertPkSimpleEnum {
         a: SimpleEnum,
         data: i32,
-}    ,
+    },
     InsertPkString {
         s: String,
         data: i32,
-}    ,
+    },
     InsertPkU128 {
         n: u128,
         data: i32,
-}    ,
+    },
     InsertPkU16 {
         n: u16,
         data: i32,
-}    ,
+    },
     InsertPkU256 {
         n: __sats::u256,
         data: i32,
-}    ,
+    },
     InsertPkU32 {
         n: u32,
         data: i32,
-}    ,
+    },
     InsertPkU32Two {
         n: u32,
         data: i32,
-}    ,
+    },
     InsertPkU64 {
         n: u64,
         data: i32,
-}    ,
+    },
     InsertPkU8 {
         n: u8,
         data: i32,
-}    ,
+    },
     InsertPkUuid {
         u: __sdk::Uuid,
         data: i32,
-}    ,
+    },
     InsertPrimitivesAsStrings {
         s: EveryPrimitiveStruct,
-}    ,
+    },
     InsertResultEveryPrimitiveStructString {
-        r: Result::<EveryPrimitiveStruct, String>,
-}    ,
+        r: Result<EveryPrimitiveStruct, String>,
+    },
     InsertResultI32String {
-        r: Result::<i32, String>,
-}    ,
+        r: Result<i32, String>,
+    },
     InsertResultIdentityString {
-        r: Result::<__sdk::Identity, String>,
-}    ,
+        r: Result<__sdk::Identity, String>,
+    },
     InsertResultSimpleEnumI32 {
-        r: Result::<SimpleEnum, i32>,
-}    ,
+        r: Result<SimpleEnum, i32>,
+    },
     InsertResultStringI32 {
-        r: Result::<String, i32>,
-}    ,
+        r: Result<String, i32>,
+    },
     InsertResultVecI32String {
-        r: Result::<Vec::<i32>, String>,
-}    ,
+        r: Result<Vec<i32>, String>,
+    },
     InsertTableHoldsTable {
         a: OneU8,
         b: VecU8,
-}    ,
+    },
     InsertUniqueBool {
         b: bool,
         data: i32,
-}    ,
+    },
     InsertUniqueConnectionId {
         a: __sdk::ConnectionId,
         data: i32,
-}    ,
+    },
     InsertUniqueI128 {
         n: i128,
         data: i32,
-}    ,
+    },
     InsertUniqueI16 {
         n: i16,
         data: i32,
-}    ,
+    },
     InsertUniqueI256 {
         n: __sats::i256,
         data: i32,
-}    ,
+    },
     InsertUniqueI32 {
         n: i32,
         data: i32,
-}    ,
+    },
     InsertUniqueI64 {
         n: i64,
         data: i32,
-}    ,
+    },
     InsertUniqueI8 {
         n: i8,
         data: i32,
-}    ,
+    },
     InsertUniqueIdentity {
         i: __sdk::Identity,
         data: i32,
-}    ,
+    },
     InsertUniqueString {
         s: String,
         data: i32,
-}    ,
+    },
     InsertUniqueU128 {
         n: u128,
         data: i32,
-}    ,
+    },
     InsertUniqueU16 {
         n: u16,
         data: i32,
-}    ,
+    },
     InsertUniqueU256 {
         n: __sats::u256,
         data: i32,
-}    ,
+    },
     InsertUniqueU32 {
         n: u32,
         data: i32,
-}    ,
+    },
     InsertUniqueU32UpdatePkU32 {
         n: u32,
         d_unique: i32,
         d_pk: i32,
-}    ,
+    },
     InsertUniqueU64 {
         n: u64,
         data: i32,
-}    ,
+    },
     InsertUniqueU8 {
         n: u8,
         data: i32,
-}    ,
+    },
     InsertUniqueUuid {
         u: __sdk::Uuid,
         data: i32,
-}    ,
+    },
     InsertUser {
         name: String,
         identity: __sdk::Identity,
-}    ,
+    },
     InsertVecBool {
-        b: Vec::<bool>,
-}    ,
+        b: Vec<bool>,
+    },
     InsertVecByteStruct {
-        s: Vec::<ByteStruct>,
-}    ,
+        s: Vec<ByteStruct>,
+    },
     InsertVecConnectionId {
-        a: Vec::<__sdk::ConnectionId>,
-}    ,
+        a: Vec<__sdk::ConnectionId>,
+    },
     InsertVecEnumWithPayload {
-        e: Vec::<EnumWithPayload>,
-}    ,
+        e: Vec<EnumWithPayload>,
+    },
     InsertVecEveryPrimitiveStruct {
-        s: Vec::<EveryPrimitiveStruct>,
-}    ,
+        s: Vec<EveryPrimitiveStruct>,
+    },
     InsertVecEveryVecStruct {
-        s: Vec::<EveryVecStruct>,
-}    ,
+        s: Vec<EveryVecStruct>,
+    },
     InsertVecF32 {
-        f: Vec::<f32>,
-}    ,
+        f: Vec<f32>,
+    },
     InsertVecF64 {
-        f: Vec::<f64>,
-}    ,
+        f: Vec<f64>,
+    },
     InsertVecI128 {
-        n: Vec::<i128>,
-}    ,
+        n: Vec<i128>,
+    },
     InsertVecI16 {
-        n: Vec::<i16>,
-}    ,
+        n: Vec<i16>,
+    },
     InsertVecI256 {
-        n: Vec::<__sats::i256>,
-}    ,
+        n: Vec<__sats::i256>,
+    },
     InsertVecI32 {
-        n: Vec::<i32>,
-}    ,
+        n: Vec<i32>,
+    },
     InsertVecI64 {
-        n: Vec::<i64>,
-}    ,
+        n: Vec<i64>,
+    },
     InsertVecI8 {
-        n: Vec::<i8>,
-}    ,
+        n: Vec<i8>,
+    },
     InsertVecIdentity {
-        i: Vec::<__sdk::Identity>,
-}    ,
+        i: Vec<__sdk::Identity>,
+    },
     InsertVecSimpleEnum {
-        e: Vec::<SimpleEnum>,
-}    ,
+        e: Vec<SimpleEnum>,
+    },
     InsertVecString {
-        s: Vec::<String>,
-}    ,
+        s: Vec<String>,
+    },
     InsertVecTimestamp {
-        t: Vec::<__sdk::Timestamp>,
-}    ,
+        t: Vec<__sdk::Timestamp>,
+    },
     InsertVecU128 {
-        n: Vec::<u128>,
-}    ,
+        n: Vec<u128>,
+    },
     InsertVecU16 {
-        n: Vec::<u16>,
-}    ,
+        n: Vec<u16>,
+    },
     InsertVecU256 {
-        n: Vec::<__sats::u256>,
-}    ,
+        n: Vec<__sats::u256>,
+    },
     InsertVecU32 {
-        n: Vec::<u32>,
-}    ,
+        n: Vec<u32>,
+    },
     InsertVecU64 {
-        n: Vec::<u64>,
-}    ,
+        n: Vec<u64>,
+    },
     InsertVecU8 {
-        n: Vec::<u8>,
-}    ,
+        n: Vec<u8>,
+    },
     InsertVecUnitStruct {
-        s: Vec::<UnitStruct>,
-}    ,
+        s: Vec<UnitStruct>,
+    },
     InsertVecUuid {
-        u: Vec::<__sdk::Uuid>,
-}    ,
-    NoOpSucceeds ,
-    SortedUuidsInsert ,
+        u: Vec<__sdk::Uuid>,
+    },
+    NoOpSucceeds,
+    SortedUuidsInsert,
     UpdateIndexedSimpleEnum {
         a: SimpleEnum,
         b: SimpleEnum,
-}    ,
+    },
     UpdatePkBool {
         b: bool,
         data: i32,
-}    ,
+    },
     UpdatePkConnectionId {
         a: __sdk::ConnectionId,
         data: i32,
-}    ,
+    },
     UpdatePkI128 {
         n: i128,
         data: i32,
-}    ,
+    },
     UpdatePkI16 {
         n: i16,
         data: i32,
-}    ,
+    },
     UpdatePkI256 {
         n: __sats::i256,
         data: i32,
-}    ,
+    },
     UpdatePkI32 {
         n: i32,
         data: i32,
-}    ,
+    },
     UpdatePkI64 {
         n: i64,
         data: i32,
-}    ,
+    },
     UpdatePkI8 {
         n: i8,
         data: i32,
-}    ,
+    },
     UpdatePkIdentity {
         i: __sdk::Identity,
         data: i32,
-}    ,
+    },
     UpdatePkSimpleEnum {
         a: SimpleEnum,
         data: i32,
-}    ,
+    },
     UpdatePkString {
         s: String,
         data: i32,
-}    ,
+    },
     UpdatePkU128 {
         n: u128,
         data: i32,
-}    ,
+    },
     UpdatePkU16 {
         n: u16,
         data: i32,
-}    ,
+    },
     UpdatePkU256 {
         n: __sats::u256,
         data: i32,
-}    ,
+    },
     UpdatePkU32 {
         n: u32,
         data: i32,
-}    ,
+    },
     UpdatePkU32Two {
         n: u32,
         data: i32,
-}    ,
+    },
     UpdatePkU64 {
         n: u64,
         data: i32,
-}    ,
+    },
     UpdatePkU8 {
         n: u8,
         data: i32,
-}    ,
+    },
     UpdatePkUuid {
         u: __sdk::Uuid,
         data: i32,
-}    ,
+    },
     UpdateUniqueBool {
         b: bool,
         data: i32,
-}    ,
+    },
     UpdateUniqueConnectionId {
         a: __sdk::ConnectionId,
         data: i32,
-}    ,
+    },
     UpdateUniqueI128 {
         n: i128,
         data: i32,
-}    ,
+    },
     UpdateUniqueI16 {
         n: i16,
         data: i32,
-}    ,
+    },
     UpdateUniqueI256 {
         n: __sats::i256,
         data: i32,
-}    ,
+    },
     UpdateUniqueI32 {
         n: i32,
         data: i32,
-}    ,
+    },
     UpdateUniqueI64 {
         n: i64,
         data: i32,
-}    ,
+    },
     UpdateUniqueI8 {
         n: i8,
         data: i32,
-}    ,
+    },
     UpdateUniqueIdentity {
         i: __sdk::Identity,
         data: i32,
-}    ,
+    },
     UpdateUniqueString {
         s: String,
         data: i32,
-}    ,
+    },
     UpdateUniqueU128 {
         n: u128,
         data: i32,
-}    ,
+    },
     UpdateUniqueU16 {
         n: u16,
         data: i32,
-}    ,
+    },
     UpdateUniqueU256 {
         n: __sats::u256,
         data: i32,
-}    ,
+    },
     UpdateUniqueU32 {
         n: u32,
         data: i32,
-}    ,
+    },
     UpdateUniqueU64 {
         n: u64,
         data: i32,
-}    ,
+    },
     UpdateUniqueU8 {
         n: u8,
         data: i32,
-}    ,
+    },
     UpdateUniqueUuid {
         u: __sdk::Uuid,
         data: i32,
-}    ,
+    },
 }
-
 
 impl __sdk::InModule for Reducer {
     type Module = RemoteModule;
@@ -1567,7 +1561,7 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-                        Reducer::DeleteFromBtreeU32 { .. } => "delete_from_btree_u32",
+            Reducer::DeleteFromBtreeU32 { .. } => "delete_from_btree_u32",
             Reducer::DeleteLargeTable { .. } => "delete_large_table",
             Reducer::DeletePkBool { .. } => "delete_pk_bool",
             Reducer::DeletePkConnectionId { .. } => "delete_pk_connection_id",
@@ -1765,17 +1759,15 @@ impl __sdk::Reducer for Reducer {
             Reducer::UpdateUniqueU8 { .. } => "update_unique_u8",
             Reducer::UpdateUniqueUuid { .. } => "update_unique_uuid",
             _ => unreachable!(),
-}
-}
+        }
+    }
     #[allow(clippy::clone_on_copy)]
-fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
+    fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
-                        Reducer::DeleteFromBtreeU32{
-                rows,
-}             => __sats::bsatn::to_vec(&delete_from_btree_u_32_reducer::DeleteFromBtreeU32Args {
-                rows: rows.clone(),
-}),
-            Reducer::DeleteLargeTable{
+            Reducer::DeleteFromBtreeU32 { rows } => {
+                __sats::bsatn::to_vec(&delete_from_btree_u_32_reducer::DeleteFromBtreeU32Args { rows: rows.clone() })
+            }
+            Reducer::DeleteLargeTable {
                 a,
                 b,
                 c,
@@ -1798,7 +1790,7 @@ fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
                 t,
                 u,
                 v,
-}             => __sats::bsatn::to_vec(&delete_large_table_reducer::DeleteLargeTableArgs {
+            } => __sats::bsatn::to_vec(&delete_large_table_reducer::DeleteLargeTableArgs {
                 a: a.clone(),
                 b: b.clone(),
                 c: c.clone(),
@@ -1821,241 +1813,162 @@ fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
                 t: t.clone(),
                 u: u.clone(),
                 v: v.clone(),
-}),
-            Reducer::DeletePkBool{
-                b,
-}             => __sats::bsatn::to_vec(&delete_pk_bool_reducer::DeletePkBoolArgs {
-                b: b.clone(),
-}),
-            Reducer::DeletePkConnectionId{
-                a,
-}             => __sats::bsatn::to_vec(&delete_pk_connection_id_reducer::DeletePkConnectionIdArgs {
-                a: a.clone(),
-}),
-            Reducer::DeletePkI128{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_i_128_reducer::DeletePkI128Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkI16{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_i_16_reducer::DeletePkI16Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkI256{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_i_256_reducer::DeletePkI256Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkI32{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_i_32_reducer::DeletePkI32Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkI64{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_i_64_reducer::DeletePkI64Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkI8{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_i_8_reducer::DeletePkI8Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkIdentity{
-                i,
-}             => __sats::bsatn::to_vec(&delete_pk_identity_reducer::DeletePkIdentityArgs {
-                i: i.clone(),
-}),
-            Reducer::DeletePkString{
-                s,
-}             => __sats::bsatn::to_vec(&delete_pk_string_reducer::DeletePkStringArgs {
-                s: s.clone(),
-}),
-            Reducer::DeletePkU128{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_u_128_reducer::DeletePkU128Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkU16{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_u_16_reducer::DeletePkU16Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkU256{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_u_256_reducer::DeletePkU256Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkU32{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_u_32_reducer::DeletePkU32Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkU32InsertPkU32Two{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&delete_pk_u_32_insert_pk_u_32_two_reducer::DeletePkU32InsertPkU32TwoArgs {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::DeletePkU32Two{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_u_32_two_reducer::DeletePkU32TwoArgs {
-                n: n.clone(),
-}),
-            Reducer::DeletePkU64{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_u_64_reducer::DeletePkU64Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkU8{
-                n,
-}             => __sats::bsatn::to_vec(&delete_pk_u_8_reducer::DeletePkU8Args {
-                n: n.clone(),
-}),
-            Reducer::DeletePkUuid{
-                u,
-}             => __sats::bsatn::to_vec(&delete_pk_uuid_reducer::DeletePkUuidArgs {
-                u: u.clone(),
-}),
-            Reducer::DeleteUniqueBool{
-                b,
-}             => __sats::bsatn::to_vec(&delete_unique_bool_reducer::DeleteUniqueBoolArgs {
-                b: b.clone(),
-}),
-            Reducer::DeleteUniqueConnectionId{
-                a,
-}             => __sats::bsatn::to_vec(&delete_unique_connection_id_reducer::DeleteUniqueConnectionIdArgs {
-                a: a.clone(),
-}),
-            Reducer::DeleteUniqueI128{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_i_128_reducer::DeleteUniqueI128Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueI16{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_i_16_reducer::DeleteUniqueI16Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueI256{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_i_256_reducer::DeleteUniqueI256Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueI32{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_i_32_reducer::DeleteUniqueI32Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueI64{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_i_64_reducer::DeleteUniqueI64Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueI8{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_i_8_reducer::DeleteUniqueI8Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueIdentity{
-                i,
-}             => __sats::bsatn::to_vec(&delete_unique_identity_reducer::DeleteUniqueIdentityArgs {
-                i: i.clone(),
-}),
-            Reducer::DeleteUniqueString{
-                s,
-}             => __sats::bsatn::to_vec(&delete_unique_string_reducer::DeleteUniqueStringArgs {
-                s: s.clone(),
-}),
-            Reducer::DeleteUniqueU128{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_u_128_reducer::DeleteUniqueU128Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueU16{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_u_16_reducer::DeleteUniqueU16Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueU256{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_u_256_reducer::DeleteUniqueU256Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueU32{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_u_32_reducer::DeleteUniqueU32Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueU64{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_u_64_reducer::DeleteUniqueU64Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueU8{
-                n,
-}             => __sats::bsatn::to_vec(&delete_unique_u_8_reducer::DeleteUniqueU8Args {
-                n: n.clone(),
-}),
-            Reducer::DeleteUniqueUuid{
-                u,
-}             => __sats::bsatn::to_vec(&delete_unique_uuid_reducer::DeleteUniqueUuidArgs {
-                u: u.clone(),
-}),
-            Reducer::InsertCallTimestamp => __sats::bsatn::to_vec(&insert_call_timestamp_reducer::InsertCallTimestampArgs {
-                }),
-Reducer::InsertCallUuidV4 => __sats::bsatn::to_vec(&insert_call_uuid_v_4_reducer::InsertCallUuidV4Args {
-                }),
-Reducer::InsertCallUuidV7 => __sats::bsatn::to_vec(&insert_call_uuid_v_7_reducer::InsertCallUuidV7Args {
-                }),
-Reducer::InsertCallerOneConnectionId => __sats::bsatn::to_vec(&insert_caller_one_connection_id_reducer::InsertCallerOneConnectionIdArgs {
-                }),
-Reducer::InsertCallerOneIdentity => __sats::bsatn::to_vec(&insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs {
-                }),
-Reducer::InsertCallerPkConnectionId{
-                data,
-}             => __sats::bsatn::to_vec(&insert_caller_pk_connection_id_reducer::InsertCallerPkConnectionIdArgs {
-                data: data.clone(),
-}),
-            Reducer::InsertCallerPkIdentity{
-                data,
-}             => __sats::bsatn::to_vec(&insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs {
-                data: data.clone(),
-}),
-            Reducer::InsertCallerUniqueConnectionId{
-                data,
-}             => __sats::bsatn::to_vec(&insert_caller_unique_connection_id_reducer::InsertCallerUniqueConnectionIdArgs {
-                data: data.clone(),
-}),
-            Reducer::InsertCallerUniqueIdentity{
-                data,
-}             => __sats::bsatn::to_vec(&insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs {
-                data: data.clone(),
-}),
-            Reducer::InsertCallerVecConnectionId => __sats::bsatn::to_vec(&insert_caller_vec_connection_id_reducer::InsertCallerVecConnectionIdArgs {
-                }),
-Reducer::InsertCallerVecIdentity => __sats::bsatn::to_vec(&insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs {
-                }),
-Reducer::InsertIntoBtreeU32{
-                rows,
-}             => __sats::bsatn::to_vec(&insert_into_btree_u_32_reducer::InsertIntoBtreeU32Args {
-                rows: rows.clone(),
-}),
-            Reducer::InsertIntoIndexedSimpleEnum{
-                n,
-}             => __sats::bsatn::to_vec(&insert_into_indexed_simple_enum_reducer::InsertIntoIndexedSimpleEnumArgs {
-                n: n.clone(),
-}),
-            Reducer::InsertIntoPkBtreeU32{
-                pk_u_32,
-                bt_u_32,
-}             => __sats::bsatn::to_vec(&insert_into_pk_btree_u_32_reducer::InsertIntoPkBtreeU32Args {
-                pk_u_32: pk_u_32.clone(),
-                bt_u_32: bt_u_32.clone(),
-}),
-            Reducer::InsertLargeTable{
+            }),
+            Reducer::DeletePkBool { b } => {
+                __sats::bsatn::to_vec(&delete_pk_bool_reducer::DeletePkBoolArgs { b: b.clone() })
+            }
+            Reducer::DeletePkConnectionId { a } => {
+                __sats::bsatn::to_vec(&delete_pk_connection_id_reducer::DeletePkConnectionIdArgs { a: a.clone() })
+            }
+            Reducer::DeletePkI128 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_i_128_reducer::DeletePkI128Args { n: n.clone() })
+            }
+            Reducer::DeletePkI16 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_i_16_reducer::DeletePkI16Args { n: n.clone() })
+            }
+            Reducer::DeletePkI256 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_i_256_reducer::DeletePkI256Args { n: n.clone() })
+            }
+            Reducer::DeletePkI32 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_i_32_reducer::DeletePkI32Args { n: n.clone() })
+            }
+            Reducer::DeletePkI64 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_i_64_reducer::DeletePkI64Args { n: n.clone() })
+            }
+            Reducer::DeletePkI8 { n } => __sats::bsatn::to_vec(&delete_pk_i_8_reducer::DeletePkI8Args { n: n.clone() }),
+            Reducer::DeletePkIdentity { i } => {
+                __sats::bsatn::to_vec(&delete_pk_identity_reducer::DeletePkIdentityArgs { i: i.clone() })
+            }
+            Reducer::DeletePkString { s } => {
+                __sats::bsatn::to_vec(&delete_pk_string_reducer::DeletePkStringArgs { s: s.clone() })
+            }
+            Reducer::DeletePkU128 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_u_128_reducer::DeletePkU128Args { n: n.clone() })
+            }
+            Reducer::DeletePkU16 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_u_16_reducer::DeletePkU16Args { n: n.clone() })
+            }
+            Reducer::DeletePkU256 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_u_256_reducer::DeletePkU256Args { n: n.clone() })
+            }
+            Reducer::DeletePkU32 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_u_32_reducer::DeletePkU32Args { n: n.clone() })
+            }
+            Reducer::DeletePkU32InsertPkU32Two { n, data } => __sats::bsatn::to_vec(
+                &delete_pk_u_32_insert_pk_u_32_two_reducer::DeletePkU32InsertPkU32TwoArgs {
+                    n: n.clone(),
+                    data: data.clone(),
+                },
+            ),
+            Reducer::DeletePkU32Two { n } => {
+                __sats::bsatn::to_vec(&delete_pk_u_32_two_reducer::DeletePkU32TwoArgs { n: n.clone() })
+            }
+            Reducer::DeletePkU64 { n } => {
+                __sats::bsatn::to_vec(&delete_pk_u_64_reducer::DeletePkU64Args { n: n.clone() })
+            }
+            Reducer::DeletePkU8 { n } => __sats::bsatn::to_vec(&delete_pk_u_8_reducer::DeletePkU8Args { n: n.clone() }),
+            Reducer::DeletePkUuid { u } => {
+                __sats::bsatn::to_vec(&delete_pk_uuid_reducer::DeletePkUuidArgs { u: u.clone() })
+            }
+            Reducer::DeleteUniqueBool { b } => {
+                __sats::bsatn::to_vec(&delete_unique_bool_reducer::DeleteUniqueBoolArgs { b: b.clone() })
+            }
+            Reducer::DeleteUniqueConnectionId { a } => {
+                __sats::bsatn::to_vec(&delete_unique_connection_id_reducer::DeleteUniqueConnectionIdArgs {
+                    a: a.clone(),
+                })
+            }
+            Reducer::DeleteUniqueI128 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_i_128_reducer::DeleteUniqueI128Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueI16 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_i_16_reducer::DeleteUniqueI16Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueI256 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_i_256_reducer::DeleteUniqueI256Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueI32 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_i_32_reducer::DeleteUniqueI32Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueI64 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_i_64_reducer::DeleteUniqueI64Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueI8 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_i_8_reducer::DeleteUniqueI8Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueIdentity { i } => {
+                __sats::bsatn::to_vec(&delete_unique_identity_reducer::DeleteUniqueIdentityArgs { i: i.clone() })
+            }
+            Reducer::DeleteUniqueString { s } => {
+                __sats::bsatn::to_vec(&delete_unique_string_reducer::DeleteUniqueStringArgs { s: s.clone() })
+            }
+            Reducer::DeleteUniqueU128 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_u_128_reducer::DeleteUniqueU128Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueU16 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_u_16_reducer::DeleteUniqueU16Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueU256 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_u_256_reducer::DeleteUniqueU256Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueU32 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_u_32_reducer::DeleteUniqueU32Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueU64 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_u_64_reducer::DeleteUniqueU64Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueU8 { n } => {
+                __sats::bsatn::to_vec(&delete_unique_u_8_reducer::DeleteUniqueU8Args { n: n.clone() })
+            }
+            Reducer::DeleteUniqueUuid { u } => {
+                __sats::bsatn::to_vec(&delete_unique_uuid_reducer::DeleteUniqueUuidArgs { u: u.clone() })
+            }
+            Reducer::InsertCallTimestamp => {
+                __sats::bsatn::to_vec(&insert_call_timestamp_reducer::InsertCallTimestampArgs {})
+            }
+            Reducer::InsertCallUuidV4 => __sats::bsatn::to_vec(&insert_call_uuid_v_4_reducer::InsertCallUuidV4Args {}),
+            Reducer::InsertCallUuidV7 => __sats::bsatn::to_vec(&insert_call_uuid_v_7_reducer::InsertCallUuidV7Args {}),
+            Reducer::InsertCallerOneConnectionId => {
+                __sats::bsatn::to_vec(&insert_caller_one_connection_id_reducer::InsertCallerOneConnectionIdArgs {})
+            }
+            Reducer::InsertCallerOneIdentity => {
+                __sats::bsatn::to_vec(&insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs {})
+            }
+            Reducer::InsertCallerPkConnectionId { data } => __sats::bsatn::to_vec(
+                &insert_caller_pk_connection_id_reducer::InsertCallerPkConnectionIdArgs { data: data.clone() },
+            ),
+            Reducer::InsertCallerPkIdentity { data } => {
+                __sats::bsatn::to_vec(&insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs {
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertCallerUniqueConnectionId { data } => __sats::bsatn::to_vec(
+                &insert_caller_unique_connection_id_reducer::InsertCallerUniqueConnectionIdArgs { data: data.clone() },
+            ),
+            Reducer::InsertCallerUniqueIdentity { data } => {
+                __sats::bsatn::to_vec(&insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs {
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertCallerVecConnectionId => {
+                __sats::bsatn::to_vec(&insert_caller_vec_connection_id_reducer::InsertCallerVecConnectionIdArgs {})
+            }
+            Reducer::InsertCallerVecIdentity => {
+                __sats::bsatn::to_vec(&insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs {})
+            }
+            Reducer::InsertIntoBtreeU32 { rows } => {
+                __sats::bsatn::to_vec(&insert_into_btree_u_32_reducer::InsertIntoBtreeU32Args { rows: rows.clone() })
+            }
+            Reducer::InsertIntoIndexedSimpleEnum { n } => __sats::bsatn::to_vec(
+                &insert_into_indexed_simple_enum_reducer::InsertIntoIndexedSimpleEnumArgs { n: n.clone() },
+            ),
+            Reducer::InsertIntoPkBtreeU32 { pk_u_32, bt_u_32 } => {
+                __sats::bsatn::to_vec(&insert_into_pk_btree_u_32_reducer::InsertIntoPkBtreeU32Args {
+                    pk_u_32: pk_u_32.clone(),
+                    bt_u_32: bt_u_32.clone(),
+                })
+            }
+            Reducer::InsertLargeTable {
                 a,
                 b,
                 c,
@@ -2078,7 +1991,7 @@ Reducer::InsertIntoBtreeU32{
                 t,
                 u,
                 v,
-}             => __sats::bsatn::to_vec(&insert_large_table_reducer::InsertLargeTableArgs {
+            } => __sats::bsatn::to_vec(&insert_large_table_reducer::InsertLargeTableArgs {
                 a: a.clone(),
                 b: b.clone(),
                 c: c.clone(),
@@ -2101,885 +2014,636 @@ Reducer::InsertIntoBtreeU32{
                 t: t.clone(),
                 u: u.clone(),
                 v: v.clone(),
-}),
-            Reducer::InsertOneBool{
-                b,
-}             => __sats::bsatn::to_vec(&insert_one_bool_reducer::InsertOneBoolArgs {
-                b: b.clone(),
-}),
-            Reducer::InsertOneByteStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_one_byte_struct_reducer::InsertOneByteStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertOneConnectionId{
-                a,
-}             => __sats::bsatn::to_vec(&insert_one_connection_id_reducer::InsertOneConnectionIdArgs {
-                a: a.clone(),
-}),
-            Reducer::InsertOneEnumWithPayload{
-                e,
-}             => __sats::bsatn::to_vec(&insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs {
-                e: e.clone(),
-}),
-            Reducer::InsertOneEveryPrimitiveStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertOneEveryVecStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_one_every_vec_struct_reducer::InsertOneEveryVecStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertOneF32{
-                f,
-}             => __sats::bsatn::to_vec(&insert_one_f_32_reducer::InsertOneF32Args {
-                f: f.clone(),
-}),
-            Reducer::InsertOneF64{
-                f,
-}             => __sats::bsatn::to_vec(&insert_one_f_64_reducer::InsertOneF64Args {
-                f: f.clone(),
-}),
-            Reducer::InsertOneI128{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_i_128_reducer::InsertOneI128Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneI16{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_i_16_reducer::InsertOneI16Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneI256{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_i_256_reducer::InsertOneI256Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneI32{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_i_32_reducer::InsertOneI32Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneI64{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_i_64_reducer::InsertOneI64Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneI8{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_i_8_reducer::InsertOneI8Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneIdentity{
-                i,
-}             => __sats::bsatn::to_vec(&insert_one_identity_reducer::InsertOneIdentityArgs {
-                i: i.clone(),
-}),
-            Reducer::InsertOneSimpleEnum{
-                e,
-}             => __sats::bsatn::to_vec(&insert_one_simple_enum_reducer::InsertOneSimpleEnumArgs {
-                e: e.clone(),
-}),
-            Reducer::InsertOneString{
-                s,
-}             => __sats::bsatn::to_vec(&insert_one_string_reducer::InsertOneStringArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertOneTimestamp{
-                t,
-}             => __sats::bsatn::to_vec(&insert_one_timestamp_reducer::InsertOneTimestampArgs {
-                t: t.clone(),
-}),
-            Reducer::InsertOneU128{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_u_128_reducer::InsertOneU128Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneU16{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_u_16_reducer::InsertOneU16Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneU256{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_u_256_reducer::InsertOneU256Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneU32{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_u_32_reducer::InsertOneU32Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneU64{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_u_64_reducer::InsertOneU64Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneU8{
-                n,
-}             => __sats::bsatn::to_vec(&insert_one_u_8_reducer::InsertOneU8Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOneUnitStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_one_unit_struct_reducer::InsertOneUnitStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertOneUuid{
-                u,
-}             => __sats::bsatn::to_vec(&insert_one_uuid_reducer::InsertOneUuidArgs {
-                u: u.clone(),
-}),
-            Reducer::InsertOptionEveryPrimitiveStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_option_every_primitive_struct_reducer::InsertOptionEveryPrimitiveStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertOptionI32{
-                n,
-}             => __sats::bsatn::to_vec(&insert_option_i_32_reducer::InsertOptionI32Args {
-                n: n.clone(),
-}),
-            Reducer::InsertOptionIdentity{
-                i,
-}             => __sats::bsatn::to_vec(&insert_option_identity_reducer::InsertOptionIdentityArgs {
-                i: i.clone(),
-}),
-            Reducer::InsertOptionSimpleEnum{
-                e,
-}             => __sats::bsatn::to_vec(&insert_option_simple_enum_reducer::InsertOptionSimpleEnumArgs {
-                e: e.clone(),
-}),
-            Reducer::InsertOptionString{
-                s,
-}             => __sats::bsatn::to_vec(&insert_option_string_reducer::InsertOptionStringArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertOptionUuid{
-                u,
-}             => __sats::bsatn::to_vec(&insert_option_uuid_reducer::InsertOptionUuidArgs {
-                u: u.clone(),
-}),
-            Reducer::InsertOptionVecOptionI32{
-                v,
-}             => __sats::bsatn::to_vec(&insert_option_vec_option_i_32_reducer::InsertOptionVecOptionI32Args {
-                v: v.clone(),
-}),
-            Reducer::InsertPkBool{
-                b,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_bool_reducer::InsertPkBoolArgs {
+            }),
+            Reducer::InsertOneBool { b } => {
+                __sats::bsatn::to_vec(&insert_one_bool_reducer::InsertOneBoolArgs { b: b.clone() })
+            }
+            Reducer::InsertOneByteStruct { s } => {
+                __sats::bsatn::to_vec(&insert_one_byte_struct_reducer::InsertOneByteStructArgs { s: s.clone() })
+            }
+            Reducer::InsertOneConnectionId { a } => {
+                __sats::bsatn::to_vec(&insert_one_connection_id_reducer::InsertOneConnectionIdArgs { a: a.clone() })
+            }
+            Reducer::InsertOneEnumWithPayload { e } => {
+                __sats::bsatn::to_vec(&insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs {
+                    e: e.clone(),
+                })
+            }
+            Reducer::InsertOneEveryPrimitiveStruct { s } => __sats::bsatn::to_vec(
+                &insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStructArgs { s: s.clone() },
+            ),
+            Reducer::InsertOneEveryVecStruct { s } => {
+                __sats::bsatn::to_vec(&insert_one_every_vec_struct_reducer::InsertOneEveryVecStructArgs {
+                    s: s.clone(),
+                })
+            }
+            Reducer::InsertOneF32 { f } => {
+                __sats::bsatn::to_vec(&insert_one_f_32_reducer::InsertOneF32Args { f: f.clone() })
+            }
+            Reducer::InsertOneF64 { f } => {
+                __sats::bsatn::to_vec(&insert_one_f_64_reducer::InsertOneF64Args { f: f.clone() })
+            }
+            Reducer::InsertOneI128 { n } => {
+                __sats::bsatn::to_vec(&insert_one_i_128_reducer::InsertOneI128Args { n: n.clone() })
+            }
+            Reducer::InsertOneI16 { n } => {
+                __sats::bsatn::to_vec(&insert_one_i_16_reducer::InsertOneI16Args { n: n.clone() })
+            }
+            Reducer::InsertOneI256 { n } => {
+                __sats::bsatn::to_vec(&insert_one_i_256_reducer::InsertOneI256Args { n: n.clone() })
+            }
+            Reducer::InsertOneI32 { n } => {
+                __sats::bsatn::to_vec(&insert_one_i_32_reducer::InsertOneI32Args { n: n.clone() })
+            }
+            Reducer::InsertOneI64 { n } => {
+                __sats::bsatn::to_vec(&insert_one_i_64_reducer::InsertOneI64Args { n: n.clone() })
+            }
+            Reducer::InsertOneI8 { n } => {
+                __sats::bsatn::to_vec(&insert_one_i_8_reducer::InsertOneI8Args { n: n.clone() })
+            }
+            Reducer::InsertOneIdentity { i } => {
+                __sats::bsatn::to_vec(&insert_one_identity_reducer::InsertOneIdentityArgs { i: i.clone() })
+            }
+            Reducer::InsertOneSimpleEnum { e } => {
+                __sats::bsatn::to_vec(&insert_one_simple_enum_reducer::InsertOneSimpleEnumArgs { e: e.clone() })
+            }
+            Reducer::InsertOneString { s } => {
+                __sats::bsatn::to_vec(&insert_one_string_reducer::InsertOneStringArgs { s: s.clone() })
+            }
+            Reducer::InsertOneTimestamp { t } => {
+                __sats::bsatn::to_vec(&insert_one_timestamp_reducer::InsertOneTimestampArgs { t: t.clone() })
+            }
+            Reducer::InsertOneU128 { n } => {
+                __sats::bsatn::to_vec(&insert_one_u_128_reducer::InsertOneU128Args { n: n.clone() })
+            }
+            Reducer::InsertOneU16 { n } => {
+                __sats::bsatn::to_vec(&insert_one_u_16_reducer::InsertOneU16Args { n: n.clone() })
+            }
+            Reducer::InsertOneU256 { n } => {
+                __sats::bsatn::to_vec(&insert_one_u_256_reducer::InsertOneU256Args { n: n.clone() })
+            }
+            Reducer::InsertOneU32 { n } => {
+                __sats::bsatn::to_vec(&insert_one_u_32_reducer::InsertOneU32Args { n: n.clone() })
+            }
+            Reducer::InsertOneU64 { n } => {
+                __sats::bsatn::to_vec(&insert_one_u_64_reducer::InsertOneU64Args { n: n.clone() })
+            }
+            Reducer::InsertOneU8 { n } => {
+                __sats::bsatn::to_vec(&insert_one_u_8_reducer::InsertOneU8Args { n: n.clone() })
+            }
+            Reducer::InsertOneUnitStruct { s } => {
+                __sats::bsatn::to_vec(&insert_one_unit_struct_reducer::InsertOneUnitStructArgs { s: s.clone() })
+            }
+            Reducer::InsertOneUuid { u } => {
+                __sats::bsatn::to_vec(&insert_one_uuid_reducer::InsertOneUuidArgs { u: u.clone() })
+            }
+            Reducer::InsertOptionEveryPrimitiveStruct { s } => __sats::bsatn::to_vec(
+                &insert_option_every_primitive_struct_reducer::InsertOptionEveryPrimitiveStructArgs { s: s.clone() },
+            ),
+            Reducer::InsertOptionI32 { n } => {
+                __sats::bsatn::to_vec(&insert_option_i_32_reducer::InsertOptionI32Args { n: n.clone() })
+            }
+            Reducer::InsertOptionIdentity { i } => {
+                __sats::bsatn::to_vec(&insert_option_identity_reducer::InsertOptionIdentityArgs { i: i.clone() })
+            }
+            Reducer::InsertOptionSimpleEnum { e } => {
+                __sats::bsatn::to_vec(&insert_option_simple_enum_reducer::InsertOptionSimpleEnumArgs { e: e.clone() })
+            }
+            Reducer::InsertOptionString { s } => {
+                __sats::bsatn::to_vec(&insert_option_string_reducer::InsertOptionStringArgs { s: s.clone() })
+            }
+            Reducer::InsertOptionUuid { u } => {
+                __sats::bsatn::to_vec(&insert_option_uuid_reducer::InsertOptionUuidArgs { u: u.clone() })
+            }
+            Reducer::InsertOptionVecOptionI32 { v } => {
+                __sats::bsatn::to_vec(&insert_option_vec_option_i_32_reducer::InsertOptionVecOptionI32Args {
+                    v: v.clone(),
+                })
+            }
+            Reducer::InsertPkBool { b, data } => __sats::bsatn::to_vec(&insert_pk_bool_reducer::InsertPkBoolArgs {
                 b: b.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkConnectionId{
-                a,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_connection_id_reducer::InsertPkConnectionIdArgs {
-                a: a.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertPkI128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_i_128_reducer::InsertPkI128Args {
+            }),
+            Reducer::InsertPkConnectionId { a, data } => {
+                __sats::bsatn::to_vec(&insert_pk_connection_id_reducer::InsertPkConnectionIdArgs {
+                    a: a.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertPkI128 { n, data } => __sats::bsatn::to_vec(&insert_pk_i_128_reducer::InsertPkI128Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkI16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_i_16_reducer::InsertPkI16Args {
+            }),
+            Reducer::InsertPkI16 { n, data } => __sats::bsatn::to_vec(&insert_pk_i_16_reducer::InsertPkI16Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkI256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_i_256_reducer::InsertPkI256Args {
+            }),
+            Reducer::InsertPkI256 { n, data } => __sats::bsatn::to_vec(&insert_pk_i_256_reducer::InsertPkI256Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkI32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_i_32_reducer::InsertPkI32Args {
+            }),
+            Reducer::InsertPkI32 { n, data } => __sats::bsatn::to_vec(&insert_pk_i_32_reducer::InsertPkI32Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkI64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_i_64_reducer::InsertPkI64Args {
+            }),
+            Reducer::InsertPkI64 { n, data } => __sats::bsatn::to_vec(&insert_pk_i_64_reducer::InsertPkI64Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkI8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_i_8_reducer::InsertPkI8Args {
+            }),
+            Reducer::InsertPkI8 { n, data } => __sats::bsatn::to_vec(&insert_pk_i_8_reducer::InsertPkI8Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkIdentity{
-                i,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_identity_reducer::InsertPkIdentityArgs {
-                i: i.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertPkSimpleEnum{
-                a,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_simple_enum_reducer::InsertPkSimpleEnumArgs {
-                a: a.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertPkString{
-                s,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_string_reducer::InsertPkStringArgs {
-                s: s.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertPkU128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_u_128_reducer::InsertPkU128Args {
+            }),
+            Reducer::InsertPkIdentity { i, data } => {
+                __sats::bsatn::to_vec(&insert_pk_identity_reducer::InsertPkIdentityArgs {
+                    i: i.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertPkSimpleEnum { a, data } => {
+                __sats::bsatn::to_vec(&insert_pk_simple_enum_reducer::InsertPkSimpleEnumArgs {
+                    a: a.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertPkString { s, data } => {
+                __sats::bsatn::to_vec(&insert_pk_string_reducer::InsertPkStringArgs {
+                    s: s.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertPkU128 { n, data } => __sats::bsatn::to_vec(&insert_pk_u_128_reducer::InsertPkU128Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkU16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_u_16_reducer::InsertPkU16Args {
+            }),
+            Reducer::InsertPkU16 { n, data } => __sats::bsatn::to_vec(&insert_pk_u_16_reducer::InsertPkU16Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkU256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_u_256_reducer::InsertPkU256Args {
+            }),
+            Reducer::InsertPkU256 { n, data } => __sats::bsatn::to_vec(&insert_pk_u_256_reducer::InsertPkU256Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkU32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_u_32_reducer::InsertPkU32Args {
+            }),
+            Reducer::InsertPkU32 { n, data } => __sats::bsatn::to_vec(&insert_pk_u_32_reducer::InsertPkU32Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkU32Two{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_u_32_two_reducer::InsertPkU32TwoArgs {
+            }),
+            Reducer::InsertPkU32Two { n, data } => {
+                __sats::bsatn::to_vec(&insert_pk_u_32_two_reducer::InsertPkU32TwoArgs {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertPkU64 { n, data } => __sats::bsatn::to_vec(&insert_pk_u_64_reducer::InsertPkU64Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkU64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_u_64_reducer::InsertPkU64Args {
+            }),
+            Reducer::InsertPkU8 { n, data } => __sats::bsatn::to_vec(&insert_pk_u_8_reducer::InsertPkU8Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPkU8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_u_8_reducer::InsertPkU8Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertPkUuid{
-                u,
-                data,
-}             => __sats::bsatn::to_vec(&insert_pk_uuid_reducer::InsertPkUuidArgs {
+            }),
+            Reducer::InsertPkUuid { u, data } => __sats::bsatn::to_vec(&insert_pk_uuid_reducer::InsertPkUuidArgs {
                 u: u.clone(),
                 data: data.clone(),
-}),
-            Reducer::InsertPrimitivesAsStrings{
-                s,
-}             => __sats::bsatn::to_vec(&insert_primitives_as_strings_reducer::InsertPrimitivesAsStringsArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertResultEveryPrimitiveStructString{
-                r,
-}             => __sats::bsatn::to_vec(&insert_result_every_primitive_struct_string_reducer::InsertResultEveryPrimitiveStructStringArgs {
-                r: r.clone(),
-}),
-            Reducer::InsertResultI32String{
-                r,
-}             => __sats::bsatn::to_vec(&insert_result_i_32_string_reducer::InsertResultI32StringArgs {
-                r: r.clone(),
-}),
-            Reducer::InsertResultIdentityString{
-                r,
-}             => __sats::bsatn::to_vec(&insert_result_identity_string_reducer::InsertResultIdentityStringArgs {
-                r: r.clone(),
-}),
-            Reducer::InsertResultSimpleEnumI32{
-                r,
-}             => __sats::bsatn::to_vec(&insert_result_simple_enum_i_32_reducer::InsertResultSimpleEnumI32Args {
-                r: r.clone(),
-}),
-            Reducer::InsertResultStringI32{
-                r,
-}             => __sats::bsatn::to_vec(&insert_result_string_i_32_reducer::InsertResultStringI32Args {
-                r: r.clone(),
-}),
-            Reducer::InsertResultVecI32String{
-                r,
-}             => __sats::bsatn::to_vec(&insert_result_vec_i_32_string_reducer::InsertResultVecI32StringArgs {
-                r: r.clone(),
-}),
-            Reducer::InsertTableHoldsTable{
-                a,
-                b,
-}             => __sats::bsatn::to_vec(&insert_table_holds_table_reducer::InsertTableHoldsTableArgs {
-                a: a.clone(),
-                b: b.clone(),
-}),
-            Reducer::InsertUniqueBool{
-                b,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_bool_reducer::InsertUniqueBoolArgs {
-                b: b.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueConnectionId{
-                a,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_connection_id_reducer::InsertUniqueConnectionIdArgs {
-                a: a.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueI128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_i_128_reducer::InsertUniqueI128Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueI16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_i_16_reducer::InsertUniqueI16Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueI256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_i_256_reducer::InsertUniqueI256Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueI32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_i_32_reducer::InsertUniqueI32Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueI64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_i_64_reducer::InsertUniqueI64Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueI8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_i_8_reducer::InsertUniqueI8Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueIdentity{
-                i,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_identity_reducer::InsertUniqueIdentityArgs {
-                i: i.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueString{
-                s,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_string_reducer::InsertUniqueStringArgs {
-                s: s.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueU128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_u_128_reducer::InsertUniqueU128Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueU16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_u_16_reducer::InsertUniqueU16Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueU256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_u_256_reducer::InsertUniqueU256Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueU32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_u_32_reducer::InsertUniqueU32Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueU32UpdatePkU32{
-                n,
-                d_unique,
-                d_pk,
-}             => __sats::bsatn::to_vec(&insert_unique_u_32_update_pk_u_32_reducer::InsertUniqueU32UpdatePkU32Args {
-                n: n.clone(),
-                d_unique: d_unique.clone(),
-                d_pk: d_pk.clone(),
-}),
-            Reducer::InsertUniqueU64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_u_64_reducer::InsertUniqueU64Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueU8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_u_8_reducer::InsertUniqueU8Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUniqueUuid{
-                u,
-                data,
-}             => __sats::bsatn::to_vec(&insert_unique_uuid_reducer::InsertUniqueUuidArgs {
-                u: u.clone(),
-                data: data.clone(),
-}),
-            Reducer::InsertUser{
-                name,
-                identity,
-}             => __sats::bsatn::to_vec(&insert_user_reducer::InsertUserArgs {
+            }),
+            Reducer::InsertPrimitivesAsStrings { s } => {
+                __sats::bsatn::to_vec(&insert_primitives_as_strings_reducer::InsertPrimitivesAsStringsArgs {
+                    s: s.clone(),
+                })
+            }
+            Reducer::InsertResultEveryPrimitiveStructString { r } => __sats::bsatn::to_vec(
+                &insert_result_every_primitive_struct_string_reducer::InsertResultEveryPrimitiveStructStringArgs {
+                    r: r.clone(),
+                },
+            ),
+            Reducer::InsertResultI32String { r } => {
+                __sats::bsatn::to_vec(&insert_result_i_32_string_reducer::InsertResultI32StringArgs { r: r.clone() })
+            }
+            Reducer::InsertResultIdentityString { r } => {
+                __sats::bsatn::to_vec(&insert_result_identity_string_reducer::InsertResultIdentityStringArgs {
+                    r: r.clone(),
+                })
+            }
+            Reducer::InsertResultSimpleEnumI32 { r } => {
+                __sats::bsatn::to_vec(&insert_result_simple_enum_i_32_reducer::InsertResultSimpleEnumI32Args {
+                    r: r.clone(),
+                })
+            }
+            Reducer::InsertResultStringI32 { r } => {
+                __sats::bsatn::to_vec(&insert_result_string_i_32_reducer::InsertResultStringI32Args { r: r.clone() })
+            }
+            Reducer::InsertResultVecI32String { r } => {
+                __sats::bsatn::to_vec(&insert_result_vec_i_32_string_reducer::InsertResultVecI32StringArgs {
+                    r: r.clone(),
+                })
+            }
+            Reducer::InsertTableHoldsTable { a, b } => {
+                __sats::bsatn::to_vec(&insert_table_holds_table_reducer::InsertTableHoldsTableArgs {
+                    a: a.clone(),
+                    b: b.clone(),
+                })
+            }
+            Reducer::InsertUniqueBool { b, data } => {
+                __sats::bsatn::to_vec(&insert_unique_bool_reducer::InsertUniqueBoolArgs {
+                    b: b.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueConnectionId { a, data } => {
+                __sats::bsatn::to_vec(&insert_unique_connection_id_reducer::InsertUniqueConnectionIdArgs {
+                    a: a.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueI128 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_i_128_reducer::InsertUniqueI128Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueI16 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_i_16_reducer::InsertUniqueI16Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueI256 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_i_256_reducer::InsertUniqueI256Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueI32 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_i_32_reducer::InsertUniqueI32Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueI64 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_i_64_reducer::InsertUniqueI64Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueI8 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_i_8_reducer::InsertUniqueI8Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueIdentity { i, data } => {
+                __sats::bsatn::to_vec(&insert_unique_identity_reducer::InsertUniqueIdentityArgs {
+                    i: i.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueString { s, data } => {
+                __sats::bsatn::to_vec(&insert_unique_string_reducer::InsertUniqueStringArgs {
+                    s: s.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueU128 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_u_128_reducer::InsertUniqueU128Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueU16 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_u_16_reducer::InsertUniqueU16Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueU256 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_u_256_reducer::InsertUniqueU256Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueU32 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_u_32_reducer::InsertUniqueU32Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueU32UpdatePkU32 { n, d_unique, d_pk } => __sats::bsatn::to_vec(
+                &insert_unique_u_32_update_pk_u_32_reducer::InsertUniqueU32UpdatePkU32Args {
+                    n: n.clone(),
+                    d_unique: d_unique.clone(),
+                    d_pk: d_pk.clone(),
+                },
+            ),
+            Reducer::InsertUniqueU64 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_u_64_reducer::InsertUniqueU64Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueU8 { n, data } => {
+                __sats::bsatn::to_vec(&insert_unique_u_8_reducer::InsertUniqueU8Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUniqueUuid { u, data } => {
+                __sats::bsatn::to_vec(&insert_unique_uuid_reducer::InsertUniqueUuidArgs {
+                    u: u.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::InsertUser { name, identity } => __sats::bsatn::to_vec(&insert_user_reducer::InsertUserArgs {
                 name: name.clone(),
                 identity: identity.clone(),
-}),
-            Reducer::InsertVecBool{
-                b,
-}             => __sats::bsatn::to_vec(&insert_vec_bool_reducer::InsertVecBoolArgs {
-                b: b.clone(),
-}),
-            Reducer::InsertVecByteStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_vec_byte_struct_reducer::InsertVecByteStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertVecConnectionId{
-                a,
-}             => __sats::bsatn::to_vec(&insert_vec_connection_id_reducer::InsertVecConnectionIdArgs {
-                a: a.clone(),
-}),
-            Reducer::InsertVecEnumWithPayload{
-                e,
-}             => __sats::bsatn::to_vec(&insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs {
-                e: e.clone(),
-}),
-            Reducer::InsertVecEveryPrimitiveStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertVecEveryVecStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_vec_every_vec_struct_reducer::InsertVecEveryVecStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertVecF32{
-                f,
-}             => __sats::bsatn::to_vec(&insert_vec_f_32_reducer::InsertVecF32Args {
-                f: f.clone(),
-}),
-            Reducer::InsertVecF64{
-                f,
-}             => __sats::bsatn::to_vec(&insert_vec_f_64_reducer::InsertVecF64Args {
-                f: f.clone(),
-}),
-            Reducer::InsertVecI128{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_i_128_reducer::InsertVecI128Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecI16{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_i_16_reducer::InsertVecI16Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecI256{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_i_256_reducer::InsertVecI256Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecI32{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_i_32_reducer::InsertVecI32Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecI64{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_i_64_reducer::InsertVecI64Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecI8{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_i_8_reducer::InsertVecI8Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecIdentity{
-                i,
-}             => __sats::bsatn::to_vec(&insert_vec_identity_reducer::InsertVecIdentityArgs {
-                i: i.clone(),
-}),
-            Reducer::InsertVecSimpleEnum{
-                e,
-}             => __sats::bsatn::to_vec(&insert_vec_simple_enum_reducer::InsertVecSimpleEnumArgs {
-                e: e.clone(),
-}),
-            Reducer::InsertVecString{
-                s,
-}             => __sats::bsatn::to_vec(&insert_vec_string_reducer::InsertVecStringArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertVecTimestamp{
-                t,
-}             => __sats::bsatn::to_vec(&insert_vec_timestamp_reducer::InsertVecTimestampArgs {
-                t: t.clone(),
-}),
-            Reducer::InsertVecU128{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_u_128_reducer::InsertVecU128Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecU16{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_u_16_reducer::InsertVecU16Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecU256{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_u_256_reducer::InsertVecU256Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecU32{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_u_32_reducer::InsertVecU32Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecU64{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_u_64_reducer::InsertVecU64Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecU8{
-                n,
-}             => __sats::bsatn::to_vec(&insert_vec_u_8_reducer::InsertVecU8Args {
-                n: n.clone(),
-}),
-            Reducer::InsertVecUnitStruct{
-                s,
-}             => __sats::bsatn::to_vec(&insert_vec_unit_struct_reducer::InsertVecUnitStructArgs {
-                s: s.clone(),
-}),
-            Reducer::InsertVecUuid{
-                u,
-}             => __sats::bsatn::to_vec(&insert_vec_uuid_reducer::InsertVecUuidArgs {
-                u: u.clone(),
-}),
-            Reducer::NoOpSucceeds => __sats::bsatn::to_vec(&no_op_succeeds_reducer::NoOpSucceedsArgs {
-                }),
-Reducer::SortedUuidsInsert => __sats::bsatn::to_vec(&sorted_uuids_insert_reducer::SortedUuidsInsertArgs {
-                }),
-Reducer::UpdateIndexedSimpleEnum{
-                a,
-                b,
-}             => __sats::bsatn::to_vec(&update_indexed_simple_enum_reducer::UpdateIndexedSimpleEnumArgs {
-                a: a.clone(),
-                b: b.clone(),
-}),
-            Reducer::UpdatePkBool{
-                b,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_bool_reducer::UpdatePkBoolArgs {
+            }),
+            Reducer::InsertVecBool { b } => {
+                __sats::bsatn::to_vec(&insert_vec_bool_reducer::InsertVecBoolArgs { b: b.clone() })
+            }
+            Reducer::InsertVecByteStruct { s } => {
+                __sats::bsatn::to_vec(&insert_vec_byte_struct_reducer::InsertVecByteStructArgs { s: s.clone() })
+            }
+            Reducer::InsertVecConnectionId { a } => {
+                __sats::bsatn::to_vec(&insert_vec_connection_id_reducer::InsertVecConnectionIdArgs { a: a.clone() })
+            }
+            Reducer::InsertVecEnumWithPayload { e } => {
+                __sats::bsatn::to_vec(&insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs {
+                    e: e.clone(),
+                })
+            }
+            Reducer::InsertVecEveryPrimitiveStruct { s } => __sats::bsatn::to_vec(
+                &insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStructArgs { s: s.clone() },
+            ),
+            Reducer::InsertVecEveryVecStruct { s } => {
+                __sats::bsatn::to_vec(&insert_vec_every_vec_struct_reducer::InsertVecEveryVecStructArgs {
+                    s: s.clone(),
+                })
+            }
+            Reducer::InsertVecF32 { f } => {
+                __sats::bsatn::to_vec(&insert_vec_f_32_reducer::InsertVecF32Args { f: f.clone() })
+            }
+            Reducer::InsertVecF64 { f } => {
+                __sats::bsatn::to_vec(&insert_vec_f_64_reducer::InsertVecF64Args { f: f.clone() })
+            }
+            Reducer::InsertVecI128 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_i_128_reducer::InsertVecI128Args { n: n.clone() })
+            }
+            Reducer::InsertVecI16 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_i_16_reducer::InsertVecI16Args { n: n.clone() })
+            }
+            Reducer::InsertVecI256 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_i_256_reducer::InsertVecI256Args { n: n.clone() })
+            }
+            Reducer::InsertVecI32 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_i_32_reducer::InsertVecI32Args { n: n.clone() })
+            }
+            Reducer::InsertVecI64 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_i_64_reducer::InsertVecI64Args { n: n.clone() })
+            }
+            Reducer::InsertVecI8 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_i_8_reducer::InsertVecI8Args { n: n.clone() })
+            }
+            Reducer::InsertVecIdentity { i } => {
+                __sats::bsatn::to_vec(&insert_vec_identity_reducer::InsertVecIdentityArgs { i: i.clone() })
+            }
+            Reducer::InsertVecSimpleEnum { e } => {
+                __sats::bsatn::to_vec(&insert_vec_simple_enum_reducer::InsertVecSimpleEnumArgs { e: e.clone() })
+            }
+            Reducer::InsertVecString { s } => {
+                __sats::bsatn::to_vec(&insert_vec_string_reducer::InsertVecStringArgs { s: s.clone() })
+            }
+            Reducer::InsertVecTimestamp { t } => {
+                __sats::bsatn::to_vec(&insert_vec_timestamp_reducer::InsertVecTimestampArgs { t: t.clone() })
+            }
+            Reducer::InsertVecU128 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_u_128_reducer::InsertVecU128Args { n: n.clone() })
+            }
+            Reducer::InsertVecU16 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_u_16_reducer::InsertVecU16Args { n: n.clone() })
+            }
+            Reducer::InsertVecU256 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_u_256_reducer::InsertVecU256Args { n: n.clone() })
+            }
+            Reducer::InsertVecU32 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_u_32_reducer::InsertVecU32Args { n: n.clone() })
+            }
+            Reducer::InsertVecU64 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_u_64_reducer::InsertVecU64Args { n: n.clone() })
+            }
+            Reducer::InsertVecU8 { n } => {
+                __sats::bsatn::to_vec(&insert_vec_u_8_reducer::InsertVecU8Args { n: n.clone() })
+            }
+            Reducer::InsertVecUnitStruct { s } => {
+                __sats::bsatn::to_vec(&insert_vec_unit_struct_reducer::InsertVecUnitStructArgs { s: s.clone() })
+            }
+            Reducer::InsertVecUuid { u } => {
+                __sats::bsatn::to_vec(&insert_vec_uuid_reducer::InsertVecUuidArgs { u: u.clone() })
+            }
+            Reducer::NoOpSucceeds => __sats::bsatn::to_vec(&no_op_succeeds_reducer::NoOpSucceedsArgs {}),
+            Reducer::SortedUuidsInsert => __sats::bsatn::to_vec(&sorted_uuids_insert_reducer::SortedUuidsInsertArgs {}),
+            Reducer::UpdateIndexedSimpleEnum { a, b } => {
+                __sats::bsatn::to_vec(&update_indexed_simple_enum_reducer::UpdateIndexedSimpleEnumArgs {
+                    a: a.clone(),
+                    b: b.clone(),
+                })
+            }
+            Reducer::UpdatePkBool { b, data } => __sats::bsatn::to_vec(&update_pk_bool_reducer::UpdatePkBoolArgs {
                 b: b.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkConnectionId{
-                a,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_connection_id_reducer::UpdatePkConnectionIdArgs {
-                a: a.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdatePkI128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_i_128_reducer::UpdatePkI128Args {
+            }),
+            Reducer::UpdatePkConnectionId { a, data } => {
+                __sats::bsatn::to_vec(&update_pk_connection_id_reducer::UpdatePkConnectionIdArgs {
+                    a: a.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdatePkI128 { n, data } => __sats::bsatn::to_vec(&update_pk_i_128_reducer::UpdatePkI128Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkI16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_i_16_reducer::UpdatePkI16Args {
+            }),
+            Reducer::UpdatePkI16 { n, data } => __sats::bsatn::to_vec(&update_pk_i_16_reducer::UpdatePkI16Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkI256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_i_256_reducer::UpdatePkI256Args {
+            }),
+            Reducer::UpdatePkI256 { n, data } => __sats::bsatn::to_vec(&update_pk_i_256_reducer::UpdatePkI256Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkI32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_i_32_reducer::UpdatePkI32Args {
+            }),
+            Reducer::UpdatePkI32 { n, data } => __sats::bsatn::to_vec(&update_pk_i_32_reducer::UpdatePkI32Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkI64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_i_64_reducer::UpdatePkI64Args {
+            }),
+            Reducer::UpdatePkI64 { n, data } => __sats::bsatn::to_vec(&update_pk_i_64_reducer::UpdatePkI64Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkI8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_i_8_reducer::UpdatePkI8Args {
+            }),
+            Reducer::UpdatePkI8 { n, data } => __sats::bsatn::to_vec(&update_pk_i_8_reducer::UpdatePkI8Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkIdentity{
-                i,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_identity_reducer::UpdatePkIdentityArgs {
-                i: i.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdatePkSimpleEnum{
-                a,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_simple_enum_reducer::UpdatePkSimpleEnumArgs {
-                a: a.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdatePkString{
-                s,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_string_reducer::UpdatePkStringArgs {
-                s: s.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdatePkU128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_u_128_reducer::UpdatePkU128Args {
+            }),
+            Reducer::UpdatePkIdentity { i, data } => {
+                __sats::bsatn::to_vec(&update_pk_identity_reducer::UpdatePkIdentityArgs {
+                    i: i.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdatePkSimpleEnum { a, data } => {
+                __sats::bsatn::to_vec(&update_pk_simple_enum_reducer::UpdatePkSimpleEnumArgs {
+                    a: a.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdatePkString { s, data } => {
+                __sats::bsatn::to_vec(&update_pk_string_reducer::UpdatePkStringArgs {
+                    s: s.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdatePkU128 { n, data } => __sats::bsatn::to_vec(&update_pk_u_128_reducer::UpdatePkU128Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkU16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_u_16_reducer::UpdatePkU16Args {
+            }),
+            Reducer::UpdatePkU16 { n, data } => __sats::bsatn::to_vec(&update_pk_u_16_reducer::UpdatePkU16Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkU256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_u_256_reducer::UpdatePkU256Args {
+            }),
+            Reducer::UpdatePkU256 { n, data } => __sats::bsatn::to_vec(&update_pk_u_256_reducer::UpdatePkU256Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkU32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_u_32_reducer::UpdatePkU32Args {
+            }),
+            Reducer::UpdatePkU32 { n, data } => __sats::bsatn::to_vec(&update_pk_u_32_reducer::UpdatePkU32Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkU32Two{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_u_32_two_reducer::UpdatePkU32TwoArgs {
+            }),
+            Reducer::UpdatePkU32Two { n, data } => {
+                __sats::bsatn::to_vec(&update_pk_u_32_two_reducer::UpdatePkU32TwoArgs {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdatePkU64 { n, data } => __sats::bsatn::to_vec(&update_pk_u_64_reducer::UpdatePkU64Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkU64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_u_64_reducer::UpdatePkU64Args {
+            }),
+            Reducer::UpdatePkU8 { n, data } => __sats::bsatn::to_vec(&update_pk_u_8_reducer::UpdatePkU8Args {
                 n: n.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdatePkU8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_u_8_reducer::UpdatePkU8Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdatePkUuid{
-                u,
-                data,
-}             => __sats::bsatn::to_vec(&update_pk_uuid_reducer::UpdatePkUuidArgs {
+            }),
+            Reducer::UpdatePkUuid { u, data } => __sats::bsatn::to_vec(&update_pk_uuid_reducer::UpdatePkUuidArgs {
                 u: u.clone(),
                 data: data.clone(),
-}),
-            Reducer::UpdateUniqueBool{
-                b,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_bool_reducer::UpdateUniqueBoolArgs {
-                b: b.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueConnectionId{
-                a,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_connection_id_reducer::UpdateUniqueConnectionIdArgs {
-                a: a.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueI128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_i_128_reducer::UpdateUniqueI128Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueI16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_i_16_reducer::UpdateUniqueI16Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueI256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_i_256_reducer::UpdateUniqueI256Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueI32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_i_32_reducer::UpdateUniqueI32Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueI64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_i_64_reducer::UpdateUniqueI64Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueI8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_i_8_reducer::UpdateUniqueI8Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueIdentity{
-                i,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_identity_reducer::UpdateUniqueIdentityArgs {
-                i: i.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueString{
-                s,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_string_reducer::UpdateUniqueStringArgs {
-                s: s.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueU128{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_u_128_reducer::UpdateUniqueU128Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueU16{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_u_16_reducer::UpdateUniqueU16Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueU256{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_u_256_reducer::UpdateUniqueU256Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueU32{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_u_32_reducer::UpdateUniqueU32Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueU64{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_u_64_reducer::UpdateUniqueU64Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueU8{
-                n,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_u_8_reducer::UpdateUniqueU8Args {
-                n: n.clone(),
-                data: data.clone(),
-}),
-            Reducer::UpdateUniqueUuid{
-                u,
-                data,
-}             => __sats::bsatn::to_vec(&update_unique_uuid_reducer::UpdateUniqueUuidArgs {
-                u: u.clone(),
-                data: data.clone(),
-}),
+            }),
+            Reducer::UpdateUniqueBool { b, data } => {
+                __sats::bsatn::to_vec(&update_unique_bool_reducer::UpdateUniqueBoolArgs {
+                    b: b.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueConnectionId { a, data } => {
+                __sats::bsatn::to_vec(&update_unique_connection_id_reducer::UpdateUniqueConnectionIdArgs {
+                    a: a.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueI128 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_i_128_reducer::UpdateUniqueI128Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueI16 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_i_16_reducer::UpdateUniqueI16Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueI256 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_i_256_reducer::UpdateUniqueI256Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueI32 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_i_32_reducer::UpdateUniqueI32Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueI64 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_i_64_reducer::UpdateUniqueI64Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueI8 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_i_8_reducer::UpdateUniqueI8Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueIdentity { i, data } => {
+                __sats::bsatn::to_vec(&update_unique_identity_reducer::UpdateUniqueIdentityArgs {
+                    i: i.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueString { s, data } => {
+                __sats::bsatn::to_vec(&update_unique_string_reducer::UpdateUniqueStringArgs {
+                    s: s.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueU128 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_u_128_reducer::UpdateUniqueU128Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueU16 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_u_16_reducer::UpdateUniqueU16Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueU256 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_u_256_reducer::UpdateUniqueU256Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueU32 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_u_32_reducer::UpdateUniqueU32Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueU64 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_u_64_reducer::UpdateUniqueU64Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueU8 { n, data } => {
+                __sats::bsatn::to_vec(&update_unique_u_8_reducer::UpdateUniqueU8Args {
+                    n: n.clone(),
+                    data: data.clone(),
+                })
+            }
+            Reducer::UpdateUniqueUuid { u, data } => {
+                __sats::bsatn::to_vec(&update_unique_uuid_reducer::UpdateUniqueUuidArgs {
+                    u: u.clone(),
+                    data: data.clone(),
+                })
+            }
             _ => unreachable!(),
-}
-}
+        }
+    }
 }
 
 #[derive(Default)]
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
-        btree_u_32: __sdk::TableUpdate<BTreeU32>,
+    btree_u_32: __sdk::TableUpdate<BTreeU32>,
     indexed_simple_enum: __sdk::TableUpdate<IndexedSimpleEnum>,
     indexed_table: __sdk::TableUpdate<IndexedTable>,
     indexed_table_2: __sdk::TableUpdate<IndexedTable2>,
@@ -3090,130 +2754,336 @@ pub struct DbUpdate {
     vec_uuid: __sdk::TableUpdate<VecUuid>,
 }
 
-
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
     type Error = __sdk::Error;
     fn try_from(raw: __ws::v2::TransactionUpdate) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
-
-        "btree_u32" => db_update.btree_u_32.append(btree_u_32_table::parse_table_update(table_update)?),
-    "indexed_simple_enum" => db_update.indexed_simple_enum.append(indexed_simple_enum_table::parse_table_update(table_update)?),
-    "indexed_table" => db_update.indexed_table.append(indexed_table_table::parse_table_update(table_update)?),
-    "indexed_table_2" => db_update.indexed_table_2.append(indexed_table_2_table::parse_table_update(table_update)?),
-    "large_table" => db_update.large_table.append(large_table_table::parse_table_update(table_update)?),
-    "one_bool" => db_update.one_bool.append(one_bool_table::parse_table_update(table_update)?),
-    "one_byte_struct" => db_update.one_byte_struct.append(one_byte_struct_table::parse_table_update(table_update)?),
-    "one_connection_id" => db_update.one_connection_id.append(one_connection_id_table::parse_table_update(table_update)?),
-    "one_enum_with_payload" => db_update.one_enum_with_payload.append(one_enum_with_payload_table::parse_table_update(table_update)?),
-    "one_every_primitive_struct" => db_update.one_every_primitive_struct.append(one_every_primitive_struct_table::parse_table_update(table_update)?),
-    "one_every_vec_struct" => db_update.one_every_vec_struct.append(one_every_vec_struct_table::parse_table_update(table_update)?),
-    "one_f32" => db_update.one_f_32.append(one_f_32_table::parse_table_update(table_update)?),
-    "one_f64" => db_update.one_f_64.append(one_f_64_table::parse_table_update(table_update)?),
-    "one_i128" => db_update.one_i_128.append(one_i_128_table::parse_table_update(table_update)?),
-    "one_i16" => db_update.one_i_16.append(one_i_16_table::parse_table_update(table_update)?),
-    "one_i256" => db_update.one_i_256.append(one_i_256_table::parse_table_update(table_update)?),
-    "one_i32" => db_update.one_i_32.append(one_i_32_table::parse_table_update(table_update)?),
-    "one_i64" => db_update.one_i_64.append(one_i_64_table::parse_table_update(table_update)?),
-    "one_i8" => db_update.one_i_8.append(one_i_8_table::parse_table_update(table_update)?),
-    "one_identity" => db_update.one_identity.append(one_identity_table::parse_table_update(table_update)?),
-    "one_simple_enum" => db_update.one_simple_enum.append(one_simple_enum_table::parse_table_update(table_update)?),
-    "one_string" => db_update.one_string.append(one_string_table::parse_table_update(table_update)?),
-    "one_timestamp" => db_update.one_timestamp.append(one_timestamp_table::parse_table_update(table_update)?),
-    "one_u128" => db_update.one_u_128.append(one_u_128_table::parse_table_update(table_update)?),
-    "one_u16" => db_update.one_u_16.append(one_u_16_table::parse_table_update(table_update)?),
-    "one_u256" => db_update.one_u_256.append(one_u_256_table::parse_table_update(table_update)?),
-    "one_u32" => db_update.one_u_32.append(one_u_32_table::parse_table_update(table_update)?),
-    "one_u64" => db_update.one_u_64.append(one_u_64_table::parse_table_update(table_update)?),
-    "one_u8" => db_update.one_u_8.append(one_u_8_table::parse_table_update(table_update)?),
-    "one_unit_struct" => db_update.one_unit_struct.append(one_unit_struct_table::parse_table_update(table_update)?),
-    "one_uuid" => db_update.one_uuid.append(one_uuid_table::parse_table_update(table_update)?),
-    "option_every_primitive_struct" => db_update.option_every_primitive_struct.append(option_every_primitive_struct_table::parse_table_update(table_update)?),
-    "option_i32" => db_update.option_i_32.append(option_i_32_table::parse_table_update(table_update)?),
-    "option_identity" => db_update.option_identity.append(option_identity_table::parse_table_update(table_update)?),
-    "option_simple_enum" => db_update.option_simple_enum.append(option_simple_enum_table::parse_table_update(table_update)?),
-    "option_string" => db_update.option_string.append(option_string_table::parse_table_update(table_update)?),
-    "option_uuid" => db_update.option_uuid.append(option_uuid_table::parse_table_update(table_update)?),
-    "option_vec_option_i32" => db_update.option_vec_option_i_32.append(option_vec_option_i_32_table::parse_table_update(table_update)?),
-    "pk_bool" => db_update.pk_bool.append(pk_bool_table::parse_table_update(table_update)?),
-    "pk_connection_id" => db_update.pk_connection_id.append(pk_connection_id_table::parse_table_update(table_update)?),
-    "pk_i128" => db_update.pk_i_128.append(pk_i_128_table::parse_table_update(table_update)?),
-    "pk_i16" => db_update.pk_i_16.append(pk_i_16_table::parse_table_update(table_update)?),
-    "pk_i256" => db_update.pk_i_256.append(pk_i_256_table::parse_table_update(table_update)?),
-    "pk_i32" => db_update.pk_i_32.append(pk_i_32_table::parse_table_update(table_update)?),
-    "pk_i64" => db_update.pk_i_64.append(pk_i_64_table::parse_table_update(table_update)?),
-    "pk_i8" => db_update.pk_i_8.append(pk_i_8_table::parse_table_update(table_update)?),
-    "pk_identity" => db_update.pk_identity.append(pk_identity_table::parse_table_update(table_update)?),
-    "pk_simple_enum" => db_update.pk_simple_enum.append(pk_simple_enum_table::parse_table_update(table_update)?),
-    "pk_string" => db_update.pk_string.append(pk_string_table::parse_table_update(table_update)?),
-    "pk_u128" => db_update.pk_u_128.append(pk_u_128_table::parse_table_update(table_update)?),
-    "pk_u16" => db_update.pk_u_16.append(pk_u_16_table::parse_table_update(table_update)?),
-    "pk_u256" => db_update.pk_u_256.append(pk_u_256_table::parse_table_update(table_update)?),
-    "pk_u32" => db_update.pk_u_32.append(pk_u_32_table::parse_table_update(table_update)?),
-    "pk_u32_two" => db_update.pk_u_32_two.append(pk_u_32_two_table::parse_table_update(table_update)?),
-    "pk_u64" => db_update.pk_u_64.append(pk_u_64_table::parse_table_update(table_update)?),
-    "pk_u8" => db_update.pk_u_8.append(pk_u_8_table::parse_table_update(table_update)?),
-    "pk_uuid" => db_update.pk_uuid.append(pk_uuid_table::parse_table_update(table_update)?),
-    "result_every_primitive_struct_string" => db_update.result_every_primitive_struct_string.append(result_every_primitive_struct_string_table::parse_table_update(table_update)?),
-    "result_i32_string" => db_update.result_i_32_string.append(result_i_32_string_table::parse_table_update(table_update)?),
-    "result_identity_string" => db_update.result_identity_string.append(result_identity_string_table::parse_table_update(table_update)?),
-    "result_simple_enum_i32" => db_update.result_simple_enum_i_32.append(result_simple_enum_i_32_table::parse_table_update(table_update)?),
-    "result_string_i32" => db_update.result_string_i_32.append(result_string_i_32_table::parse_table_update(table_update)?),
-    "result_vec_i32_string" => db_update.result_vec_i_32_string.append(result_vec_i_32_string_table::parse_table_update(table_update)?),
-    "scheduled_table" => db_update.scheduled_table.append(scheduled_table_table::parse_table_update(table_update)?),
-    "table_holds_table" => db_update.table_holds_table.append(table_holds_table_table::parse_table_update(table_update)?),
-    "unique_bool" => db_update.unique_bool.append(unique_bool_table::parse_table_update(table_update)?),
-    "unique_connection_id" => db_update.unique_connection_id.append(unique_connection_id_table::parse_table_update(table_update)?),
-    "unique_i128" => db_update.unique_i_128.append(unique_i_128_table::parse_table_update(table_update)?),
-    "unique_i16" => db_update.unique_i_16.append(unique_i_16_table::parse_table_update(table_update)?),
-    "unique_i256" => db_update.unique_i_256.append(unique_i_256_table::parse_table_update(table_update)?),
-    "unique_i32" => db_update.unique_i_32.append(unique_i_32_table::parse_table_update(table_update)?),
-    "unique_i64" => db_update.unique_i_64.append(unique_i_64_table::parse_table_update(table_update)?),
-    "unique_i8" => db_update.unique_i_8.append(unique_i_8_table::parse_table_update(table_update)?),
-    "unique_identity" => db_update.unique_identity.append(unique_identity_table::parse_table_update(table_update)?),
-    "unique_string" => db_update.unique_string.append(unique_string_table::parse_table_update(table_update)?),
-    "unique_u128" => db_update.unique_u_128.append(unique_u_128_table::parse_table_update(table_update)?),
-    "unique_u16" => db_update.unique_u_16.append(unique_u_16_table::parse_table_update(table_update)?),
-    "unique_u256" => db_update.unique_u_256.append(unique_u_256_table::parse_table_update(table_update)?),
-    "unique_u32" => db_update.unique_u_32.append(unique_u_32_table::parse_table_update(table_update)?),
-    "unique_u64" => db_update.unique_u_64.append(unique_u_64_table::parse_table_update(table_update)?),
-    "unique_u8" => db_update.unique_u_8.append(unique_u_8_table::parse_table_update(table_update)?),
-    "unique_uuid" => db_update.unique_uuid.append(unique_uuid_table::parse_table_update(table_update)?),
-    "users" => db_update.users.append(users_table::parse_table_update(table_update)?),
-    "vec_bool" => db_update.vec_bool.append(vec_bool_table::parse_table_update(table_update)?),
-    "vec_byte_struct" => db_update.vec_byte_struct.append(vec_byte_struct_table::parse_table_update(table_update)?),
-    "vec_connection_id" => db_update.vec_connection_id.append(vec_connection_id_table::parse_table_update(table_update)?),
-    "vec_enum_with_payload" => db_update.vec_enum_with_payload.append(vec_enum_with_payload_table::parse_table_update(table_update)?),
-    "vec_every_primitive_struct" => db_update.vec_every_primitive_struct.append(vec_every_primitive_struct_table::parse_table_update(table_update)?),
-    "vec_every_vec_struct" => db_update.vec_every_vec_struct.append(vec_every_vec_struct_table::parse_table_update(table_update)?),
-    "vec_f32" => db_update.vec_f_32.append(vec_f_32_table::parse_table_update(table_update)?),
-    "vec_f64" => db_update.vec_f_64.append(vec_f_64_table::parse_table_update(table_update)?),
-    "vec_i128" => db_update.vec_i_128.append(vec_i_128_table::parse_table_update(table_update)?),
-    "vec_i16" => db_update.vec_i_16.append(vec_i_16_table::parse_table_update(table_update)?),
-    "vec_i256" => db_update.vec_i_256.append(vec_i_256_table::parse_table_update(table_update)?),
-    "vec_i32" => db_update.vec_i_32.append(vec_i_32_table::parse_table_update(table_update)?),
-    "vec_i64" => db_update.vec_i_64.append(vec_i_64_table::parse_table_update(table_update)?),
-    "vec_i8" => db_update.vec_i_8.append(vec_i_8_table::parse_table_update(table_update)?),
-    "vec_identity" => db_update.vec_identity.append(vec_identity_table::parse_table_update(table_update)?),
-    "vec_simple_enum" => db_update.vec_simple_enum.append(vec_simple_enum_table::parse_table_update(table_update)?),
-    "vec_string" => db_update.vec_string.append(vec_string_table::parse_table_update(table_update)?),
-    "vec_timestamp" => db_update.vec_timestamp.append(vec_timestamp_table::parse_table_update(table_update)?),
-    "vec_u128" => db_update.vec_u_128.append(vec_u_128_table::parse_table_update(table_update)?),
-    "vec_u16" => db_update.vec_u_16.append(vec_u_16_table::parse_table_update(table_update)?),
-    "vec_u256" => db_update.vec_u_256.append(vec_u_256_table::parse_table_update(table_update)?),
-    "vec_u32" => db_update.vec_u_32.append(vec_u_32_table::parse_table_update(table_update)?),
-    "vec_u64" => db_update.vec_u_64.append(vec_u_64_table::parse_table_update(table_update)?),
-    "vec_u8" => db_update.vec_u_8.append(vec_u_8_table::parse_table_update(table_update)?),
-    "vec_unit_struct" => db_update.vec_unit_struct.append(vec_unit_struct_table::parse_table_update(table_update)?),
-    "vec_uuid" => db_update.vec_uuid.append(vec_uuid_table::parse_table_update(table_update)?),
+                "btree_u32" => db_update
+                    .btree_u_32
+                    .append(btree_u_32_table::parse_table_update(table_update)?),
+                "indexed_simple_enum" => db_update
+                    .indexed_simple_enum
+                    .append(indexed_simple_enum_table::parse_table_update(table_update)?),
+                "indexed_table" => db_update
+                    .indexed_table
+                    .append(indexed_table_table::parse_table_update(table_update)?),
+                "indexed_table_2" => db_update
+                    .indexed_table_2
+                    .append(indexed_table_2_table::parse_table_update(table_update)?),
+                "large_table" => db_update
+                    .large_table
+                    .append(large_table_table::parse_table_update(table_update)?),
+                "one_bool" => db_update
+                    .one_bool
+                    .append(one_bool_table::parse_table_update(table_update)?),
+                "one_byte_struct" => db_update
+                    .one_byte_struct
+                    .append(one_byte_struct_table::parse_table_update(table_update)?),
+                "one_connection_id" => db_update
+                    .one_connection_id
+                    .append(one_connection_id_table::parse_table_update(table_update)?),
+                "one_enum_with_payload" => db_update
+                    .one_enum_with_payload
+                    .append(one_enum_with_payload_table::parse_table_update(table_update)?),
+                "one_every_primitive_struct" => db_update
+                    .one_every_primitive_struct
+                    .append(one_every_primitive_struct_table::parse_table_update(table_update)?),
+                "one_every_vec_struct" => db_update
+                    .one_every_vec_struct
+                    .append(one_every_vec_struct_table::parse_table_update(table_update)?),
+                "one_f32" => db_update
+                    .one_f_32
+                    .append(one_f_32_table::parse_table_update(table_update)?),
+                "one_f64" => db_update
+                    .one_f_64
+                    .append(one_f_64_table::parse_table_update(table_update)?),
+                "one_i128" => db_update
+                    .one_i_128
+                    .append(one_i_128_table::parse_table_update(table_update)?),
+                "one_i16" => db_update
+                    .one_i_16
+                    .append(one_i_16_table::parse_table_update(table_update)?),
+                "one_i256" => db_update
+                    .one_i_256
+                    .append(one_i_256_table::parse_table_update(table_update)?),
+                "one_i32" => db_update
+                    .one_i_32
+                    .append(one_i_32_table::parse_table_update(table_update)?),
+                "one_i64" => db_update
+                    .one_i_64
+                    .append(one_i_64_table::parse_table_update(table_update)?),
+                "one_i8" => db_update
+                    .one_i_8
+                    .append(one_i_8_table::parse_table_update(table_update)?),
+                "one_identity" => db_update
+                    .one_identity
+                    .append(one_identity_table::parse_table_update(table_update)?),
+                "one_simple_enum" => db_update
+                    .one_simple_enum
+                    .append(one_simple_enum_table::parse_table_update(table_update)?),
+                "one_string" => db_update
+                    .one_string
+                    .append(one_string_table::parse_table_update(table_update)?),
+                "one_timestamp" => db_update
+                    .one_timestamp
+                    .append(one_timestamp_table::parse_table_update(table_update)?),
+                "one_u128" => db_update
+                    .one_u_128
+                    .append(one_u_128_table::parse_table_update(table_update)?),
+                "one_u16" => db_update
+                    .one_u_16
+                    .append(one_u_16_table::parse_table_update(table_update)?),
+                "one_u256" => db_update
+                    .one_u_256
+                    .append(one_u_256_table::parse_table_update(table_update)?),
+                "one_u32" => db_update
+                    .one_u_32
+                    .append(one_u_32_table::parse_table_update(table_update)?),
+                "one_u64" => db_update
+                    .one_u_64
+                    .append(one_u_64_table::parse_table_update(table_update)?),
+                "one_u8" => db_update
+                    .one_u_8
+                    .append(one_u_8_table::parse_table_update(table_update)?),
+                "one_unit_struct" => db_update
+                    .one_unit_struct
+                    .append(one_unit_struct_table::parse_table_update(table_update)?),
+                "one_uuid" => db_update
+                    .one_uuid
+                    .append(one_uuid_table::parse_table_update(table_update)?),
+                "option_every_primitive_struct" => db_update
+                    .option_every_primitive_struct
+                    .append(option_every_primitive_struct_table::parse_table_update(table_update)?),
+                "option_i32" => db_update
+                    .option_i_32
+                    .append(option_i_32_table::parse_table_update(table_update)?),
+                "option_identity" => db_update
+                    .option_identity
+                    .append(option_identity_table::parse_table_update(table_update)?),
+                "option_simple_enum" => db_update
+                    .option_simple_enum
+                    .append(option_simple_enum_table::parse_table_update(table_update)?),
+                "option_string" => db_update
+                    .option_string
+                    .append(option_string_table::parse_table_update(table_update)?),
+                "option_uuid" => db_update
+                    .option_uuid
+                    .append(option_uuid_table::parse_table_update(table_update)?),
+                "option_vec_option_i32" => db_update
+                    .option_vec_option_i_32
+                    .append(option_vec_option_i_32_table::parse_table_update(table_update)?),
+                "pk_bool" => db_update
+                    .pk_bool
+                    .append(pk_bool_table::parse_table_update(table_update)?),
+                "pk_connection_id" => db_update
+                    .pk_connection_id
+                    .append(pk_connection_id_table::parse_table_update(table_update)?),
+                "pk_i128" => db_update
+                    .pk_i_128
+                    .append(pk_i_128_table::parse_table_update(table_update)?),
+                "pk_i16" => db_update
+                    .pk_i_16
+                    .append(pk_i_16_table::parse_table_update(table_update)?),
+                "pk_i256" => db_update
+                    .pk_i_256
+                    .append(pk_i_256_table::parse_table_update(table_update)?),
+                "pk_i32" => db_update
+                    .pk_i_32
+                    .append(pk_i_32_table::parse_table_update(table_update)?),
+                "pk_i64" => db_update
+                    .pk_i_64
+                    .append(pk_i_64_table::parse_table_update(table_update)?),
+                "pk_i8" => db_update.pk_i_8.append(pk_i_8_table::parse_table_update(table_update)?),
+                "pk_identity" => db_update
+                    .pk_identity
+                    .append(pk_identity_table::parse_table_update(table_update)?),
+                "pk_simple_enum" => db_update
+                    .pk_simple_enum
+                    .append(pk_simple_enum_table::parse_table_update(table_update)?),
+                "pk_string" => db_update
+                    .pk_string
+                    .append(pk_string_table::parse_table_update(table_update)?),
+                "pk_u128" => db_update
+                    .pk_u_128
+                    .append(pk_u_128_table::parse_table_update(table_update)?),
+                "pk_u16" => db_update
+                    .pk_u_16
+                    .append(pk_u_16_table::parse_table_update(table_update)?),
+                "pk_u256" => db_update
+                    .pk_u_256
+                    .append(pk_u_256_table::parse_table_update(table_update)?),
+                "pk_u32" => db_update
+                    .pk_u_32
+                    .append(pk_u_32_table::parse_table_update(table_update)?),
+                "pk_u32_two" => db_update
+                    .pk_u_32_two
+                    .append(pk_u_32_two_table::parse_table_update(table_update)?),
+                "pk_u64" => db_update
+                    .pk_u_64
+                    .append(pk_u_64_table::parse_table_update(table_update)?),
+                "pk_u8" => db_update.pk_u_8.append(pk_u_8_table::parse_table_update(table_update)?),
+                "pk_uuid" => db_update
+                    .pk_uuid
+                    .append(pk_uuid_table::parse_table_update(table_update)?),
+                "result_every_primitive_struct_string" => db_update.result_every_primitive_struct_string.append(
+                    result_every_primitive_struct_string_table::parse_table_update(table_update)?,
+                ),
+                "result_i32_string" => db_update
+                    .result_i_32_string
+                    .append(result_i_32_string_table::parse_table_update(table_update)?),
+                "result_identity_string" => db_update
+                    .result_identity_string
+                    .append(result_identity_string_table::parse_table_update(table_update)?),
+                "result_simple_enum_i32" => db_update
+                    .result_simple_enum_i_32
+                    .append(result_simple_enum_i_32_table::parse_table_update(table_update)?),
+                "result_string_i32" => db_update
+                    .result_string_i_32
+                    .append(result_string_i_32_table::parse_table_update(table_update)?),
+                "result_vec_i32_string" => db_update
+                    .result_vec_i_32_string
+                    .append(result_vec_i_32_string_table::parse_table_update(table_update)?),
+                "scheduled_table" => db_update
+                    .scheduled_table
+                    .append(scheduled_table_table::parse_table_update(table_update)?),
+                "table_holds_table" => db_update
+                    .table_holds_table
+                    .append(table_holds_table_table::parse_table_update(table_update)?),
+                "unique_bool" => db_update
+                    .unique_bool
+                    .append(unique_bool_table::parse_table_update(table_update)?),
+                "unique_connection_id" => db_update
+                    .unique_connection_id
+                    .append(unique_connection_id_table::parse_table_update(table_update)?),
+                "unique_i128" => db_update
+                    .unique_i_128
+                    .append(unique_i_128_table::parse_table_update(table_update)?),
+                "unique_i16" => db_update
+                    .unique_i_16
+                    .append(unique_i_16_table::parse_table_update(table_update)?),
+                "unique_i256" => db_update
+                    .unique_i_256
+                    .append(unique_i_256_table::parse_table_update(table_update)?),
+                "unique_i32" => db_update
+                    .unique_i_32
+                    .append(unique_i_32_table::parse_table_update(table_update)?),
+                "unique_i64" => db_update
+                    .unique_i_64
+                    .append(unique_i_64_table::parse_table_update(table_update)?),
+                "unique_i8" => db_update
+                    .unique_i_8
+                    .append(unique_i_8_table::parse_table_update(table_update)?),
+                "unique_identity" => db_update
+                    .unique_identity
+                    .append(unique_identity_table::parse_table_update(table_update)?),
+                "unique_string" => db_update
+                    .unique_string
+                    .append(unique_string_table::parse_table_update(table_update)?),
+                "unique_u128" => db_update
+                    .unique_u_128
+                    .append(unique_u_128_table::parse_table_update(table_update)?),
+                "unique_u16" => db_update
+                    .unique_u_16
+                    .append(unique_u_16_table::parse_table_update(table_update)?),
+                "unique_u256" => db_update
+                    .unique_u_256
+                    .append(unique_u_256_table::parse_table_update(table_update)?),
+                "unique_u32" => db_update
+                    .unique_u_32
+                    .append(unique_u_32_table::parse_table_update(table_update)?),
+                "unique_u64" => db_update
+                    .unique_u_64
+                    .append(unique_u_64_table::parse_table_update(table_update)?),
+                "unique_u8" => db_update
+                    .unique_u_8
+                    .append(unique_u_8_table::parse_table_update(table_update)?),
+                "unique_uuid" => db_update
+                    .unique_uuid
+                    .append(unique_uuid_table::parse_table_update(table_update)?),
+                "users" => db_update.users.append(users_table::parse_table_update(table_update)?),
+                "vec_bool" => db_update
+                    .vec_bool
+                    .append(vec_bool_table::parse_table_update(table_update)?),
+                "vec_byte_struct" => db_update
+                    .vec_byte_struct
+                    .append(vec_byte_struct_table::parse_table_update(table_update)?),
+                "vec_connection_id" => db_update
+                    .vec_connection_id
+                    .append(vec_connection_id_table::parse_table_update(table_update)?),
+                "vec_enum_with_payload" => db_update
+                    .vec_enum_with_payload
+                    .append(vec_enum_with_payload_table::parse_table_update(table_update)?),
+                "vec_every_primitive_struct" => db_update
+                    .vec_every_primitive_struct
+                    .append(vec_every_primitive_struct_table::parse_table_update(table_update)?),
+                "vec_every_vec_struct" => db_update
+                    .vec_every_vec_struct
+                    .append(vec_every_vec_struct_table::parse_table_update(table_update)?),
+                "vec_f32" => db_update
+                    .vec_f_32
+                    .append(vec_f_32_table::parse_table_update(table_update)?),
+                "vec_f64" => db_update
+                    .vec_f_64
+                    .append(vec_f_64_table::parse_table_update(table_update)?),
+                "vec_i128" => db_update
+                    .vec_i_128
+                    .append(vec_i_128_table::parse_table_update(table_update)?),
+                "vec_i16" => db_update
+                    .vec_i_16
+                    .append(vec_i_16_table::parse_table_update(table_update)?),
+                "vec_i256" => db_update
+                    .vec_i_256
+                    .append(vec_i_256_table::parse_table_update(table_update)?),
+                "vec_i32" => db_update
+                    .vec_i_32
+                    .append(vec_i_32_table::parse_table_update(table_update)?),
+                "vec_i64" => db_update
+                    .vec_i_64
+                    .append(vec_i_64_table::parse_table_update(table_update)?),
+                "vec_i8" => db_update
+                    .vec_i_8
+                    .append(vec_i_8_table::parse_table_update(table_update)?),
+                "vec_identity" => db_update
+                    .vec_identity
+                    .append(vec_identity_table::parse_table_update(table_update)?),
+                "vec_simple_enum" => db_update
+                    .vec_simple_enum
+                    .append(vec_simple_enum_table::parse_table_update(table_update)?),
+                "vec_string" => db_update
+                    .vec_string
+                    .append(vec_string_table::parse_table_update(table_update)?),
+                "vec_timestamp" => db_update
+                    .vec_timestamp
+                    .append(vec_timestamp_table::parse_table_update(table_update)?),
+                "vec_u128" => db_update
+                    .vec_u_128
+                    .append(vec_u_128_table::parse_table_update(table_update)?),
+                "vec_u16" => db_update
+                    .vec_u_16
+                    .append(vec_u_16_table::parse_table_update(table_update)?),
+                "vec_u256" => db_update
+                    .vec_u_256
+                    .append(vec_u_256_table::parse_table_update(table_update)?),
+                "vec_u32" => db_update
+                    .vec_u_32
+                    .append(vec_u_32_table::parse_table_update(table_update)?),
+                "vec_u64" => db_update
+                    .vec_u_64
+                    .append(vec_u_64_table::parse_table_update(table_update)?),
+                "vec_u8" => db_update
+                    .vec_u_8
+                    .append(vec_u_8_table::parse_table_update(table_update)?),
+                "vec_unit_struct" => db_update
+                    .vec_unit_struct
+                    .append(vec_unit_struct_table::parse_table_update(table_update)?),
+                "vec_uuid" => db_update
+                    .vec_uuid
+                    .append(vec_uuid_table::parse_table_update(table_update)?),
 
                 unknown => {
-                    return Err(__sdk::InternalError::unknown_name(
-                        "table",
-                        unknown,
-                        "DatabaseUpdate",
-                    ).into());
+                    return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
                 }
             }
         }
@@ -3227,19 +3097,26 @@ impl __sdk::InModule for DbUpdate {
 
 impl __sdk::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
-                    let mut diff = AppliedDiff::default();
-                
-                diff.btree_u_32 = cache.apply_diff_to_table::<BTreeU32>("btree_u32", &self.btree_u_32);
-        diff.indexed_simple_enum = cache.apply_diff_to_table::<IndexedSimpleEnum>("indexed_simple_enum", &self.indexed_simple_enum);
+        let mut diff = AppliedDiff::default();
+
+        diff.btree_u_32 = cache.apply_diff_to_table::<BTreeU32>("btree_u32", &self.btree_u_32);
+        diff.indexed_simple_enum =
+            cache.apply_diff_to_table::<IndexedSimpleEnum>("indexed_simple_enum", &self.indexed_simple_enum);
         diff.indexed_table = cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
         diff.indexed_table_2 = cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
         diff.large_table = cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
         diff.one_bool = cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
         diff.one_byte_struct = cache.apply_diff_to_table::<OneByteStruct>("one_byte_struct", &self.one_byte_struct);
-        diff.one_connection_id = cache.apply_diff_to_table::<OneConnectionId>("one_connection_id", &self.one_connection_id);
-        diff.one_enum_with_payload = cache.apply_diff_to_table::<OneEnumWithPayload>("one_enum_with_payload", &self.one_enum_with_payload);
-        diff.one_every_primitive_struct = cache.apply_diff_to_table::<OneEveryPrimitiveStruct>("one_every_primitive_struct", &self.one_every_primitive_struct);
-        diff.one_every_vec_struct = cache.apply_diff_to_table::<OneEveryVecStruct>("one_every_vec_struct", &self.one_every_vec_struct);
+        diff.one_connection_id =
+            cache.apply_diff_to_table::<OneConnectionId>("one_connection_id", &self.one_connection_id);
+        diff.one_enum_with_payload =
+            cache.apply_diff_to_table::<OneEnumWithPayload>("one_enum_with_payload", &self.one_enum_with_payload);
+        diff.one_every_primitive_struct = cache.apply_diff_to_table::<OneEveryPrimitiveStruct>(
+            "one_every_primitive_struct",
+            &self.one_every_primitive_struct,
+        );
+        diff.one_every_vec_struct =
+            cache.apply_diff_to_table::<OneEveryVecStruct>("one_every_vec_struct", &self.one_every_vec_struct);
         diff.one_f_32 = cache.apply_diff_to_table::<OneF32>("one_f32", &self.one_f_32);
         diff.one_f_64 = cache.apply_diff_to_table::<OneF64>("one_f64", &self.one_f_64);
         diff.one_i_128 = cache.apply_diff_to_table::<OneI128>("one_i128", &self.one_i_128);
@@ -3260,42 +3137,97 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.one_u_8 = cache.apply_diff_to_table::<OneU8>("one_u8", &self.one_u_8);
         diff.one_unit_struct = cache.apply_diff_to_table::<OneUnitStruct>("one_unit_struct", &self.one_unit_struct);
         diff.one_uuid = cache.apply_diff_to_table::<OneUuid>("one_uuid", &self.one_uuid);
-        diff.option_every_primitive_struct = cache.apply_diff_to_table::<OptionEveryPrimitiveStruct>("option_every_primitive_struct", &self.option_every_primitive_struct);
+        diff.option_every_primitive_struct = cache.apply_diff_to_table::<OptionEveryPrimitiveStruct>(
+            "option_every_primitive_struct",
+            &self.option_every_primitive_struct,
+        );
         diff.option_i_32 = cache.apply_diff_to_table::<OptionI32>("option_i32", &self.option_i_32);
         diff.option_identity = cache.apply_diff_to_table::<OptionIdentity>("option_identity", &self.option_identity);
-        diff.option_simple_enum = cache.apply_diff_to_table::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum);
+        diff.option_simple_enum =
+            cache.apply_diff_to_table::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum);
         diff.option_string = cache.apply_diff_to_table::<OptionString>("option_string", &self.option_string);
         diff.option_uuid = cache.apply_diff_to_table::<OptionUuid>("option_uuid", &self.option_uuid);
-        diff.option_vec_option_i_32 = cache.apply_diff_to_table::<OptionVecOptionI32>("option_vec_option_i32", &self.option_vec_option_i_32);
-        diff.pk_bool = cache.apply_diff_to_table::<PkBool>("pk_bool", &self.pk_bool).with_updates_by_pk(|row| &row.b);
-        diff.pk_connection_id = cache.apply_diff_to_table::<PkConnectionId>("pk_connection_id", &self.pk_connection_id).with_updates_by_pk(|row| &row.a);
-        diff.pk_i_128 = cache.apply_diff_to_table::<PkI128>("pk_i128", &self.pk_i_128).with_updates_by_pk(|row| &row.n);
-        diff.pk_i_16 = cache.apply_diff_to_table::<PkI16>("pk_i16", &self.pk_i_16).with_updates_by_pk(|row| &row.n);
-        diff.pk_i_256 = cache.apply_diff_to_table::<PkI256>("pk_i256", &self.pk_i_256).with_updates_by_pk(|row| &row.n);
-        diff.pk_i_32 = cache.apply_diff_to_table::<PkI32>("pk_i32", &self.pk_i_32).with_updates_by_pk(|row| &row.n);
-        diff.pk_i_64 = cache.apply_diff_to_table::<PkI64>("pk_i64", &self.pk_i_64).with_updates_by_pk(|row| &row.n);
-        diff.pk_i_8 = cache.apply_diff_to_table::<PkI8>("pk_i8", &self.pk_i_8).with_updates_by_pk(|row| &row.n);
-        diff.pk_identity = cache.apply_diff_to_table::<PkIdentity>("pk_identity", &self.pk_identity).with_updates_by_pk(|row| &row.i);
-        diff.pk_simple_enum = cache.apply_diff_to_table::<PkSimpleEnum>("pk_simple_enum", &self.pk_simple_enum).with_updates_by_pk(|row| &row.a);
-        diff.pk_string = cache.apply_diff_to_table::<PkString>("pk_string", &self.pk_string).with_updates_by_pk(|row| &row.s);
-        diff.pk_u_128 = cache.apply_diff_to_table::<PkU128>("pk_u128", &self.pk_u_128).with_updates_by_pk(|row| &row.n);
-        diff.pk_u_16 = cache.apply_diff_to_table::<PkU16>("pk_u16", &self.pk_u_16).with_updates_by_pk(|row| &row.n);
-        diff.pk_u_256 = cache.apply_diff_to_table::<PkU256>("pk_u256", &self.pk_u_256).with_updates_by_pk(|row| &row.n);
-        diff.pk_u_32 = cache.apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32).with_updates_by_pk(|row| &row.n);
-        diff.pk_u_32_two = cache.apply_diff_to_table::<PkU32Two>("pk_u32_two", &self.pk_u_32_two).with_updates_by_pk(|row| &row.n);
-        diff.pk_u_64 = cache.apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64).with_updates_by_pk(|row| &row.n);
-        diff.pk_u_8 = cache.apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8).with_updates_by_pk(|row| &row.n);
-        diff.pk_uuid = cache.apply_diff_to_table::<PkUuid>("pk_uuid", &self.pk_uuid).with_updates_by_pk(|row| &row.u);
-        diff.result_every_primitive_struct_string = cache.apply_diff_to_table::<ResultEveryPrimitiveStructString>("result_every_primitive_struct_string", &self.result_every_primitive_struct_string);
-        diff.result_i_32_string = cache.apply_diff_to_table::<ResultI32String>("result_i32_string", &self.result_i_32_string);
-        diff.result_identity_string = cache.apply_diff_to_table::<ResultIdentityString>("result_identity_string", &self.result_identity_string);
-        diff.result_simple_enum_i_32 = cache.apply_diff_to_table::<ResultSimpleEnumI32>("result_simple_enum_i32", &self.result_simple_enum_i_32);
-        diff.result_string_i_32 = cache.apply_diff_to_table::<ResultStringI32>("result_string_i32", &self.result_string_i_32);
-        diff.result_vec_i_32_string = cache.apply_diff_to_table::<ResultVecI32String>("result_vec_i32_string", &self.result_vec_i_32_string);
-        diff.scheduled_table = cache.apply_diff_to_table::<ScheduledTable>("scheduled_table", &self.scheduled_table).with_updates_by_pk(|row| &row.scheduled_id);
-        diff.table_holds_table = cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
+        diff.option_vec_option_i_32 =
+            cache.apply_diff_to_table::<OptionVecOptionI32>("option_vec_option_i32", &self.option_vec_option_i_32);
+        diff.pk_bool = cache
+            .apply_diff_to_table::<PkBool>("pk_bool", &self.pk_bool)
+            .with_updates_by_pk(|row| &row.b);
+        diff.pk_connection_id = cache
+            .apply_diff_to_table::<PkConnectionId>("pk_connection_id", &self.pk_connection_id)
+            .with_updates_by_pk(|row| &row.a);
+        diff.pk_i_128 = cache
+            .apply_diff_to_table::<PkI128>("pk_i128", &self.pk_i_128)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_16 = cache
+            .apply_diff_to_table::<PkI16>("pk_i16", &self.pk_i_16)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_256 = cache
+            .apply_diff_to_table::<PkI256>("pk_i256", &self.pk_i_256)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_32 = cache
+            .apply_diff_to_table::<PkI32>("pk_i32", &self.pk_i_32)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_64 = cache
+            .apply_diff_to_table::<PkI64>("pk_i64", &self.pk_i_64)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_8 = cache
+            .apply_diff_to_table::<PkI8>("pk_i8", &self.pk_i_8)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_identity = cache
+            .apply_diff_to_table::<PkIdentity>("pk_identity", &self.pk_identity)
+            .with_updates_by_pk(|row| &row.i);
+        diff.pk_simple_enum = cache
+            .apply_diff_to_table::<PkSimpleEnum>("pk_simple_enum", &self.pk_simple_enum)
+            .with_updates_by_pk(|row| &row.a);
+        diff.pk_string = cache
+            .apply_diff_to_table::<PkString>("pk_string", &self.pk_string)
+            .with_updates_by_pk(|row| &row.s);
+        diff.pk_u_128 = cache
+            .apply_diff_to_table::<PkU128>("pk_u128", &self.pk_u_128)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_16 = cache
+            .apply_diff_to_table::<PkU16>("pk_u16", &self.pk_u_16)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_256 = cache
+            .apply_diff_to_table::<PkU256>("pk_u256", &self.pk_u_256)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_32 = cache
+            .apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_32_two = cache
+            .apply_diff_to_table::<PkU32Two>("pk_u32_two", &self.pk_u_32_two)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_64 = cache
+            .apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_8 = cache
+            .apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_uuid = cache
+            .apply_diff_to_table::<PkUuid>("pk_uuid", &self.pk_uuid)
+            .with_updates_by_pk(|row| &row.u);
+        diff.result_every_primitive_struct_string = cache.apply_diff_to_table::<ResultEveryPrimitiveStructString>(
+            "result_every_primitive_struct_string",
+            &self.result_every_primitive_struct_string,
+        );
+        diff.result_i_32_string =
+            cache.apply_diff_to_table::<ResultI32String>("result_i32_string", &self.result_i_32_string);
+        diff.result_identity_string =
+            cache.apply_diff_to_table::<ResultIdentityString>("result_identity_string", &self.result_identity_string);
+        diff.result_simple_enum_i_32 =
+            cache.apply_diff_to_table::<ResultSimpleEnumI32>("result_simple_enum_i32", &self.result_simple_enum_i_32);
+        diff.result_string_i_32 =
+            cache.apply_diff_to_table::<ResultStringI32>("result_string_i32", &self.result_string_i_32);
+        diff.result_vec_i_32_string =
+            cache.apply_diff_to_table::<ResultVecI32String>("result_vec_i32_string", &self.result_vec_i_32_string);
+        diff.scheduled_table = cache
+            .apply_diff_to_table::<ScheduledTable>("scheduled_table", &self.scheduled_table)
+            .with_updates_by_pk(|row| &row.scheduled_id);
+        diff.table_holds_table =
+            cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
         diff.unique_bool = cache.apply_diff_to_table::<UniqueBool>("unique_bool", &self.unique_bool);
-        diff.unique_connection_id = cache.apply_diff_to_table::<UniqueConnectionId>("unique_connection_id", &self.unique_connection_id);
+        diff.unique_connection_id =
+            cache.apply_diff_to_table::<UniqueConnectionId>("unique_connection_id", &self.unique_connection_id);
         diff.unique_i_128 = cache.apply_diff_to_table::<UniqueI128>("unique_i128", &self.unique_i_128);
         diff.unique_i_16 = cache.apply_diff_to_table::<UniqueI16>("unique_i16", &self.unique_i_16);
         diff.unique_i_256 = cache.apply_diff_to_table::<UniqueI256>("unique_i256", &self.unique_i_256);
@@ -3311,13 +3243,21 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.unique_u_64 = cache.apply_diff_to_table::<UniqueU64>("unique_u64", &self.unique_u_64);
         diff.unique_u_8 = cache.apply_diff_to_table::<UniqueU8>("unique_u8", &self.unique_u_8);
         diff.unique_uuid = cache.apply_diff_to_table::<UniqueUuid>("unique_uuid", &self.unique_uuid);
-        diff.users = cache.apply_diff_to_table::<Users>("users", &self.users).with_updates_by_pk(|row| &row.identity);
+        diff.users = cache
+            .apply_diff_to_table::<Users>("users", &self.users)
+            .with_updates_by_pk(|row| &row.identity);
         diff.vec_bool = cache.apply_diff_to_table::<VecBool>("vec_bool", &self.vec_bool);
         diff.vec_byte_struct = cache.apply_diff_to_table::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct);
-        diff.vec_connection_id = cache.apply_diff_to_table::<VecConnectionId>("vec_connection_id", &self.vec_connection_id);
-        diff.vec_enum_with_payload = cache.apply_diff_to_table::<VecEnumWithPayload>("vec_enum_with_payload", &self.vec_enum_with_payload);
-        diff.vec_every_primitive_struct = cache.apply_diff_to_table::<VecEveryPrimitiveStruct>("vec_every_primitive_struct", &self.vec_every_primitive_struct);
-        diff.vec_every_vec_struct = cache.apply_diff_to_table::<VecEveryVecStruct>("vec_every_vec_struct", &self.vec_every_vec_struct);
+        diff.vec_connection_id =
+            cache.apply_diff_to_table::<VecConnectionId>("vec_connection_id", &self.vec_connection_id);
+        diff.vec_enum_with_payload =
+            cache.apply_diff_to_table::<VecEnumWithPayload>("vec_enum_with_payload", &self.vec_enum_with_payload);
+        diff.vec_every_primitive_struct = cache.apply_diff_to_table::<VecEveryPrimitiveStruct>(
+            "vec_every_primitive_struct",
+            &self.vec_every_primitive_struct,
+        );
+        diff.vec_every_vec_struct =
+            cache.apply_diff_to_table::<VecEveryVecStruct>("vec_every_vec_struct", &self.vec_every_vec_struct);
         diff.vec_f_32 = cache.apply_diff_to_table::<VecF32>("vec_f32", &self.vec_f_32);
         diff.vec_f_64 = cache.apply_diff_to_table::<VecF64>("vec_f64", &self.vec_f_64);
         diff.vec_i_128 = cache.apply_diff_to_table::<VecI128>("vec_i128", &self.vec_i_128);
@@ -3339,247 +3279,691 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.vec_unit_struct = cache.apply_diff_to_table::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct);
         diff.vec_uuid = cache.apply_diff_to_table::<VecUuid>("vec_uuid", &self.vec_uuid);
 
-                    diff
+        diff
+    }
+    fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
+        let mut db_update = DbUpdate::default();
+        for table_rows in raw.tables {
+            match &table_rows.table[..] {
+                "btree_u32" => db_update
+                    .btree_u_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "indexed_simple_enum" => db_update
+                    .indexed_simple_enum
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "indexed_table" => db_update
+                    .indexed_table
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "indexed_table_2" => db_update
+                    .indexed_table_2
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "large_table" => db_update
+                    .large_table
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_bool" => db_update
+                    .one_bool
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_byte_struct" => db_update
+                    .one_byte_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_connection_id" => db_update
+                    .one_connection_id
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_enum_with_payload" => db_update
+                    .one_enum_with_payload
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_every_primitive_struct" => db_update
+                    .one_every_primitive_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_every_vec_struct" => db_update
+                    .one_every_vec_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_f32" => db_update
+                    .one_f_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_f64" => db_update
+                    .one_f_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_i128" => db_update
+                    .one_i_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_i16" => db_update
+                    .one_i_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_i256" => db_update
+                    .one_i_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_i32" => db_update
+                    .one_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_i64" => db_update
+                    .one_i_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_i8" => db_update
+                    .one_i_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_identity" => db_update
+                    .one_identity
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_simple_enum" => db_update
+                    .one_simple_enum
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_string" => db_update
+                    .one_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_timestamp" => db_update
+                    .one_timestamp
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_u128" => db_update
+                    .one_u_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_u16" => db_update
+                    .one_u_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_u256" => db_update
+                    .one_u_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_u32" => db_update
+                    .one_u_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_u64" => db_update
+                    .one_u_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_u8" => db_update
+                    .one_u_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_unit_struct" => db_update
+                    .one_unit_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "one_uuid" => db_update
+                    .one_uuid
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "option_every_primitive_struct" => db_update
+                    .option_every_primitive_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "option_i32" => db_update
+                    .option_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "option_identity" => db_update
+                    .option_identity
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "option_simple_enum" => db_update
+                    .option_simple_enum
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "option_string" => db_update
+                    .option_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "option_uuid" => db_update
+                    .option_uuid
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "option_vec_option_i32" => db_update
+                    .option_vec_option_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_bool" => db_update
+                    .pk_bool
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_connection_id" => db_update
+                    .pk_connection_id
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_i128" => db_update
+                    .pk_i_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_i16" => db_update
+                    .pk_i_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_i256" => db_update
+                    .pk_i_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_i32" => db_update
+                    .pk_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_i64" => db_update
+                    .pk_i_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_i8" => db_update
+                    .pk_i_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_identity" => db_update
+                    .pk_identity
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_simple_enum" => db_update
+                    .pk_simple_enum
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_string" => db_update
+                    .pk_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_u128" => db_update
+                    .pk_u_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_u16" => db_update
+                    .pk_u_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_u256" => db_update
+                    .pk_u_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_u32" => db_update
+                    .pk_u_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_u32_two" => db_update
+                    .pk_u_32_two
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_u64" => db_update
+                    .pk_u_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_u8" => db_update
+                    .pk_u_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "pk_uuid" => db_update
+                    .pk_uuid
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "result_every_primitive_struct_string" => db_update
+                    .result_every_primitive_struct_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "result_i32_string" => db_update
+                    .result_i_32_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "result_identity_string" => db_update
+                    .result_identity_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "result_simple_enum_i32" => db_update
+                    .result_simple_enum_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "result_string_i32" => db_update
+                    .result_string_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "result_vec_i32_string" => db_update
+                    .result_vec_i_32_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "scheduled_table" => db_update
+                    .scheduled_table
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "table_holds_table" => db_update
+                    .table_holds_table
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_bool" => db_update
+                    .unique_bool
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_connection_id" => db_update
+                    .unique_connection_id
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_i128" => db_update
+                    .unique_i_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_i16" => db_update
+                    .unique_i_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_i256" => db_update
+                    .unique_i_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_i32" => db_update
+                    .unique_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_i64" => db_update
+                    .unique_i_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_i8" => db_update
+                    .unique_i_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_identity" => db_update
+                    .unique_identity
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_string" => db_update
+                    .unique_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_u128" => db_update
+                    .unique_u_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_u16" => db_update
+                    .unique_u_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_u256" => db_update
+                    .unique_u_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_u32" => db_update
+                    .unique_u_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_u64" => db_update
+                    .unique_u_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_u8" => db_update
+                    .unique_u_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "unique_uuid" => db_update
+                    .unique_uuid
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "users" => db_update
+                    .users
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_bool" => db_update
+                    .vec_bool
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_byte_struct" => db_update
+                    .vec_byte_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_connection_id" => db_update
+                    .vec_connection_id
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_enum_with_payload" => db_update
+                    .vec_enum_with_payload
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_every_primitive_struct" => db_update
+                    .vec_every_primitive_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_every_vec_struct" => db_update
+                    .vec_every_vec_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_f32" => db_update
+                    .vec_f_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_f64" => db_update
+                    .vec_f_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_i128" => db_update
+                    .vec_i_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_i16" => db_update
+                    .vec_i_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_i256" => db_update
+                    .vec_i_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_i32" => db_update
+                    .vec_i_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_i64" => db_update
+                    .vec_i_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_i8" => db_update
+                    .vec_i_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_identity" => db_update
+                    .vec_identity
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_simple_enum" => db_update
+                    .vec_simple_enum
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_string" => db_update
+                    .vec_string
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_timestamp" => db_update
+                    .vec_timestamp
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_u128" => db_update
+                    .vec_u_128
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_u16" => db_update
+                    .vec_u_16
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_u256" => db_update
+                    .vec_u_256
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_u32" => db_update
+                    .vec_u_32
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_u64" => db_update
+                    .vec_u_64
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_u8" => db_update
+                    .vec_u_8
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_unit_struct" => db_update
+                    .vec_unit_struct
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "vec_uuid" => db_update
+                    .vec_uuid
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                unknown => {
+                    return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
-fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
-                let mut db_update = DbUpdate::default();
-for table_rows in raw.tables {
+            }
+        }
+        Ok(db_update)
+    }
+    fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
+        let mut db_update = DbUpdate::default();
+        for table_rows in raw.tables {
             match &table_rows.table[..] {
-                                "btree_u32" => db_update.btree_u_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "indexed_simple_enum" => db_update.indexed_simple_enum.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "indexed_table" => db_update.indexed_table.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "indexed_table_2" => db_update.indexed_table_2.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "large_table" => db_update.large_table.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_bool" => db_update.one_bool.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_byte_struct" => db_update.one_byte_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_connection_id" => db_update.one_connection_id.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_enum_with_payload" => db_update.one_enum_with_payload.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_every_primitive_struct" => db_update.one_every_primitive_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_every_vec_struct" => db_update.one_every_vec_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_f32" => db_update.one_f_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_f64" => db_update.one_f_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_i128" => db_update.one_i_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_i16" => db_update.one_i_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_i256" => db_update.one_i_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_i32" => db_update.one_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_i64" => db_update.one_i_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_i8" => db_update.one_i_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_identity" => db_update.one_identity.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_simple_enum" => db_update.one_simple_enum.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_string" => db_update.one_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_timestamp" => db_update.one_timestamp.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_u128" => db_update.one_u_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_u16" => db_update.one_u_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_u256" => db_update.one_u_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_u32" => db_update.one_u_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_u64" => db_update.one_u_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_u8" => db_update.one_u_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_unit_struct" => db_update.one_unit_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "one_uuid" => db_update.one_uuid.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "option_every_primitive_struct" => db_update.option_every_primitive_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "option_i32" => db_update.option_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "option_identity" => db_update.option_identity.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "option_simple_enum" => db_update.option_simple_enum.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "option_string" => db_update.option_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "option_uuid" => db_update.option_uuid.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "option_vec_option_i32" => db_update.option_vec_option_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_bool" => db_update.pk_bool.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_connection_id" => db_update.pk_connection_id.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_i128" => db_update.pk_i_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_i16" => db_update.pk_i_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_i256" => db_update.pk_i_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_i32" => db_update.pk_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_i64" => db_update.pk_i_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_i8" => db_update.pk_i_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_identity" => db_update.pk_identity.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_simple_enum" => db_update.pk_simple_enum.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_string" => db_update.pk_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_u128" => db_update.pk_u_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_u16" => db_update.pk_u_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_u256" => db_update.pk_u_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_u32" => db_update.pk_u_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_u32_two" => db_update.pk_u_32_two.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_u64" => db_update.pk_u_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_u8" => db_update.pk_u_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_uuid" => db_update.pk_uuid.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "result_every_primitive_struct_string" => db_update.result_every_primitive_struct_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "result_i32_string" => db_update.result_i_32_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "result_identity_string" => db_update.result_identity_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "result_simple_enum_i32" => db_update.result_simple_enum_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "result_string_i32" => db_update.result_string_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "result_vec_i32_string" => db_update.result_vec_i_32_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "scheduled_table" => db_update.scheduled_table.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "table_holds_table" => db_update.table_holds_table.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_bool" => db_update.unique_bool.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_connection_id" => db_update.unique_connection_id.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_i128" => db_update.unique_i_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_i16" => db_update.unique_i_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_i256" => db_update.unique_i_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_i32" => db_update.unique_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_i64" => db_update.unique_i_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_i8" => db_update.unique_i_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_identity" => db_update.unique_identity.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_string" => db_update.unique_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_u128" => db_update.unique_u_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_u16" => db_update.unique_u_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_u256" => db_update.unique_u_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_u32" => db_update.unique_u_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_u64" => db_update.unique_u_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_u8" => db_update.unique_u_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "unique_uuid" => db_update.unique_uuid.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "users" => db_update.users.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_bool" => db_update.vec_bool.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_byte_struct" => db_update.vec_byte_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_connection_id" => db_update.vec_connection_id.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_enum_with_payload" => db_update.vec_enum_with_payload.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_every_primitive_struct" => db_update.vec_every_primitive_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_every_vec_struct" => db_update.vec_every_vec_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_f32" => db_update.vec_f_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_f64" => db_update.vec_f_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_i128" => db_update.vec_i_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_i16" => db_update.vec_i_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_i256" => db_update.vec_i_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_i32" => db_update.vec_i_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_i64" => db_update.vec_i_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_i8" => db_update.vec_i_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_identity" => db_update.vec_identity.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_simple_enum" => db_update.vec_simple_enum.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_string" => db_update.vec_string.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_timestamp" => db_update.vec_timestamp.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_u128" => db_update.vec_u_128.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_u16" => db_update.vec_u_16.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_u256" => db_update.vec_u_256.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_u32" => db_update.vec_u_32.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_u64" => db_update.vec_u_64.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_u8" => db_update.vec_u_8.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_unit_struct" => db_update.vec_unit_struct.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "vec_uuid" => db_update.vec_uuid.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
-}}        Ok(db_update)
-}
-fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
-                let mut db_update = DbUpdate::default();
-for table_rows in raw.tables {
-            match &table_rows.table[..] {
-                                "btree_u32" => db_update.btree_u_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "indexed_simple_enum" => db_update.indexed_simple_enum.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "indexed_table" => db_update.indexed_table.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "indexed_table_2" => db_update.indexed_table_2.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "large_table" => db_update.large_table.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_bool" => db_update.one_bool.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_byte_struct" => db_update.one_byte_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_connection_id" => db_update.one_connection_id.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_enum_with_payload" => db_update.one_enum_with_payload.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_every_primitive_struct" => db_update.one_every_primitive_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_every_vec_struct" => db_update.one_every_vec_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_f32" => db_update.one_f_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_f64" => db_update.one_f_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_i128" => db_update.one_i_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_i16" => db_update.one_i_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_i256" => db_update.one_i_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_i32" => db_update.one_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_i64" => db_update.one_i_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_i8" => db_update.one_i_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_identity" => db_update.one_identity.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_simple_enum" => db_update.one_simple_enum.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_string" => db_update.one_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_timestamp" => db_update.one_timestamp.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_u128" => db_update.one_u_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_u16" => db_update.one_u_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_u256" => db_update.one_u_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_u32" => db_update.one_u_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_u64" => db_update.one_u_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_u8" => db_update.one_u_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_unit_struct" => db_update.one_unit_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "one_uuid" => db_update.one_uuid.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "option_every_primitive_struct" => db_update.option_every_primitive_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "option_i32" => db_update.option_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "option_identity" => db_update.option_identity.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "option_simple_enum" => db_update.option_simple_enum.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "option_string" => db_update.option_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "option_uuid" => db_update.option_uuid.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "option_vec_option_i32" => db_update.option_vec_option_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_bool" => db_update.pk_bool.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_connection_id" => db_update.pk_connection_id.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_i128" => db_update.pk_i_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_i16" => db_update.pk_i_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_i256" => db_update.pk_i_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_i32" => db_update.pk_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_i64" => db_update.pk_i_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_i8" => db_update.pk_i_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_identity" => db_update.pk_identity.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_simple_enum" => db_update.pk_simple_enum.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_string" => db_update.pk_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_u128" => db_update.pk_u_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_u16" => db_update.pk_u_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_u256" => db_update.pk_u_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_u32" => db_update.pk_u_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_u32_two" => db_update.pk_u_32_two.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_u64" => db_update.pk_u_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_u8" => db_update.pk_u_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_uuid" => db_update.pk_uuid.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "result_every_primitive_struct_string" => db_update.result_every_primitive_struct_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "result_i32_string" => db_update.result_i_32_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "result_identity_string" => db_update.result_identity_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "result_simple_enum_i32" => db_update.result_simple_enum_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "result_string_i32" => db_update.result_string_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "result_vec_i32_string" => db_update.result_vec_i_32_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "scheduled_table" => db_update.scheduled_table.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "table_holds_table" => db_update.table_holds_table.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_bool" => db_update.unique_bool.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_connection_id" => db_update.unique_connection_id.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_i128" => db_update.unique_i_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_i16" => db_update.unique_i_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_i256" => db_update.unique_i_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_i32" => db_update.unique_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_i64" => db_update.unique_i_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_i8" => db_update.unique_i_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_identity" => db_update.unique_identity.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_string" => db_update.unique_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_u128" => db_update.unique_u_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_u16" => db_update.unique_u_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_u256" => db_update.unique_u_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_u32" => db_update.unique_u_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_u64" => db_update.unique_u_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_u8" => db_update.unique_u_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "unique_uuid" => db_update.unique_uuid.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "users" => db_update.users.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_bool" => db_update.vec_bool.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_byte_struct" => db_update.vec_byte_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_connection_id" => db_update.vec_connection_id.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_enum_with_payload" => db_update.vec_enum_with_payload.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_every_primitive_struct" => db_update.vec_every_primitive_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_every_vec_struct" => db_update.vec_every_vec_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_f32" => db_update.vec_f_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_f64" => db_update.vec_f_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_i128" => db_update.vec_i_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_i16" => db_update.vec_i_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_i256" => db_update.vec_i_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_i32" => db_update.vec_i_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_i64" => db_update.vec_i_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_i8" => db_update.vec_i_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_identity" => db_update.vec_identity.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_simple_enum" => db_update.vec_simple_enum.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_string" => db_update.vec_string.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_timestamp" => db_update.vec_timestamp.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_u128" => db_update.vec_u_128.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_u16" => db_update.vec_u_16.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_u256" => db_update.vec_u_256.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_u32" => db_update.vec_u_32.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_u64" => db_update.vec_u_64.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_u8" => db_update.vec_u_8.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_unit_struct" => db_update.vec_unit_struct.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "vec_uuid" => db_update.vec_uuid.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
-}}        Ok(db_update)
-}
+                "btree_u32" => db_update
+                    .btree_u_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "indexed_simple_enum" => db_update
+                    .indexed_simple_enum
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "indexed_table" => db_update
+                    .indexed_table
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "indexed_table_2" => db_update
+                    .indexed_table_2
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "large_table" => db_update
+                    .large_table
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_bool" => db_update
+                    .one_bool
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_byte_struct" => db_update
+                    .one_byte_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_connection_id" => db_update
+                    .one_connection_id
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_enum_with_payload" => db_update
+                    .one_enum_with_payload
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_every_primitive_struct" => db_update
+                    .one_every_primitive_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_every_vec_struct" => db_update
+                    .one_every_vec_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_f32" => db_update
+                    .one_f_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_f64" => db_update
+                    .one_f_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_i128" => db_update
+                    .one_i_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_i16" => db_update
+                    .one_i_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_i256" => db_update
+                    .one_i_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_i32" => db_update
+                    .one_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_i64" => db_update
+                    .one_i_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_i8" => db_update
+                    .one_i_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_identity" => db_update
+                    .one_identity
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_simple_enum" => db_update
+                    .one_simple_enum
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_string" => db_update
+                    .one_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_timestamp" => db_update
+                    .one_timestamp
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_u128" => db_update
+                    .one_u_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_u16" => db_update
+                    .one_u_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_u256" => db_update
+                    .one_u_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_u32" => db_update
+                    .one_u_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_u64" => db_update
+                    .one_u_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_u8" => db_update
+                    .one_u_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_unit_struct" => db_update
+                    .one_unit_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "one_uuid" => db_update
+                    .one_uuid
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "option_every_primitive_struct" => db_update
+                    .option_every_primitive_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "option_i32" => db_update
+                    .option_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "option_identity" => db_update
+                    .option_identity
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "option_simple_enum" => db_update
+                    .option_simple_enum
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "option_string" => db_update
+                    .option_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "option_uuid" => db_update
+                    .option_uuid
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "option_vec_option_i32" => db_update
+                    .option_vec_option_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_bool" => db_update
+                    .pk_bool
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_connection_id" => db_update
+                    .pk_connection_id
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_i128" => db_update
+                    .pk_i_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_i16" => db_update
+                    .pk_i_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_i256" => db_update
+                    .pk_i_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_i32" => db_update
+                    .pk_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_i64" => db_update
+                    .pk_i_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_i8" => db_update
+                    .pk_i_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_identity" => db_update
+                    .pk_identity
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_simple_enum" => db_update
+                    .pk_simple_enum
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_string" => db_update
+                    .pk_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_u128" => db_update
+                    .pk_u_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_u16" => db_update
+                    .pk_u_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_u256" => db_update
+                    .pk_u_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_u32" => db_update
+                    .pk_u_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_u32_two" => db_update
+                    .pk_u_32_two
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_u64" => db_update
+                    .pk_u_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_u8" => db_update
+                    .pk_u_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "pk_uuid" => db_update
+                    .pk_uuid
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "result_every_primitive_struct_string" => db_update
+                    .result_every_primitive_struct_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "result_i32_string" => db_update
+                    .result_i_32_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "result_identity_string" => db_update
+                    .result_identity_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "result_simple_enum_i32" => db_update
+                    .result_simple_enum_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "result_string_i32" => db_update
+                    .result_string_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "result_vec_i32_string" => db_update
+                    .result_vec_i_32_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "scheduled_table" => db_update
+                    .scheduled_table
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "table_holds_table" => db_update
+                    .table_holds_table
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_bool" => db_update
+                    .unique_bool
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_connection_id" => db_update
+                    .unique_connection_id
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_i128" => db_update
+                    .unique_i_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_i16" => db_update
+                    .unique_i_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_i256" => db_update
+                    .unique_i_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_i32" => db_update
+                    .unique_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_i64" => db_update
+                    .unique_i_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_i8" => db_update
+                    .unique_i_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_identity" => db_update
+                    .unique_identity
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_string" => db_update
+                    .unique_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_u128" => db_update
+                    .unique_u_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_u16" => db_update
+                    .unique_u_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_u256" => db_update
+                    .unique_u_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_u32" => db_update
+                    .unique_u_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_u64" => db_update
+                    .unique_u_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_u8" => db_update
+                    .unique_u_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "unique_uuid" => db_update
+                    .unique_uuid
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "users" => db_update
+                    .users
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_bool" => db_update
+                    .vec_bool
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_byte_struct" => db_update
+                    .vec_byte_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_connection_id" => db_update
+                    .vec_connection_id
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_enum_with_payload" => db_update
+                    .vec_enum_with_payload
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_every_primitive_struct" => db_update
+                    .vec_every_primitive_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_every_vec_struct" => db_update
+                    .vec_every_vec_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_f32" => db_update
+                    .vec_f_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_f64" => db_update
+                    .vec_f_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_i128" => db_update
+                    .vec_i_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_i16" => db_update
+                    .vec_i_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_i256" => db_update
+                    .vec_i_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_i32" => db_update
+                    .vec_i_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_i64" => db_update
+                    .vec_i_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_i8" => db_update
+                    .vec_i_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_identity" => db_update
+                    .vec_identity
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_simple_enum" => db_update
+                    .vec_simple_enum
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_string" => db_update
+                    .vec_string
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_timestamp" => db_update
+                    .vec_timestamp
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_u128" => db_update
+                    .vec_u_128
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_u16" => db_update
+                    .vec_u_16
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_u256" => db_update
+                    .vec_u_256
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_u32" => db_update
+                    .vec_u_32
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_u64" => db_update
+                    .vec_u_64
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_u8" => db_update
+                    .vec_u_8
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_unit_struct" => db_update
+                    .vec_unit_struct
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "vec_uuid" => db_update
+                    .vec_uuid
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                unknown => {
+                    return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
+                }
+            }
+        }
+        Ok(db_update)
+    }
 }
 
 #[derive(Default)]
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
-        btree_u_32: __sdk::TableAppliedDiff<'r, BTreeU32>,
+    btree_u_32: __sdk::TableAppliedDiff<'r, BTreeU32>,
     indexed_simple_enum: __sdk::TableAppliedDiff<'r, IndexedSimpleEnum>,
     indexed_table: __sdk::TableAppliedDiff<'r, IndexedTable>,
     indexed_table_2: __sdk::TableAppliedDiff<'r, IndexedTable2>,
@@ -3691,24 +4075,39 @@ pub struct AppliedDiff<'r> {
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
-
 impl __sdk::InModule for AppliedDiff<'_> {
     type Module = RemoteModule;
 }
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
-                callbacks.invoke_table_row_callbacks::<BTreeU32>("btree_u32", &self.btree_u_32, event);
-        callbacks.invoke_table_row_callbacks::<IndexedSimpleEnum>("indexed_simple_enum", &self.indexed_simple_enum, event);
+        callbacks.invoke_table_row_callbacks::<BTreeU32>("btree_u32", &self.btree_u_32, event);
+        callbacks.invoke_table_row_callbacks::<IndexedSimpleEnum>(
+            "indexed_simple_enum",
+            &self.indexed_simple_enum,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
         callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
         callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
         callbacks.invoke_table_row_callbacks::<OneBool>("one_bool", &self.one_bool, event);
         callbacks.invoke_table_row_callbacks::<OneByteStruct>("one_byte_struct", &self.one_byte_struct, event);
         callbacks.invoke_table_row_callbacks::<OneConnectionId>("one_connection_id", &self.one_connection_id, event);
-        callbacks.invoke_table_row_callbacks::<OneEnumWithPayload>("one_enum_with_payload", &self.one_enum_with_payload, event);
-        callbacks.invoke_table_row_callbacks::<OneEveryPrimitiveStruct>("one_every_primitive_struct", &self.one_every_primitive_struct, event);
-        callbacks.invoke_table_row_callbacks::<OneEveryVecStruct>("one_every_vec_struct", &self.one_every_vec_struct, event);
+        callbacks.invoke_table_row_callbacks::<OneEnumWithPayload>(
+            "one_enum_with_payload",
+            &self.one_enum_with_payload,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<OneEveryPrimitiveStruct>(
+            "one_every_primitive_struct",
+            &self.one_every_primitive_struct,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<OneEveryVecStruct>(
+            "one_every_vec_struct",
+            &self.one_every_vec_struct,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<OneF32>("one_f32", &self.one_f_32, event);
         callbacks.invoke_table_row_callbacks::<OneF64>("one_f64", &self.one_f_64, event);
         callbacks.invoke_table_row_callbacks::<OneI128>("one_i128", &self.one_i_128, event);
@@ -3729,13 +4128,21 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<OneU8>("one_u8", &self.one_u_8, event);
         callbacks.invoke_table_row_callbacks::<OneUnitStruct>("one_unit_struct", &self.one_unit_struct, event);
         callbacks.invoke_table_row_callbacks::<OneUuid>("one_uuid", &self.one_uuid, event);
-        callbacks.invoke_table_row_callbacks::<OptionEveryPrimitiveStruct>("option_every_primitive_struct", &self.option_every_primitive_struct, event);
+        callbacks.invoke_table_row_callbacks::<OptionEveryPrimitiveStruct>(
+            "option_every_primitive_struct",
+            &self.option_every_primitive_struct,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<OptionI32>("option_i32", &self.option_i_32, event);
         callbacks.invoke_table_row_callbacks::<OptionIdentity>("option_identity", &self.option_identity, event);
         callbacks.invoke_table_row_callbacks::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum, event);
         callbacks.invoke_table_row_callbacks::<OptionString>("option_string", &self.option_string, event);
         callbacks.invoke_table_row_callbacks::<OptionUuid>("option_uuid", &self.option_uuid, event);
-        callbacks.invoke_table_row_callbacks::<OptionVecOptionI32>("option_vec_option_i32", &self.option_vec_option_i_32, event);
+        callbacks.invoke_table_row_callbacks::<OptionVecOptionI32>(
+            "option_vec_option_i32",
+            &self.option_vec_option_i_32,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<PkBool>("pk_bool", &self.pk_bool, event);
         callbacks.invoke_table_row_callbacks::<PkConnectionId>("pk_connection_id", &self.pk_connection_id, event);
         callbacks.invoke_table_row_callbacks::<PkI128>("pk_i128", &self.pk_i_128, event);
@@ -3755,16 +4162,36 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PkU64>("pk_u64", &self.pk_u_64, event);
         callbacks.invoke_table_row_callbacks::<PkU8>("pk_u8", &self.pk_u_8, event);
         callbacks.invoke_table_row_callbacks::<PkUuid>("pk_uuid", &self.pk_uuid, event);
-        callbacks.invoke_table_row_callbacks::<ResultEveryPrimitiveStructString>("result_every_primitive_struct_string", &self.result_every_primitive_struct_string, event);
+        callbacks.invoke_table_row_callbacks::<ResultEveryPrimitiveStructString>(
+            "result_every_primitive_struct_string",
+            &self.result_every_primitive_struct_string,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<ResultI32String>("result_i32_string", &self.result_i_32_string, event);
-        callbacks.invoke_table_row_callbacks::<ResultIdentityString>("result_identity_string", &self.result_identity_string, event);
-        callbacks.invoke_table_row_callbacks::<ResultSimpleEnumI32>("result_simple_enum_i32", &self.result_simple_enum_i_32, event);
+        callbacks.invoke_table_row_callbacks::<ResultIdentityString>(
+            "result_identity_string",
+            &self.result_identity_string,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ResultSimpleEnumI32>(
+            "result_simple_enum_i32",
+            &self.result_simple_enum_i_32,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<ResultStringI32>("result_string_i32", &self.result_string_i_32, event);
-        callbacks.invoke_table_row_callbacks::<ResultVecI32String>("result_vec_i32_string", &self.result_vec_i_32_string, event);
+        callbacks.invoke_table_row_callbacks::<ResultVecI32String>(
+            "result_vec_i32_string",
+            &self.result_vec_i_32_string,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<ScheduledTable>("scheduled_table", &self.scheduled_table, event);
         callbacks.invoke_table_row_callbacks::<TableHoldsTable>("table_holds_table", &self.table_holds_table, event);
         callbacks.invoke_table_row_callbacks::<UniqueBool>("unique_bool", &self.unique_bool, event);
-        callbacks.invoke_table_row_callbacks::<UniqueConnectionId>("unique_connection_id", &self.unique_connection_id, event);
+        callbacks.invoke_table_row_callbacks::<UniqueConnectionId>(
+            "unique_connection_id",
+            &self.unique_connection_id,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<UniqueI128>("unique_i128", &self.unique_i_128, event);
         callbacks.invoke_table_row_callbacks::<UniqueI16>("unique_i16", &self.unique_i_16, event);
         callbacks.invoke_table_row_callbacks::<UniqueI256>("unique_i256", &self.unique_i_256, event);
@@ -3784,9 +4211,21 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<VecBool>("vec_bool", &self.vec_bool, event);
         callbacks.invoke_table_row_callbacks::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct, event);
         callbacks.invoke_table_row_callbacks::<VecConnectionId>("vec_connection_id", &self.vec_connection_id, event);
-        callbacks.invoke_table_row_callbacks::<VecEnumWithPayload>("vec_enum_with_payload", &self.vec_enum_with_payload, event);
-        callbacks.invoke_table_row_callbacks::<VecEveryPrimitiveStruct>("vec_every_primitive_struct", &self.vec_every_primitive_struct, event);
-        callbacks.invoke_table_row_callbacks::<VecEveryVecStruct>("vec_every_vec_struct", &self.vec_every_vec_struct, event);
+        callbacks.invoke_table_row_callbacks::<VecEnumWithPayload>(
+            "vec_enum_with_payload",
+            &self.vec_enum_with_payload,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<VecEveryPrimitiveStruct>(
+            "vec_every_primitive_struct",
+            &self.vec_every_primitive_struct,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<VecEveryVecStruct>(
+            "vec_every_vec_struct",
+            &self.vec_every_vec_struct,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<VecF32>("vec_f32", &self.vec_f_32, event);
         callbacks.invoke_table_row_callbacks::<VecF64>("vec_f64", &self.vec_f_64, event);
         callbacks.invoke_table_row_callbacks::<VecI128>("vec_i128", &self.vec_i_128, event);
@@ -3807,9 +4246,8 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<VecU8>("vec_u8", &self.vec_u_8, event);
         callbacks.invoke_table_row_callbacks::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct, event);
         callbacks.invoke_table_row_callbacks::<VecUuid>("vec_uuid", &self.vec_uuid, event);
+    }
 }
-}
-
 
 #[doc(hidden)]
 pub struct RemoteModule;
@@ -4038,7 +4476,6 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
     fn unsubscribe(self) -> __sdk::Result<()> {
         self.imp.unsubscribe_then(None)
     }
-
 }
 
 /// Alias trait for a [`__sdk::DbContext`] connected to this module,
@@ -4046,17 +4483,23 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 ///
 /// Users can use this trait as a boundary on definitions which should accept
 /// either a [`DbConnection`] or an [`EventContext`] and operate on either.
-pub trait RemoteDbContext: __sdk::DbContext<
+pub trait RemoteDbContext:
+    __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
     SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
-> {}
-impl<Ctx: __sdk::DbContext<
-    DbView = RemoteTables,
-    Reducers = RemoteReducers,
-    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
->> RemoteDbContext for Ctx {}
-
+>
+{
+}
+impl<
+        Ctx: __sdk::DbContext<
+            DbView = RemoteTables,
+            Reducers = RemoteReducers,
+            SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
+        >,
+    > RemoteDbContext for Ctx
+{
+}
 
 /// An [`__sdk::DbContext`] augmented with a [`__sdk::Event`],
 /// passed to [`__sdk::Table::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks.
@@ -4431,7 +4874,6 @@ impl __sdk::DbContext for ErrorContext {
 impl __sdk::ErrorContext for ErrorContext {}
 
 impl __sdk::SpacetimeModule for RemoteModule {
-    
     type DbConnection = DbConnection;
     type EventContext = EventContext;
     type ReducerEventContext = ReducerEventContext;
@@ -4447,8 +4889,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
     type QueryBuilder = __sdk::QueryBuilder;
 
-fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-                btree_u_32_table::register_table(client_cache);
+    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        btree_u_32_table::register_table(client_cache);
         indexed_simple_enum_table::register_table(client_cache);
         indexed_table_table::register_table(client_cache);
         indexed_table_2_table::register_table(client_cache);
@@ -4557,5 +4999,5 @@ fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         vec_u_8_table::register_table(client_cache);
         vec_unit_struct_table::register_table(client_cache);
         vec_uuid_table::register_table(client_cache);
-}
+    }
 }

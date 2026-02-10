@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
@@ -17,11 +12,9 @@ pub struct OneEveryPrimitiveStruct {
     pub s: EveryPrimitiveStruct,
 }
 
-
 impl __sdk::InModule for OneEveryPrimitiveStruct {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `OneEveryPrimitiveStruct`.
 ///
@@ -35,7 +28,6 @@ impl __sdk::__query_builder::HasCols for OneEveryPrimitiveStruct {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneEveryPrimitiveStructCols {
             s: __sdk::__query_builder::Col::new(table_name, "s"),
-
         }
     }
 }
@@ -43,17 +35,13 @@ impl __sdk::__query_builder::HasCols for OneEveryPrimitiveStruct {
 /// Indexed column accessor struct for the table `OneEveryPrimitiveStruct`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneEveryPrimitiveStructIxCols {
-}
+pub struct OneEveryPrimitiveStructIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for OneEveryPrimitiveStruct {
     type IxCols = OneEveryPrimitiveStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneEveryPrimitiveStructIxCols {
-
-        }
+        OneEveryPrimitiveStructIxCols {}
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for OneEveryPrimitiveStruct {}
-
