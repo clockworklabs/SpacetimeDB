@@ -319,7 +319,6 @@ impl WsConnection {
                     },
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
-                        log::debug!("Got binary message: {bytes:x}");
                         idle = false;
                         record_metrics(bytes.len());
                         match Self::parse_response(&bytes) {
