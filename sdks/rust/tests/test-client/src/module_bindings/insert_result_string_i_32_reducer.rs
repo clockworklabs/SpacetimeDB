@@ -2,18 +2,26 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertResultStringI32Args {
-    pub r: Result<String, i32>,
+    pub r: Result::<String, i32>,
 }
 
 impl From<InsertResultStringI32Args> for super::Reducer {
     fn from(args: InsertResultStringI32Args) -> Self {
-        Self::InsertResultStringI32 { r: args.r }
-    }
+        Self::InsertResultStringI32 {
+            r: args.r,
+}
+}
 }
 
 impl __sdk::InModule for InsertResultStringI32Args {
@@ -31,8 +39,9 @@ pub trait insert_result_string_i_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_result_string_i_32:insert_result_string_i_32_then`] to run a callback after the reducer completes.
-    fn insert_result_string_i_32(&self, r: Result<String, i32>) -> __sdk::Result<()> {
-        self.insert_result_string_i_32_then(r, |_, _| {})
+    fn insert_result_string_i_32(&self, r: Result::<String, i32>,
+) -> __sdk::Result<()> {
+        self.insert_result_string_i_32_then(r,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_result_string_i32` to run as soon as possible,
@@ -43,7 +52,7 @@ pub trait insert_result_string_i_32 {
     ///  and its status can be observed with the `callback`.
     fn insert_result_string_i_32_then(
         &self,
-        r: Result<String, i32>,
+        r: Result::<String, i32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -54,13 +63,13 @@ pub trait insert_result_string_i_32 {
 impl insert_result_string_i_32 for super::RemoteReducers {
     fn insert_result_string_i_32_then(
         &self,
-        r: Result<String, i32>,
+        r: Result::<String, i32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertResultStringI32Args { r }, callback)
+        self.imp.invoke_reducer_with_callback(InsertResultStringI32Args { r,  }, callback)
     }
 }
+

@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::one_f_32_type::OneF32;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_f32`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for OneF32TableHandle<'ctx> {
     type Row = OneF32;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = OneF32> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = OneF32> + '_ { self.imp.iter() }
 
     type InsertCallbackId = OneF32InsertCallbackId;
 
@@ -80,30 +81,35 @@ impl<'ctx> __sdk::Table for OneF32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneF32>("one_f32");
+
+        let _table = client_cache.get_or_make_table::<OneF32>("one_f32");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OneF32>> {
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<OneF32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<OneF32>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<OneF32>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `OneF32`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_f32QueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `OneF32`.
-    fn one_f32(&self) -> __sdk::__query_builder::Table<OneF32>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `OneF32`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait one_f32QueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `OneF32`.
+            fn one_f32(&self) -> __sdk::__query_builder::Table<OneF32>;
+        }
 
-impl one_f32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_f32(&self) -> __sdk::__query_builder::Table<OneF32> {
-        __sdk::__query_builder::Table::new("one_f32")
-    }
-}
+        impl one_f32QueryTableAccess for __sdk::QueryTableAccessor {
+            fn one_f32(&self) -> __sdk::__query_builder::Table<OneF32> {
+                __sdk::__query_builder::Table::new("one_f32")
+            }
+        }
+

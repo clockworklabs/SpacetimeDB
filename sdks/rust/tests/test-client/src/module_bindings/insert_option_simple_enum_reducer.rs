@@ -2,20 +2,27 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertOptionSimpleEnumArgs {
-    pub e: Option<SimpleEnum>,
+    pub e: Option::<SimpleEnum>,
 }
 
 impl From<InsertOptionSimpleEnumArgs> for super::Reducer {
     fn from(args: InsertOptionSimpleEnumArgs) -> Self {
-        Self::InsertOptionSimpleEnum { e: args.e }
-    }
+        Self::InsertOptionSimpleEnum {
+            e: args.e,
+}
+}
 }
 
 impl __sdk::InModule for InsertOptionSimpleEnumArgs {
@@ -33,8 +40,9 @@ pub trait insert_option_simple_enum {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_option_simple_enum:insert_option_simple_enum_then`] to run a callback after the reducer completes.
-    fn insert_option_simple_enum(&self, e: Option<SimpleEnum>) -> __sdk::Result<()> {
-        self.insert_option_simple_enum_then(e, |_, _| {})
+    fn insert_option_simple_enum(&self, e: Option::<SimpleEnum>,
+) -> __sdk::Result<()> {
+        self.insert_option_simple_enum_then(e,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_option_simple_enum` to run as soon as possible,
@@ -45,7 +53,7 @@ pub trait insert_option_simple_enum {
     ///  and its status can be observed with the `callback`.
     fn insert_option_simple_enum_then(
         &self,
-        e: Option<SimpleEnum>,
+        e: Option::<SimpleEnum>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -56,13 +64,13 @@ pub trait insert_option_simple_enum {
 impl insert_option_simple_enum for super::RemoteReducers {
     fn insert_option_simple_enum_then(
         &self,
-        e: Option<SimpleEnum>,
+        e: Option::<SimpleEnum>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertOptionSimpleEnumArgs { e }, callback)
+        self.imp.invoke_reducer_with_callback(InsertOptionSimpleEnumArgs { e,  }, callback)
     }
 }
+

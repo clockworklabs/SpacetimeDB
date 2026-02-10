@@ -2,20 +2,27 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertOptionEveryPrimitiveStructArgs {
-    pub s: Option<EveryPrimitiveStruct>,
+    pub s: Option::<EveryPrimitiveStruct>,
 }
 
 impl From<InsertOptionEveryPrimitiveStructArgs> for super::Reducer {
     fn from(args: InsertOptionEveryPrimitiveStructArgs) -> Self {
-        Self::InsertOptionEveryPrimitiveStruct { s: args.s }
-    }
+        Self::InsertOptionEveryPrimitiveStruct {
+            s: args.s,
+}
+}
 }
 
 impl __sdk::InModule for InsertOptionEveryPrimitiveStructArgs {
@@ -33,8 +40,9 @@ pub trait insert_option_every_primitive_struct {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_option_every_primitive_struct:insert_option_every_primitive_struct_then`] to run a callback after the reducer completes.
-    fn insert_option_every_primitive_struct(&self, s: Option<EveryPrimitiveStruct>) -> __sdk::Result<()> {
-        self.insert_option_every_primitive_struct_then(s, |_, _| {})
+    fn insert_option_every_primitive_struct(&self, s: Option::<EveryPrimitiveStruct>,
+) -> __sdk::Result<()> {
+        self.insert_option_every_primitive_struct_then(s,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_option_every_primitive_struct` to run as soon as possible,
@@ -45,7 +53,7 @@ pub trait insert_option_every_primitive_struct {
     ///  and its status can be observed with the `callback`.
     fn insert_option_every_primitive_struct_then(
         &self,
-        s: Option<EveryPrimitiveStruct>,
+        s: Option::<EveryPrimitiveStruct>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -56,13 +64,13 @@ pub trait insert_option_every_primitive_struct {
 impl insert_option_every_primitive_struct for super::RemoteReducers {
     fn insert_option_every_primitive_struct_then(
         &self,
-        s: Option<EveryPrimitiveStruct>,
+        s: Option::<EveryPrimitiveStruct>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertOptionEveryPrimitiveStructArgs { s }, callback)
+        self.imp.invoke_reducer_with_callback(InsertOptionEveryPrimitiveStructArgs { s,  }, callback)
     }
 }
+

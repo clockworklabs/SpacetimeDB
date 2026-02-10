@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -18,8 +23,8 @@ impl From<UpdatePkSimpleEnumArgs> for super::Reducer {
         Self::UpdatePkSimpleEnum {
             a: args.a,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for UpdatePkSimpleEnumArgs {
@@ -37,8 +42,10 @@ pub trait update_pk_simple_enum {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`update_pk_simple_enum:update_pk_simple_enum_then`] to run a callback after the reducer completes.
-    fn update_pk_simple_enum(&self, a: SimpleEnum, data: i32) -> __sdk::Result<()> {
-        self.update_pk_simple_enum_then(a, data, |_, _| {})
+    fn update_pk_simple_enum(&self, a: SimpleEnum,
+data: i32,
+) -> __sdk::Result<()> {
+        self.update_pk_simple_enum_then(a, data,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_pk_simple_enum` to run as soon as possible,
@@ -50,7 +57,7 @@ pub trait update_pk_simple_enum {
     fn update_pk_simple_enum_then(
         &self,
         a: SimpleEnum,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -62,13 +69,13 @@ impl update_pk_simple_enum for super::RemoteReducers {
     fn update_pk_simple_enum_then(
         &self,
         a: SimpleEnum,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(UpdatePkSimpleEnumArgs { a, data }, callback)
+        self.imp.invoke_reducer_with_callback(UpdatePkSimpleEnumArgs { a, data,  }, callback)
     }
 }
+

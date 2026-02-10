@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -14,8 +19,10 @@ pub(super) struct InsertOneSimpleEnumArgs {
 
 impl From<InsertOneSimpleEnumArgs> for super::Reducer {
     fn from(args: InsertOneSimpleEnumArgs) -> Self {
-        Self::InsertOneSimpleEnum { e: args.e }
-    }
+        Self::InsertOneSimpleEnum {
+            e: args.e,
+}
+}
 }
 
 impl __sdk::InModule for InsertOneSimpleEnumArgs {
@@ -33,8 +40,9 @@ pub trait insert_one_simple_enum {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_one_simple_enum:insert_one_simple_enum_then`] to run a callback after the reducer completes.
-    fn insert_one_simple_enum(&self, e: SimpleEnum) -> __sdk::Result<()> {
-        self.insert_one_simple_enum_then(e, |_, _| {})
+    fn insert_one_simple_enum(&self, e: SimpleEnum,
+) -> __sdk::Result<()> {
+        self.insert_one_simple_enum_then(e,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_one_simple_enum` to run as soon as possible,
@@ -62,7 +70,7 @@ impl insert_one_simple_enum for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertOneSimpleEnumArgs { e }, callback)
+        self.imp.invoke_reducer_with_callback(InsertOneSimpleEnumArgs { e,  }, callback)
     }
 }
+

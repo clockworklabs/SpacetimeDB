@@ -2,25 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct OptionSimpleEnum {
-    pub e: Option<SimpleEnum>,
+    pub e: Option::<SimpleEnum>,
 }
+
 
 impl __sdk::InModule for OptionSimpleEnum {
     type Module = super::RemoteModule;
 }
 
+
 /// Column accessor struct for the table `OptionSimpleEnum`.
 ///
 /// Provides typed access to columns for query building.
 pub struct OptionSimpleEnumCols {
-    pub e: __sdk::__query_builder::Col<OptionSimpleEnum, Option<SimpleEnum>>,
+    pub e: __sdk::__query_builder::Col<OptionSimpleEnum, Option::<SimpleEnum>>,
 }
 
 impl __sdk::__query_builder::HasCols for OptionSimpleEnum {
@@ -28,6 +35,7 @@ impl __sdk::__query_builder::HasCols for OptionSimpleEnum {
     fn cols(table_name: &'static str) -> Self::Cols {
         OptionSimpleEnumCols {
             e: __sdk::__query_builder::Col::new(table_name, "e"),
+
         }
     }
 }
@@ -35,13 +43,17 @@ impl __sdk::__query_builder::HasCols for OptionSimpleEnum {
 /// Indexed column accessor struct for the table `OptionSimpleEnum`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OptionSimpleEnumIxCols {}
+pub struct OptionSimpleEnumIxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for OptionSimpleEnum {
     type IxCols = OptionSimpleEnumIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OptionSimpleEnumIxCols {}
+        OptionSimpleEnumIxCols {
+
+        }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for OptionSimpleEnum {}
+

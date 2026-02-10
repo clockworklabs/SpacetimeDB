@@ -2,16 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct InsertCallerOneIdentityArgs {}
+pub(super) struct InsertCallerOneIdentityArgs {
+    }
 
 impl From<InsertCallerOneIdentityArgs> for super::Reducer {
     fn from(args: InsertCallerOneIdentityArgs) -> Self {
         Self::InsertCallerOneIdentity
-    }
+}
 }
 
 impl __sdk::InModule for InsertCallerOneIdentityArgs {
@@ -29,8 +36,8 @@ pub trait insert_caller_one_identity {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_caller_one_identity:insert_caller_one_identity_then`] to run a callback after the reducer completes.
-    fn insert_caller_one_identity(&self) -> __sdk::Result<()> {
-        self.insert_caller_one_identity_then(|_, _| {})
+    fn insert_caller_one_identity(&self, ) -> __sdk::Result<()> {
+        self.insert_caller_one_identity_then( |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_caller_one_identity` to run as soon as possible,
@@ -41,7 +48,7 @@ pub trait insert_caller_one_identity {
     ///  and its status can be observed with the `callback`.
     fn insert_caller_one_identity_then(
         &self,
-
+        
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
@@ -51,12 +58,12 @@ pub trait insert_caller_one_identity {
 impl insert_caller_one_identity for super::RemoteReducers {
     fn insert_caller_one_identity_then(
         &self,
-
+        
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertCallerOneIdentityArgs {}, callback)
+        self.imp.invoke_reducer_with_callback(InsertCallerOneIdentityArgs {  }, callback)
     }
 }
+

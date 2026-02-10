@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -13,9 +18,11 @@ pub struct PkSimpleEnum {
     pub data: i32,
 }
 
+
 impl __sdk::InModule for PkSimpleEnum {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PkSimpleEnum`.
 ///
@@ -31,6 +38,7 @@ impl __sdk::__query_builder::HasCols for PkSimpleEnum {
         PkSimpleEnumCols {
             a: __sdk::__query_builder::Col::new(table_name, "a"),
             data: __sdk::__query_builder::Col::new(table_name, "data"),
+
         }
     }
 }
@@ -47,8 +55,10 @@ impl __sdk::__query_builder::HasIxCols for PkSimpleEnum {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PkSimpleEnumIxCols {
             a: __sdk::__query_builder::IxCol::new(table_name, "a"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PkSimpleEnum {}
+

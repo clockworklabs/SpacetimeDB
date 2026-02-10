@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::vec_f_32_type::VecF32;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_f32`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for VecF32TableHandle<'ctx> {
     type Row = VecF32;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = VecF32> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = VecF32> + '_ { self.imp.iter() }
 
     type InsertCallbackId = VecF32InsertCallbackId;
 
@@ -80,30 +81,35 @@ impl<'ctx> __sdk::Table for VecF32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecF32>("vec_f32");
+
+        let _table = client_cache.get_or_make_table::<VecF32>("vec_f32");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<VecF32>> {
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<VecF32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<VecF32>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<VecF32>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `VecF32`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait vec_f32QueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `VecF32`.
-    fn vec_f32(&self) -> __sdk::__query_builder::Table<VecF32>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `VecF32`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait vec_f32QueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `VecF32`.
+            fn vec_f32(&self) -> __sdk::__query_builder::Table<VecF32>;
+        }
 
-impl vec_f32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_f32(&self) -> __sdk::__query_builder::Table<VecF32> {
-        __sdk::__query_builder::Table::new("vec_f32")
-    }
-}
+        impl vec_f32QueryTableAccess for __sdk::QueryTableAccessor {
+            fn vec_f32(&self) -> __sdk::__query_builder::Table<VecF32> {
+                __sdk::__query_builder::Table::new("vec_f32")
+            }
+        }
+

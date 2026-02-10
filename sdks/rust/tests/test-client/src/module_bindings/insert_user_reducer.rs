@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<InsertUserArgs> for super::Reducer {
         Self::InsertUser {
             name: args.name,
             identity: args.identity,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for InsertUserArgs {
@@ -35,8 +41,10 @@ pub trait insert_user {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_user:insert_user_then`] to run a callback after the reducer completes.
-    fn insert_user(&self, name: String, identity: __sdk::Identity) -> __sdk::Result<()> {
-        self.insert_user_then(name, identity, |_, _| {})
+    fn insert_user(&self, name: String,
+identity: __sdk::Identity,
+) -> __sdk::Result<()> {
+        self.insert_user_then(name, identity,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_user` to run as soon as possible,
@@ -48,7 +56,7 @@ pub trait insert_user {
     fn insert_user_then(
         &self,
         name: String,
-        identity: __sdk::Identity,
+identity: __sdk::Identity,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -60,13 +68,13 @@ impl insert_user for super::RemoteReducers {
     fn insert_user_then(
         &self,
         name: String,
-        identity: __sdk::Identity,
+identity: __sdk::Identity,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertUserArgs { name, identity }, callback)
+        self.imp.invoke_reducer_with_callback(InsertUserArgs { name, identity,  }, callback)
     }
 }
+

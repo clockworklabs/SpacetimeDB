@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct InsertOneU128Args {
 
 impl From<InsertOneU128Args> for super::Reducer {
     fn from(args: InsertOneU128Args) -> Self {
-        Self::InsertOneU128 { n: args.n }
-    }
+        Self::InsertOneU128 {
+            n: args.n,
+}
+}
 }
 
 impl __sdk::InModule for InsertOneU128Args {
@@ -31,8 +39,9 @@ pub trait insert_one_u_128 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_one_u_128:insert_one_u_128_then`] to run a callback after the reducer completes.
-    fn insert_one_u_128(&self, n: u128) -> __sdk::Result<()> {
-        self.insert_one_u_128_then(n, |_, _| {})
+    fn insert_one_u_128(&self, n: u128,
+) -> __sdk::Result<()> {
+        self.insert_one_u_128_then(n,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_one_u128` to run as soon as possible,
@@ -60,6 +69,7 @@ impl insert_one_u_128 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertOneU128Args { n }, callback)
+        self.imp.invoke_reducer_with_callback(InsertOneU128Args { n,  }, callback)
     }
 }
+

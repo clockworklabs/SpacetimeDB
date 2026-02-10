@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -11,9 +17,11 @@ pub struct PkU32Two {
     pub data: i32,
 }
 
+
 impl __sdk::InModule for PkU32Two {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PkU32Two`.
 ///
@@ -29,6 +37,7 @@ impl __sdk::__query_builder::HasCols for PkU32Two {
         PkU32TwoCols {
             n: __sdk::__query_builder::Col::new(table_name, "n"),
             data: __sdk::__query_builder::Col::new(table_name, "data"),
+
         }
     }
 }
@@ -45,8 +54,10 @@ impl __sdk::__query_builder::HasIxCols for PkU32Two {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PkU32TwoIxCols {
             n: __sdk::__query_builder::IxCol::new(table_name, "n"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PkU32Two {}
+

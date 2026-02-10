@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::every_primitive_struct_type::EveryPrimitiveStruct;
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::result_every_primitive_struct_string_type::ResultEveryPrimitiveStructString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
 /// Table handle for the table `result_every_primitive_struct_string`.
 ///
@@ -32,9 +37,7 @@ pub trait ResultEveryPrimitiveStructStringTableAccess {
 impl ResultEveryPrimitiveStructStringTableAccess for super::RemoteTables {
     fn result_every_primitive_struct_string(&self) -> ResultEveryPrimitiveStructStringTableHandle<'_> {
         ResultEveryPrimitiveStructStringTableHandle {
-            imp: self
-                .imp
-                .get_table::<ResultEveryPrimitiveStructString>("result_every_primitive_struct_string"),
+            imp: self.imp.get_table::<ResultEveryPrimitiveStructString>("result_every_primitive_struct_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -47,12 +50,8 @@ impl<'ctx> __sdk::Table for ResultEveryPrimitiveStructStringTableHandle<'ctx> {
     type Row = ResultEveryPrimitiveStructString;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = ResultEveryPrimitiveStructString> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = ResultEveryPrimitiveStructString> + '_ { self.imp.iter() }
 
     type InsertCallbackId = ResultEveryPrimitiveStructStringInsertCallbackId;
 
@@ -83,8 +82,8 @@ impl<'ctx> __sdk::Table for ResultEveryPrimitiveStructStringTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table =
-        client_cache.get_or_make_table::<ResultEveryPrimitiveStructString>("result_every_primitive_struct_string");
+
+        let _table = client_cache.get_or_make_table::<ResultEveryPrimitiveStructString>("result_every_primitive_struct_string");
 }
 
 #[doc(hidden)]
@@ -92,24 +91,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<ResultEveryPrimitiveStructString>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<ResultEveryPrimitiveStructString>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<ResultEveryPrimitiveStructString>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `ResultEveryPrimitiveStructString`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait result_every_primitive_struct_stringQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `ResultEveryPrimitiveStructString`.
-    fn result_every_primitive_struct_string(&self) -> __sdk::__query_builder::Table<ResultEveryPrimitiveStructString>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `ResultEveryPrimitiveStructString`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait result_every_primitive_struct_stringQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `ResultEveryPrimitiveStructString`.
+            fn result_every_primitive_struct_string(&self) -> __sdk::__query_builder::Table<ResultEveryPrimitiveStructString>;
+        }
 
-impl result_every_primitive_struct_stringQueryTableAccess for __sdk::QueryTableAccessor {
-    fn result_every_primitive_struct_string(&self) -> __sdk::__query_builder::Table<ResultEveryPrimitiveStructString> {
-        __sdk::__query_builder::Table::new("result_every_primitive_struct_string")
-    }
-}
+        impl result_every_primitive_struct_stringQueryTableAccess for __sdk::QueryTableAccessor {
+            fn result_every_primitive_struct_string(&self) -> __sdk::__query_builder::Table<ResultEveryPrimitiveStructString> {
+                __sdk::__query_builder::Table::new("result_every_primitive_struct_string")
+            }
+        }
+

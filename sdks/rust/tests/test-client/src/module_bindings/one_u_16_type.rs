@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,9 +16,11 @@ pub struct OneU16 {
     pub n: u16,
 }
 
+
 impl __sdk::InModule for OneU16 {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `OneU16`.
 ///
@@ -26,6 +34,7 @@ impl __sdk::__query_builder::HasCols for OneU16 {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneU16Cols {
             n: __sdk::__query_builder::Col::new(table_name, "n"),
+
         }
     }
 }
@@ -33,13 +42,17 @@ impl __sdk::__query_builder::HasCols for OneU16 {
 /// Indexed column accessor struct for the table `OneU16`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneU16IxCols {}
+pub struct OneU16IxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for OneU16 {
     type IxCols = OneU16IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneU16IxCols {}
+        OneU16IxCols {
+
+        }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for OneU16 {}
+

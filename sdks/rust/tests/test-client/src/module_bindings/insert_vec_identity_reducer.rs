@@ -2,18 +2,26 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecIdentityArgs {
-    pub i: Vec<__sdk::Identity>,
+    pub i: Vec::<__sdk::Identity>,
 }
 
 impl From<InsertVecIdentityArgs> for super::Reducer {
     fn from(args: InsertVecIdentityArgs) -> Self {
-        Self::InsertVecIdentity { i: args.i }
-    }
+        Self::InsertVecIdentity {
+            i: args.i,
+}
+}
 }
 
 impl __sdk::InModule for InsertVecIdentityArgs {
@@ -31,8 +39,9 @@ pub trait insert_vec_identity {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_identity:insert_vec_identity_then`] to run a callback after the reducer completes.
-    fn insert_vec_identity(&self, i: Vec<__sdk::Identity>) -> __sdk::Result<()> {
-        self.insert_vec_identity_then(i, |_, _| {})
+    fn insert_vec_identity(&self, i: Vec::<__sdk::Identity>,
+) -> __sdk::Result<()> {
+        self.insert_vec_identity_then(i,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_identity` to run as soon as possible,
@@ -43,7 +52,7 @@ pub trait insert_vec_identity {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_identity_then(
         &self,
-        i: Vec<__sdk::Identity>,
+        i: Vec::<__sdk::Identity>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -54,13 +63,13 @@ pub trait insert_vec_identity {
 impl insert_vec_identity for super::RemoteReducers {
     fn insert_vec_identity_then(
         &self,
-        i: Vec<__sdk::Identity>,
+        i: Vec::<__sdk::Identity>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertVecIdentityArgs { i }, callback)
+        self.imp.invoke_reducer_with_callback(InsertVecIdentityArgs { i,  }, callback)
     }
 }
+

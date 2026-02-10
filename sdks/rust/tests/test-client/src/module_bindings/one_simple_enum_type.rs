@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -12,9 +17,11 @@ pub struct OneSimpleEnum {
     pub e: SimpleEnum,
 }
 
+
 impl __sdk::InModule for OneSimpleEnum {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `OneSimpleEnum`.
 ///
@@ -28,6 +35,7 @@ impl __sdk::__query_builder::HasCols for OneSimpleEnum {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneSimpleEnumCols {
             e: __sdk::__query_builder::Col::new(table_name, "e"),
+
         }
     }
 }
@@ -35,13 +43,17 @@ impl __sdk::__query_builder::HasCols for OneSimpleEnum {
 /// Indexed column accessor struct for the table `OneSimpleEnum`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneSimpleEnumIxCols {}
+pub struct OneSimpleEnumIxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for OneSimpleEnum {
     type IxCols = OneSimpleEnumIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneSimpleEnumIxCols {}
+        OneSimpleEnumIxCols {
+
+        }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for OneSimpleEnum {}
+

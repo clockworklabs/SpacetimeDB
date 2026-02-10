@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<InsertPkU128Args> for super::Reducer {
         Self::InsertPkU128 {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for InsertPkU128Args {
@@ -35,8 +41,10 @@ pub trait insert_pk_u_128 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_pk_u_128:insert_pk_u_128_then`] to run a callback after the reducer completes.
-    fn insert_pk_u_128(&self, n: u128, data: i32) -> __sdk::Result<()> {
-        self.insert_pk_u_128_then(n, data, |_, _| {})
+    fn insert_pk_u_128(&self, n: u128,
+data: i32,
+) -> __sdk::Result<()> {
+        self.insert_pk_u_128_then(n, data,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_pk_u128` to run as soon as possible,
@@ -48,7 +56,7 @@ pub trait insert_pk_u_128 {
     fn insert_pk_u_128_then(
         &self,
         n: u128,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -60,13 +68,13 @@ impl insert_pk_u_128 for super::RemoteReducers {
     fn insert_pk_u_128_then(
         &self,
         n: u128,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertPkU128Args { n, data }, callback)
+        self.imp.invoke_reducer_with_callback(InsertPkU128Args { n, data,  }, callback)
     }
 }
+

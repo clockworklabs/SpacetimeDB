@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::every_vec_struct_type::EveryVecStruct;
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::vec_every_vec_struct_type::VecEveryVecStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use super::every_vec_struct_type::EveryVecStruct;
 
 /// Table handle for the table `vec_every_vec_struct`.
 ///
@@ -45,12 +50,8 @@ impl<'ctx> __sdk::Table for VecEveryVecStructTableHandle<'ctx> {
     type Row = VecEveryVecStruct;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = VecEveryVecStruct> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = VecEveryVecStruct> + '_ { self.imp.iter() }
 
     type InsertCallbackId = VecEveryVecStructInsertCallbackId;
 
@@ -81,7 +82,8 @@ impl<'ctx> __sdk::Table for VecEveryVecStructTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecEveryVecStruct>("vec_every_vec_struct");
+
+        let _table = client_cache.get_or_make_table::<VecEveryVecStruct>("vec_every_vec_struct");
 }
 
 #[doc(hidden)]
@@ -89,24 +91,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<VecEveryVecStruct>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<VecEveryVecStruct>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<VecEveryVecStruct>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `VecEveryVecStruct`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait vec_every_vec_structQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `VecEveryVecStruct`.
-    fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `VecEveryVecStruct`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait vec_every_vec_structQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `VecEveryVecStruct`.
+            fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct>;
+        }
 
-impl vec_every_vec_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct> {
-        __sdk::__query_builder::Table::new("vec_every_vec_struct")
-    }
-}
+        impl vec_every_vec_structQueryTableAccess for __sdk::QueryTableAccessor {
+            fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct> {
+                __sdk::__query_builder::Table::new("vec_every_vec_struct")
+            }
+        }
+

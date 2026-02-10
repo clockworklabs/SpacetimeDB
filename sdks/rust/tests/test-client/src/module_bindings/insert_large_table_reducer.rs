@@ -2,14 +2,19 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::byte_struct_type::ByteStruct;
+use super::simple_enum_type::SimpleEnum;
 use super::enum_with_payload_type::EnumWithPayload;
+use super::unit_struct_type::UnitStruct;
+use super::byte_struct_type::ByteStruct;
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::every_vec_struct_type::EveryVecStruct;
-use super::simple_enum_type::SimpleEnum;
-use super::unit_struct_type::UnitStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -63,8 +68,8 @@ impl From<InsertLargeTableArgs> for super::Reducer {
             t: args.t,
             u: args.u,
             v: args.v,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for InsertLargeTableArgs {
@@ -82,56 +87,30 @@ pub trait insert_large_table {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_large_table:insert_large_table_then`] to run a callback after the reducer completes.
-    fn insert_large_table(
-        &self,
-        a: u8,
-        b: u16,
-        c: u32,
-        d: u64,
-        e: u128,
-        f: __sats::u256,
-        g: i8,
-        h: i16,
-        i: i32,
-        j: i64,
-        k: i128,
-        l: __sats::i256,
-        m: bool,
-        n: f32,
-        o: f64,
-        p: String,
-        q: SimpleEnum,
-        r: EnumWithPayload,
-        s: UnitStruct,
-        t: ByteStruct,
-        u: EveryPrimitiveStruct,
-        v: EveryVecStruct,
-    ) -> __sdk::Result<()> {
-        self.insert_large_table_then(
-            a,
-            b,
-            c,
-            d,
-            e,
-            f,
-            g,
-            h,
-            i,
-            j,
-            k,
-            l,
-            m,
-            n,
-            o,
-            p,
-            q,
-            r,
-            s,
-            t,
-            u,
-            v,
-            |_, _| {},
-        )
+    fn insert_large_table(&self, a: u8,
+b: u16,
+c: u32,
+d: u64,
+e: u128,
+f: __sats::u256,
+g: i8,
+h: i16,
+i: i32,
+j: i64,
+k: i128,
+l: __sats::i256,
+m: bool,
+n: f32,
+o: f64,
+p: String,
+q: SimpleEnum,
+r: EnumWithPayload,
+s: UnitStruct,
+t: ByteStruct,
+u: EveryPrimitiveStruct,
+v: EveryVecStruct,
+) -> __sdk::Result<()> {
+        self.insert_large_table_then(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_large_table` to run as soon as possible,
@@ -143,27 +122,27 @@ pub trait insert_large_table {
     fn insert_large_table_then(
         &self,
         a: u8,
-        b: u16,
-        c: u32,
-        d: u64,
-        e: u128,
-        f: __sats::u256,
-        g: i8,
-        h: i16,
-        i: i32,
-        j: i64,
-        k: i128,
-        l: __sats::i256,
-        m: bool,
-        n: f32,
-        o: f64,
-        p: String,
-        q: SimpleEnum,
-        r: EnumWithPayload,
-        s: UnitStruct,
-        t: ByteStruct,
-        u: EveryPrimitiveStruct,
-        v: EveryVecStruct,
+b: u16,
+c: u32,
+d: u64,
+e: u128,
+f: __sats::u256,
+g: i8,
+h: i16,
+i: i32,
+j: i64,
+k: i128,
+l: __sats::i256,
+m: bool,
+n: f32,
+o: f64,
+p: String,
+q: SimpleEnum,
+r: EnumWithPayload,
+s: UnitStruct,
+t: ByteStruct,
+u: EveryPrimitiveStruct,
+v: EveryVecStruct,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -175,58 +154,33 @@ impl insert_large_table for super::RemoteReducers {
     fn insert_large_table_then(
         &self,
         a: u8,
-        b: u16,
-        c: u32,
-        d: u64,
-        e: u128,
-        f: __sats::u256,
-        g: i8,
-        h: i16,
-        i: i32,
-        j: i64,
-        k: i128,
-        l: __sats::i256,
-        m: bool,
-        n: f32,
-        o: f64,
-        p: String,
-        q: SimpleEnum,
-        r: EnumWithPayload,
-        s: UnitStruct,
-        t: ByteStruct,
-        u: EveryPrimitiveStruct,
-        v: EveryVecStruct,
+b: u16,
+c: u32,
+d: u64,
+e: u128,
+f: __sats::u256,
+g: i8,
+h: i16,
+i: i32,
+j: i64,
+k: i128,
+l: __sats::i256,
+m: bool,
+n: f32,
+o: f64,
+p: String,
+q: SimpleEnum,
+r: EnumWithPayload,
+s: UnitStruct,
+t: ByteStruct,
+u: EveryPrimitiveStruct,
+v: EveryVecStruct,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            InsertLargeTableArgs {
-                a,
-                b,
-                c,
-                d,
-                e,
-                f,
-                g,
-                h,
-                i,
-                j,
-                k,
-                l,
-                m,
-                n,
-                o,
-                p,
-                q,
-                r,
-                s,
-                t,
-                u,
-                v,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(InsertLargeTableArgs { a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v,  }, callback)
     }
 }
+

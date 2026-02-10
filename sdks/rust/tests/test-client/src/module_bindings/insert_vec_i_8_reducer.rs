@@ -2,18 +2,26 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecI8Args {
-    pub n: Vec<i8>,
+    pub n: Vec::<i8>,
 }
 
 impl From<InsertVecI8Args> for super::Reducer {
     fn from(args: InsertVecI8Args) -> Self {
-        Self::InsertVecI8 { n: args.n }
-    }
+        Self::InsertVecI8 {
+            n: args.n,
+}
+}
 }
 
 impl __sdk::InModule for InsertVecI8Args {
@@ -31,8 +39,9 @@ pub trait insert_vec_i_8 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_i_8:insert_vec_i_8_then`] to run a callback after the reducer completes.
-    fn insert_vec_i_8(&self, n: Vec<i8>) -> __sdk::Result<()> {
-        self.insert_vec_i_8_then(n, |_, _| {})
+    fn insert_vec_i_8(&self, n: Vec::<i8>,
+) -> __sdk::Result<()> {
+        self.insert_vec_i_8_then(n,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_i8` to run as soon as possible,
@@ -43,7 +52,7 @@ pub trait insert_vec_i_8 {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_i_8_then(
         &self,
-        n: Vec<i8>,
+        n: Vec::<i8>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -54,12 +63,13 @@ pub trait insert_vec_i_8 {
 impl insert_vec_i_8 for super::RemoteReducers {
     fn insert_vec_i_8_then(
         &self,
-        n: Vec<i8>,
+        n: Vec::<i8>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecI8Args { n }, callback)
+        self.imp.invoke_reducer_with_callback(InsertVecI8Args { n,  }, callback)
     }
 }
+

@@ -2,18 +2,26 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecI64Args {
-    pub n: Vec<i64>,
+    pub n: Vec::<i64>,
 }
 
 impl From<InsertVecI64Args> for super::Reducer {
     fn from(args: InsertVecI64Args) -> Self {
-        Self::InsertVecI64 { n: args.n }
-    }
+        Self::InsertVecI64 {
+            n: args.n,
+}
+}
 }
 
 impl __sdk::InModule for InsertVecI64Args {
@@ -31,8 +39,9 @@ pub trait insert_vec_i_64 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_i_64:insert_vec_i_64_then`] to run a callback after the reducer completes.
-    fn insert_vec_i_64(&self, n: Vec<i64>) -> __sdk::Result<()> {
-        self.insert_vec_i_64_then(n, |_, _| {})
+    fn insert_vec_i_64(&self, n: Vec::<i64>,
+) -> __sdk::Result<()> {
+        self.insert_vec_i_64_then(n,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_i64` to run as soon as possible,
@@ -43,7 +52,7 @@ pub trait insert_vec_i_64 {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_i_64_then(
         &self,
-        n: Vec<i64>,
+        n: Vec::<i64>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -54,12 +63,13 @@ pub trait insert_vec_i_64 {
 impl insert_vec_i_64 for super::RemoteReducers {
     fn insert_vec_i_64_then(
         &self,
-        n: Vec<i64>,
+        n: Vec::<i64>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecI64Args { n }, callback)
+        self.imp.invoke_reducer_with_callback(InsertVecI64Args { n,  }, callback)
     }
 }
+

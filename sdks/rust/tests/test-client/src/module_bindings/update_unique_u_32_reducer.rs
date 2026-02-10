@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<UpdateUniqueU32Args> for super::Reducer {
         Self::UpdateUniqueU32 {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for UpdateUniqueU32Args {
@@ -35,8 +41,10 @@ pub trait update_unique_u_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`update_unique_u_32:update_unique_u_32_then`] to run a callback after the reducer completes.
-    fn update_unique_u_32(&self, n: u32, data: i32) -> __sdk::Result<()> {
-        self.update_unique_u_32_then(n, data, |_, _| {})
+    fn update_unique_u_32(&self, n: u32,
+data: i32,
+) -> __sdk::Result<()> {
+        self.update_unique_u_32_then(n, data,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_unique_u32` to run as soon as possible,
@@ -48,7 +56,7 @@ pub trait update_unique_u_32 {
     fn update_unique_u_32_then(
         &self,
         n: u32,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -60,13 +68,13 @@ impl update_unique_u_32 for super::RemoteReducers {
     fn update_unique_u_32_then(
         &self,
         n: u32,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(UpdateUniqueU32Args { n, data }, callback)
+        self.imp.invoke_reducer_with_callback(UpdateUniqueU32Args { n, data,  }, callback)
     }
 }
+

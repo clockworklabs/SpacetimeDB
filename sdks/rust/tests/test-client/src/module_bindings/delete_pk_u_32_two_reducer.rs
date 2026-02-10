@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct DeletePkU32TwoArgs {
 
 impl From<DeletePkU32TwoArgs> for super::Reducer {
     fn from(args: DeletePkU32TwoArgs) -> Self {
-        Self::DeletePkU32Two { n: args.n }
-    }
+        Self::DeletePkU32Two {
+            n: args.n,
+}
+}
 }
 
 impl __sdk::InModule for DeletePkU32TwoArgs {
@@ -31,8 +39,9 @@ pub trait delete_pk_u_32_two {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_pk_u_32_two:delete_pk_u_32_two_then`] to run a callback after the reducer completes.
-    fn delete_pk_u_32_two(&self, n: u32) -> __sdk::Result<()> {
-        self.delete_pk_u_32_two_then(n, |_, _| {})
+    fn delete_pk_u_32_two(&self, n: u32,
+) -> __sdk::Result<()> {
+        self.delete_pk_u_32_two_then(n,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_pk_u32_two` to run as soon as possible,
@@ -60,7 +69,7 @@ impl delete_pk_u_32_two for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(DeletePkU32TwoArgs { n }, callback)
+        self.imp.invoke_reducer_with_callback(DeletePkU32TwoArgs { n,  }, callback)
     }
 }
+
