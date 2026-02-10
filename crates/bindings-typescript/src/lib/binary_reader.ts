@@ -17,8 +17,16 @@ export default class BinaryReader {
    */
   offset: number = 0;
 
-  constructor(input: Uint8Array) {
-    this.view = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  constructor(input: Uint8Array | DataView) {
+    this.view =
+      input instanceof DataView
+        ? input
+        : new DataView(input.buffer, input.byteOffset, input.byteLength);
+    this.offset = 0;
+  }
+
+  reset(view: DataView) {
+    this.view = view;
     this.offset = 0;
   }
 

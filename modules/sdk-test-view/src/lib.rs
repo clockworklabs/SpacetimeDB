@@ -52,10 +52,10 @@ fn delete_player(ctx: &ReducerContext, identity: Identity) {
 
 #[reducer]
 pub fn move_player(ctx: &ReducerContext, dx: i32, dy: i32) {
-    let my_player = ctx.db.player().identity().find(ctx.sender).unwrap_or_else(|| {
+    let my_player = ctx.db.player().identity().find(ctx.sender()).unwrap_or_else(|| {
         ctx.db.player().insert(Player {
             entity_id: 0,
-            identity: ctx.sender,
+            identity: ctx.sender(),
         })
     });
     match ctx.db.player_location().entity_id().find(my_player.entity_id) {
@@ -82,7 +82,7 @@ pub fn move_player(ctx: &ReducerContext, dx: i32, dy: i32) {
 
 #[view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 #[view(name = my_player_and_level, public)]
@@ -90,7 +90,7 @@ fn my_player_and_level(ctx: &ViewContext) -> Option<PlayerAndLevel> {
     ctx.db
         .player()
         .identity()
-        .find(ctx.sender)
+        .find(ctx.sender())
         .and_then(|Player { entity_id, identity }| {
             ctx.db
                 .player_level()
@@ -119,7 +119,7 @@ pub fn nearby_players(ctx: &ViewContext) -> Vec<PlayerLocation> {
     ctx.db
         .player()
         .identity()
-        .find(ctx.sender)
+        .find(ctx.sender())
         .and_then(|my_player| ctx.db.player_location().entity_id().find(my_player.entity_id))
         .iter()
         .flat_map(|my_loc| {
