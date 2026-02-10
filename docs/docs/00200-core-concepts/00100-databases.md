@@ -95,6 +95,7 @@ See [`spacetime publish`](/databases/building-publishing) for details on the pub
 
 When you republish to an existing database, SpacetimeDB attempts to automatically migrate the schema. For details on what changes are supported and migration strategies:
 
+- [1.x to 2.0 Upgrade Notes](/upgrade) - Required reading before major-version upgrades.
 - [Automatic Migrations](/databases/automatic-migrations) - Learn which schema changes are safe, breaking, or forbidden.
 - [Incremental Migrations](/databases/incremental-migrations) - Advanced pattern for complex schema changes.
 
