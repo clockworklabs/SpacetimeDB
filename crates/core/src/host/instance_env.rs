@@ -975,53 +975,61 @@ fn is_blocked_ip(ip: IpAddr) -> bool {
 fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
     let [a, b, c, d] = ip.octets();
     let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
-    let is_loopback = ip.is_loopback() && block_loopback;
-
-    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#857-877:
-    //
-    // Returns [`true`] if this address is part of the Shared Address Space defined in
-    // [IETF RFC 6598] (`100.64.0.0/10`).
-    //
-    // [IETF RFC 6598]: https://tools.ietf.org/html/rfc6598
-    let is_shared = a == 100 && (b & 0b1100_0000) == 0b0100_0000;
-
-    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#879-904:
-    //
-    // Returns [`true`] if this address part of the `198.18.0.0/15` range, which is reserved for
-    // network devices benchmarking.
-    //
-    // This range is defined in [IETF RFC 2544] as `192.18.0.0` through
-    // `198.19.255.255` but [errata 423] corrects it to `198.18.0.0/15`.
-    //
-    // [IETF RFC 2544]: https://tools.ietf.org/html/rfc2544
-    // [errata 423]: https://www.rfc-editor.org/errata/eid423
+    // RFC 6890 Section 2.2.2, Table 1: "This host on this network" (0.0.0.0/8).
+    let is_this_host_on_this_network = a == 0;
+    // RFC 6890 Section 2.2.2, Table 2: "Private-Use" (10.0.0.0/8).
+    let is_private_use_10 = a == 10;
+    // RFC 6890 Section 2.2.2, Table 3: "Shared Address Space" (100.64.0.0/10).
+    let is_shared_address_space = a == 100 && (b & 0b1100_0000) == 0b0100_0000;
+    // RFC 6890 Section 2.2.2, Table 4: "Loopback" (127.0.0.0/8).
+    let is_loopback = block_loopback && a == 127;
+    // RFC 6890 Section 2.2.2, Table 5: "Link Local" (169.254.0.0/16).
+    let is_link_local = a == 169 && b == 254;
+    // RFC 6890 Section 2.2.2, Table 6: "Private-Use" (172.16.0.0/12).
+    let is_private_use_172 = a == 172 && (b & 0b1111_0000) == 16;
+    // RFC 6890 Section 2.2.2, Table 7: "IETF Protocol Assignments" (192.0.0.0/24).
+    let is_ietf_protocol_assignments = a == 192 && b == 0 && c == 0;
+    // RFC 6890 Section 2.2.2, Table 8: "Documentation (TEST-NET-1)" (192.0.2.0/24).
+    let is_test_net_1 = a == 192 && b == 0 && c == 2;
+    // RFC 6890 Section 2.2.2, Table 9: "AS112-v4" (192.31.196.0/24).
+    let is_as112_v4 = a == 192 && b == 31 && c == 196;
+    // RFC 6890 Section 2.2.2, Table 10: "AMT" (192.52.193.0/24).
+    let is_amt = a == 192 && b == 52 && c == 193;
+    // RFC 6890 Section 2.2.2, Table 11: "6to4 Relay Anycast" (192.88.99.0/24).
+    let is_6to4_relay_anycast = a == 192 && b == 88 && c == 99;
+    // RFC 6890 Section 2.2.2, Table 12: "Private-Use" (192.168.0.0/16).
+    let is_private_use_192 = a == 192 && b == 168;
+    // RFC 6890 Section 2.2.2, Table 13: "Direct Delegation AS112 Service" (192.175.48.0/24).
+    let is_direct_delegation_as112_service = a == 192 && b == 175 && c == 48;
+    // RFC 6890 Section 2.2.2, Table 14: "Benchmarking" (198.18.0.0/15).
     let is_benchmarking = a == 198 && (b & 0b1111_1110) == 18;
-
-    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#845-850:
-    //
-    // Addresses reserved for future protocols (`192.0.0.0/24`).
-    // `192.0.0.9` and `192.0.0.10` are documented as globally reachable so they're excluded.
-    let is_special = a == 192 && b == 0 && c == 0 && d != 9 && d != 10;
-
-    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#857-877:
-    //
-    // Returns [`true`] if this address is part of the Shared Address Space defined in
-    // [IETF RFC 6598] (`100.64.0.0/10`).
-    //
-    // [IETF RFC 6598]: https://tools.ietf.org/html/rfc6598
+    // RFC 6890 Section 2.2.2, Table 15: "Documentation (TEST-NET-2)" (198.51.100.0/24).
+    let is_test_net_2 = a == 198 && b == 51 && c == 100;
+    // RFC 6890 Section 2.2.2, Table 16: "Documentation (TEST-NET-3)" (203.0.113.0/24).
+    let is_test_net_3 = a == 203 && b == 0 && c == 113;
+    // RFC 6890 Section 2.2.2, Table 17: "Reserved" (240.0.0.0/4).
     let is_reserved = (a & 0b1111_0000) == 0b1111_0000;
+    // RFC 6890 Section 2.2.2, Table 18: "Limited Broadcast" (255.255.255.255/32).
+    let is_limited_broadcast = a == 255 && b == 255 && c == 255 && d == 255;
 
-    ip.is_unspecified()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_multicast()
-        || ip.is_broadcast()
-        || ip.is_documentation()
+    is_this_host_on_this_network
+        || is_private_use_10
+        || is_shared_address_space
         || is_loopback
-        || is_shared
+        || is_link_local
+        || is_private_use_172
+        || is_ietf_protocol_assignments
+        || is_test_net_1
+        || is_as112_v4
+        || is_amt
+        || is_6to4_relay_anycast
+        || is_private_use_192
+        || is_direct_delegation_as112_service
         || is_benchmarking
-        || is_special
+        || is_test_net_2
+        || is_test_net_3
         || is_reserved
+        || is_limited_broadcast
 }
 
 fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
@@ -1368,15 +1376,202 @@ mod test {
     }
 
     #[test]
-    fn blocks_private_and_special_ipv4() {
-        // RFC1918 private + loopback + shared-address-space examples should be blocked.
-        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
-        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
-        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
-        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))));
-        // A normal public address should remain allowed.
-        assert!(!is_blocked_ip(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+    fn blocks_each_rfc6890_ipv4_range() {
+        // RFC 6890 §2.2.2 tables 1-18.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let cases = [
+            // Table 1: This host on this network (0.0.0.0/8).
+            (Ipv4Addr::new(0, 0, 0, 1), true),
+            // Table 2: Private-Use (10.0.0.0/8).
+            (Ipv4Addr::new(10, 255, 255, 255), true),
+            // Table 3: Shared Address Space (100.64.0.0/10).
+            (Ipv4Addr::new(100, 127, 255, 255), true),
+            // Table 4: Loopback (127.0.0.0/8).
+            (Ipv4Addr::new(127, 0, 0, 1), block_loopback),
+            // Table 5: Link Local (169.254.0.0/16).
+            (Ipv4Addr::new(169, 254, 255, 255), true),
+            // Table 6: Private-Use (172.16.0.0/12).
+            (Ipv4Addr::new(172, 31, 255, 255), true),
+            // Table 7: IETF Protocol Assignments (192.0.0.0/24).
+            (Ipv4Addr::new(192, 0, 0, 255), true),
+            // Table 8: Documentation (TEST-NET-1) (192.0.2.0/24).
+            (Ipv4Addr::new(192, 0, 2, 1), true),
+            // Table 9: AS112-v4 (192.31.196.0/24).
+            (Ipv4Addr::new(192, 31, 196, 1), true),
+            // Table 10: AMT (192.52.193.0/24).
+            (Ipv4Addr::new(192, 52, 193, 1), true),
+            // Table 11: 6to4 Relay Anycast (192.88.99.0/24).
+            (Ipv4Addr::new(192, 88, 99, 1), true),
+            // Table 12: Private-Use (192.168.0.0/16).
+            (Ipv4Addr::new(192, 168, 255, 255), true),
+            // Table 13: Direct Delegation AS112 Service (192.175.48.0/24).
+            (Ipv4Addr::new(192, 175, 48, 1), true),
+            // Table 14: Benchmarking (198.18.0.0/15).
+            (Ipv4Addr::new(198, 19, 255, 255), true),
+            // Table 15: Documentation (TEST-NET-2) (198.51.100.0/24).
+            (Ipv4Addr::new(198, 51, 100, 1), true),
+            // Table 16: Documentation (TEST-NET-3) (203.0.113.0/24).
+            (Ipv4Addr::new(203, 0, 113, 1), true),
+            // Table 17: Reserved (240.0.0.0/4).
+            (Ipv4Addr::new(240, 0, 0, 1), true),
+            // Table 18: Limited Broadcast (255.255.255.255/32).
+            (Ipv4Addr::new(255, 255, 255, 255), true),
+        ];
+
+        for (addr, expected_blocked) in cases {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(addr)),
+                expected_blocked,
+                "unexpected block decision for {addr}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_rfc6890_ipv4_range_endpoints() {
+        // RFC 6890 §2.2.2 tables 1-18, checked at each range's low/high endpoints.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let ranges = [
+            // Table 1: This host on this network (0.0.0.0/8).
+            (
+                "this-host-on-this-network",
+                Ipv4Addr::new(0, 0, 0, 0),
+                Ipv4Addr::new(0, 255, 255, 255),
+                true,
+            ),
+            // Table 2: Private-Use (10.0.0.0/8).
+            (
+                "private-use-10",
+                Ipv4Addr::new(10, 0, 0, 0),
+                Ipv4Addr::new(10, 255, 255, 255),
+                true,
+            ),
+            // Table 3: Shared Address Space (100.64.0.0/10).
+            (
+                "shared-address-space",
+                Ipv4Addr::new(100, 64, 0, 0),
+                Ipv4Addr::new(100, 127, 255, 255),
+                true,
+            ),
+            // Table 4: Loopback (127.0.0.0/8).
+            (
+                "loopback",
+                Ipv4Addr::new(127, 0, 0, 0),
+                Ipv4Addr::new(127, 255, 255, 255),
+                block_loopback,
+            ),
+            // Table 5: Link Local (169.254.0.0/16).
+            (
+                "link-local",
+                Ipv4Addr::new(169, 254, 0, 0),
+                Ipv4Addr::new(169, 254, 255, 255),
+                true,
+            ),
+            // Table 6: Private-Use (172.16.0.0/12).
+            (
+                "private-use-172",
+                Ipv4Addr::new(172, 16, 0, 0),
+                Ipv4Addr::new(172, 31, 255, 255),
+                true,
+            ),
+            // Table 7: IETF Protocol Assignments (192.0.0.0/24).
+            (
+                "ietf-protocol-assignments",
+                Ipv4Addr::new(192, 0, 0, 0),
+                Ipv4Addr::new(192, 0, 0, 255),
+                true,
+            ),
+            // Table 8: Documentation (TEST-NET-1) (192.0.2.0/24).
+            (
+                "test-net-1",
+                Ipv4Addr::new(192, 0, 2, 0),
+                Ipv4Addr::new(192, 0, 2, 255),
+                true,
+            ),
+            // Table 9: AS112-v4 (192.31.196.0/24).
+            (
+                "as112-v4",
+                Ipv4Addr::new(192, 31, 196, 0),
+                Ipv4Addr::new(192, 31, 196, 255),
+                true,
+            ),
+            // Table 10: AMT (192.52.193.0/24).
+            (
+                "amt",
+                Ipv4Addr::new(192, 52, 193, 0),
+                Ipv4Addr::new(192, 52, 193, 255),
+                true,
+            ),
+            // Table 11: 6to4 Relay Anycast (192.88.99.0/24).
+            (
+                "6to4-relay-anycast",
+                Ipv4Addr::new(192, 88, 99, 0),
+                Ipv4Addr::new(192, 88, 99, 255),
+                true,
+            ),
+            // Table 12: Private-Use (192.168.0.0/16).
+            (
+                "private-use-192",
+                Ipv4Addr::new(192, 168, 0, 0),
+                Ipv4Addr::new(192, 168, 255, 255),
+                true,
+            ),
+            // Table 13: Direct Delegation AS112 Service (192.175.48.0/24).
+            (
+                "direct-delegation-as112-service",
+                Ipv4Addr::new(192, 175, 48, 0),
+                Ipv4Addr::new(192, 175, 48, 255),
+                true,
+            ),
+            // Table 14: Benchmarking (198.18.0.0/15).
+            (
+                "benchmarking",
+                Ipv4Addr::new(198, 18, 0, 0),
+                Ipv4Addr::new(198, 19, 255, 255),
+                true,
+            ),
+            // Table 15: Documentation (TEST-NET-2) (198.51.100.0/24).
+            (
+                "test-net-2",
+                Ipv4Addr::new(198, 51, 100, 0),
+                Ipv4Addr::new(198, 51, 100, 255),
+                true,
+            ),
+            // Table 16: Documentation (TEST-NET-3) (203.0.113.0/24).
+            (
+                "test-net-3",
+                Ipv4Addr::new(203, 0, 113, 0),
+                Ipv4Addr::new(203, 0, 113, 255),
+                true,
+            ),
+            // Table 17: Reserved (240.0.0.0/4).
+            (
+                "reserved",
+                Ipv4Addr::new(240, 0, 0, 0),
+                Ipv4Addr::new(255, 255, 255, 255),
+                true,
+            ),
+            // Table 18: Limited Broadcast (255.255.255.255/32).
+            (
+                "limited-broadcast",
+                Ipv4Addr::new(255, 255, 255, 255),
+                Ipv4Addr::new(255, 255, 255, 255),
+                true,
+            ),
+        ];
+
+        for (name, low, high, expected_blocked) in ranges {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(low)),
+                expected_blocked,
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(high)),
+                expected_blocked,
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
     }
 
     #[test]
