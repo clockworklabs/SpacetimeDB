@@ -78,6 +78,14 @@ impl List {
             _ => None,
         };
 
+        // If there's no current version set but a latest is available,
+        // still show it first.
+        if current.is_none() {
+            if let Some(ref new_ver) = show_latest {
+                println!("{} {}", new_ver, "(available - run `spacetime version upgrade`)");
+            }
+        }
+
         for ver in &sorted_versions {
             let is_current = Some(ver) == current.as_ref();
 
@@ -93,14 +101,6 @@ impl List {
                 println!("{} {}", ver, "(current)");
             } else {
                 println!("{ver}");
-            }
-        }
-
-        // If there's no current version set but a latest is available,
-        // still show it at the end.
-        if current.is_none() {
-            if let Some(ref new_ver) = show_latest {
-                println!("{} {}", new_ver, "(available - run `spacetime version upgrade`)");
             }
         }
 
