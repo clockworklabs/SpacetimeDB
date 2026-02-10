@@ -31,6 +31,7 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::future::Future;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -871,7 +872,11 @@ impl InstanceEnv {
 
         // Actually execute the HTTP request!
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-        let execute_fut = reqwest::Client::new().execute(reqwest);
+        let execute_fut = reqwest::Client::builder()
+            .dns_resolver(Arc::new(FilteredDnsResolver))
+            .build()
+            .map_err(http_error)?
+            .execute(reqwest);
 
         // Run the future that does IO work on a tokio worker thread, where it's more efficent.
         let response_fut = tokio::spawn(async {
@@ -937,6 +942,135 @@ impl InstanceEnv {
 ///
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+
+struct FilteredDnsResolver;
+
+impl reqwest::dns::Resolve for FilteredDnsResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            let addrs = tokio::net::lookup_host((host.as_str(), 0)).await?;
+            let filtered_addrs: Vec<SocketAddr> = addrs.filter(|addr| !is_blocked_ip(addr.ip())).collect();
+
+            if filtered_addrs.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "refusing to connect to private or special-purpose addresses",
+                )
+                .into());
+            }
+
+            Ok(Box::new(filtered_addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_blocked_ipv4(ip),
+        IpAddr::V6(ip) => is_blocked_ipv6(ip),
+    }
+}
+
+fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, d] = ip.octets();
+
+    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#857-877:
+    //
+    // Returns [`true`] if this address is part of the Shared Address Space defined in
+    // [IETF RFC 6598] (`100.64.0.0/10`).
+    //
+    // [IETF RFC 6598]: https://tools.ietf.org/html/rfc6598
+    let is_shared = a == 100 && (b & 0b1100_0000) == 0b0100_0000;
+
+    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#879-904:
+    //
+    // Returns [`true`] if this address part of the `198.18.0.0/15` range, which is reserved for
+    // network devices benchmarking.
+    //
+    // This range is defined in [IETF RFC 2544] as `192.18.0.0` through
+    // `198.19.255.255` but [errata 423] corrects it to `198.18.0.0/15`.
+    //
+    // [IETF RFC 2544]: https://tools.ietf.org/html/rfc2544
+    // [errata 423]: https://www.rfc-editor.org/errata/eid423
+    let is_benchmarking = a == 198 && (b & 0b1111_1110) == 18;
+
+    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#845-850:
+    //
+    // Addresses reserved for future protocols (`192.0.0.0/24`).
+    // `192.0.0.9` and `192.0.0.10` are documented as globally reachable so they're excluded.
+    let is_special = a == 192 && b == 0 && c == 0 && d != 9 && d != 10;
+
+    // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#857-877:
+    //
+    // Returns [`true`] if this address is part of the Shared Address Space defined in
+    // [IETF RFC 6598] (`100.64.0.0/10`).
+    //
+    // [IETF RFC 6598]: https://tools.ietf.org/html/rfc6598
+    let is_reserved = (a & 0b1111_0000) == 0b1111_0000;
+
+    ip.is_unspecified()
+        || ip.is_private()
+        || ip.is_loopback()
+        || ip.is_link_local()
+        || ip.is_multicast()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || is_shared
+        || is_benchmarking
+        || is_special
+        || is_reserved
+}
+
+fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
+    let segments = ip.segments();
+
+    if ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_unique_local()
+        || ip.is_unicast_link_local()
+        || ip.is_multicast()
+    {
+        return true;
+    }
+
+    // IPv4-compatible / mapped (`::a.b.c.d` and `::ffff:a.b.c.d`)
+    if ip.to_ipv4().is_some_and(is_blocked_ipv4) {
+        return true;
+    }
+
+    // According to https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#1628-1631:
+    // 6to4 (`2002::/16`) is not explicitly documented as globally reachable.
+    if segments[0] == 0x2002 {
+        let [a, b] = segments[1].to_be_bytes();
+        let [c, d] = segments[2].to_be_bytes();
+        if is_blocked_ipv4(Ipv4Addr::new(a, b, c, d)) {
+            return true;
+        }
+    }
+
+    // Well-known IPv4/IPv6 translation prefix (`64:ff9b::/96`).
+    // This is checked explicitly here because std's unstable `Ipv6Addr::is_global` only checks `64:ff9b:1::/48`:
+    // https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#1609-1610
+    if segments[0] == 0x0064
+        && segments[1] == 0xff9b
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0
+    {
+        let [a, b] = segments[6].to_be_bytes();
+        let [c, d] = segments[7].to_be_bytes();
+        if is_blocked_ipv4(Ipv4Addr::new(a, b, c, d)) {
+            return true;
+        }
+    }
+
+    // Local-use IPv4/IPv6 translation prefix (`64:ff9b:1::/48`).
+    // std marks this as non-global in its unstable `Ipv6Addr::is_global`:
+    // https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#1609-1610
+    segments[0] == 0x0064 && segments[1] == 0xff9b && segments[2] == 0x0001
+}
 
 /// Unpack `request` and convert it into an [`http::request::Parts`],
 /// and a [`Duration`] from its `timeout` if supplied.
@@ -1232,6 +1366,46 @@ mod test {
             Ok(())
         })?;
         Ok((table_id, index_id))
+    }
+
+    #[test]
+    fn blocks_private_and_special_ipv4() {
+        // RFC1918 private + loopback + shared-address-space examples should be blocked.
+        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
+        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
+        assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))));
+        // A normal public address should remain allowed.
+        assert!(!is_blocked_ip(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+    }
+
+    #[test]
+    fn blocks_private_and_special_ipv6() {
+        // Loopback, unique-local, and link-local examples should be blocked.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))));
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
+        // A normal global IPv6 address should remain allowed.
+        assert!(!is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111
+        ))));
+    }
+
+    #[test]
+    fn blocks_ipv6_encodings_of_private_ipv4() {
+        // IPv4-mapped form of `10.0.0.1`: `::ffff:10.0.0.1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0001
+        ))));
+        // 6to4 form carrying `10.0.0.1`: `2002:0a00:0001::1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2002, 0x0a00, 0x0001, 0, 0, 0, 0, 1
+        ))));
+        // IPv4/IPv6 translation prefix carrying `10.0.0.1`: `64:ff9b::a00:1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x0064, 0xff9b, 0, 0, 0, 0, 0x0a00, 0x0001
+        ))));
     }
 
     #[test]
