@@ -61,7 +61,7 @@ pub fn cli() -> Command {
                 .help("The path to the module bindings directory relative to the project directory, defaults to `<project-path>/src/module_bindings`"),
         )
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
-        // This is not a requirement in general, but is a requirement for all templates 
+        // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         .arg(
             Arg::new("module-project-path")
@@ -620,7 +620,13 @@ async fn stream_logs(
 
     let status = res.status();
     if status.is_client_error() || status.is_server_error() {
-        let err = res.text().await?;
+        let mut err = res.text().await?;
+        // The server doesn't always send an error description in the response
+        // body (maybe it should), so default to status code + canonical reason
+        // phrase (e.g. "502 Bad Gateway").
+        if err.is_empty() {
+            err = format!("{status}");
+        }
         anyhow::bail!(err)
     }
 

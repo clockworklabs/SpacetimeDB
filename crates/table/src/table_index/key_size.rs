@@ -70,13 +70,18 @@ impl KeyBytesStorage for u64 {
 pub trait KeySize {
     type MemoStorage: KeyBytesStorage;
 
-    fn key_size_in_bytes(&self) -> usize;
+    /// Returns the size of this key in bytes.
+    ///
+    /// The default implementation returns the static size of the type,
+    /// which is correct for primitives and composites of them.
+    fn key_size_in_bytes(&self) -> usize {
+        mem::size_of_val(self)
+    }
 }
 
 macro_rules! impl_key_size_primitive {
     ($prim:ty) => {
         impl KeySize for $prim {
-            fn key_size_in_bytes(&self) -> usize { std::mem::size_of::<Self>() }
             type MemoStorage = ();
         }
     };
