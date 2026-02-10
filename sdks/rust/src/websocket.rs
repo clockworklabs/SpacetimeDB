@@ -247,7 +247,8 @@ impl WsConnection {
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ws::v2::ServerMessage, WsError> {
-        let bytes = &*decompress_server_message(bytes)?;
+        // TODO(ws-v2): Re-enable compression
+        // let bytes = &*decompress_server_message(bytes)?;
         bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })
     }
 
@@ -319,6 +320,7 @@ impl WsConnection {
                     },
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
+                        log::debug!("Got binary message: {bytes:x}");
                         idle = false;
                         record_metrics(bytes.len());
                         match Self::parse_response(&bytes) {
