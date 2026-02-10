@@ -18,7 +18,7 @@ fn old_fixture_wasm() -> PathBuf {
 }
 
 #[test]
-fn publish_upgrade_prompt_wasm_end_to_end() {
+fn upgrade_prompt_on_publish() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
     let old_wasm = old_fixture_wasm();
