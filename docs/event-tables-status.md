@@ -1,6 +1,6 @@
 # Event Tables Implementation Status
 
-Tracking progress against the [event tables proposal](../../SpacetimeDBPrivate/proposals/00XX-event-tables.md).
+Tracking progress against the [event tables proposal](../SpacetimeDBPrivate/proposals/00XX-event-tables.md).
 
 ## Implemented
 
@@ -10,14 +10,14 @@ Tracking progress against the [event tables proposal](../../SpacetimeDBPrivate/p
 - [x] `is_event` field on `TableSchema` propagated through schema validation (`crates/schema/`)
 - [x] `RawModuleDefV10` includes `is_event` in table definitions (`crates/lib/src/db/raw_def/v10.rs`)
 - [x] Event table rows are recorded as inserts in `tx_data` at commit time but NOT merged into committed state (`crates/datastore/src/locking_tx_datastore/committed_state.rs`)
-- [x] Commitlog replay treats event table inserts as noops — `replay_insert()` returns early when `schema.is_event` (`committed_state.rs`)
+- [x] Commitlog replay treats event table inserts as noops -- `replay_insert()` returns early when `schema.is_event` (`committed_state.rs`)
 - [x] Event tables function as normal tables during reducer execution (insert/delete/update within a transaction)
 
 ### Server: Subscriptions & Query Engine
 
 - [x] `SELECT * FROM *` excludes event tables (`crates/core/src/subscription/subscription.rs`)
 - [x] `CanBeLookupTable` trait: event tables do NOT implement it, preventing use as the right/lookup table in view semijoins (`crates/bindings-macro/src/table.rs`, `crates/query-builder/src/table.rs`)
-- [x] `reads_from_event_table()` check in `SubscriptionPlan::compile()` rejects event tables as lookup tables in subscription joins (`crates/subscription/src/lib.rs`). **Note:** the proposal says this should eventually be allowed (noops make it well-defined), but it is restricted for now for ease of implementation.
+- [x] `reads_from_event_table()` check in `SubscriptionPlan::compile()` rejects event tables as lookup tables in subscription joins (`crates/subscription/src/lib.rs`). The proposal notes that joining on event tables is well-defined (noops), but it is restricted for now for ease of implementation.
 - [x] View definitions cannot select from event tables at runtime (`crates/core/src/host/wasm_common/module_host_actor.rs`). The proposal says to disallow event table access in the query builder entirely for now.
 
 ### Server: V1 Protocol Compatibility
@@ -26,55 +26,78 @@ Tracking progress against the [event tables proposal](../../SpacetimeDBPrivate/p
   - Enforced in all three V1 paths: `SubscribeSingle`, `SubscribeMulti`, and legacy `Subscribe`
 - [x] `returns_event_table()` methods on `SubscriptionPlan` and `Plan` for detecting event table subscriptions
 
-### Client: Rust SDK (v1 only)
+### Server: V2 Subscription Path
+
+- [x] Event tables work correctly through the v2 subscription evaluation path -- verified end-to-end with v2 client subscribing, calling reducer, receiving `on_insert` callback
+- [x] Merged `jsdt/ws-v2` (server-side v2 protocol) and `phoebe/rust-sdk-ws-v2` (client-side v2 SDK) into `tyler/impl-event-tables`
+
+### Client: Rust SDK
 
 - [x] `EventTable` trait and `TableHandle` implementation that skips client cache storage (`sdks/rust/src/table.rs`)
 - [x] `is_event` flag on `TableMetadata` in client cache (`sdks/rust/src/client_cache.rs`)
-- [x] Codegen generates `EventTable` impl (insert-only, no delete callbacks) for event tables (`crates/codegen/src/rust.rs`). **Note:** the proposal says to generate both `on_insert` and `on_delete`. The server only sends inserts, but the client could synthesize the delete callback from the insert since every event table row is a noop. `on_delete` generation is deferred for now and can be added later.
+- [x] Codegen generates `EventTable` impl (insert-only, no delete callbacks) for event tables (`crates/codegen/src/rust.rs`). The proposal says to generate both `on_insert` and `on_delete` (see Deferred section below).
 - [x] `on_insert` callbacks fire for event table rows; `count()` and `iter()` always return empty
 - [x] `spacetime_module.rs` exposes `is_event` in generated `SpacetimeModule` trait
+- [x] SDK uses v2 WebSocket protocol by default (`ws::v2::BIN_PROTOCOL` in `sdks/rust/src/websocket.rs`)
+
+### Reducer Callback Deprecation (2.0 -- primary goal of proposal)
+
+The proposal's primary motivation is deprecating reducer event callbacks and replacing them with event tables. This is implemented in the v2 SDK:
+
+- [x] V2 server does not publish `ReducerEvent` messages to clients (commit `fd3ef210f`)
+- [x] V2 codegen does not generate `ctx.reducers.on_<reducer>()` callbacks; replaced with `_then()` pattern for per-call result callbacks
+- [x] `CallReducerFlags` / `NoSuccessNotify` removed from v2 SDK (proposal recommends deprecation)
+- [ ] Document migration path from reducer callbacks to event tables (proposal includes examples in "Reducer Callback Compatibility" section but no standalone migration guide exists)
 
 ### Compile-time Checks (trybuild)
 
 - [x] Event tables cannot be the lookup (right) table in `left_semijoin` (`crates/bindings/tests/ui/views.rs`)
 - [x] Event tables cannot be the lookup (right) table in `right_semijoin`
-- [x] Event tables CAN be the left/outer table in a semijoin (positive compile test — would still be blocked at runtime by the view validation check)
+- [x] Event tables CAN be the left/outer table in a semijoin (positive compile test -- would still be blocked at runtime by the view validation check)
 
 ### Integration Tests
 
-- [x] V1 rejection test: verifies v1 clients get a subscription error with upgrade message
-- [x] Basic event table test: `on_insert` fires, row values match, cache stays empty (written but `#[ignore]` — needs v2 SDK)
-- [x] Multiple events in one reducer test (written but `#[ignore]` — needs v2 SDK)
-- [x] Events don't persist across transactions test (written but `#[ignore]` — needs v2 SDK)
+All event table integration tests are active and passing on the v2 SDK:
+
+- [x] Basic event table test: `on_insert` fires, row values match, cache stays empty (`event-table`)
+- [x] Multiple events in one reducer test: 3 inserts in one reducer all arrive as callbacks (`multiple-events`)
+- [x] Events don't persist across transactions test: event count doesn't grow after a subsequent noop reducer (`events-dont-persist`)
+
+The V1 rejection test (`exec_v1_rejects_event_table`) exists in the test client source but is not wired up in `test.rs`, since the SDK now exclusively uses v2. The V1 rejection server logic remains in place for any V1 clients that may connect.
+
+Test module: `modules/sdk-test-event-table/src/lib.rs`
+Test client: `sdks/rust/tests/event-table-client/src/main.rs`
+Test harness: `sdks/rust/tests/test.rs` (`event_table_tests` module)
 
 ### Proposal Document
 
 - [x] WebSocket Protocol Compatibility section added to proposal (`SpacetimeDBPrivate/proposals/00XX-event-tables.md`)
 
+## Deferred
+
+Items that are well-defined and implementable but deliberately deferred per the proposal.
+
+### `on_delete` Codegen
+
+The proposal says to generate both `on_insert` and `on_delete` for event tables. Since the server only sends inserts (the optimization described in the proposal), the client would need to synthesize `on_delete` from `on_insert` since every event table row is a noop. This is deferred for now and can be added later without breaking changes. See proposal section "Client-side API".
+
+### Event Tables in Subscription Joins
+
+The proposal notes that using event tables as the right/inner/lookup table in subscription joins is well-defined (noops make it so), and that event-table-ness is "infectious" -- joined results behave as event tables too. Currently blocked by the `reads_from_event_table()` check in `SubscriptionPlan::compile()` and the `CanBeLookupTable` compile-time trait. This restriction exists for ease of implementation and can be relaxed later.
+
+### Event Tables in Views
+
+The proposal says event tables MAY be accessible in view functions but cannot return rows. Currently disallowed both at compile time (via `CanBeLookupTable`) and runtime (view validation check). The proposal suggests this will be allowed in the future, potentially with implicit "infectious" event-table-ness for views that join on event tables.
+
 ## Not Yet Implemented
-
-### Reducer Callback Deprecation (2.0 — primary goal of proposal)
-
-The proposal's primary motivation is deprecating reducer event callbacks and replacing them with event tables. This has NOT been started:
-
-- [ ] Stop publishing `ReducerEvent` messages to v2 clients
-- [ ] Remove `ctx.reducers.on_<reducer>()` callback generation for v2 codegen
-- [ ] Document migration path from reducer callbacks to event tables
 
 ### Server: Untested Behaviors
 
-- [ ] RLS (Row-Level Security) on event tables — proposal says RLS should apply with same semantics as non-event tables; no specific testing or handling found
-- [ ] Primary key, unique constraints, indexes on event tables — proposal says these should work; not tested
-- [ ] Sequences and `auto_inc` on event tables — proposal says these should work; not tested
-- [ ] Event table as right/inner table in subscription joins — proposal says this should eventually be allowed (noops make it well-defined); currently blocked by `reads_from_event_table()` check
+These are described in the proposal as expected to work but have no dedicated tests:
 
-### Client: Rust SDK v2 WebSocket Support
-
-- [ ] Add `WsVersion` field to `WsParams` and `DbConnectionBuilder`
-- [ ] Add `with_ws_version()` builder method
-- [ ] Update `request_insert_protocol_header()` to use `ws_v2::BIN_PROTOCOL` when v2 is selected
-- [ ] Handle v2 server messages (subscription responses, transaction updates)
-- [ ] Re-enable `#[ignore]`'d event table integration tests once v2 is working
+- [ ] RLS (Row-Level Security) on event tables -- proposal says RLS should apply with same semantics as non-event tables
+- [ ] Primary key, unique constraints, indexes on event tables -- proposal says these should work
+- [ ] Sequences and `auto_inc` on event tables -- proposal says these should work
 
 ### Server: Module-side for Other Languages
 
@@ -87,20 +110,30 @@ The proposal's primary motivation is deprecating reducer event callbacks and rep
 - [ ] C# SDK: `EventTable` support and client codegen
 - [ ] C++ SDK: `EventTable` support and client codegen
 
-### Server: V2 Subscription Path for Event Tables
-
-- [ ] Verify event tables work correctly through the v2 subscription evaluation path (`eval_updates_sequential_inner_v2`)
-- [ ] End-to-end test with a v2 client subscribing to event tables
-
 ### Proposal: Future Work Items (not blocking 2.0)
 
-- [ ] `#[table]` attribute on reducer functions (auto-generate event table from reducer args)
-- [ ] `ctx.on.<event_name>()` convenience syntax on client
-- [ ] Event tables in views / infectious event-table-ness for joined views
-- [ ] TTL tables as generalization of event tables (`ttl = Duration::ZERO`)
-- [ ] Temporal filters
-- [ ] Light mode deprecation (2.0)
-- [ ] `CallReducerFlags` / `NoSuccessNotify` deprecation (2.0)
+- [ ] `#[table]` attribute on reducer functions (auto-generate event table from reducer args) -- proposal "Reducer Event Table" section
+- [ ] `ctx.on.<event_name>()` convenience syntax on client -- proposal ".on Syntax" section
+- [ ] Event tables in views / infectious event-table-ness for joined views -- proposal "Views" section
+- [ ] TTL tables as generalization of event tables (`ttl = Duration::ZERO`) -- proposal "TTLs, Temporal Filters..." section
+- [ ] Temporal filters -- proposal "TTLs, Temporal Filters..." section
+- [ ] Light mode deprecation (2.0) -- proposal "Light mode deprecation" section
+- [ ] Migration guide from reducer callbacks to event tables
+
+## Known Issues
+
+### V2 SDK Test Stability
+
+The broader (non-event-table) SDK test suite has intermittent failures when running on the v2 protocol branches. These manifest as:
+- Server panics at `crates/client-api/src/routes/subscribe.rs:1353` (`try_reclaim().expect("buffer should be unique")`)
+- Test timeouts
+- `STATUS_STACK_BUFFER_OVERRUN` crashes
+
+These are pre-existing issues in the v2 WebSocket implementation, not caused by event tables. The event table tests themselves pass reliably.
+
+### `request_id` Bug (Fixed)
+
+`sdks/rust/src/db_connection.rs:383` had `request_id: 0` hardcoded instead of using the generated `request_id` variable. This caused "Reducer result for unknown request_id 0" errors for all reducer calls. Fixed in commit `43d84a277` on this branch and `f2f385a28` on `phoebe/rust-sdk-ws-v2`.
 
 ## Key Files
 
@@ -119,6 +152,6 @@ The proposal's primary motivation is deprecating reducer event callbacks and rep
 | Rust SDK | `sdks/rust/src/table.rs`, `sdks/rust/src/client_cache.rs` |
 | Test module | `modules/sdk-test-event-table/src/lib.rs` |
 | Test client | `sdks/rust/tests/event-table-client/src/main.rs` |
-| Test harness | `sdks/rust/tests/test.rs` (event_table_tests module) |
+| Test harness | `sdks/rust/tests/test.rs` (`event_table_tests` module) |
 | Compile tests | `crates/bindings/tests/ui/views.rs` |
-| Proposal | `SpacetimeDBPrivate/proposals/00XX-event-tables.md` |
+| Proposal | `../SpacetimeDBPrivate/proposals/00XX-event-tables.md` |
