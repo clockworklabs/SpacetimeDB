@@ -1903,7 +1903,7 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     // For each actor, subscribe to the `OneU8` table.
     // The choice of table is a fairly random one: just one of the simpler tables.
     let conns = ["alice", "bob"].map(|who| {
-        let conn = connect_with_then(&pre_ins_counter, who, |b| b.with_light_mode(true), |_| {});
+        let conn = connect_with_then(&pre_ins_counter, who, |b| b, |_| {});
         let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
 
         let counter2 = counter.clone();
