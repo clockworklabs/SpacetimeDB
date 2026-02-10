@@ -317,32 +317,19 @@ mod event_table_tests {
             .build()
     }
 
-    // These tests require v2 WebSocket support in the Rust SDK, which is not yet implemented.
-    // The server now rejects v1 subscriptions to event tables with an upgrade error.
-    // Re-enable these once the Rust SDK supports v2 protocol negotiation.
-
     #[test]
-    #[ignore = "requires v2 WebSocket support in the Rust SDK"]
     fn event_table() {
         make_test("event-table").run();
     }
 
     #[test]
-    #[ignore = "requires v2 WebSocket support in the Rust SDK"]
     fn multiple_events() {
         make_test("multiple-events").run();
     }
 
     #[test]
-    #[ignore = "requires v2 WebSocket support in the Rust SDK"]
     fn events_dont_persist() {
         make_test("events-dont-persist").run();
-    }
-
-    /// Verify that v1 clients receive a clear error when subscribing to event tables.
-    #[test]
-    fn v1_rejects_event_table_subscription() {
-        make_test("v1-rejects-event-table").run();
     }
 }
 
