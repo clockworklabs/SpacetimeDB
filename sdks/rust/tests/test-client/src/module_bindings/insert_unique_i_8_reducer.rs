@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<InsertUniqueI8Args> for super::Reducer {
         Self::InsertUniqueI8 {
             n: args.n,
             data: args.data,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for InsertUniqueI8Args {
@@ -41,10 +35,8 @@ pub trait insert_unique_i_8 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_unique_i_8:insert_unique_i_8_then`] to run a callback after the reducer completes.
-    fn insert_unique_i_8(&self, n: i8,
-data: i32,
-) -> __sdk::Result<()> {
-        self.insert_unique_i_8_then(n, data,  |_, _| {})
+    fn insert_unique_i_8(&self, n: i8, data: i32) -> __sdk::Result<()> {
+        self.insert_unique_i_8_then(n, data, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_unique_i8` to run as soon as possible,
@@ -56,7 +48,7 @@ data: i32,
     fn insert_unique_i_8_then(
         &self,
         n: i8,
-data: i32,
+        data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -68,13 +60,13 @@ impl insert_unique_i_8 for super::RemoteReducers {
     fn insert_unique_i_8_then(
         &self,
         n: i8,
-data: i32,
+        data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertUniqueI8Args { n, data,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertUniqueI8Args { n, data }, callback)
     }
 }
-

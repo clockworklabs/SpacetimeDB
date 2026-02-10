@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct NoOpSucceedsArgs {
-    }
+pub(super) struct NoOpSucceedsArgs {}
 
 impl From<NoOpSucceedsArgs> for super::Reducer {
     fn from(args: NoOpSucceedsArgs) -> Self {
         Self::NoOpSucceeds
-}
+    }
 }
 
 impl __sdk::InModule for NoOpSucceedsArgs {
@@ -36,8 +29,8 @@ pub trait no_op_succeeds {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`no_op_succeeds:no_op_succeeds_then`] to run a callback after the reducer completes.
-    fn no_op_succeeds(&self, ) -> __sdk::Result<()> {
-        self.no_op_succeeds_then( |_, _| {})
+    fn no_op_succeeds(&self) -> __sdk::Result<()> {
+        self.no_op_succeeds_then(|_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `no_op_succeeds` to run as soon as possible,
@@ -48,7 +41,7 @@ pub trait no_op_succeeds {
     ///  and its status can be observed with the `callback`.
     fn no_op_succeeds_then(
         &self,
-        
+
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
@@ -58,12 +51,11 @@ pub trait no_op_succeeds {
 impl no_op_succeeds for super::RemoteReducers {
     fn no_op_succeeds_then(
         &self,
-        
+
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(NoOpSucceedsArgs {  }, callback)
+        self.imp.invoke_reducer_with_callback(NoOpSucceedsArgs {}, callback)
     }
 }
-

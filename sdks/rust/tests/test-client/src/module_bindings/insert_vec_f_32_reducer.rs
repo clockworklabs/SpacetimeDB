@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecF32Args {
-    pub f: Vec::<f32>,
+    pub f: Vec<f32>,
 }
 
 impl From<InsertVecF32Args> for super::Reducer {
     fn from(args: InsertVecF32Args) -> Self {
-        Self::InsertVecF32 {
-            f: args.f,
-}
-}
+        Self::InsertVecF32 { f: args.f }
+    }
 }
 
 impl __sdk::InModule for InsertVecF32Args {
@@ -39,9 +31,8 @@ pub trait insert_vec_f_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_f_32:insert_vec_f_32_then`] to run a callback after the reducer completes.
-    fn insert_vec_f_32(&self, f: Vec::<f32>,
-) -> __sdk::Result<()> {
-        self.insert_vec_f_32_then(f,  |_, _| {})
+    fn insert_vec_f_32(&self, f: Vec<f32>) -> __sdk::Result<()> {
+        self.insert_vec_f_32_then(f, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_f32` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait insert_vec_f_32 {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_f_32_then(
         &self,
-        f: Vec::<f32>,
+        f: Vec<f32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,12 @@ pub trait insert_vec_f_32 {
 impl insert_vec_f_32 for super::RemoteReducers {
     fn insert_vec_f_32_then(
         &self,
-        f: Vec::<f32>,
+        f: Vec<f32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecF32Args { f,  }, callback)
+        self.imp.invoke_reducer_with_callback(InsertVecF32Args { f }, callback)
     }
 }
-

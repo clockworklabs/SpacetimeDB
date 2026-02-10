@@ -2,31 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct VecF32 {
-    pub f: Vec::<f32>,
+    pub f: Vec<f32>,
 }
-
 
 impl __sdk::InModule for VecF32 {
     type Module = super::RemoteModule;
 }
 
-
 /// Column accessor struct for the table `VecF32`.
 ///
 /// Provides typed access to columns for query building.
 pub struct VecF32Cols {
-    pub f: __sdk::__query_builder::Col<VecF32, Vec::<f32>>,
+    pub f: __sdk::__query_builder::Col<VecF32, Vec<f32>>,
 }
 
 impl __sdk::__query_builder::HasCols for VecF32 {
@@ -34,7 +26,6 @@ impl __sdk::__query_builder::HasCols for VecF32 {
     fn cols(table_name: &'static str) -> Self::Cols {
         VecF32Cols {
             f: __sdk::__query_builder::Col::new(table_name, "f"),
-
         }
     }
 }
@@ -42,16 +33,11 @@ impl __sdk::__query_builder::HasCols for VecF32 {
 /// Indexed column accessor struct for the table `VecF32`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct VecF32IxCols {
-}
+pub struct VecF32IxCols {}
 
 impl __sdk::__query_builder::HasIxCols for VecF32 {
     type IxCols = VecF32IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        VecF32IxCols {
-
-        }
+        VecF32IxCols {}
     }
 }
-
-

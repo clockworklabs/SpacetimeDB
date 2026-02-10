@@ -2,31 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct VecString {
-    pub s: Vec::<String>,
+    pub s: Vec<String>,
 }
-
 
 impl __sdk::InModule for VecString {
     type Module = super::RemoteModule;
 }
 
-
 /// Column accessor struct for the table `VecString`.
 ///
 /// Provides typed access to columns for query building.
 pub struct VecStringCols {
-    pub s: __sdk::__query_builder::Col<VecString, Vec::<String>>,
+    pub s: __sdk::__query_builder::Col<VecString, Vec<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for VecString {
@@ -34,7 +26,6 @@ impl __sdk::__query_builder::HasCols for VecString {
     fn cols(table_name: &'static str) -> Self::Cols {
         VecStringCols {
             s: __sdk::__query_builder::Col::new(table_name, "s"),
-
         }
     }
 }
@@ -42,16 +33,11 @@ impl __sdk::__query_builder::HasCols for VecString {
 /// Indexed column accessor struct for the table `VecString`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct VecStringIxCols {
-}
+pub struct VecStringIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for VecString {
     type IxCols = VecStringIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        VecStringIxCols {
-
-        }
+        VecStringIxCols {}
     }
 }
-
-

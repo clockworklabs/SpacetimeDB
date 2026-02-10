@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,11 +10,9 @@ pub struct OneI32 {
     pub n: i32,
 }
 
-
 impl __sdk::InModule for OneI32 {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `OneI32`.
 ///
@@ -34,7 +26,6 @@ impl __sdk::__query_builder::HasCols for OneI32 {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneI32Cols {
             n: __sdk::__query_builder::Col::new(table_name, "n"),
-
         }
     }
 }
@@ -42,16 +33,11 @@ impl __sdk::__query_builder::HasCols for OneI32 {
 /// Indexed column accessor struct for the table `OneI32`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneI32IxCols {
-}
+pub struct OneI32IxCols {}
 
 impl __sdk::__query_builder::HasIxCols for OneI32 {
     type IxCols = OneI32IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneI32IxCols {
-
-        }
+        OneI32IxCols {}
     }
 }
-
-

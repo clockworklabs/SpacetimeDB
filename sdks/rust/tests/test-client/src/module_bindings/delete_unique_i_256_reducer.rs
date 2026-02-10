@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct DeleteUniqueI256Args {
 
 impl From<DeleteUniqueI256Args> for super::Reducer {
     fn from(args: DeleteUniqueI256Args) -> Self {
-        Self::DeleteUniqueI256 {
-            n: args.n,
-}
-}
+        Self::DeleteUniqueI256 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for DeleteUniqueI256Args {
@@ -39,9 +31,8 @@ pub trait delete_unique_i_256 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_unique_i_256:delete_unique_i_256_then`] to run a callback after the reducer completes.
-    fn delete_unique_i_256(&self, n: __sats::i256,
-) -> __sdk::Result<()> {
-        self.delete_unique_i_256_then(n,  |_, _| {})
+    fn delete_unique_i_256(&self, n: __sats::i256) -> __sdk::Result<()> {
+        self.delete_unique_i_256_then(n, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_unique_i256` to run as soon as possible,
@@ -69,7 +60,7 @@ impl delete_unique_i_256 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteUniqueI256Args { n,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteUniqueI256Args { n }, callback)
     }
 }
-

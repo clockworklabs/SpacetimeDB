@@ -2,32 +2,25 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct VecEveryPrimitiveStruct {
-    pub s: Vec::<EveryPrimitiveStruct>,
+    pub s: Vec<EveryPrimitiveStruct>,
 }
-
 
 impl __sdk::InModule for VecEveryPrimitiveStruct {
     type Module = super::RemoteModule;
 }
 
-
 /// Column accessor struct for the table `VecEveryPrimitiveStruct`.
 ///
 /// Provides typed access to columns for query building.
 pub struct VecEveryPrimitiveStructCols {
-    pub s: __sdk::__query_builder::Col<VecEveryPrimitiveStruct, Vec::<EveryPrimitiveStruct>>,
+    pub s: __sdk::__query_builder::Col<VecEveryPrimitiveStruct, Vec<EveryPrimitiveStruct>>,
 }
 
 impl __sdk::__query_builder::HasCols for VecEveryPrimitiveStruct {
@@ -35,7 +28,6 @@ impl __sdk::__query_builder::HasCols for VecEveryPrimitiveStruct {
     fn cols(table_name: &'static str) -> Self::Cols {
         VecEveryPrimitiveStructCols {
             s: __sdk::__query_builder::Col::new(table_name, "s"),
-
         }
     }
 }
@@ -43,16 +35,11 @@ impl __sdk::__query_builder::HasCols for VecEveryPrimitiveStruct {
 /// Indexed column accessor struct for the table `VecEveryPrimitiveStruct`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct VecEveryPrimitiveStructIxCols {
-}
+pub struct VecEveryPrimitiveStructIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for VecEveryPrimitiveStruct {
     type IxCols = VecEveryPrimitiveStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        VecEveryPrimitiveStructIxCols {
-
-        }
+        VecEveryPrimitiveStructIxCols {}
     }
 }
-
-

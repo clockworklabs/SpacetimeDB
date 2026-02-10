@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_vec_struct_type::EveryVecStruct;
 
@@ -17,11 +12,9 @@ pub struct OneEveryVecStruct {
     pub s: EveryVecStruct,
 }
 
-
 impl __sdk::InModule for OneEveryVecStruct {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `OneEveryVecStruct`.
 ///
@@ -35,7 +28,6 @@ impl __sdk::__query_builder::HasCols for OneEveryVecStruct {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneEveryVecStructCols {
             s: __sdk::__query_builder::Col::new(table_name, "s"),
-
         }
     }
 }
@@ -43,16 +35,11 @@ impl __sdk::__query_builder::HasCols for OneEveryVecStruct {
 /// Indexed column accessor struct for the table `OneEveryVecStruct`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneEveryVecStructIxCols {
-}
+pub struct OneEveryVecStructIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for OneEveryVecStruct {
     type IxCols = OneEveryVecStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneEveryVecStructIxCols {
-
-        }
+        OneEveryVecStructIxCols {}
     }
 }
-
-
