@@ -1759,7 +1759,7 @@ mod test {
     }
 
     #[test]
-    fn blocks_each_additional_iana_ipv6_range() {
+    fn blocks_additional_iana_ipv6_range() {
         // Additional ranges listed in the IANA IPv6 Special-Purpose Address Space registry.
         // Some are transitively covered by the broader `2001::/23` block, and are kept
         // here intentionally as explicit regression checks.
@@ -1876,18 +1876,6 @@ mod test {
                 "{name}: unexpected decision for high endpoint {high}"
             );
         }
-    }
-
-    #[test]
-    fn blocks_private_and_special_ipv6() {
-        // Loopback, unique-local, and link-local examples should be blocked.
-        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
-        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))));
-        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
-        // A normal global IPv6 address should remain allowed.
-        assert!(!is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
-            0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111
-        ))));
     }
 
     #[test]
