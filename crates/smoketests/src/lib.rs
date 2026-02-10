@@ -57,7 +57,7 @@ use regex::Regex;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -592,12 +592,63 @@ impl Smoketest {
         output
     }
 
+    /// Runs a spacetime CLI command with stdin input.
+    ///
+    /// Returns the command output. The command is run but not yet asserted.
+    /// Uses --config-path to isolate test config from user config.
+    /// Callers should pass `--server` explicitly when the command needs it.
+    pub fn spacetime_cmd_with_stdin(&self, args: &[&str], stdin_input: &str) -> Output {
+        let start = Instant::now();
+        let cli_path = ensure_binaries_built();
+        let mut child = Command::new(&cli_path)
+            .arg("--config-path")
+            .arg(&self.config_path)
+            .args(args)
+            .current_dir(self.project_dir.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn spacetime command");
+
+        {
+            use std::io::Write;
+            let stdin = child.stdin.as_mut().expect("missing child stdin");
+            stdin
+                .write_all(stdin_input.as_bytes())
+                .expect("Failed to write spacetime stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to wait for spacetime command");
+
+        let cmd_name = args.first().unwrap_or(&"unknown");
+        eprintln!("[TIMING] spacetime {} (stdin): {:?}", cmd_name, start.elapsed());
+        output
+    }
+
     /// Runs a spacetime CLI command and returns stdout as a string.
     ///
     /// Panics if the command fails.
     /// Callers should pass `--server` explicitly when the command needs it.
     pub fn spacetime(&self, args: &[&str]) -> Result<String> {
         let output = self.spacetime_cmd(args);
+        if !output.status.success() {
+            bail!(
+                "spacetime {:?} failed:\nstdout: {}\nstderr: {}",
+                args,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Runs a spacetime CLI command with stdin and returns stdout as a string.
+    ///
+    /// Panics if the command fails.
+    /// Callers should pass `--server` explicitly when the command needs it.
+    pub fn spacetime_with_stdin(&self, args: &[&str], stdin_input: &str) -> Result<String> {
+        let output = self.spacetime_cmd_with_stdin(args, stdin_input);
         if !output.status.success() {
             bail!(
                 "spacetime {:?} failed:\nstdout: {}\nstderr: {}",
@@ -677,6 +728,20 @@ log = "0.4"
         self.precompiled_wasm_path = Some(path);
     }
 
+    /// Switches to using an explicit precompiled WASM path.
+    ///
+    /// After calling this, subsequent `publish_module*` calls will use this
+    /// WASM file instead of building from source.
+    pub fn use_precompiled_wasm_path(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        if !path.exists() {
+            bail!("Pre-compiled wasm not found at {}", path.display());
+        }
+        eprintln!("[PRECOMPILED] Switching to explicit wasm path: {}", path.display());
+        self.precompiled_wasm_path = Some(path.to_path_buf());
+        Ok(())
+    }
+
     /// Runs `spacetime build` and returns the raw output.
     ///
     /// Use this when you need to check for build failures (e.g., wasm_bindgen detection).
@@ -723,16 +788,29 @@ log = "0.4"
 
     /// Publishes the module with name, clear, and break_clients options.
     pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal(Some(name), clear, break_clients)
+        self.publish_module_internal(Some(name), clear, break_clients, None)
+    }
+
+    /// Publishes the module and allows supplying stdin input to the CLI.
+    ///
+    /// Useful for interactive publish prompts which require typed acknowledgements.
+    pub fn publish_module_with_stdin(&mut self, name: &str, stdin_input: &str) -> Result<String> {
+        self.publish_module_internal(Some(name), false, false, Some(stdin_input))
     }
 
     /// Internal helper for publishing with options.
     fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
-        self.publish_module_internal(name, clear, false)
+        self.publish_module_internal(name, clear, false, None)
     }
 
     /// Internal helper for publishing with all options.
-    fn publish_module_internal(&mut self, name: Option<&str>, clear: bool, break_clients: bool) -> Result<String> {
+    fn publish_module_internal(
+        &mut self,
+        name: Option<&str>,
+        clear: bool,
+        break_clients: bool,
+        stdin_input: Option<&str>,
+    ) -> Result<String> {
         let start = Instant::now();
 
         // Determine the WASM path - either precompiled or build it
@@ -796,7 +874,10 @@ log = "0.4"
             args.push(&name_owned);
         }
 
-        let output = self.spacetime(&args)?;
+        let output = match stdin_input {
+            Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
+            None => self.spacetime(&args)?,
+        };
         eprintln!(
             "[TIMING] spacetime publish (after build): {:?}",
             publish_start.elapsed()
