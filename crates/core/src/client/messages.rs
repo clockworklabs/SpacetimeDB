@@ -179,6 +179,28 @@ pub fn serialize(
     }
 }
 
+/// Serialize `msg` into a [`DataMessage`] containing a [`ws_v2::ServerMessage`].
+///
+/// This mirrors the v1 framing by prepending the compression tag and applying
+/// conditional compression when configured.
+pub fn serialize_v2(
+    mut buffer: SerializeBuffer,
+    msg: ws_v2::ServerMessage,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    let srv_msg = buffer.write_with_tag(ws_v1::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
+        bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
+    });
+
+    match decide_compression(srv_msg.len(), compression) {
+        ws_v1::Compression::None => buffer.uncompressed(),
+        ws_v1::Compression::Brotli => {
+            buffer.compress_with_tag(ws_v1::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
+        }
+        ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_v1::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+    }
+}
+
 #[derive(Debug, From)]
 pub enum SerializableMessage {
     QueryBinary(OneOffQueryResponseMessage<ws_v1::BsatnFormat>),

@@ -13,7 +13,7 @@ use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Extension;
 use axum_extra::TypedHeader;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use bytestring::ByteString;
 use crossbeam_queue::ArrayQueue;
 use derive_more::From;
@@ -23,7 +23,8 @@ use prometheus::{Histogram, IntGauge};
 use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
-    serialize, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage, ToProtocol,
+    serialize, serialize_v2, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage,
+    ToProtocol,
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
@@ -32,14 +33,12 @@ use spacetimedb::client::{
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
-use spacetimedb::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -1434,54 +1433,14 @@ async fn ws_encode_message(
 #[allow(dead_code, unused_variables)]
 async fn ws_encode_message_v2(
     config: ClientConfig,
-    _buf: SerializeBuffer,
+    buf: SerializeBuffer,
     message: ws_v2::ServerMessage,
     _is_large_message: bool,
     _bsatn_rlb_pool: &BsatnRowListBuilderPool,
 ) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
-    let _ = (_buf, _is_large_message, _bsatn_rlb_pool);
+    let _ = (_is_large_message, _bsatn_rlb_pool);
     let start = Instant::now();
-    let mut raw = BytesMut::new();
-    bsatn::to_writer(&mut raw, &message).expect("should be able to bsatn encode v2 message");
-
-    let compression = decide_compression(raw.len(), config.compression);
-    let (data, in_use) = match compression {
-        ws_v1::Compression::None => {
-            let mut framed = BytesMut::with_capacity(1 + raw.len());
-            framed.put_u8(ws_v1::SERVER_MSG_COMPRESSION_TAG_NONE);
-            framed.extend_from_slice(&raw);
-            let data = framed.freeze();
-            let in_use = InUseSerializeBuffer::Uncompressed {
-                uncompressed: data.clone(),
-                compressed: BytesMut::new(),
-            };
-            (data, in_use)
-        }
-        ws_v1::Compression::Brotli => {
-            let mut compressed = BytesMut::new();
-            compressed.put_u8(ws_v1::SERVER_MSG_COMPRESSION_TAG_BROTLI);
-            let mut writer = (&mut compressed).writer();
-            brotli_compress(&raw, &mut writer);
-            let data = compressed.freeze();
-            let in_use = InUseSerializeBuffer::Compressed {
-                uncompressed: raw,
-                compressed: data.clone(),
-            };
-            (data, in_use)
-        }
-        ws_v1::Compression::Gzip => {
-            let mut compressed = BytesMut::new();
-            compressed.put_u8(ws_v1::SERVER_MSG_COMPRESSION_TAG_GZIP);
-            let mut writer = (&mut compressed).writer();
-            gzip_compress(&raw, &mut writer);
-            let data = compressed.freeze();
-            let in_use = InUseSerializeBuffer::Compressed {
-                uncompressed: raw,
-                compressed: data.clone(),
-            };
-            (data, in_use)
-        }
-    };
+    let (in_use, data) = serialize_v2(buf, message, config.compression);
 
     let metrics = EncodeMetrics {
         timing: start.elapsed(),
