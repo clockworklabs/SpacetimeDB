@@ -969,37 +969,35 @@ fn exec_on_reducer() {
 
     subscribe_all_then(&connection, move |ctx| {
         sub_applied_nothing_result(assert_all_tables_empty(ctx));
-        ctx.reducers
-            .insert_one_u_8_then(value, move |ctx, status| {
-                let run_checks = || {
-                    match status {
-                        Ok(Ok(())) => {}
-                        other => anyhow::bail!("Unexpected status: {other:?}"),
-                    }
-                    if !matches!(ctx.event.status, Status::Committed) {
-                        anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
-                    }
-                    let expected_reducer = Reducer::InsertOneU8 { n: value };
-                    if ctx.event.reducer != expected_reducer {
-                        anyhow::bail!(
-                            "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
-                            ctx.event.reducer
-                        );
-                    }
+        ctx.reducers.insert_one_u_8_then(value, move |ctx, status| {
+            let run_checks = || {
+                match status {
+                    Ok(Ok(())) => {}
+                    other => anyhow::bail!("Unexpected status: {other:?}"),
+                }
+                if !matches!(ctx.event.status, Status::Committed) {
+                    anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
+                }
+                let expected_reducer = Reducer::InsertOneU8 { n: value };
+                if ctx.event.reducer != expected_reducer {
+                    anyhow::bail!(
+                        "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
+                        ctx.event.reducer
+                    );
+                }
 
-                    if ctx.db.one_u_8().count() != 1 {
-                        anyhow::bail!("Expected 1 row in table OneU8, but found {}", ctx.db.one_u_8().count());
-                    }
-                    let row = ctx.db.one_u_8().iter().next().unwrap();
-                    if row.n != value {
-                        anyhow::bail!("Unexpected row value. Expected {value} but found {row:?}");
-                    }
-                    Ok(())
-                };
+                if ctx.db.one_u_8().count() != 1 {
+                    anyhow::bail!("Expected 1 row in table OneU8, but found {}", ctx.db.one_u_8().count());
+                }
+                let row = ctx.db.one_u_8().iter().next().unwrap();
+                if row.n != value {
+                    anyhow::bail!("Unexpected row value. Expected {value} but found {row:?}");
+                }
+                Ok(())
+            };
 
-                reducer_result(run_checks());
-            })
-            .unwrap();
+            reducer_result(run_checks());
+        }).unwrap();
     });
 
     test_counter.wait_for_all();
@@ -1024,19 +1022,51 @@ fn exec_fail_reducer() {
         sub_applied_nothing_result(assert_all_tables_empty(ctx));
 
         // First call: should succeed.
-        ctx.reducers
-            .insert_pk_u_8_then(key, initial_data, move |ctx, status| {
+        ctx.reducers.insert_pk_u_8_then(key, initial_data, move |ctx, status| {
+            let run_checks = || {
+                match &status {
+                    Ok(Ok(())) => {}
+                    other => anyhow::bail!("Expected success but got {other:?}"),
+                }
+                if !matches!(ctx.event.status, Status::Committed) {
+                    anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
+                }
+                let expected_reducer = Reducer::InsertPkU8 {
+                    n: key,
+                    data: initial_data,
+                };
+                if ctx.event.reducer != expected_reducer {
+                    anyhow::bail!(
+                        "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
+                        ctx.event.reducer
+                    );
+                }
+
+                if ctx.db.pk_u_8().count() != 1 {
+                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.pk_u_8().count());
+                }
+                let row = ctx.db.pk_u_8().iter().next().unwrap();
+                if row.n != key || row.data != initial_data {
+                    anyhow::bail!("Unexpected row value. Expected ({key}, {initial_data}) but found {row:?}");
+                }
+                Ok(())
+            };
+
+            reducer_success_result(run_checks());
+
+            // Second call with same key: should fail (duplicate primary key).
+            ctx.reducers.insert_pk_u_8_then(key, fail_data, move |ctx, status| {
                 let run_checks = || {
                     match &status {
-                        Ok(Ok(())) => {}
-                        other => anyhow::bail!("Expected success but got {other:?}"),
+                        Ok(Err(_err_msg)) => {}
+                        other => anyhow::bail!("Expected reducer error but got {other:?}"),
                     }
-                    if !matches!(ctx.event.status, Status::Committed) {
-                        anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
+                    if !matches!(ctx.event.status, Status::Err(_)) {
+                        anyhow::bail!("Unexpected status. Expected Err but found {:?}", ctx.event.status);
                     }
                     let expected_reducer = Reducer::InsertPkU8 {
                         n: key,
-                        data: initial_data,
+                        data: fail_data,
                     };
                     if ctx.event.reducer != expected_reducer {
                         anyhow::bail!(
@@ -1055,47 +1085,9 @@ fn exec_fail_reducer() {
                     Ok(())
                 };
 
-                reducer_success_result(run_checks());
-
-                // Second call with same key: should fail (duplicate primary key).
-                ctx.reducers
-                    .insert_pk_u_8_then(key, fail_data, move |ctx, status| {
-                        let run_checks = || {
-                            match &status {
-                                Ok(Err(_err_msg)) => {}
-                                other => anyhow::bail!("Expected reducer error but got {other:?}"),
-                            }
-                            if !matches!(ctx.event.status, Status::Err(_)) {
-                                anyhow::bail!("Unexpected status. Expected Err but found {:?}", ctx.event.status);
-                            }
-                            let expected_reducer = Reducer::InsertPkU8 {
-                                n: key,
-                                data: fail_data,
-                            };
-                            if ctx.event.reducer != expected_reducer {
-                                anyhow::bail!(
-                                    "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
-                                    ctx.event.reducer
-                                );
-                            }
-
-                            if ctx.db.pk_u_8().count() != 1 {
-                                anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.pk_u_8().count());
-                            }
-                            let row = ctx.db.pk_u_8().iter().next().unwrap();
-                            if row.n != key || row.data != initial_data {
-                                anyhow::bail!(
-                                    "Unexpected row value. Expected ({key}, {initial_data}) but found {row:?}"
-                                );
-                            }
-                            Ok(())
-                        };
-
-                        reducer_fail_result(run_checks());
-                    })
-                    .unwrap();
-            })
-            .unwrap();
+                reducer_fail_result(run_checks());
+            }).unwrap();
+        }).unwrap();
     });
 
     test_counter.wait_for_all();
@@ -1803,26 +1795,23 @@ fn exec_caller_always_notified() {
 
     let connection = connect(&test_counter);
 
-    connection
-        .reducers
-        .no_op_succeeds_then(move |ctx, status| {
-            no_op_result(match (&ctx.event, &status) {
-                (
-                    ReducerEvent {
-                        status: Status::Committed,
-                        reducer: Reducer::NoOpSucceeds,
-                        ..
-                    },
-                    Ok(Ok(())),
-                ) => Ok(()),
-                _ => Err(anyhow::anyhow!(
-                    "Unexpected event from no_op_succeeds reducer: {:?}, status: {:?}",
-                    ctx.event,
-                    status,
-                )),
-            });
-        })
-        .unwrap();
+    connection.reducers.no_op_succeeds_then(move |ctx, status| {
+        no_op_result(match (&ctx.event, &status) {
+            (
+                ReducerEvent {
+                    status: Status::Committed,
+                    reducer: Reducer::NoOpSucceeds,
+                    ..
+                },
+                Ok(Ok(())),
+            ) => Ok(()),
+            _ => Err(anyhow::anyhow!(
+                "Unexpected event from no_op_succeeds reducer: {:?}, status: {:?}",
+                ctx.event,
+                status,
+            )),
+        });
+    }).unwrap();
 
     test_counter.wait_for_all();
 }
@@ -1880,20 +1869,18 @@ fn exec_sorted_uuids_insert() {
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
         move |ctx| {
-            ctx.reducers
-                .sorted_uuids_insert_then(move |ctx, _status| {
-                    let run_checks = || {
-                        if !matches!(ctx.event.reducer, Reducer::SortedUuidsInsert) {
-                            anyhow::bail!(
-                                "Unexpected Event: expected reducer SortedUuidsInsert but found {:?}",
-                                ctx.event,
-                            );
-                        }
-                        Ok(())
-                    };
-                    test_counter.add_test("sorted-uuids-insert-callback")(run_checks());
-                })
-                .unwrap();
+            ctx.reducers.sorted_uuids_insert_then(move |ctx, _status| {
+                let run_checks = || {
+                    if !matches!(ctx.event.reducer, Reducer::SortedUuidsInsert) {
+                        anyhow::bail!(
+                            "Unexpected Event: expected reducer SortedUuidsInsert but found {:?}",
+                            ctx.event,
+                        );
+                    }
+                    Ok(())
+                };
+                test_counter.add_test("sorted-uuids-insert-callback")(run_checks());
+            }).unwrap();
 
             sub_applied_nothing_result(assert_all_tables_empty(ctx))
         }
@@ -1916,7 +1903,7 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     // For each actor, subscribe to the `OneU8` table.
     // The choice of table is a fairly random one: just one of the simpler tables.
     let conns = ["alice", "bob"].map(|who| {
-        let conn = connect_with_then(&pre_ins_counter, who, |b| b, |_| {});
+        let conn = connect_with_then(&pre_ins_counter, who, |b| b.with_light_mode(true), |_| {});
         let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
 
         let counter2 = counter.clone();
@@ -2197,33 +2184,25 @@ fn test_lhs_join_update() {
     }));
 
     // Add two pk_u32 rows to the subscription
-    conn.reducers
-        .insert_pk_u_32_then(1, 0, move |_, _| {
-            put_result(&mut on_insert_1, Ok(()));
-        })
-        .unwrap();
-    conn.reducers
-        .insert_pk_u_32_then(2, 0, move |_, _| {
-            put_result(&mut on_insert_2, Ok(()));
-        })
-        .unwrap();
+    conn.reducers.insert_pk_u_32_then(1, 0, move |_, _| {
+        put_result(&mut on_insert_1, Ok(()));
+    }).unwrap();
+    conn.reducers.insert_pk_u_32_then(2, 0, move |_, _| {
+        put_result(&mut on_insert_2, Ok(()));
+    }).unwrap();
     conn.reducers.insert_unique_u_32(1, 3).unwrap();
     conn.reducers.insert_unique_u_32(2, 4).unwrap();
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
     insert_counter.wait_for_all();
-    conn.reducers
-        .update_pk_u_32_then(2, 1, move |ctx, _| {
-            put_result(&mut on_update_1, Ok(()));
-            // Chain another update to verify the second update callback.
-            ctx.reducers
-                .update_pk_u_32_then(2, 0, move |_, _| {
-                    put_result(&mut on_update_2, Ok(()));
-                })
-                .unwrap();
-        })
-        .unwrap();
+    conn.reducers.update_pk_u_32_then(2, 1, move |ctx, _| {
+        put_result(&mut on_update_1, Ok(()));
+        // Chain another update to verify the second update callback.
+        ctx.reducers.update_pk_u_32_then(2, 0, move |_, _| {
+            put_result(&mut on_update_2, Ok(()));
+        }).unwrap();
+    }).unwrap();
 
     // Wait for the second row update for pk_u32
     update_counter.wait_for_all();
@@ -2248,33 +2227,25 @@ fn test_lhs_join_update_disjoint_queries() {
     }));
 
     // Add two pk_u32 rows to the subscription
-    conn.reducers
-        .insert_pk_u_32_then(1, 0, move |_, _| {
-            put_result(&mut on_insert_1, Ok(()));
-        })
-        .unwrap();
-    conn.reducers
-        .insert_pk_u_32_then(2, 0, move |_, _| {
-            put_result(&mut on_insert_2, Ok(()));
-        })
-        .unwrap();
+    conn.reducers.insert_pk_u_32_then(1, 0, move |_, _| {
+        put_result(&mut on_insert_1, Ok(()));
+    }).unwrap();
+    conn.reducers.insert_pk_u_32_then(2, 0, move |_, _| {
+        put_result(&mut on_insert_2, Ok(()));
+    }).unwrap();
     conn.reducers.insert_unique_u_32(1, 3).unwrap();
     conn.reducers.insert_unique_u_32(2, 4).unwrap();
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
     insert_counter.wait_for_all();
-    conn.reducers
-        .update_pk_u_32_then(2, 1, move |ctx, _| {
-            put_result(&mut on_update_1, Ok(()));
-            // Chain another update to verify the second update callback.
-            ctx.reducers
-                .update_pk_u_32_then(2, 0, move |_, _| {
-                    put_result(&mut on_update_2, Ok(()));
-                })
-                .unwrap();
-        })
-        .unwrap();
+    conn.reducers.update_pk_u_32_then(2, 1, move |ctx, _| {
+        put_result(&mut on_update_1, Ok(()));
+        // Chain another update to verify the second update callback.
+        ctx.reducers.update_pk_u_32_then(2, 0, move |_, _| {
+            put_result(&mut on_update_2, Ok(()));
+        }).unwrap();
+    }).unwrap();
 
     // Wait for the second row update for pk_u32
     update_counter.wait_for_all();
