@@ -1,7 +1,12 @@
 <template>
-  <SpacetimeDBProvider :connection-builder="connectionBuilder">
-    <AppContent />
-  </SpacetimeDBProvider>
+  <ClientOnly>
+    <SpacetimeDBProvider :connection-builder="connectionBuilder">
+      <AppContent />
+    </SpacetimeDBProvider>
+    <template #fallback>
+      <AppContent />
+    </template>
+  </ClientOnly>
 </template>
 
 <script setup lang="ts">
@@ -28,11 +33,13 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
   console.log('Error connecting to SpacetimeDB:', err);
 };
 
-const connectionBuilder = DbConnection.builder()
-  .withUri(HOST)
-  .withModuleName(DB_NAME)
-  .withToken(localStorage.getItem('auth_token') || undefined)
-  .onConnect(onConnect)
-  .onDisconnect(onDisconnect)
-  .onConnectError(onConnectError);
+const connectionBuilder = import.meta.client
+  ? DbConnection.builder()
+      .withUri(HOST)
+      .withModuleName(DB_NAME)
+      .withToken(localStorage.getItem('auth_token') || undefined)
+      .onConnect(onConnect)
+      .onDisconnect(onDisconnect)
+      .onConnectError(onConnectError)
+  : undefined;
 </script>

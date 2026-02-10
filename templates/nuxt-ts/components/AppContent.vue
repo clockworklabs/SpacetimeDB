@@ -4,8 +4,8 @@
 
     <div :style="{ marginBottom: '1rem' }">
       Status:
-      <strong :style="{ color: conn.isActive ? 'green' : 'red' }">
-        {{ conn.isActive ? 'Connected' : 'Disconnected' }}
+      <strong :style="{ color: conn?.isActive ? 'green' : 'red' }">
+        {{ conn?.isActive ? 'Connected' : 'Disconnected' }}
       </strong>
     </div>
 
@@ -15,22 +15,22 @@
         placeholder="Enter name"
         v-model="name"
         :style="{ padding: '0.5rem', marginRight: '0.5rem' }"
-        :disabled="!conn.isActive"
+        :disabled="!conn?.isActive"
       />
       <button
         type="submit"
         :style="{ padding: '0.5rem 1rem' }"
-        :disabled="!conn.isActive"
+        :disabled="!conn?.isActive"
       >
         Add Person
       </button>
     </form>
 
     <div>
-      <h2>People ({{ people.length }})</h2>
-      <p v-if="people.length === 0">No people yet. Add someone above!</p>
+      <h2>People ({{ displayPeople.length }})</h2>
+      <p v-if="displayPeople.length === 0">No people yet. Add someone above!</p>
       <ul v-else>
-        <li v-for="(person, index) in people" :key="index">
+        <li v-for="(person, index) in displayPeople" :key="index">
           {{ person.name }}
         </li>
       </ul>
@@ -39,22 +39,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { tables, reducers } from '../module_bindings';
-import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/vue';
 
-const conn = useSpacetimeDB();
 const name = ref('');
 
-// Subscribe to all people in the database
-const [people] = useTable(tables.person);
+// Fetch initial data server-side for SSR
+const { data: initialPeople } = await useFetch('/api/people');
 
-const addReducer = useReducer(reducers.add);
+// On the client, use real-time composables
+let conn: ReturnType<typeof import('spacetimedb/vue').useSpacetimeDB> | undefined;
+let people: ReturnType<typeof import('spacetimedb/vue').useTable>[0] | undefined;
+let addReducer: ReturnType<typeof import('spacetimedb/vue').useReducer> | undefined;
+
+if (import.meta.client) {
+  const { useSpacetimeDB, useTable, useReducer } = await import('spacetimedb/vue');
+  conn = useSpacetimeDB();
+  const [tableData] = useTable(tables.person);
+  people = tableData;
+  addReducer = useReducer(reducers.add);
+}
+
+// Use real-time data once connected, fall back to SSR data
+const displayPeople = computed(() => {
+  if (conn?.isActive && people?.value) {
+    return people.value;
+  }
+  return initialPeople.value ?? [];
+});
 
 const addPerson = () => {
-  if (!name.value.trim() || !conn.isActive) return;
-
-  // Call the add reducer
+  if (!name.value.trim() || !conn?.isActive || !addReducer) return;
   addReducer({ name: name.value });
   name.value = '';
 };
