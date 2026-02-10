@@ -19,7 +19,7 @@ use crate::host::{
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
-use crate::module_host_context::ModuleCreationContextLimited;
+use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
@@ -51,6 +51,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValu
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
@@ -294,7 +295,7 @@ pub enum DescribeError {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(
-        mcc: ModuleCreationContextLimited,
+        mcc: ModuleCreationContext,
         module: T,
     ) -> Result<(Self, WasmModuleInstance<T::Instance>), InitializationError> {
         log::trace!(
@@ -649,7 +650,7 @@ impl InstanceCommon {
 
             for sub in tx.lookup_st_view_subs(view_id)? {
                 view_calls.push(CallViewParams {
-                    view_name: view_name.to_owned().into(),
+                    view_name: view_name.clone(),
                     view_id,
                     table_id,
                     fn_ptr: *fn_ptr,
@@ -682,7 +683,7 @@ impl InstanceCommon {
         // We've already validated by this point that the procedure exists,
         // so it's fine to use the panicking `procedure_by_id`.
         let procedure_def = self.info.module_def.procedure_by_id(procedure_id);
-        let procedure_name: &str = &procedure_def.name;
+        let procedure_name = &procedure_def.name;
 
         // TODO(observability): Add tracing spans, energy, metrics?
         // These will require further thinking once we implement procedure suspend/resume,
@@ -690,7 +691,7 @@ impl InstanceCommon {
 
         let op = ProcedureOp {
             id: procedure_id,
-            name: procedure_name.into(),
+            name: procedure_name.clone(),
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -907,7 +908,7 @@ impl InstanceCommon {
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.clone(),
+                reducer: Some(reducer_name.clone()),
                 reducer_id,
                 args,
             },
@@ -1275,14 +1276,13 @@ impl InstanceCommon {
     ) -> (ViewCallResult, bool) {
         let view_calls = tx
             .view_for_update()
-            .cloned()
             .map(|info| {
                 let view_def = module_def
                     .get_view_by_id(info.fn_ptr, info.sender.is_none())
                     .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
 
                 CallViewParams {
-                    view_name: view_def.name.clone().into(),
+                    view_name: view_def.name.clone(),
                     view_id: info.view_id,
                     table_id: info.table_id,
                     fn_ptr: view_def.fn_ptr,
@@ -1552,7 +1552,7 @@ fn lifecyle_modifications_to_tx(
 */
 
 pub trait InstanceOp {
-    fn name(&self) -> &str;
+    fn name(&self) -> &Identifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1560,7 +1560,7 @@ pub trait InstanceOp {
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
-    pub name: &'a str,
+    pub name: &'a Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1570,7 +1570,7 @@ pub struct ViewOp<'a> {
 }
 
 impl InstanceOp for ViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         self.name
     }
 
@@ -1591,7 +1591,7 @@ impl InstanceOp for ViewOp<'_> {
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
-    pub name: &'a str,
+    pub name: &'a Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1600,7 +1600,7 @@ pub struct AnonymousViewOp<'a> {
 }
 
 impl InstanceOp for AnonymousViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         self.name
     }
 
@@ -1631,8 +1631,8 @@ pub struct ReducerOp<'a> {
 }
 
 impl InstanceOp for ReducerOp<'_> {
-    fn name(&self) -> &str {
-        self.name
+    fn name(&self) -> &Identifier {
+        self.name.as_identifier()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1667,7 +1667,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
 #[derive(Clone, Debug)]
 pub struct ProcedureOp {
     pub id: ProcedureId,
-    pub name: Box<str>,
+    pub name: Identifier,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,
@@ -1675,7 +1675,7 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         &self.name
     }
     fn timestamp(&self) -> Timestamp {

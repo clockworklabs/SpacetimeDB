@@ -11,6 +11,7 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod smoketest;
 
 /// SpacetimeDB CI tasks
 ///
@@ -236,13 +237,7 @@ enum CiCmd {
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
-    Smoketests {
-        #[arg(
-            trailing_var_arg = true,
-            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
-        )]
-        args: Vec<String>,
-    },
+    Smoketests(smoketest::SmoketestsArgs),
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -299,15 +294,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn infer_python() -> String {
-    let py3_available = cmd!("python3", "--version").run().is_ok();
-    if py3_available {
-        "python3".to_string()
-    } else {
-        "python".to_string()
-    }
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -317,8 +303,20 @@ fn main() -> Result<()> {
         Some(CiCmd::Test) => {
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
-            // cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
-            cmd!("cargo", "test", "--all", "--", "--test-threads=2", "--skip", "unreal").run()?;
+            // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
+            // Smoketests have their own dedicated command: `cargo ci smoketests`
+            cmd!(
+                "cargo",
+                "test",
+                "--all",
+                "--exclude",
+                "spacetimedb-smoketests",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -478,16 +476,8 @@ fn main() -> Result<()> {
             .run()?;
         }
 
-        Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            let python = infer_python();
-            cmd(
-                python,
-                ["-m", "smoketests"]
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .chain(smoketest_args),
-            )
-            .run()?;
+        Some(CiCmd::Smoketests(args)) => {
+            smoketest::run(args)?;
         }
 
         Some(CiCmd::UpdateFlow {
