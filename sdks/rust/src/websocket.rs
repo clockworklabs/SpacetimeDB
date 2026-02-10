@@ -247,8 +247,7 @@ impl WsConnection {
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ws::v2::ServerMessage, WsError> {
-        // TODO(ws-v2): Re-enable compression
-        // let bytes = &*decompress_server_message(bytes)?;
+        let bytes = &*decompress_server_message(bytes)?;
         bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })
     }
 
