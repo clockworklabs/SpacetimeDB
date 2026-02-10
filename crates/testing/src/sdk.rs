@@ -6,6 +6,7 @@ use spacetimedb_paths::{RootDir, SpacetimePaths};
 use std::fs::create_dir_all;
 use std::sync::{Mutex, OnceLock};
 use std::thread::JoinHandle;
+use std::{path::Path, path::PathBuf};
 
 use crate::invoke_cli;
 use crate::modules::{start_runtime, CompilationMode, CompiledModule};
@@ -103,6 +104,14 @@ pub struct Test {
     /// - `SPACETIME_SDK_TEST_CLIENT_PROJECT` bound to the `client_project` path.
     /// - `SPACETIME_SDK_TEST_DB_NAME` bound to the database identity or name.
     run_command: String,
+
+    client_runner: ClientRunner,
+}
+
+#[derive(Clone)]
+enum ClientRunner {
+    Default,
+    Web { wasm_path: String, bindgen_out_dir: String },
 }
 
 pub const TEST_MODULE_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_MODULE_PROJECT";
@@ -135,7 +144,7 @@ impl Test {
 
         let db_name = publish_module(paths, &file, host_type);
 
-        run_client(&self.run_command, &self.client_project, &db_name);
+        run_client(&self.client_runner, &self.run_command, &self.client_project, &db_name);
     }
 }
 
@@ -358,8 +367,9 @@ fn split_command_string(command: &str) -> (String, Vec<String>) {
 // Note: this function is memoized to ensure we only compile each client once.
 fn compile_client(compile_command: &str, client_project: &str) {
     let client_project = client_project.to_owned();
+    let compile_command = compile_command.to_owned();
 
-    memoized!(|client_project: String| -> () {
+    memoized!(|(client_project, compile_command): (String, String)| -> () {
         let (exe, args) = split_command_string(compile_command);
 
         let output = cmd(exe, args)
@@ -375,24 +385,95 @@ fn compile_client(compile_command: &str, client_project: &str) {
     })
 }
 
-fn run_client(run_command: &str, client_project: &str, db_name: &str) {
-    let (exe, args) = split_command_string(run_command);
+fn run_client(runner: &ClientRunner, run_command: &str, client_project: &str, db_name: &str) {
+    match runner {
+        ClientRunner::Default => {
+            let (exe, args) = split_command_string(run_command);
 
-    let output = cmd(exe, args)
-        .dir(client_project)
-        .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
-        .env(TEST_DB_NAME_ENV_VAR, db_name)
-        .env(
-            "RUST_LOG",
-            "spacetimedb=debug,spacetimedb_client_api=debug,spacetimedb_lib=debug,spacetimedb_standalone=debug",
-        )
-        .stderr_to_stdout()
-        .stdout_capture()
-        .unchecked()
-        .run()
-        .expect("Error running run command");
+            let command = cmd(exe, args);
 
-    status_ok_or_panic(output, run_command, "(running)");
+            let output = command
+                .dir(client_project)
+                .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
+                .env(TEST_DB_NAME_ENV_VAR, db_name)
+                .env(
+                    "RUST_LOG",
+                    "spacetimedb=debug,spacetimedb_client_api=debug,spacetimedb_lib=debug,spacetimedb_standalone=debug",
+                )
+                .stderr_to_stdout()
+                .stdout_capture()
+                .unchecked()
+                .run()
+                .expect("Error running run command");
+
+            status_ok_or_panic(output, run_command, "(running)");
+        }
+        ClientRunner::Web {
+            wasm_path,
+            bindgen_out_dir,
+        } => {
+            let rust_log =
+                "spacetimedb=debug,spacetimedb_client_api=debug,spacetimedb_lib=debug,spacetimedb_standalone=debug";
+
+            let wasm_path = Path::new(wasm_path);
+            let bindgen_out_dir = PathBuf::from(bindgen_out_dir);
+            let bindgen_out_dir = if bindgen_out_dir.is_absolute() {
+                bindgen_out_dir
+            } else {
+                Path::new(client_project).join(bindgen_out_dir)
+            };
+
+            create_dir_all(&bindgen_out_dir).expect("Failed to create wasm-bindgen out dir");
+
+            let output = cmd(
+                "wasm-bindgen",
+                [
+                    "--target".to_owned(),
+                    "nodejs".to_owned(),
+                    "--out-dir".to_owned(),
+                    bindgen_out_dir
+                        .to_str()
+                        .expect("bindgen_out_dir should be valid utf-8")
+                        .to_owned(),
+                    wasm_path.to_str().expect("wasm_path should be valid utf-8").to_owned(),
+                ],
+            )
+            .dir(client_project)
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run()
+            .expect("Error running wasm-bindgen");
+            status_ok_or_panic(output, "wasm-bindgen", "(wasm-bindgen)");
+
+            // Crate name test-client becomes test_client for wasm-bindgen output.
+            let js_module = bindgen_out_dir.join("test_client.js");
+            let js_module = js_module
+                .to_str()
+                .expect("js_module path should be valid utf-8")
+                .to_owned();
+
+            let node_script = format!(
+                "(async () => {{\n  const m = require({js_module:?});\n  if (m.default) {{ await m.default(); }}\n  const run = m.run || m.main || m.start;\n  if (!run) throw new Error('No exported run/main/start function from wasm module');\n  await run(process.argv[2]);\n}})().catch((e) => {{ console.error(e); process.exit(1); }});"
+            );
+
+            let mut node_args: Vec<String> =
+                vec!["-e".to_owned(), node_script, "--".to_owned(), run_command.to_owned()];
+
+            let output = cmd("node", node_args)
+                .dir(client_project)
+                .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
+                .env(TEST_DB_NAME_ENV_VAR, db_name)
+                .env("RUST_LOG", rust_log)
+                .stderr_to_stdout()
+                .stdout_capture()
+                .unchecked()
+                .run()
+                .expect("Error running wasm client via node");
+
+            status_ok_or_panic(output, run_command, "(running web)");
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -404,6 +485,8 @@ pub struct TestBuilder {
     generate_subdir: Option<String>,
     compile_command: Option<String>,
     run_command: Option<String>,
+
+    client_runner: Option<ClientRunner>,
 }
 
 impl TestBuilder {
@@ -464,6 +547,16 @@ impl TestBuilder {
         }
     }
 
+    pub fn with_web_client(self, wasm_path: impl Into<String>, bindgen_out_dir: impl Into<String>) -> Self {
+        TestBuilder {
+            client_runner: Some(ClientRunner::Web {
+                wasm_path: wasm_path.into(),
+                bindgen_out_dir: bindgen_out_dir.into(),
+            }),
+            ..self
+        }
+    }
+
     pub fn build(self) -> Test {
         let generate_language = self
             .generate_language
@@ -494,6 +587,8 @@ impl TestBuilder {
             run_command: self
                 .run_command
                 .expect("Supply a run command using TestBuilder::with_run_command"),
+
+            client_runner: self.client_runner.unwrap_or(ClientRunner::Default),
         }
     }
 }

@@ -6,13 +6,79 @@ license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+<<<<<<< Updated upstream
+[features]
+default = ["native"]
+
+# Builds the existing CLI test client.
+native = [
+    "dep:test-counter",
+    "dep:tokio",
+    "dep:env_logger",
+    "dep:rand",
+]
+
+# Builds the client for wasm32-unknown-unknown using the Rust SDK `web` backend.
+web = [
+    "spacetimedb-sdk/web",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+]
+
+[[bin]]
+name = "test-client"
+path = "src/main.rs"
+
+||||||| Stash base
+=======
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["native"]
+
+native = [
+    "dep:test-counter",
+    "dep:tokio",
+    "dep:env_logger",
+    "dep:rand",
+]
+
+web = [
+    "spacetimedb-sdk/web",
+    "dep:wasm-bindgen",
+]
+
+[[bin]]
+name = "test-client"
+path = "src/main.rs"
+required-features = ["native"]
+
+>>>>>>> Stashed changes
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
-test-counter = { path = "../test-counter" }
-tokio.workspace = true
 anyhow.workspace = true
+<<<<<<< Updated upstream
+
+test-counter = { path = "../test-counter", optional = true }
+tokio = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+||||||| Stash base
 env_logger.workspace = true
 rand.workspace = true
+=======
+
+test-counter = { path = "../test-counter", optional = true }
+tokio = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+
+wasm-bindgen = { workspace = true, optional = true }
+>>>>>>> Stashed changes
 
 [lints]
 workspace = true

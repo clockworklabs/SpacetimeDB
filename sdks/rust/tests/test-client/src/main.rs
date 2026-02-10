@@ -34,6 +34,7 @@ fn db_name_or_panic() -> String {
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
 /// This allows us to fail tests by panicking in callbacks.
+#[cfg(not(target_arch = "wasm32"))]
 fn exit_on_panic() {
     // The default panic hook is responsible for printing the panic message and backtrace to stderr.
     // Grab a handle on it, and invoke it in our custom hook before exiting.
@@ -63,6 +64,7 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -70,8 +72,11 @@ fn main() {
     let test = std::env::args()
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
+    dispatch(&test);
+}
 
-    match &*test {
+pub(crate) fn dispatch(test: &str) {
+    match test {
         "insert-primitive" => exec_insert_primitive(),
         "subscribe-and-cancel" => exec_subscribe_and_cancel(),
         "subscribe-and-unsubscribe" => exec_subscribe_and_unsubscribe(),
