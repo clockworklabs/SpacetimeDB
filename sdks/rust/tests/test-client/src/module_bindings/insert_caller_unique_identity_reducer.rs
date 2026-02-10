@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct InsertCallerUniqueIdentityArgs {
 
 impl From<InsertCallerUniqueIdentityArgs> for super::Reducer {
     fn from(args: InsertCallerUniqueIdentityArgs) -> Self {
-        Self::InsertCallerUniqueIdentity {
-            data: args.data,
-}
-}
+        Self::InsertCallerUniqueIdentity { data: args.data }
+    }
 }
 
 impl __sdk::InModule for InsertCallerUniqueIdentityArgs {
@@ -39,9 +31,8 @@ pub trait insert_caller_unique_identity {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_caller_unique_identity:insert_caller_unique_identity_then`] to run a callback after the reducer completes.
-    fn insert_caller_unique_identity(&self, data: i32,
-) -> __sdk::Result<()> {
-        self.insert_caller_unique_identity_then(data,  |_, _| {})
+    fn insert_caller_unique_identity(&self, data: i32) -> __sdk::Result<()> {
+        self.insert_caller_unique_identity_then(data, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_caller_unique_identity` to run as soon as possible,
@@ -69,7 +60,7 @@ impl insert_caller_unique_identity for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertCallerUniqueIdentityArgs { data,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertCallerUniqueIdentityArgs { data }, callback)
     }
 }
-

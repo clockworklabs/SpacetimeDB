@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::one_timestamp_type::OneTimestamp;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_timestamp`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
     type Row = OneTimestamp;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = OneTimestamp> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneTimestamp> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = OneTimestampInsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<OneTimestamp>("one_timestamp");
+    let _table = client_cache.get_or_make_table::<OneTimestamp>("one_timestamp");
 }
 
 #[doc(hidden)]
@@ -90,26 +88,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OneTimestamp>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<OneTimestamp>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<OneTimestamp>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `OneTimestamp`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait one_timestampQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `OneTimestamp`.
-            fn one_timestamp(&self) -> __sdk::__query_builder::Table<OneTimestamp>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneTimestamp`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_timestampQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneTimestamp`.
+    fn one_timestamp(&self) -> __sdk::__query_builder::Table<OneTimestamp>;
+}
 
-        impl one_timestampQueryTableAccess for __sdk::QueryTableAccessor {
-            fn one_timestamp(&self) -> __sdk::__query_builder::Table<OneTimestamp> {
-                __sdk::__query_builder::Table::new("one_timestamp")
-            }
-        }
-
+impl one_timestampQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_timestamp(&self) -> __sdk::__query_builder::Table<OneTimestamp> {
+        __sdk::__query_builder::Table::new("one_timestamp")
+    }
+}

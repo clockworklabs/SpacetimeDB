@@ -2,27 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::b_tree_u_32_type::BTreeU32;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertIntoBtreeU32Args {
-    pub rows: Vec::<BTreeU32>,
+    pub rows: Vec<BTreeU32>,
 }
 
 impl From<InsertIntoBtreeU32Args> for super::Reducer {
     fn from(args: InsertIntoBtreeU32Args) -> Self {
-        Self::InsertIntoBtreeU32 {
-            rows: args.rows,
-}
-}
+        Self::InsertIntoBtreeU32 { rows: args.rows }
+    }
 }
 
 impl __sdk::InModule for InsertIntoBtreeU32Args {
@@ -40,9 +33,8 @@ pub trait insert_into_btree_u_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_into_btree_u_32:insert_into_btree_u_32_then`] to run a callback after the reducer completes.
-    fn insert_into_btree_u_32(&self, rows: Vec::<BTreeU32>,
-) -> __sdk::Result<()> {
-        self.insert_into_btree_u_32_then(rows,  |_, _| {})
+    fn insert_into_btree_u_32(&self, rows: Vec<BTreeU32>) -> __sdk::Result<()> {
+        self.insert_into_btree_u_32_then(rows, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_into_btree_u32` to run as soon as possible,
@@ -53,7 +45,7 @@ pub trait insert_into_btree_u_32 {
     ///  and its status can be observed with the `callback`.
     fn insert_into_btree_u_32_then(
         &self,
-        rows: Vec::<BTreeU32>,
+        rows: Vec<BTreeU32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -64,13 +56,13 @@ pub trait insert_into_btree_u_32 {
 impl insert_into_btree_u_32 for super::RemoteReducers {
     fn insert_into_btree_u_32_then(
         &self,
-        rows: Vec::<BTreeU32>,
+        rows: Vec<BTreeU32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertIntoBtreeU32Args { rows,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertIntoBtreeU32Args { rows }, callback)
     }
 }
-

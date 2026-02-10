@@ -2,27 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::b_tree_u_32_type::BTreeU32;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteFromBtreeU32Args {
-    pub rows: Vec::<BTreeU32>,
+    pub rows: Vec<BTreeU32>,
 }
 
 impl From<DeleteFromBtreeU32Args> for super::Reducer {
     fn from(args: DeleteFromBtreeU32Args) -> Self {
-        Self::DeleteFromBtreeU32 {
-            rows: args.rows,
-}
-}
+        Self::DeleteFromBtreeU32 { rows: args.rows }
+    }
 }
 
 impl __sdk::InModule for DeleteFromBtreeU32Args {
@@ -40,9 +33,8 @@ pub trait delete_from_btree_u_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_from_btree_u_32:delete_from_btree_u_32_then`] to run a callback after the reducer completes.
-    fn delete_from_btree_u_32(&self, rows: Vec::<BTreeU32>,
-) -> __sdk::Result<()> {
-        self.delete_from_btree_u_32_then(rows,  |_, _| {})
+    fn delete_from_btree_u_32(&self, rows: Vec<BTreeU32>) -> __sdk::Result<()> {
+        self.delete_from_btree_u_32_then(rows, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_from_btree_u32` to run as soon as possible,
@@ -53,7 +45,7 @@ pub trait delete_from_btree_u_32 {
     ///  and its status can be observed with the `callback`.
     fn delete_from_btree_u_32_then(
         &self,
-        rows: Vec::<BTreeU32>,
+        rows: Vec<BTreeU32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -64,13 +56,13 @@ pub trait delete_from_btree_u_32 {
 impl delete_from_btree_u_32 for super::RemoteReducers {
     fn delete_from_btree_u_32_then(
         &self,
-        rows: Vec::<BTreeU32>,
+        rows: Vec<BTreeU32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteFromBtreeU32Args { rows,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteFromBtreeU32Args { rows }, callback)
     }
 }
-

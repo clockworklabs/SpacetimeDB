@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecU256Args {
-    pub n: Vec::<__sats::u256>,
+    pub n: Vec<__sats::u256>,
 }
 
 impl From<InsertVecU256Args> for super::Reducer {
     fn from(args: InsertVecU256Args) -> Self {
-        Self::InsertVecU256 {
-            n: args.n,
-}
-}
+        Self::InsertVecU256 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for InsertVecU256Args {
@@ -39,9 +31,8 @@ pub trait insert_vec_u_256 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_u_256:insert_vec_u_256_then`] to run a callback after the reducer completes.
-    fn insert_vec_u_256(&self, n: Vec::<__sats::u256>,
-) -> __sdk::Result<()> {
-        self.insert_vec_u_256_then(n,  |_, _| {})
+    fn insert_vec_u_256(&self, n: Vec<__sats::u256>) -> __sdk::Result<()> {
+        self.insert_vec_u_256_then(n, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_u256` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait insert_vec_u_256 {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_u_256_then(
         &self,
-        n: Vec::<__sats::u256>,
+        n: Vec<__sats::u256>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,12 @@ pub trait insert_vec_u_256 {
 impl insert_vec_u_256 for super::RemoteReducers {
     fn insert_vec_u_256_then(
         &self,
-        n: Vec::<__sats::u256>,
+        n: Vec<__sats::u256>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecU256Args { n,  }, callback)
+        self.imp.invoke_reducer_with_callback(InsertVecU256Args { n }, callback)
     }
 }
-

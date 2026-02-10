@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::b_tree_u_32_type::BTreeU32;
 use super::pk_u_32_type::PkU32;
@@ -15,8 +10,8 @@ use super::pk_u_32_type::PkU32;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertIntoPkBtreeU32Args {
-    pub pk_u_32: Vec::<PkU32>,
-    pub bt_u_32: Vec::<BTreeU32>,
+    pub pk_u_32: Vec<PkU32>,
+    pub bt_u_32: Vec<BTreeU32>,
 }
 
 impl From<InsertIntoPkBtreeU32Args> for super::Reducer {
@@ -24,8 +19,8 @@ impl From<InsertIntoPkBtreeU32Args> for super::Reducer {
         Self::InsertIntoPkBtreeU32 {
             pk_u_32: args.pk_u_32,
             bt_u_32: args.bt_u_32,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for InsertIntoPkBtreeU32Args {
@@ -43,10 +38,8 @@ pub trait insert_into_pk_btree_u_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_into_pk_btree_u_32:insert_into_pk_btree_u_32_then`] to run a callback after the reducer completes.
-    fn insert_into_pk_btree_u_32(&self, pk_u_32: Vec::<PkU32>,
-bt_u_32: Vec::<BTreeU32>,
-) -> __sdk::Result<()> {
-        self.insert_into_pk_btree_u_32_then(pk_u_32, bt_u_32,  |_, _| {})
+    fn insert_into_pk_btree_u_32(&self, pk_u_32: Vec<PkU32>, bt_u_32: Vec<BTreeU32>) -> __sdk::Result<()> {
+        self.insert_into_pk_btree_u_32_then(pk_u_32, bt_u_32, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_into_pk_btree_u32` to run as soon as possible,
@@ -57,8 +50,8 @@ bt_u_32: Vec::<BTreeU32>,
     ///  and its status can be observed with the `callback`.
     fn insert_into_pk_btree_u_32_then(
         &self,
-        pk_u_32: Vec::<PkU32>,
-bt_u_32: Vec::<BTreeU32>,
+        pk_u_32: Vec<PkU32>,
+        bt_u_32: Vec<BTreeU32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -69,14 +62,14 @@ bt_u_32: Vec::<BTreeU32>,
 impl insert_into_pk_btree_u_32 for super::RemoteReducers {
     fn insert_into_pk_btree_u_32_then(
         &self,
-        pk_u_32: Vec::<PkU32>,
-bt_u_32: Vec::<BTreeU32>,
+        pk_u_32: Vec<PkU32>,
+        bt_u_32: Vec<BTreeU32>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertIntoPkBtreeU32Args { pk_u_32, bt_u_32,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertIntoPkBtreeU32Args { pk_u_32, bt_u_32 }, callback)
     }
 }
-

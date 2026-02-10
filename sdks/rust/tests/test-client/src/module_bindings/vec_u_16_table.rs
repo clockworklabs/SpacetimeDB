@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::vec_u_16_type::VecU16;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_u16`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for VecU16TableHandle<'ctx> {
     type Row = VecU16;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = VecU16> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecU16> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = VecU16InsertCallbackId;
 
@@ -81,35 +80,30 @@ impl<'ctx> __sdk::Table for VecU16TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<VecU16>("vec_u16");
+    let _table = client_cache.get_or_make_table::<VecU16>("vec_u16");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::v2::TableUpdate,
-) -> __sdk::Result<__sdk::TableUpdate<VecU16>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<VecU16>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<VecU16>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<VecU16>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `VecU16`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait vec_u16QueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `VecU16`.
-            fn vec_u16(&self) -> __sdk::__query_builder::Table<VecU16>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecU16`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_u16QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecU16`.
+    fn vec_u16(&self) -> __sdk::__query_builder::Table<VecU16>;
+}
 
-        impl vec_u16QueryTableAccess for __sdk::QueryTableAccessor {
-            fn vec_u16(&self) -> __sdk::__query_builder::Table<VecU16> {
-                __sdk::__query_builder::Table::new("vec_u16")
-            }
-        }
-
+impl vec_u16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_u16(&self) -> __sdk::__query_builder::Table<VecU16> {
+        __sdk::__query_builder::Table::new("vec_u16")
+    }
+}

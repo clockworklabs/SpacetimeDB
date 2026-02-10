@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SortedUuidsInsertArgs {
-    }
+pub(super) struct SortedUuidsInsertArgs {}
 
 impl From<SortedUuidsInsertArgs> for super::Reducer {
     fn from(args: SortedUuidsInsertArgs) -> Self {
         Self::SortedUuidsInsert
-}
+    }
 }
 
 impl __sdk::InModule for SortedUuidsInsertArgs {
@@ -36,8 +29,8 @@ pub trait sorted_uuids_insert {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`sorted_uuids_insert:sorted_uuids_insert_then`] to run a callback after the reducer completes.
-    fn sorted_uuids_insert(&self, ) -> __sdk::Result<()> {
-        self.sorted_uuids_insert_then( |_, _| {})
+    fn sorted_uuids_insert(&self) -> __sdk::Result<()> {
+        self.sorted_uuids_insert_then(|_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `sorted_uuids_insert` to run as soon as possible,
@@ -48,7 +41,7 @@ pub trait sorted_uuids_insert {
     ///  and its status can be observed with the `callback`.
     fn sorted_uuids_insert_then(
         &self,
-        
+
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
@@ -58,12 +51,12 @@ pub trait sorted_uuids_insert {
 impl sorted_uuids_insert for super::RemoteReducers {
     fn sorted_uuids_insert_then(
         &self,
-        
+
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SortedUuidsInsertArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(SortedUuidsInsertArgs {}, callback)
     }
 }
-

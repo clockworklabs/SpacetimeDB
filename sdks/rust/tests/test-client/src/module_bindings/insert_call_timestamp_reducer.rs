@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct InsertCallTimestampArgs {
-    }
+pub(super) struct InsertCallTimestampArgs {}
 
 impl From<InsertCallTimestampArgs> for super::Reducer {
     fn from(args: InsertCallTimestampArgs) -> Self {
         Self::InsertCallTimestamp
-}
+    }
 }
 
 impl __sdk::InModule for InsertCallTimestampArgs {
@@ -36,8 +29,8 @@ pub trait insert_call_timestamp {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_call_timestamp:insert_call_timestamp_then`] to run a callback after the reducer completes.
-    fn insert_call_timestamp(&self, ) -> __sdk::Result<()> {
-        self.insert_call_timestamp_then( |_, _| {})
+    fn insert_call_timestamp(&self) -> __sdk::Result<()> {
+        self.insert_call_timestamp_then(|_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_call_timestamp` to run as soon as possible,
@@ -48,7 +41,7 @@ pub trait insert_call_timestamp {
     ///  and its status can be observed with the `callback`.
     fn insert_call_timestamp_then(
         &self,
-        
+
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
@@ -58,12 +51,12 @@ pub trait insert_call_timestamp {
 impl insert_call_timestamp for super::RemoteReducers {
     fn insert_call_timestamp_then(
         &self,
-        
+
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertCallTimestampArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertCallTimestampArgs {}, callback)
     }
 }
-
