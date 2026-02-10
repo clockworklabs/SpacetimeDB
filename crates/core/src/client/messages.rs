@@ -1,7 +1,9 @@
 use super::{ClientConfig, DataMessage, Protocol};
+use crate::client::consume_each_list::ConsumeEachBuffer;
 use crate::host::module_host::{EventStatus, ModuleEvent, ProcedureCallError};
 use crate::host::{ArgsTuple, ProcedureCallResult};
 use crate::messages::websocket as ws;
+use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
@@ -16,6 +18,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -119,6 +122,13 @@ impl InUseSerializeBuffer {
             compressed,
         })
     }
+
+    pub fn is_unique(&self) -> bool {
+        match self {
+            InUseSerializeBuffer::Uncompressed { uncompressed, .. } => uncompressed.is_unique(),
+            InUseSerializeBuffer::Compressed { compressed, .. } => compressed.is_unique(),
+        }
+    }
 }
 
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
@@ -126,6 +136,7 @@ impl InUseSerializeBuffer {
 /// If `protocol` is [`Protocol::Binary`],
 /// the message will be conditionally compressed by this method according to `compression`.
 pub fn serialize(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
     mut buffer: SerializeBuffer,
     msg: impl ToProtocol<Encoded = SwitchedServerMessage>,
     config: ClientConfig,
@@ -147,6 +158,10 @@ pub fn serialize(
             let srv_msg = buffer.write_with_tag(SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
                 bsatn::to_writer(w.into_inner(), &msg).unwrap()
             });
+
+            // At this point, we no longer have a use for `msg`,
+            // so try to reclaim its buffers.
+            msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 
             // Conditionally compress the message.
             let (in_use, msg_bytes) = match decide_compression(srv_msg.len(), config.compression) {
@@ -267,7 +282,12 @@ impl ToProtocol for TransactionUpdateMessage {
                 status,
                 caller_identity: event.caller_identity,
                 reducer_call: ws::ReducerCallInfo {
-                    reducer_name: event.function_call.reducer.to_owned().into(),
+                    reducer_name: event
+                        .function_call
+                        .reducer
+                        .as_ref()
+                        .map(|r| (&**r).into())
+                        .unwrap_or_default(),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id,
@@ -364,7 +384,7 @@ pub struct SubscriptionData {
 #[derive(Debug, Clone)]
 pub struct SubscriptionRows {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_rows: FormatSwitch<ws::TableUpdate<BsatnFormat>, ws::TableUpdate<JsonFormat>>,
 }
 
@@ -435,7 +455,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -448,7 +468,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -466,7 +486,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }
@@ -479,7 +499,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name,
+                                table_name: result.table_name.to_boxed_str(),
                                 table_rows,
                             },
                         }

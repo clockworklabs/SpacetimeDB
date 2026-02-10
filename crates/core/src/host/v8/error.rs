@@ -2,12 +2,17 @@
 
 use super::serialize_to_js;
 use super::string::IntoJsString;
+use crate::error::NodesError;
+use crate::host::wasm_common::err_to_errno_and_log;
+use crate::host::AbiCall;
 use crate::{
     database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record},
     host::instance_env::InstanceEnv,
     replica_context::ReplicaContext,
 };
 use core::fmt;
+use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_primitives::errno;
 use spacetimedb_sats::Serialize;
 use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
 
@@ -138,6 +143,26 @@ impl CodeError {
     }
 }
 
+/// Throws `{ __code_error__: code }`.
+pub(super) fn code_error(scope: &PinScope<'_, '_>, code: u16) -> ExceptionThrown {
+    let res = CodeError::from_code(scope, code);
+    collapse_exc_thrown(scope, res)
+}
+
+/// Throws `{ __code_error__: NO_SUCH_ITER }`.
+pub(super) fn no_such_iter(scope: &PinScope<'_, '_>) -> SysCallError {
+    code_error(scope, errno::NO_SUCH_ITER.get()).into()
+}
+
+/// Collapses `res` where the `Ok(x)` where `x` is throwable.
+pub(super) fn collapse_exc_thrown<'scope>(
+    scope: &PinScope<'scope, '_>,
+    res: ExcResult<impl Throwable<'scope>>,
+) -> ExceptionThrown {
+    let (Ok(thrown) | Err(thrown)) = res.map(|ev| ev.throw(scope));
+    thrown
+}
+
 /// A catchable error code thrown in callbacks
 /// to indicate bad arguments to a syscall.
 #[derive(Serialize)]
@@ -159,6 +184,78 @@ impl CodeMessageError {
         };
         serialize_to_js(scope, &error).map(ExceptionValue)
     }
+}
+
+/// Either an exception, already thrown, or [`NodesError`] arising from [`InstanceEnv`].
+#[derive(derive_more::From)]
+pub(super) enum SysCallError {
+    NoEnv,
+    /// Only occurs in the v2 ABI.
+    OutOfBounds,
+    Error(NodesError),
+    Exception(ExceptionThrown),
+}
+
+/// Converts a `SysCallError` into a `ExceptionThrown`.
+pub(super) fn handle_sys_call_error<'scope>(
+    abi_call: AbiCall,
+    scope: &mut PinScope<'scope, '_>,
+    err: SysCallError,
+) -> ExceptionThrown {
+    const ENV_NOT_SET: u16 = 1;
+    match err {
+        SysCallError::NoEnv => code_error(scope, ENV_NOT_SET),
+        SysCallError::OutOfBounds => RangeError("length argument was out of bounds for `ArrayBuffer`").throw(scope),
+        SysCallError::Exception(exc) => exc,
+        SysCallError::Error(error) => throw_nodes_error(abi_call, scope, error),
+    }
+}
+
+/// An out-of-bounds syscall error.
+pub const OOB: SysCallError = SysCallError::OutOfBounds;
+
+/// A result where the error is a [`SysCallError`].
+pub type SysCallResult<T> = Result<T, SysCallError>;
+
+/// A flag set in [`throw_nodes_error`].
+/// The flag should be checked in every module -> host ABI.
+/// If the flag is set, the call is prevented.
+struct TerminationFlag;
+
+/// Checks the termination flag and throws a `TerminationError` if set.
+///
+/// Returns whether the flag was set.
+pub(super) fn throw_if_terminated(scope: &PinScope<'_, '_>) -> bool {
+    // If the flag was set in `throw_nodes_error`,
+    // we need to block all module -> host ABI calls.
+    let set = scope.get_slot::<TerminationFlag>().is_some();
+    if set {
+        let err = anyhow::anyhow!("execution is being terminated");
+        if let Ok(exception) = TerminationError::from_error(scope, &err) {
+            exception.throw(scope);
+        }
+    }
+
+    set
+}
+
+/// Turns a [`NodesError`] into a thrown exception.
+fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
+    let res = match err_to_errno_and_log::<u16>(abi_call, error) {
+        Ok((code, None)) => CodeError::from_code(scope, code),
+        Ok((code, Some(message))) => CodeMessageError::from_code(scope, code, message),
+        Err(err) => {
+            // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
+            // Unfortunately, JS execution won't be terminated once the callback returns,
+            // so we set a slot that all callbacks immediately check
+            // to ensure that the module won't be able to do anything to the host
+            // while it's being terminated (eventually).
+            scope.terminate_execution();
+            scope.set_slot(TerminationFlag);
+            TerminationError::from_error(scope, &err)
+        }
+    };
+    collapse_exc_thrown(scope, res)
 }
 
 /// A catchable error code thrown in callbacks
@@ -260,18 +357,22 @@ pub(super) struct JsStackTrace {
 
 impl JsStackTrace {
     /// Converts a V8 [`StackTrace`] into one independent of `'scope`.
-    pub(super) fn from_trace<'scope>(scope: &PinScope<'scope, '_>, trace: Local<'scope, StackTrace>) -> Self {
+    pub(super) fn from_trace<'scope>(scope: &mut PinScope<'scope, '_>, trace: Local<'scope, StackTrace>) -> Self {
         let frames = (0..trace.get_frame_count())
             .map(|index| {
                 let frame = trace.get_frame(scope, index).unwrap();
                 JsStackTraceFrame::from_frame(scope, frame)
             })
+            // A call frame with this name is the dividing line between user stack frames
+            // and module-bindings frames (e.g. `__call_reducer__`). See `callUserFunction`
+            // in `src/server/runtime.ts` in the Typescript SDK.
+            .take_while(|frame| frame.fn_name() != "__spacetimedb_end_short_backtrace")
             .collect::<Box<[_]>>();
         Self { frames }
     }
 
     /// Construct a backtrace from `scope`.
-    pub(super) fn from_current_stack_trace(scope: &PinScope<'_, '_>) -> ExcResult<Self> {
+    pub(super) fn from_current_stack_trace(scope: &mut PinScope<'_, '_>) -> ExcResult<Self> {
         let trace = StackTrace::current_stack_trace(scope, 1024).ok_or_else(exception_already_thrown)?;
         Ok(Self::from_trace(scope, trace))
     }
@@ -337,17 +438,51 @@ pub(super) struct JsStackTraceFrame {
 
 impl JsStackTraceFrame {
     /// Converts a V8 [`StackFrame`] into one independent of `'scope`.
-    fn from_frame<'scope>(scope: &PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
-        let script_name = frame
-            .get_script_name_or_source_url(scope)
-            .map(|s| s.to_rust_string_lossy(scope));
-
+    fn from_frame<'scope>(scope: &mut PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
+        let script_id = frame.get_script_id();
+        let mut line = frame.get_line_number();
+        let mut column = frame.get_column();
+        let mut script_name = None;
         let fn_name = frame.get_function_name(scope).map(|s| s.to_rust_string_lossy(scope));
 
+        let sourcemap = scope.get_slot().and_then(|SourceMaps(maps)| maps.get(&script_id));
+
+        let sourcemap = if let Some(sm) = sourcemap {
+            sm.as_ref()
+        } else {
+            SourceMaps::parse_and_insert(scope, frame)
+        };
+
+        // sourcemap uses 0-based line/column numbers, while v8 uses 1-based
+        if let Some(token) = sourcemap.and_then(|sm| sm.lookup_token(line as u32 - 1, column as u32 - 1)) {
+            line = token.get_src_line() as usize + 1;
+            column = token.get_src_col() as usize + 1;
+            if let Some(file) = token.get_source() {
+                script_name = Some(file.to_owned())
+            }
+
+            // If we ever want to support de-minifying function names, uncomment this.
+            // The process of obtaining the original name of a function given a token
+            // in that function is imperfect and could return an incorrect name for an
+            // unminified identifier. So until we need it, turn it off.
+            //
+            // if let Some((sv, fn_name)) = Option::zip(token.get_source_view(), fn_name.as_mut()) {
+            //     if let Some(new_name) = sv.get_original_function_name(token, fn_name) {
+            //         new_name.clone_into(fn_name)
+            //     }
+            // }
+        }
+
+        let script_name = script_name.or_else(|| {
+            frame
+                .get_script_name_or_source_url(scope)
+                .map(|s| s.to_rust_string_lossy(scope))
+        });
+
         Self {
-            line: frame.get_line_number(),
-            column: frame.get_column(),
-            script_id: frame.get_script_id(),
+            line,
+            column,
+            script_id,
             script_name,
             fn_name,
             is_eval: frame.is_eval(),
@@ -401,9 +536,43 @@ impl fmt::Display for JsStackTraceFrame {
     }
 }
 
+/// Mappings from a script id to its source map.
+///
+/// An entry with `None` indicates that there is no sourcemap for that script.
+#[derive(Default)]
+struct SourceMaps(IntMap<usize, Option<sourcemap::SourceMap>>);
+
+impl SourceMaps {
+    /// Extract the sourcemap from the given frame, if it exists, and insert
+    /// it into the `SourceMaps` in the isolate.
+    fn parse_and_insert<'a>(
+        scope: &'a mut PinScope<'_, '_>,
+        frame: Local<'_, StackFrame>,
+    ) -> Option<&'a sourcemap::SourceMap> {
+        let sourcemap = frame.get_script_source_mapping_url(scope).and_then(|source_map_url| {
+            let source_map_url = source_map_url.to_rust_string_lossy(scope);
+            if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
+                Some(sourcemap)
+            } else {
+                None
+            }
+        });
+        let SourceMaps(maps) = get_or_insert_slot(scope, SourceMaps::default);
+        maps.entry(frame.get_script_id()).insert(sourcemap).into_mut().as_ref()
+    }
+}
+
+/// Get the slot `T` from `isolate`, or create it with the value `default()` if it doesn't exist.
+fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnce() -> T) -> &mut T {
+    if isolate.get_slot::<T>().is_none() {
+        isolate.set_slot(default());
+    }
+    isolate.get_slot_mut().unwrap()
+}
+
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    fn from_caught(scope: &PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
+    fn from_caught(scope: &mut PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
         match scope.message() {
             Some(message) => Self {
                 trace: message

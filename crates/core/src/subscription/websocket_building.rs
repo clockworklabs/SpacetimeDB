@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use bytestring::ByteString;
 use core::mem;
 use spacetimedb_client_api_messages::websocket::{
@@ -9,6 +10,12 @@ use spacetimedb_sats::ser::serde::SerializeWrapper;
 use spacetimedb_sats::Serialize;
 use std::io;
 use std::io::Write as _;
+
+/// A source of row list builders for a given [`BuildableWebsocketFormat`].
+pub trait RowListBuilderSource<F: BuildableWebsocketFormat> {
+    /// Returns a row list builder from the source `self`.
+    fn take_row_list_builder(&self) -> F::ListBuilder;
+}
 
 /// A list of rows being built.
 pub trait RowListBuilder: Default {
@@ -22,13 +29,17 @@ pub trait RowListBuilder: Default {
 }
 
 pub trait BuildableWebsocketFormat: WebsocketFormat {
-    /// The builder for [`Self::List`].
+    /// The builder for [`WebsocketFormat::List`].
     type ListBuilder: RowListBuilder<FinishedList = Self::List>;
 
     /// Encodes the `elems` to a list in the format and also returns the length of the list.
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64) {
+    ///
+    /// Needs to be provided with an empty [`WebsocketFormat::ListBuilder`].
+    fn encode_list<R: ToBsatn + Serialize>(
+        mut list: Self::ListBuilder,
+        elems: impl Iterator<Item = R>,
+    ) -> (Self::List, u64) {
         let mut num_rows = 0;
-        let mut list = Self::ListBuilder::default();
         for elem in elems {
             num_rows += 1;
             list.push(elem);
@@ -36,7 +47,7 @@ pub trait BuildableWebsocketFormat: WebsocketFormat {
         (list.finish(), num_rows)
     }
 
-    /// Convert a `QueryUpdate` into `Self::QueryUpdate`.
+    /// Convert a `QueryUpdate` into [`WebsocketFormat::QueryUpdate`].
     /// This allows some formats to e.g., compress the update.
     fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate;
 }
@@ -67,12 +78,14 @@ pub struct BsatnRowListBuilder {
     /// intended to facilitate parallel decode purposes on large initial updates.
     size_hint: RowSizeHintBuilder,
     /// The flattened byte array for a list of rows.
-    rows_data: Vec<u8>,
+    rows_data: BytesMut,
 }
 
 /// A [`RowSizeHint`] under construction.
+#[derive(Default)]
 pub enum RowSizeHintBuilder {
     /// We haven't seen any rows yet.
+    #[default]
     Empty,
     /// Each row in `rows_data` is of the same fixed size as specified here
     /// but we don't know whether the size fits in `RowSize`
@@ -88,9 +101,11 @@ pub enum RowSizeHintBuilder {
     RowOffsets(Vec<RowOffset>),
 }
 
-impl Default for RowSizeHintBuilder {
-    fn default() -> Self {
-        Self::Empty
+impl BsatnRowListBuilder {
+    /// Returns a new builder using an empty [`BytesMut`] for the `rows_data` buffer.
+    pub fn new_from_bytes(rows_data: BytesMut) -> Self {
+        let size_hint = <_>::default();
+        Self { size_hint, rows_data }
     }
 }
 

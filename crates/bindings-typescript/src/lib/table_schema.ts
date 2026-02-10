@@ -1,6 +1,7 @@
 import type { ProductType } from './algebraic_type';
 import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type { IndexOpts } from './indexes';
+import type { ModuleContext } from './schema';
 import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
 
 /**
@@ -24,12 +25,12 @@ export type TableSchema<
   /**
    * The {@link ProductType} representing the structure of a row in the table.
    */
-  readonly rowSpacetimeType: ProductType;
+  readonly rowSpacetimeType: RowBuilder<Row>['algebraicType']['value'];
 
   /**
    * The {@link RawTableDefV9} of the configured table
    */
-  readonly tableDef: Infer<typeof RawTableDefV9>;
+  tableDef(ctx: ModuleContext): Infer<typeof RawTableDefV9>;
 
   /**
    * The indexes defined on the table.
@@ -45,3 +46,9 @@ export type TableSchema<
     columns: [any];
   }[];
 };
+
+export type UntypedTableSchema = TableSchema<
+  string,
+  Record<string, ColumnBuilder<any, any, any>>,
+  readonly IndexOpts<string>[]
+>;

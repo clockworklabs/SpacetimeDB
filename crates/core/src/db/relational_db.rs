@@ -1,22 +1,22 @@
+use crate::db::durability::DurabilityWorker;
 use crate::db::MetricsRecorderQueue;
-use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
+use crate::error::{DBError, RestoreSnapshotError};
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
-use fs2::FileExt;
 use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
-use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
-use spacetimedb_data_structures::map::IntSet;
+use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
-    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
+    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
@@ -34,35 +34,34 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
-use spacetimedb_durability as durability;
+use spacetimedb_durability::{self as durability, History};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
+use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
-use spacetimedb_table::table::RowRef;
+use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_vm::errors::{ErrorType, ErrorVm};
 use spacetimedb_vm::ops::parse;
 use std::borrow::Cow;
-use std::collections::HashSet;
-use std::fmt;
-use std::fs::File;
 use std::io;
 use std::ops::{Bound, RangeBounds};
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -97,13 +96,12 @@ pub const ONLY_MODULE_VERSION: &str = "0.0.1";
 /// for each entry in [`ConnectedClients`].
 pub type ConnectedClients = HashSet<(Identity, ConnectionId)>;
 
-#[derive(Clone)]
 pub struct RelationalDB {
     database_identity: Identity,
     owner_identity: Identity,
 
     inner: Locking,
-    durability: Option<Arc<Durability>>,
+    durability: Option<DurabilityWorker>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -116,12 +114,6 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
-
-    // DO NOT ADD FIELDS AFTER THIS.
-    // By default, fields are dropped in declaration order.
-    // We want to release the file lock last.
-    // TODO(noa): is this lockfile still necessary now that we have data-dir?
-    _lock: LockFile,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -141,9 +133,17 @@ impl std::fmt::Debug for RelationalDB {
     }
 }
 
+impl Drop for RelationalDB {
+    fn drop(&mut self) {
+        // Attempt to flush the outstanding transactions.
+        if let Some(worker) = self.durability.take() {
+            worker.spawn_close(self.database_identity);
+        }
+    }
+}
+
 impl RelationalDB {
     fn new(
-        lock: LockFile,
         database_identity: Identity,
         owner_identity: Identity,
         inner: Locking,
@@ -153,7 +153,10 @@ impl RelationalDB {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
-        let (durability, disk_size_fn, snapshot_worker) = Persistence::unzip(persistence);
+        let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
+        let durability = durability
+            .zip(rt)
+            .map(|(durability, rt)| DurabilityWorker::new(database_identity, durability, rt));
 
         Self {
             inner,
@@ -168,8 +171,6 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
-
-            _lock: lock,
         }
     }
 
@@ -258,7 +259,6 @@ impl RelationalDB {
     /// [ModuleHost]: crate::host::module_host::ModuleHost
     #[allow(clippy::too_many_arguments)]
     pub fn open(
-        root: &ReplicaDir,
         database_identity: Identity,
         owner_identity: Identity,
         history: impl durability::History<TxData = Txdata>,
@@ -267,8 +267,6 @@ impl RelationalDB {
         page_pool: PagePool,
     ) -> Result<(Self, ConnectedClients), DBError> {
         log::trace!("[{database_identity}] DATABASE: OPEN");
-
-        let lock = LockFile::lock(root)?;
 
         // Check the latest durable TX and restore from a snapshot no newer than it,
         // so that you drop TXes which were committed but not durable before the restart.
@@ -312,7 +310,6 @@ impl RelationalDB {
             .set(elapsed_time.as_secs_f64());
 
         let db = Self::new(
-            lock,
             database_identity,
             owner_identity,
             inner,
@@ -344,6 +341,27 @@ impl RelationalDB {
         Ok((db, connected_clients))
     }
 
+    /// Shut down the database, without dropping it.
+    ///
+    /// If the database is in-memory only, this does nothing.
+    /// Otherwise, it instructs the durability layer to shut down
+    /// and waits until all outstanding transactions are reported as durable.
+    ///
+    /// After calling this method, calling [Self::commit_tx_downgrade] or
+    /// [Self::commit_tx] will panic.
+    ///
+    /// Returns `None` if the database is in-memory only,
+    /// or nothing has been durably persisted yet.
+    ///
+    /// Returns the durable [TxOffset] in a `Some` otherwise.
+    pub async fn shutdown(&self) -> Option<TxOffset> {
+        if let Some(durability) = &self.durability {
+            return durability.close().await;
+        }
+
+        None
+    }
+
     fn migrate_system_tables(&self) -> Result<(), DBError> {
         let mut tx = self.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         for schema in system_tables() {
@@ -353,6 +371,12 @@ impl RelationalDB {
                     self.database_identity,
                     schema.table_name
                 );
+                // FIXME: `create_table` of tables with sequences
+                // gives a different initial allocation than is given by `CommittedState::bootstrap_system_tables`.
+                // See comment in that method.
+                // This results in requiring `CommittedState::fixup_delete_duplicate_system_sequence_rows`.
+                // Fix `migrate_system_tables` to create new system sequences
+                // with the same initial allocation as `bootstrap_system_tables`.
                 let _ = self.create_table(&mut tx, schema.clone())?;
             }
         }
@@ -748,7 +772,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxOffset, TxMetrics, String) {
+    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx(tx)
     }
@@ -760,118 +784,49 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, String) {
+    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         log::trace!("RELEASE TX");
         self.inner.release_tx(tx)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>, DBError> {
+    #[allow(clippy::type_complexity)]
+    pub fn commit_tx(
+        &self,
+        tx: MutTx,
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
-        // TODO: Never returns `None` -- should it?
         let reducer_context = tx.ctx.reducer_context().cloned();
+        // TODO: Never returns `None` -- should it?
         let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
 
+        let tx_data = Arc::new(tx_data);
         if let Some(durability) = &self.durability {
-            Self::do_durability(&**durability, reducer_context.as_ref(), &tx_data)
+            durability.request_durability(reducer_context, &tx_data);
         }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx_downgrade(
-        &self,
-        tx: MutTx,
-        workload: Workload,
-    ) -> Result<Option<(TxData, TxMetrics, Tx)>, DBError> {
+    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
         log::trace!("COMMIT MUT TX");
 
-        let Some((tx_data, tx_metrics, tx)) = self.inner.commit_mut_tx_downgrade(tx, workload)? else {
-            return Ok(None);
-        };
+        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload);
 
         self.maybe_do_snapshot(&tx_data);
 
+        let tx_data = Arc::new(tx_data);
         if let Some(durability) = &self.durability {
-            Self::do_durability(&**durability, tx.ctx.reducer_context(), &tx_data)
+            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
         }
 
-        Ok(Some((tx_data, tx_metrics, tx)))
-    }
-
-    /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
-    ///
-    /// Note that by this stage,
-    /// [`spacetimedb_datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
-    /// has already decided based on the reducer and operations whether the transaction should be appended;
-    /// this method is responsible only for reading its decision out of the `tx_data`
-    /// and calling `durability.append_tx`.
-    fn do_durability(durability: &Durability, reducer_context: Option<&ReducerContext>, tx_data: &TxData) {
-        use commitlog::payload::{
-            txdata::{Mutations, Ops},
-            Txdata,
-        };
-
-        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
-            tx_data
-                .ephemeral_tables()
-                .map(|etables| !etables.contains(table_id))
-                .unwrap_or(true)
-        };
-
-        if tx_data.tx_offset().is_some() {
-            let inserts: Box<_> = tx_data
-                .inserts()
-                // Skip ephemeral tables
-                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
-
-            let truncates: IntSet<TableId> = tx_data.truncates().collect();
-
-            let deletes: Box<_> = tx_data
-                .deletes()
-                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                // filter out deletes for tables that are truncated in the same transaction.
-                .filter(|ops| !truncates.contains(&ops.table_id))
-                .collect();
-
-            let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
-
-            let inputs = reducer_context.map(|rcx| rcx.into());
-
-            let txdata = Txdata {
-                inputs,
-                outputs: None,
-                mutations: Some(Mutations {
-                    inserts,
-                    deletes,
-                    truncates,
-                }),
-            };
-
-            // TODO: Should measure queuing time + actual write
-            durability.append_tx(txdata);
-        } else {
-            debug_assert!(
-                !tx_data.has_rows_or_connect_disconnect(reducer_context),
-                "tx_data has no rows but has connect/disconnect: `{:?}`",
-                reducer_context.map(|rcx| &rcx.name),
-            );
-        }
+        (tx_data, tx_metrics, tx)
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
@@ -1053,7 +1008,7 @@ impl RelationalDB {
     /// Should only be called after the tx lock has been fully released.
     pub(crate) fn report_tx_metrics(
         &self,
-        reducer: String,
+        reducer: Option<ReducerName>,
         tx_data: Option<Arc<TxData>>,
         metrics_for_writer: Option<TxMetrics>,
         metrics_for_reader: Option<TxMetrics>,
@@ -1161,7 +1116,7 @@ impl RelationalDB {
     pub fn create_table_for_test_with_the_works(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         indexes: &[ColList],
         unique_constraints: &[ColList],
         access: StAccess,
@@ -1169,7 +1124,11 @@ impl RelationalDB {
         let mut module_def_builder = RawModuleDefV9Builder::new();
 
         let mut table_builder = module_def_builder
-            .build_table_with_new_type_for_tests(name, ProductType::from_iter(schema.iter().cloned()), true)
+            .build_table_with_new_type_for_tests(
+                RawIdentifier::new(name),
+                ProductType::from_iter(schema.iter().cloned()),
+                true,
+            )
             .with_access(access.into());
 
         for columns in indexes {
@@ -1193,7 +1152,7 @@ impl RelationalDB {
     pub fn create_table_for_test_with_access(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         indexes: &[ColId],
         access: StAccess,
     ) -> Result<TableId, DBError> {
@@ -1204,7 +1163,7 @@ impl RelationalDB {
     pub fn create_table_for_test(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         indexes: &[ColId],
     ) -> Result<TableId, DBError> {
         self.create_table_for_test_with_access(name, schema, indexes, StAccess::Public)
@@ -1213,7 +1172,7 @@ impl RelationalDB {
     pub fn create_table_for_test_multi_column(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
         self.create_table_for_test_with_the_works(name, schema, &[idx_cols], &[], StAccess::Public)
@@ -1222,7 +1181,7 @@ impl RelationalDB {
     pub fn create_table_for_test_mix_indexes(
         &self,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         idx_cols_single: &[ColId],
         idx_cols_multi: ColList,
     ) -> Result<TableId, DBError> {
@@ -1241,7 +1200,7 @@ impl RelationalDB {
     /// relatively cheap operation which only modifies the system tables.
     ///
     /// If the table is not found or is a system table, an error is returned.
-    pub fn rename_table(&self, tx: &mut MutTx, table_id: TableId, new_name: &str) -> Result<(), DBError> {
+    pub fn rename_table(&self, tx: &mut MutTx, table_id: TableId, new_name: TableName) -> Result<(), DBError> {
         Ok(self.inner.rename_table_mut_tx(tx, table_id, new_name)?)
     }
 
@@ -1363,7 +1322,7 @@ impl RelationalDB {
         Ok(self.inner.iter_mut_tx(tx, table_id)?)
     }
 
-    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<IterTx<'a>, DBError> {
+    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<TableScanIter<'a>, DBError> {
         Ok(self.inner.iter_tx(tx, table_id)?)
     }
 
@@ -1442,6 +1401,15 @@ impl RelationalDB {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 
+    pub fn index_scan_point<'a>(
+        &'a self,
+        tx: &'a MutTx,
+        index_id: IndexId,
+        point: &[u8],
+    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>>), DBError> {
+        Ok(tx.index_scan_point(index_id, point)?)
+    }
+
     pub fn insert<'a>(
         &'a self,
         tx: &'a mut MutTx,
@@ -1511,12 +1479,17 @@ impl RelationalDB {
     }
 
     /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub fn report_mut_tx_metrics(&self, reducer: String, metrics: TxMetrics, tx_data: Option<TxData>) {
-        self.report_tx_metrics(reducer, tx_data.map(Arc::new), Some(metrics), None);
+    pub fn report_mut_tx_metrics(
+        &self,
+        reducer: Option<ReducerName>,
+        metrics: TxMetrics,
+        tx_data: Option<Arc<TxData>>,
+    ) {
+        self.report_tx_metrics(reducer, tx_data, Some(metrics), None);
     }
 
     /// Reports subscription metrics for `reducer`, using counters provided by `db`.
-    pub fn report_read_tx_metrics(&self, reducer: String, metrics: TxMetrics) {
+    pub fn report_read_tx_metrics(&self, reducer: Option<ReducerName>, metrics: TxMetrics) {
         self.report_tx_metrics(reducer, None, None, Some(metrics));
     }
 
@@ -1686,33 +1659,6 @@ impl RelationalDB {
         Ok(())
     }
 }
-#[allow(unused)]
-#[derive(Clone)]
-struct LockFile {
-    path: Arc<Path>,
-    lock: Arc<File>,
-}
-
-impl LockFile {
-    pub fn lock(root: &ReplicaDir) -> Result<Self, DBError> {
-        root.create()?;
-        let path = root.0.join("db.lock");
-        let lock = File::create(&path)?;
-        lock.try_lock_exclusive()
-            .map_err(|e| DatabaseError::DatabasedOpened(root.0.clone(), e.into()))?;
-
-        Ok(Self {
-            path: path.into(),
-            lock: lock.into(),
-        })
-    }
-}
-
-impl fmt::Debug for LockFile {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LockFile").field("path", &self.path).finish()
-    }
-}
 
 fn apply_history<H>(datastore: &Locking, database_identity: Identity, history: H) -> Result<(), DBError>
 where
@@ -1743,7 +1689,12 @@ where
 
     let time_before = std::time::Instant::now();
 
-    let mut replay = datastore.replay(progress);
+    let mut replay = datastore.replay(
+        progress,
+        // We don't want to instantiate an incorrect state;
+        // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
+        spacetimedb_datastore::locking_tx_datastore::datastore::ErrorBehavior::FailFast,
+    );
     let start_tx_offset = replay.next_tx_offset();
     history
         .fold_transactions_from(start_tx_offset, &mut replay)
@@ -1776,9 +1727,9 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
 pub async fn local_durability(
-    commitlog_dir: CommitLogDir,
+    replica_dir: ReplicaDir,
     snapshot_worker: Option<&SnapshotWorker>,
-) -> io::Result<(LocalDurability, DiskSizeFn)> {
+) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
@@ -1791,7 +1742,7 @@ pub async fn local_durability(
     });
     let local = spawn_rayon(move || {
         durability::Local::open(
-            commitlog_dir,
+            replica_dir.clone(),
             rt,
             durability::local::Options {
                 commitlog: commitlog::Options {
@@ -1813,6 +1764,14 @@ pub async fn local_durability(
     });
 
     Ok((local, disk_size_fn))
+}
+
+/// Open a [History] for replay from the local durable state.
+///
+/// Currently, this is simply a read-only copy of the commitlog.
+pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata>> {
+    let commitlog_dir = replica_dir.commit_log();
+    asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
 
 /// Watches snapshot creation events and compresses all commitlog segments older
@@ -1908,6 +1867,7 @@ pub mod tests_utils {
     use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
+    use spacetimedb_paths::server::ReplicaDir;
     use spacetimedb_paths::server::SnapshotDirPath;
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
@@ -1934,6 +1894,14 @@ pub mod tests_utils {
         }
     }
 
+    /// Constituents of a [TestDB], see [TestDB::into_parts].
+    pub type TestDBParts = (
+        Arc<RelationalDB>,
+        Option<Arc<durability::Local<ProductValue>>>,
+        Option<tokio::runtime::Runtime>,
+        Option<TestDBDir>,
+    );
+
     /// A [`RelationalDB`] in a temporary directory.
     ///
     /// When dropped, any resources including the temporary directory will be
@@ -1948,13 +1916,9 @@ pub mod tests_utils {
     /// [`TestDB`] is deref-coercible into [`RelationalDB`], which is dubious
     /// but convenient.
     pub struct TestDB {
-        pub db: RelationalDB,
+        pub db: Arc<RelationalDB>,
 
-        // nb: drop order is declaration order
         durable: Option<DurableState>,
-        dir: TestDBDir,
-
-        /// Whether to construct a snapshot repository when restarting with [`Self::reopen`].
         want_snapshot_repo: bool,
     }
 
@@ -1978,8 +1942,9 @@ pub mod tests_utils {
     }
 
     struct DurableState {
-        handle: Arc<durability::Local<ProductValue>>,
+        durability: Arc<durability::Local<ProductValue>>,
         rt: tokio::runtime::Runtime,
+        replica_dir: TestDBDir,
     }
 
     impl TestDB {
@@ -1989,13 +1954,10 @@ pub mod tests_utils {
 
         /// Create a [`TestDB`] which does not store data on disk.
         pub fn in_memory() -> Result<Self, DBError> {
-            let dir = TempReplicaDir::new()?;
-            let db = Self::in_memory_internal(&dir)?;
+            let db = Self::in_memory_internal().map(Arc::new)?;
             Ok(Self {
                 db,
-
                 durable: None,
-                dir: dir.into(),
                 want_snapshot_repo: false,
             })
         }
@@ -2010,13 +1972,16 @@ pub mod tests_utils {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone(), true)?;
-            let durable = DurableState { handle, rt };
+            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), true)?;
+            let durable = DurableState {
+                durability,
+                rt,
+                replica_dir: dir.into(),
+            };
 
             Ok(Self {
-                db,
+                db: Arc::new(db),
                 durable: Some(durable),
-                dir: dir.into(),
                 want_snapshot_repo: true,
             })
         }
@@ -2026,13 +1991,16 @@ pub mod tests_utils {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone(), false)?;
-            let durable = DurableState { handle, rt };
+            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), false)?;
+            let durable = DurableState {
+                durability,
+                rt,
+                replica_dir: dir.into(),
+            };
 
             Ok(Self {
-                db,
+                db: Arc::new(db),
                 durable: Some(durable),
-                dir: dir.into(),
                 want_snapshot_repo: false,
             })
         }
@@ -2052,17 +2020,17 @@ pub mod tests_utils {
                 })
                 .transpose()?;
 
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log(), snapshots.as_ref()))?;
-            let history = local.clone();
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let history = local.as_history();
 
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
+                runtime: rt,
             };
 
             let (db, _) = RelationalDB::open(
-                root,
                 db_identity,
                 owner_identity,
                 history,
@@ -2086,12 +2054,10 @@ pub mod tests_utils {
             history: impl durability::History<TxData = Txdata>,
             expected_num_clients: usize,
         ) -> Result<Self, DBError> {
-            let dir = TempReplicaDir::new()?;
-            let db = Self::open_db(&dir, history, None, None, expected_num_clients)?;
+            let db = Self::open_db(history, None, None, expected_num_clients)?;
             Ok(Self {
-                db,
+                db: Arc::new(db),
                 durable: None,
-                dir: dir.into(),
                 want_snapshot_repo: false,
             })
         }
@@ -2099,57 +2065,46 @@ pub mod tests_utils {
         /// Re-open the database, after ensuring that all data has been flushed
         /// to disk (if the database was created via [`Self::durable`]).
         pub fn reopen(self) -> Result<Self, DBError> {
+            if let Some(rt) = self.runtime() {
+                rt.block_on(self.db.shutdown());
+            }
             drop(self.db);
 
-            if let Some(DurableState { handle, rt }) = self.durable {
-                let handle =
-                    Arc::into_inner(handle).expect("`drop(self.db)` should have dropped all references to durability");
-                rt.block_on(handle.close())?;
-
+            if let Some(DurableState {
+                durability: _,
+                rt,
+                replica_dir,
+            }) = self.durable
+            {
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
-                let (db, handle) = Self::durable_internal(&self.dir, rt.handle().clone(), self.want_snapshot_repo)?;
-                let durable = DurableState { handle, rt };
+                let (db, handle) = Self::durable_internal(&replica_dir, rt.handle().clone(), self.want_snapshot_repo)?;
+                let durable = DurableState {
+                    durability: handle,
+                    rt,
+                    replica_dir,
+                };
 
                 Ok(Self {
-                    db,
+                    db: Arc::new(db),
                     durable: Some(durable),
                     ..self
                 })
             } else {
-                let db = Self::in_memory_internal(&self.dir)?;
+                let db = Self::in_memory_internal().map(Arc::new)?;
                 Ok(Self { db, ..self })
             }
         }
 
-        /// Close the database, flushing outstanding data to disk (if the
-        /// database was created via [`Self::durable`].
-        ///
-        /// Note that the data is no longer accessible once this method returns,
-        /// because the temporary directory has been dropped. The method is
-        /// provided mainly for cases where measuring the flush overhead is
-        /// desired.
-        pub fn close(self) -> Result<(), DBError> {
-            drop(self.db);
-            if let Some(DurableState { handle, rt }) = self.durable {
-                let handle =
-                    Arc::into_inner(handle).expect("`drop(self.db)` should have dropped all references to durability");
-                rt.block_on(handle.close())?;
-            }
-
-            Ok(())
-        }
-
         pub fn with_row_count(self, row_count: RowCountFn) -> Self {
-            Self {
-                db: self.db.with_row_count(row_count),
-                ..self
-            }
+            let db = Arc::into_inner(self.db).expect("TestDB::db should be unique");
+            let db = Arc::new(db.with_row_count(row_count));
+            Self { db, ..self }
         }
 
         /// The root path of the (temporary) database directory.
-        pub fn path(&self) -> &ReplicaDir {
-            &self.dir
+        pub fn path(&self) -> Option<&TestDBDir> {
+            self.durable.as_ref().map(|dstate| &dstate.replica_dir)
         }
 
         /// Handle to the tokio runtime, available if [`Self::durable`] was used
@@ -2160,23 +2115,20 @@ pub mod tests_utils {
 
         /// Deconstruct `self` into its constituents.
         #[allow(unused)]
-        pub fn into_parts(
-            self,
-        ) -> (
-            RelationalDB,
-            Option<Arc<durability::Local<ProductValue>>>,
-            Option<tokio::runtime::Runtime>,
-            TestDBDir,
-        ) {
-            let Self { db, durable, dir, .. } = self;
-            let (durability, rt) = durable
-                .map(|DurableState { handle, rt }| (Some(handle), Some(rt)))
-                .unwrap_or((None, None));
-            (db, durability, rt, dir)
+        pub fn into_parts(self) -> TestDBParts {
+            let Self { db, durable, .. } = self;
+            match durable {
+                Some(DurableState {
+                    durability: handle,
+                    rt,
+                    replica_dir,
+                }) => (db, Some(handle), Some(rt), Some(replica_dir)),
+                None => (db, None, None, None),
+            }
         }
 
-        fn in_memory_internal(root: &ReplicaDir) -> Result<RelationalDB, DBError> {
-            Self::open_db(root, EmptyHistory::new(), None, None, 0)
+        fn in_memory_internal() -> Result<RelationalDB, DBError> {
+            Self::open_db(EmptyHistory::new(), None, None, 0)
         }
 
         fn durable_internal(
@@ -2190,27 +2142,26 @@ pub mod tests_utils {
                         .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Disabled))
                 })
                 .transpose()?;
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log(), snapshots.as_ref()))?;
-            let history = local.clone();
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let history = local.as_history();
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
+                runtime: rt,
             };
-            let db = Self::open_db(root, history, Some(persistence), None, 0)?;
+            let db = Self::open_db(history, Some(persistence), None, 0)?;
 
             Ok((db, local))
         }
 
         pub fn open_db(
-            root: &ReplicaDir,
             history: impl durability::History<TxData = Txdata>,
             persistence: Option<Persistence>,
             metrics_recorder_queue: Option<MetricsRecorderQueue>,
             expected_num_clients: usize,
         ) -> Result<RelationalDB, DBError> {
             let (db, connected_clients) = RelationalDB::open(
-                root,
                 Self::DATABASE_IDENTITY,
                 Self::OWNER,
                 history,
@@ -2237,7 +2188,7 @@ pub mod tests_utils {
     }
 
     impl Deref for TestDB {
-        type Target = RelationalDB;
+        type Target = Arc<RelationalDB>;
 
         fn deref(&self) -> &Self::Target {
             &self.db
@@ -2278,21 +2229,22 @@ pub mod tests_utils {
     pub fn create_view_for_test(
         db: &RelationalDB,
         name: &str,
-        schema: &[(&str, AlgebraicType)],
+        schema: &[(&'static str, AlgebraicType)],
         is_anonymous: bool,
     ) -> Result<(ViewId, TableId), DBError> {
         let mut builder = RawModuleDefV9Builder::new();
 
         // Add the view's product type to the typespace
+        let name = RawIdentifier::new(name);
         let type_ref = builder.add_algebraic_type(
             [],
-            name,
+            name.clone(),
             AlgebraicType::Product(ProductType::from_iter(schema.iter().cloned())),
             true,
         );
 
         builder.add_view(
-            name,
+            name.clone(),
             0,
             true,
             is_anonymous,
@@ -2301,7 +2253,7 @@ pub mod tests_utils {
         );
 
         let module_def: ModuleDef = builder.finish().try_into()?;
-        let view_def: &ViewDef = module_def.view(name).expect("view not found");
+        let view_def: &ViewDef = module_def.view(&*name).expect("view not found");
 
         // Allocate a backing table and return its table id
         db.with_auto_commit(Workload::Internal, |tx| db.create_view(tx, &module_def, view_def))
@@ -2406,7 +2358,6 @@ mod tests {
     use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
-    use durability::EmptyHistory;
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
@@ -2420,6 +2371,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_lib::Timestamp;
+    use spacetimedb_paths::server::ReplicaDir;
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
@@ -2442,7 +2394,7 @@ mod tests {
         f: impl FnOnce(RawTableDefBuilder<'_>) -> RawTableDefBuilder,
     ) -> TableSchema {
         let mut builder = RawModuleDefV9Builder::new();
-        f(builder.build_table_with_new_type(name, columns, true));
+        f(builder.build_table_with_new_type(RawIdentifier::new(name), columns, true));
         let raw = builder.finish();
         let def: ModuleDef = raw.try_into().expect("table validation failed");
         let table = def.table(name).expect("table not found");
@@ -2531,14 +2483,13 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         stdb.commit_tx(tx)?;
 
-        match RelationalDB::open(
-            stdb.path(),
-            Identity::ZERO,
-            Identity::ZERO,
-            EmptyHistory::new(),
-            None,
-            None,
-            PagePool::new_for_test(),
+        match TestDB::open_existing_durable(
+            stdb.path().unwrap(),
+            stdb.runtime().unwrap().clone(),
+            0,
+            stdb.database_identity(),
+            stdb.owner_identity(),
+            false,
         ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
@@ -2546,7 +2497,7 @@ mod tests {
             Err(e) => match e {
                 DBError::Database(DatabaseError::DatabasedOpened(_, _)) => {}
                 err => {
-                    panic!("Failed with error {err}")
+                    panic!("Failed with error {err:?}")
                 }
             },
         }
@@ -2624,6 +2575,36 @@ mod tests {
     }
 
     #[test]
+    fn test_view_materialization_does_not_consume_tx_offset() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?;
+
+        let (tx_offset_1, view_id, table_id) = {
+            let module_def = view_module_def();
+            let view_def = module_def.view("my_view").unwrap();
+
+            let mut tx = begin_mut_tx(&stdb);
+            let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+            let (tx_offset, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+            assert_eq!(Some(tx_offset), tx_data.tx_offset());
+
+            (tx_offset, view_id, table_id)
+        };
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
+        let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+
+        // `tx_data.tx_offset()` should return `None`,
+        // so that it is not considered for durability.
+        // The tx offset reported for confirmed reads should stay the same.
+        assert!(tx_data.tx_offset().is_none());
+        assert_eq!(tx_offset_1, tx_offset_2);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_view_tables_are_ephemeral_with_snapshot() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
@@ -2638,7 +2619,7 @@ mod tests {
             "View table should NOT be empty after insert"
         );
 
-        let root = stdb.path().snapshots();
+        let root = stdb.path().unwrap().snapshots();
         let (_, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, false);
         stdb.take_snapshot(&repo)?.expect("snapshot should succeed");
 
@@ -3194,7 +3175,7 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
 
         let table_id = stdb.create_table(&mut tx, table_indexed(true))?;
-        stdb.rename_table(&mut tx, table_id, "YourTable")?;
+        stdb.rename_table(&mut tx, table_id, TableName::for_test("YourTable"))?;
         let table_name = stdb.table_name_from_id_mut(&tx, table_id)?;
 
         assert_eq!(Some("YourTable"), table_name.as_ref().map(Cow::as_ref));
@@ -3312,7 +3293,7 @@ mod tests {
         let timestamp = Timestamp::now();
         let workload = |name: &str| {
             Workload::Reducer(ReducerContext {
-                name: name.into(),
+                name: ReducerName::for_test(name),
                 caller_identity: Identity::__dummy(),
                 caller_connection_id: ConnectionId::ZERO,
                 timestamp,
@@ -3452,17 +3433,14 @@ mod tests {
             }
         }
 
-        let (db, durablity, rt, dir) = stdb.into_parts();
-        // Free reference to durability.
-        drop(db);
-        // Ensure everything is flushed to disk.
-        rt.expect("Durable TestDB must have a runtime")
-            .block_on(
-                Arc::into_inner(durablity.expect("Durable TestDB must have a durability"))
-                    .expect("failed to unwrap Arc")
-                    .close(),
-            )
-            .expect("failed to close local durabilility");
+        let replica_dir = {
+            // Ensure all resources are released and data is flushed to disk.
+            let (db, _, rt, dir) = stdb.into_parts();
+            let rt = rt.expect("Durable TestDB must have a runtime");
+            rt.block_on(db.shutdown()).expect("should have durable offset");
+            drop(db);
+            dir.expect("Durable TestDB must have a database directory")
+        };
 
         // Re-open commitlog and collect inputs.
         let inputs = Rc::new(RefCell::new(Inputs {
@@ -3475,13 +3453,13 @@ mod tests {
             row_ty,
         }));
         {
-            let clog =
-                Commitlog::<()>::open(dir.commit_log(), Default::default(), None).expect("failed to open commitlog");
+            let clog = Commitlog::<()>::open(replica_dir.commit_log(), Default::default(), None)
+                .expect("failed to open commitlog");
             let decoder = Decoder(Rc::clone(&inputs));
             clog.fold_transactions(decoder).unwrap();
         }
         // Just a safeguard so we don't drop the temp dir before this point.
-        drop(dir);
+        drop(replica_dir);
 
         let inputs = Rc::into_inner(inputs).unwrap().into_inner();
         log::debug!("collected inputs: {:?}", inputs.inputs);
@@ -3506,9 +3484,9 @@ mod tests {
                 arg_bsatn,
             } = ReducerContext::try_from(&input).unwrap();
             if i == 0 {
-                assert_eq!(reducer_name, "__identity_connected__");
+                assert_eq!(&*reducer_name, "__identity_connected__");
             } else {
-                assert_eq!(reducer_name, "abstract_concrete_proxy_factory_impl");
+                assert_eq!(&*reducer_name, "abstract_concrete_proxy_factory_impl");
             }
             assert!(
                 arg_bsatn.is_empty(),
@@ -3604,7 +3582,7 @@ mod tests {
     // NOTE: `snapshot_watching_compressor` is what filter out the last snapshot
     #[test]
     fn compress_snapshot_test() -> ResultTest<()> {
-        let stdb = TestDB::in_memory()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = begin_mut_tx(&stdb);
         let schema = my_table(AlgebraicType::I32);
@@ -3614,7 +3592,7 @@ mod tests {
         }
         stdb.commit_tx(tx)?;
 
-        let root = stdb.path().snapshots();
+        let root = stdb.path().unwrap().snapshots();
         let (dir, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, true);
         stdb.take_snapshot(&repo)?;
 
@@ -3715,11 +3693,22 @@ mod tests {
 
     #[test]
     fn tries_older_snapshots() -> ResultTest<()> {
-        let stdb = TestDB::in_memory()?;
-        stdb.path().snapshots().create()?;
-        let repo = SnapshotRepository::open(stdb.path().snapshots(), stdb.database_identity(), 85)?;
+        let stdb = TestDB::durable()?;
+        let snapshots_path = stdb.path().unwrap().snapshots();
+        snapshots_path.create()?;
+        let repo = SnapshotRepository::open(snapshots_path, stdb.database_identity(), 85)?;
 
-        stdb.take_snapshot(&repo)?.expect("failed to take snapshot");
+        // Ensure that an initial snapshot exists,
+        // but ignore if the snapshot worker won the race.
+        match stdb.take_snapshot(&repo) {
+            Err(e) => {
+                if !matches!(&e, DBError::Datastore(DatastoreError::Snapshot(e)) if e.is_already_exists()) {
+                    panic!("failed to create snapshot: {e:#}");
+                }
+            }
+            Ok(out) => out.map(drop).expect("snapshot not created: empty committed state"),
+        };
+        // Insert some data and take another snapshot.
         {
             let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
             let schema = my_table(AlgebraicType::I32);
@@ -3807,7 +3796,7 @@ mod tests {
         assert!(table_1_id > table_0_id);
     }
 
-    use crate::error::DBError;
+    use crate::error::{DBError, DatabaseError};
     use fs_extra::dir::{copy, CopyOptions};
     use itertools::Itertools;
 
@@ -3906,7 +3895,7 @@ mod tests {
 
         let db_identity = Identity::from_hex("c2006c1c2ede44b44e9835dfe00e3e1edc3bc67024b504cb6a3b8491db5d98a3")?;
         let owner_identity = Identity::from_hex("c2001c551217385bdeba5f1e1b5b19a28910852a94ce43428508e7a098760cea")?;
-        let (db, durability_handle) = TestDB::open_existing_durable(
+        let (db, _) = TestDB::open_existing_durable(
             &dir,
             rt.handle().clone(),
             22000001,
@@ -3933,9 +3922,8 @@ mod tests {
         })?;
         // Now we are going to shut it down and reopen it, to ensure that the new table can be
         // read from disk.
+        rt.block_on(db.shutdown());
         drop(db);
-        let handle = Arc::into_inner(durability_handle).expect("Durability handle should be dropped by db");
-        rt.block_on(handle.close()).expect("Failed to close durability handle");
 
         let (db, _) = TestDB::open_existing_durable(
             &dir,

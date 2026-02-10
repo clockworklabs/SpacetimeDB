@@ -6,7 +6,8 @@ import {
   ConnectionId,
   Identity,
   ScheduleAt,
-} from 'spacetimedb';
+  Uuid,
+} from '../src';
 
 describe('it correctly serializes and deserializes algebraic values', () => {
   test('when it serializes and deserializes with a product type', () => {
@@ -155,6 +156,31 @@ describe('it correctly serializes and deserializes algebraic values', () => {
     );
 
     console.log(deserializedValue);
+
+    expect(deserializedValue).toEqual(value);
+  });
+
+  test('when it serializes and deserializes an Uuid ', () => {
+    const value = {
+      __uuid__: BigInt('0x1234567890abcdef1234567890abcdef'),
+    };
+
+    const algebraic_type = Uuid.getAlgebraicType();
+    const binaryWriter = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
+
+    const buffer = binaryWriter.getBuffer();
+    expect(buffer).toEqual(
+      new Uint8Array([
+        239, 205, 171, 144, 120, 86, 52, 18, 239, 205, 171, 144, 120, 86, 52,
+        18,
+      ])
+    );
+
+    const deserializedValue = AlgebraicType.deserializeValue(
+      new BinaryReader(buffer),
+      algebraic_type
+    );
 
     expect(deserializedValue).toEqual(value);
   });

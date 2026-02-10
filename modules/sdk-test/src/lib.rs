@@ -9,7 +9,7 @@
 use anyhow::{anyhow, Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
+    ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, Uuid,
 };
 
 #[derive(PartialEq, Eq, Hash, SpacetimeType)]
@@ -40,6 +40,7 @@ pub enum EnumWithPayload {
     Identity(Identity),
     ConnectionId(ConnectionId),
     Timestamp(Timestamp),
+    Uuid(Uuid),
     Bytes(Vec<u8>),
     Ints(Vec<i32>),
     Strings(Vec<String>),
@@ -78,6 +79,7 @@ pub struct EveryPrimitiveStruct {
     r: ConnectionId,
     s: Timestamp,
     t: TimeDuration,
+    u: Uuid,
 }
 
 #[derive(SpacetimeType)]
@@ -102,6 +104,7 @@ pub struct EveryVecStruct {
     r: Vec<ConnectionId>,
     s: Vec<Timestamp>,
     t: Vec<TimeDuration>,
+    u: Vec<Uuid>,
 }
 
 /// Defines one or more tables, and optionally reducers alongside them.
@@ -276,6 +279,7 @@ define_tables! {
 
     OneIdentity { insert insert_one_identity } i Identity;
     OneConnectionId { insert insert_one_connection_id} a ConnectionId;
+    OneUuid { insert insert_one_uuid } u Uuid;
 
     OneTimestamp { insert insert_one_timestamp } t Timestamp;
 
@@ -313,6 +317,7 @@ define_tables! {
 
     VecIdentity { insert insert_vec_identity } i Vec<Identity>;
     VecConnectionId { insert insert_vec_connection_id} a Vec<ConnectionId>;
+    VecUuid { insert insert_vec_uuid } u Vec<Uuid>;
 
     VecTimestamp { insert insert_vec_timestamp } t Vec<Timestamp>;
 
@@ -330,9 +335,20 @@ define_tables! {
     OptionI32 { insert insert_option_i32 } n Option<i32>;
     OptionString { insert insert_option_string } s Option<String>;
     OptionIdentity { insert insert_option_identity } i Option<Identity>;
+    OptionUuid { insert insert_option_uuid } u Option<Uuid>;
     OptionSimpleEnum { insert insert_option_simple_enum } e Option<SimpleEnum>;
     OptionEveryPrimitiveStruct { insert insert_option_every_primitive_struct } s Option<EveryPrimitiveStruct>;
     OptionVecOptionI32 { insert insert_option_vec_option_i32 } v Option<Vec<Option<i32>>>;
+}
+
+// Tables holding a Result of various types.
+define_tables! {
+    ResultI32String { insert insert_result_i32_string } r Result<i32, String>;
+    ResultStringI32 { insert insert_result_string_i32 } r Result<String, i32>;
+    ResultIdentityString { insert insert_result_identity_string } r Result<Identity, String>;
+    ResultSimpleEnumI32 { insert insert_result_simple_enum_i32 } r Result<SimpleEnum, i32>;
+    ResultEveryPrimitiveStructString { insert insert_result_every_primitive_struct_string } r Result<EveryPrimitiveStruct, String>;
+    ResultVecI32String { insert insert_result_vec_i32_string } r Result<Vec<i32>, String>;
 }
 
 // Tables mapping a unique, but non-pk, key to a boring i32 payload.
@@ -436,6 +452,12 @@ define_tables! {
         update_by update_unique_connection_id = update_by_a(a),
         delete_by delete_unique_connection_id = delete_by_a(a: ConnectionId),
     } #[unique] a ConnectionId, data i32;
+
+    UniqueUuid {
+        insert_or_panic insert_unique_uuid,
+        update_by update_unique_uuid = update_by_u(u),
+        delete_by delete_unique_uuid = delete_by_u(u: Uuid),
+    } #[unique] u Uuid, data i32;
 }
 
 // Tables mapping a primary key to a boring i32 payload.
@@ -543,6 +565,12 @@ define_tables! {
         delete_by delete_pk_connection_id = delete_by_a(a: ConnectionId),
     } #[primary_key] a ConnectionId, data i32;
 
+    PkUuid {
+        insert_or_panic insert_pk_uuid,
+        update_by update_pk_uuid = update_by_u(u),
+        delete_by delete_pk_uuid = delete_by_u(u: Uuid),
+    } #[primary_key] u Uuid, data i32;
+
     PkSimpleEnum {
         insert_or_panic insert_pk_simple_enum,
     } #[primary_key] a SimpleEnum, data i32;
@@ -609,32 +637,34 @@ fn delete_pk_u32_insert_pk_u32_two(ctx: &ReducerContext, n: u32, data: i32) -> a
 
 #[spacetimedb::reducer]
 fn insert_caller_one_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender });
+    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender() });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_vec_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender] });
+    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender()] });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_unique_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.unique_identity().insert(UniqueIdentity { i: ctx.sender, data });
+    ctx.db
+        .unique_identity()
+        .insert(UniqueIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_pk_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender, data });
+    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.one_connection_id().insert(OneConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
     });
     Ok(())
 }
@@ -642,7 +672,7 @@ fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.vec_connection_id().insert(VecConnectionId {
-        a: vec![ctx.connection_id.context("No connection id in reducer context")?],
+        a: vec![ctx.connection_id().context("No connection id in reducer context")?],
     });
     Ok(())
 }
@@ -650,7 +680,7 @@ fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.unique_connection_id().insert(UniqueConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
@@ -659,7 +689,7 @@ fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow
 #[spacetimedb::reducer]
 fn insert_caller_pk_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.pk_connection_id().insert(PkConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
@@ -668,6 +698,20 @@ fn insert_caller_pk_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Re
 #[spacetimedb::reducer]
 fn insert_call_timestamp(ctx: &ReducerContext) {
     ctx.db.one_timestamp().insert(OneTimestamp { t: ctx.timestamp });
+}
+
+#[spacetimedb::reducer]
+fn insert_call_uuid_v4(ctx: &ReducerContext) {
+    ctx.db.one_uuid().insert(OneUuid {
+        u: ctx.new_uuid_v4().unwrap(),
+    });
+}
+
+#[spacetimedb::reducer]
+fn insert_call_uuid_v7(ctx: &ReducerContext) {
+    ctx.db.one_uuid().insert(OneUuid {
+        u: ctx.new_uuid_v7().unwrap(),
+    });
 }
 
 #[spacetimedb::reducer]
@@ -694,6 +738,7 @@ fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
             s.r.to_string(),
             s.s.to_string(),
             s.t.to_string(),
+            s.u.to_string(),
         ],
     });
 }
@@ -813,6 +858,26 @@ fn update_indexed_simple_enum(ctx: &ReducerContext, a: SimpleEnum, b: SimpleEnum
     if ctx.db.indexed_simple_enum().n().filter(&a).next().is_some() {
         ctx.db.indexed_simple_enum().n().delete(&a);
         ctx.db.indexed_simple_enum().insert(IndexedSimpleEnum { n: b });
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+fn sorted_uuids_insert(ctx: &ReducerContext) -> anyhow::Result<()> {
+    for _ in 0..1000 {
+        let uuid = ctx.new_uuid_v7()?;
+        ctx.db.pk_uuid().insert(PkUuid { u: uuid, data: 0 });
+    }
+
+    // Verify UUIDs are sorted
+    let mut last_uuid = None;
+    for row in ctx.db.pk_uuid().iter() {
+        if let Some(last) = last_uuid {
+            if last >= row.u {
+                return Err(anyhow!("UUIDs are not sorted correctly"));
+            }
+        }
+        last_uuid = Some(row.u);
     }
     Ok(())
 }

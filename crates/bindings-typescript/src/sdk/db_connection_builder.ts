@@ -198,7 +198,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
 
   /**
    * Registers a callback to run when a {@link DbConnection} whose connection initially succeeded
-   * is disconnected, either after a {@link DbConnection.disconnect} call or due to an error.
+   * is disconnected, either after a {@link DbConnection.disconnect()} call or due to an error.
    *
    * If the connection ended because of an error, the error is passed to the callback.
    *

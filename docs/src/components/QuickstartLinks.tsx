@@ -7,7 +7,7 @@ import { CardLinkGrid } from "./CardLinkGrid";
 import TypeScriptLogo from "@site/static/images/logos/typescript-logo.svg";
 import CSharpLogo from "@site/static/images/logos/csharp-logo.svg";
 import RustLogo from "@site/static/images/logos/rust-logo.svg";
-// import ReactLogo from "@site/static/images/logos/react-logo.svg";
+import ReactLogo from "@site/static/images/logos/react-logo.svg";
 // import UnityLogo from "@site/static/images/logos/unity-logo.svg";
 // import UnrealLogo from "@site/static/images/logos/unreal-logo.svg";
 
@@ -18,28 +18,28 @@ export function QuickstartLinks() {
         {
           icon: <TypeScriptLogo height={40} />,
           href: "/quickstarts/typescript",
-          docId: "quickstarts/typescript",
+          docId: "intro/quickstarts/typescript",
           label: "TypeScript",
         },
         {
           icon: <CSharpLogo height={40} />,
           href: "/quickstarts/c-sharp",
-          docId: "quickstarts/c-sharp",
+          docId: "intro/quickstarts/c-sharp",
           label: "C#",
         },
         {
           icon: <RustLogo height={40} />,
           href: "/quickstarts/rust",
-          docId: "quickstarts/rust",
+          docId: "intro/quickstarts/rust",
           invertIcon: true,
           label: "Rust",
         },
-        // {
-        //   icon: <ReactLogo height={40} />,
-        //   href: "/quickstart/react",
-        //   docId: "quickstart/react",
-        //   label: "React",
-        // },
+        {
+          icon: <ReactLogo height={40} />,
+          href: "/quickstarts/react",
+          docId: "intro/quickstarts/react",
+          label: "React",
+        },
         // {
         //   icon: <UnityLogo height={40} />,
         //   href: "/quickstart/unity",

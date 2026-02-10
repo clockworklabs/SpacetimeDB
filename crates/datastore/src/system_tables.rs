@@ -11,6 +11,7 @@
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
@@ -19,20 +20,24 @@ use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::{ConnectionId, Identity, ProductValue, SpacetimeType, Timestamp};
 use spacetimedb_primitives::*;
+use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
 use spacetimedb_schema::def::{
-    BTreeAlgorithm, ConstraintData, DirectAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
+    BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
 };
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
+use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::str::FromStr;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
@@ -108,6 +113,67 @@ pub(crate) const ST_VIEW_ARG_NAME: &str = "st_view_arg";
 /// test suite when adding sequences to system tables.
 pub const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
 
+/// Is `table_id` reserved as a system table?
+pub fn table_id_is_reserved(table_id: TableId) -> bool {
+    table_id.0 <= ST_RESERVED_SEQUENCE_RANGE
+}
+
+/// For a `row` in the table `table_id`, is `row` a schema meta-descriptor for a reserved system table?
+///
+/// Returns true e.g. for the `st_table` row `{ table_id: ST_VIEW_ID, table_name: "st_view", .. }`,
+/// but false e.g. for the `st_table` row `{ table_id: ST_RESERVED_SEQUENCE_RANGE + 1, table_name: "some_user_table", .. }`.
+/// Also returns false if `table_id` is not a system table.
+pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<bool, anyhow::Error> {
+    fn to_typed_row<T: DeserializeOwned>(row: &ProductValue) -> Result<T, anyhow::Error> {
+        T::deserialize(ValueDeserializer::new(AlgebraicValue::Product(row.clone())))
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize {row:?} as {}: {e:?}", std::any::type_name::<T>()))
+    }
+
+    Ok(match table_id {
+        ST_TABLE_ID => {
+            let row: StTableRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
+        ST_COLUMN_ID => {
+            let row: StColumnRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
+        ST_SEQUENCE_ID => {
+            let row: StSequenceRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
+        ST_INDEX_ID => {
+            let row: StIndexRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
+        ST_CONSTRAINT_ID => {
+            let row: StConstraintRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
+        ST_MODULE_ID | ST_CLIENT_ID | ST_VAR_ID => false,
+        ST_SCHEDULED_ID => {
+            // We don't have any scheduled system tables as of writing (pgoldman 2025-12-16),
+            // but no harm in future-proofing.
+            let row: StScheduledRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
+        ST_ROW_LEVEL_SECURITY_ID => {
+            // We don't install any RLS rules on system tables automatically, but users can.
+            // This means that `st_row_level_security` rules are never system meta-descriptors,
+            // in the sense that if they exist, they come from users.
+            false
+        }
+        ST_CONNECTION_CREDENTIALS_ID => false,
+        // We don't define any system views, so none of the view-related tables can be system meta-descriptors.
+        ST_VIEW_ID | ST_VIEW_PARAM_ID | ST_VIEW_COLUMN_ID | ST_VIEW_SUB_ID | ST_VIEW_ARG_ID => false,
+        TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
+            log::warn!("Unknown system table {table_id:?}");
+            false
+        }
+        _ => false,
+    })
+}
+
 // This help to keep the correct order when bootstrapping
 #[allow(non_camel_case_types)]
 #[derive(Debug, Display)]
@@ -157,10 +223,10 @@ pub trait StFields: Copy + Sized {
     /// Returns the column name of the system table field a static string slice.
     fn name(self) -> &'static str;
 
-    /// Returns the column name of the system table field as a boxed slice.
+    /// Returns the column name of the system table field as a [`RawIdentifier`].
     #[inline]
-    fn col_name(self) -> Box<str> {
-        self.name().into()
+    fn col_name(self) -> Identifier {
+        Identifier::new_assume_valid(self.name().into())
     }
 
     /// Return all fields of this type, in order.
@@ -767,7 +833,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
 #[sats(crate = spacetimedb_lib)]
 pub struct StTableRow {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_type: StTableType,
     pub table_access: StAccess,
     /// The primary key of the table.
@@ -800,7 +866,7 @@ pub struct StViewRow {
     /// An auto-inc id for each view
     pub view_id: ViewId,
     /// The name of the view function as defined in the module
-    pub view_name: Box<str>,
+    pub view_name: TableName,
     /// The [`TableId`] for this view if materialized.
     /// Currently all views are materialized and therefore are assigned a [`TableId`] by default.
     pub table_id: Option<TableId>,
@@ -828,7 +894,7 @@ pub struct AlgebraicTypeViaBytes(pub AlgebraicType);
 impl_st!([] AlgebraicTypeViaBytes, AlgebraicType::bytes());
 impl<'de> Deserialize<'de> for AlgebraicTypeViaBytes {
     fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let bytes = <&[u8]>::deserialize(deserializer)?;
+        let bytes = <Cow<'_, [u8]>>::deserialize(deserializer)?;
         let ty = AlgebraicType::decode(&mut &*bytes).map_err(D::Error::custom)?;
         Ok(AlgebraicTypeViaBytes(ty))
     }
@@ -859,7 +925,7 @@ impl From<AlgebraicType> for AlgebraicTypeViaBytes {
 pub struct StColumnRow {
     pub table_id: TableId,
     pub col_pos: ColId,
-    pub col_name: Box<str>,
+    pub col_name: Identifier,
     pub col_type: AlgebraicTypeViaBytes,
 }
 
@@ -909,7 +975,7 @@ pub struct StViewColumnRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub col_pos: ColId,
-    pub col_name: Box<str>,
+    pub col_name: Identifier,
     pub col_type: AlgebraicTypeViaBytes,
 }
 
@@ -924,7 +990,7 @@ pub struct StViewParamRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub param_pos: ColId,
-    pub param_name: Box<str>,
+    pub param_name: RawIdentifier,
     pub param_type: AlgebraicTypeViaBytes,
 }
 
@@ -974,7 +1040,7 @@ pub struct StViewArgRow {
 pub struct StIndexRow {
     pub index_id: IndexId,
     pub table_id: TableId,
-    pub index_name: Box<str>,
+    pub index_name: RawIdentifier,
     pub index_algorithm: StIndexAlgorithm,
 }
 
@@ -996,12 +1062,16 @@ pub enum StIndexAlgorithm {
 
     /// A Direct index.
     Direct { column: ColId },
+
+    /// A Hash index.
+    Hash { columns: ColList },
 }
 
 impl From<IndexAlgorithm> for StIndexAlgorithm {
     fn from(algorithm: IndexAlgorithm) -> Self {
         match algorithm {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Hash(HashAlgorithm { columns }) => Self::Hash { columns },
             IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
             algo => unreachable!("unexpected `{algo:?}`, did you add a new one?"),
         }
@@ -1011,8 +1081,9 @@ impl From<IndexAlgorithm> for StIndexAlgorithm {
 impl From<StIndexAlgorithm> for IndexAlgorithm {
     fn from(algorithm: StIndexAlgorithm) -> Self {
         match algorithm {
-            StIndexAlgorithm::BTree { columns } => Self::BTree(BTreeAlgorithm { columns }),
-            StIndexAlgorithm::Direct { column } => Self::Direct(DirectAlgorithm { column }),
+            StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
+            StIndexAlgorithm::Hash { columns } => BTreeAlgorithm { columns }.into(),
+            StIndexAlgorithm::Direct { column } => DirectAlgorithm { column }.into(),
             algo => unreachable!("unexpected `{algo:?}` in system table `st_indexes`"),
         }
     }
@@ -1069,7 +1140,7 @@ impl From<IndexSchema> for StIndexRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StSequenceRow {
     pub sequence_id: SequenceId,
-    pub sequence_name: Box<str>,
+    pub sequence_name: RawIdentifier,
     pub table_id: TableId,
     pub col_pos: ColId,
     pub increment: i128,
@@ -1120,7 +1191,7 @@ impl From<StSequenceRow> for SequenceSchema {
 #[sats(crate = spacetimedb_lib)]
 pub struct StConstraintRow {
     pub(crate) constraint_id: ConstraintId,
-    pub(crate) constraint_name: Box<str>,
+    pub(crate) constraint_name: RawIdentifier,
     pub table_id: TableId,
     pub(crate) constraint_data: StConstraintData,
 }
@@ -1535,8 +1606,8 @@ pub struct StScheduledRow {
     /// Note that, despite the column name, this may refer to either a reducer or a procedure.
     /// We cannot change the schema of existing system tables,
     /// so we are unable to rename this column.
-    pub(crate) reducer_name: Box<str>,
-    pub(crate) schedule_name: Box<str>,
+    pub(crate) reducer_name: Identifier,
+    pub(crate) schedule_name: Identifier,
     pub(crate) at_column: ColId,
 }
 
@@ -1596,10 +1667,11 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_data_structures::map::HashSet;
 
     #[test]
     fn test_index_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for index in table.indexes.iter() {
                 assert!(
@@ -1654,7 +1726,7 @@ mod tests {
 
     #[test]
     fn test_constraint_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for constraint in table.constraints.iter() {
                 assert!(
@@ -1689,7 +1761,7 @@ mod tests {
 
     #[test]
     fn test_sequence_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for table in system_tables() {
             for sequence in table.sequences.iter() {
                 assert!(

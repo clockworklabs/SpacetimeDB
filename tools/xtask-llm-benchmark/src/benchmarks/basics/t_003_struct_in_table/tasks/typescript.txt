@@ -1,0 +1,12 @@
+Write a SpacetimeDB backend module in TypeScript that defines a custom struct type used as a table column.
+
+TYPES
+- Position
+  - x: number (i32)
+  - y: number (i32)
+
+TABLE
+- entity
+  - Fields:
+    - id: number (i32, primary key)
+    - pos: Position

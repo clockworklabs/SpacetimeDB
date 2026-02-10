@@ -7,10 +7,10 @@ use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
-use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
+use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -26,6 +26,7 @@ use spacetimedb_sats::{
     buffer::{CountWriter, TeeWriter},
     AlgebraicValue, ProductValue,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
@@ -46,15 +47,49 @@ pub struct InstanceEnv {
     /// The type of the last, including current, function to be executed by this environment.
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
-    pub func_name: String,
+    pub func_name: Option<Identifier>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
 }
 
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+///
+/// # Safety
+///
+/// `InstanceEnv` doesn't auto-derive `Send` because it may hold a `MutTxId`,
+/// which we've manually made `!Send` to preserve logical invariants.
+/// As described above, sending an `InstanceEnv` while it holds a `MutTxId` will violate logical invariants,
+/// but this is not a safety concern.
+/// Transferring a `MutTxId` between threads will never cause Undefined Behavior,
+/// though it is likely to lead to deadlocks.
+unsafe impl Send for InstanceEnv {}
+
 #[derive(Clone, Default)]
 pub struct TxSlot {
+    // Wrapped in Mutex for interior mutability.
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
@@ -160,9 +195,11 @@ impl ChunkedWriter {
     pub fn collect_iter(
         pool: &mut ChunkPool,
         iter: impl Iterator<Item = impl ToBsatn>,
-        rows_scanned: &mut usize,
-        bytes_scanned: &mut usize,
-    ) -> Vec<Vec<u8>> {
+    ) -> (Vec<Vec<u8>>, usize, usize) {
+        // Track the number of rows and the number of bytes scanned by the iterator.
+        let mut rows_scanned = 0;
+        let mut bytes_scanned = 0;
+
         let mut chunked_writer = Self::new(pool);
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
@@ -171,16 +208,16 @@ impl ChunkedWriter {
             item.to_bsatn_extend(&mut chunked_writer.curr).unwrap();
             // Flush at item boundaries.
             chunked_writer.flush(pool);
-            // Update rows scanned
-            *rows_scanned += 1;
+            // Update rows scanned.
+            rows_scanned += 1;
         }
 
         let chunks = chunked_writer.into_chunks();
 
         // Update (BSATN) bytes scanned
-        *bytes_scanned += chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
+        bytes_scanned += chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
 
-        chunks
+        (chunks, rows_scanned, bytes_scanned)
     }
 }
 
@@ -196,7 +233,7 @@ impl InstanceEnv {
             // arbitrary - change if we need to recognize that an `InstanceEnv` has never
             // run a function
             func_type: FuncCallType::Reducer,
-            func_name: String::from("<initializing>"),
+            func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
         }
@@ -208,11 +245,17 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
-        name.clone_into(&mut self.func_name);
+        self.func_name = Some(name);
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.func_name.as_deref()
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -411,6 +454,23 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_delete_by_index_scan_point_bsatn(
+        &self,
+        index_id: IndexId,
+        point: &[u8],
+    ) -> Result<u32, NodesError> {
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
+
+        // Find all rows in the table to delete.
+        let (table_id, _, iter) = stdb.index_scan_point(tx, index_id, point)?;
+        // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
+        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+
+        Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_delete_by_index_scan_range_bsatn(
         &self,
         index_id: IndexId,
@@ -427,7 +487,18 @@ impl InstanceEnv {
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
-        // Note, we're deleting rows based on the result of a btree scan.
+        Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
+    }
+
+    /// Deletes `rows_to_delete` in `tx`
+    /// and assumes `rows_to_delete` came from an index scan.
+    fn datastore_delete_by_index_scan(
+        stdb: &RelationalDB,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        rows_to_delete: SmallVec<[RowPointer; 1]>,
+    ) -> u32 {
+        // Note, we're deleting rows based on the result of an index scan.
         // Hence we must update our `index_seeks` and `rows_scanned` metrics.
         //
         // Note that we're not updating `bytes_scanned` at all,
@@ -436,7 +507,7 @@ impl InstanceEnv {
         tx.metrics.rows_scanned += rows_to_delete.len();
 
         // Delete them and count how many we deleted.
-        Ok(stdb.delete(tx, table_id, rows_to_delete))
+        stdb.delete(tx, table_id, rows_to_delete)
     }
 
     /// Deletes all rows in the table identified by `table_id`
@@ -521,25 +592,44 @@ impl InstanceEnv {
         pool: &mut ChunkPool,
         table_id: TableId,
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
-        // Track the number of rows and the number of bytes scanned by the iterator
-        let mut rows_scanned = 0;
-        let mut bytes_scanned = 0;
+        // Open the iterator.
+        let iter = self.relational_db().iter_mut(tx, table_id)?;
 
-        // Scan table and serialize rows to bsatn
-        let chunks = ChunkedWriter::collect_iter(
-            pool,
-            stdb.iter_mut(tx, table_id)?,
-            &mut rows_scanned,
-            &mut bytes_scanned,
-        );
+        // Scan the index and serialize rows to BSATN.
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+
+        // Record the number of rows and the number of bytes scanned by the iterator.
+        tx.metrics.bytes_scanned += bytes_scanned;
+        tx.metrics.rows_scanned += rows_scanned;
 
         tx.record_table_scan(&self.func_type, table_id);
 
-        tx.metrics.rows_scanned += rows_scanned;
+        Ok(chunks)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_index_scan_point_bsatn_chunks(
+        &self,
+        pool: &mut ChunkPool,
+        index_id: IndexId,
+        point: &[u8],
+    ) -> Result<Vec<Vec<u8>>, NodesError> {
+        let tx = &mut *self.get_tx()?;
+
+        // Open index iterator
+        let (table_id, point, iter) = self.relational_db().index_scan_point(tx, index_id, point)?;
+
+        // Scan the index and serialize rows to BSATN.
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+
+        // Record the number of rows and the number of bytes scanned by the iterator.
+        tx.metrics.index_seeks += 1;
         tx.metrics.bytes_scanned += bytes_scanned;
+        tx.metrics.rows_scanned += rows_scanned;
+
+        tx.record_index_scan_point(&self.func_type, table_id, index_id, point);
 
         Ok(chunks)
     }
@@ -554,24 +644,22 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
-        // Track rows and bytes scanned by the iterator
-        let mut rows_scanned = 0;
-        let mut bytes_scanned = 0;
-
         // Open index iterator
-        let (table_id, lower, upper, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, lower, upper, iter) =
+            self.relational_db()
+                .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
-        // Scan the index and serialize rows to bsatn
-        let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
+        // Scan the index and serialize rows to BSATN.
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
 
-        tx.record_index_scan(&self.func_type, table_id, index_id, lower, upper);
-
+        // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.index_seeks += 1;
-        tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
+        tx.metrics.rows_scanned += rows_scanned;
+
+        tx.record_index_scan_range(&self.func_type, table_id, index_id, lower, upper);
 
         Ok(chunks)
     }
@@ -607,7 +695,7 @@ impl InstanceEnv {
     // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
     // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
 
-    pub fn start_mutable_tx(&mut self) -> Result<impl Future<Output = ()> + use<'_>, NodesError> {
+    pub fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
         if self.get_tx().is_ok() {
             return Err(NodesError::WouldBlockTransaction(
                 super::AbiCall::ProcedureStartMutTransaction,
@@ -616,13 +704,11 @@ impl InstanceEnv {
 
         let stdb = self.replica_ctx.relational_db.clone();
         // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
-        let fut = async move {
-            let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
-            self.tx.set_raw(tx);
-            self.in_anon_tx = true;
-        };
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        self.tx.set_raw(tx);
+        self.in_anon_tx = true;
 
-        Ok(fut)
+        Ok(())
     }
 
     /// Finishes an anonymous transaction,
@@ -645,7 +731,7 @@ impl InstanceEnv {
     // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
     // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
 
-    pub fn commit_mutable_tx(&mut self) -> Result<impl Future<Output = ()> + use<'_>, NodesError> {
+    pub fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
         self.finish_anon_tx()?;
 
         let stdb = self.relational_db().clone();
@@ -665,15 +751,10 @@ impl InstanceEnv {
             host_execution_duration: Duration::from_millis(0),
         };
         // Commit the tx and broadcast it.
-        // This is somewhat expensive,
-        // and can block for a while,
-        // so we need to asyncify it.
-        let fut = async move {
-            let event = asyncify(move || commit_and_broadcast_event(&subs, None, event, tx)).await;
-            self.procedure_last_tx_offset = Some(event.tx_offset);
-        };
+        let event = commit_and_broadcast_event(&subs, None, event, tx);
+        self.procedure_last_tx_offset = Some(event.tx_offset);
 
-        Ok(fut)
+        Ok(())
     }
 
     pub fn abort_mutable_tx(&mut self) -> Result<(), NodesError> {
@@ -681,7 +762,7 @@ impl InstanceEnv {
         let stdb = self.relational_db().clone();
         let tx = self.take_tx()?;
 
-        // Roll back the tx; this isn't that expensive, so we don't need to `asyncify`.
+        // Roll back the tx.
         let offset = ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
         self.procedure_last_tx_offset = Some(from_tx_offset(offset));
         Ok(())
@@ -701,7 +782,7 @@ impl InstanceEnv {
             Ok(()) => {
                 let message = format!(
                     "aborting dangling anonymous transaction in procedure {}",
-                    self.func_name
+                    self.func_name.as_deref().unwrap_or("<unknown>")
                 );
                 self.console_log_simple_message(LogLevel::Error, None, &message);
             }
@@ -714,6 +795,14 @@ impl InstanceEnv {
         self.procedure_last_tx_offset.take()
     }
 
+    /// Perform an HTTP request.
+    /// Exposed to modules via the `ProcedureContext`.
+    ///
+    /// It's very important that the error returned from this function
+    /// not contain any potentially sensitive data from `request`,
+    /// such as the query parameters or header values.
+    /// This way, it's safe to log the errors (either for us to do so, or for module code to do so),
+    /// and less dangerous to send them to the calling client of a procedure.
     pub fn http_request(
         &mut self,
         request: st_http::Request,
@@ -739,17 +828,34 @@ impl InstanceEnv {
             .with_label_values(self.database_identity())
             .inc_scope();
 
+        /// Strip the query part out of the URL in `err`, as query parameters may be sensitive
+        /// and we'd like it to be safe to directly log errors from this method.
+        fn strip_query_params_from_reqwest_error(mut err: reqwest::Error) -> reqwest::Error {
+            if let Some(url) = err.url_mut() {
+                // `set_query` of `None` clears the query part.
+                url.set_query(None);
+            }
+            err
+        }
+
         fn http_error<E: ToString>(err: E) -> NodesError {
             NodesError::HttpError(err.to_string())
         }
 
         // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
         // and map its body into a type `reqwest` will like.
+        //
+        // See comments on and in `convert_http_request` for justification that there's no sensitive info in this error.
         let (request, timeout) = convert_http_request(request).map_err(http_error)?;
 
         let request = http::Request::from_parts(request, body);
 
-        let mut reqwest: reqwest::Request = request.try_into().map_err(http_error)?;
+        let mut reqwest: reqwest::Request = request
+            .try_into()
+            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
+            // Strip those out before returning the error.
+            .map_err(strip_query_params_from_reqwest_error)
+            .map_err(http_error)?;
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
         // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
@@ -767,17 +873,24 @@ impl InstanceEnv {
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
         let execute_fut = reqwest::Client::new().execute(reqwest);
 
-        let response_fut = async {
+        // Run the future that does IO work on a tokio worker thread, where it's more efficent.
+        let response_fut = tokio::spawn(async {
+            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
+            // We'll strip those with `strip_query_params_from_eqwest_error`
+            // after `await`ing `response_fut` below.
             let response = execute_fut.await?;
 
             // Download the response body, which in all likelihood will be a stream,
             // as reqwest seems to prefer that.
             let (response, body) = http::Response::from(response).into_parts();
 
+            // This error may also contain the full URL with query params.
+            // Again, we'll strip them after `await`ing `response_fut` below.
             let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
 
             Ok((response, body))
-        };
+        })
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
 
         let database_identity = *self.database_identity();
 
@@ -798,6 +911,9 @@ impl InstanceEnv {
                             .inc();
                     }
                 })
+                // `response_fut` returns a `reqwest::Error`, which may contain the full URL including query params.
+                // Strip them out to clean the error of potentially sensitive info.
+                .map_err(strip_query_params_from_reqwest_error)
                 .map_err(http_error)?;
 
             // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
@@ -822,6 +938,13 @@ impl InstanceEnv {
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// Unpack `request` and convert it into an [`http::request::Parts`],
+/// and a [`Duration`] from its `timeout` if supplied.
+///
+/// It's very important that the error return from this function
+/// not contain any potentially sensitive data from `request`,
+/// such as the query parameters or header values.
+/// See comment on [`InstanceEnv::http_request`].
 fn convert_http_request(request: st_http::Request) -> http::Result<(http::request::Parts, Option<Duration>)> {
     let st_http::Request {
         method,
@@ -844,6 +967,9 @@ fn convert_http_request(request: st_http::Request) -> http::Result<(http::reques
         st_http::Method::Patch => http::Method::PATCH,
         st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
     };
+    // The error type here, `http::uri::InvalidUri`, doesn't contain the URI itself,
+    // so it's safe to return and to log.
+    // See https://docs.rs/http/1.3.1/src/http/uri/mod.rs.html#120-141 .
     request.uri = uri.try_into()?;
     request.version = match version {
         st_http::Version::Http09 => http::Version::HTTP_09,
@@ -854,7 +980,21 @@ fn convert_http_request(request: st_http::Request) -> http::Result<(http::reques
     };
     request.headers = headers
         .into_iter()
-        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
+        .map(|(k, v)| {
+            Ok((
+                // The error type here, `http::header::InvalidHeaderName`, doesn't contain the header name itself,
+                // so it's safe to return and to log.
+                // See https://docs.rs/http/1.3.1/src/http/header/name.rs.html#60-63 .
+                k.into_string().try_into()?,
+                // The error type here, `http::header::InvalidHeaderValue`, doesn't contain the header value itself,
+                // so it's safe to return and to log.
+                // See https://docs.rs/http/1.3.1/src/http/header/value.rs.html#27-31 .
+                v.into_vec().try_into()?,
+            ))
+        })
+        // Collecting into a `HeaderMap` doesn't add any new possible errors,
+        // the `?` here is just to propogate the errors from converting the individual header names and values.
+        // We know those are free from sensitive info, so this result is clean.
         .collect::<http::Result<_>>()?;
 
     let timeout = timeout.map(|d| d.to_duration_saturating());
@@ -960,23 +1100,22 @@ mod test {
     use anyhow::{anyhow, Result};
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
-    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
-    use tempfile::TempDir;
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
-    fn temp_logger() -> Result<DatabaseLogger> {
-        let temp = TempDir::new()?;
-        let path = ModuleLogsDir::from_path_unchecked(temp.keep());
-        let path = path.today();
-        Ok(DatabaseLogger::open(path))
+    fn temp_logger() -> DatabaseLogger {
+        DatabaseLogger::in_memory(64 * 1024)
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
         let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        let logger = {
+            let _rt = runtime.enter();
+            Arc::new(temp_logger())
+        };
         Ok((
             ReplicaContext {
                 database: Database {
@@ -987,7 +1126,7 @@ mod test {
                     initial_program: Hash::ZERO,
                 },
                 replica_id: 0,
-                logger: Arc::new(temp_logger()?),
+                logger,
                 subscriptions: subs,
                 relational_db,
             },
@@ -1006,7 +1145,7 @@ mod test {
     /// It does not persist data to disk.
     fn relational_db() -> Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
-        Ok(Arc::new(db))
+        Ok(db)
     }
 
     /// Generate a `ProductValue` for use in [create_table_with_index]

@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecTimestamp`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_timestampQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecTimestamp`.
+    fn vec_timestamp(&self) -> __sdk::__query_builder::Table<VecTimestamp>;
+}
+
+impl vec_timestampQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_timestamp(&self) -> __sdk::__query_builder::Table<VecTimestamp> {
+        __sdk::__query_builder::Table::new("vec_timestamp")
+    }
+}

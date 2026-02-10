@@ -11,167 +11,30 @@ import type { ConnectionState } from './connection_state';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDef } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
+import {
+  type Value,
+  type Expr,
+  type ColumnsFromRow,
+  eq,
+  and,
+  or,
+  isEq,
+  isAnd,
+  isOr,
+  evaluate,
+  toString,
+  where,
+  classifyMembership,
+} from '../lib/filter';
+
+export { eq, and, or, isEq, isAnd, isOr, where };
+export type { Value, Expr };
 
 export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
   onDelete?: (row: RowType) => void;
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
 }
-
-export type Value = string | number | boolean;
-
-export type Expr<Column extends string> =
-  | { type: 'eq'; key: Column; value: Value }
-  | { type: 'and'; children: Expr<Column>[] }
-  | { type: 'or'; children: Expr<Column>[] };
-
-export const eq = <Column extends string>(
-  key: Column,
-  value: Value
-): Expr<Column> => ({ type: 'eq', key, value });
-
-export const and = <Column extends string>(
-  ...children: Expr<Column>[]
-): Expr<Column> => {
-  const flat: Expr<Column>[] = [];
-  for (const c of children) {
-    if (!c) continue;
-    if (c.type === 'and') flat.push(...c.children);
-    else flat.push(c);
-  }
-  const pruned = flat.filter(Boolean);
-  if (pruned.length === 0) return { type: 'and', children: [] };
-  if (pruned.length === 1) return pruned[0];
-  return { type: 'and', children: pruned };
-};
-
-export const or = <Column extends string>(
-  ...children: Expr<Column>[]
-): Expr<Column> => {
-  const flat: Expr<Column>[] = [];
-  for (const c of children) {
-    if (!c) continue;
-    if (c.type === 'or') flat.push(...c.children);
-    else flat.push(c);
-  }
-  const pruned = flat.filter(Boolean);
-  if (pruned.length === 0) return { type: 'or', children: [] };
-  if (pruned.length === 1) return pruned[0];
-  return { type: 'or', children: pruned };
-};
-
-export const isEq = <Column extends string>(
-  e: Expr<Column>
-): e is Extract<Expr<Column>, { type: 'eq' }> => e.type === 'eq';
-export const isAnd = <Column extends string>(
-  e: Expr<Column>
-): e is Extract<Expr<Column>, { type: 'and' }> => e.type === 'and';
-export const isOr = <Column extends string>(
-  e: Expr<Column>
-): e is Extract<Expr<Column>, { type: 'or' }> => e.type === 'or';
-
-export function evaluate<Column extends string>(
-  expr: Expr<Column>,
-  row: Record<Column, any>
-): boolean {
-  switch (expr.type) {
-    case 'eq': {
-      const v = row[expr.key];
-      if (
-        typeof v === 'string' ||
-        typeof v === 'number' ||
-        typeof v === 'boolean'
-      ) {
-        return v === expr.value;
-      }
-      return false;
-    }
-    case 'and':
-      return (
-        expr.children.length === 0 || expr.children.every(c => evaluate(c, row))
-      );
-    case 'or':
-      return (
-        expr.children.length !== 0 && expr.children.some(c => evaluate(c, row))
-      );
-  }
-}
-
-function formatValue(v: Value): string {
-  switch (typeof v) {
-    case 'string':
-      return `'${v.replace(/'/g, "''")}'`;
-    case 'number':
-      return Number.isFinite(v) ? String(v) : `'${String(v)}'`;
-    case 'boolean':
-      return v ? 'TRUE' : 'FALSE';
-  }
-}
-
-function escapeIdent(id: string): string {
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(id)) return id;
-  return `"${id.replace(/"/g, '""')}"`;
-}
-
-function parenthesize(s: string): string {
-  if (!s.includes(' AND ') && !s.includes(' OR ')) return s;
-  return `(${s})`;
-}
-
-export function toString<Column extends string>(expr: Expr<Column>): string {
-  switch (expr.type) {
-    case 'eq':
-      return `${escapeIdent(expr.key)} = ${formatValue(expr.value)}`;
-    case 'and':
-      return parenthesize(expr.children.map(toString).join(' AND '));
-    case 'or':
-      return parenthesize(expr.children.map(toString).join(' OR '));
-  }
-}
-
-/**
- * This is just the identity function to make things look like SQL.
- * @param expr
- * @returns
- */
-export function where<Column extends string>(expr: Expr<Column>): Expr<Column> {
-  return expr;
-}
-
-type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
-
-function classifyMembership<
-  Col extends string,
-  R extends Record<string, unknown>,
->(where: Expr<Col> | undefined, oldRow: R, newRow: R): MembershipChange {
-  // No filter: everything is in, so updates are always "stayIn".
-  if (!where) {
-    return 'stayIn';
-  }
-
-  const oldIn = evaluate(where, oldRow);
-  const newIn = evaluate(where, newRow);
-
-  if (oldIn && !newIn) {
-    return 'leave';
-  }
-  if (!oldIn && newIn) {
-    return 'enter';
-  }
-  if (oldIn && newIn) {
-    return 'stayIn';
-  }
-  return 'stayOut';
-}
-
-/**
- * Extracts the column names from a RowType whose values are of type Value.
- * Note that this will exclude columns that are of type object, array, etc.
- */
-type ColumnsFromRow<R> = {
-  [K in keyof R]-?: R[K] extends Value | undefined ? K : never;
-}[keyof R] &
-  string;
 
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
@@ -259,6 +122,7 @@ export function useTable<TableDef extends UntypedTableDef>(
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
   type UseTableRowType = RowType<TableDef>;
   const tableName = tableDef.name;
+  const accessorName = tableDef.accessorName;
   let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
   if (
     whereClauseOrCallbacks &&
@@ -287,14 +151,14 @@ export function useTable<TableDef extends UntypedTableDef>(
 
   const query =
     `SELECT * FROM ${tableName}` +
-    (whereClause ? ` WHERE ${toString(whereClause)}` : '');
+    (whereClause ? ` WHERE ${toString(tableDef, whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
   const lastSnapshotRef = useRef<
     [readonly Prettify<UseTableRowType>[], boolean] | null
   >(null);
 
-  const whereKey = whereClause ? toString(whereClause) : '';
+  const whereKey = whereClause ? toString(tableDef, whereClause) : '';
 
   const computeSnapshot = useCallback((): [
     readonly Prettify<UseTableRowType>[],
@@ -304,7 +168,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!connection) {
       return [[], false];
     }
-    const table = connection.db[tableName];
+    const table = connection.db[accessorName];
     const result: readonly Prettify<UseTableRowType>[] = whereClause
       ? (Array.from(table.iter()).filter(row =>
           evaluate(whereClause, row as UseTableRowType)
@@ -312,7 +176,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
     return [result, subscribeApplied];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState, tableName, whereKey, subscribeApplied]);
+  }, [connectionState, accessorName, whereKey, subscribeApplied]);
 
   useEffect(() => {
     const connection = connectionState.getConnection()!;
@@ -403,7 +267,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         return () => {};
       }
 
-      const table = connection.db[tableName];
+      const table = connection.db[accessorName];
       table.onInsert(onInsert);
       table.onDelete(onDelete);
       table.onUpdate?.(onUpdate);
@@ -417,7 +281,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       connectionState,
-      tableName,
+      accessorName,
       whereKey,
       callbacks?.onDelete,
       callbacks?.onInsert,

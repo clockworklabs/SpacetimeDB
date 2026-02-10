@@ -1,4 +1,4 @@
-import { ProductType } from './algebraic_type';
+import type { errors } from '../server/errors';
 import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
@@ -13,7 +13,7 @@ import type {
   ReadonlyIndexes,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import { registerTypesRecursively } from './schema';
+import type { ModuleContext } from './schema';
 import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
@@ -24,12 +24,51 @@ import {
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
-import type { Prettify } from './type_util';
+import type {
+  InvalidColumnMetadata,
+  Prettify,
+  ValidateColumnMetadata,
+} from './type_util';
 import { toPascalCase } from './util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
 type ColList = ColId[];
+
+/**
+ * Check if any column in the row has invalid metadata.
+ */
+type HasInvalidColumn<Row extends RowObj> = {
+  [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
+    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+      ? true
+      : false
+    : false;
+}[keyof Row] extends false
+  ? false
+  : true;
+
+/**
+ * Extract the names of columns that have invalid metadata.
+ */
+type InvalidColumnNames<Row extends RowObj> = {
+  [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
+    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+      ? K & string
+      : never
+    : never;
+}[keyof Row];
+
+/**
+ * A descriptive error type that surfaces the validation error.
+ * The type name itself contains the error message for better CLI output.
+ */
+type ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
+  InvalidColumns extends string,
+> = {
+  _invalidColumns: InvalidColumns;
+  _fix: 'Remove either default() or the constraint (primaryKey/unique/autoInc) from these columns';
+};
 
 /**
  * A helper type to extract the row type from a TableDef
@@ -66,7 +105,8 @@ export type UntypedTableDef = {
   name: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  rowType: ProductType;
+  // This is really just a ProductType where all the elements have names.
+  rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
 };
@@ -166,8 +206,8 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
-  iter(): IterableIterator<Prettify<RowType<TableDef>>>;
-  [Symbol.iterator](): IterableIterator<Prettify<RowType<TableDef>>>;
+  iter(): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
+  [Symbol.iterator](): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
 }
 
 /**
@@ -179,8 +219,8 @@ export interface TableMethods<TableDef extends UntypedTableDef>
    * Insert and return the inserted row (auto-increment fields filled).
    *
    * May throw on error:
-   * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
-   * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
+   * * If there are any unique or primary key columns in this table, may throw {@link errors.UniqueAlreadyExists}.
+   * * If there are any auto-incrementing columns in this table, may throw {@link errors.AutoIncOverflow}.
    * */
   insert(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
 
@@ -189,24 +229,58 @@ export interface TableMethods<TableDef extends UntypedTableDef>
 }
 
 /**
- * Defines a database table with schema and options
+ * Defines a database table with schema and options.
+ *
  * @param opts - Table configuration including name, indexes, and access control
  * @param row - Product type defining the table's row structure
  * @returns Table handle for use in schema() function
+ *
  * @example
  * ```ts
  * const playerTable = table(
  *   { name: 'player', public: true },
- *   t.object({
+ *   {
  *     id: t.u32().primaryKey(),
  *     name: t.string().index('btree')
- *   })
+ *   }
  * );
  * ```
+ *
+ * ## Column Validation Error
+ *
+ * **If you see an error like "Expected 3 arguments, but got 2"**, this means
+ * one of your columns has an invalid combination of attributes.
+ *
+ * Specifically, `default()` cannot be combined with:
+ * - `primaryKey()`
+ * - `unique()`
+ * - `autoInc()`
+ *
+ * **Example of invalid code:**
+ * ```ts
+ * // ERROR: default() + primaryKey() is not allowed
+ * const badTable = table(
+ *   { name: 'bad' },
+ *   { id: t.u64().default(0n).primaryKey() }  // <- This causes "Expected 3 arguments"
+ * );
+ * ```
+ *
+ * **How to fix:** Remove either `default()` or the constraint (`primaryKey`/`unique`/`autoInc`).
  */
 export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   opts: Opts,
-  row: Row | RowBuilder<Row>
+  row: Row | RowBuilder<Row>,
+  // ⚠️ INTERNAL: This parameter enforces compile-time validation of column metadata.
+  // It is never passed at runtime. If you see "Expected 3 arguments, but got 2",
+  // it means a column has an invalid combination (e.g., default + primaryKey).
+  // See the JSDoc above for details on how to fix this error.
+  ..._: HasInvalidColumn<Row> extends true
+    ? [
+        error: ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
+          InvalidColumnNames<Row>
+        >,
+      ]
+    : []
 ): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,
@@ -226,8 +300,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   if (row.typeName === undefined) {
     row.typeName = toPascalCase(name);
   }
-
-  const rowTypeRef = registerTypesRecursively(row);
 
   row.algebraicType.value.elements.forEach((elem, i) => {
     colIds.set(elem.name, i);
@@ -346,9 +418,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
 
-  const tableDef: Infer<typeof RawTableDefV9> = {
+  const tableDef = (ctx: ModuleContext): Infer<typeof RawTableDefV9> => ({
     name,
-    productTypeRef: rowTypeRef.ref,
+    productTypeRef: ctx.registerTypesRecursively(row).ref,
     primaryKey: pk,
     indexes,
     constraints,
@@ -363,20 +435,18 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         : undefined,
     tableType: { tag: 'User' },
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
-  };
+  });
 
-  const productType = {
-    elements: row.algebraicType.value.elements.map(elem => {
-      return { name: elem.name, algebraicType: elem.algebraicType };
-    }),
-  };
+  const productType = row.algebraicType.value as RowBuilder<
+    CoerceRow<Row>
+  >['algebraicType']['value'];
 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
     tableDef,
-    idxs: indexes as OptsIndices<Opts>,
+    idxs: {} as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
   };
 }

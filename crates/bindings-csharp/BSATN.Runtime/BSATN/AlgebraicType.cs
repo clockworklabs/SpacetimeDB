@@ -6,17 +6,11 @@ public interface ITypeRegistrar
 }
 
 [SpacetimeDB.Type]
-public partial struct AggregateElement
+public partial struct AggregateElement(string name, AlgebraicType algebraicType)
 {
-    public string? Name;
+    public string? Name = name;
 
-    public AlgebraicType AlgebraicType;
-
-    public AggregateElement(string name, AlgebraicType algebraicType)
-    {
-        Name = name;
-        AlgebraicType = algebraicType;
-    }
+    public AlgebraicType AlgebraicType = algebraicType;
 }
 
 [SpacetimeDB.Type]
@@ -49,4 +43,8 @@ public partial record AlgebraicType
     // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as an Option<T>.
     internal static AlgebraicType MakeOption(AlgebraicType someType) =>
         new Sum([new("some", someType), new("none", Unit)]);
+
+    // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as a Result<T, E>.
+    internal static AlgebraicType MakeResult(AlgebraicType okType, AlgebraicType errType) =>
+        new Sum([new("ok", okType), new("err", errType)]);
 }

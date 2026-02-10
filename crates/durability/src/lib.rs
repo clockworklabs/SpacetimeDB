@@ -1,5 +1,6 @@
 use std::{iter, marker::PhantomData, sync::Arc};
 
+use futures::future::BoxFuture;
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -30,6 +31,7 @@ pub struct DurabilityExited;
 /// The handle is valid for as long as the [`Durability`] instance it was
 /// obtained from is live, i.e. able to persist transactions. When the instance
 /// shuts down or crashes, methods will return errors of type [`DurabilityExited`].
+#[derive(Clone)]
 pub struct DurableOffset {
     // TODO: `watch::Receiver::wait_for` will hold a shared lock until all
     // subscribers have seen the current value. Although it may skip entries,
@@ -83,6 +85,12 @@ impl From<watch::Receiver<Option<TxOffset>>> for DurableOffset {
     }
 }
 
+/// Future created by [Durability::close].
+///
+/// This is a boxed future rather than an associated type, so that [Durability]
+/// can be used as a trait object without knowing the type of the `close` future.
+pub type Close = BoxFuture<'static, Option<TxOffset>>;
+
 /// The durability API.
 ///
 /// NOTE: This is a preliminary definition, still under consideration.
@@ -110,6 +118,29 @@ pub trait Durability: Send + Sync {
     /// either because nothing has been persisted yet, or because the status
     /// cannot be retrieved.
     fn durable_tx_offset(&self) -> DurableOffset;
+
+    /// Asynchronously request the durability to shut down, without dropping it.
+    ///
+    /// Shall close any internal channels, such that it is no longer possible to
+    /// append new data (i.e. [Durability::append_tx] shall panic).
+    /// Then, drains the internal queues and attempts to make the remaining data
+    /// durable. Resolves to the durable [TxOffset].
+    ///
+    /// When the returned future resolves, calls to [Durability::append_tx] must
+    /// panic, and calling [DurableOffset::last_seen] must return the same value
+    /// as the future's output.
+    ///
+    /// Repeatedly calling `close` on an already closed [Durability] shall
+    /// return the same [TxOffset].
+    ///
+    /// Note that errors are not propagated, as the [Durability] may already be
+    /// closed.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the [Close] future shall abort the shutdown process,
+    /// and leave the [Durability] in a closed state.
+    fn close(&self) -> Close;
 }
 
 /// Access to the durable history.

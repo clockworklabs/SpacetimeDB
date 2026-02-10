@@ -93,8 +93,28 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn insert_call_timestamp() {
-                make_test("insert-call-timestamp").run();
+            fn insert_call_uuid_v4() {
+                make_test("insert-call-uuid-v4").run();
+            }
+
+            #[test]
+            fn insert_call_uuid_v7() {
+                make_test("insert-call-uuid-v7").run();
+            }
+
+            #[test]
+            fn insert_uuid() {
+                make_test("insert-uuid").run();
+            }
+
+            #[test]
+            fn delete_uuid() {
+                make_test("delete-uuid").run();
+            }
+
+            #[test]
+            fn update_uuid() {
+                make_test("delete-uuid").run();
             }
 
             #[test]
@@ -260,6 +280,11 @@ macro_rules! declare_tests_with_suffix {
             fn overlapping_subscriptions() {
                 make_test("overlapping-subscriptions").run();
             }
+
+            #[test]
+            fn sorted_uuids_insert() {
+                make_test("sorted-uuids-insert").run();
+            }
         }
     };
 }
@@ -268,6 +293,7 @@ declare_tests_with_suffix!(rust, "");
 declare_tests_with_suffix!(typescript, "-ts");
 // TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");
+declare_tests_with_suffix!(cpp, "-cpp");
 
 macro_rules! procedure_tests {
     ($mod_name:ident, $suffix:literal) => {
@@ -334,42 +360,60 @@ macro_rules! procedure_tests {
 
 procedure_tests!(rust_procedures, "");
 procedure_tests!(typescript_procedures, "-ts");
+procedure_tests!(cpp_procedures, "-cpp");
 
-mod view {
-    use spacetimedb_testing::sdk::Test;
+macro_rules! view_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            use spacetimedb_testing::sdk::Test;
 
-    const MODULE: &str = "sdk-test-view";
-    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
+            const MODULE: &str = concat!("sdk-test-view", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
 
-    fn make_test(subcommand: &str) -> Test {
-        Test::builder()
-            .with_name(subcommand)
-            .with_module(MODULE)
-            .with_client(CLIENT)
-            .with_language("rust")
-            .with_bindings_dir("src/module_bindings")
-            .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
-            .build()
-    }
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
+                    .build()
+            }
 
-    #[test]
-    fn subscribe_anonymous_view() {
-        make_test("view-anonymous-subscribe").run()
-    }
+            #[test]
+            fn subscribe_anonymous_view() {
+                make_test("view-anonymous-subscribe").run()
+            }
 
-    #[test]
-    fn subscribe_non_anonymous_view() {
-        make_test("view-non-anonymous-subscribe").run()
-    }
+            #[test]
+            fn subscribe_anonymous_view_query_builder() {
+                make_test("view-anonymous-subscribe-with-query-builder").run()
+            }
 
-    #[test]
-    fn subscribe_view_non_table_return() {
-        make_test("view-non-table-return").run()
-    }
+            #[test]
+            fn subscribe_non_anonymous_view() {
+                make_test("view-non-anonymous-subscribe").run()
+            }
 
-    #[test]
-    fn subscription_updates_for_view() {
-        make_test("view-subscription-update").run()
-    }
+            #[test]
+            fn subscribe_view_non_table_return() {
+                make_test("view-non-table-return").run()
+            }
+
+            #[test]
+            fn subscribe_view_non_table_query_builder_return() {
+                make_test("view-non-table-query-builder-return").run()
+            }
+
+            #[test]
+            fn subscription_updates_for_view() {
+                make_test("view-subscription-update").run()
+            }
+        }
+    };
 }
+
+view_tests!(rust_view, "");
+view_tests!(cpp_view, "-cpp");

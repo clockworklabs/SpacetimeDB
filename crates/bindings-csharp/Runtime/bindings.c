@@ -1,6 +1,7 @@
 #include <assert.h>
 // #include <mono/metadata/appdomain.h>
 // #include <mono/metadata/object.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -100,12 +101,32 @@ IMPORT(void, volatile_nonatomic_schedule_immediate,
 IMPORT(void, identity, (void* id_ptr), (id_ptr));
 #undef SPACETIME_MODULE_VERSION
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.4"
+IMPORT(Status, datastore_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, RowIter* iter),
+       (index_id, point, point_len, iter));
+IMPORT(Status, datastore_delete_by_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, uint32_t* num_deleted),
+       (index_id, point, point_len, num_deleted));
+#undef SPACETIME_MODULE_VERSION
+
 #define SPACETIME_MODULE_VERSION "spacetime_10.1"
 IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* out), (source, out));
 #undef SPACETIME_MODULE_VERSION
 
 #define SPACETIME_MODULE_VERSION "spacetime_10.2"
 IMPORT(int16_t, get_jwt, (const uint8_t* connection_id_ptr, BytesSource* bytes_ptr), (connection_id_ptr, bytes_ptr));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.3"
+IMPORT(uint16_t, procedure_start_mut_tx, (int64_t* micros), (micros));
+IMPORT(uint16_t, procedure_commit_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_abort_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_http_request,
+       (const uint8_t* request_ptr, uint32_t request_len,
+        const uint8_t* body_ptr, uint32_t body_len,
+        BytesSource* out),
+       (request_ptr, request_len, body_ptr, body_len, out));
 #undef SPACETIME_MODULE_VERSION
 
 #ifndef EXPERIMENTAL_WASM_AOT

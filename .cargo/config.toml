@@ -3,6 +3,10 @@ rustflags = ["--cfg", "tokio_unstable"]
 
 [alias]
 bump-versions = "run -p upgrade-version --"
+llm = "run --package xtask-llm-benchmark --bin llm_benchmark --"
+ci = "run -p ci --"
+smoketest = "ci smoketests --"
+smoketests = "smoketest"
 
 [target.x86_64-pc-windows-msvc]
 # Use a different linker. Otherwise, the build fails with some obscure linker error that

@@ -23,6 +23,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::compression::{
     compress_with_zstd, CompressCount, CompressReader, CompressType, CompressionAlgorithm,
@@ -47,7 +48,6 @@ use std::ops::RangeBounds;
 use std::time::{Duration, Instant};
 use std::{
     collections::BTreeMap,
-    collections::HashMap,
     ffi::OsStr,
     fmt,
     io::{BufWriter, Read, Write},
@@ -127,6 +127,12 @@ pub enum SnapshotError {
     Lockfile(#[from] LockfileError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+impl SnapshotError {
+    pub fn is_already_exists(&self) -> bool {
+        matches!(self, Self::Io(e) if e.kind() == std::io::ErrorKind::AlreadyExists)
+    }
 }
 
 /// Magic number for snapshot files: a point in spacetime.

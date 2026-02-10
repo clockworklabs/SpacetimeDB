@@ -1,6 +1,49 @@
+use super::Index;
+use core::mem;
+use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::{
-    algebraic_value::Packed, i256, u256, AlgebraicValue, ArrayValue, ProductValue, SumValue, F32, F64,
+    algebraic_value::Packed, i256, sum_value::SumTag, u256, AlgebraicValue, ArrayValue, ProductValue, SumValue, F32,
+    F64,
 };
+
+/// Storage for memoizing `KeySize` statistics.
+pub trait KeyBytesStorage: Default + MemoryUsage {
+    /// Add `key.key_size_in_bytes()` to the statistics.
+    fn add_to_key_bytes<I: Index>(&mut self, key: &I::Key);
+
+    /// Subtract `key.key_size_in_bytes()` from the statistics.
+    fn sub_from_key_bytes<I: Index>(&mut self, key: &I::Key);
+
+    /// Resets the statistics to zero.
+    fn reset_to_zero(&mut self);
+
+    /// Returns the number bytes taken up by the keys of the index.
+    fn get<I: Index>(&self, index: &I) -> u64;
+}
+
+impl KeyBytesStorage for () {
+    fn add_to_key_bytes<I: Index>(&mut self, _: &I::Key) {}
+    fn sub_from_key_bytes<I: Index>(&mut self, _: &I::Key) {}
+    fn reset_to_zero(&mut self) {}
+    fn get<I: Index>(&self, index: &I) -> u64 {
+        index.num_keys() as u64 * mem::size_of::<I::Key>() as u64
+    }
+}
+
+impl KeyBytesStorage for u64 {
+    fn add_to_key_bytes<I: Index>(&mut self, key: &I::Key) {
+        *self += key.key_size_in_bytes() as u64;
+    }
+    fn sub_from_key_bytes<I: Index>(&mut self, key: &I::Key) {
+        *self -= key.key_size_in_bytes() as u64;
+    }
+    fn reset_to_zero(&mut self) {
+        *self = 0;
+    }
+    fn get<I: Index>(&self, _: &I) -> u64 {
+        *self
+    }
+}
 
 /// Index keys whose memory usage we can measure and report.
 ///
@@ -25,6 +68,8 @@ use spacetimedb_sats::{
 /// - Array values take bytes equal to the sum of their elements' bytes.
 ///   As with strings, no overhead is counted.
 pub trait KeySize {
+    type MemoStorage: KeyBytesStorage;
+
     fn key_size_in_bytes(&self) -> usize;
 }
 
@@ -32,6 +77,7 @@ macro_rules! impl_key_size_primitive {
     ($prim:ty) => {
         impl KeySize for $prim {
             fn key_size_in_bytes(&self) -> usize { std::mem::size_of::<Self>() }
+            type MemoStorage = ();
         }
     };
     ($($prim:ty,)*) => {
@@ -42,6 +88,7 @@ macro_rules! impl_key_size_primitive {
 impl_key_size_primitive!(
     bool,
     u8,
+    SumTag,
     i8,
     u16,
     i16,
@@ -61,12 +108,14 @@ impl_key_size_primitive!(
 );
 
 impl KeySize for Box<str> {
+    type MemoStorage = u64;
     fn key_size_in_bytes(&self) -> usize {
         self.len()
     }
 }
 
 impl KeySize for AlgebraicValue {
+    type MemoStorage = u64;
     fn key_size_in_bytes(&self) -> usize {
         match self {
             AlgebraicValue::Bool(x) => x.key_size_in_bytes(),
@@ -95,12 +144,14 @@ impl KeySize for AlgebraicValue {
 }
 
 impl KeySize for SumValue {
+    type MemoStorage = u64;
     fn key_size_in_bytes(&self) -> usize {
         1 + self.value.key_size_in_bytes()
     }
 }
 
 impl KeySize for ProductValue {
+    type MemoStorage = u64;
     fn key_size_in_bytes(&self) -> usize {
         self.elements.key_size_in_bytes()
     }
@@ -110,6 +161,8 @@ impl<K> KeySize for [K]
 where
     K: KeySize,
 {
+    type MemoStorage = u64;
+
     // TODO(perf, bikeshedding): check that this optimized to `size_of::<K>() * self.len()`
     // when `K` is a primitive.
     fn key_size_in_bytes(&self) -> usize {
@@ -118,6 +171,8 @@ where
 }
 
 impl KeySize for ArrayValue {
+    type MemoStorage = u64;
+
     fn key_size_in_bytes(&self) -> usize {
         match self {
             ArrayValue::Sum(elts) => elts.key_size_in_bytes(),

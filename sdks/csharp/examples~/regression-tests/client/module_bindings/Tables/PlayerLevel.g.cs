@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class PlayerLevelHandle : RemoteTableHandle<EventContext, PlayerLevel>
         {
-            protected override string RemoteTableName => "PlayerLevel";
+            protected override string RemoteTableName => "player_level";
 
             public sealed class LevelIndex : BTreeIndexBase<ulong>
             {
@@ -43,5 +43,29 @@ namespace SpacetimeDB.Types
         }
 
         public readonly PlayerLevelHandle PlayerLevel;
+    }
+
+    public sealed class PlayerLevelCols
+    {
+        public global::SpacetimeDB.Col<PlayerLevel, ulong> PlayerId { get; }
+        public global::SpacetimeDB.Col<PlayerLevel, ulong> Level { get; }
+
+        public PlayerLevelCols(string tableName)
+        {
+            PlayerId = new global::SpacetimeDB.Col<PlayerLevel, ulong>(tableName, "PlayerId");
+            Level = new global::SpacetimeDB.Col<PlayerLevel, ulong>(tableName, "Level");
+        }
+    }
+
+    public sealed class PlayerLevelIxCols
+    {
+        public global::SpacetimeDB.IxCol<PlayerLevel, ulong> PlayerId { get; }
+        public global::SpacetimeDB.IxCol<PlayerLevel, ulong> Level { get; }
+
+        public PlayerLevelIxCols(string tableName)
+        {
+            PlayerId = new global::SpacetimeDB.IxCol<PlayerLevel, ulong>(tableName, "PlayerId");
+            Level = new global::SpacetimeDB.IxCol<PlayerLevel, ulong>(tableName, "Level");
+        }
     }
 }

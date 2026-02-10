@@ -15,10 +15,9 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{
-    BTreeAlgorithm, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
-};
+use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
 
@@ -130,7 +129,7 @@ impl Lang for TypeScript {
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true).unwrap();
+        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true).unwrap();
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
@@ -190,7 +189,8 @@ impl Lang for TypeScript {
 
         writeln!(out, "export const params = {{");
         out.with_indent(|out| {
-            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true).unwrap()
+            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true, false)
+                .unwrap()
         });
         writeln!(out, "}};");
 
@@ -214,7 +214,7 @@ impl Lang for TypeScript {
         for reducer in iter_reducers(module) {
             let reducer_name = &reducer.name;
             let reducer_module_name = reducer_module_name(reducer_name);
-            let args_type = reducer_args_type_name(&reducer.name);
+            let args_type = reducer_args_type_name(reducer_name);
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
             writeln!(out, "export {{ {args_type} }};");
         }
@@ -347,6 +347,12 @@ impl Lang for TypeScript {
             "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
         );
         writeln!(out);
+        writeln!(out, "/** A typed query builder for this remote SpacetimeDB module. */");
+        writeln!(
+            out,
+            "export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
+        );
+        writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
         writeln!(
             out,
@@ -430,7 +436,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** Creates a new {{@link SubscriptionBuilder}} to configure a subscription to the remote SpacetimeDB instance. */");
-        writeln!(out, "subscriptionBuilder = (): SubscriptionBuilder => {{");
+        writeln!(out, "override subscriptionBuilder = (): SubscriptionBuilder => {{");
         out.indent(1);
         writeln!(out, "return new SubscriptionBuilder(this);");
 
@@ -453,8 +459,11 @@ fn print_index_imports(out: &mut Indenter) {
     let mut types = [
         "TypeBuilder as __TypeBuilder",
         "type AlgebraicTypeType as __AlgebraicTypeType",
+        "Uuid as __Uuid",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
+        "makeQueryBuilder as __makeQueryBuilder",
+        "type QueryBuilder as __QueryBuilder",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
@@ -535,7 +544,7 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
         writeln!(out, "}};");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true, false).unwrap());
         writeln!(out, "}};");
     }
 }
@@ -559,7 +568,7 @@ fn define_body_for_product(
         writeln!(out, "}});");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
         writeln!(out, "}});");
     }
     out.newline();
@@ -582,38 +591,34 @@ fn write_table_opts<'a>(
             // Skip system-defined indexes
             continue;
         }
-        match &index_def.algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                let get_name_and_type = |col_pos: ColId| {
-                    let (field_name, field_type) = &product_def.elements[col_pos.idx()];
-                    let name_camel = field_name.deref().to_case(Case::Camel);
-                    (name_camel, field_type)
-                };
-                // TODO(cloutiertyler):
-                // The name users supply is actually the accessor name which will be used
-                // in TypeScript to access the index. This will be used verbatim.
-                // This is confusing because it is not the index name and there is
-                // no actual way for the user to set the actual index name.
-                // I think we should standardize: name and accessorName as the way to set
-                // the name and accessor name of an index across all SDKs.
-                if let Some(accessor_name) = &index_def.accessor_name {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
-                } else {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
-                }
-                out.indent(1);
-                for col_id in columns.iter() {
-                    writeln!(out, "'{}',", get_name_and_type(col_id).0);
-                }
-                out.dedent(1);
-                writeln!(out, "] }},");
-            }
-            IndexAlgorithm::Direct(_) => {
-                // Direct indexes are not implemented yet.
-                continue;
-            }
-            _ => todo!(),
+
+        // We're generating code for the client,
+        // and it does not care what the algorithm on the server is,
+        // as it an use a btree in all cases.
+        let columns = index_def.algorithm.columns();
+        let get_name_and_type = |col_pos: ColId| {
+            let (field_name, field_type) = &product_def.elements[col_pos.idx()];
+            let name_camel = field_name.deref().to_case(Case::Camel);
+            (name_camel, field_type)
         };
+        // TODO(cloutiertyler):
+        // The name users supply is actually the accessor name which will be used
+        // in TypeScript to access the index. This will be used verbatim.
+        // This is confusing because it is not the index name and there is
+        // no actual way for the user to set the actual index name.
+        // I think we should standardize: name and accessorName as the way to set
+        // the name and accessor name of an index across all SDKs.
+        if let Some(accessor_name) = &index_def.accessor_name {
+            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
+        } else {
+            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
+        }
+        out.indent(1);
+        for col_id in columns.iter() {
+            writeln!(out, "'{}',", get_name_and_type(col_id).0);
+        }
+        out.dedent(1);
+        writeln!(out, "] }},");
     }
     out.dedent(1);
     writeln!(out, "],");
@@ -656,6 +661,7 @@ fn write_object_type_builder_fields(
     elements: &[(Identifier, AlgebraicTypeUse)],
     primary_key: Option<ColId>,
     convert_case: bool,
+    write_original_name: bool,
 ) -> anyhow::Result<()> {
     for (i, (ident, ty)) in elements.iter().enumerate() {
         let name = if convert_case {
@@ -668,7 +674,8 @@ fn write_object_type_builder_fields(
             Some(pk) => pk.idx() == i,
             None => false,
         };
-        write_type_builder_field(module, out, &name, ty, is_primary_key)?;
+        let original_name = (write_original_name && convert_case && *name != **ident).then_some(&**ident);
+        write_type_builder_field(module, out, &name, original_name, ty, is_primary_key)?;
     }
 
     Ok(())
@@ -678,6 +685,7 @@ fn write_type_builder_field(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
+    original_name: Option<&str>,
     ty: &AlgebraicTypeUse,
     is_primary_key: bool,
 ) -> fmt::Result {
@@ -694,19 +702,21 @@ fn write_type_builder_field(
         writeln!(out, "get {name}() {{");
         out.indent(1);
         write!(out, "return ");
-        write_type_builder(module, out, ty)?;
-        if is_primary_key {
-            write!(out, ".primaryKey()");
-        }
+    } else {
+        write!(out, "{name}: ");
+    }
+    write_type_builder(module, out, ty)?;
+    if is_primary_key {
+        write!(out, ".primaryKey()");
+    }
+    if let Some(original_name) = original_name {
+        write!(out, ".name(\"{original_name}\")");
+    }
+    if needs_getter {
         writeln!(out, ";");
         out.dedent(1);
         writeln!(out, "}},");
     } else {
-        write!(out, "{name}: ");
-        write_type_builder(module, out, ty)?;
-        if is_primary_key {
-            write!(out, ".primaryKey()");
-        }
         writeln!(out, ",");
     }
 
@@ -723,9 +733,17 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
         AlgebraicTypeUse::Timestamp => write!(out, "__t.timestamp()")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__t.timeDuration()")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__t.scheduleAt()")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__t.uuid()")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "__t.option(")?;
             write_type_builder(module, out, inner_ty)?;
+            write!(out, ")")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "__t.result(")?;
+            write_type_builder(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_type_builder(module, out, err_ty)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
@@ -781,7 +799,7 @@ fn define_body_for_sum(
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
     write!(out, " = __t.enum(\"{name}\", {{");
-    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false).unwrap());
+    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false, false).unwrap());
     writeln!(out, "}});");
     out.newline();
     writeln!(out, "export default {name};");
@@ -801,15 +819,15 @@ fn table_module_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Snake) + "_table"
 }
 
-fn reducer_args_type_name(reducer_name: &Identifier) -> String {
-    reducer_name.deref().to_case(Case::Pascal)
+fn reducer_args_type_name(reducer_name: &ReducerName) -> String {
+    reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
 
 fn procedure_args_type_name(reducer_name: &Identifier) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Procedure"
 }
 
-fn reducer_module_name(reducer_name: &Identifier) -> String {
+fn reducer_module_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Snake) + "_reducer"
 }
 
@@ -834,13 +852,14 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Uuid
         | AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::Array(_)
         | AlgebraicTypeUse::Ref(_) // We use the type name for these.
         | AlgebraicTypeUse::String => {
             false
         }
-        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) | AlgebraicTypeUse::Result { .. } => {
             true
         }
     }
@@ -860,6 +879,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::ConnectionId => write!(out, "__Infer<typeof __t.connectionId()>")?,
         AlgebraicTypeUse::Timestamp => write!(out, "__Infer<typeof __t.timestamp()>")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__Infer<typeof __t.timeDuration()>")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__Uuid")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: __Infer<typeof __t.timeDuration()> }} | {{ tag: \"Time\", value: __Infer<typeof __t.timestamp()> }}"
@@ -867,6 +887,11 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
             write!(out, " | undefined")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write_type(module, out, ok_ty, ref_prefix, ref_suffix)?;
+            write!(out, " | ")?;
+            write_type(module, out, err_ty, ref_prefix, ref_suffix)?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::Bool => write!(out, "boolean")?,

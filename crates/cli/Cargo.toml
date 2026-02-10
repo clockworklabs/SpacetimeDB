@@ -87,10 +87,6 @@ notify.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 fs_extra.workspace = true
-assert_cmd = "2"
-predicates = "3"
-portpicker = "0.1"
-reqwest = { workspace = true, features = ["blocking", "json"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
@@ -100,6 +96,7 @@ tikv-jemalloc-ctl = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 
 [build-dependencies]
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 toml.workspace = true
 

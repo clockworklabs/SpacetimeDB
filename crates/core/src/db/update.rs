@@ -106,11 +106,25 @@ fn auto_migrate_database(
                 let sequence_def = &table_def.sequences[sequence_name];
                 let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
 
-                let min: AlgebraicValue = sequence_def.min_value.unwrap_or(1).into();
-                let max: AlgebraicValue = sequence_def.max_value.unwrap_or(i128::MAX).into();
+                let ty = table_def
+                    .get_column(sequence_def.column)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} refers to unknown column")
+                    })?
+                    .ty
+                    .clone();
+
+                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                let min = AlgebraicValue::from_i128(&ty, sequence_def.min_value.unwrap_or(1)).ok_or_else(|| {
+                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
+                })?;
+
+                let max =
+                    AlgebraicValue::from_i128(&ty, sequence_def.max_value.unwrap_or(i128::MAX)).ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                    })?;
 
                 let range = min..max;
-
                 if stdb
                     .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
                     .next()
@@ -243,7 +257,7 @@ fn auto_migrate_database(
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 
@@ -252,7 +266,7 @@ fn auto_migrate_database(
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
@@ -273,7 +287,10 @@ fn auto_migrate_database(
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).expect("table must exist");
+                let table_def = plan
+                    .new
+                    .stored_in_table_def(&table_name.clone().into())
+                    .expect("table must exist");
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 

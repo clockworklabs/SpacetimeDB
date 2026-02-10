@@ -1,4 +1,4 @@
-import type { RowType, UntypedTableDef } from './table';
+import type { RowType, table, UntypedTableDef } from './table';
 import type { ColumnMetadata, IndexTypes } from './type_builders';
 import type { CollapseTuple, Prettify } from './type_util';
 import { Range } from '../server/range';
@@ -108,7 +108,7 @@ export interface ReadonlyRangedIndex<
 > {
   filter(
     range: IndexScanRangeBounds<TableDef, I>
-  ): IterableIterator<Prettify<RowType<TableDef>>>;
+  ): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
 }
 
 /**

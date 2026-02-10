@@ -1,8 +1,8 @@
 use std::borrow::Cow;
-use std::env;
 use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{env, io};
 
 use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
@@ -11,8 +11,8 @@ use crate::auth::{
 use crate::routes::subscribe::generate_random_connection_id;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
-    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, NodeDelegate,
-    Unauthorized,
+    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
+    NodeDelegate, Unauthorized,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
@@ -20,13 +20,13 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
-use futures::StreamExt;
+use futures::TryStreamExt;
 use http::StatusCode;
-use log::info;
+use log::{info, warn};
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
-use spacetimedb::host::UpdateDatabaseResult;
+use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
@@ -84,7 +84,48 @@ pub struct CallParams {
 }
 
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
+const MISDIRECTED: (StatusCode, &str) = (StatusCode::NOT_FOUND, "Database is not scheduled on this host");
 
+fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
+    let status_code = match e {
+        ReducerCallError::Args(_) => {
+            log::debug!("Attempt to call reducer {reducer} with invalid arguments");
+            StatusCode::BAD_REQUEST
+        }
+        ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
+        ReducerCallError::NoSuchReducer => {
+            log::debug!("Attempt to call non-existent reducer {reducer}");
+            StatusCode::NOT_FOUND
+        }
+        ReducerCallError::LifecycleReducer(lifecycle) => {
+            log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
+            StatusCode::BAD_REQUEST
+        }
+    };
+
+    log::debug!("Error while invoking reducer {e:#}");
+    (status_code, format!("{:#}", anyhow::anyhow!(e)))
+}
+
+fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, String) {
+    let status_code = match e {
+        ProcedureCallError::Args(_) => {
+            log::debug!("Attempt to call procedure {procedure} with invalid arguments");
+            StatusCode::BAD_REQUEST
+        }
+        ProcedureCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+        ProcedureCallError::NoSuchProcedure => {
+            log::debug!("Attempt to call non-existent procedure OR reducer {procedure}");
+            StatusCode::NOT_FOUND
+        }
+        ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
+        ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    log::error!("Error while invoking procedure {e:#}");
+    (status_code, format!("{:#}", anyhow::anyhow!(e)))
+}
+
+/// Call a reducer or procedure on the specified database module.
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -107,53 +148,68 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
+    // Call the database's `client_connected` reducer, if any.
+    // If it fails or rejects the connection, bail.
     module
         .call_identity_connected(auth.into(), connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
     let result = match module
-        .call_reducer(caller_identity, Some(connection_id), None, None, None, &reducer, args)
+        .call_reducer(
+            caller_identity,
+            Some(connection_id),
+            None,
+            None,
+            None,
+            &reducer,
+            args.clone(),
+        )
         .await
     {
-        Ok(rcr) => Ok(rcr),
-        Err(e) => {
-            let status_code = match e {
-                ReducerCallError::Args(_) => {
-                    log::debug!("Attempt to call reducer with invalid arguments");
-                    StatusCode::BAD_REQUEST
-                }
-                ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
-                ReducerCallError::NoSuchReducer => {
-                    log::debug!("Attempt to call non-existent reducer {reducer}");
-                    StatusCode::NOT_FOUND
-                }
-                ReducerCallError::LifecycleReducer(lifecycle) => {
-                    log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
-                    StatusCode::BAD_REQUEST
-                }
-            };
-
-            log::debug!("Error while invoking reducer {e:#}");
-            Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
+        Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+        Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
+            // Not a reducer — try procedure instead
+            match module
+                .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                .await
+                .result
+            {
+                Ok(res) => Ok(CallResult::Procedure(res)),
+                Err(e) => Err(map_procedure_error(e, &reducer)),
+            }
         }
+        Err(e) => Err(map_reducer_error(e, &reducer)),
     };
 
     module
-        // We don't clear views after reducer calls
+        // We don't clear views or procedures after reducer calls
         .call_identity_disconnected(caller_identity, connection_id, false)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
     match result {
-        Ok(result) => {
+        Ok(CallResult::Reducer(result)) => {
             let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
             Ok((
                 status,
                 TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
                 TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
                 body,
-            ))
+            )
+                .into_response())
+        }
+        Ok(CallResult::Procedure(result)) => {
+            // Procedures don't assign a special meaning to error returns, unlike reducers,
+            // as there's no transaction for them to automatically abort.
+            // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
+            let (status, body) = procedure_outcome_response(result.return_val);
+            Ok((
+                status,
+                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                body,
+            )
+                .into_response())
         }
         Err(e) => Err((e.0, e.1).into()),
     }
@@ -167,19 +223,20 @@ fn assert_content_type_json(content_type: headers::ContentType) -> axum::respons
     }
 }
 
-fn reducer_outcome_response(owner_identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> (StatusCode, String) {
+fn reducer_outcome_response(
+    owner_identity: &Identity,
+    reducer: &str,
+    outcome: ReducerOutcome,
+) -> (StatusCode, Box<str>) {
     match outcome {
-        ReducerOutcome::Committed => (StatusCode::OK, "".to_owned()),
+        ReducerOutcome::Committed => (StatusCode::OK, "".into()),
         ReducerOutcome::Failed(errmsg) => {
             // TODO: different status code? this is what cloudflare uses, sorta
-            (StatusCode::from_u16(530).unwrap(), errmsg)
+            (StatusCode::from_u16(530).unwrap(), *errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
             log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
-            (
-                StatusCode::PAYMENT_REQUIRED,
-                "Module energy budget exhausted.".to_owned(),
-            )
+            (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
         }
     }
 }
@@ -228,11 +285,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
             NO_SUCH_DATABASE
         })?;
 
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let leader = worker_ctx.leader(database.id).await.map_err(log_and_500)?;
 
     Ok((leader, database))
 }
@@ -252,88 +305,6 @@ pub enum DBCallErr {
     HandlerError(ErrorResponse),
     NoSuchDatabase,
     InstanceNotScheduled,
-}
-
-#[derive(Deserialize)]
-pub struct ProcedureParams {
-    name_or_identity: NameOrIdentity,
-    procedure: String,
-}
-
-async fn procedure<S: ControlStateDelegate + NodeDelegate>(
-    State(worker_ctx): State<S>,
-    Extension(auth): Extension<SpacetimeAuth>,
-    Path(ProcedureParams {
-        name_or_identity,
-        procedure,
-    }): Path<ProcedureParams>,
-    TypedHeader(content_type): TypedHeader<headers::ContentType>,
-    ByteStringBody(body): ByteStringBody,
-) -> axum::response::Result<impl IntoResponse> {
-    assert_content_type_json(content_type)?;
-
-    let caller_identity = auth.claims.identity;
-
-    let args = FunctionArgs::Json(body);
-
-    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
-
-    // HTTP callers always need a connection ID to provide to connect/disconnect,
-    // so generate one.
-    let connection_id = generate_random_connection_id();
-
-    // Call the database's `client_connected` reducer, if any.
-    // If it fails or rejects the connection, bail.
-    module
-        .call_identity_connected(auth.into(), connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-
-    let result = match module
-        .call_procedure(caller_identity, Some(connection_id), None, &procedure, args)
-        .await
-        .result
-    {
-        Ok(res) => Ok(res),
-        Err(e) => {
-            let status_code = match e {
-                ProcedureCallError::Args(_) => {
-                    log::debug!("Attempt to call reducer with invalid arguments");
-                    StatusCode::BAD_REQUEST
-                }
-                ProcedureCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
-                ProcedureCallError::NoSuchProcedure => {
-                    log::debug!("Attempt to call non-existent procedure {procedure}");
-                    StatusCode::NOT_FOUND
-                }
-                ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
-                ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            log::error!("Error while invoking procedure {e:#}");
-            Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
-        }
-    };
-
-    module
-        // We don't clear views after procedure calls
-        .call_identity_disconnected(caller_identity, connection_id, false)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
-
-    match result {
-        Ok(result) => {
-            // Procedures don't assign a special meaning to error returns, unlike reducers,
-            // as there's no transaction for them to automatically abort.
-            // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
-            let (status, body) = procedure_outcome_response(result.return_val);
-            Ok((
-                status,
-                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
-                body,
-            ))
-        }
-        Err(e) => Err((e.0, e.1).into()),
-    }
 }
 
 fn procedure_outcome_response(return_val: AlgebraicValue) -> (StatusCode, axum::response::Response) {
@@ -457,49 +428,41 @@ where
         .authorize_action(auth.claims.identity, database.database_identity, Action::ViewModuleLogs)
         .await?;
 
-    let replica = worker_ctx
-        .get_leader_replica_by_database(database.id)
-        .await
-        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
-    let replica_id = replica.id;
+    fn log_err(database: Identity) -> impl Fn(&io::Error) {
+        move |e| warn!("error serving module logs for database {database}: {e:#}")
+    }
 
-    let logs_dir = worker_ctx.module_logs_dir(replica_id);
-    let lines = DatabaseLogger::read_latest(logs_dir, num_lines).await;
-
-    let body = if follow {
-        let leader = worker_ctx
-            .leader(database.id)
-            .await
-            .map_err(log_and_500)?
-            .ok_or(StatusCode::NOT_FOUND)?;
-        let log_rx = leader
-            .module()
-            .await
-            .map_err(log_and_500)?
-            .subscribe_to_logs()
-            .map_err(log_and_500)?;
-
-        let stream = tokio_stream::wrappers::BroadcastStream::new(log_rx).filter_map(move |x| {
-            std::future::ready(match x {
-                Ok(log) => Some(log),
-                Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)) => {
-                    log::trace!(
-                        "Skipped {} lines in log for module {}",
-                        skipped,
-                        database_identity.to_hex()
-                    );
-                    None
-                }
-            })
-        });
-
-        let stream = futures::stream::once(std::future::ready(lines.into()))
-            .chain(stream)
-            .map(Ok::<_, std::convert::Infallible>);
-
-        Body::from_stream(stream)
-    } else {
-        Body::from(lines)
+    let body = match worker_ctx.leader(database.id).await {
+        Ok(host) => {
+            let module = host.module().await.map_err(log_and_500)?;
+            let logs = module.database_logger().tail(num_lines, follow).await.map_err(|e| {
+                warn!("database={database_identity} unable to tail logs: {e:#}");
+                (StatusCode::SERVICE_UNAVAILABLE, "Logs are temporarily not available")
+            })?;
+            Body::from_stream(logs.inspect_err(log_err(database_identity)))
+        }
+        Err(e) if e.is_misdirected() => return Err(MISDIRECTED.into()),
+        // If this is the right node for the current or last-known leader,
+        // we may still be able to serve logs from disk,
+        // even if we can't get hold of a running [ModuleHost].
+        Err(e) => {
+            warn!("could not obtain leader host for module logs: {e:#}");
+            let Some(replica) = worker_ctx.get_leader_replica_by_database(database.id).await else {
+                return Err(MISDIRECTED.into());
+            };
+            let logs_dir = worker_ctx.module_logs_dir(replica.id);
+            if !logs_dir.0.try_exists().map_err(log_and_500)? {
+                // Probably an in-memory database.
+                // Logs may become available at a later time.
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Database is not running and doesn't have persistent logs",
+                )
+                    .into());
+            }
+            let logs = DatabaseLogger::read_latest_on_disk(logs_dir, num_lines);
+            Body::from_stream(logs.inspect_err(log_err(database_identity)))
+        }
     };
 
     Ok((
@@ -688,6 +651,8 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     host_type: HostType,
     parent: Option<NameOrIdentity>,
+    #[serde(alias = "org")]
+    organization: Option<NameOrIdentity>,
 }
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
@@ -700,6 +665,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         policy,
         host_type,
         parent,
+        organization,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -711,14 +677,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         let name_or_identity = name_or_identity
             .as_ref()
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
-        if let Ok(identity) = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)? {
-            if ctx
+        let database_identity = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)?;
+        if let Ok(identity) = database_identity {
+            let exists = ctx
                 .get_database_by_identity(&identity)
                 .await
                 .map_err(log_and_500)?
-                .is_some()
-            {
-                return reset(
+                .is_some();
+            if exists {
+                if parent.is_some() {
+                    return Err(bad_request(
+                        "Setting the parent of an existing database is not supported".into(),
+                    ));
+                }
+
+                return self::reset(
                     State(ctx),
                     Path(ResetDatabaseParams {
                         name_or_identity: name_or_identity.clone(),
@@ -740,6 +713,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
     };
+    let maybe_org_identity = match organization.as_ref() {
+        None => None,
+        Some(org) => org.resolve(&ctx).await.map(Some)?,
+    };
 
     // Check that the replication factor looks somewhat sane.
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
@@ -752,19 +729,18 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .await
         .map_err(log_and_500)?;
     match existing.as_ref() {
-        // If not, check that the we caller is sufficiently authenticated.
         None => {
             allow_creation(&auth)?;
-            if let Some(parent) = maybe_parent_database_identity {
-                ctx.authorize_action(
-                    auth.claims.identity,
-                    database_identity,
-                    Action::CreateDatabase { parent: Some(parent) },
-                )
-                .await?;
-            }
+            ctx.authorize_action(
+                auth.claims.identity,
+                database_identity,
+                Action::CreateDatabase {
+                    parent: maybe_parent_database_identity,
+                    organization: maybe_org_identity,
+                },
+            )
+            .await?;
         }
-        // If yes, authorize via ctx.
         Some(database) => {
             ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
                 .await?;
@@ -798,6 +774,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 num_replicas,
                 host_type,
                 parent,
+                organization: maybe_org_identity,
             },
             schema_migration_policy,
         )
@@ -952,6 +929,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 num_replicas: None,
                 host_type,
                 parent: None,
+                organization: None,
             },
             style,
         )
@@ -1184,9 +1162,7 @@ pub struct DatabaseRoutes<S> {
     /// GET: /database/:name_or_identity/subscribe
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
-    pub call_reducer_post: MethodRouter<S>,
-    /// POST: /database/:name_or_identity/procedure/:reducer
-    pub call_procedure_post: MethodRouter<S>,
+    pub call_reducer_procedure_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
@@ -1217,8 +1193,7 @@ where
             names_put: put(set_names::<S>),
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
-            call_reducer_post: post(call::<S>),
-            call_procedure_post: post(procedure::<S>),
+            call_reducer_procedure_post: post(call::<S>),
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
@@ -1243,8 +1218,7 @@ where
             .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
-            .route("/call/:reducer", self.call_reducer_post)
-            .route("/unstable/procedure/:procedure", self.call_procedure_post)
+            .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)

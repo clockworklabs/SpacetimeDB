@@ -49,7 +49,7 @@ const config: Config = {
 
   url: 'https://spacetimedb.com',
   // this means the site is served at https://spacetimedb.com/docs/
-  baseUrl: '/docs/', 
+  baseUrl: '/docs/',
 
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
@@ -65,7 +65,10 @@ const config: Config = {
     locales: ['en'],
   },
 
-  clientModules: [require.resolve('./src/client-modules/fonts')],
+  clientModules: [
+    require.resolve('./src/client-modules/fonts'),
+    require.resolve('./src/client-modules/inkeep-font-override'),
+  ],
 
   headTags: [
     {
@@ -140,7 +143,7 @@ const config: Config = {
     navbar: {
       logo: {
         alt: 'SpacetimeDB Logo',
-        src: 'https://spacetimedb.com/images/brand.png',
+        src: 'https://spacetimedb.com/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
       },
@@ -158,11 +161,6 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://spacetimedb.com/maincloud',
-          label: 'Maincloud',
-          position: 'right',
-        },
-        {
           href: 'https://spacetimedb.com/blog',
           label: 'Blog',
           position: 'right',
@@ -170,6 +168,11 @@ const config: Config = {
         {
           href: 'https://spacetimedb.com/community',
           label: 'Community',
+          position: 'right',
+        },
+        {
+          href: 'https://spacetimedb.com/spacerace',
+          label: 'Spacerace',
           position: 'right',
         },
         {
@@ -201,7 +204,6 @@ const config: Config = {
       },
     ],
   ],
-
 };
 
 export default config;

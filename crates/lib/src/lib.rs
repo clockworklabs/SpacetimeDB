@@ -2,6 +2,7 @@ use crate::db::raw_def::v9::RawModuleDefV9Builder;
 use crate::db::raw_def::RawTableDefV8;
 use anyhow::Context;
 use sats::typespace::TypespaceBuilder;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::WithTypespace;
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
@@ -37,6 +38,7 @@ pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::time_duration::TimeDuration;
 pub use spacetimedb_sats::timestamp::Timestamp;
+pub use spacetimedb_sats::uuid::Uuid;
 pub use spacetimedb_sats::SpacetimeType;
 pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
@@ -123,7 +125,7 @@ impl TableDesc {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct ReducerDef {
-    pub name: Box<str>,
+    pub name: RawIdentifier,
     pub args: Vec<ProductTypeElement>,
 }
 
@@ -160,6 +162,7 @@ impl RawModuleDefV8 {
 pub enum RawModuleDef {
     V8BackCompat(RawModuleDefV8),
     V9(db::raw_def::v9::RawModuleDefV9),
+    V10(db::raw_def::v10::RawModuleDefV10),
     // TODO(jgilles): It would be nice to have a custom error message if this fails with an unknown variant,
     // but I'm not sure if that can be done via the Deserialize trait.
 }
@@ -185,7 +188,7 @@ impl ModuleDefBuilder {
     pub fn add_type_for_tests(&mut self, name: &str, ty: AlgebraicType) -> spacetimedb_sats::AlgebraicTypeRef {
         let slot_ref = self.module.typespace.add(ty);
         self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-            name: name.to_owned(),
+            name: RawIdentifier::new(name),
             ty: slot_ref,
         }));
         slot_ref
@@ -207,7 +210,7 @@ impl ModuleDefBuilder {
             .collect();
         let data = self.module.typespace.add(ty.into());
         self.add_type_alias(TypeAlias {
-            name: schema.table_name.clone().into(),
+            name: schema.table_name.clone(),
             ty: data,
         });
         self.add_table(TableDesc { schema, data });
@@ -223,9 +226,9 @@ impl ModuleDefBuilder {
     }
 
     #[cfg(feature = "test")]
-    pub fn add_reducer_for_tests(&mut self, name: impl Into<Box<str>>, args: ProductType) {
+    pub fn add_reducer_for_tests(&mut self, name: impl AsRef<str>, args: ProductType) {
         self.add_reducer(ReducerDef {
-            name: name.into(),
+            name: RawIdentifier::new(name.as_ref()),
             args: args.elements.to_vec(),
         });
     }
@@ -265,7 +268,7 @@ impl TypespaceBuilder for ModuleDefBuilder {
                 // Alias provided? Relate `name -> slot_ref`.
                 if let Some(name) = name {
                     self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: name.to_owned(),
+                        name: name.into(),
                         ty: slot_ref,
                     }));
                 }
@@ -292,7 +295,7 @@ pub enum MiscModuleExport {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct TypeAlias {
-    pub name: String,
+    pub name: RawIdentifier,
     pub ty: sats::AlgebraicTypeRef,
 }
 

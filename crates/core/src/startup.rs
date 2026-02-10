@@ -317,9 +317,14 @@ impl Cores {
 
     /// Get the cores of the local host, as reported by the operating system.
     ///
-    /// Returns `None` if `num_cpus` is less than 8.
+    /// Returns `None` if `num_cpus` is less than 8
+    /// or if core pinning is disabled.
     /// If `Some` is returned, the `Vec` is non-empty.
     pub fn get_core_ids() -> Option<Vec<CoreId>> {
+        if cfg!(feature = "no-core-pinning") {
+            return None;
+        }
+
         let cores = core_affinity::get_core_ids()
             .filter(|cores| cores.len() >= 10)?
             .into_iter()
@@ -431,18 +436,12 @@ pub struct DatabaseCores(Vec<CoreId>);
 impl DatabaseCores {
     /// Construct a [`JobCores`] manager suitable for running database WASM code on.
     ///
-    /// The `global_runtime` should be a [`tokio::runtime::Handle`] to the [`tokio::runtime::Runtime`]
-    /// constructed from the [`TokioCores`] of this [`Cores`].
-    ///
     /// ```rust
     /// # use spacetimedb::startup::pin_threads;
     /// let cores = pin_threads();
-    /// let mut builder = tokio::runtime::Builder::new_multi_thread();
-    /// cores.tokio.configure(&mut builder);
-    /// let mut rt = builder.build().unwrap();
-    /// let database_cores = cores.databases.make_database_runners(rt.handle());
+    /// let database_cores = cores.databases.make_database_runners();
     /// ```
-    pub fn make_database_runners(self, global_runtime: &tokio::runtime::Handle) -> JobCores {
-        JobCores::from_pinned_cores(self.0, global_runtime.clone())
+    pub fn make_database_runners(self) -> JobCores {
+        JobCores::from_pinned_cores(self.0)
     }
 }

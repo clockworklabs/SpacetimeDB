@@ -8,7 +8,7 @@ class SqlFormat(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{ConnectionId, Identity, ReducerContext, SpacetimeType, Table, Timestamp, TimeDuration};
+use spacetimedb::{ConnectionId, Identity, ReducerContext, SpacetimeType, Table, Timestamp, TimeDuration, Uuid};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = t_ints, public)]
@@ -54,6 +54,7 @@ pub struct TOthers {
     connection_id: ConnectionId,
     timestamp: Timestamp,
     duration:  TimeDuration,
+    uuid: Uuid,
 }
 
 #[spacetimedb::table(name = t_others_tuple, public)]
@@ -92,6 +93,19 @@ pub struct TNested {
    ints: TInts,
 }
 
+#[derive(Clone)]
+#[spacetimedb::table(name = t_enums)]
+pub struct TEnums {
+    bool_opt: Option<bool>,
+    bool_result: Result<bool, String>,
+    action: Action,
+}
+
+#[spacetimedb::table(name = t_enums_tuple)]
+pub struct TEnumsTuple {
+    tuple: TEnums,
+}
+
 #[spacetimedb::reducer]
 pub fn test(ctx: &ReducerContext) {
     let tuple = TInts {
@@ -127,6 +141,7 @@ pub fn test(ctx: &ReducerContext) {
         connection_id: ConnectionId::ZERO,      
         timestamp: Timestamp::UNIX_EPOCH,
         duration: TimeDuration::from_micros(1000 * 10000),
+        uuid: Uuid::NIL,
     };
     ctx.db.t_others().insert(tuple.clone());
     ctx.db.t_others_tuple().insert(TOthersTuple { tuple });
@@ -141,6 +156,15 @@ pub fn test(ctx: &ReducerContext) {
         se: TSimpleEnum { id: 2, action: Action::Active },
         ints,
     });
+    
+    let tuple = TEnums {
+        bool_opt: Some(true),
+        bool_result: Ok(false),
+        action: Action::Active,
+    };
+    
+    ctx.db.t_enums().insert(tuple.clone());
+    ctx.db.t_enums_tuple().insert(TEnumsTuple { tuple });
 }
 """
 
@@ -210,14 +234,14 @@ tuple
  {"u8": 105, "u16": 1050, "u32": 83892, "u64": 48937498, "u128": 4378528978889, "u256": 4378528978889}
 (1 row)""")
         self.assertPsql(token, "SELECT * FROM t_others", """\
-bool |    f32    |         f64         |         str         |      bytes       |                              identity                              |           connection_id            |         timestamp         | duration
-------+-----------+---------------------+---------------------+------------------+--------------------------------------------------------------------+------------------------------------+---------------------------+----------
- t    | 594806.56 | -3454353.3453890434 | This is spacetimedb | \\x01020304050607 | \\x0000000000000000000000000000000000000000000000000000000000000001 | \\x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | PT10S
+bool |    f32    |         f64         |         str         |      bytes       |                              identity                              |           connection_id            |         timestamp         | duration |                 uuid
+------+-----------+---------------------+---------------------+------------------+--------------------------------------------------------------------+------------------------------------+---------------------------+----------+--------------------------------------
+ t    | 594806.56 | -3454353.3453890434 | This is spacetimedb | \\x01020304050607 | \\x0000000000000000000000000000000000000000000000000000000000000001 | \\x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | PT10S    | 00000000-0000-0000-0000-000000000000
 (1 row)""")
         self.assertPsql(token, "SELECT * FROM t_others_tuple", """\
 tuple
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"bool": true, "f32": 594806.56, "f64": -3454353.3453890434, "str": "This is spacetimedb", "bytes": "0x01020304050607", "identity": "0x0000000000000000000000000000000000000000000000000000000000000001", "connection_id": "0x00000000000000000000000000000000", "timestamp": "1970-01-01T00:00:00+00:00", "duration": "PT10S"}
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"bool": true, "f32": 594806.56, "f64": -3454353.3453890434, "str": "This is spacetimedb", "bytes": "0x01020304050607", "identity": "0x0000000000000000000000000000000000000000000000000000000000000001", "connection_id": "0x00000000000000000000000000000000", "timestamp": "1970-01-01T00:00:00+00:00", "duration": "PT10S", "uuid": "00000000-0000-0000-0000-000000000000"}
 (1 row)""")
         self.assertPsql(token, "SELECT * FROM t_simple_enum", """\
 id |  action
@@ -235,7 +259,19 @@ en                 |                 se                  |                      
 -----------------------------------+-------------------------------------+---------------------------------------------------------------------------------------------------------
  {"id": 1, "color": {"Gray": 128}} | {"id": 2, "action": {"Active": {}}} | {"i8": -25, "i16": -3224, "i32": -23443, "i64": -2344353, "i128": -234434897853, "i256": -234434897853}
 (1 row)""")
-
+        self.assertPsql(token,"SELECT * FROM t_enums", """\
+bool_opt    |  bool_result  | action
+----------------+---------------+--------
+ {"some": true} | {"ok": false} | Active
+(1 row)
+""")
+        self.assertPsql(token,"SELECT * FROM t_enums_tuple", """\
+tuple
+--------------------------------------------------------------------------------------
+ {"bool_opt": {"some": true}, "bool_result": {"ok": false}, "action": {"Active": {}}}
+(1 row)
+""")
+    
     def test_sql_conn(self):
         """This test is designed to test connecting to the database and executing queries using `psycopg2`"""
         token = self.read_token()

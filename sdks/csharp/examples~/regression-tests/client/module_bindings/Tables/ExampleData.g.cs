@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ExampleDataHandle : RemoteTableHandle<EventContext, ExampleData>
         {
-            protected override string RemoteTableName => "ExampleData";
+            protected override string RemoteTableName => "example_data";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
@@ -45,5 +45,29 @@ namespace SpacetimeDB.Types
         }
 
         public readonly ExampleDataHandle ExampleData;
+    }
+
+    public sealed class ExampleDataCols
+    {
+        public global::SpacetimeDB.Col<ExampleData, uint> Id { get; }
+        public global::SpacetimeDB.Col<ExampleData, uint> Indexed { get; }
+
+        public ExampleDataCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "Id");
+            Indexed = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "Indexed");
+        }
+    }
+
+    public sealed class ExampleDataIxCols
+    {
+        public global::SpacetimeDB.IxCol<ExampleData, uint> Id { get; }
+        public global::SpacetimeDB.IxCol<ExampleData, uint> Indexed { get; }
+
+        public ExampleDataIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "Id");
+            Indexed = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "Indexed");
+        }
     }
 }

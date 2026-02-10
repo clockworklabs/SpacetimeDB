@@ -48,7 +48,7 @@ pub enum AlgebraicValue {
     /// a product value stores a value `v_i` of type `T_i` for each field `N_i`.
     Product(ProductValue),
     /// A homogeneous array of `AlgebraicValue`s.
-    /// The array has the type [`AlgebraicType::Array(elem_ty)`].
+    /// The array has the type [`AlgebraicType::Array(elem_ty)`][AlgebraicType::Array].
     ///
     /// The contained values are stored packed in a representation appropriate for their type.
     /// See [`ArrayValue`] for details on the representation.
@@ -188,6 +188,34 @@ impl AlgebraicValue {
         Self::sum(1, Self::unit())
     }
 
+    /// Converts `self` into `Result<Result<AlgebraicValue, AlgebraicValue>, Self>`, if applicable.
+    pub fn into_result(self) -> Result<Result<Self, Self>, Self> {
+        match self {
+            AlgebraicValue::Sum(sum_value) => match sum_value.tag {
+                0 => Ok(Ok(*sum_value.value)),
+                1 => Ok(Err(*sum_value.value)),
+                _ => Err(AlgebraicValue::Sum(sum_value)),
+            },
+            _ => Err(self),
+        }
+    }
+
+    /// Returns an [`AlgebraicValue`] for ` Ok: v`.
+    ///
+    /// The `Ok` variant is assigned the tag `0`.
+    #[inline]
+    pub fn ResultOk(v: Self) -> Self {
+        Self::sum(0, v)
+    }
+
+    /// Returns an [`AlgebraicValue`] for ` Err: v`.
+    ///
+    /// The `Err` variant is assigned the tag `1`.
+    #[inline]
+    pub fn ResultErr(v: Self) -> Self {
+        Self::sum(1, v)
+    }
+
     /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and `value`.
     pub fn sum(tag: u8, value: Self) -> Self {
         Self::Sum(SumValue::new(tag, value))
@@ -276,6 +304,30 @@ impl AlgebraicValue {
             _ => false,
         }
     }
+
+    /// Constructs an `AlgebraicValue` from an `i128` according to the given `AlgebraicType`.
+    ///
+    /// Returns `None` if the type is not a supported integer type.
+    pub fn from_i128(ty: &AlgebraicType, value: i128) -> Option<Self> {
+        let val = match ty {
+            AlgebraicType::I8 => (value as i8).into(),
+            AlgebraicType::I16 => (value as i16).into(),
+            AlgebraicType::I32 => (value as i32).into(),
+            AlgebraicType::I64 => (value as i64).into(),
+            AlgebraicType::I128 => value.into(),
+            AlgebraicType::I256 => i256::from(value).into(),
+
+            AlgebraicType::U8 => (value as u8).into(),
+            AlgebraicType::U16 => (value as u16).into(),
+            AlgebraicType::U32 => (value as u32).into(),
+            AlgebraicType::U64 => (value as u64).into(),
+            AlgebraicType::U128 => (value as u128).into(),
+            AlgebraicType::U256 => (u256::from(value as u128)).into(),
+
+            _ => return None,
+        };
+        Some(val)
+    }
 }
 
 impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {
@@ -341,6 +393,17 @@ mod tests {
         let sum_value = AlgebraicValue::OptionNone();
         let typespace = Typespace::new(vec![]);
         assert_eq!("(none = ())", in_space(&typespace, &option, &sum_value).to_satn(),);
+    }
+
+    #[test]
+    fn result() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        let ok = AlgebraicValue::ResultOk(AlgebraicValue::U8(42));
+        let typespace = Typespace::new(vec![]);
+        assert_eq!("(ok = 42)", in_space(&typespace, &result, &ok).to_satn(),);
+
+        let err = AlgebraicValue::ResultErr(AlgebraicValue::String("error".into()));
+        assert_eq!("(err = \"error\")", in_space(&typespace, &result, &err).to_satn(),);
     }
 
     #[test]

@@ -1,8 +1,9 @@
 use anyhow::{bail, Result};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_execution::{
     pipelined::{
-        PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScan, PipelinedIxJoin, PipelinedIxScan,
-        PipelinedProject,
+        PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScanEq, PipelinedIxDeltaScanRange, PipelinedIxJoin,
+        PipelinedIxScanEq, PipelinedIxScanRange, PipelinedProject,
     },
     Datastore, DeltaStore, Row,
 };
@@ -11,8 +12,8 @@ use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
-use std::sync::Arc;
-use std::{collections::HashSet, ops::RangeBounds};
+use spacetimedb_schema::table_name::TableName;
+use std::ops::RangeBounds;
 
 /// A subscription is a view over a particular table.
 /// How do we incrementally maintain that view?
@@ -36,8 +37,10 @@ impl Fragments {
         let mut index_ids = HashSet::new();
         for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
             plan.visit(&mut |plan| match plan {
-                PipelinedExecutor::IxScan(PipelinedIxScan { table_id, index_id, .. })
-                | PipelinedExecutor::IxDeltaScan(PipelinedIxDeltaScan { table_id, index_id, .. })
+                PipelinedExecutor::IxScanEq(PipelinedIxScanEq { table_id, index_id, .. })
+                | PipelinedExecutor::IxScanRange(PipelinedIxScanRange { table_id, index_id, .. })
+                | PipelinedExecutor::IxDeltaScanEq(PipelinedIxDeltaScanEq { table_id, index_id, .. })
+                | PipelinedExecutor::IxDeltaScanRange(PipelinedIxDeltaScanRange { table_id, index_id, .. })
                 | PipelinedExecutor::IxJoin(PipelinedIxJoin {
                     rhs_table: table_id,
                     rhs_index: index_id,
@@ -247,49 +250,6 @@ impl Fragments {
             }),
             _ => bail!("Invalid number of tables in subscription: {}", tables.len()),
         }
-    }
-}
-
-/// Newtype wrapper for table names.
-///
-/// Uses an `Arc` internally, so `Clone` is cheap.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TableName(Arc<str>);
-
-impl From<Arc<str>> for TableName {
-    fn from(name: Arc<str>) -> Self {
-        TableName(name)
-    }
-}
-
-impl From<Box<str>> for TableName {
-    fn from(name: Box<str>) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl From<String> for TableName {
-    fn from(name: String) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl std::ops::Deref for TableName {
-    type Target = str;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl TableName {
-    pub fn table_name_from_str(name: &str) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl std::fmt::Display for TableName {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.0.fmt(f)
     }
 }
 
@@ -546,8 +506,6 @@ impl SubscriptionPlan {
         }
 
         let mut subscriptions = vec![];
-
-        let return_name = TableName::from(return_name);
 
         for plan in plans {
             let plan_opt = plan.clone().optimize(auth)?;

@@ -14,6 +14,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_schema::identifier::Identifier;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::time::Instant;
@@ -220,7 +221,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: &str,
+        name: Identifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -237,16 +238,10 @@ impl WasmInstanceEnv {
         (args, errors)
     }
 
-    /// Returns the name of the most recent reducer or procedure to be run in this environment.
-    pub fn funcall_name(&self) -> &str {
-        &self.instance_env.func_name
-    }
-
     /// Returns the name of the most recent reducer or procedure to be run in this environment,
     /// or `None` if no reducer or procedure is actively being invoked.
-    fn log_record_function(&self) -> Option<&str> {
-        let function = self.funcall_name();
-        (!function.is_empty()).then_some(function)
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.instance_env.log_record_function()
     }
 
     /// Returns the start time of the most recent reducer or procedure to be run in this environment.
@@ -525,6 +520,69 @@ impl WasmInstanceEnv {
                 .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id.into())?;
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
+    }
+
+    /// Finds all rows in the index identified by `index_id`,
+    /// according to `point = point_ptr[..point_len]` in WASM memory.
+    ///
+    /// The index itself has a schema/type.
+    /// Matching defined by first BSATN-decoding `point` to that `AlgebraicType`
+    /// and then comparing the decoded `point` to the keys in the index
+    /// using `Ord for AlgebraicValue`.
+    /// to the keys in the index.
+    /// The `point` is BSATN-decoded to that `AlgebraicType`.
+    /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+    /// This occurs exactly when the row's BSATN-encoding
+    /// is equal to the encoding of the `AlgebraicValue`.
+    ///
+    /// This ABI is not limited to single column indices.
+    /// Multi-column indices can be queried by providing
+    /// a BSATN-encoded `ProductValue`
+    /// that is typed at the `ProductType` of the index.
+    ///
+    /// The relevant table for the index is found implicitly via the `index_id`,
+    /// which is unique for the module.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+    ///   typed at the index's key type (`AlgebraicType`).
+    pub fn datastore_index_scan_point_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        point_ptr: WasmPtr<u8>, // AlgebraicValue
+        point_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreIndexScanPointBsatn, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the `point` from WASM memory.
+            let point = mem.deref_slice(point_ptr, point_len)?;
+
+            // Find the relevant rows.
+            let chunks = env.instance_env.datastore_index_scan_point_bsatn_chunks(
+                &mut env.chunk_pool,
+                index_id.into(),
+                point,
+            )?;
+
+            // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.iters.insert(chunks.into_iter()))
         })
     }
@@ -876,6 +934,49 @@ impl WasmInstanceEnv {
             let row_len = env.instance_env.update(table_id.into(), index_id.into(), row)?;
             u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
             Ok(())
+        })
+    }
+
+    /// Deletes all rows found in the index identified by `index_id`,
+    /// according to `point = point_ptr[..point_len]` in WASM memory.
+    ///
+    /// This syscall will delete all the rows found by
+    /// [`datastore_index_scan_point_bsatn`] with the same arguments passed.
+    /// See `datastore_index_scan_point_bsatn` for details.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+    ///   typed at the index's key type (`AlgebraicType`).
+    pub fn datastore_delete_by_index_scan_point_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        point_ptr: WasmPtr<u8>, // AlgebraicValue
+        point_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByIndexScanPointBsatn, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the `point` from WASM memory.
+            let point = mem.deref_slice(point_ptr, point_len)?;
+
+            // Delete the relevant rows.
+            Ok(env
+                .instance_env
+                .datastore_delete_by_index_scan_point_bsatn(index_id.into(), point)?)
         })
     }
 
@@ -1439,10 +1540,9 @@ impl WasmInstanceEnv {
     }
 
     /// Starts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// a mutable transaction lock is aquired.
+    /// blocking until a mutable transaction lock is acquired.
     ///
-    /// Upon resuming, returns `0` on success,
+    /// Returns `0` on success,
     /// enabling further calls that require a pending transaction,
     /// or an error code otherwise.
     ///
@@ -1456,38 +1556,23 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
-    pub fn procedure_start_mut_tx<'caller>(
-        caller: Caller<'caller, Self>,
-        (out,): (WasmPtr<u64>,),
-    ) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(
-            caller,
-            AbiCall::ProcedureStartMutTransaction,
-            move |mut caller| async move {
-                let (mem, env) = Self::mem_env(&mut caller);
-                let res = async {
-                    env.instance_env.start_mutable_tx()?.await;
-                    Ok(())
-                }
-                .await;
-                let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
-                let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
+    pub fn procedure_start_mut_tx<'caller>(caller: Caller<'caller, Self>, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureStartMutTransaction, |mut caller| {
+            let (mem, env) = Self::mem_env(&mut caller);
+            let res = env.instance_env.start_mutable_tx().map_err(WasmError::from);
+            let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+            let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
 
-                let result = res
-                    .map(|()| 0u16.into())
-                    .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err));
-
-                (caller, result)
-            },
-        )
+            res.map(|()| 0u16.into())
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err))
+        })
     }
 
     /// Commits a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been committed
+    /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    /// Once complete, it returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
@@ -1505,30 +1590,22 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(
-            caller,
-            AbiCall::ProcedureCommitMutTransaction,
-            |mut caller| async move {
-                let (_, env) = Self::mem_env(&mut caller);
+    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |mut caller| {
+            let (_, env) = Self::mem_env(&mut caller);
 
-                let res = async {
-                    env.instance_env.commit_mutable_tx()?.await;
-                    Ok(0u16.into())
-                }
-                .await
-                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err));
-
-                (caller, res)
-            },
-        )
+            {
+                env.instance_env.commit_mutable_tx()?;
+                Ok(0u16.into())
+            }
+            .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
+        })
     }
 
     /// Aborts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been rolled back.
+    /// blocking until the transaction has been aborted.
     ///
-    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    /// Returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
@@ -1546,11 +1623,10 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| async move {
+    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| {
             let (_, env) = Self::mem_env(&mut caller);
-            let ret = env.procedure_abort_mut_tx_inner();
-            (caller, ret)
+            env.procedure_abort_mut_tx_inner()
         })
     }
 

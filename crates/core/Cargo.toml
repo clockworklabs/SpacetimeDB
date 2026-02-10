@@ -96,6 +96,7 @@ similar.workspace = true
 slab.workspace = true
 sled.workspace = true
 smallvec.workspace = true
+sourcemap.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
 tabled.workspace = true
@@ -104,7 +105,7 @@ thiserror.workspace = true
 thin-vec.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
-tokio-stream = "0.1"
+tokio-stream = { workspace = true, features = ["sync"] }
 tokio-metrics = { version = "0.4.0", features = ["rt"] }
 toml.workspace = true
 tracing-appender.workspace = true
@@ -119,6 +120,7 @@ urlencoding.workspace = true
 uuid.workspace = true
 v8.workspace = true
 wasmtime.workspace = true
+wasmtime-internal-fiber.workspace = true
 jwks.workspace = true
 async_cache = "0.3.1"
 faststr = "0.2.23"
@@ -141,12 +143,16 @@ spacetimedb-wasm-instance-env-times = []
 test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
 # Perfmaps for profiling modules
 perfmap = []
+# Disables core pinning
+no-core-pinning = []
+no-job-core-pinning = []
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
+spacetimedb-vm = { workspace = true, features = ["test"]}
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

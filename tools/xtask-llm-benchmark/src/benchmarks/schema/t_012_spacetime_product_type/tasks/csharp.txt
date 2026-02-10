@@ -1,0 +1,18 @@
+﻿Write a SpacetimeDB backend module in C# that defines a product type and uses it in a table.
+
+TYPES
+- Struct: Score
+  - Fields:
+    - Left: int
+    - Right: int
+
+TABLE
+- Result (public)
+  - Struct: Result
+  - Fields:
+    - Id: int (primary key)
+    - Value: Score
+
+REDUCERS
+- SetScore: given id:int, left:int, right:int, insert exactly this row into Result
+  - (Id=id, Value=Score{Left=left, Right=right})

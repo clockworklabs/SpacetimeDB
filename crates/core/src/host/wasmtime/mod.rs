@@ -1,24 +1,21 @@
-use std::borrow::Cow;
-use std::time::Duration;
-
-use anyhow::Context;
-use spacetimedb_paths::server::ServerDataDir;
-use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
-
+use self::wasm_instance_env::WasmInstanceEnv;
+use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostActor, WasmModuleInstance};
+use super::wasm_common::{abi, ModuleCreationError};
 use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
-use crate::host::module_host::{Instance, ModuleRuntime};
 use crate::module_host_context::ModuleCreationContext;
+use crate::util::jobs::AllocatedJobCore;
+use anyhow::Context;
+use spacetimedb_paths::server::ServerDataDir;
+use std::borrow::Cow;
+use std::time::Duration;
+use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
+pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
+#[cfg(unix)]
+mod pooling_stack_creator;
 mod wasm_instance_env;
 mod wasmtime_module;
-
-use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
-
-use self::wasm_instance_env::WasmInstanceEnv;
-
-use super::wasm_common::module_host_actor::{InitializationError, WasmModuleInstance};
-use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
 pub struct WasmtimeRuntime {
     engine: Engine,
@@ -64,6 +61,11 @@ impl WasmtimeRuntime {
             // which is responsible only for executing WASM. See `crate::util::jobs` for this infrastructure.
             .async_support(true);
 
+        #[cfg(unix)]
+        config
+            .async_stack_size(self::pooling_stack_creator::ASYNC_STACK_SIZE)
+            .with_host_stack(self::pooling_stack_creator::PoolingStackCreator::new());
+
         // Offer a compile-time flag for enabling perfmap generation,
         // so `perf` can display JITted symbol names.
         // Ideally we would be able to configure this at runtime via a flag to `spacetime start`,
@@ -104,13 +106,15 @@ impl WasmtimeRuntime {
 pub type Module = WasmModuleHostActor<WasmtimeModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
-impl ModuleRuntime for WasmtimeRuntime {
-    fn make_actor(
+impl WasmtimeRuntime {
+    pub fn make_actor(
         &self,
         mcc: ModuleCreationContext,
-    ) -> anyhow::Result<(super::module_host::Module, super::module_host::Instance)> {
+        program_bytes: &[u8],
+        core: AllocatedJobCore,
+    ) -> anyhow::Result<super::module_host::ModuleWithInstance> {
         let module =
-            wasmtime::Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+            wasmtime::Module::new(&self.engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -126,11 +130,12 @@ impl ModuleRuntime for WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        let (module, init_inst) = WasmModuleHostActor::new(mcc.into_limited(), module)?;
-        let module = super::module_host::Module::Wasm(module);
-        let init_inst = Instance::Wasm(Box::new(init_inst));
-
-        Ok((module, init_inst))
+        let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
+        Ok(super::module_host::ModuleWithInstance::Wasm {
+            module,
+            executor: core.spawn_async_executor(),
+            init_inst: Box::new(init_inst),
+        })
     }
 }
 

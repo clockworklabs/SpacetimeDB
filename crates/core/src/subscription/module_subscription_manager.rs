@@ -9,7 +9,8 @@ use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
-use crate::subscription::websocket_building::BuildableWebsocketFormat;
+use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::worker_metrics::WORKER_METRICS;
 use core::mem;
 use parking_lot::RwLock;
@@ -28,7 +29,8 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
-use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
+use spacetimedb_schema::table_name::TableName;
+use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -57,7 +59,7 @@ pub struct Plan {
 }
 
 impl CollectViews for Plan {
-    fn collect_views(&self, views: &mut std::collections::HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         for plan in &self.plans {
             plan.collect_views(views);
         }
@@ -83,7 +85,7 @@ impl Plan {
 
     /// A subscription query return rows from a single table.
     /// This method returns the name of that table.
-    pub fn subscribed_table_name(&self) -> &str {
+    pub fn subscribed_table_name(&self) -> &TableName {
         self.plans[0].subscribed_table_name()
     }
 
@@ -1137,18 +1139,52 @@ impl SubscriptionManager {
     /// However, in order to optimize for the common case of small updates,
     /// we removed rayon and switched to a single-threaded execution,
     /// which removed significant overhead associated with thread switching.
-    #[tracing::instrument(level = "trace", skip_all)]
+    //#[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_updates_sequential(
         &self,
         (tx, tx_offset): (&DeltaTx, TransactionOffset),
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> ExecutionMetrics {
+        //let span = tracing::info_span!("eval_incr").entered();
+
+        let (updates, errs, metrics) = if self.queries.is_empty() {
+            // We have no queries, so do nothing.
+            <_>::default()
+        } else {
+            let tables = &event.status.database_update().unwrap().tables;
+            self.eval_updates_sequential_inner(tx, bsatn_rlb_pool, tables)
+        };
+
+        let queries = ComputedQueries {
+            updates,
+            errs,
+            event,
+            caller,
+        };
+
+        // We've now finished all of the work which needs to read from the datastore,
+        // so get this work off the main thread and over to the `send_worker`,
+        // then return ASAP in order to unlock the datastore and start running the next transaction.
+        // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
+        self.send_worker_queue
+            .send(SendWorkerMessage::Broadcast { tx_offset, queries })
+            .expect("send worker has panicked, or otherwise dropped its recv queue!");
+
+        //drop(span);
+
+        metrics
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn eval_updates_sequential_inner(
+        &self,
+        tx: &DeltaTx,
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        tables: &[DatabaseTableUpdate],
+    ) -> (Vec<ClientUpdate>, Vec<(ClientId, Box<str>)>, ExecutionMetrics) {
         use FormatSwitch::{Bsatn, Json};
-
-        let tables = &event.status.database_update().unwrap().tables;
-
-        let span = tracing::info_span!("eval_incr").entered();
 
         #[derive(Default)]
         struct FoldState {
@@ -1230,12 +1266,13 @@ impl SubscriptionManager {
                     updates: &UpdatesRelValue<'_>,
                     memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                     metrics: &mut ExecutionMetrics,
+                    rlb_pool: &impl RowListBuilderSource<F>,
                 ) -> SingleQueryUpdate<F> {
                     let (update, num_rows, num_bytes) = memory
                         .get_or_insert_with(|| {
                             // TODO(centril): consider pushing the encoding of each row into
                             // `eval_delta` instead, to avoid building the temporary `Vec`s in `UpdatesRelValue`.
-                            let encoded = updates.encode::<F>();
+                            let encoded = updates.encode::<F>(rlb_pool);
                             // The first time we insert into this map, we call encode.
                             // This is when we serialize the rows to BSATN/JSON.
                             // Hence this is where we increment `bytes_scanned`.
@@ -1280,11 +1317,13 @@ impl SubscriptionManager {
                                     &delta_updates,
                                     &mut ops_bin_uncompressed,
                                     &mut acc.metrics,
+                                    bsatn_rlb_pool,
                                 )),
                                 Protocol::Text => Json(memo_encode::<JsonFormat>(
                                     &delta_updates,
                                     &mut ops_json,
                                     &mut acc.metrics,
+                                    &JsonRowListBuilderFakePool,
                                 )),
                             };
                             ClientUpdate {
@@ -1301,25 +1340,7 @@ impl SubscriptionManager {
                 acc
             });
 
-        // We've now finished all of the work which needs to read from the datastore,
-        // so get this work off the main thread and over to the `send_worker`,
-        // then return ASAP in order to unlock the datastore and start running the next transaction.
-        // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
-        self.send_worker_queue
-            .send(SendWorkerMessage::Broadcast {
-                tx_offset,
-                queries: ComputedQueries {
-                    updates,
-                    errs,
-                    event,
-                    caller,
-                },
-            })
-            .expect("send worker has panicked, or otherwise dropped its recv queue!");
-
-        drop(span);
-
-        metrics
+        (updates, errs, metrics)
     }
 }
 
@@ -1533,14 +1554,15 @@ impl SendWorker {
             .filter(|upd| !clients_with_errors.contains(&upd.id))
             // Do the aggregation.
             .fold(client_table_id_updates, |mut tables, upd| {
+                let table_name = upd.table_name.to_boxed_str();
                 match tables.entry((upd.id, upd.table_id)) {
                     Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
                         Bsatn((tbl_upd, update)) => tbl_upd.push(update),
                         Json((tbl_upd, update)) => tbl_upd.push(update),
                     },
                     Entry::Vacant(entry) => drop(entry.insert(match upd.update {
-                        Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
-                        Json(update) => Json(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                        Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, table_name, update)),
+                        Json(update) => Json(TableUpdate::new(upd.table_id, table_name, update)),
                     })),
                 }
                 tables
@@ -1647,6 +1669,8 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::reducer_name::ReducerName;
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
     use tokio::sync::oneshot;
 
@@ -1655,6 +1679,7 @@ mod tests {
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
+    use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::tx::DeltaTx;
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
@@ -1686,7 +1711,7 @@ mod tests {
         (Identity::ZERO, ConnectionId::from_u128(connection_id))
     }
 
-    fn client(connection_id: u128, db: &RelationalDB) -> ClientConnectionSender {
+    fn client(connection_id: u128, db: &Arc<RelationalDB>) -> ClientConnectionSender {
         let (identity, connection_id) = id(connection_id);
         ClientConnectionSender::dummy(
             ClientActorId {
@@ -2155,7 +2180,7 @@ mod tests {
         // select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: "t".into(),
+            table_name: TableName::for_test("t"),
             inserts: [product![2u8]].into(),
             deletes: [product![3u8]].into(),
         };
@@ -2173,7 +2198,7 @@ mod tests {
         // Only: select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: "t".into(),
+            table_name: TableName::for_test("t"),
             inserts: [product![8u8]].into(),
             deletes: [product![9u8]].into(),
         };
@@ -2214,7 +2239,7 @@ mod tests {
         // Therefore we must evaluate it for any update on `t`.
         let table_update = DatabaseTableUpdate {
             table_id: t_id,
-            table_name: "t".into(),
+            table_name: TableName::for_test("t"),
             inserts: [product![0u8, 0u8]].into(),
             deletes: [].into(),
         };
@@ -2230,7 +2255,7 @@ mod tests {
         // Yes, because `s.a = 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: "s".into(),
+            table_name: TableName::for_test("s"),
             inserts: [product![0u8, 1u8]].into(),
             deletes: [].into(),
         };
@@ -2246,7 +2271,7 @@ mod tests {
         // No, because `s.a != 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: "s".into(),
+            table_name: TableName::for_test("s"),
             inserts: [product![0u8, 2u8]].into(),
             deletes: [].into(),
         };
@@ -2501,7 +2526,7 @@ mod tests {
             caller_identity: id0,
             caller_connection_id: Some(client0.id.connection_id),
             function_call: ModuleFunctionCall {
-                reducer: "DummyReducer".into(),
+                reducer: Some(ReducerName::for_test("DummyReducer")),
                 reducer_id: u32::MAX.into(),
                 args: ArgsTuple::nullary(),
             },
@@ -2524,7 +2549,13 @@ mod tests {
                 db.report_read_tx_metrics(reducer, tx_metrics);
             });
             let delta_tx = DeltaTx::from(&*tx);
-            subscriptions.eval_updates_sequential((&delta_tx, offset_rx), event, Some(Arc::new(client0)));
+            let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
+            subscriptions.eval_updates_sequential(
+                (&delta_tx, offset_rx),
+                &bsatn_rlb_pool,
+                event,
+                Some(Arc::new(client0)),
+            );
         }
 
         runtime.block_on(async move {

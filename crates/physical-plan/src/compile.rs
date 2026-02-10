@@ -1,12 +1,10 @@
 //! Lowering from the logical plan to the physical plan.
 
-use std::collections::HashMap;
-
 use crate::dml::{DeletePlan, MutationPlan, UpdatePlan};
 use crate::plan::{
     HashJoin, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Semi, TableScan, TupleField,
 };
-
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar};
 use spacetimedb_expr::statement::DML;
 

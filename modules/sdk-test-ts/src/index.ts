@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { toCamelCase } from 'spacetimedb';
+import { toCamelCase, Uuid } from 'spacetimedb';
 import { type RowObj, schema, t, table } from 'spacetimedb/server';
 
 const SimpleEnum = t.enum('SimpleEnum', ['Zero', 'One', 'Two']);
@@ -26,6 +26,7 @@ const EnumWithPayload = t.enum('EnumWithPayload', {
   Identity: t.identity(),
   ConnectionId: t.connectionId(),
   Timestamp: t.timestamp(),
+  Uuid: t.uuid(),
   Bytes: t.array(t.u8()),
   Ints: t.array(t.i32()),
   Strings: t.array(t.string()),
@@ -61,6 +62,7 @@ const EveryPrimitiveStruct = t.object('EveryPrimitiveStruct', {
   r: t.connectionId(),
   s: t.timestamp(),
   t: t.timeDuration(),
+  u: t.uuid(),
 });
 
 const EveryVecStruct = t.object('EveryVecStruct', {
@@ -84,6 +86,7 @@ const EveryVecStruct = t.object('EveryVecStruct', {
   r: t.array(t.connectionId()),
   s: t.array(t.timestamp()),
   t: t.array(t.timeDuration()),
+  u: t.array(t.uuid()),
 });
 
 type TableSchema = ReturnType<typeof table<any, any>>;
@@ -171,6 +174,12 @@ const singleValTables = [
   ),
 
   tbl(
+    'one_uuid',
+    {insert: 'insert_one_uuid'},
+    {u: t.uuid()}
+  ),
+
+  tbl(
     'one_timestamp',
     { insert: 'insert_one_timestamp' },
     { t: t.timestamp() }
@@ -254,6 +263,12 @@ const vecTables = [
   ),
 
   tbl(
+    'vec_uuid',
+    {insert: 'insert_vec_uuid'},
+    {u: t.array(t.uuid())}
+  ),
+
+  tbl(
     'vec_simple_enum',
     { insert: 'insert_vec_simple_enum' },
     { e: t.array(SimpleEnum) }
@@ -300,6 +315,11 @@ const optionTables = [
     { i: t.option(t.identity()) }
   ),
   tbl(
+    'option_uuid',
+    {insert: 'insert_option_uuid'},
+    {u: t.option(t.uuid())}
+  ),
+  tbl(
     'option_simple_enum',
     { insert: 'insert_option_simple_enum' },
     { e: t.option(SimpleEnum) }
@@ -313,6 +333,40 @@ const optionTables = [
     'option_vec_option_i32',
     { insert: 'insert_option_vec_option_i32' },
     { v: t.option(t.array(t.option(t.i32()))) }
+  ),
+] as const;
+
+// Tables for Result<Ok, Err> values.
+const resultTables = [
+  tbl(
+    'result_i32_string',
+    { insert: 'insert_result_i32_string' },
+    { r: t.result(t.i32(), t.string()) }
+  ),
+  tbl(
+    'result_string_i32',
+    { insert: 'insert_result_string_i32' },
+    { r: t.result(t.string(), t.i32()) }
+  ),
+  tbl(
+    'result_identity_string',
+    { insert: 'insert_result_identity_string' },
+    { r: t.result(t.identity(), t.string()) }
+  ),
+  tbl(
+    'result_simple_enum_i32',
+    { insert: 'insert_result_simple_enum_i32' },
+    { r: t.result(SimpleEnum, t.i32()) }
+  ),
+  tbl(
+    'result_every_primitive_struct_string',
+    { insert: 'insert_result_every_primitive_struct_string' },
+    { r: t.result(EveryPrimitiveStruct, t.string()) }
+  ),
+  tbl(
+    'result_vec_i32_string',
+    { insert: 'insert_result_vec_i32_string' },
+    { r: t.result(t.array(t.i32()), t.string()) }
   ),
 ] as const;
 
@@ -477,6 +531,16 @@ const uniqueTables = [
       delete_by: ['delete_unique_connection_id', 'a'],
     },
     { a: t.connectionId().unique(), data: t.i32() }
+  ),
+
+  tbl(
+    'unique_uuid',
+    {
+      insert_or_panic: 'insert_unique_uuid',
+      update_by: ['update_unique_uuid', 'u'],
+      delete_by: ['delete_unique_uuid', 'u'],
+    },
+    {u: t.uuid().unique(), data: t.i32()}
   ),
 ] as const;
 
@@ -654,6 +718,16 @@ const pkTables = [
   ),
 
   tbl(
+    'pk_uuid',
+    {
+      insert_or_panic: 'insert_pk_uuid',
+      update_by: ['update_pk_uuid', 'u'],
+      delete_by: ['delete_pk_uuid', 'u'],
+    },
+    {u: t.uuid().primaryKey(), data: t.i32()}
+  ),
+
+  tbl(
     'pk_simple_enum',
     {
       insert_or_panic: 'insert_pk_simple_enum',
@@ -717,6 +791,7 @@ const allTables = [
   ...singleValTables,
   ...vecTables,
   ...optionTables,
+  ...resultTables,
   ...uniqueTables,
   ...pkTables,
   ...weirdTables,
@@ -941,6 +1016,14 @@ spacetimedb.reducer('insert_call_timestamp', ctx => {
   ctx.db.oneTimestamp.insert({ t: ctx.timestamp });
 });
 
+spacetimedb.reducer('insert_call_uuid_v4', ctx => {
+  ctx.db.oneUuid.insert({u: ctx.newUuidV4()});
+});
+
+spacetimedb.reducer('insert_call_uuid_v7', ctx => {
+  ctx.db.oneUuid.insert({ u: ctx.newUuidV7() });
+});
+
 spacetimedb.reducer(
   'insert_primitives_as_strings',
   { s: EveryPrimitiveStruct },
@@ -969,6 +1052,7 @@ spacetimedb.reducer(
         // s.s.toDate().toISOString(),
         '1970-01-01T02:44:36.543210+00:00',
         s.t.toString(),
+        s.u.toString(),
       ],
     });
   }
@@ -1012,3 +1096,25 @@ spacetimedb.reducer(
     }
   }
 );
+
+spacetimedb.reducer('sorted_uuids_insert', ctx => {
+  const PkTable = pkTables.find(t => t.table.tableName === 'pk_uuid')?.table.rowType;
+  if (!PkTable) {
+    throw new Error("Table 'pk_uuid' not found");
+  }
+
+  for (let i = 0; i < 1000; i++) {
+    const uuid = ctx.newUuidV7();
+    ctx.db.pkUuid.insert({ u: uuid, data: 0 });
+  }
+
+  // Verify UUIDs are sorted
+  let lastUuid: Uuid | null = null;
+
+  for (const row of ctx.db.pkUuid.iter()) {
+    if (lastUuid !== null && lastUuid >= row.u) {
+      throw new Error("UUIDs are not sorted correctly");
+    }
+    lastUuid = row.u;
+  }
+});

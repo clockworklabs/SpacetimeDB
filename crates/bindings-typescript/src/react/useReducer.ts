@@ -27,12 +27,12 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
       return;
     }
     const fn = (conn.reducers as any)[reducerName] as (
-      p: ParamsType<ReducerDef>
+      ...p: ParamsType<ReducerDef>
     ) => void;
     if (queueRef.current.length) {
       const pending = queueRef.current.splice(0);
       for (const params of pending) {
-        fn(params);
+        fn(...params);
       }
     }
   }, [getConnection, reducerName, isActive]);
@@ -45,9 +45,9 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
         return;
       }
       const fn = (conn.reducers as any)[reducerName] as (
-        p: ParamsType<ReducerDef>
+        ...p: ParamsType<ReducerDef>
       ) => void;
-      return fn(params);
+      return fn(...params);
     },
     [getConnection, reducerName]
   );

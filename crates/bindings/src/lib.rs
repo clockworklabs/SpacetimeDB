@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
-use core::cell::{LazyCell, OnceCell, RefCell};
+use core::cell::{Cell, LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
 use std::rc::Rc;
@@ -20,13 +20,15 @@ pub mod rt;
 pub mod table;
 
 #[doc(hidden)]
-pub mod query_builder;
+pub use spacetimedb_query_builder as query_builder;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
+#[cfg(feature = "rand")]
+use rand08::RngCore;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
@@ -45,11 +47,12 @@ pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
+pub use spacetimedb_lib::Uuid;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
-    AutoIncOverflow, RangedIndex, RangedIndexReadOnly, Table, TryInsertError, UniqueColumn, UniqueColumnReadOnly,
-    UniqueConstraintViolation,
+    AutoIncOverflow, PointIndex, PointIndexReadOnly, RangedIndex, RangedIndexReadOnly, Table, TryInsertError,
+    UniqueColumn, UniqueColumnReadOnly, UniqueConstraintViolation,
 };
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
@@ -659,7 +662,7 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// #[reducer]
 /// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
-///     if ctx.sender != ctx.identity() {
+///     if ctx.sender() != ctx.identity() {
 ///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.".into());
 ///     }
 ///     // Reducer body...
@@ -704,7 +707,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// #[procedure]
 /// fn return_value(ctx: &mut ProcedureContext, arg: MyArgument) -> MyReturnValue {
 ///     MyReturnValue {
-///         a: format!("Hello, {}", ctx.sender),
+///         a: format!("Hello, {}", ctx.sender()),
 ///         b: ctx.timestamp,
 ///     }
 /// }
@@ -813,13 +816,13 @@ pub use spacetimedb_bindings_macro::procedure;
 /// // A view that selects at most one row from a table
 /// #[view(name = my_player, public)]
 /// fn my_player(ctx: &ViewContext) -> Option<Player> {
-///     ctx.db.player().identity().find(ctx.sender)
+///     ctx.db.player().identity().find(ctx.sender())
 /// }
 ///
 /// // An example of column projection
 /// #[view(name = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
-///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
+///     ctx.db.player().identity().find(ctx.sender()).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql
@@ -891,7 +894,7 @@ impl Default for AnonymousViewContext {
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
-    pub sender: Identity,
+    sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
 }
@@ -903,6 +906,11 @@ impl ViewContext {
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
+    }
+
+    /// The `Identity` of the client that invoked the view.
+    pub fn sender(&self) -> Identity {
+        self.sender
     }
 }
 
@@ -921,7 +929,7 @@ impl ViewContext {
 #[non_exhaustive]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
-    pub sender: Identity,
+    sender: Identity,
 
     /// The time at which the reducer was started.
     pub timestamp: Timestamp,
@@ -930,7 +938,7 @@ pub struct ReducerContext {
     ///
     /// Will be `None` for certain reducers invoked automatically by the host,
     /// including `init` and scheduled reducers.
-    pub connection_id: Option<ConnectionId>,
+    connection_id: Option<ConnectionId>,
 
     sender_auth: AuthCtx,
 
@@ -974,6 +982,10 @@ pub struct ReducerContext {
 
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
+    /// A counter used for generating UUIDv7 values.
+    /// **Note:** must be 0..=u32::MAX
+    #[cfg(feature = "rand")]
+    counter_uuid: Cell<u32>,
 }
 
 impl ReducerContext {
@@ -987,6 +999,8 @@ impl ReducerContext {
             sender_auth: AuthCtx::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
         }
     }
 
@@ -1000,7 +1014,22 @@ impl ReducerContext {
             sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
         }
+    }
+
+    /// The `Identity` of the client that invoked the reducer.
+    pub fn sender(&self) -> Identity {
+        self.sender
+    }
+
+    /// The `ConnectionId` of the client that invoked the reducer.
+    ///
+    /// Will be `None` for certain reducers invoked automatically by the host,
+    /// including `init` and scheduled reducers.
+    pub fn connection_id(&self) -> Option<ConnectionId> {
+        self.connection_id
     }
 
     /// Returns the authorization information for the caller of this reducer.
@@ -1029,6 +1058,47 @@ impl ReducerContext {
     /// Create a sender-bound read-only view context using this reducer's caller.
     pub fn as_read_only(&self) -> ViewContext {
         ViewContext::new(self.sender)
+    }
+
+    ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v4();
+    ///     log::info!(uuid);
+    /// }
+    /// # }
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    ///     let uuid = ctx.new_uuid_v7()?;
+    ///     log::info!(uuid);
+    /// }
+    /// # }
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
+        let mut random_bytes = [0u8; 4];
+        self.rng().try_fill_bytes(&mut random_bytes)?;
+        Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
     }
 }
 
@@ -1072,7 +1142,7 @@ impl Deref for TxContext {
 #[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
-    pub sender: Identity,
+    sender: Identity,
 
     /// The time at which the procedure was started.
     pub timestamp: Timestamp,
@@ -1080,17 +1150,49 @@ pub struct ProcedureContext {
     /// The `ConnectionId` of the client that invoked the procedure.
     ///
     /// Will be `None` for certain scheduled procedures.
-    pub connection_id: Option<ConnectionId>,
+    connection_id: Option<ConnectionId>,
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
-    // TODO: Add rng?
+    // TODO: Change rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
+    #[cfg(feature = "rand08")]
+    rng: std::cell::OnceCell<StdbRng>,
+    /// A counter used for generating UUIDv7 values.
+    /// **Note:** must be 0..=u32::MAX
+    // Disabled when compiling without `rand`, as both v4 and v7 UUIDs have random components.
+    #[cfg(feature = "rand")]
+    counter_uuid: Cell<u32>,
 }
 
 #[cfg(feature = "unstable")]
 impl ProcedureContext {
+    fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        Self {
+            sender,
+            timestamp,
+            connection_id,
+            http: http::HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    /// The `Identity` of the client that invoked the procedure.
+    pub fn sender(&self) -> Identity {
+        self.sender
+    }
+
+    /// The `ConnectionId` of the client that invoked the procedure.
+    ///
+    /// Will be `None` for certain scheduled procedures.
+    pub fn connection_id(&self) -> Option<ConnectionId> {
+        self.connection_id
+    }
+
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
@@ -1253,6 +1355,49 @@ impl ProcedureContext {
         }
 
         res
+    }
+
+    ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{procedure, ProcedureContext, Uuid};
+    ///
+    /// #[procedure]
+    /// fn generate_uuid_v4(ctx: &ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v4();
+    ///     log::info!(uuid);
+    ///     uuid
+    /// }
+    /// # }
+    /// ```
+    #[cfg(all(feature = "unstable", feature = "rand"))]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{procedure, ProcedureContext, Uuid};
+    ///
+    /// #[procedure]
+    /// fn generate_uuid_v7(ctx: &ProcedureContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    ///     let uuid = ctx.new_uuid_v7()?;
+    ///     log::info!(uuid);
+    ///     Ok(uuid)
+    /// }
+    /// # }
+    /// ```
+    #[cfg(all(feature = "unstable", feature = "rand"))]
+    pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
+        let mut random_bytes = [0u8; 4];
+        self.rng().try_fill_bytes(&mut random_bytes)?;
+        Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
     }
 }
 

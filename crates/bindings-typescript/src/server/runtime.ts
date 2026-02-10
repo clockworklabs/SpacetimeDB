@@ -1,16 +1,21 @@
-import * as _syscalls1_0 from 'spacetime:sys@1.0';
-import * as _syscalls1_2 from 'spacetime:sys@1.2';
+import * as _syscalls2_0 from 'spacetime:sys@2.0';
 
-import type { ModuleHooks, u16, u32 } from 'spacetime:sys@1.0';
-import { AlgebraicType, ProductType } from '../lib/algebraic_type';
+import type { ModuleHooks, u16, u32 } from 'spacetime:sys@2.0';
+import {
+  AlgebraicType,
+  ProductType,
+  type Deserializer,
+} from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
+import { Timestamp } from '../lib/timestamp';
+import { Uuid } from '../lib/uuid';
+import BinaryReader from '../lib/binary_reader';
+import BinaryWriter, { ResizableBuffer } from '../lib/binary_writer';
 import {
   type Index,
   type IndexVal,
@@ -19,36 +24,27 @@ import {
 } from '../lib/indexes';
 import { callProcedure } from './procedures';
 import {
-  REDUCERS,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
-  type ReducerCtx,
+  type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
-import {
-  MODULE_DEF,
-  getRegisteredSchema,
-  type UntypedSchemaDef,
-} from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
-import { bsatnBaseSize, toCamelCase } from '../lib/util';
-import {
-  ANON_VIEWS,
-  VIEWS,
-  type AnonymousViewCtx,
-  type ViewCtx,
-} from '../lib/views';
+import { hasOwn, toCamelCase } from '../lib/util';
+import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
+import { makeRandom, type Random } from './rng';
+import { getRegisteredSchema } from './schema';
 
 const { freeze } = Object;
 
-export const sys = freeze(wrapSyscalls(_syscalls1_0, _syscalls1_2));
+export const sys = freeze(wrapSyscalls(_syscalls2_0));
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -181,50 +177,138 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
-export const makeReducerCtx = (
-  sender: Identity,
-  timestamp: Timestamp,
-  connectionId: ConnectionId | null
-): ReducerCtx<UntypedSchemaDef> => ({
-  sender,
+/** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
+let REDUCER_CTX: InstanceType<typeof ReducerCtxImpl> | undefined;
+
+// Using a class expression rather than declaration keeps the class out of the
+// type namespace, so that `ReducerCtx` still refers to the interface.
+export const ReducerCtxImpl = class ReducerCtx<
+  SchemaDef extends UntypedSchemaDef,
+> implements IReducerCtx<SchemaDef>
+{
+  #identity: Identity | undefined;
+  #senderAuth: AuthCtx | undefined;
+  #uuidCounter: { value: number } | undefined;
+  #random: Random | undefined;
+  sender: Identity;
+  timestamp: Timestamp;
+  connectionId: ConnectionId | null;
+  db: DbView<SchemaDef>;
+
+  constructor(
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    Object.seal(this);
+    this.sender = sender;
+    this.timestamp = timestamp;
+    this.connectionId = connectionId;
+    this.db = getDbView();
+  }
+
+  /** Reset the `ReducerCtx` to be used for a new transaction */
+  static reset(
+    me: InstanceType<typeof this>,
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    me.sender = sender;
+    me.timestamp = timestamp;
+    me.connectionId = connectionId;
+    me.#uuidCounter = undefined;
+    me.#senderAuth = undefined;
+  }
+
   get identity() {
-    return new Identity(sys.identity().__identity__);
-  },
-  timestamp,
-  connectionId,
-  db: getDbView(),
-  senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
-});
+    return (this.#identity ??= new Identity(sys.identity()));
+  }
+
+  get senderAuth() {
+    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
+      this.connectionId,
+      this.sender
+    ));
+  }
+
+  get random() {
+    return (this.#random ??= makeRandom(this.timestamp));
+  }
+
+  /**
+   * Create a new random {@link Uuid} `v4` using this `ReducerCtx`'s RNG.
+   */
+  newUuidV4(): Uuid {
+    const bytes = this.random.fill(new Uint8Array(16));
+    return Uuid.fromRandomBytesV4(bytes);
+  }
+
+  /**
+   * Create a new sortable {@link Uuid} `v7` using this `ReducerCtx`'s RNG, counter,
+   * and timestamp.
+   */
+  newUuidV7(): Uuid {
+    const bytes = this.random.fill(new Uint8Array(4));
+    const counter = (this.#uuidCounter ??= { value: 0 });
+    return Uuid.fromCounterV7(counter, this.timestamp, bytes);
+  }
+};
+
+/**
+ * Call into a user function `fn` - the backtrace from an exception thrown in
+ * `fn` or one of its descendants in the callgraph will be stripped by host
+ * code in `crates/core/src/host/v8/error.rs` such that `fn` will be shown to
+ * be the root of the call stack.
+ */
+export const callUserFunction = function __spacetimedb_end_short_backtrace<
+  Args extends any[],
+  R,
+>(fn: (...args: Args) => R, ...args: Args): R {
+  return fn(...args);
+};
+
+let reducerArgsDeserializers: Deserializer<any>[];
 
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
-    AlgebraicType.serializeValue(
+    RawModuleDef.serialize(
       writer,
-      RawModuleDef.algebraicType,
-      RawModuleDef.V9(MODULE_DEF)
+      RawModuleDef.V9(getRegisteredSchema().moduleDef)
     );
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
-    const argsType = AlgebraicType.Product(
-      MODULE_DEF.reducers[reducerId].params
-    );
-    const args = AlgebraicType.deserializeValue(
-      new BinaryReader(argsBuf),
-      argsType,
-      MODULE_DEF.typespace
-    );
+    const moduleCtx = getRegisteredSchema();
+    if (reducerArgsDeserializers == null) {
+      reducerArgsDeserializers = moduleCtx.moduleDef.reducers.map(
+        ({ params }) =>
+          ProductType.makeDeserializer(params, moduleCtx.typespace)
+      );
+    }
+    const deserializeArgs = reducerArgsDeserializers[reducerId];
+    BINARY_READER.reset(argsBuf);
+    const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze(
-      makeReducerCtx(
+    let ctx;
+    if (REDUCER_CTX == null) {
+      ctx = REDUCER_CTX = new ReducerCtxImpl(
         senderIdentity,
         new Timestamp(timestamp),
         ConnectionId.nullIfZero(new ConnectionId(connId))
-      )
-    );
+      );
+    } else {
+      ctx = REDUCER_CTX;
+      ReducerCtxImpl.reset(
+        REDUCER_CTX,
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      );
+    }
     try {
-      return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
+      callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
@@ -232,108 +316,56 @@ export const hooks: ModuleHooks = {
       throw e;
     }
   },
-};
-
-export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
   __call_view__(id, sender, argsBuf) {
-    const { fn, params, returnType, returnTypeBaseSize } = VIEWS[id];
+    const moduleCtx = getRegisteredSchema();
+    const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
+      moduleCtx.views[id];
     const ctx: ViewCtx<any> = freeze({
       sender: new Identity(sender),
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
-      from: makeQueryBuilder(getRegisteredSchema()),
+      from: makeQueryBuilder(moduleCtx.schemaType),
     });
-    // ViewResultHeader.RawSql
-    const args = ProductType.deserializeValue(
-      new BinaryReader(argsBuf),
-      params,
-      MODULE_DEF.typespace
-    );
-    const ret = fn(ctx, args);
+    const args = deserializeParams(new BinaryReader(argsBuf));
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     if (isRowTypedQuery(ret)) {
       const query = toSql(ret);
-      const v = ViewResultHeader.RawSql(query);
-      AlgebraicType.serializeValue(
-        retBuf,
-        ViewResultHeader.algebraicType,
-        v,
-        MODULE_DEF.typespace
-      );
-      return {
-        data: retBuf.getBuffer(),
-      };
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RawSql(query));
     } else {
-      AlgebraicType.serializeValue(
-        retBuf,
-        ViewResultHeader.algebraicType,
-        ViewResultHeader.RowData,
-        MODULE_DEF.typespace
-      );
-      AlgebraicType.serializeValue(
-        retBuf,
-        returnType,
-        ret,
-        MODULE_DEF.typespace
-      );
-      return {
-        data: retBuf.getBuffer(),
-      };
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RowData);
+      serializeReturn(retBuf, ret);
     }
+    return { data: retBuf.getBuffer() };
   },
   __call_view_anon__(id, argsBuf) {
-    const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
+    const moduleCtx = getRegisteredSchema();
+    const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
+      moduleCtx.anonViews[id];
     const ctx: AnonymousViewCtx<any> = freeze({
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
-      from: makeQueryBuilder(getRegisteredSchema()),
+      from: makeQueryBuilder(moduleCtx.schemaType),
     });
-    const args = ProductType.deserializeValue(
-      new BinaryReader(argsBuf),
-      params,
-      MODULE_DEF.typespace
-    );
-    const ret = fn(ctx, args);
+    const args = deserializeParams(new BinaryReader(argsBuf));
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     if (isRowTypedQuery(ret)) {
       const query = toSql(ret);
-      const v = ViewResultHeader.RawSql(query);
-      AlgebraicType.serializeValue(
-        retBuf,
-        ViewResultHeader.algebraicType,
-        v,
-        MODULE_DEF.typespace
-      );
-      return {
-        data: retBuf.getBuffer(),
-      };
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RawSql(query));
     } else {
-      AlgebraicType.serializeValue(
-        retBuf,
-        ViewResultHeader.algebraicType,
-        ViewResultHeader.RowData,
-        MODULE_DEF.typespace
-      );
-      AlgebraicType.serializeValue(
-        retBuf,
-        returnType,
-        ret,
-        MODULE_DEF.typespace
-      );
-      return {
-        data: retBuf.getBuffer(),
-      };
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RowData);
+      serializeReturn(retBuf, ret);
     }
+    return { data: retBuf.getBuffer() };
   },
-};
-
-export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
   __call_procedure__(id, sender, connection_id, timestamp, args) {
     return callProcedure(
+      getRegisteredSchema(),
       id,
       new Identity(sender),
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
@@ -345,7 +377,7 @@ export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
 
 let DB_VIEW: DbView<any> | null = null;
 function getDbView() {
-  DB_VIEW ??= makeDbView(MODULE_DEF);
+  DB_VIEW ??= makeDbView(getRegisteredSchema().moduleDef);
   return DB_VIEW;
 }
 
@@ -360,6 +392,9 @@ function makeDbView(moduleDef: Infer<typeof RawModuleDefV9>): DbView<any> {
   );
 }
 
+const BINARY_WRITER = new BinaryWriter(0);
+const BINARY_READER = new BinaryReader(new Uint8Array());
+
 function makeTableView(
   typespace: Infer<typeof Typespace>,
   table: Infer<typeof RawTableDefV9>
@@ -370,7 +405,8 @@ function makeTableView(
     throw 'impossible';
   }
 
-  const baseSize = bsatnBaseSize(typespace, rowType);
+  const serializeRow = AlgebraicType.makeSerializer(rowType, typespace);
+  const deserializeRow = AlgebraicType.makeDeserializer(rowType, typespace);
 
   const sequences = table.sequences.map(seq => {
     const col = rowType.value.elements[seq.column];
@@ -404,21 +440,20 @@ function makeTableView(
     return {
       colName: col.name!,
       sequenceTrigger,
-      read: (reader: BinaryReader) =>
-        AlgebraicType.deserializeValue(reader, colType, typespace),
+      deserialize: AlgebraicType.makeDeserializer(colType, typespace),
     };
   });
   const hasAutoIncrement = sequences.length > 0;
 
   const iter = () =>
-    new TableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
+    tableIterator(sys.datastore_table_scan_bsatn(table_id), deserializeRow);
 
   const integrateGeneratedColumns = hasAutoIncrement
-    ? (row: RowType<any>, ret_buf: Uint8Array) => {
-        const reader = new BinaryReader(ret_buf);
-        for (const { colName, read, sequenceTrigger } of sequences) {
+    ? (row: RowType<any>, ret_buf: DataView) => {
+        BINARY_READER.reset(ret_buf);
+        for (const { colName, deserialize, sequenceTrigger } of sequences) {
           if (row[colName] === sequenceTrigger) {
-            row[colName] = read(reader);
+            row[colName] = deserialize(BINARY_READER);
           }
         }
       }
@@ -429,21 +464,24 @@ function makeTableView(
     iter,
     [Symbol.iterator]: () => iter(),
     insert: row => {
-      const writer = new BinaryWriter(baseSize);
-      AlgebraicType.serializeValue(writer, rowType, row, typespace);
-      const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
+      const buf = LEAF_BUF;
+      BINARY_WRITER.reset(buf);
+      serializeRow(BINARY_WRITER, row);
+      sys.datastore_insert_bsatn(table_id, buf.buffer, BINARY_WRITER.offset);
       const ret = { ...row };
-      integrateGeneratedColumns?.(ret, ret_buf);
+      integrateGeneratedColumns?.(ret, buf.view);
 
       return ret;
     },
     delete: (row: RowType<any>): boolean => {
-      const writer = new BinaryWriter(4 + baseSize);
-      writer.writeU32(1);
-      AlgebraicType.serializeValue(writer, rowType, row, typespace);
+      const buf = LEAF_BUF;
+      BINARY_WRITER.reset(buf);
+      BINARY_WRITER.writeU32(1);
+      serializeRow(BINARY_WRITER, row);
       const count = sys.datastore_delete_all_by_eq_bsatn(
         table_id,
-        writer.getBuffer()
+        buf.buffer,
+        BINARY_WRITER.offset
       );
       return count > 0;
     },
@@ -475,146 +513,219 @@ function makeTableView(
       .filter(x => x.data.tag === 'Unique')
       .some(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
 
-    const indexType = AlgebraicType.Product({
-      elements: column_ids.map(id => rowType.value.elements[id]),
-    });
+    const indexSerializers = column_ids.map(id =>
+      AlgebraicType.makeSerializer(
+        rowType.value.elements[id].algebraicType,
+        typespace
+      )
+    );
 
-    const baseSize = bsatnBaseSize(typespace, indexType);
-
-    const serializePrefix = (
-      writer: BinaryWriter,
-      prefix: any[],
-      prefix_elems: number
-    ) => {
-      if (prefix_elems > numColumns - 1)
-        throw new TypeError('too many elements in prefix');
-      for (let i = 0; i < prefix_elems; i++) {
-        const elemType = indexType.value.elements[i].algebraicType;
-        AlgebraicType.serializeValue(writer, elemType, prefix[i], typespace);
+    const serializePoint = (buffer: ResizableBuffer, colVal: any[]): number => {
+      BINARY_WRITER.reset(buffer);
+      for (let i = 0; i < numColumns; i++) {
+        indexSerializers[i](BINARY_WRITER, colVal[i]);
       }
-      return writer;
+      return BINARY_WRITER.offset;
     };
 
+    const serializeSingleElement =
+      numColumns === 1 ? indexSerializers[0] : null;
+
+    const serializeSinglePoint =
+      serializeSingleElement &&
+      ((buffer: ResizableBuffer, colVal: any): number => {
+        BINARY_WRITER.reset(buffer);
+        serializeSingleElement(BINARY_WRITER, colVal);
+        return BINARY_WRITER.offset;
+      });
+
     type IndexScanArgs = [
-      prefix: Uint8Array,
+      prefix_len: u32,
       prefix_elems: u16,
-      rstart: Uint8Array,
-      rend: Uint8Array,
+      rstart_len: u32,
+      rend_len: u32,
     ];
 
     let index: Index<any, any>;
-    if (isUnique) {
-      const serializeBound = (colVal: any[]): IndexScanArgs => {
-        if (colVal.length !== numColumns)
-          throw new TypeError('wrong number of elements');
-
-        const writer = new BinaryWriter(baseSize + 1);
-        const prefix_elems = numColumns - 1;
-        serializePrefix(writer, colVal, prefix_elems);
-        const rstartOffset = writer.offset;
-        writer.writeU8(0);
-        AlgebraicType.serializeValue(
-          writer,
-          indexType.value.elements[numColumns - 1].algebraicType,
-          colVal[numColumns - 1],
-          typespace
-        );
-        const buffer = writer.getBuffer();
-        const prefix = buffer.slice(0, rstartOffset);
-        const rstart = buffer.slice(rstartOffset);
-        return [prefix, prefix_elems, rstart, rstart];
-      };
+    if (isUnique && serializeSinglePoint) {
+      // numColumns == 1, unique index
       index = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
-          if (numColumns === 1) colVal = [colVal];
-          const args = serializeBound(colVal);
-          const iter = new TableIterator(
-            sys.datastore_index_scan_range_bsatn(index_id, ...args),
-            rowType
+          const buf = LEAF_BUF;
+          const point_len = serializeSinglePoint(buf, colVal);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
           );
-          const { value, done } = iter.next();
-          if (done) return null;
-          if (!iter.next().done)
-            throw new Error(
-              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
-            );
-          return value;
+          return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
-          if (numColumns === 1) colVal = [colVal];
-          const args = serializeBound(colVal);
-          const num = sys.datastore_delete_by_index_scan_range_bsatn(
+          const buf = LEAF_BUF;
+          const point_len = serializeSinglePoint(buf, colVal);
+          const num = sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
-            ...args
+            buf.buffer,
+            point_len
           );
           return num > 0;
         },
         update: (row: RowType<any>): RowType<any> => {
-          const writer = new BinaryWriter(baseSize);
-          AlgebraicType.serializeValue(writer, rowType, row, typespace);
-          const ret_buf = sys.datastore_update_bsatn(
+          const buf = LEAF_BUF;
+          BINARY_WRITER.reset(buf);
+          serializeRow(BINARY_WRITER, row);
+          sys.datastore_update_bsatn(
             table_id,
             index_id,
-            writer.getBuffer()
+            buf.buffer,
+            BINARY_WRITER.offset
           );
-          integrateGeneratedColumns?.(row, ret_buf);
+          integrateGeneratedColumns?.(row, buf.view);
           return row;
         },
       } as UniqueIndex<any, any>;
+    } else if (isUnique) {
+      // numColumns != 1, unique index
+      index = {
+        find: (colVal: IndexVal<any, any>): RowType<any> | null => {
+          if (colVal.length !== numColumns) {
+            throw new TypeError('wrong number of elements');
+          }
+          const buf = LEAF_BUF;
+          const point_len = serializePoint(buf, colVal);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+          return tableIterateOne(iter_id, deserializeRow);
+        },
+        delete: (colVal: IndexVal<any, any>): boolean => {
+          if (colVal.length !== numColumns)
+            throw new TypeError('wrong number of elements');
+
+          const buf = LEAF_BUF;
+          const point_len = serializePoint(buf, colVal);
+          const num = sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+          return num > 0;
+        },
+        update: (row: RowType<any>): RowType<any> => {
+          const buf = LEAF_BUF;
+          BINARY_WRITER.reset(buf);
+          serializeRow(BINARY_WRITER, row);
+          sys.datastore_update_bsatn(
+            table_id,
+            index_id,
+            buf.buffer,
+            BINARY_WRITER.offset
+          );
+          integrateGeneratedColumns?.(row, buf.view);
+          return row;
+        },
+      } as UniqueIndex<any, any>;
+    } else if (serializeSinglePoint) {
+      // numColumns == 1
+      index = {
+        filter: (range: any): IteratorObject<RowType<any>> => {
+          const buf = LEAF_BUF;
+          const point_len = serializeSinglePoint(buf, range);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+          return tableIterator(iter_id, deserializeRow);
+        },
+        delete: (range: any): u32 => {
+          const buf = LEAF_BUF;
+          const point_len = serializeSinglePoint(buf, range);
+          return sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+        },
+      } as RangedIndex<any, any>;
     } else {
-      const serializeRange = (range: any[]): IndexScanArgs => {
+      // numColumns != 1
+      const serializeRange = (
+        buffer: ResizableBuffer,
+        range: any[]
+      ): IndexScanArgs => {
         if (range.length > numColumns) throw new TypeError('too many elements');
 
-        const writer = new BinaryWriter(baseSize + 1);
+        BINARY_WRITER.reset(buffer);
+        const writer = BINARY_WRITER;
         const prefix_elems = range.length - 1;
-        serializePrefix(writer, range, prefix_elems);
+        for (let i = 0; i < prefix_elems; i++) {
+          indexSerializers[i](writer, range[i]);
+        }
         const rstartOffset = writer.offset;
         const term = range[range.length - 1];
-        const termType =
-          indexType.value.elements[range.length - 1].algebraicType;
-        let rstart: Uint8Array, rend: Uint8Array;
+        const serializeTerm = indexSerializers[range.length - 1];
         if (term instanceof Range) {
           const writeBound = (bound: Bound<any>) => {
             const tags = { included: 0, excluded: 1, unbounded: 2 };
             writer.writeU8(tags[bound.tag]);
-            if (bound.tag !== 'unbounded')
-              AlgebraicType.serializeValue(
-                writer,
-                termType,
-                bound.value,
-                typespace
-              );
+            if (bound.tag !== 'unbounded') serializeTerm(writer, bound.value);
           };
           writeBound(term.from);
-          const rendOffset = writer.offset;
+          const rstartLen = writer.offset - rstartOffset;
           writeBound(term.to);
-          rstart = writer.getBuffer().slice(rstartOffset, rendOffset);
-          rend = writer.getBuffer().slice(rendOffset);
+          const rendLen = writer.offset - rstartLen;
+          return [rstartOffset, prefix_elems, rstartLen, rendLen];
         } else {
           writer.writeU8(0);
-          AlgebraicType.serializeValue(writer, termType, term, typespace);
-          rstart = rend = writer.getBuffer().slice(rstartOffset);
+          serializeTerm(writer, term);
+          const rstartLen = writer.offset;
+          const rendLen = 0;
+          return [rstartOffset, prefix_elems, rstartLen, rendLen];
         }
-        const buffer = writer.getBuffer();
-        const prefix = buffer.slice(0, rstartOffset);
-        return [prefix, prefix_elems, rstart, rend];
       };
       index = {
-        filter: (range: any): IterableIterator<RowType<any>> => {
-          if (numColumns === 1) range = [range];
-          const args = serializeRange(range);
-          return new TableIterator(
-            sys.datastore_index_scan_range_bsatn(index_id, ...args),
-            rowType
-          );
+        filter: (range: any[]): IteratorObject<RowType<any>> => {
+          if (range.length === numColumns) {
+            const buf = LEAF_BUF;
+            const point_len = serializePoint(buf, range);
+            const iter_id = sys.datastore_index_scan_point_bsatn(
+              index_id,
+              buf.buffer,
+              point_len
+            );
+            return tableIterator(iter_id, deserializeRow);
+          } else {
+            const buf = LEAF_BUF;
+            const args = serializeRange(buf, range);
+            const iter_id = sys.datastore_index_scan_range_bsatn(
+              index_id,
+              buf.buffer,
+              ...args
+            );
+            return tableIterator(iter_id, deserializeRow);
+          }
         },
-        delete: (range: any): u32 => {
-          if (numColumns === 1) range = [range];
-          const args = serializeRange(range);
-          return sys.datastore_delete_by_index_scan_range_bsatn(
-            index_id,
-            ...args
-          );
+        delete: (range: any[]): u32 => {
+          if (range.length === numColumns) {
+            const buf = LEAF_BUF;
+            const point_len = serializePoint(buf, range);
+            return sys.datastore_delete_by_index_scan_point_bsatn(
+              index_id,
+              buf.buffer,
+              point_len
+            );
+          } else {
+            const buf = LEAF_BUF;
+            const args = serializeRange(buf, range);
+            return sys.datastore_delete_by_index_scan_range_bsatn(
+              index_id,
+              buf.buffer,
+              ...args
+            );
+          }
         },
       } as RangedIndex<any, any>;
     }
@@ -629,67 +740,116 @@ function makeTableView(
   return freeze(tableView);
 }
 
-function hasOwn<K extends PropertyKey>(
-  o: object,
-  k: K
-): o is K extends PropertyKey ? { [k in K]: unknown } : never {
-  return Object.hasOwn(o, k);
+function* tableIterator<T>(
+  id: u32,
+  deserialize: Deserializer<T>
+): Generator<T, undefined> {
+  using iter = new IteratorHandle(id);
+
+  const iterBuf = takeBuf();
+  try {
+    let amt;
+    while ((amt = iter.advance(iterBuf))) {
+      const reader = new BinaryReader(iterBuf.view);
+      while (reader.offset < amt) {
+        yield deserialize(reader);
+      }
+    }
+  } finally {
+    returnBuf(iterBuf);
+  }
 }
 
-class TableIterator implements IterableIterator<any, undefined> {
-  #id: u32 | -1;
-  #reader: BinaryReader;
-  #ty: AlgebraicType;
-  constructor(id: u32, ty: AlgebraicType) {
-    this.#id = id;
-    this.#reader = new BinaryReader(new Uint8Array());
-    this.#ty = ty;
+function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
+  const buf = LEAF_BUF;
+  // we only need to check for the `<= 0` case, since this function is only used
+  // with iterators that should only have zero or one element.
+  const ret = advanceIterRaw(id, buf);
+  if (ret !== 0) {
+    BINARY_READER.reset(buf.view);
+    return deserialize(BINARY_READER);
   }
-  [Symbol.iterator](): typeof this {
-    return this;
-  }
-  next(): IteratorResult<any, undefined> {
-    while (true) {
-      if (this.#reader.remaining > 0) {
-        const value = AlgebraicType.deserializeValue(
-          this.#reader,
-          this.#ty,
-          MODULE_DEF.typespace
-        );
-        return { value };
+  return null;
+}
+
+/**
+ * `ret < 0` means the iterator yielded elements but is now exhausted and has been destroyed.
+ * `ret === 0` means the iterator was empty and has been destroyed.
+ * `ret > 0` means the iterator yielded elements and has more to give.
+ */
+function advanceIterRaw(id: u32, buf: ResizableBuffer): number {
+  while (true) {
+    try {
+      return 0 | sys.row_iter_bsatn_advance(id, buf.buffer);
+    } catch (e) {
+      if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
+        buf.grow(e.__buffer_too_small__ as number);
+        continue;
       }
-      if (this.#id === -1) {
-        return { value: undefined, done: true };
-      }
-      this.#advance_iter();
+      throw e;
     }
+  }
+}
+
+// This should guarantee in most cases that we don't have to reallocate an iterator
+// buffer, unless there's a single row that serializes to >1 MiB.
+const DEFAULT_BUFFER_CAPACITY = 32 * 1024 * 2;
+
+const ITER_BUFS: ResizableBuffer[] = [
+  new ResizableBuffer(DEFAULT_BUFFER_CAPACITY),
+];
+let ITER_BUF_COUNT = 1;
+
+function takeBuf(): ResizableBuffer {
+  return ITER_BUF_COUNT
+    ? ITER_BUFS[--ITER_BUF_COUNT]
+    : new ResizableBuffer(DEFAULT_BUFFER_CAPACITY);
+}
+
+function returnBuf(buf: ResizableBuffer) {
+  ITER_BUFS[ITER_BUF_COUNT++] = buf;
+}
+
+/**
+ * This should only be used from functions that don't need persistent ownership
+ * over the buffer. While using this value, one should not call a function that
+ * also uses this value.
+ */
+const LEAF_BUF = new ResizableBuffer(DEFAULT_BUFFER_CAPACITY);
+
+/** A class to manage the lifecycle of an iterator handle. */
+class IteratorHandle implements Disposable {
+  #id: u32 | -1;
+
+  static #finalizationRegistry = new FinalizationRegistry<u32>(
+    sys.row_iter_bsatn_close
+  );
+
+  constructor(id: u32) {
+    this.#id = id;
+    IteratorHandle.#finalizationRegistry.register(this, id, this);
   }
 
-  #advance_iter() {
-    let buf_max_len = 0x10000;
-    while (true) {
-      try {
-        const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
-          this.#id,
-          buf_max_len
-        );
-        if (done) this.#id = -1;
-        this.#reader = new BinaryReader(buf);
-        return;
-      } catch (e) {
-        if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
-          buf_max_len = e.__buffer_too_small__ as number;
-          continue;
-        }
-        throw e;
-      }
-    }
+  /** Unregister this object with the finalization registry and return the id */
+  #detach() {
+    const id = this.#id;
+    this.#id = -1;
+    IteratorHandle.#finalizationRegistry.unregister(this);
+    return id;
+  }
+
+  /** Call `row_iter_bsatn_advance`, returning 0 if this iterator has been exhausted. */
+  advance(buf: ResizableBuffer): number {
+    if (this.#id === -1) return 0;
+    const ret = advanceIterRaw(this.#id, buf);
+    if (ret <= 0) this.#detach();
+    return ret < 0 ? -ret : ret;
   }
 
   [Symbol.dispose]() {
     if (this.#id >= 0) {
-      this.#id = -1;
-      sys.row_iter_bsatn_close(this.#id);
+      const id = this.#detach();
+      sys.row_iter_bsatn_close(id);
     }
   }
 }

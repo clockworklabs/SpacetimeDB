@@ -156,12 +156,15 @@ mod tests {
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
     use crate::subscription::module_subscription_manager::QueriedTableIndexIds;
+    use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::subscription::{legacy_get_all, ExecutionSet};
     use crate::subscription::tx::DeltaTx;
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
+    use smallvec::SmallVec;
     use spacetimedb_client_api_messages::websocket::{BsatnFormat, CompressableQueryUpdate, Compression};
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::execution_context::Workload;
     use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -173,12 +176,12 @@ mod tests {
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::relation::FieldName;
     use spacetimedb_schema::schema::*;
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};
     use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
     use spacetimedb_vm::relation::{MemTable, RelValue};
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
@@ -194,7 +197,7 @@ mod tests {
         let q = Expr::Crud(Box::new(CrudExpr::Query(query.clone())));
 
         let mut result = Vec::with_capacity(1);
-        let mut updates = Vec::new();
+        let mut updates = SmallVec::new();
         collect_result(&mut result, &mut updates, run_ast(p, q, sources).into())?;
         Ok(result)
     }
@@ -202,7 +205,7 @@ mod tests {
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
+            table_name: TableName::for_test(table_name),
             deletes: [].into(),
             inserts: [row].into(),
         }
@@ -211,7 +214,7 @@ mod tests {
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
+            table_name: TableName::for_test(table_name),
             deletes: [row].into(),
             inserts: [].into(),
         }
@@ -239,7 +242,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: table_name.into(),
+            table_name: TableName::for_test(table_name),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -355,7 +358,9 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval::<BsatnFormat>(db, tx, None, Compression::None).tables;
+        let result = s
+            .eval::<BsatnFormat>(db, tx, &BsatnRowListBuilderPool::new(), None, Compression::None)
+            .tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -442,12 +447,13 @@ mod tests {
         }
 
         let update = DatabaseUpdate {
-            tables: vec![DatabaseTableUpdate {
+            tables: [DatabaseTableUpdate {
                 table_id,
-                table_name: "test".into(),
+                table_name: TableName::for_test("test"),
                 deletes: deletes.into(),
                 inserts: [].into(),
-            }],
+            }]
+            .into(),
         };
 
         db.commit_tx(tx)?;
@@ -526,13 +532,13 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "inventory".into(),
+            table_name: TableName::for_test("inventory"),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
 
         let update = DatabaseUpdate {
-            tables: vec![data.clone()],
+            tables: [data.clone()].into(),
         };
 
         check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
@@ -640,20 +646,20 @@ mod tests {
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
-            table_name: "inventory".into(),
+            table_name: TableName::for_test("inventory"),
             deletes: [row_1].into(),
             inserts: [].into(),
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
-            table_name: "player".into(),
+            table_name: TableName::for_test("player"),
             deletes: [].into(),
             inserts: [row_2].into(),
         };
 
         let update = DatabaseUpdate {
-            tables: vec![data1, data2],
+            tables: smallvec::smallvec![data1, data2],
         };
 
         let row_1 = product!(1u64, "health");
@@ -1010,7 +1016,7 @@ mod tests {
                 result.tables[0],
                 DatabaseTableUpdate {
                     table_id: lhs_id,
-                    table_name: "lhs".into(),
+                    table_name: TableName::for_test("lhs"),
                     deletes: [lhs_old].into(),
                     inserts: [lhs_new].into(),
                 },
@@ -1087,10 +1093,9 @@ mod tests {
             }
         }
 
-        let (data, _, tx) = tx.commit_downgrade(Workload::ForTests);
+        let (data, _, tx) = db.commit_tx_downgrade(tx, Workload::ForTests);
         let table_id = plan.subscribed_table_id();
-        // This awful construction to convert `Arc<str>` into `Box<str>`.
-        let table_name = (&**plan.subscribed_table_name()).into();
+        let table_name = plan.subscribed_table_name().clone();
         let tx = DeltaTx::new(&tx, &data, &QueriedTableIndexIds::from_iter(plan.index_ids()));
 
         // IMPORTANT: FOR TESTING ONLY!
@@ -1158,9 +1163,9 @@ mod tests {
             .collect::<Arc<_>>();
 
         let tables = if inserts.is_empty() && deletes.is_empty() {
-            vec![]
+            smallvec::smallvec![]
         } else {
-            vec![DatabaseTableUpdate {
+            smallvec::smallvec![DatabaseTableUpdate {
                 table_id,
                 table_name,
                 inserts,
@@ -1432,7 +1437,7 @@ mod tests {
             result.tables[0],
             DatabaseTableUpdate {
                 table_id: lhs_id,
-                table_name: "lhs".into(),
+                table_name: TableName::for_test("lhs"),
                 deletes: [lhs_old].into(),
                 inserts: [lhs_new].into(),
             },

@@ -49,18 +49,33 @@ error: views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:154:1
+   --> tests/ui/views.rs:143:1
     |
-154 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
+143 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0573]: expected type, found function `scheduled_table_view`
-   --> tests/ui/views.rs:142:56
+error[E0425]: cannot find type `ScheduledTable` in this scope
+   --> tests/ui/views.rs:143:45
     |
-142 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
-    |                             ---------------            ^^^^^^^^^^^^^^^^^^^^ help: a trait with a similar name exists: `scheduled_table__view`
-    |                             |
-    |                             similarly named trait `scheduled_table__view` defined here
+143 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
+    |                                             ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find type `T` in this scope
+   --> tests/ui/views.rs:202:55
+    |
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+    |                                                       ^ not found in this scope
+    |
+help: you might be missing a type parameter
+    |
+202 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> Query<T> {
+    |                          +++
+
+error[E0425]: cannot find type `T` in this scope
+   --> tests/ui/views.rs:202:55
+    |
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+    |                                                       ^ not found in this scope
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:106:1
@@ -68,9 +83,14 @@ error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not s
 106 | #[view(name = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<ReducerContext>`
     |
-    = help: the following other types implement trait `ViewKindTrait`:
-              ViewKind<AnonymousViewContext>
-              ViewKind<ViewContext>
+help: the following other types implement trait `ViewKindTrait`
+   --> src/rt.rs
+    |
+    | impl ViewKindTrait for ViewKind<ViewContext> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ViewKind<ViewContext>`
+...
+    | impl ViewKindTrait for ViewKind<AnonymousViewContext> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ViewKind<AnonymousViewContext>`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0276]: impl has stricter requirements than trait
@@ -157,19 +177,19 @@ error[E0599]: no method named `delete` found for reference `&test__ViewHandle` i
            candidate #1: `similar::algorithms::DiffHook`
            candidate #2: `spacetimedb::Table`
 
-error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly` in the current scope
+error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:50:30
    |
 50 |     read_only.db.test().id().delete(&0);
    |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
 
-error[E0599]: no method named `update` found for struct `UniqueColumnReadOnly` in the current scope
+error[E0599]: no method named `update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:57:30
    |
 57 |     read_only.db.test().id().update(Test { id: 0, x: 0 });
    |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
 
-error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly` in the current scope
+error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly<Tbl, IndexType, Idx>` in the current scope
   --> tests/ui/views.rs:64:29
    |
 64 |     read_only.db.test().x().delete(0u32..);
@@ -192,9 +212,13 @@ error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&Ano
 107 | fn view_def_wrong_context(_: &ReducerContext) -> Vec<Player> {
     |                               ^^^^^^^^^^^^^^ the trait `ViewContextArg` is not implemented for `ReducerContext`
     |
-    = help: the following other types implement trait `ViewContextArg`:
-              AnonymousViewContext
-              ViewContext
+help: the following other types implement trait `ViewContextArg`
+   --> src/rt.rs
+    |
+    | impl ViewContextArg for ViewContext {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ViewContext`
+    | impl ViewContextArg for AnonymousViewContext {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AnonymousViewContext`
 
 error[E0599]: no function or associated item named `invoke` found for struct `ViewDispatcher<ReducerContext>` in the current scope
    --> tests/ui/views.rs:106:1
@@ -233,12 +257,24 @@ error[E0277]: Views must return `Vec<T>` or `Option<T>` where `T` is a `Spacetim
    --> tests/ui/views.rs:129:46
     |
 129 | fn view_def_wrong_return(_: &ViewContext) -> Player {
-    |                                              ^^^^^^ the trait `ViewReturn` is not implemented for `Player`
+    |                                              ^^^^^^ unsatisfied trait bound
     |
-    = help: the following other types implement trait `ViewReturn`:
-              Option<T>
-              Query<T>
-              Vec<T>
+help: the trait `ViewReturn` is not implemented for `Player`
+   --> tests/ui/views.rs:68:1
+    |
+ 68 | struct Player {
+    | ^^^^^^^^^^^^^
+help: the following other types implement trait `ViewReturn`
+   --> src/rt.rs
+    |
+    | impl<T: SpacetimeType + Serialize> ViewReturn for Vec<T> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<T>`
+...
+    | impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Option<T>`
+...
+    | impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Query<T>`
 
 error[E0277]: invalid view signature
    --> tests/ui/views.rs:128:1
@@ -288,8 +324,13 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
    --> tests/ui/views.rs:137:71
     |
 137 | fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
-    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
     |
+help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
+   --> tests/ui/views.rs:73:1
+    |
+ 73 | struct NotSpacetimeType {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^
     = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
     = help: the following other types implement trait `SpacetimeType`:
               &T
@@ -299,7 +340,7 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
               Arc<T>
               ArrayType
               Box<T>
-              ColId
+              ColumnAttribute
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `ViewReturn`
 
@@ -307,8 +348,13 @@ error[E0277]: the trait bound `NotSpacetimeType: Serialize` is not satisfied
    --> tests/ui/views.rs:137:71
     |
 137 | fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
-    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `NotSpacetimeType`
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
     |
+help: the trait `Serialize` is not implemented for `NotSpacetimeType`
+   --> tests/ui/views.rs:73:1
+    |
+ 73 | struct NotSpacetimeType {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^
     = help: the following other types implement trait `Serialize`:
               &T
               ()
@@ -347,8 +393,13 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
    --> tests/ui/views.rs:137:71
     |
 137 | fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
-    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
     |
+help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
+   --> tests/ui/views.rs:73:1
+    |
+ 73 | struct NotSpacetimeType {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^
     = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
     = help: the following other types implement trait `SpacetimeType`:
               &T
@@ -358,6 +409,96 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
               Arc<T>
               ArrayType
               Box<T>
-              ColId
+              ColumnAttribute
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
+
+error[E0277]: the trait bound `{integer}: RHS<Player, spacetimedb::Identity>` is not satisfied
+   --> tests/ui/views.rs:160:49
+    |
+160 |     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
+    |                                              -- ^^ the trait `RHS<Player, spacetimedb::Identity>` is not implemented for `{integer}`
+    |                                              |
+    |                                              required by a bound introduced by this call
+    |
+    = help: the following other types implement trait `RHS<T, V>`:
+              `f32` implements `RHS<T, f32>`
+              `f64` implements `RHS<T, f64>`
+              `i128` implements `RHS<T, i128>`
+              `i16` implements `RHS<T, i16>`
+              `i32` implements `RHS<T, i32>`
+              `i64` implements `RHS<T, i64>`
+              `i8` implements `RHS<T, i8>`
+              `u128` implements `RHS<T, u128>`
+            and $N others
+note: required by a bound in `Col::<T, V>::eq`
+   --> $WORKSPACE/crates/query-builder/src/table.rs
+    |
+    |     pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+    |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
+
+error[E0277]: the trait bound `u32: RHS<PlayerInfo, u8>` is not satisfied
+   --> tests/ui/views.rs:166:49
+    |
+166 |     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
+    |                                              -- ^^^^^^^ the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
+    |                                              |
+    |                                              required by a bound introduced by this call
+    |
+help: the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
+      but trait `RHS<PlayerInfo, u32>` is implemented for it
+   --> $WORKSPACE/crates/query-builder/src/expr.rs
+    |
+    | impl_rhs!(u32, |v: u32| v.to_string());
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for that trait implementation, expected `u32`, found `u8`
+note: required by a bound in `Col::<T, V>::eq`
+   --> $WORKSPACE/crates/query-builder/src/table.rs
+    |
+    |     pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+    |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
+    = note: this error originates in the macro `impl_rhs` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui/views.rs:175:62
+    |
+175 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
+    |                                                           -- ^^^^^^^^^^ expected `IxCol<Player, u32>`, found `IxCol<Player, Identity>`
+    |                                                           |
+    |                                                           arguments to this method are incorrect
+    |
+    = note: expected struct `IxCol<Player, u32>`
+               found struct `IxCol<Player, spacetimedb::Identity>`
+note: method defined here
+   --> $WORKSPACE/crates/query-builder/src/join.rs
+    |
+    |     pub fn eq<R: HasIxCols>(self, rhs: IxCol<R, V>) -> IxJoinEq<T, R, V> {
+    |            ^^
+
+error[E0609]: no field `age` on type `&PlayerInfoIxCols`
+   --> tests/ui/views.rs:185:72
+    |
+185 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
+    |                                                                        ^^^ unknown field
+    |
+    = note: available fields are: `identity`, `weight`
+
+error[E0308]: mismatched types
+   --> tests/ui/views.rs:193:5
+    |
+192 |   fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
+    |                                                              ------------- expected `Query<Player>` because of return type
+193 | /     ctx.from
+194 | |         .player()
+195 | |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
+196 | |         .build()
+    | |________________^ expected `Query<Player>`, found `Query<PlayerInfo>`
+    |
+    = note: expected struct `Query<Player>`
+               found struct `Query<PlayerInfo>`
+
+error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the current scope
+   --> tests/ui/views.rs:203:14
+    |
+203 |     ctx.from.xyz().build()
+    |              ^^^ method not found in `QueryBuilder`
