@@ -1035,48 +1035,74 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
 fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
     let segments = ip.segments();
     let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
-    let is_loopback = ip.is_loopback() && block_loopback;
-
-    if ip.is_unspecified() || ip.is_unique_local() || ip.is_unicast_link_local() || ip.is_multicast() || is_loopback {
-        return true;
-    }
-
-    // IPv4-compatible / mapped (`::a.b.c.d` and `::ffff:a.b.c.d`)
-    if ip.to_ipv4().is_some_and(is_blocked_ipv4) {
-        return true;
-    }
-
-    // According to https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#1628-1631:
-    // 6to4 (`2002::/16`) is not explicitly documented as globally reachable.
-    if segments[0] == 0x2002 {
-        let [a, b] = segments[1].to_be_bytes();
-        let [c, d] = segments[2].to_be_bytes();
-        if is_blocked_ipv4(Ipv4Addr::new(a, b, c, d)) {
-            return true;
-        }
-    }
-
-    // Well-known IPv4/IPv6 translation prefix (`64:ff9b::/96`).
-    // This is checked explicitly here because std's unstable `Ipv6Addr::is_global` only checks `64:ff9b:1::/48`:
-    // https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#1609-1610
-    if segments[0] == 0x0064
+    // RFC 6890 Section 2.2.3, Table 17: "Loopback Address" (::1/128).
+    let is_loopback_address = block_loopback && ip == Ipv6Addr::LOCALHOST;
+    // RFC 6890 Section 2.2.3, Table 18: "Unspecified Address" (::/128).
+    let is_unspecified_address = ip.is_unspecified();
+    // RFC 6890 Section 2.2.3, Table 19: "IPv4-IPv6 Translat." (64:ff9b::/96).
+    let is_ipv4_ipv6_translation = segments[0] == 0x0064
         && segments[1] == 0xff9b
         && segments[2] == 0
         && segments[3] == 0
         && segments[4] == 0
-        && segments[5] == 0
-    {
-        let [a, b] = segments[6].to_be_bytes();
-        let [c, d] = segments[7].to_be_bytes();
-        if is_blocked_ipv4(Ipv4Addr::new(a, b, c, d)) {
-            return true;
-        }
-    }
+        && segments[5] == 0;
+    // IANA IPv6 Special-Purpose Address Space: "IPv4-IPv6 Translat." (64:ff9b:1::/48), RFC 8215.
+    let is_ipv4_ipv6_translation_local_use = segments[0] == 0x0064 && segments[1] == 0xff9b && segments[2] == 0x0001;
+    // RFC 6890 Section 2.2.3, Table 20: "IPv4-mapped Address" (::ffff:0:0/96).
+    let is_ipv4_mapped = segments[0] == 0
+        && segments[1] == 0
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0xffff;
+    // RFC 6890 Section 2.2.3, Table 21: "Discard-Only Address Block" (100::/64).
+    let is_discard_only_prefix = segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 0;
+    // IANA IPv6 Special-Purpose Address Space: "Dummy IPv6 Prefix" (100:0:0:1::/64), RFC 9780.
+    let is_dummy_ipv6_prefix = segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 1;
+    // RFC 6890 Section 2.2.3, Table 22: "IETF Protocol Assignments" (2001::/23).
+    // This broader prefix also covers newer IANA entries including:
+    // `2001:1::1/128`, `2001:1::2/128`, `2001:1::3/128`, `2001:3::/32`,
+    // `2001:4:112::/48`, `2001:20::/28`, and `2001:30::/28`.
+    let is_ietf_protocol_assignments = segments[0] == 0x2001 && (segments[1] & 0xfe00) == 0;
+    // RFC 6890 Section 2.2.3, Table 23: "TEREDO" (2001::/32).
+    let is_teredo = segments[0] == 0x2001 && segments[1] == 0;
+    // RFC 6890 Section 2.2.3, Table 24: "Benchmarking" (2001:2::/48).
+    let is_benchmarking = segments[0] == 0x2001 && segments[1] == 0x0002 && segments[2] == 0;
+    // RFC 6890 Section 2.2.3, Table 25: "Documentation" (2001:db8::/32).
+    let is_documentation = segments[0] == 0x2001 && segments[1] == 0x0db8;
+    // RFC 6890 Section 2.2.3, Table 26: "ORCHID" (2001:10::/28).
+    let is_orchid = segments[0] == 0x2001 && (segments[1] & 0xfff0) == 0x0010;
+    // RFC 6890 Section 2.2.3, Table 27: "6to4" (2002::/16).
+    let is_6to4 = segments[0] == 0x2002;
+    // IANA IPv6 Special-Purpose Address Space: "Direct Delegation AS112 Service" (2620:4f:8000::/48), RFC 7534.
+    let is_direct_delegation_as112_service = segments[0] == 0x2620 && segments[1] == 0x004f && segments[2] == 0x8000;
+    // IANA IPv6 Special-Purpose Address Space: "Documentation" (3fff::/20), RFC 9637.
+    let is_documentation_3fff = segments[0] == 0x3fff && (segments[1] & 0xf000) == 0;
+    // IANA IPv6 Special-Purpose Address Space: "Segment Routing (SRv6) SIDs" (5f00::/16), RFC 9602.
+    let is_segment_routing_srv6_sids = segments[0] == 0x5f00;
+    // RFC 6890 Section 2.2.3, Table 28: "Unique-Local" (fc00::/7).
+    let is_unique_local = (segments[0] & 0xfe00) == 0xfc00;
+    // RFC 6890 Section 2.2.3, Table 29: "Linked-Scoped Unicast" (fe80::/10).
+    let is_link_scoped_unicast = (segments[0] & 0xffc0) == 0xfe80;
 
-    // Local-use IPv4/IPv6 translation prefix (`64:ff9b:1::/48`).
-    // std marks this as non-global in its unstable `Ipv6Addr::is_global`:
-    // https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#1609-1610
-    segments[0] == 0x0064 && segments[1] == 0xff9b && segments[2] == 0x0001
+    is_loopback_address
+        || is_unspecified_address
+        || is_ipv4_ipv6_translation
+        || is_ipv4_ipv6_translation_local_use
+        || is_ipv4_mapped
+        || is_discard_only_prefix
+        || is_dummy_ipv6_prefix
+        || is_ietf_protocol_assignments
+        || is_teredo
+        || is_benchmarking
+        || is_documentation
+        || is_orchid
+        || is_6to4
+        || is_direct_delegation_as112_service
+        || is_documentation_3fff
+        || is_segment_routing_srv6_sids
+        || is_unique_local
+        || is_link_scoped_unicast
 }
 
 /// Unpack `request` and convert it into an [`http::request::Parts`],
@@ -1569,6 +1595,284 @@ mod test {
             assert_eq!(
                 is_blocked_ip(IpAddr::V4(high)),
                 expected_blocked,
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_each_rfc6890_ipv6_range() {
+        // RFC 6890 §2.2.3 tables 17-29.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let cases = [
+            // Table 17: Loopback Address (::1/128).
+            (Ipv6Addr::LOCALHOST, block_loopback),
+            // Table 18: Unspecified Address (::/128).
+            (Ipv6Addr::UNSPECIFIED, true),
+            // Table 19: IPv4-IPv6 Translat. (64:ff9b::/96).
+            (Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0xc000, 0x0201), true),
+            // Table 20: IPv4-mapped Address (::ffff:0:0/96).
+            (Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0808, 0x0808), true),
+            // Table 21: Discard-Only Address Block (100::/64).
+            (Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 22: IETF Protocol Assignments (2001::/23).
+            (Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1), true),
+            // Table 23: TEREDO (2001::/32).
+            (Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 1), true),
+            // Table 24: Benchmarking (2001:2::/48).
+            (Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0, 0, 0, 0, 1), true),
+            // Table 25: Documentation (2001:db8::/32).
+            (Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1), true),
+            // Table 26: ORCHID (2001:10::/28).
+            (Ipv6Addr::new(0x2001, 0x0010, 0, 0, 0, 0, 0, 1), true),
+            // Table 27: 6to4 (2002::/16).
+            (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 28: Unique-Local (fc00::/7).
+            (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 29: Linked-Scoped Unicast (fe80::/10).
+            (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), true),
+        ];
+
+        for (addr, expected_blocked) in cases {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(addr)),
+                expected_blocked,
+                "unexpected block decision for {addr}"
+            );
+        }
+        // A normal global IPv6 address should remain allowed.
+        assert!(!is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111
+        ))));
+    }
+
+    #[test]
+    fn blocks_rfc6890_ipv6_range_endpoints() {
+        // RFC 6890 §2.2.3 tables 17-29, checked at each range's low/high endpoints.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let ranges = [
+            // Table 17: Loopback Address (::1/128).
+            (
+                "loopback-address",
+                Ipv6Addr::LOCALHOST,
+                Ipv6Addr::LOCALHOST,
+                block_loopback,
+            ),
+            // Table 18: Unspecified Address (::/128).
+            (
+                "unspecified-address",
+                Ipv6Addr::UNSPECIFIED,
+                Ipv6Addr::UNSPECIFIED,
+                true,
+            ),
+            // Table 19: IPv4-IPv6 Translat. (64:ff9b::/96).
+            (
+                "ipv4-ipv6-translation",
+                Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 20: IPv4-mapped Address (::ffff:0:0/96).
+            (
+                "ipv4-mapped-address",
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0),
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 21: Discard-Only Address Block (100::/64).
+            (
+                "discard-only-address-block",
+                Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0100, 0, 0, 0, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 22: IETF Protocol Assignments (2001::/23).
+            (
+                "ietf-protocol-assignments",
+                Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x01ff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 23: TEREDO (2001::/32).
+            (
+                "teredo",
+                Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 24: Benchmarking (2001:2::/48).
+            (
+                "benchmarking",
+                Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 25: Documentation (2001:db8::/32).
+            (
+                "documentation",
+                Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0db8, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 26: ORCHID (2001:10::/28).
+            (
+                "orchid",
+                Ipv6Addr::new(0x2001, 0x0010, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x001f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 27: 6to4 (2002::/16).
+            (
+                "6to4",
+                Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2002, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 28: Unique-Local (fc00::/7).
+            (
+                "unique-local",
+                Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0xfdff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 29: Linked-Scoped Unicast (fe80::/10).
+            (
+                "linked-scoped-unicast",
+                Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0xfebf, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+        ];
+
+        for (name, low, high, expected_blocked) in ranges {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(low)),
+                expected_blocked,
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(high)),
+                expected_blocked,
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_each_additional_iana_ipv6_range() {
+        // Additional ranges listed in the IANA IPv6 Special-Purpose Address Space registry.
+        // Some are transitively covered by the broader `2001::/23` block, and are kept
+        // here intentionally as explicit regression checks.
+        let cases = [
+            // IPv4-IPv6 Translat. local-use prefix (`64:ff9b:1::/48`).
+            Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0, 0, 0, 0, 1),
+            // Dummy IPv6 Prefix (`100:0:0:1::/64`).
+            Ipv6Addr::new(0x0100, 0, 0, 1, 0, 0, 0, 1),
+            // Port Control Protocol Anycast (`2001:1::1/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+            // Traversal Using Relays around NAT Anycast (`2001:1::2/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+            // DNS-SD Service Registration Protocol Anycast (`2001:1::3/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+            // AMT (`2001:3::/32`).
+            Ipv6Addr::new(0x2001, 0x0003, 0, 0, 0, 0, 0, 1),
+            // AS112-v6 (`2001:4:112::/48`).
+            Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0, 0, 0, 0, 1),
+            // ORCHIDv2 (`2001:20::/28`).
+            Ipv6Addr::new(0x2001, 0x0020, 0, 0, 0, 0, 0, 1),
+            // Drone Remote ID Protocol Entity Tags (DETs) Prefix (`2001:30::/28`).
+            Ipv6Addr::new(0x2001, 0x0030, 0, 0, 0, 0, 0, 1),
+            // Direct Delegation AS112 Service (`2620:4f:8000::/48`).
+            Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0, 0, 0, 0, 1),
+            // Documentation (`3fff::/20`).
+            Ipv6Addr::new(0x3fff, 0x0001, 0, 0, 0, 0, 0, 1),
+            // Segment Routing (SRv6) SIDs (`5f00::/16`).
+            Ipv6Addr::new(0x5f00, 0, 0, 0, 0, 0, 0, 1),
+        ];
+
+        for addr in cases {
+            assert!(
+                is_blocked_ip(IpAddr::V6(addr)),
+                "expected additional IANA IPv6 range to be blocked: {addr}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_additional_iana_ipv6_range_endpoints() {
+        // Additional ranges listed in the IANA IPv6 Special-Purpose Address Space registry.
+        // Some are transitively covered by the broader `2001::/23` block, and are kept
+        // here intentionally as explicit regression checks.
+        let ranges = [
+            (
+                "ipv4-ipv6-translation-local-use",
+                Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "dummy-ipv6-prefix",
+                Ipv6Addr::new(0x0100, 0, 0, 1, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0100, 0, 0, 1, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "pcp-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+            ),
+            (
+                "turn-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+            ),
+            (
+                "dns-sd-srp-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+            ),
+            (
+                "amt",
+                Ipv6Addr::new(0x2001, 0x0003, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0003, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "as112-v6",
+                Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "orchidv2",
+                Ipv6Addr::new(0x2001, 0x0020, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x002f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "drone-remote-id-dets-prefix",
+                Ipv6Addr::new(0x2001, 0x0030, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x003f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "direct-delegation-as112-service",
+                Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "documentation-3fff",
+                Ipv6Addr::new(0x3fff, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x3fff, 0x0fff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "segment-routing-srv6-sids",
+                Ipv6Addr::new(0x5f00, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x5f00, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+        ];
+
+        for (name, low, high) in ranges {
+            assert!(
+                is_blocked_ip(IpAddr::V6(low)),
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert!(
+                is_blocked_ip(IpAddr::V6(high)),
                 "{name}: unexpected decision for high endpoint {high}"
             );
         }
