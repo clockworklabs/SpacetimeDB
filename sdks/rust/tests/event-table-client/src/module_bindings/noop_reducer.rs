@@ -18,8 +18,6 @@ impl __sdk::InModule for NoopArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct NoopCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `noop`.
 ///
@@ -29,66 +27,35 @@ pub trait noop {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_noop`] callbacks.
-    fn noop(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `noop`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`noop:noop_then`] to run a callback after the reducer completes.
+    fn noop(&self) -> __sdk::Result<()> {
+        self.noop_then(|_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `noop` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`NoopCallbackId`] can be passed to [`Self::remove_on_noop`]
-    /// to cancel the callback.
-    fn on_noop(&self, callback: impl FnMut(&super::ReducerEventContext) + Send + 'static) -> NoopCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_noop`],
-    /// causing it not to run in the future.
-    fn remove_on_noop(&self, callback: NoopCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn noop_then(
+        &self,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl noop for super::RemoteReducers {
-    fn noop(&self) -> __sdk::Result<()> {
-        self.imp.call_reducer("noop", NoopArgs {})
-    }
-    fn on_noop(&self, mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static) -> NoopCallbackId {
-        NoopCallbackId(self.imp.on_reducer(
-            "noop",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::Noop {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_noop(&self, callback: NoopCallbackId) {
-        self.imp.remove_on_reducer("noop", callback.0)
-    }
-}
+    fn noop_then(
+        &self,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `noop`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_noop {
-    /// Set the call-reducer flags for the reducer `noop` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn noop(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_noop for super::SetReducerFlags {
-    fn noop(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("noop", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(NoopArgs {}, callback)
     }
 }
