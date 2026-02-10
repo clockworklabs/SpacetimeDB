@@ -868,12 +868,26 @@ impl InstanceEnv {
 
         let reqwest = reqwest;
 
+        // Check if we have a blocked IP address, since IP literals bypass DNS resolution.
+        if is_blocked_ip_literal(reqwest.url()) {
+            return Err(http_error(BLOCKED_HTTP_ADDRESS_ERROR));
+        }
+
+        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+            if is_blocked_ip_literal(attempt.url()) {
+                attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
+            } else {
+                reqwest::redirect::Policy::default().redirect(attempt)
+            }
+        });
+
         // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
 
         // Actually execute the HTTP request!
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
         let execute_fut = reqwest::Client::builder()
             .dns_resolver(Arc::new(FilteredDnsResolver))
+            .redirect(redirect_policy)
             .build()
             .map_err(http_error)?
             .execute(reqwest);
@@ -942,6 +956,7 @@ impl InstanceEnv {
 ///
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
 struct FilteredDnsResolver;
 
@@ -953,15 +968,21 @@ impl reqwest::dns::Resolve for FilteredDnsResolver {
             let filtered_addrs: Vec<SocketAddr> = addrs.filter(|addr| !is_blocked_ip(addr.ip())).collect();
 
             if filtered_addrs.is_empty() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::PermissionDenied,
-                    "refusing to connect to private or special-purpose addresses",
-                )
-                .into());
+                return Err(
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, BLOCKED_HTTP_ADDRESS_ERROR).into(),
+                );
             }
 
             Ok(Box::new(filtered_addrs.into_iter()) as reqwest::dns::Addrs)
         })
+    }
+}
+
+fn is_blocked_ip_literal(url: &reqwest::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Ipv4(ip)) => is_blocked_ip(IpAddr::V4(ip)),
+        Some(url::Host::Ipv6(ip)) => is_blocked_ip(IpAddr::V6(ip)),
+        Some(url::Host::Domain(_)) | None => false,
     }
 }
 
@@ -1451,6 +1472,31 @@ mod test {
                 "unexpected block decision for {addr}"
             );
         }
+    }
+
+    #[test]
+    fn blocks_ip_literal_hosts_in_urls() {
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        assert_eq!(
+            is_blocked_ip_literal(&reqwest::Url::parse("http://127.0.0.1:80/").unwrap()),
+            block_loopback
+        );
+        assert_eq!(
+            is_blocked_ip_literal(&reqwest::Url::parse("http://[::1]:80/").unwrap()),
+            block_loopback
+        );
+        assert!(is_blocked_ip_literal(
+            &reqwest::Url::parse("http://10.0.0.1:80/").unwrap()
+        ));
+        assert!(is_blocked_ip_literal(
+            &reqwest::Url::parse("http://[fc00::1]:80/").unwrap()
+        ));
+        assert!(!is_blocked_ip_literal(
+            &reqwest::Url::parse("http://8.8.8.8:80/").unwrap()
+        ));
+        assert!(!is_blocked_ip_literal(
+            &reqwest::Url::parse("http://example.com:80/").unwrap()
+        ));
     }
 
     #[test]
