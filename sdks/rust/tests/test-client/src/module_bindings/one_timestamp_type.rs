@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,9 +16,11 @@ pub struct OneTimestamp {
     pub t: __sdk::Timestamp,
 }
 
+
 impl __sdk::InModule for OneTimestamp {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `OneTimestamp`.
 ///
@@ -26,6 +34,7 @@ impl __sdk::__query_builder::HasCols for OneTimestamp {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneTimestampCols {
             t: __sdk::__query_builder::Col::new(table_name, "t"),
+
         }
     }
 }
@@ -33,11 +42,16 @@ impl __sdk::__query_builder::HasCols for OneTimestamp {
 /// Indexed column accessor struct for the table `OneTimestamp`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneTimestampIxCols {}
+pub struct OneTimestampIxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for OneTimestamp {
     type IxCols = OneTimestampIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneTimestampIxCols {}
+        OneTimestampIxCols {
+
+        }
     }
 }
+
+

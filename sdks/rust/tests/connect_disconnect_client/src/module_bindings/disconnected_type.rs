@@ -41,3 +41,4 @@ impl __sdk::__query_builder::HasIxCols for Disconnected {
         DisconnectedIxCols {}
     }
 }
+

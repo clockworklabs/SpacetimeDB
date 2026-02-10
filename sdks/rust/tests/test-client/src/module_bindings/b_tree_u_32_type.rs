@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -11,9 +17,11 @@ pub struct BTreeU32 {
     pub data: i32,
 }
 
+
 impl __sdk::InModule for BTreeU32 {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `BTreeU32`.
 ///
@@ -29,6 +37,7 @@ impl __sdk::__query_builder::HasCols for BTreeU32 {
         BTreeU32Cols {
             n: __sdk::__query_builder::Col::new(table_name, "n"),
             data: __sdk::__query_builder::Col::new(table_name, "data"),
+
         }
     }
 }
@@ -45,6 +54,9 @@ impl __sdk::__query_builder::HasIxCols for BTreeU32 {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         BTreeU32IxCols {
             n: __sdk::__query_builder::IxCol::new(table_name, "n"),
+
         }
     }
 }
+
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,15 +22,13 @@ impl From<UpdatePkU256Args> for super::Reducer {
         Self::UpdatePkU256 {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for UpdatePkU256Args {
     type Module = super::RemoteModule;
 }
-
-pub struct UpdatePkU256CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_pk_u256`.
@@ -35,72 +39,42 @@ pub trait update_pk_u_256 {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_update_pk_u_256`] callbacks.
-    fn update_pk_u_256(&self, n: __sats::u256, data: i32) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `update_pk_u256`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`update_pk_u_256:update_pk_u_256_then`] to run a callback after the reducer completes.
+    fn update_pk_u_256(&self, n: __sats::u256,
+data: i32,
+) -> __sdk::Result<()> {
+        self.update_pk_u_256_then(n, data,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `update_pk_u256` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`UpdatePkU256CallbackId`] can be passed to [`Self::remove_on_update_pk_u_256`]
-    /// to cancel the callback.
-    fn on_update_pk_u_256(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn update_pk_u_256_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &__sats::u256, &i32) + Send + 'static,
-    ) -> UpdatePkU256CallbackId;
-    /// Cancel a callback previously registered by [`Self::on_update_pk_u_256`],
-    /// causing it not to run in the future.
-    fn remove_on_update_pk_u_256(&self, callback: UpdatePkU256CallbackId);
+        n: __sats::u256,
+data: i32,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl update_pk_u_256 for super::RemoteReducers {
-    fn update_pk_u_256(&self, n: __sats::u256, data: i32) -> __sdk::Result<()> {
-        self.imp.call_reducer("update_pk_u256", UpdatePkU256Args { n, data })
-    }
-    fn on_update_pk_u_256(
+    fn update_pk_u_256_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &__sats::u256, &i32) + Send + 'static,
-    ) -> UpdatePkU256CallbackId {
-        UpdatePkU256CallbackId(self.imp.on_reducer(
-            "update_pk_u256",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::UpdatePkU256 { n, data },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n, data)
-            }),
-        ))
-    }
-    fn remove_on_update_pk_u_256(&self, callback: UpdatePkU256CallbackId) {
-        self.imp.remove_on_reducer("update_pk_u256", callback.0)
+        n: __sats::u256,
+data: i32,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(UpdatePkU256Args { n, data,  }, callback)
     }
 }
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `update_pk_u256`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_update_pk_u_256 {
-    /// Set the call-reducer flags for the reducer `update_pk_u256` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn update_pk_u_256(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_update_pk_u_256 for super::SetReducerFlags {
-    fn update_pk_u_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_pk_u256", flags);
-    }
-}

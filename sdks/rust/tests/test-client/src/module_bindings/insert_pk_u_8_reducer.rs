@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,15 +22,13 @@ impl From<InsertPkU8Args> for super::Reducer {
         Self::InsertPkU8 {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for InsertPkU8Args {
     type Module = super::RemoteModule;
 }
-
-pub struct InsertPkU8CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_pk_u8`.
@@ -35,72 +39,42 @@ pub trait insert_pk_u_8 {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_pk_u_8`] callbacks.
-    fn insert_pk_u_8(&self, n: u8, data: i32) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_pk_u8`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_pk_u_8:insert_pk_u_8_then`] to run a callback after the reducer completes.
+    fn insert_pk_u_8(&self, n: u8,
+data: i32,
+) -> __sdk::Result<()> {
+        self.insert_pk_u_8_then(n, data,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_pk_u8` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertPkU8CallbackId`] can be passed to [`Self::remove_on_insert_pk_u_8`]
-    /// to cancel the callback.
-    fn on_insert_pk_u_8(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_pk_u_8_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u8, &i32) + Send + 'static,
-    ) -> InsertPkU8CallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_pk_u_8`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_pk_u_8(&self, callback: InsertPkU8CallbackId);
+        n: u8,
+data: i32,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_pk_u_8 for super::RemoteReducers {
-    fn insert_pk_u_8(&self, n: u8, data: i32) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_pk_u8", InsertPkU8Args { n, data })
-    }
-    fn on_insert_pk_u_8(
+    fn insert_pk_u_8_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u8, &i32) + Send + 'static,
-    ) -> InsertPkU8CallbackId {
-        InsertPkU8CallbackId(self.imp.on_reducer(
-            "insert_pk_u8",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertPkU8 { n, data },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n, data)
-            }),
-        ))
-    }
-    fn remove_on_insert_pk_u_8(&self, callback: InsertPkU8CallbackId) {
-        self.imp.remove_on_reducer("insert_pk_u8", callback.0)
+        n: u8,
+data: i32,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(InsertPkU8Args { n, data,  }, callback)
     }
 }
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_pk_u8`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_pk_u_8 {
-    /// Set the call-reducer flags for the reducer `insert_pk_u8` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_pk_u_8(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_pk_u_8 for super::SetReducerFlags {
-    fn insert_pk_u_8(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_pk_u8", flags);
-    }
-}

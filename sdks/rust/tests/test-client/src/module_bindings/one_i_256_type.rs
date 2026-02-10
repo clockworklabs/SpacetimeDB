@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,9 +16,11 @@ pub struct OneI256 {
     pub n: __sats::i256,
 }
 
+
 impl __sdk::InModule for OneI256 {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `OneI256`.
 ///
@@ -26,6 +34,7 @@ impl __sdk::__query_builder::HasCols for OneI256 {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneI256Cols {
             n: __sdk::__query_builder::Col::new(table_name, "n"),
+
         }
     }
 }
@@ -33,11 +42,16 @@ impl __sdk::__query_builder::HasCols for OneI256 {
 /// Indexed column accessor struct for the table `OneI256`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneI256IxCols {}
+pub struct OneI256IxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for OneI256 {
     type IxCols = OneI256IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneI256IxCols {}
+        OneI256IxCols {
+
+        }
     }
 }
+
+

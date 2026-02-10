@@ -2,25 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::enum_with_payload_type::EnumWithPayload;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct VecEnumWithPayload {
-    pub e: Vec<EnumWithPayload>,
+    pub e: Vec::<EnumWithPayload>,
 }
+
 
 impl __sdk::InModule for VecEnumWithPayload {
     type Module = super::RemoteModule;
 }
 
+
 /// Column accessor struct for the table `VecEnumWithPayload`.
 ///
 /// Provides typed access to columns for query building.
 pub struct VecEnumWithPayloadCols {
-    pub e: __sdk::__query_builder::Col<VecEnumWithPayload, Vec<EnumWithPayload>>,
+    pub e: __sdk::__query_builder::Col<VecEnumWithPayload, Vec::<EnumWithPayload>>,
 }
 
 impl __sdk::__query_builder::HasCols for VecEnumWithPayload {
@@ -28,6 +35,7 @@ impl __sdk::__query_builder::HasCols for VecEnumWithPayload {
     fn cols(table_name: &'static str) -> Self::Cols {
         VecEnumWithPayloadCols {
             e: __sdk::__query_builder::Col::new(table_name, "e"),
+
         }
     }
 }
@@ -35,11 +43,16 @@ impl __sdk::__query_builder::HasCols for VecEnumWithPayload {
 /// Indexed column accessor struct for the table `VecEnumWithPayload`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct VecEnumWithPayloadIxCols {}
+pub struct VecEnumWithPayloadIxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for VecEnumWithPayload {
     type IxCols = VecEnumWithPayloadIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        VecEnumWithPayloadIxCols {}
+        VecEnumWithPayloadIxCols {
+
+        }
     }
 }
+
+

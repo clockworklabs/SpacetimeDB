@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::byte_struct_type::ByteStruct;
 
@@ -12,9 +17,11 @@ pub struct OneByteStruct {
     pub s: ByteStruct,
 }
 
+
 impl __sdk::InModule for OneByteStruct {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `OneByteStruct`.
 ///
@@ -28,6 +35,7 @@ impl __sdk::__query_builder::HasCols for OneByteStruct {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneByteStructCols {
             s: __sdk::__query_builder::Col::new(table_name, "s"),
+
         }
     }
 }
@@ -35,11 +43,16 @@ impl __sdk::__query_builder::HasCols for OneByteStruct {
 /// Indexed column accessor struct for the table `OneByteStruct`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneByteStructIxCols {}
+pub struct OneByteStructIxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for OneByteStruct {
     type IxCols = OneByteStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneByteStructIxCols {}
+        OneByteStructIxCols {
+
+        }
     }
 }
+
+

@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::vec_i_256_type::VecI256;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_i256`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for VecI256TableHandle<'ctx> {
     type Row = VecI256;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = VecI256> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = VecI256> + '_ { self.imp.iter() }
 
     type InsertCallbackId = VecI256InsertCallbackId;
 
@@ -80,32 +81,35 @@ impl<'ctx> __sdk::Table for VecI256TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecI256>("vec_i256");
+
+        let _table = client_cache.get_or_make_table::<VecI256>("vec_i256");
 }
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<VecI256>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<VecI256>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<VecI256>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `VecI256`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait vec_i256QueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `VecI256`.
-    fn vec_i256(&self) -> __sdk::__query_builder::Table<VecI256>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `VecI256`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait vec_i256QueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `VecI256`.
+            fn vec_i256(&self) -> __sdk::__query_builder::Table<VecI256>;
+        }
 
-impl vec_i256QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_i256(&self) -> __sdk::__query_builder::Table<VecI256> {
-        __sdk::__query_builder::Table::new("vec_i256")
-    }
-}
+        impl vec_i256QueryTableAccess for __sdk::QueryTableAccessor {
+            fn vec_i256(&self) -> __sdk::__query_builder::Table<VecI256> {
+                __sdk::__query_builder::Table::new("vec_i256")
+            }
+        }
+

@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::one_i_16_type::OneI16;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_i16`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for OneI16TableHandle<'ctx> {
     type Row = OneI16;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = OneI16> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = OneI16> + '_ { self.imp.iter() }
 
     type InsertCallbackId = OneI16InsertCallbackId;
 
@@ -80,32 +81,35 @@ impl<'ctx> __sdk::Table for OneI16TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneI16>("one_i16");
+
+        let _table = client_cache.get_or_make_table::<OneI16>("one_i16");
 }
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OneI16>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<OneI16>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<OneI16>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `OneI16`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_i16QueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `OneI16`.
-    fn one_i16(&self) -> __sdk::__query_builder::Table<OneI16>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `OneI16`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait one_i16QueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `OneI16`.
+            fn one_i16(&self) -> __sdk::__query_builder::Table<OneI16>;
+        }
 
-impl one_i16QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_i16(&self) -> __sdk::__query_builder::Table<OneI16> {
-        __sdk::__query_builder::Table::new("one_i16")
-    }
-}
+        impl one_i16QueryTableAccess for __sdk::QueryTableAccessor {
+            fn one_i16(&self) -> __sdk::__query_builder::Table<OneI16> {
+                __sdk::__query_builder::Table::new("one_i16")
+            }
+        }
+

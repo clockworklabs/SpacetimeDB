@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct InsertCallerVecIdentityArgs {}
+pub(super) struct InsertCallerVecIdentityArgs {
+    }
 
 impl From<InsertCallerVecIdentityArgs> for super::Reducer {
     fn from(args: InsertCallerVecIdentityArgs) -> Self {
         Self::InsertCallerVecIdentity
-    }
+}
 }
 
 impl __sdk::InModule for InsertCallerVecIdentityArgs {
     type Module = super::RemoteModule;
 }
-
-pub struct InsertCallerVecIdentityCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_caller_vec_identity`.
@@ -29,73 +34,36 @@ pub trait insert_caller_vec_identity {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_caller_vec_identity`] callbacks.
-    fn insert_caller_vec_identity(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_caller_vec_identity`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_caller_vec_identity:insert_caller_vec_identity_then`] to run a callback after the reducer completes.
+    fn insert_caller_vec_identity(&self, ) -> __sdk::Result<()> {
+        self.insert_caller_vec_identity_then( |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_caller_vec_identity` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertCallerVecIdentityCallbackId`] can be passed to [`Self::remove_on_insert_caller_vec_identity`]
-    /// to cancel the callback.
-    fn on_insert_caller_vec_identity(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_caller_vec_identity_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> InsertCallerVecIdentityCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_caller_vec_identity`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_caller_vec_identity(&self, callback: InsertCallerVecIdentityCallbackId);
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_caller_vec_identity for super::RemoteReducers {
-    fn insert_caller_vec_identity(&self) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_caller_vec_identity", InsertCallerVecIdentityArgs {})
-    }
-    fn on_insert_caller_vec_identity(
+    fn insert_caller_vec_identity_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> InsertCallerVecIdentityCallbackId {
-        InsertCallerVecIdentityCallbackId(self.imp.on_reducer(
-            "insert_caller_vec_identity",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertCallerVecIdentity {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_insert_caller_vec_identity(&self, callback: InsertCallerVecIdentityCallbackId) {
-        self.imp.remove_on_reducer("insert_caller_vec_identity", callback.0)
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(InsertCallerVecIdentityArgs {  }, callback)
     }
 }
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_caller_vec_identity`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_caller_vec_identity {
-    /// Set the call-reducer flags for the reducer `insert_caller_vec_identity` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_caller_vec_identity(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_caller_vec_identity for super::SetReducerFlags {
-    fn insert_caller_vec_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_caller_vec_identity", flags);
-    }
-}

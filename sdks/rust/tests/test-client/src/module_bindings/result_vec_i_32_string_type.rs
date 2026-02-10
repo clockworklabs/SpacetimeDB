@@ -2,23 +2,31 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ResultVecI32String {
-    pub r: Result<Vec<i32>, String>,
+    pub r: Result::<Vec::<i32>, String>,
 }
+
 
 impl __sdk::InModule for ResultVecI32String {
     type Module = super::RemoteModule;
 }
 
+
 /// Column accessor struct for the table `ResultVecI32String`.
 ///
 /// Provides typed access to columns for query building.
 pub struct ResultVecI32StringCols {
-    pub r: __sdk::__query_builder::Col<ResultVecI32String, Result<Vec<i32>, String>>,
+    pub r: __sdk::__query_builder::Col<ResultVecI32String, Result::<Vec::<i32>, String>>,
 }
 
 impl __sdk::__query_builder::HasCols for ResultVecI32String {
@@ -26,6 +34,7 @@ impl __sdk::__query_builder::HasCols for ResultVecI32String {
     fn cols(table_name: &'static str) -> Self::Cols {
         ResultVecI32StringCols {
             r: __sdk::__query_builder::Col::new(table_name, "r"),
+
         }
     }
 }
@@ -33,11 +42,16 @@ impl __sdk::__query_builder::HasCols for ResultVecI32String {
 /// Indexed column accessor struct for the table `ResultVecI32String`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct ResultVecI32StringIxCols {}
+pub struct ResultVecI32StringIxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for ResultVecI32String {
     type IxCols = ResultVecI32StringIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        ResultVecI32StringIxCols {}
+        ResultVecI32StringIxCols {
+
+        }
     }
 }
+
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -14,15 +19,15 @@ pub(super) struct InsertIntoIndexedSimpleEnumArgs {
 
 impl From<InsertIntoIndexedSimpleEnumArgs> for super::Reducer {
     fn from(args: InsertIntoIndexedSimpleEnumArgs) -> Self {
-        Self::InsertIntoIndexedSimpleEnum { n: args.n }
-    }
+        Self::InsertIntoIndexedSimpleEnum {
+            n: args.n,
+}
+}
 }
 
 impl __sdk::InModule for InsertIntoIndexedSimpleEnumArgs {
     type Module = super::RemoteModule;
 }
-
-pub struct InsertIntoIndexedSimpleEnumCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_into_indexed_simple_enum`.
@@ -33,75 +38,39 @@ pub trait insert_into_indexed_simple_enum {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_into_indexed_simple_enum`] callbacks.
-    fn insert_into_indexed_simple_enum(&self, n: SimpleEnum) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_into_indexed_simple_enum`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_into_indexed_simple_enum:insert_into_indexed_simple_enum_then`] to run a callback after the reducer completes.
+    fn insert_into_indexed_simple_enum(&self, n: SimpleEnum,
+) -> __sdk::Result<()> {
+        self.insert_into_indexed_simple_enum_then(n,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_into_indexed_simple_enum` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertIntoIndexedSimpleEnumCallbackId`] can be passed to [`Self::remove_on_insert_into_indexed_simple_enum`]
-    /// to cancel the callback.
-    fn on_insert_into_indexed_simple_enum(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_into_indexed_simple_enum_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum) + Send + 'static,
-    ) -> InsertIntoIndexedSimpleEnumCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_into_indexed_simple_enum`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_into_indexed_simple_enum(&self, callback: InsertIntoIndexedSimpleEnumCallbackId);
+        n: SimpleEnum,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_into_indexed_simple_enum for super::RemoteReducers {
-    fn insert_into_indexed_simple_enum(&self, n: SimpleEnum) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_into_indexed_simple_enum", InsertIntoIndexedSimpleEnumArgs { n })
-    }
-    fn on_insert_into_indexed_simple_enum(
+    fn insert_into_indexed_simple_enum_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum) + Send + 'static,
-    ) -> InsertIntoIndexedSimpleEnumCallbackId {
-        InsertIntoIndexedSimpleEnumCallbackId(self.imp.on_reducer(
-            "insert_into_indexed_simple_enum",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertIntoIndexedSimpleEnum { n },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n)
-            }),
-        ))
-    }
-    fn remove_on_insert_into_indexed_simple_enum(&self, callback: InsertIntoIndexedSimpleEnumCallbackId) {
-        self.imp
-            .remove_on_reducer("insert_into_indexed_simple_enum", callback.0)
+        n: SimpleEnum,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(InsertIntoIndexedSimpleEnumArgs { n,  }, callback)
     }
 }
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_into_indexed_simple_enum`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_into_indexed_simple_enum {
-    /// Set the call-reducer flags for the reducer `insert_into_indexed_simple_enum` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_into_indexed_simple_enum(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_into_indexed_simple_enum for super::SetReducerFlags {
-    fn insert_into_indexed_simple_enum(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("insert_into_indexed_simple_enum", flags);
-    }
-}

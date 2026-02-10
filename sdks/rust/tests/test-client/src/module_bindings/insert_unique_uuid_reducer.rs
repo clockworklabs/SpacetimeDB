@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,15 +22,13 @@ impl From<InsertUniqueUuidArgs> for super::Reducer {
         Self::InsertUniqueUuid {
             u: args.u,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for InsertUniqueUuidArgs {
     type Module = super::RemoteModule;
 }
-
-pub struct InsertUniqueUuidCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_unique_uuid`.
@@ -35,73 +39,42 @@ pub trait insert_unique_uuid {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_unique_uuid`] callbacks.
-    fn insert_unique_uuid(&self, u: __sdk::Uuid, data: i32) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_unique_uuid`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_unique_uuid:insert_unique_uuid_then`] to run a callback after the reducer completes.
+    fn insert_unique_uuid(&self, u: __sdk::Uuid,
+data: i32,
+) -> __sdk::Result<()> {
+        self.insert_unique_uuid_then(u, data,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_unique_uuid` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertUniqueUuidCallbackId`] can be passed to [`Self::remove_on_insert_unique_uuid`]
-    /// to cancel the callback.
-    fn on_insert_unique_uuid(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_unique_uuid_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &__sdk::Uuid, &i32) + Send + 'static,
-    ) -> InsertUniqueUuidCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_unique_uuid`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_unique_uuid(&self, callback: InsertUniqueUuidCallbackId);
+        u: __sdk::Uuid,
+data: i32,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_unique_uuid for super::RemoteReducers {
-    fn insert_unique_uuid(&self, u: __sdk::Uuid, data: i32) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_unique_uuid", InsertUniqueUuidArgs { u, data })
-    }
-    fn on_insert_unique_uuid(
+    fn insert_unique_uuid_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &__sdk::Uuid, &i32) + Send + 'static,
-    ) -> InsertUniqueUuidCallbackId {
-        InsertUniqueUuidCallbackId(self.imp.on_reducer(
-            "insert_unique_uuid",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertUniqueUuid { u, data },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, u, data)
-            }),
-        ))
-    }
-    fn remove_on_insert_unique_uuid(&self, callback: InsertUniqueUuidCallbackId) {
-        self.imp.remove_on_reducer("insert_unique_uuid", callback.0)
+        u: __sdk::Uuid,
+data: i32,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(InsertUniqueUuidArgs { u, data,  }, callback)
     }
 }
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_unique_uuid`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_unique_uuid {
-    /// Set the call-reducer flags for the reducer `insert_unique_uuid` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_unique_uuid(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_unique_uuid for super::SetReducerFlags {
-    fn insert_unique_uuid(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_uuid", flags);
-    }
-}
