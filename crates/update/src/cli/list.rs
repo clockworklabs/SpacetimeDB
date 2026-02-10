@@ -45,7 +45,7 @@ impl List {
         };
 
         // Sort versions using semver ordering. Versions that fail to parse are
-        // placed at the end in their original (alphabetical) order.
+        // placed at the end in alphabetical order.
         let mut parsed: Vec<(semver::Version, String)> = Vec::new();
         let mut unparsed: Vec<String> = Vec::new();
         for ver in versions {
