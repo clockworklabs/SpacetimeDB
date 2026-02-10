@@ -148,8 +148,8 @@ impl TxId {
     /// Returns:
     /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    pub(super) fn release(self) -> (TxOffset, TxMetrics, ReducerName) {
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    pub(super) fn release(self) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         // A read tx doesn't consume `next_tx_offset`, so subtract one to obtain
         // the offset that was visible to the transaction.
         //

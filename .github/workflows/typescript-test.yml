@@ -13,13 +13,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: --privileged
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
-
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,7 +21,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - uses: pnpm/action-setup@v4
         with:
@@ -91,6 +85,20 @@ jobs:
           # Let the main CI job save the cache since it builds the most things
           save-if: false
           prefix-key: v1
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |

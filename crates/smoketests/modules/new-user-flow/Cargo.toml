@@ -1,0 +1,12 @@
+[package]
+name = "smoketest-module-new-user-flow"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb.workspace = true
+log.workspace = true

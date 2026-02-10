@@ -16,7 +16,7 @@ A SpacetimeDB **database** is an application that runs on a [host](#host).
 
 A database exports [tables](#table), which store data, and [reducers](#reducer), which allow [clients](#client) to make requests.
 
-A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C# or Rust.
+A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C#, Rust or TypeScript.
 
 (Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
 
@@ -451,7 +451,7 @@ A view can be written in Rust like so:
 ```rust
 #[spacetimedb::view(name = my_player, public)]
 fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 ```
 
