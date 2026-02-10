@@ -33,7 +33,8 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
-    let procedure_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
+    let procedure_name = ident_to_litstr(func_name).value();
+    let explicit_name = args.name;
 
     assert_only_lifetime_generics(original_function, "procedures")?;
 
@@ -50,7 +51,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
 
     // Extract all function parameter names.
     let opt_arg_names = typed_args.iter().map(|arg| {
-        if let syn::Pat::Ident(i) = &*arg.pat {
+        if let syn::Pat::Ident(i) = &*arg.arg.pat {
             let name = i.ident.to_string();
             quote!(Some(#name))
         } else {
@@ -58,7 +59,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
         }
     });
 
-    let arg_tys = typed_args.iter().map(|arg| arg.ty.as_ref()).collect::<Vec<_>>();
+    let arg_tys = typed_args.iter().map(|arg| arg.arg.ty.as_ref()).collect::<Vec<_>>();
     let first_arg_ty = arg_tys.first().into_iter();
     let rest_arg_tys = arg_tys.iter().skip(1);
 
@@ -74,7 +75,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
         syn::ReturnType::Type(_, t) => quote!(#t),
     };
 
-    let register_describer_symbol = format!("__preinit__20_register_describer_{}", procedure_name.value());
+    let register_describer_symbol = format!("__preinit__20_register_describer_{}", procedure_name);
 
     let lifetime_params = &original_function.sig.generics;
     let lifetime_where_clause = &lifetime_params.where_clause;
@@ -120,6 +121,8 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
 
             /// The pointer for invoking this function
             const INVOKE: spacetimedb::rt::ProcedureFn = #func_name::invoke;
+
+            const EXPLICIT_NAME = #explicit_name;
 
             /// The return type of this function
             fn return_type(ts: &mut impl spacetimedb::sats::typespace::TypespaceBuilder) -> Option<spacetimedb::sats::AlgebraicType> {

@@ -21,6 +21,9 @@ pub mod scheduler;
 pub mod st_var;
 pub mod version;
 
+#[doc(hidden)]
+pub use crate::db::raw_def::v10::{ExplicitName, ExplicitNameContext};
+
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 }

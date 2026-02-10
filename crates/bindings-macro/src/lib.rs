@@ -41,6 +41,7 @@ mod sym {
 
     symbol!(at);
     symbol!(auto_inc);
+    symbol!(accessor);
     symbol!(btree);
     symbol!(client_connected);
     symbol!(client_disconnected);
@@ -249,7 +250,7 @@ pub fn serialize(input: StdTokenStream) -> StdTokenStream {
 pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
     sats_derive(input, true, |ty| {
         let ident = ty.ident;
-        let name = &ty.name;
+        let name = &ty.accessor;
 
         let krate = &ty.krate;
         TokenStream::from_iter([

@@ -79,24 +79,63 @@ pub(crate) fn assert_only_lifetime_generics(original_function: &ItemFn, function
     Ok(())
 }
 
+use syn::Attribute;
+pub struct ParsedArg<'a> {
+    pub arg: &'a PatType,
+    pub explicit_name: Option<String>,
+}
+
+fn parse_name_attr(attrs: &[Attribute]) -> syn::Result<Option<String>> {
+    for attr in attrs {
+        if attr.path().is_ident("name") {
+            let lit: LitStr = attr.parse_args()?;
+            return Ok(Some(lit.value()));
+        }
+    }
+    Ok(None)
+}
+
+pub(crate) fn extract_name_attr(attrs: &[Attribute]) -> syn::Result<Option<String>> {
+    let mut name = None;
+
+    for attr in attrs {
+        if attr.path() != sym::name {
+            continue;
+        }
+
+        check_duplicate(&name, attr)?;
+
+        let value = attr.parse_args::<LitStr>()?;
+        name = Some(value.value());
+    }
+
+    Ok(name)
+}
+
 /// Extract all function parameters, except for `self` ones that aren't allowed.
-pub(crate) fn extract_typed_args(original_function: &ItemFn) -> syn::Result<Vec<&PatType>> {
+pub(crate) fn extract_typed_args(original_function: &ItemFn) -> syn::Result<Vec<ParsedArg<'_>>> {
     original_function
         .sig
         .inputs
         .iter()
         .map(|arg| match arg {
-            FnArg::Typed(arg) => Ok(arg),
+            FnArg::Typed(pat) => {
+                let explicit_name = parse_name_attr(&pat.attrs)?;
+                Ok(ParsedArg {
+                    arg: pat,
+                    explicit_name,
+                })
+            }
             _ => Err(syn::Error::new_spanned(arg, "expected typed argument")),
         })
         .collect()
 }
-
 pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
-    let reducer_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
+    let reducer_name = ident_to_litstr(func_name);
+    let explicit_name = args.name.as_ref().unwrap_or(&reducer_name);
 
     assert_only_lifetime_generics(original_function, "reducers")?;
 
@@ -106,7 +145,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
 
     // Extract all function parameter names.
     let opt_arg_names = typed_args.iter().map(|arg| {
-        if let syn::Pat::Ident(i) = &*arg.pat {
+        if let syn::Pat::Ident(i) = &*arg.arg.pat {
             let name = i.ident.to_string();
             quote!(Some(#name))
         } else {
@@ -114,7 +153,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
         }
     });
 
-    let arg_tys = typed_args.iter().map(|arg| arg.ty.as_ref()).collect::<Vec<_>>();
+    let arg_tys = typed_args.iter().map(|arg| arg.arg.ty.as_ref()).collect::<Vec<_>>();
     let first_arg_ty = arg_tys.first().into_iter();
     let rest_arg_tys = arg_tys.iter().skip(1);
 

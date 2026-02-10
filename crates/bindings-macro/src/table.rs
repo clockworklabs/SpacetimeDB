@@ -12,12 +12,14 @@ use syn::parse::Parse;
 use syn::parse::Parser as _;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::LitStr;
 use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
+    accessor: Ident,
     access: Option<TableAccess>,
     scheduled: Option<ScheduledArg>,
-    name: Ident,
+    name: Option<LitStr>,
     indices: Vec<IndexArg>,
 }
 
@@ -45,17 +47,23 @@ struct ScheduledArg {
 }
 
 struct IndexArg {
-    name: Ident,
+    accessor: Ident,
+    name: Option<LitStr>,
     is_unique: bool,
     kind: IndexType,
 }
 
 impl IndexArg {
-    fn new(name: Ident, kind: IndexType) -> Self {
+    fn new(accessor: Ident, kind: IndexType, name: Option<LitStr>) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
-        Self { name, is_unique, kind }
+        Self {
+            accessor,
+            is_unique,
+            kind,
+            name,
+        }
     }
 }
 
@@ -70,6 +78,7 @@ impl TableArgs {
         let mut access = None;
         let mut scheduled = None;
         let mut name = None;
+        let mut accessor: Option<Ident> = None;
         let mut indices = Vec::new();
         syn::meta::parser(|meta| {
             match_meta!(match meta {
@@ -86,6 +95,11 @@ impl TableArgs {
                     let value = meta.value()?;
                     name = Some(value.parse()?);
                 }
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
+                    let value = meta.value()?;
+                    accessor = Some(value.parse()?);
+                }
                 sym::index => indices.push(IndexArg::parse_meta(meta)?),
                 sym::scheduled => {
                     check_duplicate(&scheduled, &meta)?;
@@ -95,15 +109,17 @@ impl TableArgs {
             Ok(())
         })
         .parse2(input)?;
-        let name = name.ok_or_else(|| {
+        let accessor = accessor.ok_or_else(|| {
             let table = struct_ident.to_string().to_snake_case();
             syn::Error::new(
                 Span::call_site(),
-                format_args!("must specify table name, e.g. `#[spacetimedb::table(name = {table})]"),
+                format!("must specify table accessor, e.g. `#[spacetimedb::table(accessor = {table})]"),
             )
         })?;
+
         Ok(TableArgs {
             access,
+            accessor,
             scheduled,
             name,
             indices,
@@ -152,14 +168,20 @@ impl ScheduledArg {
 
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
+        let mut accessor = None;
         let mut name = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
             match_meta!(match meta {
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
+                    accessor = Some(meta.value()?.parse()?);
+                }
                 sym::name => {
                     check_duplicate(&name, &meta)?;
-                    name = Some(meta.value()?.parse()?);
+                    let value = meta.value()?;
+                    name = Some(value.parse()?);
                 }
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
@@ -176,7 +198,7 @@ impl IndexArg {
             });
             Ok(())
         })?;
-        let name = name.ok_or_else(|| meta.error("missing index name, e.g. name = my_index"))?;
+        let accessor = accessor.ok_or_else(|| meta.error("missing index accessor, e.g. accessor = my_index"))?;
         let kind = algo.ok_or_else(|| {
             meta.error(
                 "missing index algorithm, e.g., `btree(columns = [col1, col2])`, \
@@ -184,7 +206,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(name, kind))
+        Ok(IndexArg::new(accessor, kind, name))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -244,6 +266,9 @@ impl IndexArg {
     /// Parses an inline `#[index(btree)]`, `#[index(hash)]`, or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
+
+        let mut accessor: Option<Ident> = None;
+        let mut name: Option<LitStr> = None;
         attr.parse_nested_meta(|meta| {
             match_meta!(match meta {
                 sym::btree => {
@@ -262,13 +287,24 @@ impl IndexArg {
                     check_duplicate_msg(&kind, &meta, "index type specified twice")?;
                     kind = Some(IndexType::Direct { column: field.clone() })
                 }
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
+                    accessor = Some(meta.value()?.parse()?);
+                }
+                sym::name => {
+                    check_duplicate(&name, &meta)?;
+                    name = Some(meta.value()?.parse()?);
+                }
             });
             Ok(())
         })?;
         let kind = kind
             .ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `direct`)"))?;
-        let name = field.clone();
-        Ok(IndexArg::new(name, kind))
+
+        // Default accessor = field name if not provided
+        let accessor = accessor.unwrap_or_else(|| field.clone());
+
+        Ok(IndexArg::new(accessor, kind, name))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -288,26 +324,27 @@ impl IndexArg {
                 if !self.is_unique {
                     return Err(syn::Error::new(
                         column.span(),
-                        "a direct index must be paired with a `#[unique] constraint",
+                        "a direct index must be paired with a `#[unique]` constraint",
                     ));
                 }
 
                 (ValidatedIndexType::Direct { col }, "direct")
             }
         };
-        // See crates/schema/src/validate/v9.rs for the format of index names.
-        // It's slightly unnerving that we just trust that component to generate this format correctly,
-        // but what can you do.
-        let cols = kind.columns();
-        let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
-        let cols = cols.join("_");
-        let index_name = format!("{table_name}_{cols}_idx_{kind_str}");
-
         Ok(ValidatedIndex {
             is_unique: self.is_unique,
-            index_name,
-            accessor_name: &self.name,
+            index_name: self.name.clone().map(|n| n.value()).unwrap_or_else(|| {
+                // See crates/schema/src/validate/v9.rs for the format of index names.
+                // It's slightly unnerving that we just trust that component to generate this format correctly,
+                // but what can you do.
+                let cols = kind.columns();
+                let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
+                let cols = cols.join("_");
+                format!("{table_name}_{cols}_idx_{kind_str}")
+            }),
+            accessor_name: &self.accessor,
             kind,
+            is_explicitly_named: self.name.is_some(),
         })
     }
 }
@@ -366,6 +403,7 @@ struct ValidatedIndex<'a> {
     accessor_name: &'a Ident,
     is_unique: bool,
     kind: ValidatedIndexType<'a>,
+    is_explicitly_named: bool,
 }
 
 enum ValidatedIndexType<'a> {
@@ -595,6 +633,7 @@ struct Column<'a> {
     ident: &'a syn::Ident,
     ty: &'a syn::Type,
     default_value: Option<syn::Expr>,
+    explicit_name: Option<LitStr>,
 }
 
 fn try_find_column<'a, 'b, T: ?Sized>(cols: &'a [Column<'b>], name: &T) -> Option<&'a Column<'b>>
@@ -609,11 +648,27 @@ fn find_column<'a, 'b>(cols: &'a [Column<'b>], name: &Ident) -> syn::Result<&'a 
 }
 
 enum ColumnAttr {
-    Unique(Span),
-    AutoInc(Span),
-    PrimaryKey(Span),
+    Unique(UniqueAttr),
+    AutoInc(AutoIncAttr),
+    PrimaryKey(PrimaryKeyAttr),
     Index(IndexArg),
     Default(syn::Expr, Span),
+    Name(LitStr),
+}
+
+struct UniqueAttr {
+    span: Span,
+    name: Option<LitStr>,
+}
+
+struct AutoIncAttr {
+    span: Span,
+    name: Option<LitStr>,
+}
+
+struct PrimaryKeyAttr {
+    span: Span,
+    name: Option<LitStr>,
 }
 
 impl ColumnAttr {
@@ -625,20 +680,106 @@ impl ColumnAttr {
             let index = IndexArg::parse_index_attr(field_ident, attr)?;
             Some(ColumnAttr::Index(index))
         } else if ident == sym::unique {
-            attr.meta.require_path_only()?;
-            Some(ColumnAttr::Unique(ident.span()))
+            let unique_attr = parse_unique_attr(attr, ident)?;
+            Some(ColumnAttr::Unique(unique_attr))
         } else if ident == sym::auto_inc {
-            attr.meta.require_path_only()?;
-            Some(ColumnAttr::AutoInc(ident.span()))
+            let autoinc_attr = parse_autoinc_attr(attr, ident)?;
+            Some(ColumnAttr::AutoInc(autoinc_attr))
         } else if ident == sym::primary_key {
-            attr.meta.require_path_only()?;
-            Some(ColumnAttr::PrimaryKey(ident.span()))
+            let pk_attr = parse_primary_key_attr(attr, ident)?;
+            Some(ColumnAttr::PrimaryKey(pk_attr))
         } else if ident == sym::default {
             Some(parse_default_attr(attr, ident)?)
+        } else if ident == sym::name {
+            Some(parse_name_attr(attr)?)
         } else {
             None
         })
     }
+}
+
+fn parse_unique_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<UniqueAttr> {
+    let mut name = None;
+
+    // Try to parse as path-only first
+    if attr.meta.require_path_only().is_ok() {
+        return Ok(UniqueAttr {
+            span: ident.span(),
+            name: None,
+        });
+    }
+
+    // Otherwise parse nested meta
+    attr.parse_nested_meta(|meta| {
+        match_meta!(match meta {
+            sym::name => {
+                check_duplicate(&name, &meta)?;
+                name = Some(meta.value()?.parse()?);
+            }
+        });
+        Ok(())
+    })?;
+
+    Ok(UniqueAttr {
+        span: ident.span(),
+        name,
+    })
+}
+
+fn parse_autoinc_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<AutoIncAttr> {
+    let mut name = None;
+
+    // Try to parse as path-only first
+    if attr.meta.require_path_only().is_ok() {
+        return Ok(AutoIncAttr {
+            span: ident.span(),
+            name: None,
+        });
+    }
+
+    // Otherwise parse nested meta
+    attr.parse_nested_meta(|meta| {
+        match_meta!(match meta {
+            sym::name => {
+                check_duplicate(&name, &meta)?;
+                name = Some(meta.value()?.parse()?);
+            }
+        });
+        Ok(())
+    })?;
+
+    Ok(AutoIncAttr {
+        span: ident.span(),
+        name,
+    })
+}
+
+fn parse_primary_key_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<PrimaryKeyAttr> {
+    let mut name = None;
+
+    // Try to parse as path-only first
+    if attr.meta.require_path_only().is_ok() {
+        return Ok(PrimaryKeyAttr {
+            span: ident.span(),
+            name: None,
+        });
+    }
+
+    // Otherwise parse nested meta
+    attr.parse_nested_meta(|meta| {
+        match_meta!(match meta {
+            sym::name => {
+                check_duplicate(&name, &meta)?;
+                name = Some(meta.value()?.parse()?);
+            }
+        });
+        Ok(())
+    })?;
+
+    Ok(PrimaryKeyAttr {
+        span: ident.span(),
+        name,
+    })
 }
 
 fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<ColumnAttr> {
@@ -652,6 +793,11 @@ fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<Colum
     ))
 }
 
+fn parse_name_attr(attr: &syn::Attribute) -> syn::Result<ColumnAttr> {
+    let name: LitStr = attr.parse_args()?;
+    Ok(ColumnAttr::Name(name))
+}
+
 use std::collections::HashSet;
 use std::sync::Mutex;
 
@@ -663,8 +809,113 @@ static GENERATED_STRUCTS: std::sync::LazyLock<Mutex<HashSet<String>>> =
 
 fn is_first_appearance(struct_name: &str) -> bool {
     let mut set = GENERATED_STRUCTS.lock().expect("mutex poisoned");
-
     set.insert(struct_name.to_string())
+}
+
+fn generate_explicit_names_impl(
+    table_name: &str,
+    tablehandle_ident: &Ident,
+    explicit_table_name: &Option<&LitStr>,
+    columns: &[Column<'_>],
+    indices: &[ValidatedIndex<'_>],
+    unique_columns_with_names: &[(Column<'_>, Option<LitStr>)],
+    sequenced_columns_with_names: &[(Column<'_>, Option<LitStr>)],
+    primary_key_column: &Option<Column<'_>>,
+    primary_key_name: &Option<LitStr>,
+) -> TokenStream {
+    let mut explicit_names_body = Vec::new();
+
+    // Table name
+    if let Some(explicit_table_name) = explicit_table_name {
+        explicit_names_body.push(quote! {
+            names.push(RawExplicitName {
+                context: ExplicitNameContext::table(#table_name),
+                name: #explicit_table_name.to_string(),
+            });
+        });
+    }
+
+    // Column names
+    for col in columns {
+        if let Some(col_name) = &col.explicit_name {
+            let col_id = col.index as u32;
+            explicit_names_body.push(quote! {
+                names.push(RawExplicitName {
+                    context: ExplicitNameContext::column(
+                        #table_name,
+                        #col_id
+                    ),
+                    name: #col_name.to_string(),
+                });
+            });
+        }
+    }
+
+    // Index names
+    for index in indices.iter() {
+        if index.is_explicitly_named {
+            let accessor = index.accessor_name.to_string();
+            let index_name = &index.index_name;
+            explicit_names_body.push(quote! {
+                names.push(RawExplicitName {
+                    context: ExplicitNameContext::index(#accessor),
+                    name: #index_name.to_string(),
+                });
+            });
+        }
+    }
+
+    // Primary key constraint
+    if let (Some(_), Some(pk_name)) = (primary_key_column, primary_key_name) {
+        let pk_constraint_name = format!("{}_pkey", table_name);
+        explicit_names_body.push(quote! {
+            names.push(RawExplicitName {
+                context: ExplicitNameContext::constraint(#pk_constraint_name),
+                name: #pk_name.to_string(),
+            });
+        });
+    }
+
+    // Unique constraints
+    for (col, explicit_name) in unique_columns_with_names {
+        if let Some(name) = explicit_name {
+            let col_name = col.ident.to_string();
+            let constraint_name = format!("{}_{}_key", table_name, col_name);
+            explicit_names_body.push(quote! {
+                names.push(RawExplicitName {
+                    context: ExplicitNameContext::constraint(#constraint_name),
+                    name: #name.to_string(),
+                });
+            });
+        }
+    }
+
+    // Sequence names
+    for (col, explicit_name) in sequenced_columns_with_names {
+        if let Some(name) = explicit_name {
+            let col_name = col.ident.to_string();
+            let sequence_name = format!("{}_{}_seq", table_name, col_name);
+            explicit_names_body.push(quote! {
+                names.push(RawExplicitName {
+                    context: ExplicitNameContext::sequence(#sequence_name),
+                    name: #name.to_string(),
+                });
+            });
+        }
+    }
+
+    quote! {
+        use spacetimedb::spacetimedb_lib::ExplicitNameContext;
+        use spacetimedb::spacetimedb_lib::ExplicitName as RawExplicitName;
+
+        impl spacetimedb::rt::ExplicitNames for #tablehandle_ident {
+            fn explicit_names() -> Vec<RawExplicitName> {
+                let mut names = Vec::new();
+                #(#explicit_names_body)*
+                names
+            }
+        }
+    }
 }
 
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -672,12 +923,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
-    let table_ident = &args.name;
+    let table_ident = &args.accessor;
     let view_trait_ident = format_ident!("{}__view", table_ident);
     let query_trait_ident = format_ident!("{}__query", table_ident);
     let query_cols_struct = format_ident!("{}Cols", original_struct_ident);
     let query_ix_cols_struct = format_ident!("{}IxCols", original_struct_ident);
     let table_name = table_ident.unraw().to_string();
+    let explicit_table_name = args.name.as_ref();
     let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
@@ -712,6 +964,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let mut sequenced_columns = vec![];
     let mut primary_key_column = None;
 
+    // Track explicit names for constraint and sequence generation
+    let mut unique_constraint_names: Vec<Option<LitStr>> = vec![];
+    let mut autoinc_sequence_names: Vec<Option<LitStr>> = vec![];
+    let mut primary_key_name: Option<LitStr> = None;
+
     for (i, field) in fields.iter().enumerate() {
         let col_num = i as u16;
         let field_ident = field.ident.unwrap();
@@ -720,27 +977,44 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let mut auto_inc = None;
         let mut primary_key = None;
         let mut default_value = None;
+        let mut column_name = None;
+        let mut unique_name = None;
+        let mut autoinc_name = None;
+
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
                 continue;
             };
             match attr {
-                ColumnAttr::Unique(span) => {
-                    check_duplicate(&unique, span)?;
-                    unique = Some(span);
+                ColumnAttr::Unique(unique_attr) => {
+                    check_duplicate(&unique, unique_attr.span)?;
+                    unique = Some(unique_attr.span);
+                    unique_name = unique_attr.name;
                 }
-                ColumnAttr::AutoInc(span) => {
-                    check_duplicate(&auto_inc, span)?;
-                    auto_inc = Some(span);
+                ColumnAttr::AutoInc(autoinc_attr) => {
+                    check_duplicate(&auto_inc, autoinc_attr.span)?;
+                    auto_inc = Some(autoinc_attr.span);
+                    autoinc_name = autoinc_attr.name;
                 }
-                ColumnAttr::PrimaryKey(span) => {
-                    check_duplicate(&primary_key, span)?;
-                    primary_key = Some(span);
+                ColumnAttr::PrimaryKey(pk_attr) => {
+                    check_duplicate(&primary_key, pk_attr.span)?;
+                    primary_key = Some(pk_attr.span);
+                    if primary_key_name.is_some() {
+                        return Err(syn::Error::new(
+                            pk_attr.span,
+                            "cannot specify multiple primary key names",
+                        ));
+                    }
+                    primary_key_name = pk_attr.name;
                 }
                 ColumnAttr::Index(index_arg) => args.indices.push(index_arg),
                 ColumnAttr::Default(expr, span) => {
                     check_duplicate(&default_value, span)?;
                     default_value = Some(expr);
+                }
+                ColumnAttr::Name(name) => {
+                    check_duplicate(&column_name, &name)?;
+                    column_name = Some(name);
                 }
             }
         }
@@ -760,13 +1034,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             vis: field.vis,
             ty: field.ty,
             default_value,
+            explicit_name: column_name,
         };
 
         if unique.is_some() || primary_key.is_some() {
             unique_columns.push(column.clone());
+            if unique.is_some() {
+                unique_constraint_names.push(unique_name);
+            }
         }
         if auto_inc.is_some() {
             sequenced_columns.push(column.clone());
+            autoinc_sequence_names.push(autoinc_name);
         }
         if let Some(span) = primary_key {
             check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
@@ -796,10 +1075,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
         // as it's the safest choice of index for the general case,
         // even if isn't optimal in specific cases.
-        let name = unique_col.ident.clone();
-        let columns = vec![name.clone()];
+        let accessor = unique_col.ident.clone();
+        let columns = vec![accessor.clone()];
         args.indices.push(IndexArg {
-            name,
+            accessor,
+            name: None,
             is_unique: true,
             kind: IndexType::BTree { columns },
         })
@@ -908,7 +1188,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                              `scheduled(my_reducer, at = custom_scheduled_at)`",
                 )
             })?;
-            let primary_key_column = primary_key_column.ok_or_else(|| {
+            let primary_key_column = primary_key_column.clone().ok_or_else(|| {
                 syn::Error::new(
                     sched.span,
                     "scheduled tables must have a `#[primary_key] #[auto_inc] scheduled_id: u64` column",
@@ -971,11 +1251,37 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
             const SEQUENCES: &'static [u16] = &[#(#sequence_col_ids),*];
             #(const SCHEDULE: Option<spacetimedb::table::ScheduleDesc<'static>> = Some(#schedule);)*
-
             #table_id_from_name_func
             #default_fn
         }
     };
+
+    // Prepare unique columns with their explicit names
+    let unique_columns_with_names: Vec<_> = unique_columns
+        .iter()
+        .zip(&unique_constraint_names)
+        .map(|(col, name)| (col.clone(), name.clone()))
+        .collect();
+
+    // Prepare sequenced columns with their explicit names
+    let sequenced_columns_with_names: Vec<_> = sequenced_columns
+        .iter()
+        .zip(&autoinc_sequence_names)
+        .map(|(col, name)| (col.clone(), name.clone()))
+        .collect();
+
+    // Generate ExplicitNames trait implementation
+    let explicit_names_impl = generate_explicit_names_impl(
+        &table_name,
+        &tablehandle_ident,
+        &explicit_table_name,
+        &columns,
+        &indices,
+        &unique_columns_with_names,
+        &sequenced_columns_with_names,
+        &primary_key_column,
+        &primary_key_name,
+    );
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
 
@@ -1135,6 +1441,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
 
             #tabletype_impl
+
+            #explicit_names_impl
 
             #[allow(non_camel_case_types)]
             mod __indices {

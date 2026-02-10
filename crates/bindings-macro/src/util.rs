@@ -1,7 +1,8 @@
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
 use syn::parse::Parse;
-use syn::Ident;
+use syn::spanned::Spanned;
+use syn::{Attribute, Ident, LitStr};
 
 /// Parses `item`, passing it and `args` to `f`,
 /// which should return only whats newly added, excluding the `item`.
@@ -46,6 +47,18 @@ impl ErrorSource for Span {
 impl ErrorSource for &syn::meta::ParseNestedMeta<'_> {
     fn error(self, msg: impl std::fmt::Display) -> syn::Error {
         self.error(msg)
+    }
+}
+
+impl ErrorSource for &syn::Attribute {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
+        syn::Error::new(self.span(), msg)
+    }
+}
+
+impl ErrorSource for &syn::LitStr {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
+        syn::Error::new(self.span(), msg)
     }
 }
 
@@ -109,3 +122,5 @@ macro_rules! match_meta {
     };
 }
 pub(crate) use match_meta;
+
+use crate::sym;

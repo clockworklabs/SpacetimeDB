@@ -7,13 +7,15 @@ use syn::punctuated::Pair;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token};
 
+use crate::reducer::extract_name_attr;
 use crate::sym;
 use crate::util::{check_duplicate, match_meta};
 
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,
     pub generics: &'a syn::Generics,
-    pub name: LitStr,
+    pub accessor: LitStr,
+    pub explicit_name: Option<String>,
     pub krate: TokenStream,
     // may want to use in the future
     #[allow(unused)]
@@ -32,14 +34,16 @@ pub(crate) enum SatsTypeData<'a> {
 pub(crate) struct SatsField<'a> {
     pub ident: Option<&'a syn::Ident>,
     pub vis: &'a syn::Visibility,
-    pub name: Option<String>,
+    pub accessor: Option<String>,
+    pub explicit_name: Option<String>,
     pub ty: &'a syn::Type,
     pub original_attrs: &'a [syn::Attribute],
 }
 
 pub(crate) struct SatsVariant<'a> {
     pub ident: &'a syn::Ident,
-    pub name: String,
+    pub accessor: String,
+    pub explicit_name: Option<String>,
     pub ty: Option<&'a syn::Type>,
     pub member: Option<syn::Member>,
     // may want to use in the future
@@ -53,27 +57,37 @@ pub(crate) fn sats_type_from_derive(
 ) -> syn::Result<SatsType<'_>> {
     let data = match &input.data {
         syn::Data::Struct(struc) => {
-            let fields = struc.fields.iter().map(|field| SatsField {
-                ident: field.ident.as_ref(),
-                vis: &field.vis,
-                name: field.ident.as_ref().map(syn::Ident::to_string),
-                ty: &field.ty,
-                original_attrs: &field.attrs,
+            let fields = struc.fields.iter().map(|field| {
+                let explicit_name = extract_name_attr(&field.attrs)?;
+                let accessor = field.ident.as_ref().map(syn::Ident::to_string);
+                Ok(SatsField {
+                    ident: field.ident.as_ref(),
+                    vis: &field.vis,
+                    accessor,
+                    explicit_name,
+                    ty: &field.ty,
+                    original_attrs: &field.attrs,
+                })
             });
-            SatsTypeData::Product(fields.collect())
+            SatsTypeData::Product(fields.collect::<syn::Result<_>>()?)
         }
         syn::Data::Enum(enu) => {
             let variants = enu.variants.iter().map(|var| {
                 let (member, ty) = variant_data(var)?.unzip();
+
+                let explicit_name = extract_name_attr(&var.attrs)?;
+                let accessor = var.ident.to_string();
+
                 Ok(SatsVariant {
                     ident: &var.ident,
-                    name: var.ident.to_string(),
+                    accessor,
+                    explicit_name,
                     ty,
                     member,
                     original_attrs: &var.attrs,
                 })
             });
-            SatsTypeData::Sum(variants.collect::<syn::Result<Vec<_>>>()?)
+            SatsTypeData::Sum(variants.collect::<syn::Result<_>>()?)
         }
         syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     };
@@ -98,7 +112,7 @@ pub(crate) fn extract_sats_type<'a>(
     data: SatsTypeData<'a>,
     crate_fallback: TokenStream,
 ) -> syn::Result<SatsType<'a>> {
-    let mut name = None;
+    let mut explicit_name = None;
     let mut krate = None;
     for attr in attrs {
         if attr.path() != sym::sats {
@@ -113,24 +127,25 @@ pub(crate) fn extract_sats_type<'a>(
                     krate = Some(v.into_token_stream());
                 }
                 sym::name => {
-                    check_duplicate(&name, &meta)?;
+                    check_duplicate(&explicit_name, &meta)?;
                     let value = meta.value()?;
                     let v = value.parse::<LitStr>()?;
-                    name = Some(v);
+                    explicit_name = Some(v.value());
                 }
             });
             Ok(())
         })?;
     }
     let krate = krate.unwrap_or(crate_fallback);
-    let name = name.unwrap_or_else(|| crate::util::ident_to_litstr(ident));
+    let accessor = crate::util::ident_to_litstr(ident);
 
     let is_repr_c = is_repr_c(attrs);
 
     Ok(SatsType {
         ident,
         generics,
-        name,
+        accessor,
+        explicit_name,
         krate,
         original_attrs: attrs,
         data,
@@ -139,7 +154,7 @@ pub(crate) fn extract_sats_type<'a>(
 }
 
 pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
-    let ty_name = &ty.name;
+    let ty_name = &ty.accessor;
     let name = &ty.ident;
     let krate = &ty.krate;
 
@@ -147,7 +162,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     let typ = match &ty.data {
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
-                let field_name = match &field.name {
+                let field_name = match &field.accessor {
                     Some(name) => quote!(Some(#name)),
                     None => quote!(None),
                 };
@@ -176,7 +191,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
                 elems: Default::default(),
             });
             let variants = variants.iter().map(|var| {
-                let variant_name = &var.name;
+                let variant_name = &var.accessor;
                 let ty = var.ty.unwrap_or(&unit);
                 quote!((
                     #variant_name,
@@ -323,7 +338,7 @@ fn extract_repr_c_primitive<'a>(ty: &'a SatsType) -> Option<Vec<&'a syn::Ident>>
 }
 
 pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
-    let (name, tuple_name) = (&ty.ident, &ty.name);
+    let (name, tuple_name) = (&ty.ident, &ty.accessor);
     let spacetimedb_lib = &ty.krate;
     let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
 
@@ -381,7 +396,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
             let n_fields = fields.len();
 
             let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
-            let field_strings = fields.iter().map(|f| f.name.as_deref().unwrap()).collect::<Vec<_>>();
+            let field_strings = fields
+                .iter()
+                .map(|f| f.accessor.as_deref().unwrap())
+                .collect::<Vec<_>>();
             let field_types = fields.iter().map(|f| &f.ty);
             let field_types2 = field_types.clone();
             quote! {
@@ -470,7 +488,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
             }
         }
         SatsTypeData::Sum(variants) => {
-            let variant_names = variants.iter().map(|var| &*var.name).collect::<Vec<_>>();
+            let variant_names = variants.iter().map(|var| &*var.accessor).collect::<Vec<_>>();
             let variant_idents = variants.iter().map(|var| var.ident).collect::<Vec<_>>();
             let tags = 0u8..;
             let arms = variants.iter().map(|var| {
@@ -597,7 +615,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
 
             let fieldnames = fields.iter().map(|field| field.ident.unwrap());
             let tys = fields.iter().map(|f| &f.ty);
-            let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
+            let fieldnamestrings = fields.iter().map(|field| field.accessor.as_ref().unwrap());
             let nfields = fields.len();
             quote! {
                 let mut __prod = __serializer.serialize_named_product(#nfields)?;
@@ -607,7 +625,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
         }
         SatsTypeData::Sum(variants) => {
             let arms = variants.iter().enumerate().map(|(i, var)| {
-                let (name,name_str) = (var.ident, &var.name);
+                let (name,name_str) = (var.ident, &var.accessor);
                 let tag = i as u8;
                 if let (Some(member), Some(ty)) = (&var.member, var.ty) {
                     quote_spanned! {ty.span()=>

@@ -82,7 +82,111 @@ pub enum RawModuleDefV10Section {
     /// V10 stores lifecycle-to-reducer mappings separately.
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
 
-    RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
+    RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables
+
+    /// Specifies how identifiers should be converted when interpreting module definitions.
+    CaseConversionPolicy(CaseConversionPolicy),
+
+    ExplicitNameOverride(Vec<ExplicitName>),
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct ColumnCtx {
+    pub table: RawIdentifier,
+    pub column_id: u32,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct FunctionArgCtx {
+    pub reducer: RawIdentifier,
+    pub param_idx: u16,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct TypeCtx {
+    pub type_ref: AlgebraicTypeRef,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct TypeVariantCtx {
+    pub type_ref: AlgebraicTypeRef,
+    pub tag: u16,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[non_exhaustive]
+pub enum ExplicitNameContext {
+    Table(RawIdentifier),
+    Column(ColumnCtx),
+    Function(RawIdentifier),
+    FunctionArg(FunctionArgCtx),
+    Index(RawIdentifier),
+    Constraint(RawIdentifier),
+    Sequence(RawIdentifier),
+    Type(TypeCtx),
+    TypeEnumVariant(TypeVariantCtx),
+}
+
+impl ExplicitNameContext {
+    pub fn table(table: impl Into<RawIdentifier>) -> Self {
+        Self::Table(table.into())
+    }
+
+    pub fn column(table: impl Into<RawIdentifier>, column: u32) -> Self {
+        Self::Column(ColumnCtx {
+            table: table.into(),
+            column_id: column,
+        })
+    }
+
+    pub fn function(func: impl Into<RawIdentifier>) -> Self {
+        Self::Function(func.into())
+    }
+
+    pub fn function_arg(func: impl Into<RawIdentifier>, param_idx: u16) -> Self {
+        Self::FunctionArg(FunctionArgCtx {
+            reducer: func.into(),
+            param_idx,
+        })
+    }
+
+    pub fn index(index: impl Into<RawIdentifier>) -> Self {
+        Self::Index(index.into())
+    }
+
+    pub fn constraint(explicit_name: impl Into<RawIdentifier>) -> Self {
+        Self::Constraint(explicit_name.into())
+    }
+
+    pub fn sequence(sequence: impl Into<RawIdentifier>) -> Self {
+        Self::Sequence(sequence.into())
+    }
+
+    pub fn r#type(type_ref: AlgebraicTypeRef) -> Self {
+        Self::Type(TypeCtx { type_ref })
+    }
+
+    pub fn enum_variant(type_ref: AlgebraicTypeRef, tag: u16) -> Self {
+        Self::TypeEnumVariant(TypeVariantCtx { type_ref, tag })
+    }
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct ExplicitName {
+    pub context: ExplicitNameContext,
+    pub name: String,
 }
 
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
@@ -407,6 +511,22 @@ pub struct RawViewDefV10 {
     pub return_type: AlgebraicType,
 }
 
+/// Specifies how identifiers should be converted when interpreting module definitions.
+#[derive(Debug, Default, Clone, Copy, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub enum CaseConversionPolicy {
+    /// No conversion - source names used verbatim as canonical names
+    None,
+    /// Convert to snake_case (SpacetimeDB default)
+    #[default]
+    SnakeCase,
+    /// Convert to camelCase
+    CamelCase,
+    /// Convert to PascalCase (UpperCamelCase)
+    PascalCase,
+}
+
 impl RawModuleDefV10 {
     /// Get the types section, if present.
     pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
@@ -663,6 +783,47 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
             _ => unreachable!("Just ensured RowLevelSecurity section exists"),
+        }
+    }
+
+    pub fn set_case_conversion_policy(&mut self, policy: CaseConversionPolicy) {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::CaseConversionPolicy(_)))
+            .unwrap_or_else(|| {
+                self.module.sections.push(RawModuleDefV10Section::CaseConversionPolicy(
+                    CaseConversionPolicy::default(),
+                ));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::CaseConversionPolicy(p) => *p = policy,
+            _ => unreachable!("Just ensured CaseConversionPolicy section exists"),
+        }
+    }
+
+    pub fn add_explicit_name(&mut self, context: ExplicitNameContext, name: impl Into<String>) {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ExplicitNameOverride(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::ExplicitNameOverride(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ExplicitNameOverride(names) => names.push(ExplicitName {
+                context,
+                name: name.into(),
+            }),
+            _ => unreachable!("Just ensured ExplicitNameOverride section exists"),
         }
     }
 

@@ -4,7 +4,7 @@ use crate::query_builder::Query;
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
-use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+use spacetimedb_lib::db::raw_def::v10::{ExplicitName as RawExplicitName, RawModuleDefV10Builder};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
@@ -166,6 +166,8 @@ pub trait FnInfo {
 
     /// The function to invoke.
     const INVOKE: Self::Invoke;
+
+    const EXPLICIT_NAME: Option<&'static str> = None;
 
     /// The return type of this function.
     /// Currently only implemented for views.
@@ -1272,4 +1274,8 @@ pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesS
     read_bytes_source_into(source, &mut buf);
     bsatn::from_slice::<T>(&buf)
         .unwrap_or_else(|err| panic!("Failed to BSATN-deserialize `{}`: {err:#?}", std::any::type_name::<T>()))
+}
+
+pub trait ExplicitNames {
+    fn explicit_names() -> Vec<RawExplicitName>;
 }
