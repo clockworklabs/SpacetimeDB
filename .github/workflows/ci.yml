@@ -379,6 +379,9 @@ jobs:
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Set up Python env
         run: |
           test -d venv || python3 -m venv venv
