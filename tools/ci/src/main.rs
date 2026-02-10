@@ -311,6 +311,22 @@ fn main() -> Result<()> {
                 "--all",
                 "--exclude",
                 "spacetimedb-smoketests",
+                "--exclude",
+                "spacetimedb-sdk",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // SDK procedure tests intentionally make localhost HTTP requests.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests",
                 "--",
                 "--test-threads=2",
                 "--skip",

@@ -974,6 +974,8 @@ fn is_blocked_ip(ip: IpAddr) -> bool {
 
 fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
     let [a, b, c, d] = ip.octets();
+    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    let is_loopback = ip.is_loopback() && block_loopback;
 
     // Taken directly from https://doc.rust-lang.org/nightly/src/core/net/ip_addr.rs.html#857-877:
     //
@@ -1011,11 +1013,11 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
 
     ip.is_unspecified()
         || ip.is_private()
-        || ip.is_loopback()
         || ip.is_link_local()
         || ip.is_multicast()
         || ip.is_broadcast()
         || ip.is_documentation()
+        || is_loopback
         || is_shared
         || is_benchmarking
         || is_special
@@ -1024,13 +1026,10 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
 
 fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
     let segments = ip.segments();
+    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    let is_loopback = ip.is_loopback() && block_loopback;
 
-    if ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_unique_local()
-        || ip.is_unicast_link_local()
-        || ip.is_multicast()
-    {
+    if ip.is_unspecified() || ip.is_unique_local() || ip.is_unicast_link_local() || ip.is_multicast() || is_loopback {
         return true;
     }
 

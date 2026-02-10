@@ -137,6 +137,9 @@ nix = { workspace = true, features = ["sched"] }
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
 default = ["unindexed_iter_by_col_range_warn"]
+# Test-only escape hatch used by SDK procedure tests that intentionally call `localhost`.
+# Keep this off in production builds.
+allow_loopback_http_for_tests = []
 # Enable timing for wasm ABI calls
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
