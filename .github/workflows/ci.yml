@@ -52,6 +52,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -160,6 +162,8 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -276,6 +280,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -298,12 +304,25 @@ jobs:
         with:
           run_install: true
 
+      # Install cmake and emscripten for C++ module compilation tests.
+      - name: Install cmake and emscripten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript
         run: pnpm build
 
+        # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
-        run: cargo ci test
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo ci test
 
   lints:
     name: Lints
@@ -315,6 +334,8 @@ jobs:
         uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Cache Rust dependencies
@@ -342,6 +363,8 @@ jobs:
       - uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Cache Rust dependencies
@@ -362,6 +385,9 @@ jobs:
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Set up Python env
         run: |
           test -d venv || python3 -m venv venv
@@ -398,6 +424,8 @@ jobs:
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
@@ -472,6 +500,8 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Run Unreal Engine tests
         working-directory: sdks/unreal
         env:
@@ -542,6 +572,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Check for docs change
         run: cargo ci self-docs --check
@@ -594,6 +626,8 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -692,6 +726,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -718,6 +754,8 @@ jobs:
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
+          export CARGO_HOME="$HOME/.cargo"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
@@ -828,6 +866,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -846,6 +886,12 @@ jobs:
       - name: Check v8 outputs
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
           if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
             echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
             cargo clean --release -p v8 || true
@@ -854,6 +900,8 @@ jobs:
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
+          export CARGO_HOME="$HOME/.cargo"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
@@ -1039,6 +1087,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2

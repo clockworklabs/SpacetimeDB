@@ -3,7 +3,6 @@ use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
-use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
 use spacetimedb_commitlog::repo::TxOffset;
 use spacetimedb_durability::DurabilityExited;
@@ -96,7 +95,7 @@ impl From<LockError> for DatabaseError {
     }
 }
 
-#[derive(Error, Debug, EnumAsInner)]
+#[derive(Error, Debug)]
 pub enum DBError {
     #[error("LibError: {0}")]
     Lib(#[from] LibError),
