@@ -6,44 +6,41 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SendMessageArgs {
-    pub text: String,
-}
+pub(super) struct IdentityConnectedArgs {}
 
-impl From<SendMessageArgs> for super::Reducer {
-    fn from(args: SendMessageArgs) -> Self {
-        Self::SendMessage { text: args.text }
+impl From<IdentityConnectedArgs> for super::Reducer {
+    fn from(args: IdentityConnectedArgs) -> Self {
+        Self::IdentityConnected
     }
 }
 
-impl __sdk::InModule for SendMessageArgs {
+impl __sdk::InModule for IdentityConnectedArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `send_message`.
+/// Extension trait for access to the reducer `identity_connected`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait send_message {
-    /// Request that the remote module invoke the reducer `send_message` to run as soon as possible.
+pub trait identity_connected {
+    /// Request that the remote module invoke the reducer `identity_connected` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`send_message:send_message_then`] to run a callback after the reducer completes.
-    fn send_message(&self, text: String) -> __sdk::Result<()> {
-        self.send_message_then(text, |_, _| {})
+    /// /// Use [`identity_connected:identity_connected_then`] to run a callback after the reducer completes.
+    fn identity_connected(&self) -> __sdk::Result<()> {
+        self.identity_connected_then(|_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `send_message` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `identity_connected` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn send_message_then(
+    fn identity_connected_then(
         &self,
-        text: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -51,16 +48,15 @@ pub trait send_message {
     ) -> __sdk::Result<()>;
 }
 
-impl send_message for super::RemoteReducers {
-    fn send_message_then(
+impl identity_connected for super::RemoteReducers {
+    fn identity_connected_then(
         &self,
-        text: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(SendMessageArgs { text }, callback)
+            .invoke_reducer_with_callback(IdentityConnectedArgs {}, callback)
     }
 }
