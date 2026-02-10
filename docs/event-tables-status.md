@@ -2,16 +2,32 @@
 
 Tracking progress against the [event tables proposal](../SpacetimeDBPrivate/proposals/00XX-event-tables.md).
 
+**Branches:**
+- `tyler/impl-event-tables` -- full implementation (rebased on `phoebe/rust-sdk-ws-v2`)
+- `tyler/event-tables-datastore` -- datastore-only subset (off `master`, PR [#4251](https://github.com/clockworklabs/SpacetimeDB/pull/4251))
+
 ## Implemented
 
 ### Server: Module-side (`#[table(..., event)]`)
 
 - [x] `event` attribute on `#[table]` macro (`crates/bindings-macro/src/table.rs`)
 - [x] `is_event` field on `TableSchema` propagated through schema validation (`crates/schema/`)
-- [x] `RawModuleDefV10` includes `is_event` in table definitions (`crates/lib/src/db/raw_def/v10.rs`)
+- [x] `RawModuleDefV10` includes `is_event` in table definitions (`crates/lib/src/db/raw_def/v10.rs`). Note: V9 does not support event tables.
 - [x] Event table rows are recorded as inserts in `tx_data` at commit time but NOT merged into committed state (`crates/datastore/src/locking_tx_datastore/committed_state.rs`)
 - [x] Commitlog replay treats event table inserts as noops -- `replay_insert()` returns early when `schema.is_event` (`committed_state.rs`)
 - [x] Event tables function as normal tables during reducer execution (insert/delete/update within a transaction)
+
+### Server: Datastore Unit Tests (PR #4251)
+
+- [x] Insert + delete in same tx cancels out -- no TxData entry, no committed state (`test_event_table_insert_delete_noop`)
+- [x] Update (delete + re-insert) leaves only the final row in TxData, nothing in committed state (`test_event_table_update_only_final_row`)
+- [x] Bare insert records in TxData but not committed state (`test_event_table_insert_records_txdata_not_committed_state`)
+- [x] `replay_insert()` is a no-op for event tables (`test_event_table_replay_ignores_inserts`)
+
+### Server: Migration Validation (PR #4251)
+
+- [x] `ChangeTableEventFlag` error variant in `auto_migrate.rs` prevents changing `is_event` between module versions
+- [x] Tests: non-event -> event and event -> non-event both rejected; same flag accepted (`test_change_event_flag_rejected`, `test_same_event_flag_accepted`)
 
 ### Server: Subscriptions & Query Engine
 
@@ -47,7 +63,6 @@ The proposal's primary motivation is deprecating reducer event callbacks and rep
 - [x] V2 server does not publish `ReducerEvent` messages to clients (commit `fd3ef210f`)
 - [x] V2 codegen does not generate `ctx.reducers.on_<reducer>()` callbacks; replaced with `_then()` pattern for per-call result callbacks
 - [x] `CallReducerFlags` / `NoSuccessNotify` removed from v2 SDK (proposal recommends deprecation)
-- [ ] Document migration path from reducer callbacks to event tables (proposal includes examples in "Reducer Callback Compatibility" section but no standalone migration guide exists)
 
 ### Compile-time Checks (trybuild)
 
@@ -96,7 +111,7 @@ The proposal says event tables MAY be accessible in view functions but cannot re
 These are described in the proposal as expected to work but have no dedicated tests:
 
 - [ ] RLS (Row-Level Security) on event tables -- proposal says RLS should apply with same semantics as non-event tables
-- [ ] Primary key, unique constraints, indexes on event tables -- proposal says these should work
+- [ ] Primary key, unique constraints, indexes on event tables -- proposal says these should work within a single transaction
 - [ ] Sequences and `auto_inc` on event tables -- proposal says these should work
 
 ### Server: Module-side for Other Languages
@@ -110,6 +125,10 @@ These are described in the proposal as expected to work but have no dedicated te
 - [ ] C# SDK: `EventTable` support and client codegen
 - [ ] C++ SDK: `EventTable` support and client codegen
 
+### Documentation
+
+- [ ] Migration guide from reducer callbacks to event tables (proposal includes examples in "Reducer Callback Compatibility" section but no standalone guide exists)
+
 ### Proposal: Future Work Items (not blocking 2.0)
 
 - [ ] `#[table]` attribute on reducer functions (auto-generate event table from reducer args) -- proposal "Reducer Event Table" section
@@ -118,16 +137,14 @@ These are described in the proposal as expected to work but have no dedicated te
 - [ ] TTL tables as generalization of event tables (`ttl = Duration::ZERO`) -- proposal "TTLs, Temporal Filters..." section
 - [ ] Temporal filters -- proposal "TTLs, Temporal Filters..." section
 - [ ] Light mode deprecation (2.0) -- proposal "Light mode deprecation" section
-- [ ] Migration guide from reducer callbacks to event tables
 
 ## Known Issues
 
 ### V2 SDK Test Stability
 
 The broader (non-event-table) SDK test suite has intermittent failures when running on the v2 protocol branches. These manifest as:
-- Server panics at `crates/client-api/src/routes/subscribe.rs:1353` (`try_reclaim().expect("buffer should be unique")`)
-- Test timeouts
-- `STATUS_STACK_BUFFER_OVERRUN` crashes
+- `subscribe_all_select_star` and `fail_reducer` intermittent failures in Rust SDK tests
+- Test timeouts under parallel execution
 
 These are pre-existing issues in the v2 WebSocket implementation, not caused by event tables. The event table tests themselves pass reliably.
 
@@ -141,7 +158,9 @@ These are pre-existing issues in the v2 WebSocket implementation, not caused by 
 |------|------|
 | Table macro | `crates/bindings-macro/src/table.rs` |
 | Schema | `crates/schema/src/schema.rs` (`is_event` field) |
+| Migration validation | `crates/schema/src/auto_migrate.rs` (`ChangeTableEventFlag`) |
 | Committed state | `crates/datastore/src/locking_tx_datastore/committed_state.rs` |
+| Datastore unit tests | `crates/datastore/src/locking_tx_datastore/datastore.rs` |
 | Subscription filtering | `crates/core/src/subscription/subscription.rs` |
 | V1 rejection | `crates/core/src/subscription/module_subscription_actor.rs` |
 | Plan helpers | `crates/core/src/subscription/module_subscription_manager.rs`, `crates/subscription/src/lib.rs` |
