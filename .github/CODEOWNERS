@@ -7,6 +7,8 @@ LICENSE.txt @cloutiertyler
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
 
 /crates/cli/src/ @bfops @cloutiertyler @jdetter
+/tools/ci/ @bfops @cloutiertyler @jdetter
+/.github/ @bfops @jdetter
 
 /crates/sdk/examples/quickstart-chat/ @gefjon
 /modules/quickstart-chat/ @gefjon
