@@ -1,4 +1,4 @@
-/// Regression tests run with a live server.
+///  tests run with a live server.
 /// To run these, run a local SpacetimeDB via `spacetime start`,
 /// then in a separate terminal run `tools~/run-regression-tests.sh PATH_TO_SPACETIMEDB_REPO_CHECKOUT`.
 /// This is done on CI in .github/workflows/test.yml.
@@ -94,6 +94,9 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.ScoresPlayer123Level5().Build())
         .AddQuery(qb => qb.From.User().Build())
         .AddQuery(qb => qb.From.Score().Build())
+        .AddQuery(qb => qb.From.WhereTestView().Build())
+        .AddQuery(qb => qb.From.FindWhereTest().Build())
+        .AddQuery(qb => qb.From.WhereTestQuery().Build())
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -349,6 +352,43 @@ void ValidateWhereSubscription(IRemoteDbContext conn)
     );
 }
 
+void ValidateWhereTestViews(IRemoteDbContext conn)
+{
+    Log.Debug("Checking where_test views...");
+    Debug.Assert(
+        conn.Db.WhereTestView != null,
+        "WhereTestView should not be null"
+    );
+    Debug.Assert(
+        conn.Db.WhereTestView.Count == 1,
+        $"Expected exactly one WhereTestView row, got {conn.Db.WhereTestView.Count}"
+    );
+    var viewRow = conn.Db.WhereTestView.Iter().First();
+    Debug.Assert(viewRow.Id == 2, $"Expected WhereTestView row id=2, got {viewRow.Id}");
+
+    Debug.Assert(
+        conn.Db.WhereTestQuery != null,
+        "WhereTestQuery should not be null"
+    );
+    Debug.Assert(
+        conn.Db.WhereTestQuery.Count == 1,
+        $"Expected exactly one WhereTestQuery row, got {conn.Db.WhereTestQuery.Count}"
+    );
+    var queryRow = conn.Db.WhereTestQuery.Iter().First();
+    Debug.Assert(queryRow.Id == 2, $"Expected WhereTestQuery row id=2, got {queryRow.Id}");
+
+    Debug.Assert(
+        conn.Db.FindWhereTest != null,
+        "FindWhereTest should not be null"
+    );
+    Debug.Assert(
+        conn.Db.FindWhereTest.Count == 1,
+        $"Expected exactly one FindWhereTest row, got {conn.Db.FindWhereTest.Count}"
+    );
+    var anonRow = conn.Db.FindWhereTest.Iter().First();
+    Debug.Assert(anonRow.Id == 3, $"Expected FindWhereTest row id=3, got {anonRow.Id}");
+}
+
 void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
 {
     Log.Debug("Checking typed semijoin subscriptions...");
@@ -380,6 +420,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     applied = true;
 
     ValidateWhereSubscription(context);
+    ValidateWhereTestViews(context);
     ValidateSemijoinSubscriptions(context, context.Identity!.Value);
 
     // Do some operations that alter row state;

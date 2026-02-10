@@ -120,8 +120,20 @@ internal static class PublicTableViewRegressions
         );
     }
 
-    private static string BuildIdEqualsZeroSql() =>
+    private static string BuildPublicTableQuerySql() =>
         MakeTable().Where(cols => cols.Id.Eq(0)).Build().Sql;
+
+    private static string BuildPublicTableViewSql()
+    {
+        var cols = new PublicTableCols("PublicTable");
+        return MakeTable().Where(_ => cols.Id.Eq(0)).Build().Sql;
+    }
+
+    private static string BuildFindPublicTableByIdentitySql()
+    {
+        var table = MakeTable();
+        return table.Where(cols => cols.Id.Eq(0)).Build().Sql;
+    }
 
     /// <summary>
     /// Mirrors Module.PublicTableQuery server view to ensure the generated SQL stays in sync.
@@ -129,7 +141,7 @@ internal static class PublicTableViewRegressions
     [Conditional("DEBUG")]
     public static void ValidatePublicTableQuerySql()
     {
-        var sql = BuildIdEqualsZeroSql();
+        var sql = BuildPublicTableQuerySql();
         Debug.Assert(
             sql == "SELECT * FROM \"PublicTable\" WHERE (\"PublicTable\".\"Id\" = 0)",
             $"Unexpected SQL produced for public_table_query: {sql}"
@@ -142,7 +154,7 @@ internal static class PublicTableViewRegressions
     [Conditional("DEBUG")]
     public static void ValidatePublicTableViewSql()
     {
-        var sql = BuildIdEqualsZeroSql();
+        var sql = BuildPublicTableViewSql();
         Debug.Assert(
             sql == "SELECT * FROM \"PublicTable\" WHERE (\"PublicTable\".\"Id\" = 0)",
             $"Unexpected SQL produced for public_table_view: {sql}"
@@ -155,7 +167,7 @@ internal static class PublicTableViewRegressions
     [Conditional("DEBUG")]
     public static void ValidateFindPublicTableByIdentitySql()
     {
-        var sql = BuildIdEqualsZeroSql();
+        var sql = BuildFindPublicTableByIdentitySql();
         Debug.Assert(
             sql == "SELECT * FROM \"PublicTable\" WHERE (\"PublicTable\".\"Id\" = 0)",
             $"Unexpected SQL produced for find_public_table__by_identity: {sql}"

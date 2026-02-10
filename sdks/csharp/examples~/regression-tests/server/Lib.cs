@@ -54,6 +54,36 @@ public static partial class Module
         public string Name;
     }
 
+    private sealed class WhereTestCols
+    {
+        public Col<WhereTest, uint> Id { get; }
+
+        public WhereTestCols(string tableName)
+        {
+            Id = new Col<WhereTest, uint>(tableName, nameof(WhereTest.Id));
+        }
+    }
+
+    private sealed class WhereTestIxCols
+    {
+        public IxCol<WhereTest, uint> Id { get; }
+
+        public WhereTestIxCols(string tableName)
+        {
+            Id = new IxCol<WhereTest, uint>(tableName, nameof(WhereTest.Id));
+        }
+    }
+
+    private static Table<WhereTest, WhereTestCols, WhereTestIxCols> MakeWhereTestTable()
+    {
+        const string tableName = "where_test";
+        return new Table<WhereTest, WhereTestCols, WhereTestIxCols>(
+            tableName,
+            new WhereTestCols(tableName),
+            new WhereTestIxCols(tableName)
+        );
+    }
+
     [SpacetimeDB.Table(Name = "example_data", Public = true)]
     public partial struct ExampleData
     {
@@ -298,6 +328,24 @@ public static partial class Module
             rows.Add(score);
         }
         return rows;
+    }
+
+    [SpacetimeDB.View(Name = "where_test_view", Public = true)]
+    public static WhereTest? WhereTestView(ViewContext ctx)
+    {
+        return ctx.Db.where_test.Id.Find(2);
+    }
+
+    [SpacetimeDB.View(Name = "where_test_query", Public = true)]
+    public static Query<WhereTest> WhereTestQuery(ViewContext ctx)
+    {
+        return MakeWhereTestTable().Where(cols => cols.Id.Eq(2u)).Build();
+    }
+
+    [SpacetimeDB.View(Name = "find_where_test", Public = true)]
+    public static WhereTest? FindWhereTest(AnonymousViewContext ctx)
+    {
+        return ctx.Db.where_test.Id.Find(3);
     }
 
     [SpacetimeDB.View(Name = "nullable_vec_view", Public = true)]
