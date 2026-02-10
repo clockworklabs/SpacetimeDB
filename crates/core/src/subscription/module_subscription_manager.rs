@@ -1204,10 +1204,30 @@ impl SubscriptionManager {
 
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
+        for (subscription_id, queries) in client_info.v2_subscriptions {
+            for query_hash in queries {
+                let Some(query_state) = self.queries.get_mut(&query_hash) else {
+                    tracing::warn!("Query state not found for query hash: {:?}", query_hash);
+                    continue;
+                };
+                query_state.v2_subscriptions.remove(&subscription_id);
+                if !query_state.has_subscribers() {
+                    queries_to_remove.push(query_hash);
+                    SubscriptionManager::remove_query_from_tables(
+                        &mut self.tables,
+                        &mut self.join_edges,
+                        &mut self.indexes,
+                        &mut self.search_args,
+                        &query_state.query,
+                    );
+                }
+            }
+        }
+        // This loop can be removed once v1 subscriptions are removed.
         for query_hash in client_info.subscription_ref_count.keys() {
             let Some(query_state) = self.queries.get_mut(query_hash) else {
-                tracing::warn!("Query state not found for query hash: {:?}", query_hash);
-                return;
+                // This can happen if they are cliented up in the v2 loop above.
+                continue;
             };
             query_state.subscriptions.remove(client);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
