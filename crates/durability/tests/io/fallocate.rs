@@ -99,7 +99,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             new_segment_rx.borrow_and_update();
             // Write past available space.
             for offset in 0..256 {
-                durability.commit([(offset, txdata.clone()).into()].into());
+                durability.append_tx((offset, txdata.clone()).into());
             }
             // Ensure new segment is created.
             new_segment_rx.changed().await?;
@@ -107,7 +107,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             sleep(Duration::from_millis(5)).await;
             // Durability actor should have crashed, so this should panic.
             info!("trying append on crashed durability");
-            durability.commit([(256, txdata.clone()).into()].into());
+            durability.append_tx((256, txdata.clone()).into());
         }
 
         Ok(())

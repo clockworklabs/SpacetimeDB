@@ -95,12 +95,8 @@ pub type Close = BoxFuture<'static, Option<TxOffset>>;
 ///
 /// NOTE: This is a preliminary definition, still under consideration.
 ///
-/// A durability implementation accepts one or more [Transaction]s to be made
-/// durable via [Durability::commit] in a non-blocking fashion.
-///
-/// A batch of transactions is eventually made durable atomically.
-/// Note that this means that a torn write can render the whole batch
-/// inaccessible, so small batches are usually preferable.
+/// A durability implementation accepts a [Transaction] to be made durable via
+/// the [Durability::append_tx] method in a non-blocking fashion.
 ///
 /// Once a transaction becomes durable, the [DurableOffset] is updated.
 /// What durable means depends on the implementation, informally it can be
@@ -115,6 +111,16 @@ pub trait Durability: Send + Sync {
     /// cannot be made durable immediately.
     ///
     /// Errors may be signalled by panicking.
+    //
+    // TODO: Support batches of txs, i.e. commits.
+    //
+    // The commitlog supports this, but allocation overhead in the durability
+    // API is too high given we don't make any use of it.
+    //
+    // We don't make any use of it because a commit is an atomic unit of storage
+    // (i.e. a torn write will corrupt all transactions contained in it), and it
+    // is very unclear when it is both correct and beneficial to bundle more
+    // than a single transaction into a commit.
     fn append_tx(&self, tx: Transaction<Self::TxData>);
 
     /// Obtain a handle to the [DurableOffset].

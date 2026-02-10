@@ -8,7 +8,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 
 use crate::{
     commit::StoredCommit,
@@ -320,7 +320,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         let writer = &mut self.head;
         let committed = writer.commit(transactions)?;
         if writer.len() >= self.opts.max_segment_size {
-            self.flush().expect("failed to flush segment");
+            self.flush().expect("failed to flush segment upon rotation");
             self.sync();
             self.start_new_segment()?;
         }
@@ -371,7 +371,7 @@ impl<R: Repo, T> Drop for Generic<R, T> {
     fn drop(&mut self) {
         if !self.panicked {
             if let Err(e) = self.flush_and_sync() {
-                warn!("failed to flush on drop: {e:#}");
+                error!("failed to flush on drop: {e:#}");
             }
         }
     }
