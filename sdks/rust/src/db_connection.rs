@@ -379,8 +379,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 let msg = ws::v2::ClientMessage::CallReducer(ws::v2::CallReducer {
                     reducer: reducer_name.into(),
                     args: args.into(),
-                    // TODO(ws-v2): Get a request_id, record it for callbacks, and send it.
-                    request_id: 0,
+                    request_id,
                     flags,
                 });
                 self.send_chan
