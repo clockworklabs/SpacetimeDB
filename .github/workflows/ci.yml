@@ -754,7 +754,7 @@ jobs:
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
-          BIN="${GITHUB_WORKSPACE}/.cargo/bin"
+          BIN="$HOME/.cargo/bin"
           echo "$BIN" >> "$GITHUB_PATH"
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
@@ -900,7 +900,7 @@ jobs:
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
-          BIN="${GITHUB_WORKSPACE}/.cargo/bin"
+          BIN="$HOME/.cargo/bin"
           echo "$BIN" >> "$GITHUB_PATH"
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
