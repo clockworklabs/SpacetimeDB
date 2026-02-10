@@ -874,6 +874,7 @@ const spacetimedb = schema(
   Users,
   IndexedSimpleEnum
 );
+export default spacetimedb;
 
 export const reducers = spacetimedb.exportGroup(
   Object.assign(

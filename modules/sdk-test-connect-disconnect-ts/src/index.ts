@@ -14,6 +14,7 @@ const Disconnected = table(
 );
 
 const spacetimedb = schema(Connected, Disconnected);
+export default spacetimedb;
 
 export const identity_connected = spacetimedb.clientConnected(ctx => {
   ctx.db.connected.insert({ identity: ctx.sender });
