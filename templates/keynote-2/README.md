@@ -11,7 +11,7 @@ npm install
 npm run demo
 ```
 
-The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results comparing your chosen systems (SpacetimeDB and Convex by default, as both are simple to run locally).
+The demo compares SpacetimeDB and Convex by default, since both are easy for anyone to set up and run locally without additional infrastructure. Other systems (Postgres, CockroachDB, SQLite, etc.) are also supported but require more setup. The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results.
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
 
