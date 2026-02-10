@@ -36,7 +36,7 @@ spacetime dev --template browser-ts my-spacetime-app
 
   <Step title="Build the client bindings">
     <StepText>
-      The generated bindings need to be bundled into a JavaScript file that can be loaded in the browser.
+      The generated TypeScript bindings need to be bundled into a JavaScript file that can be loaded in the browser via a script tag.
     </StepText>
     <StepCode>
 ```bash
