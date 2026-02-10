@@ -1232,6 +1232,10 @@ impl __sdk::InModule for Reducer {{
                                     "}),\n",
                                 );
                             }
+                            // Write a catch-all pattern to handle the case where the module defines zero reducers,
+                            // 'cause references are always considered inhabited,
+                            // even references to uninhabited types.
+                            writeln!(out, "_ => unreachable!(),");
                         },
                         "}\n",
                     );

@@ -149,11 +149,6 @@ fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, param
         path.push_str(&cid.to_hex());
     }
 
-    // Specify the `light` mode if requested.
-    if params.light {
-        path.push_str("&light=true");
-    }
-
     // Enable confirmed reads if requested.
     if let Some(confirmed) = params.confirmed {
         path.push_str("&confirmed=");
