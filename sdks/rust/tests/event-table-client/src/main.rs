@@ -190,11 +190,13 @@ fn exec_events_dont_persist() {
                     }
                 });
 
+                ctx.reducers.emit_test_event("hello".to_string(), 42).unwrap();
+
                 // After the noop reducer completes, the insert count should
                 // still be 1 from the emit_test_event call — no stale events.
-                ctx.reducers.on_noop({
+                ctx.reducers.noop_then({
                     let insert_count = insert_count.clone();
-                    move |_ctx| {
+                    move |_ctx, _result| {
                         let set_result = noop_result.lock().unwrap().take().unwrap();
                         let count = insert_count.load(Ordering::SeqCst);
                         if count == 1 {
@@ -205,10 +207,7 @@ fn exec_events_dont_persist() {
                             )));
                         }
                     }
-                });
-
-                ctx.reducers.emit_test_event("hello".to_string(), 42).unwrap();
-                ctx.reducers.noop().unwrap();
+                }).unwrap();
             });
         }
     });
