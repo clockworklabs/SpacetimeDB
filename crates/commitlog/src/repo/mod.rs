@@ -214,7 +214,7 @@ pub fn create_segment_writer<R: Repo>(
             records: Vec::new(),
             epoch,
         },
-        inner: io::BufWriter::new(storage),
+        inner: io::BufWriter::with_capacity(opts.write_buffer_size, storage),
 
         min_tx_offset: offset,
         bytes_written: Header::LEN as u64,
