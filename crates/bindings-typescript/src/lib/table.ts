@@ -32,6 +32,7 @@ import type {
   ValidateColumnMetadata,
 } from './type_util';
 import { toPascalCase } from './util';
+import BinaryWriter from './binary_writer';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -365,9 +366,11 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     }
 
     if (meta.defaultValue) {
+      const writer = new BinaryWriter(16);
+      builder.serialize(writer, meta.defaultValue);
       defaultValues.push({
         colId: colIds.get(name)!,
-        value: meta.defaultValue,
+        value: writer.getBuffer(),
       });
     }
 
