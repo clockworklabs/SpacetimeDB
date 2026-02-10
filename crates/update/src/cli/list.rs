@@ -71,7 +71,7 @@ impl List {
         };
 
         // Determine whether the latest version is newer than any installed version.
-        let newest_installed = sorted_versions.last().and_then(|v| semver::Version::parse(v).ok());
+        let newest_installed = sorted_versions.first().and_then(|v| semver::Version::parse(v).ok());
 
         let show_latest = match (&latest, &newest_installed) {
             (Some(lat), Some(cur)) if lat > cur => Some(lat.to_string()),
