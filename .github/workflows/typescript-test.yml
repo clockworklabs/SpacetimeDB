@@ -104,14 +104,12 @@ jobs:
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
-          BIN="${GITHUB_WORKSPACE}/bin"
-          mkdir -p "$BIN"
+          BIN="${GITHUB_WORKSPACE}/.cargo/bin"
           echo "$BIN" >> "$GITHUB_PATH"
-          export CARGO_HOME="${GITHUB_WORKSPACE}/.cargo"
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf ${GITHUB_WORKSPACE}/.cargo/bin/spacetimedb-cli "$BIN"/spacetime
+          ln -sf "$BIN/spacetimedb-cli" "$BIN/spacetime"
           # Clear any existing information
           spacetime server clear -y
 
