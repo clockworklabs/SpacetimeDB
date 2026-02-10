@@ -154,13 +154,7 @@ impl ArtifactType {
 
 pub(super) async fn fetch_latest_version(client: &reqwest::Client) -> anyhow::Result<semver::Version> {
     let url = format!("{}/latest", releases_url());
-    let release: Release = client
-        .get(url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    let release: Release = client.get(url).send().await?.error_for_status()?.json().await?;
     release.version().context("Could not parse latest version number")
 }
 
