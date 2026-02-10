@@ -472,7 +472,7 @@ fn user_input_direct(ctx: &DbConnection) {
 "#,
             connected_str: "connected",
         }
-    }    
+    }
 }
 
 /// Quickstart test runner.
