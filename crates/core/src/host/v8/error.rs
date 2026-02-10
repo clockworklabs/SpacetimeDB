@@ -646,7 +646,6 @@ pub(super) fn catch_exception<'scope, T>(
     scope: &mut PinScope<'scope, '_>,
     body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
 ) -> Result<T, ErrorOrException<JsError>> {
-    tc_scope!(scope, scope);
     catch_exception_continue(scope, body).map_err(|(e, _)| e)
 }
 

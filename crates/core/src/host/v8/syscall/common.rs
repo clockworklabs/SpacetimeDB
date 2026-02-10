@@ -1,4 +1,5 @@
 use super::super::{
+    call_recv_fun,
     de::deserialize_js,
     de::scratch_buf,
     env_on_isolate,
@@ -50,7 +51,7 @@ pub fn call_call_procedure(
     let args = &[procedure_id, sender, connection_id, timestamp, procedure_args];
 
     // Call the function.
-    let ret = fun.call(scope, hooks.recv, args).ok_or_else(exception_already_thrown)?;
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
 
     // Deserialize the user result.
     let ret =
@@ -66,10 +67,7 @@ pub fn call_describe_module(
     hooks: &HookFunctions<'_>,
 ) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     // Call the function.
-    let raw_mod_js = hooks
-        .describe_module
-        .call(scope, hooks.recv, &[])
-        .ok_or_else(exception_already_thrown)?;
+    let raw_mod_js = call_recv_fun(scope, hooks.describe_module, hooks.recv, &[])?;
 
     // Deserialize the raw module.
     let raw_mod = cast!(

@@ -114,6 +114,10 @@ pub(super) fn call_call_view_anon(
 
 pub use self::common::{call_call_procedure, call_describe_module};
 
+/// Get the hooks for the module.
+///
+/// May use the module's exports if it's a v2+ module, or the registered global
+/// hooks if it's v1 module.
 pub(super) fn get_hooks<'scope>(
     scope: &mut PinScope<'scope, '_>,
     exports_obj: Local<'_, v8::Object>,

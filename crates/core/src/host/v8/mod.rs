@@ -512,7 +512,7 @@ fn startup_instance_worker<'scope>(
         // Start-up the user's module.
         let exports_obj = eval_user_module(scope, &program)?;
 
-        // Find the `__call_reducer__` function.
+        // Find the hook functions.
         let hooks =
             get_hooks(scope, exports_obj)?.ok_or_else(|| anyhow::anyhow!("must export schema as default export"))?;
         Ok(hooks)
@@ -581,6 +581,7 @@ async fn spawn_instance_worker(
         let mut isolate = new_isolate();
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
+        // Setup the instance environment.
         let (replica_ctx, scheduler) = match &module_or_mcc {
             Either::Left(module) => (module.replica_ctx(), module.scheduler()),
             Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
@@ -611,7 +612,7 @@ async fn spawn_instance_worker(
             }
         };
 
-        // Setup the instance common and environment.
+        // Setup the instance common.
         let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
@@ -798,7 +799,17 @@ fn call_free_fun<'scope>(
     args: &[Local<'scope, Value>],
 ) -> FnRet<'scope> {
     let receiver = v8::undefined(scope).into();
-    fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
+    call_recv_fun(scope, fun, receiver, args)
+}
+
+/// Calls function `fun` with `recv` and `args`.
+fn call_recv_fun<'scope>(
+    scope: &PinScope<'scope, '_>,
+    fun: Local<'_, Function>,
+    recv: Local<'_, Value>,
+    args: &[Local<'_, Value>],
+) -> FnRet<'scope> {
+    fun.call(scope, recv, args).ok_or_else(exception_already_thrown)
 }
 
 struct V8Instance<'a, 'scope, 'isolate> {

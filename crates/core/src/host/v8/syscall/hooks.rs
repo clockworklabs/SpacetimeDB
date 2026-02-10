@@ -97,6 +97,7 @@ impl HooksInfo {
 /// The actual callable module hook functions and their abi version.
 pub(in super::super) struct HookFunctions<'scope> {
     pub abi: AbiVersion,
+    /// The `this` variable to pass to the hook functions.
     pub recv: Local<'scope, v8::Value>,
     /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
     pub describe_module: Local<'scope, Function>,

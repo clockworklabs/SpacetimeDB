@@ -205,13 +205,14 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
 
     let maj_sys_ver = maj_sys_ver.context(
         "Your module doesn't import the `spacetimedb/server` package at all - \
-         this is likely a mistake, as your module will not be able to do anything",
+         this is likely a mistake, as your module will not be able to interface \
+         with the SpacetimeDB host.",
     )?;
 
     if maj_sys_ver == 2 {
         anyhow::ensure!(
             output_chunk.exports.contains(&"default".into()),
-            "It seems like you haven't exported your schema. You must `export default spacetime;`"
+            "It seems like you haven't exported your schema. You must `export default schema(...);`"
         );
     }
 
