@@ -105,7 +105,6 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme, UriError> {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct WsParams {
     pub compression: ws::common::Compression,
-    pub light: bool,
     /// `Some(true)` to enable confirmed reads for the connection,
     /// `Some(false)` to disable them.
     /// `None` to not set the parameter and let the server choose.
