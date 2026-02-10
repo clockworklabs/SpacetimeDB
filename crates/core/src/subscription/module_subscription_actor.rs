@@ -11,7 +11,7 @@ use crate::client::messages::{
     ProcedureResultMessage, SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage,
     SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
-use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+use crate::client::{ClientActorId, ClientConnectionSender, Protocol, WsVersion};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
@@ -40,9 +40,9 @@ use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_expr::expr::CollectViews;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
+use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_primitives::ArgId;
 use spacetimedb_table::static_assert_size;
 use std::{sync::Arc, time::Instant};
@@ -1547,21 +1547,61 @@ impl ModuleSubscriptions {
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 (read_tx, tx_data, tx_metrics)
             }
-            EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
+            EventStatus::FailedUser(_) | EventStatus::FailedInternal(_) | EventStatus::OutOfEnergy => {
                 // If the transaction failed, we need to rollback the mutable tx.
                 // We don't need to do any subscription updates in this case, so we will exit early.
 
                 let event = Arc::new(event);
                 let tx_offset = Self::rollback_mut_tx(stdb, tx);
                 if let Some(client) = caller {
-                    let message = TransactionUpdateMessage {
-                        event: Some(event.clone()),
-                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
-                    };
+                    match client.config.version {
+                        WsVersion::V1 => {
+                            let message = TransactionUpdateMessage {
+                                event: Some(event.clone()),
+                                database_update: SubscriptionUpdateMessage::default_for_protocol(
+                                    client.config.protocol,
+                                    None,
+                                ),
+                            };
 
-                    let _ =
-                        self.broadcast_queue
-                            .send_client_message_v1(client, Some(from_tx_offset(tx_offset)), message);
+                            let _ = self.broadcast_queue.send_client_message_v1(
+                                client,
+                                Some(from_tx_offset(tx_offset)),
+                                message,
+                            );
+                        }
+                        WsVersion::V2 => {
+                            if let Some(request_id) = event.request_id {
+                                let error = match &event.status {
+                                    EventStatus::FailedUser(err) => err.clone(),
+                                    EventStatus::FailedInternal(err) => err.clone(),
+                                    EventStatus::OutOfEnergy => "reducer ran out of energy".into(),
+                                    EventStatus::Committed(_) => {
+                                        tracing::warn!("Unexpected committed status in reducer failure branch");
+                                        "reducer failed".into()
+                                    }
+                                };
+                                let result = match &event.status {
+                                    EventStatus::FailedUser(_) => ws_v2::ReducerOutcome::Err(
+                                        bsatn::to_vec(&error)
+                                            .expect("failed to bsatn encode reducer error")
+                                            .into(),
+                                    ),
+                                    _ => ws_v2::ReducerOutcome::InternalError(error.into()),
+                                };
+                                let message = ws_v2::ReducerResult {
+                                    request_id,
+                                    timestamp: event.timestamp,
+                                    result,
+                                };
+                                let _ = self.broadcast_queue.send_client_message_v2(
+                                    client,
+                                    None, // This should arguably have a tx_offset, but it shouldn't matter as long as we wait for previous messages to be sent.
+                                    message,
+                                );
+                            }
+                        }
+                    }
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }

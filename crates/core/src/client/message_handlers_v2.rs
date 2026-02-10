@@ -5,7 +5,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use serde::de::Error as _;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
-use spacetimedb_lib::bsatn;
+use spacetimedb_lib::{bsatn, Timestamp};
 use spacetimedb_primitives::ReducerId;
 use std::time::Instant;
 
@@ -69,13 +69,26 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 .request_round_trip
                 .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
                 .observe(timer.elapsed().as_secs_f64());
-            res.map(drop).map_err(|e| {
-                (
-                    Some(reducer),
-                    mod_info.module_def.reducer_full(&**reducer).map(|(id, _)| id),
-                    e.into(),
-                )
-            })
+            match res {
+                Ok(_) => {
+                    // If this was not a success, we would have already sent an error message.
+                    Ok(())
+                }
+                Err(e) => {
+                    let err_msg = format!("{e:#}");
+                    let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                        request_id,
+                        // Maybe we should use the same timestamp that was used for the reducer context, but this is probably fine for now.
+                        timestamp: Timestamp::now(),
+                        result: ws_v2::ReducerOutcome::InternalError(err_msg.into()),
+                    });
+                    // TODO: Should we kill the client here, or does it mean the client is already dead.
+                    if let Err(send_err) = client.send_message(None, server_message) {
+                        log::warn!("Failed to send reducer error to client: {send_err}");
+                    }
+                    Ok(())
+                }
+            }
         }
         ws_v2::ClientMessage::CallProcedure(ws_v2::CallProcedure {
             ref procedure,

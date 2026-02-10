@@ -176,7 +176,7 @@ impl MessageExecutionError {
                 reducer_id: reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },
-            status: EventStatus::Failed(format!("{:#}", err)),
+            status: EventStatus::FailedInternal(format!("{:#}", err)),
             reducer_return_value: None,
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::ZERO,

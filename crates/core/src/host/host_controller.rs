@@ -177,7 +177,9 @@ impl From<&EventStatus> for ReducerOutcome {
     fn from(status: &EventStatus) -> Self {
         match &status {
             EventStatus::Committed(_) => ReducerOutcome::Committed,
-            EventStatus::Failed(e) => ReducerOutcome::Failed(Box::new((&**e).into())),
+            EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => {
+                ReducerOutcome::Failed(Box::new((&**e).into()))
+            }
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
