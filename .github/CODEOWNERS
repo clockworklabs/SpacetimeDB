@@ -8,6 +8,8 @@ LICENSE.txt @cloutiertyler
 
 /crates/cli/src/ @bfops @cloutiertyler @jdetter
 /tools/ci/ @bfops @cloutiertyler @jdetter
+/tools/upgrade-version/ @bfops @jdetter
+/tools/license-check/ @bfops @jdetter
 /.github/ @bfops @jdetter
 
 /crates/sdk/examples/quickstart-chat/ @gefjon
