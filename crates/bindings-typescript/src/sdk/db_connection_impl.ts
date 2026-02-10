@@ -628,9 +628,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       }
       case 'SubscribeApplied': {
         const querySetId = serverMessage.value.querySetId.id;
-        const subscription = this.#subscriptionManager.subscriptions.get(
-          querySetId
-        );
+        const subscription =
+          this.#subscriptionManager.subscriptions.get(querySetId);
         if (!subscription) {
           stdbLogger(
             'error',
@@ -644,10 +643,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           serverMessage.value.rows,
           'insert'
         );
-        const callbacks = this.#applyTableUpdates(
-          tableUpdates,
-          eventContext
-        );
+        const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('applied', subscriptionEventContext);
         for (const callback of callbacks) {
@@ -657,9 +653,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       }
       case 'UnsubscribeApplied': {
         const querySetId = serverMessage.value.querySetId.id;
-        const subscription = this.#subscriptionManager.subscriptions.get(
-          querySetId
-        );
+        const subscription =
+          this.#subscriptionManager.subscriptions.get(querySetId);
         if (!subscription) {
           stdbLogger(
             'error',
@@ -672,10 +667,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const tableUpdates = serverMessage.value.rows
           ? this.#queryRowsToTableUpdates(serverMessage.value.rows, 'delete')
           : [];
-        const callbacks = this.#applyTableUpdates(
-          tableUpdates,
-          eventContext
-        );
+        const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('end', subscriptionEventContext);
         this.#subscriptionManager.subscriptions.delete(querySetId);
@@ -693,9 +685,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           ...eventContext,
           event: error,
         };
-        const subscription = this.#subscriptionManager.subscriptions.get(
-          querySetId
-        );
+        const subscription =
+          this.#subscriptionManager.subscriptions.get(querySetId);
         if (subscription) {
           subscription.emitter.emit('error', errorContext, error);
           this.#subscriptionManager.subscriptions.delete(querySetId);
@@ -713,10 +704,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         for (const querySetUpdate of serverMessage.value.querySets) {
           const tableUpdates =
             this.#querySetUpdateToTableUpdates(querySetUpdate);
-          const callbacks = this.#applyTableUpdates(
-            tableUpdates,
-            eventContext
-          );
+          const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
           for (const callback of callbacks) {
             callback.cb();
           }
@@ -730,8 +718,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#pendingReducerCalls.delete(requestId);
         }
         const reducerName = pending?.name ?? '<unknown>';
-        const deserializeArgs = this.#reducerArgsSerializers[reducerName]
-          ?.deserialize;
+        const deserializeArgs =
+          this.#reducerArgsSerializers[reducerName]?.deserialize;
         let reducerArgs: UntypedReducerDef['params'] | undefined = undefined;
         if (deserializeArgs && pending?.args) {
           try {
@@ -747,10 +735,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           );
           const event: Event<never> = { tag: 'UnknownTransaction' };
           const eventContext = this.#makeEventContext(event);
-          const callbacks = this.#applyTableUpdates(
-            tableUpdates,
-            eventContext
-          );
+          const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
           for (const callback of callbacks) {
             callback.cb();
           }

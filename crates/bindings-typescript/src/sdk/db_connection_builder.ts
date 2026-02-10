@@ -136,7 +136,6 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
     return this;
   }
 
-
   /**
    * Register a callback to be invoked upon authentication with the database.
    *

@@ -7,17 +7,17 @@ import {
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ConnectionId, type Infer } from '../src';
 import { Timestamp } from '../src';
-import { TimeDuration } from '../src';
 import * as ws from '../src/sdk/client_api';
 import type { ReducerEvent } from '../src/sdk/db_connection_impl';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
+import BinaryReader from '../src/lib/binary_reader';
 import {
   anIdentity,
   bobIdentity,
-  encodeCreatePlayerArgs,
   encodePlayer,
   encodeUser,
+  makeQuerySetUpdate,
   sallyIdentity,
 } from './utils';
 
@@ -64,6 +64,36 @@ class Deferred<T> {
 
 beforeEach(() => {});
 
+async function getLastCallReducerRequestId(
+  wsAdapter: WebsocketTestAdapter
+): Promise<number> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const raw = wsAdapter.messageQueue.pop();
+    if (raw) {
+      const message = ws.ClientMessage.deserialize(new BinaryReader(raw));
+      if (message.tag !== 'CallReducer') {
+        throw new Error(`Expected CallReducer message, got ${message.tag}`);
+      }
+      return message.value.requestId;
+    }
+    await Promise.resolve();
+  }
+  throw new Error('Expected a call reducer message to be sent');
+}
+
+function makeReducerResult(requestId: number, querySetUpdate: any) {
+  return ws.ServerMessage.ReducerResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    result: ws.ReducerOutcome.Ok({
+      retValue: new Uint8Array(),
+      transactionUpdate: {
+        querySets: [querySetUpdate],
+      },
+    }),
+  });
+}
+
 describe('DbConnection', () => {
   test('call onConnectError callback after websocket connection failed to be established', async () => {
     const onConnectErrorPromise = new Deferred<void>();
@@ -109,7 +139,7 @@ describe('DbConnection', () => {
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
+    const tokenMessage = ws.ServerMessage.InitialConnection({
       identity: anIdentity,
       token: 'a-token',
       connectionId: ConnectionId.random(),
@@ -138,7 +168,7 @@ describe('DbConnection', () => {
     ]);
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
+    const tokenMessage = ws.ServerMessage.InitialConnection({
       identity: anIdentity,
       token: 'a-token',
       connectionId: ConnectionId.random(),
@@ -190,39 +220,21 @@ describe('DbConnection', () => {
       }
     );
 
-    const subscriptionMessage: Infer<typeof ws.ServerMessage> =
-      ws.ServerMessage.InitialSubscription({
-        databaseUpdate: {
-          tables: [
-            {
-              tableId: 35,
-              tableName: 'player',
-              numRows: BigInt(1),
-              updates: [
-                ws.CompressableQueryUpdate.Uncompressed({
-                  deletes: {
-                    sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                    rowsData: new Uint8Array(),
-                  },
-                  inserts: {
-                    sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                    rowsData: encodePlayer({
-                      id: 1,
-                      userId: anIdentity,
-                      name: 'drogus',
-                      location: { x: 0, y: 0 },
-                    }),
-                  },
-                }),
-              ],
-            },
-          ],
-        },
-        requestId: 0,
-        totalHostExecutionDuration: new TimeDuration(BigInt(0)),
-      });
-
-    wsAdapter.sendToClient(subscriptionMessage);
+    const initialQuerySetUpdate = makeQuerySetUpdate(
+      0,
+      'player',
+      encodePlayer({
+        id: 1,
+        userId: anIdentity,
+        name: 'drogus',
+        location: { x: 0, y: 0 },
+      })
+    );
+    wsAdapter.sendToClient(
+      ws.ServerMessage.TransactionUpdate({
+        querySets: [initialQuerySetUpdate],
+      })
+    );
 
     await Promise.race([
       insert1Promise.promise,
@@ -235,46 +247,22 @@ describe('DbConnection', () => {
     expect(inserts[0].player.id).toEqual(1);
     expect(inserts[0].reducerEvent).toEqual(undefined);
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
-        tables: [
-          {
-            tableId: 35,
-            tableName: 'player',
-            numRows: BigInt(2),
-            updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
-                deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array(),
-                },
-                inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: encodePlayer({
-                    id: 2,
-                    userId: anIdentity,
-                    name: 'drogus',
-                    location: { x: 2, y: 3 },
-                  }),
-                },
-              }),
-            ],
-          },
-        ],
-      }),
-      timestamp: new Timestamp(1681391805281203n),
-      callerIdentity: anIdentity,
-      callerConnectionId: ConnectionId.random(),
-      reducerCall: {
-        reducerName: 'create_player',
-        reducerId: 0,
-        args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
-        requestId: 0,
-      },
-      energyQuantaUsed: { quanta: BigInt(33841000) },
-      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
+    client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 2, y: 3 },
     });
-    wsAdapter.sendToClient(transactionUpdate);
+    const requestId = await getLastCallReducerRequestId(wsAdapter);
+    const reducerQuerySetUpdate = makeQuerySetUpdate(
+      0,
+      'player',
+      encodePlayer({
+        id: 2,
+        userId: anIdentity,
+        name: 'drogus',
+        location: { x: 2, y: 3 },
+      })
+    );
+    wsAdapter.sendToClient(makeReducerResult(requestId, reducerQuerySetUpdate));
 
     await Promise.race([
       insert2Promise.promise,
@@ -285,19 +273,17 @@ describe('DbConnection', () => {
 
     expect(inserts).toHaveLength(2);
     expect(inserts[1].player.id).toEqual(2);
-    expect(inserts[1].reducerEvent?.reducer.name).toEqual('create_player');
-    expect(inserts[1].reducerEvent?.status.tag).toEqual('Committed');
-    expect(inserts[1].reducerEvent?.callerIdentity).toEqual(anIdentity);
-    expect(inserts[1].reducerEvent?.reducer.args).toEqual({
+    expect(inserts[1].reducerEvent).toEqual(undefined);
+
+    expect(reducerCallbackLog).toHaveLength(1);
+    expect(reducerCallbackLog[0].reducerEvent.reducer.name).toEqual(
+      'create_player'
+    );
+    expect(reducerCallbackLog[0].reducerEvent.outcome.tag).toEqual('Ok');
+    expect(reducerCallbackLog[0].reducerEvent.reducer.args).toEqual({
       name: 'A Player',
       location: { x: 2, y: 3 },
     });
-
-    expect(reducerCallbackLog).toHaveLength(1);
-
-    expect(reducerCallbackLog[0].reducerEvent.callerIdentity).toEqual(
-      anIdentity
-    );
   });
 
   test('tables should be updated before the reducer callback', async () => {
@@ -321,54 +307,29 @@ describe('DbConnection', () => {
       updatePromise.resolve();
     });
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
-        tables: [
-          {
-            tableId: 35,
-            tableName: 'player',
-            numRows: BigInt(1),
-            updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
-                deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array(),
-                },
-                // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
-                inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array([
-                    ...encodePlayer({
-                      id: 1,
-                      userId: anIdentity,
-                      name: 'foo',
-                      location: { x: 0, y: 0 },
-                    }),
-                  ]),
-                },
-              }),
-            ],
-          },
-        ],
-      }),
-      timestamp: new Timestamp(1681391805281203n),
-      callerIdentity: anIdentity,
-      callerConnectionId: ConnectionId.random(),
-      reducerCall: {
-        reducerName: 'create_player',
-        reducerId: 0,
-        args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
-        requestId: 0,
-      },
-      energyQuantaUsed: { quanta: BigInt(33841000) },
-      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
+    client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 2, y: 3 },
     });
-    wsAdapter.sendToClient(transactionUpdate);
+    const requestId = await getLastCallReducerRequestId(wsAdapter);
+    const reducerQuerySetUpdate = makeQuerySetUpdate(
+      0,
+      'player',
+      new Uint8Array([
+        ...encodePlayer({
+          id: 1,
+          userId: anIdentity,
+          name: 'foo',
+          location: { x: 0, y: 0 },
+        }),
+      ])
+    );
+    wsAdapter.sendToClient(makeReducerResult(requestId, reducerQuerySetUpdate));
 
     await Promise.all([updatePromise.promise]);
   });
 
-  test('a reducer callback should be called before the database callbacks', async () => {
+  test('a reducer callback should be called after the database callbacks', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
@@ -397,53 +358,28 @@ describe('DbConnection', () => {
       updatePromise.resolve();
     });
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
-        tables: [
-          {
-            tableId: 35,
-            tableName: 'player',
-            numRows: BigInt(1),
-            updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
-                deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array(),
-                },
-                // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
-                inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array([
-                    ...encodePlayer({
-                      id: 2,
-                      userId: anIdentity,
-                      name: 'foo',
-                      location: { x: 0, y: 0 },
-                    }),
-                  ]),
-                },
-              }),
-            ],
-          },
-        ],
-      }),
-      timestamp: new Timestamp(1681391805281203n),
-      callerIdentity: anIdentity,
-      callerConnectionId: ConnectionId.random(),
-      reducerCall: {
-        reducerName: 'create_player',
-        reducerId: 0,
-        args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
-        requestId: 0,
-      },
-      energyQuantaUsed: { quanta: BigInt(33841000) },
-      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
+    client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 2, y: 3 },
     });
-    wsAdapter.sendToClient(transactionUpdate);
+    const requestId = await getLastCallReducerRequestId(wsAdapter);
+    const reducerQuerySetUpdate = makeQuerySetUpdate(
+      0,
+      'player',
+      new Uint8Array([
+        ...encodePlayer({
+          id: 2,
+          userId: anIdentity,
+          name: 'foo',
+          location: { x: 0, y: 0 },
+        }),
+      ])
+    );
+    wsAdapter.sendToClient(makeReducerResult(requestId, reducerQuerySetUpdate));
 
     await Promise.all([insertPromise.promise, updatePromise.promise]);
 
-    expect(callbackLog).toEqual(['CreatePlayerReducer', 'Player']);
+    expect(callbackLog).toEqual(['Player', 'CreatePlayerReducer']);
   });
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update when the PK is of type Identity', async () => {
@@ -458,7 +394,7 @@ describe('DbConnection', () => {
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
+    const tokenMessage = ws.ServerMessage.InitialConnection({
       identity: Identity.fromString(
         '0000000000000000000000000000000000000000000000000000000000000069'
       ),
@@ -498,73 +434,30 @@ describe('DbConnection', () => {
       update1Promise.resolve();
     });
 
-    const subscriptionMessage = ws.ServerMessage.InitialSubscription({
-      databaseUpdate: {
-        tables: [
-          {
-            tableId: 35,
-            tableName: 'user',
-            numRows: BigInt(1),
-            updates: [
-              // pgoldman 2024-06-25: This is weird, `InitialSubscription`s aren't supposed to contain deletes or updates.
-              ws.CompressableQueryUpdate.Uncompressed({
-                deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array([]),
-                },
-                inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array([...encodeUser(initialUser)]),
-                },
-              }),
-            ],
-          },
-        ],
-      },
-      requestId: 0,
-      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
-    });
-
-    wsAdapter.sendToClient(subscriptionMessage);
+    const initialQuerySetUpdate = makeQuerySetUpdate(
+      0,
+      'user',
+      new Uint8Array([...encodeUser(initialUser)])
+    );
+    wsAdapter.sendToClient(
+      ws.ServerMessage.TransactionUpdate({
+        querySets: [initialQuerySetUpdate],
+      })
+    );
 
     // await update1Promise.promise;
     await initialInsertPromise.promise;
     console.log('First insert is done');
 
     const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
-        tables: [
-          {
-            tableId: 35,
-            tableName: 'user',
-            numRows: BigInt(1),
-            updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
-                deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array([...encodeUser(initialUser)]),
-                },
-                // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
-                inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array([...encodeUser(updatedUser)]),
-                },
-              }),
-            ],
-          },
-        ],
-      }),
-      timestamp: new Timestamp(1681391805281203n),
-      callerIdentity: anIdentity,
-      callerConnectionId: ConnectionId.random(),
-      reducerCall: {
-        reducerName: 'create_player',
-        reducerId: 0,
-        args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
-        requestId: 0,
-      },
-      energyQuantaUsed: { quanta: BigInt(33841000) },
-      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
+      querySets: [
+        makeQuerySetUpdate(
+          0,
+          'user',
+          new Uint8Array([...encodeUser(updatedUser)]),
+          new Uint8Array([...encodeUser(initialUser)])
+        ),
+      ],
     });
 
     console.log('Sending transaction update');
@@ -595,39 +488,7 @@ describe('DbConnection', () => {
     };
     const binary = [...encodeUser(user1)].concat([...encodeUser(user2)]);
     const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
-        tables: [
-          {
-            tableId: 35,
-            tableName: 'user',
-            numRows: BigInt(1),
-            updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
-                deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array([]),
-                },
-                // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
-                inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
-                  rowsData: new Uint8Array(binary),
-                },
-              }),
-            ],
-          },
-        ],
-      }),
-      timestamp: new Timestamp(1681391805281203n),
-      callerIdentity: anIdentity,
-      callerConnectionId: ConnectionId.random(),
-      reducerCall: {
-        reducerName: 'create_player',
-        reducerId: 0,
-        args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
-        requestId: 0,
-      },
-      energyQuantaUsed: { quanta: BigInt(33841000) },
-      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
+      querySets: [makeQuerySetUpdate(0, 'user', new Uint8Array(binary))],
     });
     const gotAllInserts = new Deferred<void>();
     let inserts = 0;

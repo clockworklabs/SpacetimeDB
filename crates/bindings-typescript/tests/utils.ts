@@ -2,6 +2,7 @@ import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
 import { Player, Point, User } from '../test-app/src/module_bindings';
+import * as ws from '../src/sdk/client_api';
 
 export const anIdentity = Identity.fromString(
   '0000000000000000000000000000000000000000000000000000000000000069'
@@ -33,4 +34,44 @@ export function encodeCreatePlayerArgs(
   writer.writeString(name);
   Point.serialize(writer, location);
   return writer.getBuffer();
+}
+
+export function makeRowList(rowsData: Uint8Array) {
+  return {
+    sizeHint: ws.RowSizeHint.FixedSize(0),
+    rowsData,
+  };
+}
+
+export function makeQueryRows(table: string, rowsData: Uint8Array) {
+  return {
+    tables: [
+      {
+        table,
+        rows: makeRowList(rowsData),
+      },
+    ],
+  };
+}
+
+export function makeQuerySetUpdate(
+  querySetId: number,
+  tableName: string,
+  inserts: Uint8Array,
+  deletes: Uint8Array = new Uint8Array()
+) {
+  return {
+    querySetId: { id: querySetId },
+    tables: [
+      {
+        tableName,
+        rows: [
+          ws.TableUpdateRows.PersistentTable({
+            inserts: makeRowList(inserts),
+            deletes: makeRowList(deletes),
+          }),
+        ],
+      },
+    ],
+  };
 }
