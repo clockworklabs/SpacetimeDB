@@ -36,19 +36,74 @@ impl List {
                 Some(file_name.to_string())
             }
         };
+
         let versions = if self.all {
             let client = super::reqwest_client()?;
             super::tokio_block_on(super::install::available_releases(&client))??
         } else {
             paths.cli_bin_dir.installed_versions()?
         };
+
+        // Sort versions using semver ordering. Versions that fail to parse are
+        // placed at the end in their original (alphabetical) order.
+        let mut parsed: Vec<(semver::Version, String)> = Vec::new();
+        let mut unparsed: Vec<String> = Vec::new();
         for ver in versions {
-            print!("{ver}");
-            if Some(&ver) == current.as_ref() {
-                print!(" (current)");
+            match semver::Version::parse(&ver) {
+                Ok(sv) => parsed.push((sv, ver)),
+                Err(_) => unparsed.push(ver),
             }
-            println!();
         }
+        parsed.sort_by(|(a, _), (b, _)| b.cmp(a));
+
+        let sorted_versions: Vec<String> = parsed.into_iter().map(|(_, s)| s).chain(unparsed).collect();
+
+        // Check for a newer version available on GitHub.
+        let latest = if !self.all {
+            let client = super::reqwest_client().ok();
+            client.and_then(|c| {
+                super::tokio_block_on(super::install::fetch_latest_version(&c))
+                    .ok()
+                    .and_then(|r| r.ok())
+            })
+        } else {
+            None
+        };
+
+        // Determine whether the latest version is newer than any installed version.
+        let newest_installed = sorted_versions.last().and_then(|v| semver::Version::parse(v).ok());
+
+        let show_latest = match (&latest, &newest_installed) {
+            (Some(lat), Some(cur)) if lat > cur => Some(lat.to_string()),
+            _ => None,
+        };
+
+        for ver in &sorted_versions {
+            let is_current = Some(ver) == current.as_ref();
+
+            // If this is the current version and there's a newer version
+            // available, print the newer version first.
+            if is_current {
+                if let Some(ref new_ver) = show_latest {
+                    println!("{} {}", new_ver, "(available - run `spacetime version upgrade`)");
+                }
+            }
+
+            if is_current {
+                println!("{} {}", ver, "(current)");
+            } else {
+                println!("{ver}");
+            }
+        }
+
+        // If there's no current version set but a latest is available,
+        // still show it at the end.
+        if current.is_none() {
+            if let Some(ref new_ver) = show_latest {
+                println!("{} {}", new_ver, "(available - run `spacetime version upgrade`)");
+            }
+        }
+
         Ok(())
     }
 }
