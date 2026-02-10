@@ -280,6 +280,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -332,6 +334,8 @@ jobs:
         uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Cache Rust dependencies
@@ -359,6 +363,8 @@ jobs:
       - uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Cache Rust dependencies
@@ -418,6 +424,8 @@ jobs:
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
@@ -492,6 +500,8 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Run Unreal Engine tests
         working-directory: sdks/unreal
         env:
@@ -562,6 +572,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Check for docs change
         run: cargo ci self-docs --check
@@ -614,6 +626,8 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -712,6 +726,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -848,6 +864,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -1065,6 +1083,8 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
