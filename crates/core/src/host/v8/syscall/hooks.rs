@@ -11,6 +11,10 @@ use crate::host::v8::error::Throwable;
 use crate::host::v8::error::TypeError;
 use crate::host::v8::from_value::cast;
 use crate::host::v8::string::StringConst;
+use crate::host::wasm_common::{DESCRIBE_MODULE_DUNDER, DESCRIBE_MODULE_DUNDER_V10};
+
+const DESCRIBE_MODULE_DUNDER_STR: &StringConst = &StringConst::new(DESCRIBE_MODULE_DUNDER);
+const DESCRIBE_MODULE_DUNDER_V10_STR: &StringConst = &StringConst::new(DESCRIBE_MODULE_DUNDER_V10);
 
 /// Returns the hook function `name` on `hooks_obj`.
 pub(super) fn get_hook_function<'scope>(
@@ -21,6 +25,23 @@ pub(super) fn get_hook_function<'scope>(
     let key = name.string(scope);
     let object = property(scope, hooks_obj, key)?;
     cast!(scope, object, Function, "module function hook `{}`", name.as_str()).map_err(|e| e.throw(scope))
+}
+
+/// Ensures a module doesn't define both `__describe_module__` and `__describe_module_v10__`.
+pub(super) fn validate_describe_hooks<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    hooks_obj: Local<'_, Object>,
+) -> ExcResult<()> {
+    let has_v9_or_earlier = !property(scope, hooks_obj, DESCRIBE_MODULE_DUNDER_STR.string(scope))?.is_undefined();
+    let has_v10 = !property(scope, hooks_obj, DESCRIBE_MODULE_DUNDER_V10_STR.string(scope))?.is_undefined();
+    if has_v9_or_earlier && has_v10 {
+        return Err(TypeError(format!(
+            "module cannot register both `{}` and `{}` hooks",
+            DESCRIBE_MODULE_DUNDER, DESCRIBE_MODULE_DUNDER_V10
+        ))
+        .throw(scope));
+    }
+    Ok(())
 }
 
 /// Registers all the module function `hooks`

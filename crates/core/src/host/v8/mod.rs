@@ -942,12 +942,15 @@ fn extract_description<'scope>(
 mod test {
     use super::to_value::test::with_scope;
     use super::*;
+    use crate::host::test_utils::module_creation_context_for_test;
     use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
     use crate::host::wasm_common::module_host_actor::ReducerOp;
     use crate::host::ArgsTuple;
+    use crate::messages::control_db::HostType;
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::ReducerId;
     use spacetimedb_schema::reducer_name::ReducerName;
+    use std::sync::Arc;
 
     fn with_module_catch<T>(
         code: &str,
@@ -1053,5 +1056,52 @@ js error Uncaught Error: foobar
         })
         .map_err(|e| e.to_string());
         assert_eq!(raw_mod, Ok(RawModuleDef::V9(<_>::default())));
+    }
+
+    #[test]
+    fn fail_multiple_describe_module_exports() {
+        let code = r#"
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({
+                __call_reducer__: function() {},
+                __describe_module__: function() {
+                    return new Uint8Array([0]);
+                },
+                __describe_module_v10__: function() {
+                    return new Uint8Array([0]);
+                },
+            })
+        "#;
+        let err = with_scope(|scope| eval_user_module_catch(scope, code))
+            .expect_err("register_hooks should fail")
+            .to_string();
+        assert!(err.contains("cannot register both `__describe_module__` and `__describe_module_v10__` hooks"));
+    }
+
+    #[test]
+    fn startup_worker_fails_multiple_describe_module_exports() {
+        let code: Arc<str> = Arc::from(
+            r#"
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({
+                __call_reducer__: function() {},
+                __describe_module__: function() {
+                    return new Uint8Array([0]);
+                },
+                __describe_module_v10__: function() {
+                    return new Uint8Array([0]);
+                },
+            })
+        "#,
+        );
+
+        let err = with_scope(|scope| {
+            let (mcc, _runtime) = module_creation_context_for_test(HostType::Js);
+            match startup_instance_worker(scope, code, Either::Right(mcc)) {
+                Ok(_) => panic!("startup should fail"),
+                Err(err) => err.to_string(),
+            }
+        });
+        assert!(err.contains("module cannot register both `__describe_module__` and `__describe_module_v10__` hooks"));
     }
 }

@@ -14,7 +14,7 @@ use super::common::{
     procedure_start_mut_tx, row_iter_bsatn_close, table_id_from_name, volatile_nonatomic_schedule_immediate,
 };
 use super::hooks::HookFunctions;
-use super::hooks::{get_hook_function, set_hook_slots};
+use super::hooks::{get_hook_function, set_hook_slots, validate_describe_hooks};
 use super::{AbiVersion, FnRet, ModuleHookKey};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::instrumentation::span;
@@ -311,9 +311,11 @@ fn with_span<'scope, T, E: From<ExceptionThrown>>(
 ///
 /// Throws a `TypeError` if:
 /// - `hooks` is not an object that has functions `__describe_module__` and `__call_reducer__`.
+/// - `hooks` contains both `__describe_module__` and `__describe_module_v10__`.
 fn register_hooks_v1_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
     // Convert `hooks` to an object.
     let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
+    validate_describe_hooks(scope, hooks)?;
 
     let describe_module = get_hook_function(scope, hooks, str_from_ident!(__describe_module__))?;
     let call_reducer = get_hook_function(scope, hooks, str_from_ident!(__call_reducer__))?;

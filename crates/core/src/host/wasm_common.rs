@@ -42,16 +42,28 @@ pub fn detect_raw_def_version<M>(module: &M) -> Result<RawModuleDefVersion, modu
 where
     M: module_host_actor::WasmModule,
 {
-    if module.get_export(DESCRIBE_MODULE_DUNDER).is_some() {
-        Ok(RawModuleDefVersion::V9OrEarlier)
-    } else if module.get_export(DESCRIBE_MODULE_DUNDER_V10).is_some() {
-        Ok(RawModuleDefVersion::V10)
-    } else {
-        Err(module_host_actor::DescribeError::Signature(anyhow::anyhow!(
+    detect_raw_def_version_from_export(|name| module.get_export(name))
+}
+
+fn detect_raw_def_version_from_export<T>(
+    get_export: impl Fn(&str) -> Option<T>,
+) -> Result<RawModuleDefVersion, module_host_actor::DescribeError> {
+    let has_v9_or_earlier = get_export(DESCRIBE_MODULE_DUNDER).is_some();
+    let has_v10 = get_export(DESCRIBE_MODULE_DUNDER_V10).is_some();
+
+    match (has_v9_or_earlier, has_v10) {
+        (true, false) => Ok(RawModuleDefVersion::V9OrEarlier),
+        (false, true) => Ok(RawModuleDefVersion::V10),
+        (false, false) => Err(module_host_actor::DescribeError::Signature(anyhow::anyhow!(
             "module does not export a {} or {} function",
             DESCRIBE_MODULE_DUNDER,
             DESCRIBE_MODULE_DUNDER_V10
-        )))
+        ))),
+        (true, true) => Err(module_host_actor::DescribeError::Signature(anyhow::anyhow!(
+            "module exports both {} and {}; expected exactly one describe function",
+            DESCRIBE_MODULE_DUNDER,
+            DESCRIBE_MODULE_DUNDER_V10
+        ))),
     }
 }
 /// Returns the describe dunder symbol for a given module version.

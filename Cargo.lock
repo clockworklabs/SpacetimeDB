@@ -7781,6 +7781,7 @@ dependencies = [
  "urlencoding",
  "uuid",
  "v8",
+ "wasmbin",
  "wasmtime",
  "wasmtime-internal-fiber",
 ]

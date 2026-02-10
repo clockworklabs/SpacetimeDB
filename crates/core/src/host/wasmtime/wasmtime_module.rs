@@ -684,6 +684,14 @@ fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {
 mod tests {
     use super::*;
     use crate::energy::EnergyQuanta;
+    use crate::host::test_utils::module_creation_context_for_test;
+    use crate::host::wasm_common::module_host_actor::WasmModuleHostActor;
+    use crate::host::wasm_common::{DESCRIBE_MODULE_DUNDER, DESCRIBE_MODULE_DUNDER_V10};
+    use crate::messages::control_db::HostType;
+    use wasmbin::builtins::Blob;
+    use wasmbin::indices::{FuncId, TypeId};
+    use wasmbin::sections::{Export, ExportDesc, FuncBody};
+    use wasmbin::types::{FuncType, ValueType};
 
     #[test]
     fn test_fuel() {
@@ -697,5 +705,60 @@ mod tests {
         let remaining: EnergyQuanta = get_store_fuel(&store).into();
         let used = EnergyQuanta::from(budget) - remaining;
         assert_eq!(used, EnergyQuanta::new(10));
+    }
+
+    fn module_with_both_describe_exports_wasm() -> Vec<u8> {
+        let module = wasmbin::Module {
+            sections: vec![
+                vec![FuncType {
+                    params: vec![ValueType::I32],
+                    results: vec![],
+                }]
+                .into(),
+                vec![TypeId::from(0), TypeId::from(0)].into(),
+                vec![
+                    Export {
+                        name: DESCRIBE_MODULE_DUNDER.to_owned(),
+                        desc: ExportDesc::Func(FuncId::from(0)),
+                    },
+                    Export {
+                        name: DESCRIBE_MODULE_DUNDER_V10.to_owned(),
+                        desc: ExportDesc::Func(FuncId::from(1)),
+                    },
+                ]
+                .into(),
+                vec![
+                    Blob::from(FuncBody {
+                        locals: vec![],
+                        expr: vec![],
+                    }),
+                    Blob::from(FuncBody {
+                        locals: vec![],
+                        expr: vec![],
+                    }),
+                ]
+                .into(),
+            ],
+        };
+        module.encode_into(Vec::new()).expect("failed to encode test module")
+    }
+
+    #[test]
+    fn wasm_module_host_actor_fails_multiple_describe_module_exports() {
+        let wasm = module_with_both_describe_exports_wasm();
+        let engine = wasmtime::Engine::new(&wasmtime::Config::new()).unwrap();
+        let module = wasmtime::Module::new(&engine, &wasm).expect("failed to compile test module");
+        let linker = wasmtime::Linker::new(&engine);
+        let instance_pre = linker
+            .instantiate_pre(&module)
+            .expect("failed to prepare instantiation");
+        let module = WasmtimeModule::new(instance_pre);
+        let (mcc, _runtime) = module_creation_context_for_test(HostType::Wasm);
+
+        let err = match WasmModuleHostActor::new(mcc, module) {
+            Ok(_) => panic!("initialization should fail"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("module exports both __describe_module__ and __describe_module_v10__"));
     }
 }

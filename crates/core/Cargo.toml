@@ -164,6 +164,7 @@ pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
 fs_extra.workspace = true
+wasmbin.workspace = true
 
 [lints]
 workspace = true

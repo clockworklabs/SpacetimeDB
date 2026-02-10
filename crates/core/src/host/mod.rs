@@ -16,6 +16,8 @@ mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
+#[cfg(test)]
+pub(crate) mod test_utils;
 pub mod wasmtime;
 
 // Visible for integration testing.
