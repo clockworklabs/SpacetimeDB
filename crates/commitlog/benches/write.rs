@@ -2,7 +2,7 @@ use core::fmt;
 use std::num::NonZeroU16;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput};
-use spacetimedb_commitlog::{Commitlog, Options};
+use spacetimedb_commitlog::{Commitlog, Options, Transaction};
 use spacetimedb_paths::{server::CommitLogDir, FromPathUnchecked as _};
 use tempfile::tempdir_in;
 
@@ -54,27 +54,22 @@ fn bench_append(c: &mut Criterion, label: &str, params: Params) {
                  fsync_every,
              }| {
                 let tmp = tempdir_in(".").unwrap();
-                let clog = Commitlog::open(
-                    CommitLogDir::from_path_unchecked(tmp.path()),
-                    Options {
-                        max_records_in_commit: *txs_per_commit,
-                        ..<_>::default()
-                    },
-                    None,
-                )
-                .unwrap();
+                let dir = CommitLogDir::from_path_unchecked(tmp.path());
+                let clog = Commitlog::open(dir, Options::default(), None).unwrap();
+                let mut offset = clog.max_committed_offset().unwrap_or_default();
 
                 b.iter(|| {
                     let mut payloads = payloads.iter().cycle();
                     for i in 0..*total_appends {
-                        let payload = payloads.next().unwrap();
-                        let mut retry = Some(payload);
-                        while let Some(txdata) = retry.take() {
-                            if let Err(txdata) = clog.append(txdata) {
-                                clog.flush().unwrap();
-                                retry = Some(txdata);
-                            }
-                        }
+                        clog.commit(payloads.by_ref().take(txs_per_commit.get() as usize).map(|payload| {
+                            let tx = Transaction {
+                                offset,
+                                txdata: payload,
+                            };
+                            offset += 1;
+                            tx
+                        }))
+                        .unwrap();
                         if i % fsync_every == 0 {
                             clog.flush_and_sync().unwrap();
                         }
