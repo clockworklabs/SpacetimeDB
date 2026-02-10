@@ -14,6 +14,8 @@ using SpacetimeDB.Types;
 const string HOST = "http://localhost:3000";
 const string DBNAME = "btree-repro";
 const string THROW_ERROR_MESSAGE = "this is an error";
+const uint UPDATED_WHERE_TEST_VALUE = 42;
+const string UPDATED_WHERE_TEST_NAME = "this_name_was_updated";
 
 DbConnection ConnectToDB()
 {
@@ -201,6 +203,29 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "Expected a row inserted into null_string_nullable with Name == null"
         );
     };
+
+    conn.Reducers.OnUpdateWhereTest += (
+        ReducerEventContext ctx,
+        uint id,
+        uint value,
+        string name
+    ) =>
+    {
+        Log.Info("Got UpdateWhereTest callback");
+        waiting--;
+        Debug.Assert(id == 2, $"Expected UpdateWhereTest to target id=2, got {id}");
+        Debug.Assert(
+            value == UPDATED_WHERE_TEST_VALUE,
+            $"Expected UpdateWhereTest value {UPDATED_WHERE_TEST_VALUE}, got {value}"
+        );
+        Debug.Assert(
+            name == UPDATED_WHERE_TEST_NAME,
+            $"Expected UpdateWhereTest name {UPDATED_WHERE_TEST_NAME}, got {name}"
+        );
+
+        ValidateWhereSubscription(ctx, UPDATED_WHERE_TEST_NAME);
+        ValidateWhereTestViews(ctx, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
+    };
 }
 
 const uint MAX_ID = 10;
@@ -334,7 +359,7 @@ void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
     );
 }
 
-void ValidateWhereSubscription(IRemoteDbContext conn)
+void ValidateWhereSubscription(IRemoteDbContext conn, string expectedTestName = "this_name_will_get_updated")
 {
     Log.Debug("Checking typed WHERE subscription...");
     Debug.Assert(conn.Db.WhereTest != null, "conn.Db.WhereTest != null");
@@ -343,16 +368,20 @@ void ValidateWhereSubscription(IRemoteDbContext conn)
     Debug.Assert(rows.Count == 2, $"Expected 2 where_test rows, got {rows.Count}");
     Debug.Assert(rows.All(r => r.Value > 10), "Expected all where_test.Value > 10");
     Debug.Assert(
-        rows.Any(r => r.Id == 2 && r.Name == "high"),
-        "Expected where_test row id=2 name=high"
+        rows.Any(r => r.Id == 2 && r.Name == expectedTestName),
+        $"Expected where_test row id=2 name={expectedTestName}"
     );
     Debug.Assert(
-        rows.Any(r => r.Id == 3 && r.Name == "alsohigh"),
-        "Expected where_test row id=3 name=alsohigh"
+        rows.Any(r => r.Id == 3 && r.Name == "this_name_will_not_be_updated"),
+        "Expected where_test row id=3 name=this_name_will_not_be_updated"
     );
 }
 
-void ValidateWhereTestViews(IRemoteDbContext conn)
+void ValidateWhereTestViews(
+    IRemoteDbContext conn,
+    uint expectedId2Value = 15,
+    string expectedId2Name = "this_name_will_get_updated"
+)
 {
     Log.Debug("Checking where_test views...");
     Debug.Assert(
@@ -365,6 +394,14 @@ void ValidateWhereTestViews(IRemoteDbContext conn)
     );
     var viewRow = conn.Db.WhereTestView.Iter().First();
     Debug.Assert(viewRow.Id == 2, $"Expected WhereTestView row id=2, got {viewRow.Id}");
+    Debug.Assert(
+        viewRow.Value == expectedId2Value,
+        $"Expected WhereTestView row value={expectedId2Value}, got {viewRow.Value}"
+    );
+    Debug.Assert(
+        viewRow.Name == expectedId2Name,
+        $"Expected WhereTestView row name={expectedId2Name}, got {viewRow.Name}"
+    );
 
     Debug.Assert(
         conn.Db.WhereTestQuery != null,
@@ -376,6 +413,14 @@ void ValidateWhereTestViews(IRemoteDbContext conn)
     );
     var queryRow = conn.Db.WhereTestQuery.Iter().First();
     Debug.Assert(queryRow.Id == 2, $"Expected WhereTestQuery row id=2, got {queryRow.Id}");
+    Debug.Assert(
+        queryRow.Value == expectedId2Value,
+        $"Expected WhereTestQuery row value={expectedId2Value}, got {queryRow.Value}"
+    );
+    Debug.Assert(
+        queryRow.Name == expectedId2Name,
+        $"Expected WhereTestQuery row name={expectedId2Name}, got {queryRow.Name}"
+    );
 
     Debug.Assert(
         conn.Db.FindWhereTest != null,
@@ -436,6 +481,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling Add");
     waiting++;
     context.Reducers.Add(1, 1);
+
+    Log.Debug("Updating where_test row via reducer");
+    waiting++;
+    context.Reducers.UpdateWhereTest(2, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
 
     Log.Debug("Calling ThrowError");
     waiting++;

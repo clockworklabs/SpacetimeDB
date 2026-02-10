@@ -436,6 +436,24 @@ public static partial class Module
         );
     }
 
+    [SpacetimeDB.Reducer]
+    public static void UpdateWhereTest(ReducerContext ctx, uint id, uint value, string name)
+    {
+        if (ctx.Db.where_test.Id.Find(id) is null)
+        {
+            throw new Exception($"where_test id={id} missing");
+        }
+
+        ctx.Db.where_test.Id.Update(
+            new WhereTest
+            {
+                Id = id,
+                Value = value,
+                Name = name,
+            }
+        );
+    }
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
@@ -527,7 +545,7 @@ public static partial class Module
                 {
                     Id = 1,
                     Value = 5,
-                    Name = "low",
+                    Name = "this_name_is_unimportant",
                 }
             );
         }
@@ -538,7 +556,7 @@ public static partial class Module
                 {
                     Id = 2,
                     Value = 15,
-                    Name = "high",
+                    Name = "this_name_will_get_updated",
                 }
             );
         }
@@ -549,7 +567,7 @@ public static partial class Module
                 {
                     Id = 3,
                     Value = 15,
-                    Name = "alsohigh",
+                    Name = "this_name_will_not_be_updated",
                 }
             );
         }
