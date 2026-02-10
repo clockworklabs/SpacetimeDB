@@ -102,17 +102,14 @@ impl RowSizeHint {
                 }
                 Some(start..(start + size).min(data_end))
             }
-            Self::RowOffsets(offsets) => offsets
-                .get(index)
-                .map(|start| {
-                    let start = *start as usize;
-                    let end = offsets
-                        .get(index + 1)
-                        .map(|offset| *offset as usize)
-                        .unwrap_or(data_end);
-                    start..end
-                })
-                .filter(|range| !range.is_empty()),
+            Self::RowOffsets(offsets) => offsets.get(index).map(|start| {
+                let start = *start as usize;
+                let end = offsets
+                    .get(index + 1)
+                    .map(|offset| *offset as usize)
+                    .unwrap_or(data_end);
+                start..end
+            }),
         }
     }
 }
