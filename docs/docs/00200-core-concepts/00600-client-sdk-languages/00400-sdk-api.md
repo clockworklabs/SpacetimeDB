@@ -30,7 +30,9 @@ Subscribe to tables or queries using SQL:
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-// Subscribe with callbacks
+import { tables } from './module_bindings';
+
+// Subscribe with query builders (recommended)
 conn
   .subscriptionBuilder()
   .onApplied(ctx => {
@@ -39,7 +41,10 @@ conn
   .onError((ctx, error) => {
     console.error(`Subscription failed: ${error}`);
   })
-  .subscribe(['SELECT * FROM user']);
+  .subscribe([tables.user]);
+
+// Raw SQL is also supported:
+// .subscribe(['SELECT * FROM user']);
 ```
 
 </TabItem>

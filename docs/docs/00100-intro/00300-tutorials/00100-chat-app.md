@@ -727,7 +727,7 @@ Replace the entire contents of `src/App.tsx` with the following:
 ```tsx
 import React, { useEffect, useState } from 'react';
 import { Message, tables, reducers } from './module_bindings';
-import { useSpacetimeDB, useTable, where, eq, useReducer } from 'spacetimedb/react';
+import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
 
@@ -1237,15 +1237,13 @@ Next replace `const onlineUsers: User[] = [];` with the following:
 
 ```tsx
 // Subscribe to all online users in the chat
-// so we can show who's online and demonstrate
-// the `where` and `eq` query expressions
+// using the query builder's `.where()` method
 const [onlineUsers] = useTable(
-  tables.user,
-  where(eq('online', true))
+  tables.user.where(r => r.online.eq(true))
 );
 ```
 
-Notice that we can filter users in the `user` table based on their online status by passing a query expression into the `useTable` hook as the second argument.
+Notice that we can filter users in the `user` table based on their online status by chaining `.where()` on the table ref with a typed predicate function.
 
 Let's now prettify our messages in our render function by sorting them by their `sent` timestamp, and joining the username of the sender to the message by looking up the user by their `Identity` in the `user` table. Replace `const prettyMessages: PrettyMessage[] = [];` with the following:
 
@@ -1345,11 +1343,9 @@ Update your `onlineUsers` React hook to add the following callbacks:
 
 ```tsx
 // Subscribe to all online users in the chat
-// so we can show who's online and demonstrate
-// the `where` and `eq` query expressions
+// using the query builder's `.where()` method
 const [ onlineUsers ] = useTable(
-  tables.user,
-  where(eq('online', true)),
+  tables.user.where(r => r.online.eq(true)),
   {
     onInsert: user => {
       // All users being inserted here are online
@@ -1379,7 +1375,7 @@ const [ onlineUsers ] = useTable(
 );
 ```
 
-These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `where` filter.
+These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `.where()` filter.
 
 Here, we post a system message indicating that a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being updated to "online".
 
@@ -1406,8 +1402,7 @@ Finally, let's also subscribe to offline users so we can show them in the sideba
 
 ```tsx
 const [offlineUsers] = useTable(
-  tables.user,
-  where(eq('online', false))
+  tables.user.where(r => r.online.eq(false))
 );
 ```
 

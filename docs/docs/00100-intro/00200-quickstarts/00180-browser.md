@@ -52,6 +52,10 @@ npm run build
       Open `index.html` directly in your browser. The app connects to SpacetimeDB and displays data in real-time.
 
       The JavaScript code runs inline in a script tag, using the bundled `DbConnection` class.
+
+      :::tip
+      When using npm imports with a bundler (e.g. React, Vue, Svelte), you can use type-safe [query builders](/sdks/typescript#query-builder-api) instead of raw SQL strings. The IIFE bundle shown here uses raw SQL.
+      :::
     </StepText>
     <StepCode>
 ```html

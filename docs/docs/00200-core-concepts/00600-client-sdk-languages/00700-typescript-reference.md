@@ -25,6 +25,8 @@ Before diving into the reference, you may want to review:
 | [Access the client cache](#access-the-client-cache)               | Make local queries against subscribed rows, and register [row callbacks](#callback-oninsert) to run when subscribed rows change.       |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.                                |
 | [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                                                    |
+| [Query Builder API](#query-builder-api)                           | Type-safe query builder for subscriptions using the `tables` export.                                                                   |
+| [Framework Integrations](#framework-integrations)                 | React, Vue, and Svelte hooks for reactive SpacetimeDB data.                                                                            |
 
 ## Project setup
 
@@ -350,11 +352,30 @@ Register a callback to run if the subscription is rejected or unexpectedly termi
 
 ```typescript
 class SubscriptionBuilder {
+  // Subscribe using raw SQL strings
   subscribe(queries: string | string[]): SubscriptionHandle;
+
+  // Subscribe using query builders (recommended)
+  subscribe(query: TableRef | TableRef[]): SubscriptionHandle;
 }
 ```
 
-Subscribe to a set of queries.
+Subscribe to a set of queries. You can pass raw SQL strings, or use [query builders](#query-builder-api) for type-safe, auto-completing queries.
+
+```typescript
+import { tables } from './module_bindings';
+
+// Query builder (recommended) — type-safe, auto-completing
+conn.subscriptionBuilder().subscribe(tables.user);
+conn.subscriptionBuilder().subscribe([tables.user, tables.message]);
+conn.subscriptionBuilder().subscribe(
+  tables.user.where(r => r.online.eq(true))
+);
+
+// Raw SQL — still supported
+conn.subscriptionBuilder().subscribe('SELECT * FROM user');
+conn.subscriptionBuilder().subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
+```
 
 See [the SpacetimeDB SQL Reference](/reference/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
@@ -367,6 +388,92 @@ class SubscriptionBuilder {
 ```
 
 Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
+
+## Query Builder API
+
+The TypeScript SDK provides a type-safe query builder as an alternative to raw SQL strings. Query builders give you auto-completion and compile-time type checking for your subscription queries.
+
+### The `tables` export
+
+Your generated `module_bindings` exports a `tables` object. Each property on `tables` corresponds to a public table in your module. These table refs serve double duty: they are both table references _and_ query builders.
+
+```typescript
+import { tables } from './module_bindings';
+
+// `tables.user` is a query builder for `SELECT * FROM user`
+// `tables.message` is a query builder for `SELECT * FROM message`
+```
+
+### Building queries with `where`
+
+Call `.where()` on a table ref to add a filter. The predicate function receives a row expression with typed column accessors:
+
+```typescript
+// All users
+tables.user
+
+// Online users only
+tables.user.where(r => r.online.eq(true))
+
+// Users with a specific name
+tables.user.where(r => r.name.eq('Alice'))
+```
+
+### Column operators
+
+Each column accessor on the row expression supports the following comparison operators:
+
+| Operator | Description              | Example                          |
+| -------- | ------------------------ | -------------------------------- |
+| `eq`     | Equal to                 | `r.online.eq(true)`              |
+| `ne`     | Not equal to             | `r.name.ne('Anonymous')`         |
+| `lt`     | Less than                | `r.age.lt(18)`                   |
+| `lte`    | Less than or equal to    | `r.level.lte(5)`                 |
+| `gt`     | Greater than             | `r.score.gt(100)`                |
+| `gte`    | Greater than or equal to | `r.requiredLevel.gte(10)`        |
+
+### Boolean combinators
+
+Combine multiple conditions using instance methods or standalone functions:
+
+```typescript
+// Instance methods — chain on a boolean expression
+tables.user.where(r => r.age.gte(18).and(r.age.lt(65)))
+tables.user.where(r => r.online.eq(true).or(r.name.eq('Admin')))
+tables.user.where(r => r.online.eq(true).not())
+
+// Standalone functions — useful for combining many conditions
+import { and, or, not } from './module_bindings';
+
+tables.user.where(r => and(r.age.gte(18), r.age.lt(65)))
+tables.user.where(r => or(r.online.eq(true), r.name.eq('Admin')))
+tables.user.where(r => not(r.online.eq(true)))
+```
+
+### Using query builders with subscriptions
+
+Query builders can be passed directly to `subscribe`:
+
+```typescript
+import { tables } from './module_bindings';
+
+// Subscribe to a single table (all rows)
+conn.subscriptionBuilder().subscribe(tables.user);
+
+// Subscribe to a filtered query
+conn.subscriptionBuilder().subscribe(
+  tables.user.where(r => r.online.eq(true))
+);
+
+// Subscribe to multiple queries
+conn.subscriptionBuilder().subscribe([
+  tables.user,
+  tables.message,
+]);
+
+// Raw SQL is still supported
+conn.subscriptionBuilder().subscribe('SELECT * FROM user');
+```
 
 #### Type `SubscriptionHandle`
 
@@ -909,3 +1016,138 @@ ConnectionId
 ```
 
 An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
+
+## Framework Integrations
+
+The SpacetimeDB TypeScript SDK includes built-in integrations for React, Vue, and Svelte. These provide reactive hooks that automatically subscribe to queries and re-render when data changes.
+
+### React
+
+```bash
+import { SpacetimeDBProvider, useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
+```
+
+#### `SpacetimeDBProvider`
+
+Wrap your app in `SpacetimeDBProvider` to provide the SpacetimeDB connection to all child components:
+
+```tsx
+import { SpacetimeDBProvider } from 'spacetimedb/react';
+import { DbConnection } from './module_bindings';
+
+function Root() {
+  return (
+    <SpacetimeDBProvider connect={() =>
+      DbConnection.builder()
+        .withUri('wss://maincloud.spacetimedb.com')
+        .withModuleName('my_module')
+        .build()
+    }>
+      <App />
+    </SpacetimeDBProvider>
+  );
+}
+```
+
+#### `useSpacetimeDB()`
+
+Returns the current `DbConnection` from the provider context:
+
+```tsx
+const conn = useSpacetimeDB();
+```
+
+#### `useTable(query, callbacks?)`
+
+Subscribe to a table or filtered query and return a reactive array of rows:
+
+```tsx
+import { useTable } from 'spacetimedb/react';
+import { tables } from './module_bindings';
+
+// Subscribe to all users
+const [users, isReady] = useTable(tables.user);
+
+// Subscribe with a filter
+const [onlineUsers, isReady] = useTable(
+  tables.user.where(r => r.online.eq(true))
+);
+
+// Subscribe with callbacks
+const [onlineUsers, isReady] = useTable(
+  tables.user.where(r => r.online.eq(true)),
+  {
+    onInsert: (user) => console.log('User connected:', user.name),
+    onDelete: (user) => console.log('User disconnected:', user.name),
+    onUpdate: (oldUser, newUser) => console.log('User updated:', newUser.name),
+  }
+);
+```
+
+Returns a tuple of `[rows, isReady]` where `rows` is a `readonly Row[]` and `isReady` is a `boolean` indicating whether the subscription has been applied.
+
+#### `useReducer(reducer)`
+
+Returns a function to call a reducer:
+
+```tsx
+import { useReducer } from 'spacetimedb/react';
+import { reducers } from './module_bindings';
+
+const sendMessage = useReducer(reducers.sendMessage);
+sendMessage({ text: 'Hello!' });
+```
+
+### Vue
+
+```bash
+import { SpacetimeDBProvider, useSpacetimeDB, useTable, useReducer } from 'spacetimedb/vue';
+```
+
+The Vue integration provides the same hooks as React. `useTable` returns `[DeepReadonly<Ref<readonly Row[]>>, DeepReadonly<Ref<boolean>>]` for Vue's reactivity system:
+
+```vue
+<script setup lang="ts">
+import { useTable } from 'spacetimedb/vue';
+import { tables } from './module_bindings';
+
+const [users, isReady] = useTable(tables.user);
+const [onlineUsers] = useTable(
+  tables.user.where(r => r.online.eq(true))
+);
+</script>
+
+<template>
+  <div v-if="isReady">
+    <div v-for="user in users" :key="user.identity.toHexString()">
+      {{ user.name }}
+    </div>
+  </div>
+</template>
+```
+
+### Svelte
+
+```bash
+import { SpacetimeDBProvider, useSpacetimeDB, useTable, useReducer } from 'spacetimedb/svelte';
+```
+
+The Svelte integration provides the same hooks as React. `useTable` returns `[Readable<readonly Row[]>, Readable<boolean>]` using Svelte stores:
+
+```svelte
+<script lang="ts">
+import { useTable } from 'spacetimedb/svelte';
+import { tables } from './module_bindings';
+
+const [users, isReady] = useTable(tables.user);
+const [onlineUsers] = useTable(
+  tables.user.where(r => r.online.eq(true))
+);
+</script>
+
+{#if $isReady}
+  {#each $users as user}
+    <div>{user.name}</div>
+  {/each}
+{/if}
+```
