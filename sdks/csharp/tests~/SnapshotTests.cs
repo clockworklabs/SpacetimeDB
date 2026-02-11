@@ -12,6 +12,13 @@ using U128 = SpacetimeDB.U128;
 
 public class SnapshotTests
 {
+    sealed class TestSubscriptionHandle : ISubscriptionHandle
+    {
+        public void OnApplied(ISubscriptionEventContext ctx) { }
+        public void OnError(IErrorContext ctx) { }
+        public void OnEnded(ISubscriptionEventContext ctx) { }
+    }
+
     class Events : List<KeyValuePair<string, object?>>
     {
         private bool frozen;
@@ -416,6 +423,30 @@ public class SnapshotTests
             }
         }
 
+        // Snapshot tests also inject raw subscription server messages directly, so there is no real
+        // outgoing Subscribe call to populate DbConnectionBase.subscriptions. Prime known query_set_id
+        // entries so SubscribeApplied/UnsubscribeApplied routes through the typed subscription path.
+        static void PrimeSubscription(DbConnection client, uint querySetId)
+        {
+            var baseType = client.GetType().BaseType ?? throw new InvalidOperationException("DbConnection has no base type.");
+            var subscriptionsField = baseType.GetField("subscriptions", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Failed to find subscriptions field.");
+            var subscriptionsObj = subscriptionsField.GetValue(client)
+                ?? throw new InvalidOperationException("subscriptions is null.");
+
+            var dictType = subscriptionsObj.GetType();
+            var containsKey = dictType.GetMethod("ContainsKey")
+                ?? throw new InvalidOperationException("Failed to find ContainsKey on subscriptions.");
+            if ((bool)(containsKey.Invoke(subscriptionsObj, [querySetId]) ?? false))
+            {
+                return;
+            }
+
+            var add = dictType.GetMethod("Add")
+                ?? throw new InvalidOperationException("Failed to find Add on subscriptions.");
+            add.Invoke(subscriptionsObj, [querySetId, new TestSubscriptionHandle()]);
+        }
+
         // But for proper testing we need to convert it back to raw binary messages as if it was received over network.
         var sampleDumpBinary = sampleDumpParsed.Select(
             (message, i) =>
@@ -423,8 +454,9 @@ public class SnapshotTests
                 // Start tracking requests in the stats handler so that those request IDs can later be found.
                 switch (message)
                 {
-                    case ServerMessage.SubscribeApplied(var _):
+                    case ServerMessage.SubscribeApplied(var subscribeApplied):
                         client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
+                        PrimeSubscription(client, subscribeApplied.QuerySetId.Id);
                         break;
                     case ServerMessage.UnsubscribeApplied(var _):
                         client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");

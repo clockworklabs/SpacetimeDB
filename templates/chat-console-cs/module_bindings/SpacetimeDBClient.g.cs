@@ -501,26 +501,12 @@ namespace SpacetimeDB.Types
         /// or vice versa, may misbehave in any number of ways,
         /// including dropping subscriptions, corrupting the client cache, or panicking.
         /// </summary>
-        public void SubscribeToAllTables()
-        {
-            // Make sure we use the legacy handle constructor here, even though there's only 1 query.
-            // We drop the error handler, since it can't be called for legacy subscriptions.
-            new SubscriptionHandle(
-                conn,
-                Applied,
-                new string[] { "SELECT * FROM *" }
-            );
-        }
+        public SubscriptionHandle SubscribeToAllTables() =>
+            new(conn, Applied, Error, QueryBuilder.AllTablesSqlQueries());
     }
 
     public sealed class SubscriptionHandle : SubscriptionHandleBase<SubscriptionEventContext, ErrorContext>
     {
-        /// <summary>
-        /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
-        /// </summary>
-        public SubscriptionHandle(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls) : base(conn, onApplied, querySqls)
-        { }
-
         /// <summary>
         /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
         /// </summary>
@@ -536,6 +522,13 @@ namespace SpacetimeDB.Types
     public sealed class QueryBuilder
     {
         public From From { get; } = new();
+
+        internal static string[] AllTablesSqlQueries() => new string[]
+        {
+            new QueryBuilder().From.Message().ToSql(),
+            new QueryBuilder().From.User().ToSql(),
+        }
+        ;
     }
 
     public sealed class From

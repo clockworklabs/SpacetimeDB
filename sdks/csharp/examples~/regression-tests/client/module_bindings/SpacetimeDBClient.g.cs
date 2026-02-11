@@ -570,26 +570,12 @@ namespace SpacetimeDB.Types
         /// or vice versa, may misbehave in any number of ways,
         /// including dropping subscriptions, corrupting the client cache, or panicking.
         /// </summary>
-        public void SubscribeToAllTables()
-        {
-            // Make sure we use the legacy handle constructor here, even though there's only 1 query.
-            // We drop the error handler, since it can't be called for legacy subscriptions.
-            new SubscriptionHandle(
-                conn,
-                Applied,
-                new string[] { "SELECT * FROM *" }
-            );
-        }
+        public SubscriptionHandle SubscribeToAllTables() =>
+            new(conn, Applied, Error, QueryBuilder.AllTablesSqlQueries());
     }
 
     public sealed class SubscriptionHandle : SubscriptionHandleBase<SubscriptionEventContext, ErrorContext>
     {
-        /// <summary>
-        /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
-        /// </summary>
-        public SubscriptionHandle(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls) : base(conn, onApplied, querySqls)
-        { }
-
         /// <summary>
         /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
         /// </summary>
@@ -605,6 +591,37 @@ namespace SpacetimeDB.Types
     public sealed class QueryBuilder
     {
         public From From { get; } = new();
+
+        internal static string[] AllTablesSqlQueries() => new string[]
+        {
+            new QueryBuilder().From.Admins().ToSql(),
+            new QueryBuilder().From.Account().ToSql(),
+            new QueryBuilder().From.ExampleData().ToSql(),
+            new QueryBuilder().From.MyAccount().ToSql(),
+            new QueryBuilder().From.MyAccountMissing().ToSql(),
+            new QueryBuilder().From.MyLog().ToSql(),
+            new QueryBuilder().From.MyPlayer().ToSql(),
+            new QueryBuilder().From.MyTable().ToSql(),
+            new QueryBuilder().From.NullStringNonnullable().ToSql(),
+            new QueryBuilder().From.NullStringNullable().ToSql(),
+            new QueryBuilder().From.NullableVec().ToSql(),
+            new QueryBuilder().From.NullableVecView().ToSql(),
+            new QueryBuilder().From.Player().ToSql(),
+            new QueryBuilder().From.PlayerLevel().ToSql(),
+            new QueryBuilder().From.PlayersAtLevelOne().ToSql(),
+            new QueryBuilder().From.RetryLog().ToSql(),
+            new QueryBuilder().From.Score().ToSql(),
+            new QueryBuilder().From.ScoresPlayer123().ToSql(),
+            new QueryBuilder().From.ScoresPlayer123Level5().ToSql(),
+            new QueryBuilder().From.ScoresPlayer123Range().ToSql(),
+            new QueryBuilder().From.User().ToSql(),
+            new QueryBuilder().From.UsersAge1865().ToSql(),
+            new QueryBuilder().From.UsersAge18Plus().ToSql(),
+            new QueryBuilder().From.UsersAgeUnder18().ToSql(),
+            new QueryBuilder().From.UsersNamedAlice().ToSql(),
+            new QueryBuilder().From.WhereTest().ToSql(),
+        }
+        ;
     }
 
     public sealed class From

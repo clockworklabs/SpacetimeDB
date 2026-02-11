@@ -113,7 +113,6 @@ namespace SpacetimeDB
         internal void AddOnConnectError(WebSocket.ConnectErrorEventHandler cb);
         internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
 
-        internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
         internal QuerySetId? Subscribe(ISubscriptionHandle handle, string[] querySqls);
         internal void Unsubscribe(QuerySetId queryId);
         void FrameTick();
@@ -143,12 +142,6 @@ namespace SpacetimeDB
         /// </summary>
         [Obsolete]
         public event Action<Exception>? onSendError;
-
-        /// <summary>
-        /// Dictionary of legacy subscriptions, keyed by request ID rather than query ID.
-        /// Only used for `SubscribeToAllTables()`.
-        /// </summary>
-        private readonly Dictionary<uint, ISubscriptionHandle> legacySubscriptions = new();
 
         /// <summary>
         /// Dictionary of subscriptions, keyed by query ID.
@@ -705,23 +698,16 @@ namespace SpacetimeDB
                         {
                             try
                             {
-                                subscription.OnApplied(eventContext, new SubscriptionAppliedType.Active(subscribeApplied.QuerySetId));
+                                subscription.OnApplied(eventContext);
                             }
                             catch (Exception e)
                             {
                                 Log.Exception(e);
                             }
                         }
-                        else if (legacySubscriptions.TryGetValue(subscribeApplied.QuerySetId.Id, out var legacySubscription))
+                        else
                         {
-                            try
-                            {
-                                legacySubscription.OnApplied(eventContext, new SubscriptionAppliedType.LegacyActive(new()));
-                            }
-                            catch (Exception e)
-                            {
-                                Log.Exception(e);
-                            }
+                            Log.Warn($"Received SubscribeApplied for unknown query_set_id={subscribeApplied.QuerySetId.Id}");
                         }
 
                         break;
@@ -741,17 +727,6 @@ namespace SpacetimeDB
                             try
                             {
                                 subscription.OnError(eventContext);
-                            }
-                            catch (Exception e)
-                            {
-                                Log.Exception(e);
-                            }
-                        }
-                        else if (legacySubscriptions.TryGetValue(subscriptionError.QuerySetId.Id, out var legacySubscription))
-                        {
-                            try
-                            {
-                                legacySubscription.OnError(eventContext);
                             }
                             catch (Exception e)
                             {
@@ -784,7 +759,6 @@ namespace SpacetimeDB
                         }
 
                         subscriptions.Remove(unsubscribeApplied.QuerySetId.Id);
-                        legacySubscriptions.Remove(unsubscribeApplied.QuerySetId.Id);
                     }
                     break;
 
@@ -916,27 +890,6 @@ namespace SpacetimeDB
                 args.ProcedureName,
                 IStructuralReadWrite.ToBytes(args).ToList()
             )));
-        }
-
-        void IDbConnection.LegacySubscribe(ISubscriptionHandle handle, string[] querySqls)
-        {
-            if (!webSocket.IsConnected)
-            {
-                Log.Error("Cannot subscribe, not connected to server!");
-                return;
-            }
-
-            var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
-            var querySetId = querySetIdAllocator.Next();
-            legacySubscriptions[querySetId] = handle;
-            webSocket.Send(new ClientMessage.Subscribe(
-                new Subscribe
-                {
-                    RequestId = id,
-                    QuerySetId = new QuerySetId(querySetId),
-                    QueryStrings = querySqls.ToList()
-                }
-            ));
         }
 
         QuerySetId? IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)

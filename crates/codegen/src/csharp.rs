@@ -480,25 +480,11 @@ const REDUCER_EVENTS: &str = r#"
         /// or vice versa, may misbehave in any number of ways,
         /// including dropping subscriptions, corrupting the client cache, or panicking.
         /// </summary>
-        public void SubscribeToAllTables()
-        {
-            // Make sure we use the legacy handle constructor here, even though there's only 1 query.
-            // We drop the error handler, since it can't be called for legacy subscriptions.
-            new SubscriptionHandle(
-                conn,
-                Applied,
-                new string[] { "SELECT * FROM *" }
-            );
-        }
+        public SubscriptionHandle SubscribeToAllTables() =>
+            new(conn, Applied, Error, QueryBuilder.AllTablesSqlQueries());
     }
 
     public sealed class SubscriptionHandle : SubscriptionHandleBase<SubscriptionEventContext, ErrorContext> {
-        /// <summary>
-        /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
-        /// </summary>
-        public SubscriptionHandle(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls) : base(conn, onApplied, querySqls)
-        { }
-
         /// <summary>
         /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
         /// </summary>
@@ -973,10 +959,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
-            writeln!(
-                output,
-                "internal RemoteReducers(DbConnection conn) : base(conn) {{ }}"
-            );
+            writeln!(output, "internal RemoteReducers(DbConnection conn) : base(conn) {{ }}");
             writeln!(
                 output,
                 "internal event Action<ReducerEventContext, Exception>? InternalOnUnhandledReducerError;"
@@ -1013,6 +996,15 @@ impl Lang for Csharp<'_> {
         writeln!(output, "public sealed class QueryBuilder");
         indented_block(&mut output, |output| {
             writeln!(output, "public From From {{ get; }} = new();");
+            writeln!(output);
+            writeln!(output, "internal static string[] AllTablesSqlQueries() => new string[]");
+            indented_block(output, |output| {
+                for (table_name, _) in iter_table_names_and_types(module) {
+                    let method_name = table_name.deref().to_case(Case::Pascal);
+                    writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
+                }
+            });
+            writeln!(output, ";");
         });
         writeln!(output);
 
@@ -1575,4 +1567,3 @@ where
 
     (func_params, func_args)
 }
-
