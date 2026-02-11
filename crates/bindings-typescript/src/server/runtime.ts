@@ -1,6 +1,6 @@
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 
-import type { ModuleHooks, u16, u32 } from 'spacetime:sys@2.0';
+import type { ModuleHooks, u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import {
   AlgebraicType,
   ProductType,
@@ -28,7 +28,7 @@ import {
   type JwtClaims,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
-import { type ModuleDef, type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import type { Infer } from '../lib/type_builders';
 import { hasOwn, toCamelCase } from '../lib/util';
@@ -39,7 +39,7 @@ import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
 import { makeRandom, type Random } from './rng';
-import { getRegisteredSchema } from './schema';
+import type { SchemaInner } from './schema';
 
 const { freeze } = Object;
 
@@ -176,9 +176,6 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
-/** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
-let REDUCER_CTX: InstanceType<typeof ReducerCtxImpl> | undefined;
-
 // Using a class expression rather than declaration keeps the class out of the
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
@@ -197,13 +194,14 @@ export const ReducerCtxImpl = class ReducerCtx<
   constructor(
     sender: Identity,
     timestamp: Timestamp,
-    connectionId: ConnectionId | null
+    connectionId: ConnectionId | null,
+    dbView: DbView<any>
   ) {
     Object.seal(this);
     this.sender = sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
-    this.db = getDbView();
+    this.db = dbView;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -267,45 +265,71 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
   return fn(...args);
 };
 
-let reducerArgsDeserializers: Deserializer<any>[];
+export const makeHooks = (schema: SchemaInner): ModuleHooks =>
+  new ModuleHooksImpl(schema);
 
-export const hooks: ModuleHooks = {
+class ModuleHooksImpl implements ModuleHooks {
+  #schema: SchemaInner;
+  #dbView_: DbView<any> | undefined;
+  #reducerArgsDeserializers;
+  /** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
+  #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
+
+  constructor(schema: SchemaInner) {
+    this.#schema = schema;
+    this.#reducerArgsDeserializers = schema.moduleDef.reducers.map(
+      ({ params }) => ProductType.makeDeserializer(params, schema.typespace)
+    );
+  }
+
+  get #dbView() {
+    return (this.#dbView_ ??= freeze(
+      Object.fromEntries(
+        this.#schema.moduleDef.tables.map(table => [
+          toCamelCase(table.sourceName),
+          makeTableView(this.#schema.typespace, table),
+        ])
+      )
+    ));
+  }
+
+  get #reducerCtx() {
+    return (this.#reducerCtx_ ??= new ReducerCtxImpl(
+      Identity.zero(),
+      Timestamp.UNIX_EPOCH,
+      null,
+      this.#dbView
+    ));
+  }
+
   __describe_module__() {
     const writer = new BinaryWriter(128);
     RawModuleDef.serialize(
       writer,
-      RawModuleDef.V10(getRegisteredSchema().rawModuleDefV10())
+      RawModuleDef.V10(this.#schema.rawModuleDefV10())
     );
     return writer.getBuffer();
-  },
-  __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
-    const moduleCtx = getRegisteredSchema();
-    if (reducerArgsDeserializers == null) {
-      reducerArgsDeserializers = moduleCtx.moduleDef.reducers.map(
-        ({ params }) =>
-          ProductType.makeDeserializer(params, moduleCtx.typespace)
-      );
-    }
-    const deserializeArgs = reducerArgsDeserializers[reducerId];
+  }
+
+  __call_reducer__(
+    reducerId: u32,
+    sender: u256,
+    connId: u128,
+    timestamp: bigint,
+    argsBuf: DataView
+  ): undefined | { tag: 'err'; value: string } {
+    const moduleCtx = this.#schema;
+    const deserializeArgs = this.#reducerArgsDeserializers[reducerId];
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
-    let ctx;
-    if (REDUCER_CTX == null) {
-      ctx = REDUCER_CTX = new ReducerCtxImpl(
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      );
-    } else {
-      ctx = REDUCER_CTX;
-      ReducerCtxImpl.reset(
-        REDUCER_CTX,
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      );
-    }
+    const ctx = this.#reducerCtx;
+    ReducerCtxImpl.reset(
+      ctx,
+      senderIdentity,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId))
+    );
     try {
       callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
     } catch (e) {
@@ -314,9 +338,14 @@ export const hooks: ModuleHooks = {
       }
       throw e;
     }
-  },
-  __call_view__(id, sender, argsBuf) {
-    const moduleCtx = getRegisteredSchema();
+  }
+
+  __call_view__(
+    id: u32,
+    sender: u256,
+    argsBuf: Uint8Array
+  ): { data: Uint8Array } {
+    const moduleCtx = this.#schema;
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.views[id];
     const ctx: ViewCtx<any> = freeze({
@@ -324,7 +353,7 @@ export const hooks: ModuleHooks = {
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: getDbView(),
+      db: this.#dbView,
       from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
@@ -338,16 +367,17 @@ export const hooks: ModuleHooks = {
       serializeReturn(retBuf, ret);
     }
     return { data: retBuf.getBuffer() };
-  },
-  __call_view_anon__(id, argsBuf) {
-    const moduleCtx = getRegisteredSchema();
+  }
+
+  __call_view_anon__(id: u32, argsBuf: Uint8Array): { data: Uint8Array } {
+    const moduleCtx = this.#schema;
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.anonViews[id];
     const ctx: AnonymousViewCtx<any> = freeze({
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: getDbView(),
+      db: this.#dbView,
       from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
@@ -361,34 +391,25 @@ export const hooks: ModuleHooks = {
       serializeReturn(retBuf, ret);
     }
     return { data: retBuf.getBuffer() };
-  },
-  __call_procedure__(id, sender, connection_id, timestamp, args) {
+  }
+
+  __call_procedure__(
+    id: u32,
+    sender: u256,
+    connection_id: u128,
+    timestamp: bigint,
+    args: Uint8Array
+  ): Uint8Array {
     return callProcedure(
-      getRegisteredSchema(),
+      this.#schema,
       id,
       new Identity(sender),
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
       new Timestamp(timestamp),
-      args
+      args,
+      () => this.#dbView
     );
-  },
-};
-
-let DB_VIEW: DbView<any> | null = null;
-function getDbView() {
-  DB_VIEW ??= makeDbView(getRegisteredSchema().moduleDef);
-  return DB_VIEW;
-}
-
-function makeDbView(moduleDef: ModuleDef): DbView<any> {
-  return freeze(
-    Object.fromEntries(
-      moduleDef.tables.map(table => [
-        toCamelCase(table.sourceName),
-        makeTableView(moduleDef.typespace, table),
-      ])
-    )
-  );
+  }
 }
 
 const BINARY_WRITER = new BinaryWriter(0);
@@ -861,10 +882,12 @@ type Intersections<Ts extends readonly any[]> = Ts extends [
   : unknown;
 
 function wrapSyscalls<
-  Modules extends Record<string, (...args: any[]) => any>[],
+  Modules extends Record<string, symbol | ((...args: any[]) => any)>[],
 >(...modules: Modules): Intersections<Modules> {
   return Object.fromEntries(
-    modules.flatMap(Object.entries).map(([k, v]) => [k, wrapSyscall(v)])
+    modules
+      .flatMap(Object.entries)
+      .map(([k, v]) => [k, typeof v === 'function' ? wrapSyscall(v) : v])
   ) as Intersections<Modules>;
 }
 

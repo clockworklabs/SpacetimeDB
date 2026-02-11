@@ -10,11 +10,12 @@ export const TickTimer = table({
 });
 
 const spacetimedb = schema(TickTimer);
+export default spacetimedb;
 
-spacetimedb.reducer('tick', { timer: TickTimer.rowType }, (ctx, { timer }) => {
+export const tick = spacetimedb.reducer({ timer: TickTimer.rowType }, (ctx, { timer }) => {
 });
 
-spacetimedb.init(ctx => {
+export const init = spacetimedb.init(ctx => {
   ctx.db.tickTimer.insert({
     scheduledId: 0n,
     scheduledAt: ScheduleAt.interval(50_000n),

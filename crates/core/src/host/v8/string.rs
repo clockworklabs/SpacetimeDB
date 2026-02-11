@@ -1,5 +1,5 @@
 use super::error::StringTooLongError;
-use v8::{Local, OneByteConst, PinScope};
+use v8::{Local, OneByteConst, PinScope, Symbol};
 
 type LString<'scope> = Local<'scope, v8::String>;
 type StringResult<'scope> = Result<LString<'scope>, StringTooLongError>;
@@ -35,6 +35,12 @@ impl StringConst {
     pub(super) fn string<'scope>(&'static self, scope: &PinScope<'scope, '_>) -> LString<'scope> {
         v8::String::new_from_onebyte_const(scope, &self.0)
             .expect("`create_external_onebyte_const` should've asserted `.len() < kMaxLength`")
+    }
+
+    /// Converts the string to a V8 symbol using [`Symbol::for_api`].
+    pub(super) fn symbol<'scope>(&'static self, scope: &PinScope<'scope, '_>) -> Local<'scope, Symbol> {
+        let desc = self.string(scope);
+        Symbol::for_api(scope, desc)
     }
 
     /// Returns the backing string slice.

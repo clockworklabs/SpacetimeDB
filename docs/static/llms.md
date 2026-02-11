@@ -2259,6 +2259,7 @@ const Message = table(
 
 // Compose the schema - this gives us ctx.db.user and ctx.db.message
 const spacetimedb = schema(User, Message);
+export default spacetimedb;
 ```
 
 **Type Builders**
@@ -2315,6 +2316,7 @@ const Player = table(
 );
 
 const spacetimedb = schema(Player);
+export default spacetimedb;
 ```
 
 #### 3. Writing Reducers
@@ -2343,6 +2345,7 @@ const Message = table(
 );
 
 const spacetimedb = schema(User, Message);
+export default spacetimedb;
 
 // Helper function for validation
 function validateName(name: string) {
@@ -2353,7 +2356,7 @@ function validateName(name: string) {
 
 // Set user's name
 // Arguments: reducer name, argument types object, callback
-spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
+export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -2363,7 +2366,7 @@ spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
 });
 
 // Send a message
-spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
+export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   if (!text) {
     throw new SenderError('Messages must not be empty');
   }
@@ -2392,13 +2395,13 @@ SpacetimeDB provides special lifecycle methods on the `spacetimedb` object:
 
 ```typescript
 // Called once when the module is first published
-spacetimedb.init(ctx => {
+export const init = spacetimedb.init(ctx => {
   console.log('Module initialized');
   // Seed initial data, set up schedules, etc.
 });
 
 // Called when a client connects
-spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: true });
@@ -2412,7 +2415,7 @@ spacetimedb.clientConnected(ctx => {
 });
 
 // Called when a client disconnects
-spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
@@ -2427,13 +2430,13 @@ Views are read-only functions that return computed data from tables. Define view
 ```typescript
 // View that returns the caller's user (user-specific)
 // Uses spacetimedb.view() which provides ctx.sender
-spacetimedb.view('my_user', ctx => {
+export const my_user = spacetimedb.view({ name: 'my_user' }, ctx => {
   return ctx.db.user.identity.find(ctx.sender);
 });
 
 // View that returns all online users (same for all callers)
 // Uses spacetimedb.anonymousView() - no access to ctx.sender
-spacetimedb.anonymousView('online_users', ctx => {
+export const online_users = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
   return ctx.db.user.filter(u => u.online);
 });
 ```

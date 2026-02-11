@@ -1,5 +1,6 @@
 use crate::host::v8::de::scratch_buf;
 use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
+use crate::host::v8::exception_already_thrown;
 use crate::host::wasm_common::abi::parse_abi_version;
 use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
 use spacetimedb_lib::VersionTuple;
@@ -10,7 +11,7 @@ mod hooks;
 mod v1;
 mod v2;
 
-pub(super) use self::hooks::{get_hooks, HookFunctions, ModuleHookKey};
+pub(super) use self::hooks::{get_registered_hooks, HookFunctions, ModuleHookKey};
 
 /// The return type of a module -> host syscall.
 pub(super) type FnRet<'scope> = ExcResult<Local<'scope, v8::Value>>;
@@ -112,3 +113,27 @@ pub(super) fn call_call_view_anon(
 }
 
 pub use self::common::{call_call_procedure, call_describe_module};
+
+/// Get the hooks for the module.
+///
+/// May use the module's exports if it's a v2+ module, or the registered global
+/// hooks if it's v1 module.
+pub(super) fn get_hooks<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    exports_obj: Local<'_, v8::Object>,
+) -> Result<Option<HookFunctions<'scope>>, ErrorOrException<ExceptionThrown>> {
+    if let Some(hooks) = get_registered_hooks(scope) {
+        return Ok(Some(hooks));
+    }
+
+    let default = super::str_from_ident!(default).string(scope);
+    let default_export = exports_obj
+        .get(scope, default.into())
+        .ok_or_else(exception_already_thrown)?;
+    if default_export.is_null_or_undefined() {
+        return Ok(None);
+    }
+    let hooks = v2::get_hooks_from_default_export(scope, default_export, exports_obj)?
+        .ok_or_else(|| anyhow::anyhow!("default export is not a Schema object"))?;
+    Ok(Some(hooks))
+}

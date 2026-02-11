@@ -20,8 +20,9 @@ export const Profile = table({
 });
 
 const spacetimedb = schema(Profile);
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.profile.insert({
       id: 1,

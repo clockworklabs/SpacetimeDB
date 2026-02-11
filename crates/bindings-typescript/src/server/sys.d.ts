@@ -6,7 +6,13 @@ declare module 'spacetime:sys@2.0' {
   export type u128 = bigint;
   export type u256 = bigint;
 
-  export type ModuleHooks = {
+  export const moduleHooks: unique symbol;
+
+  interface ModuleDefaultExport {
+    [moduleHooks](exports: object): ModuleHooks;
+  }
+
+  export interface ModuleHooks {
     __describe_module__(): Uint8Array;
 
     __call_reducer__(
@@ -28,7 +34,7 @@ declare module 'spacetime:sys@2.0' {
       timestamp: bigint,
       args: Uint8Array
     ): Uint8Array;
-  };
+  }
 
   export function register_hooks(hooks: ModuleHooks);
 
