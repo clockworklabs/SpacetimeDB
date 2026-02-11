@@ -104,6 +104,13 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
+        // If the number in the name of this function is changed, update the version
+        // of the `deno_core_icudata` dep to match the number in the function name.
+        v8::icu::set_common_data_77(deno_core_icudata::ICU_DATA).ok();
+        // Set a default locale for functions like `toLocaleString()`.
+        // en-001 is "International English". <https://www.ctrl.blog/entry/en-001.html>
+        v8::icu::set_default_locale("en-001");
+
         // We don't want idle tasks nor background worker tasks,
         // as we intend to run on a single core.
         // Per the docs, `new_single_threaded_default_platform` requires
