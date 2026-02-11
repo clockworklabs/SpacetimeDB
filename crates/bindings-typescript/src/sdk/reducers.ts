@@ -19,7 +19,7 @@ type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
 // Loose shape that allows all three families even when key names are unknown
 type ReducersViewLoose = {
   // call: camelCase(name)
-  [k: string]: (params: any) => void;
+  [k: string]: (params: any) => Promise<void>;
 };
 
 export type ReducersView<RemoteModule> = IfAny<
@@ -30,7 +30,7 @@ export type ReducersView<RemoteModule> = IfAny<
       {
         [K in RemoteModule['reducers'][number] as CamelCase<
           K['accessorName']
-        >]: (params: InferTypeOfRow<K['params']>) => void;
+        >]: (params: InferTypeOfRow<K['params']>) => Promise<void>;
       }
     : never
 >;

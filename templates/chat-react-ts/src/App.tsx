@@ -103,7 +103,14 @@ function App() {
   const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setNewMessage('');
-    sendMessage({ text: newMessage });
+    sendMessage({ text: newMessage }).then(
+      () => {
+        console.log('Message sent.');
+      },
+      err => {
+        console.error('Error sending message:', err);
+      }
+    );
   };
 
   return (

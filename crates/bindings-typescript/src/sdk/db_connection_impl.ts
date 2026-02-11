@@ -27,7 +27,10 @@ import type {
   InferTypeOfRow,
   Serializer,
 } from '../';
-import type { ProcedureResultMessage } from './message_types.ts';
+import type {
+  ProcedureResultMessage,
+  ReducerResultMessage,
+} from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
 import {
@@ -154,6 +157,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #callReducerFlags = new Map<string, CallReducerFlags>();
+  #reducerCallbacks = new Map<
+    number,
+    (result: ReducerResultMessage['result']) => void
+  >();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
   #rowDeserializers: Record<string, Deserializer<any>>;
   #reducerArgsSerializers: Record<
@@ -312,7 +319,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const writer = new BinaryWriter(1024);
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
-        this.callReducer(reducerName, argsBuffer, flags);
+        return this.callReducer(reducerName, argsBuffer, flags);
       };
     }
 
@@ -686,7 +693,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         break;
       }
       case 'ReducerResult': {
-        const { result } = serverMessage.value;
+        const { requestId, result } = serverMessage.value;
 
         if (result.tag === 'Ok') {
           const tableUpdates = result.value.transactionUpdate.querySets.flatMap(
@@ -699,6 +706,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             callback.cb();
           }
         }
+        const cb = this.#reducerCallbacks.get(requestId);
+        this.#reducerCallbacks.delete(requestId);
+        cb?.(result);
         break;
       }
       case 'ProcedureResult': {
@@ -745,7 +755,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     reducerName: string,
     argsBuffer: Uint8Array,
     flags: CallReducerFlags
-  ): void {
+  ): Promise<void> {
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
@@ -754,6 +765,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       flags: callReducerFlagsToNumber(flags),
     });
     this.#sendMessage(message);
+    this.#reducerCallbacks.set(requestId, result => {
+      if (result.tag === 'Ok' || result.tag === 'Okmpty') {
+        resolve();
+      } else {
+        reject(result.value);
+      }
+    });
+    return promise;
   }
 
   /**
@@ -768,11 +787,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     _paramsType: ProductType,
     params: object,
     flags: CallReducerFlags
-  ) {
+  ): Promise<void> {
     const writer = new BinaryWriter(1024);
     this.#reducerArgsSerializers[reducerName].serialize(writer, params);
     const argsBuffer = writer.getBuffer();
-    this.callReducer(reducerName, argsBuffer, flags);
+    return this.callReducer(reducerName, argsBuffer, flags);
   }
 
   /**
