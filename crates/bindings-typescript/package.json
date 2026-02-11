@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.11.2",
+  "version": "1.12.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -77,6 +77,12 @@
       "import": "./dist/vue/index.mjs",
       "require": "./dist/vue/index.cjs",
       "default": "./dist/vue/index.mjs"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "import": "./dist/svelte/index.mjs",
+      "require": "./dist/svelte/index.cjs",
+      "default": "./dist/svelte/index.mjs"
     }
   },
   "size-limit": [
@@ -96,7 +102,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "31 kB"
+      "limit": "40 kB"
     },
     {
       "name": "esm (uncompressed)",
@@ -169,21 +175,26 @@
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
     "vue": "^3.3.0",
+    "svelte": "^4.0.0 || ^5.0.0",
     "undici": "^6.19.2"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
-    "vue": {
+    "svelte": {
       "optional": true
     },
     "undici": {
+      "optional": true
+    },
+    "vue": {
       "optional": true
     }
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "svelte": "^5.0.0",
     "@size-limit/file": "^11.2.0",
     "@types/fast-text-encoding": "^1.0.3",
     "@types/react": "^19.1.13",
@@ -193,6 +204,7 @@
     "@vitest/coverage-v8": "^3.2.4",
     "brotli-size-cli": "^1.0.0",
     "eslint": "^9.33.0",
+    "eslint-plugin-jsdoc": "^61.5.0",
     "globals": "^15.14.0",
     "size-limit": "^11.2.0",
     "ts-node": "^10.9.2",

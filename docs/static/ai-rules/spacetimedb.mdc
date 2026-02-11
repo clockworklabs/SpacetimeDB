@@ -44,6 +44,9 @@ When implementing a feature that spans backend and client:
 ## Commands
 
 ```bash
+# Login to allow remote database deployment e.g. to maincloud
+spacetime login
+
 # Start local SpacetimeDB
 spacetime start
 
@@ -59,6 +62,17 @@ spacetime generate --lang <lang> --out-dir <out> --project-path <module-path>
 # View logs
 spacetime logs <db-name>
 ```
+
+---
+
+## Deployment
+
+- Maincloud is the spacetimedb hosted cloud and the default location for module publishing
+- The default server marked by *** in `spacetime server list` should be used when publishing
+- If the default server is maincloud you should publish to maincloud
+- Publishing to maincloud is free of charge
+- When publishing to maincloud the database dashboard will be at the url: https://spacetimedb.com/@<username>/<database-name>
+- The database owner can view utilization and performance metrics on the dashboard
 
 ---
 

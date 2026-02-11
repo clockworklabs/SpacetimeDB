@@ -5,16 +5,14 @@
 //! into dedicated sections for cleaner organization.
 //! It allows easier future extensibility to add new kinds of definitions.
 
+use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
 use core::fmt;
-use std::any::TypeId;
-use std::collections::{btree_map, BTreeMap};
-
-use itertools::Itertools as _;
 use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SpacetimeType, Typespace};
-
-use crate::db::raw_def::v9::{Lifecycle, RawIdentifier, RawIndexAlgorithm, TableAccess, TableType};
+use std::any::TypeId;
+use std::collections::{btree_map, BTreeMap};
 
 /// A possibly-invalid raw module definition.
 ///
@@ -83,8 +81,11 @@ pub enum RawModuleDefV10Section {
     /// Unlike V9 where lifecycle was a field on reducers,
     /// V10 stores lifecycle-to-reducer mappings separately.
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
-    //TODO: Add section for Event tables, and Case conversion before exposing this from module
+
+    RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
 }
+
+pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
 
 /// The definition of a database table.
 ///
@@ -180,9 +181,13 @@ pub struct RawReducerDefV10 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub enum FunctionVisibility {
-    /// Internal-only, not callable from clients.
-    /// Typically used for lifecycle reducers and scheduled functions.
-    Internal,
+    /// Not callable by arbitrary clients.
+    ///
+    /// Still callable by the module owner, collaborators,
+    /// and internal module code.
+    ///
+    /// Enabled for lifecycle reducers and scheduled functions by default.
+    Private,
 
     /// Callable from client code.
     ClientCallable,
@@ -196,7 +201,7 @@ pub struct RawScheduleDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub source_name: Option<Box<str>>,
+    pub source_name: Option<RawIdentifier>,
 
     /// The name of the table containing the schedule.
     pub table_name: RawIdentifier,
@@ -250,7 +255,7 @@ pub struct RawSequenceDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub source_name: Option<Box<str>>,
+    pub source_name: Option<RawIdentifier>,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -282,7 +287,7 @@ pub struct RawSequenceDefV10 {
 pub struct RawIndexDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub source_name: Option<Box<str>>,
+    pub source_name: Option<RawIdentifier>,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -307,7 +312,7 @@ pub struct RawIndexDefV10 {
 pub struct RawConstraintDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub source_name: Option<Box<str>>,
+    pub source_name: Option<RawIdentifier>,
 
     /// The data for the constraint.
     pub data: RawConstraintDataV10,
@@ -476,6 +481,14 @@ impl RawModuleDefV10 {
             })
             .expect("Tables section must exist for tests")
     }
+
+    // Get the row-level security section, if present.
+    pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::RowLevelSecurity(rls) => Some(rls),
+            _ => None,
+        })
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -633,6 +646,26 @@ impl RawModuleDefV10Builder {
         TypespaceBuilder::add_type::<T>(self)
     }
 
+    /// Get mutable access to the row-level security section, creating it if missing.
+    fn row_level_security_mut(&mut self) -> &mut Vec<RawRowLevelSecurityDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::RowLevelSecurity(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::RowLevelSecurity(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
+            _ => unreachable!("Just ensured RowLevelSecurity section exists"),
+        }
+    }
+
     /// Create a table builder.
     ///
     /// Does not validate that the product_type_ref is valid; this is left to the module validation code.
@@ -716,7 +749,7 @@ impl RawModuleDefV10Builder {
         // Make the type into a ref.
         let name = *name_gen;
         let add_ty = core::mem::replace(ty, AlgebraicType::U8);
-        *ty = AlgebraicType::Ref(self.add_algebraic_type([], format!("gen_{name}"), add_ty, true));
+        *ty = AlgebraicType::Ref(self.add_algebraic_type([], RawIdentifier::new(format!("gen_{name}")), add_ty, true));
         *name_gen += 1;
     }
 
@@ -841,7 +874,7 @@ impl RawModuleDefV10Builder {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: function_name,
             params,
-            visibility: FunctionVisibility::Internal,
+            visibility: FunctionVisibility::Private,
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         });
@@ -867,45 +900,19 @@ impl RawModuleDefV10Builder {
         });
     }
 
+    /// Add a row-level security policy to the module.
+    ///
+    /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
+    ///
+    /// **NOTE**: The `sql` expression must be unique within the module.
+    pub fn add_row_level_security(&mut self, sql: &str) {
+        self.row_level_security_mut()
+            .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
+    }
+
     /// Finish building, consuming the builder and returning the module.
     /// The module should be validated before use.
-    ///
-    /// This method automatically marks functions used in lifecycle or schedule functions
-    /// as `Internal` visibility.
-    pub fn finish(mut self) -> RawModuleDefV10 {
-        let internal_functions = self
-            .module
-            .lifecycle_reducers()
-            .cloned()
-            .into_iter()
-            .flatten()
-            .map(|lcr| lcr.function_name.clone())
-            .chain(
-                self.module
-                    .schedules()
-                    .cloned()
-                    .into_iter()
-                    .flatten()
-                    .map(|sched| sched.function_name.clone()),
-            );
-
-        for internal_function in internal_functions {
-            if let Some(r) = self
-                .reducers_mut()
-                .iter_mut()
-                .find(|r| r.source_name == internal_function)
-            {
-                r.visibility = FunctionVisibility::Internal;
-            }
-
-            if let Some(p) = self
-                .procedures_mut()
-                .iter_mut()
-                .find(|p| p.source_name == internal_function)
-            {
-                p.visibility = FunctionVisibility::Internal;
-            }
-        }
+    pub fn finish(self) -> RawModuleDefV10 {
         self.module
     }
 }
@@ -966,7 +973,11 @@ pub fn reducer_default_err_return_type() -> AlgebraicType {
 ///
 pub fn sats_name_to_scoped_name_v10(sats_name: &str) -> RawScopedTypeNameV10 {
     // We can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
-    let mut scope: Vec<RawIdentifier> = sats_name.split("::").flat_map(|s| s.split('.')).map_into().collect();
+    let mut scope: Vec<RawIdentifier> = sats_name
+        .split("::")
+        .flat_map(|s| s.split('.'))
+        .map(RawIdentifier::new)
+        .collect();
     // Unwrapping to "" will result in a validation error down the line, which is exactly what we want.
     let source_name = scope.pop().unwrap_or_default();
     RawScopedTypeNameV10 {
@@ -1113,7 +1124,7 @@ impl RawTableDefBuilderV10<'_> {
             .as_product()?
             .elements
             .iter()
-            .position(|e| e.name().is_some_and(|n| n == column))
+            .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
     }
 }

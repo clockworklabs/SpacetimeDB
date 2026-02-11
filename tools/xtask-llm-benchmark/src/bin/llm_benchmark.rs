@@ -3,8 +3,8 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use futures::{StreamExt, TryStreamExt};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use spacetimedb_guard::SpacetimeDbGuard;
-use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -888,7 +888,7 @@ async fn run_many_routes_for_mode(
     let host = config.host.clone();
     let details_path = config.details_path.clone();
 
-    futures::stream::iter(routes.iter().cloned().map(|route| {
+    futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
         let details_path = details_path.clone();
 
@@ -899,7 +899,7 @@ async fn run_many_routes_for_mode(
                 bench_root,
                 mode,
                 hash,
-                route: &route,
+                route,
                 context,
                 llm,
                 lang,

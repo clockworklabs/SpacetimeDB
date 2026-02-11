@@ -23,7 +23,7 @@ use spacetimedb_lib::{
 };
 use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::product;
+use spacetimedb_sats::{product, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::ModuleDef,
     schema::{Schema as _, TableSchema},
@@ -277,7 +277,7 @@ fn table(
     f: impl FnOnce(RawTableDefBuilder<'_>) -> RawTableDefBuilder,
 ) -> TableSchema {
     let mut builder = RawModuleDefV9Builder::new();
-    f(builder.build_table_with_new_type(name, columns, true));
+    f(builder.build_table_with_new_type(RawIdentifier::new(name), columns, true));
     let raw = builder.finish();
     let def: ModuleDef = raw.try_into().expect("table validation failed");
     let table = def.table(name).expect("table not found");
