@@ -1,16 +1,14 @@
-use bytes::Bytes;
-use spacetimedb_lib::{RawModuleDef, VersionTuple};
-use v8::{callback_scope, Context, FixedArray, Local, Module, PinScope};
-
 use crate::host::v8::de::scratch_buf;
 use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
 use crate::host::wasm_common::abi::parse_abi_version;
-use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
-};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
+use spacetimedb_lib::VersionTuple;
+use v8::{callback_scope, ArrayBuffer, Context, FixedArray, Local, Module, PinScope};
 
+mod common;
 mod hooks;
 mod v1;
+mod v2;
 
 pub(super) use self::hooks::{get_hooks, HookFunctions, ModuleHookKey};
 
@@ -21,6 +19,7 @@ pub(super) type FnRet<'scope> = ExcResult<Local<'scope, v8::Value>>;
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum AbiVersion {
     V1,
+    V2,
 }
 
 /// A dependency resolver for the user's module
@@ -58,9 +57,10 @@ fn resolve_sys_module_inner<'scope>(
             (1, 1) => Ok(v1::sys_v1_1(scope)),
             (1, 2) => Ok(v1::sys_v1_2(scope)),
             (1, 3) => Ok(v1::sys_v1_3(scope)),
+            (2, 0) => Ok(v2::sys_v2_0(scope)),
             _ => Err(TypeError(format!(
                 "Could not import {spec:?}, likely because this module was built for a newer version of SpacetimeDB.\n\
-                It requires sys module v{major}.{minor}, but that version is not supported by the database."
+            It requires sys module v{major}.{minor}, but that version is not supported by the database."
             ))
             .throw(scope)),
         },
@@ -71,13 +71,15 @@ fn resolve_sys_module_inner<'scope>(
 /// Calls the registered `__call_reducer__` function hook.
 ///
 /// This handles any (future) ABI version differences.
-pub(super) fn call_call_reducer(
-    scope: &mut PinScope<'_, '_>,
-    hooks: &HookFunctions<'_>,
+pub(super) fn call_call_reducer<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
+    reducer_args_buf: Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_reducer(scope, hooks, op),
+        AbiVersion::V2 => v2::call_call_reducer(scope, hooks, op, reducer_args_buf),
     }
 }
 
@@ -91,6 +93,7 @@ pub(super) fn call_call_view(
 ) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view(scope, hooks, op),
+        AbiVersion::V2 => v2::call_call_view(scope, hooks, op),
     }
 }
 
@@ -104,30 +107,8 @@ pub(super) fn call_call_view_anon(
 ) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view_anon(scope, hooks, op),
+        AbiVersion::V2 => v2::call_call_view_anon(scope, hooks, op),
     }
 }
 
-/// Calls the registered `__call_procedure__` function hook.
-///
-/// This handles any (future) ABI version differences.
-pub(super) fn call_call_procedure(
-    scope: &mut PinScope<'_, '_>,
-    hooks: &HookFunctions<'_>,
-    op: ProcedureOp,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
-    match hooks.abi {
-        AbiVersion::V1 => v1::call_call_procedure(scope, hooks, op),
-    }
-}
-
-/// Calls the registered `__describe_module__` function hook.
-///
-/// This handles any (future) ABI version differences.
-pub(super) fn call_describe_module<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'_>,
-) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
-    match hooks.abi {
-        AbiVersion::V1 => v1::call_describe_module(scope, hooks),
-    }
-}
+pub use self::common::{call_call_procedure, call_describe_module};

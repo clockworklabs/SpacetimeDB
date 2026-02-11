@@ -3,8 +3,12 @@
 
 use crate::{
     energy::EnergyMonitor,
-    host::{module_host::ModuleInfo, wasm_common::module_host_actor::DescribeError, Scheduler},
-    module_host_context::ModuleCreationContextLimited,
+    host::{
+        module_host::ModuleInfo,
+        wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
+        Scheduler,
+    },
+    module_host_context::ModuleCreationContext,
     replica_context::ReplicaContext,
 };
 use spacetimedb_lib::{Identity, RawModuleDef};
@@ -13,7 +17,7 @@ use std::sync::Arc;
 
 /// Builds a [`ModuleCommon`] from a [`RawModuleDef`].
 pub fn build_common_module_from_raw(
-    mcc: ModuleCreationContextLimited,
+    mcc: ModuleCreationContext,
     raw_def: RawModuleDef,
 ) -> Result<ModuleCommon, ValidationErrors> {
     // Perform a bunch of validation on the raw definition.
@@ -86,10 +90,11 @@ impl ModuleCommon {
 
 /// Runs the describer of modules in `run` and does some logging around it.
 pub(crate) fn run_describer<T>(
-    describer_func_name: &str,
     log_traceback: impl Copy + FnOnce(&str, &str, &anyhow::Error),
     run: impl FnOnce() -> anyhow::Result<T>,
 ) -> Result<T, DescribeError> {
+    let describer_func_name = DESCRIBE_MODULE_DUNDER;
+
     let start = std::time::Instant::now();
     log::trace!("Start describer \"{describer_func_name}\"...");
 
