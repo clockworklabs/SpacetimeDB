@@ -812,7 +812,7 @@ struct IndexedTable {
     player_id: u32,
 }
 
-#[spacetimedb::table(accessor = indexed_table_2, index(name=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
+#[spacetimedb::table(accessor = indexed_table_2, index(accessor=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
 struct IndexedTable2 {
     player_id: u32,
     player_snazz: f32,

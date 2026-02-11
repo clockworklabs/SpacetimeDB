@@ -485,7 +485,7 @@ pub trait IndexIsPointed: Index {}
 /// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
 ///
 /// #[table(accessor = user,
-///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
 /// struct User {
 ///     id: u32,
 ///     name: String,
@@ -540,7 +540,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// use spacetimedb::{table, ReducerContext, PointIndex};
     ///
     /// #[table(accessor = user,
-    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    ///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -582,7 +582,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// use spacetimedb::{table, ReducerContext, PointIndex};
     ///
     /// #[table(accessor = user,
-    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    ///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -725,7 +725,7 @@ pub trait IndexIsRanged: Index {}
 /// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
 /// #[table(accessor = user,
-///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
 /// struct User {
 ///     id: u32,
 ///     name: String,
@@ -782,7 +782,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// use spacetimedb::{table, ReducerContext, RangedIndex};
     ///
     /// #[table(accessor = user,
-    ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+    ///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -864,7 +864,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// use spacetimedb::{table, ReducerContext, RangedIndex};
     ///
     /// #[table(accessor = user,
-    ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+    ///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,

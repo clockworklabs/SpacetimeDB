@@ -11,7 +11,7 @@ pub struct PlayerState {
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(accessor = player_info, index(name=age_level_index, btree(columns = [age, level])))]
+#[spacetimedb::table(accessor = player_info, index(accessor=age_level_index, btree(columns = [age, level])))]
 pub struct PlayerInfo {
     #[primary_key]
     id: u64,

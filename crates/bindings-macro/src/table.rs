@@ -45,17 +45,21 @@ struct ScheduledArg {
 }
 
 struct IndexArg {
-    name: Ident,
+    accessor: Ident,
     is_unique: bool,
     kind: IndexType,
 }
 
 impl IndexArg {
-    fn new(name: Ident, kind: IndexType) -> Self {
+    fn new(accessor: Ident, kind: IndexType) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
-        Self { name, is_unique, kind }
+        Self {
+            accessor,
+            is_unique,
+            kind,
+        }
     }
 }
 
@@ -152,14 +156,14 @@ impl ScheduledArg {
 
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
-        let mut name = None;
+        let mut accessor = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
             match_meta!(match meta {
-                sym::name => {
-                    check_duplicate(&name, &meta)?;
-                    name = Some(meta.value()?.parse()?);
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
+                    accessor = Some(meta.value()?.parse()?);
                 }
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
@@ -176,7 +180,7 @@ impl IndexArg {
             });
             Ok(())
         })?;
-        let name = name.ok_or_else(|| meta.error("missing index name, e.g. name = my_index"))?;
+        let accessor = accessor.ok_or_else(|| meta.error("missing index name, e.g. accessor = my_index"))?;
         let kind = algo.ok_or_else(|| {
             meta.error(
                 "missing index algorithm, e.g., `btree(columns = [col1, col2])`, \
@@ -184,7 +188,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(name, kind))
+        Ok(IndexArg::new(accessor, kind))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -306,7 +310,7 @@ impl IndexArg {
         Ok(ValidatedIndex {
             is_unique: self.is_unique,
             index_name,
-            accessor_name: &self.name,
+            accessor_name: &self.accessor,
             kind,
         })
     }
@@ -799,7 +803,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let name = unique_col.ident.clone();
         let columns = vec![name.clone()];
         args.indices.push(IndexArg {
-            name,
+            accessor: name,
             is_unique: true,
             kind: IndexType::BTree { columns },
         })

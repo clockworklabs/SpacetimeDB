@@ -118,7 +118,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// use spacetimedb::{table, ReducerContext};
 ///
 /// #[table(accessor = user, public,
-///         index(name = popularity_and_username, btree(columns = [popularity, username])),
+///         index(accessor = popularity_and_username, btree(columns = [popularity, username])),
 /// )]
 /// pub struct User {
 ///     #[auto_inc]
@@ -227,7 +227,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ### `index(...)`
 ///
 /// You can specify an index on one or more of the table's columns with the syntax:
-/// `index(name = my_index, btree(columns = [a, b, c]))`
+/// `index(accessor = my_index, btree(columns = [a, b, c]))`
 ///
 /// You can also just put `#[index(btree)]` on the field itself if you only need
 /// a single-column index; see column attributes below.
@@ -797,7 +797,7 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     id: u64,
 /// }
 ///
-/// #[table(accessor = location, index(name = coordinates, btree(columns = [x, y])))]
+/// #[table(accessor = location, index(accessor = coordinates, btree(columns = [x, y])))]
 /// struct Location {
 ///     #[unique]
 ///     player_id: u64,
