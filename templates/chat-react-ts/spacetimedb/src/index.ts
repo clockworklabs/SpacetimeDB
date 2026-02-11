@@ -24,7 +24,7 @@ function validateName(name: string) {
   if (!name) throw new SenderError('Names must not be empty');
 }
 
-export const set_name = spacetimedb.reducer(
+export const setName = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
     validateName(name);
@@ -39,7 +39,7 @@ function validateMessage(text: string) {
   if (!text) throw new SenderError('Messages must not be empty');
 }
 
-export const send_message = spacetimedb.reducer(
+export const sendMessage = spacetimedb.reducer(
   { text: t.string() },
   (ctx, { text }) => {
     // Things to consider:

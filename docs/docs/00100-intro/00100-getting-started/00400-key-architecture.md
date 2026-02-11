@@ -105,7 +105,7 @@ This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_p
 A reducer can be written in a TypeScript module like so:
 
 ```typescript
-export const set_player_name = spacetimedb.reducer({ id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
+export const setPlayerName = spacetimedb.reducer({ id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
    // ...
 });
 ```
@@ -321,7 +321,7 @@ Procedures are currently in beta, and their API may change in upcoming Spacetime
 A procedure can be defined in a TypeScript module:
 
 ```typescript
-export const make_request = spacetimedb.procedure(t.string(), ctx => {
+export const makeRequest = spacetimedb.procedure(t.string(), ctx => {
    // ...
 })
 ```
@@ -492,7 +492,7 @@ Views must be declared as `public` and accept only a context parameter. They can
 A view can be written in a TypeScript module like so:
 
 ```typescript
-export const my_player = spacetimedb.view(
+export const myPlayer = spacetimedb.view(
   { name: 'my_player', public: true },
   t.option(players.row()),
   (ctx) => {

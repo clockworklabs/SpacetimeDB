@@ -21,7 +21,7 @@ Use the `spacetimedb.reducer` function:
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
+export const createUser = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
     throw new Error('Name cannot be empty');

@@ -26,7 +26,7 @@ const post = table(
 const spacetimedb = schema({ post });
 export default spacetimedb;
 
-export const add_post = spacetimedb.reducer({ title: t.string() }, (ctx, { title }) => {
+export const addPost = spacetimedb.reducer({ title: t.string() }, (ctx, { title }) => {
   // Pass 0 for the auto-increment field
   const inserted = ctx.db.post.insert({ id: 0n, title });
   // inserted.id now contains the assigned value
@@ -184,7 +184,7 @@ const user = table(
   }
 );
 
-export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+export const insertUser = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.user.insert({ user_id: 0n, name });
 });
 ```

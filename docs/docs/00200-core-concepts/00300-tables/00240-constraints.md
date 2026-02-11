@@ -180,7 +180,7 @@ When you update a row, SpacetimeDB uses the primary key to determine whether it'
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const update_user_name = spacetimedb.reducer({ id: t.u64(), newName: t.string() }, (ctx, { id, newName }) => {
+export const updateUserName = spacetimedb.reducer({ id: t.u64(), newName: t.string() }, (ctx, { id, newName }) => {
   const user = ctx.db.user.id.find(id);
   if (user) {
     // This is an update — primary key (id) stays the same

@@ -440,7 +440,7 @@ const spacetimedb = schema({ message });
 export default spacetimedb;
 
 // Public view that only returns messages the caller can see
-export const my_messages = spacetimedb.view(
+export const myMessages = spacetimedb.view(
   { name: 'my_messages', public: true },
   t.array(message.rowType),
   (ctx) => {
@@ -587,7 +587,7 @@ const publicUserProfile = t.row('PublicUserProfile', {
 });
 
 // Public view that returns the caller's profile without sensitive data
-export const my_profile = spacetimedb.view(
+export const myProfile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(publicUserProfile),
   (ctx) => {
@@ -782,7 +782,7 @@ const colleague = t.row('Colleague', {
 });
 
 // View that returns colleagues in the caller's department, without salary info
-export const my_colleagues = spacetimedb.view(
+export const myColleagues = spacetimedb.view(
   { name: 'my_colleagues', public: true },
   t.array(colleague),
   (ctx) => {
