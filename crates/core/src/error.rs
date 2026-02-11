@@ -3,7 +3,6 @@ use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
-use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
 use spacetimedb_commitlog::repo::TxOffset;
 use spacetimedb_durability::DurabilityExited;
@@ -96,7 +95,7 @@ impl From<LockError> for DatabaseError {
     }
 }
 
-#[derive(Error, Debug, EnumAsInner)]
+#[derive(Error, Debug)]
 pub enum DBError {
     #[error("LibError: {0}")]
     Lib(#[from] LibError),
@@ -295,10 +294,8 @@ pub enum NodesError {
     NotInAnonTransaction,
     #[error("ABI call not allowed while holding open a transaction: {0}")]
     WouldBlockTransaction(AbiCall),
-    #[error("table with name {0:?} already exists")]
-    AlreadyExists(String),
     #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    SystemName(Box<str>),
+    SystemName(TableName),
     #[error("internal db error: {0}")]
     Internal(#[source] Box<DBError>),
     #[error(transparent)]
@@ -314,8 +311,6 @@ pub enum NodesError {
 impl From<DBError> for NodesError {
     fn from(e: DBError) -> Self {
         match e {
-            DBError::Datastore(DatastoreError::Table(TableError::Exist(name))) => Self::AlreadyExists(name),
-            DBError::Datastore(DatastoreError::Table(TableError::System(name))) => Self::SystemName(name),
             DBError::Datastore(
                 DatastoreError::Table(TableError::IdNotFound(_, _)) | DatastoreError::Table(TableError::NotFound(_)),
             ) => Self::TableNotFound,
