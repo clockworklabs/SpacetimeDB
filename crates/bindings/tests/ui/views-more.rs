@@ -10,7 +10,7 @@ struct PlayerInfo {
 }
 /// Comparing incompatible types in `where` condition: u8 != u32 implicitly
 #[view(name = view_bad_where_int_types_implicit, public)]
-fn view_bad_where_int_types_implicit(ctx: &ViewContext) -> Query<PlayerInfo> {
+fn view_bad_where_int_types_implicit(ctx: &ViewContext) -> impl Query<PlayerInfo> {
     ctx.from.player_info().r#where(|a| a.age.eq(4200)).build()
 }
 
