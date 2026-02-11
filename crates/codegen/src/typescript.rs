@@ -446,15 +446,15 @@ impl Lang for TypeScript {
             code: output.into_inner(),
         };
 
-        let reducers_file = generate_reducers_file(module);
-        let procedures_file = generate_procedures_file(module);
+        let reducers_file = generate_reducers_file(module, options);
+        let procedures_file = generate_procedures_file(module, options);
         let types_file = generate_types_file(module);
 
         vec![index_file, reducers_file, procedures_file, types_file]
     }
 }
 
-fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
+fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -464,7 +464,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
 
     writeln!(out);
     writeln!(out, "// Import all reducer arg schemas");
-    for reducer in iter_reducers(module) {
+    for reducer in iter_reducers(module, options.visibility) {
         let reducer_name = &reducer.name;
         let reducer_module_name = reducer_module_name(reducer_name);
         let args_type = reducer_args_type_name(&reducer.name);
@@ -472,7 +472,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
     }
 
     writeln!(out);
-    for reducer in iter_reducers(module) {
+    for reducer in iter_reducers(module, options.visibility) {
         let reducer_name_pascalcase = reducer.name.deref().to_case(Case::Pascal);
         let args_type = reducer_args_type_name(&reducer.name);
         writeln!(
@@ -488,7 +488,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
     }
 }
 
-fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
+fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -498,7 +498,7 @@ fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
 
     writeln!(out);
     writeln!(out, "// Import all procedure arg schemas");
-    for procedure in iter_procedures(module) {
+    for procedure in iter_procedures(module, options.visibility) {
         let procedure_name = &procedure.name;
         let procedure_module_name = procedure_module_name(procedure_name);
         let args_type = procedure_args_type_name(&procedure.name);
@@ -506,7 +506,7 @@ fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
     }
 
     writeln!(out);
-    for procedure in iter_procedures(module) {
+    for procedure in iter_procedures(module, options.visibility) {
         let procedure_name_pascalcase = procedure.name.deref().to_case(Case::Pascal);
         let args_type = procedure_args_type_name(&procedure.name);
         writeln!(
