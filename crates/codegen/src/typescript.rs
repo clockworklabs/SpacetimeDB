@@ -246,12 +246,12 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
-        writeln!(out, "const tablesSchema = __schema(");
+        writeln!(out, "const tablesSchema = __schema({{");
         out.indent(1);
         for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-            writeln!(out, "__table({{");
+            writeln!(out, "{}: __table({{", table.name);
             out.indent(1);
             write_table_opts(
                 module,
@@ -267,14 +267,14 @@ impl Lang for TypeScript {
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
             let view_name_pascalcase = view.name.deref().to_case(Case::Pascal);
-            writeln!(out, "__table({{");
+            writeln!(out, "{}: __table({{", view.name);
             out.indent(1);
             write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty());
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
         out.dedent(1);
-        writeln!(out, ");");
+        writeln!(out, "}});");
 
         writeln!(out);
         writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
@@ -337,10 +337,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** The tables available in this remote SpacetimeDB module. */");
-        writeln!(
-            out,
-            "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
-        );
+        writeln!(out, "export const tables = tablesSchema.schemaType.tables;");
         writeln!(out);
         writeln!(out, "/** A typed query builder for this remote SpacetimeDB module. */");
         writeln!(

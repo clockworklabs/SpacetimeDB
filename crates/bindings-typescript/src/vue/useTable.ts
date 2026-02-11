@@ -66,7 +66,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   DeepReadonly<Ref<boolean>>,
 ] {
   type Row = RowType<TableDef>;
-  const tableName = tableDef.name;
+  const tableName = tableDef.sourceName;
   const accessorName = tableDef.accessorName;
 
   let whereClause: Expr<ColumnsFromRow<Row>> | undefined;

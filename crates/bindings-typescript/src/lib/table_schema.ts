@@ -4,19 +4,19 @@ import type RawScheduleDefV10 from './autogen/raw_schedule_def_v_10_type';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
 import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
+import type { ReducerExport } from '../server';
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
  */
 export type TableSchema<
-  TableName extends string,
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
 > = {
   /**
    * The name of the table.
    */
-  readonly tableName: TableName;
+  readonly tableName?: string;
 
   /**
    * The TypeBuilder representation of the type of the rows in the table.
@@ -31,7 +31,12 @@ export type TableSchema<
   /**
    * The {@link RawTableDefV10} of the configured table
    */
-  tableDef(ctx: ModuleContext): Infer<typeof RawTableDefV10>;
+  tableDef(
+    ctx: ModuleContext,
+    accName: string
+  ): Infer<typeof RawTableDefV10> & {
+    schedule?: Infer<typeof RawScheduleDefV10>;
+  };
 
   /**
    * The indexes defined on the table.
@@ -50,11 +55,13 @@ export type TableSchema<
   /**
    * The schedule defined on the table, if any.
    */
-  readonly schedule?: Infer<typeof RawScheduleDefV10>;
+  readonly schedule?: {
+    scheduleAtCol: number;
+    reducer: () => ReducerExport<any, any>;
+  };
 };
 
 export type UntypedTableSchema = TableSchema<
-  string,
   Record<string, ColumnBuilder<any, any, any>>,
   readonly IndexOpts<string>[]
 >;

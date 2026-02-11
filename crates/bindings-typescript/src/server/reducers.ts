@@ -38,6 +38,10 @@ export function makeReducerExport<
   reducerExport[exportContext] = ctx;
   reducerExport[registerExport] = (ctx, exportName) => {
     registerReducer(ctx, name ?? exportName, params, fn, lifecycle);
+    ctx.reducerExports.set(
+      reducerExport as ReducerExport<any, any>,
+      name ?? exportName
+    );
   };
 
   return reducerExport;

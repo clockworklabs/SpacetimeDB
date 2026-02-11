@@ -49,7 +49,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   callbacks?: UseTableCallbacks<RowType<TableDef>>
 ): [Readable<readonly Prettify<RowType<TableDef>>[]>, Readable<boolean>] {
   type Row = RowType<TableDef>;
-  const tableName = tableDef.name;
+  const tableName = tableDef.sourceName;
   const accessorName = tableDef.accessorName;
 
   let whereClause: Expr<ColumnsFromRow<Row>> | undefined;

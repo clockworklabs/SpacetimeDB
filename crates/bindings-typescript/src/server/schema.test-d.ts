@@ -4,7 +4,7 @@ import t from '../lib/type_builders';
 
 const person = table(
   {
-    name: 'person',
+    // name: 'person',
     indexes: [
       {
         name: 'id_name_idx',
@@ -34,7 +34,7 @@ const person = table(
   }
 );
 
-const spacetimedb = schema(person);
+const spacetimedb = schema({ person });
 
 spacetimedb.init(ctx => {
   ctx.db.person.id_name_idx.filter(1);

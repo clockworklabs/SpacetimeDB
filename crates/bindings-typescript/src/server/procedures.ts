@@ -85,6 +85,12 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
 
+type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
+
+const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
+  extends ReducerCtxImpl<S>
+  implements ITransactionCtx<S> {};
+
 function registerProcedure<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
@@ -192,7 +198,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
       const timestamp = sys.procedure_start_mut_tx();
 
       try {
-        const ctx: TransactionCtx<UntypedSchemaDef> = new ReducerCtxImpl(
+        const ctx: TransactionCtx<S> = new TransactionCtxImpl(
           this.sender,
           new Timestamp(timestamp),
           this.connectionId,
