@@ -2,27 +2,27 @@ error: views must be `public`, e.g. `#[view(public)]`
   --> tests/ui/views.rs:76:1
    |
 76 | #[view(accessor = view_def_no_public)]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: `public` already specified
-  --> tests/ui/views.rs:82:44
+  --> tests/ui/views.rs:82:48
    |
 82 | #[view(accessor = view_def_dup_public, public, public)]
-   |                                            ^^^^^^
+   |                                                ^^^^^^
 
-error: `name` already specified
-  --> tests/ui/views.rs:88:34
+error: expected string literal
+  --> tests/ui/views.rs:88:45
    |
 88 | #[view(accessor = view_def_dup_name, name = view_def_dup_name, public)]
-   |                                  ^^^^
+   |                                             ^^^^^^^^^^^^^^^^^
 
-error: expected `name` or `public`
-  --> tests/ui/views.rs:94:49
+error: expected one of: `name`, `public`, `accessor`
+  --> tests/ui/views.rs:94:53
    |
 94 | #[view(accessor = view_def_unsupported_arg, public, anonymous)]
-   |                                                 ^^^^^^^^^
+   |                                                     ^^^^^^^^^
 
 error: Views must always have a context parameter: `&ViewContext` or `&AnonymousViewContext`
    --> tests/ui/views.rs:101:1
@@ -81,7 +81,7 @@ error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not s
    --> tests/ui/views.rs:106:1
     |
 106 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<ReducerContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<ReducerContext>`
     |
 help: the following other types implement trait `ViewKindTrait`
    --> src/rt.rs
@@ -97,7 +97,7 @@ error[E0276]: impl has stricter requirements than trait
    --> tests/ui/views.rs:106:1
     |
 106 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<ReducerContext>: ViewKindTrait`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<ReducerContext>: ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -199,7 +199,7 @@ error[E0599]: no function or associated item named `register` found for struct `
    --> tests/ui/views.rs:106:1
     |
 106 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<ReducerContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<ReducerContext>`
     |
     = note: the function or associated item was found for
             - `ViewRegistrar<AnonymousViewContext>`
@@ -224,7 +224,7 @@ error[E0599]: no function or associated item named `invoke` found for struct `Vi
    --> tests/ui/views.rs:106:1
     |
 106 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<ReducerContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<ReducerContext>`
     |
     = note: the function or associated item was found for
             - `ViewDispatcher<AnonymousViewContext>`
@@ -235,7 +235,7 @@ error[E0277]: invalid view signature
    --> tests/ui/views.rs:128:1
     |
 128 | #[view(accessor = view_def_wrong_return, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Player {view_def_wrong_return}`
     = note:
@@ -280,7 +280,7 @@ error[E0277]: invalid view signature
    --> tests/ui/views.rs:128:1
     |
 128 | #[view(accessor = view_def_wrong_return, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Player {view_def_wrong_return}`
     = note:
@@ -302,7 +302,7 @@ error[E0277]: invalid anonymous view signature
    --> tests/ui/views.rs:136:1
     |
 136 | #[view(accessor = view_def_returns_not_a_spacetime_type, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`
     = note:
@@ -371,7 +371,7 @@ error[E0277]: invalid anonymous view signature
    --> tests/ui/views.rs:136:1
     |
 136 | #[view(accessor = view_def_returns_not_a_spacetime_type, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`
     = note:

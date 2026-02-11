@@ -1031,11 +1031,11 @@ namespace SpacetimeDB
         {
             [DataMember(Name = "arg")]
             public TestA Arg;
-            [DataMember(Name = "arg2")]
+            [DataMember(Name = "arg_2")]
             public TestB Arg2;
-            [DataMember(Name = "arg3")]
+            [DataMember(Name = "arg_3")]
             public NamespaceTestC Arg3;
-            [DataMember(Name = "arg4")]
+            [DataMember(Name = "arg_4")]
             public NamespaceTestF Arg4;
 
             public Test(
@@ -1923,38 +1923,38 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "logged_out_player";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class LoggedOutPlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public IdentityUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public LoggedOutPlayerIdentityIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly LoggedOutPlayerIdentityIdxBtreeUniqueIndex LoggedOutPlayerIdentityIdxBtree;
 
-            public sealed class NameUniqueIndex : UniqueIndexBase<string>
+            public sealed class LoggedOutPlayerNameIdxBtreeUniqueIndex : UniqueIndexBase<string>
             {
                 protected override string GetKey(Player row) => row.Name;
 
-                public NameUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public LoggedOutPlayerNameIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly NameUniqueIndex Name;
+            public readonly LoggedOutPlayerNameIdxBtreeUniqueIndex LoggedOutPlayerNameIdxBtree;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Player row) => row.PlayerId;
 
-                public PlayerIdUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdUniqueIndex PlayerId;
+            public readonly LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex LoggedOutPlayerPlayerIdIdxBtree;
 
             internal LoggedOutPlayerHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
-                Name = new(this);
-                PlayerId = new(this);
+                LoggedOutPlayerIdentityIdxBtree = new(this);
+                LoggedOutPlayerNameIdxBtree = new(this);
+                LoggedOutPlayerPlayerIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;
@@ -2072,19 +2072,19 @@ namespace SpacetimeDB
 
             public readonly AgeIndex Age;
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class PersonIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(Person row) => row.Id;
 
-                public IdUniqueIndex(PersonHandle table) : base(table) { }
+                public PersonIdIdxBtreeUniqueIndex(PersonHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly PersonIdIdxBtreeUniqueIndex PersonIdIdxBtree;
 
             internal PersonHandle(DbConnection conn) : base(conn)
             {
                 Age = new(this);
-                Id = new(this);
+                PersonIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Person row) => row.Id;
@@ -2140,28 +2140,28 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "pk_multi_identity";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class PkMultiIdentityIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(PkMultiIdentity row) => row.Id;
 
-                public IdUniqueIndex(PkMultiIdentityHandle table) : base(table) { }
+                public PkMultiIdentityIdIdxBtreeUniqueIndex(PkMultiIdentityHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly PkMultiIdentityIdIdxBtreeUniqueIndex PkMultiIdentityIdIdxBtree;
 
-            public sealed class OtherUniqueIndex : UniqueIndexBase<uint>
+            public sealed class PkMultiIdentityOtherIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(PkMultiIdentity row) => row.Other;
 
-                public OtherUniqueIndex(PkMultiIdentityHandle table) : base(table) { }
+                public PkMultiIdentityOtherIdxBtreeUniqueIndex(PkMultiIdentityHandle table) : base(table) { }
             }
 
-            public readonly OtherUniqueIndex Other;
+            public readonly PkMultiIdentityOtherIdxBtreeUniqueIndex PkMultiIdentityOtherIdxBtree;
 
             internal PkMultiIdentityHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
-                Other = new(this);
+                PkMultiIdentityIdIdxBtree = new(this);
+                PkMultiIdentityOtherIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(PkMultiIdentity row) => row.Id;
@@ -2215,38 +2215,38 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "player";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class PlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerIdentityIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly PlayerIdentityIdxBtreeUniqueIndex PlayerIdentityIdxBtree;
 
-            public sealed class NameUniqueIndex : UniqueIndexBase<string>
+            public sealed class PlayerNameIdxBtreeUniqueIndex : UniqueIndexBase<string>
             {
                 protected override string GetKey(Player row) => row.Name;
 
-                public NameUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerNameIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly NameUniqueIndex Name;
+            public readonly PlayerNameIdxBtreeUniqueIndex PlayerNameIdxBtree;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class PlayerPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Player row) => row.PlayerId;
 
-                public PlayerIdUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerPlayerIdIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdUniqueIndex PlayerId;
+            public readonly PlayerPlayerIdIdxBtreeUniqueIndex PlayerPlayerIdIdxBtree;
 
             internal PlayerHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
-                Name = new(this);
-                PlayerId = new(this);
+                PlayerIdentityIdxBtree = new(this);
+                PlayerNameIdxBtree = new(this);
+                PlayerPlayerIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;
@@ -2414,18 +2414,18 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "repeating_test_arg";
 
-            public sealed class ScheduledIdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class RepeatingTestArgScheduledIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(RepeatingTestArg row) => row.ScheduledId;
 
-                public ScheduledIdUniqueIndex(RepeatingTestArgHandle table) : base(table) { }
+                public RepeatingTestArgScheduledIdIdxBtreeUniqueIndex(RepeatingTestArgHandle table) : base(table) { }
             }
 
-            public readonly ScheduledIdUniqueIndex ScheduledId;
+            public readonly RepeatingTestArgScheduledIdIdxBtreeUniqueIndex RepeatingTestArgScheduledIdIdxBtree;
 
             internal RepeatingTestArgHandle(DbConnection conn) : base(conn)
             {
-                ScheduledId = new(this);
+                RepeatingTestArgScheduledIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(RepeatingTestArg row) => row.ScheduledId;
@@ -2636,28 +2636,28 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "test_e";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class TestEIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(TestE row) => row.Id;
 
-                public IdUniqueIndex(TestEHandle table) : base(table) { }
+                public TestEIdIdxBtreeUniqueIndex(TestEHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly TestEIdIdxBtreeUniqueIndex TestEIdIdxBtree;
 
-            public sealed class NameIndex : BTreeIndexBase<string>
+            public sealed class TestENameIdxBtreeIndex : BTreeIndexBase<string>
             {
                 protected override string GetKey(TestE row) => row.Name;
 
-                public NameIndex(TestEHandle table) : base(table) { }
+                public TestENameIdxBtreeIndex(TestEHandle table) : base(table) { }
             }
 
-            public readonly NameIndex Name;
+            public readonly TestENameIdxBtreeIndex TestENameIdxBtree;
 
             internal TestEHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
-                Name = new(this);
+                TestEIdIdxBtree = new(this);
+                TestENameIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(TestE row) => row.Id;

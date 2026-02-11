@@ -15,7 +15,7 @@ pub type TestAlias = TestA;
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(feature = "test-add-column")]
-#[spacetimedb::table(accessor = person, public, index(accessor = age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = person, public, index(accessor = age, name = "age", btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -27,7 +27,7 @@ pub struct Person {
 }
 
 #[cfg(not(feature = "test-add-column"))]
-#[spacetimedb::table(accessor = person, public, index(accessor = age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = person, public, index(accessor = age, name = "age", btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -42,7 +42,7 @@ pub struct RemoveTable {
     pub id: u32,
 }
 
-#[spacetimedb::table(accessor = test_a, index(accessor = foo, btree(columns = [x])))]
+#[spacetimedb::table(accessor = test_a, index(accessor = foo, name = "foo", btree(columns = [x])))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
@@ -128,7 +128,7 @@ pub struct PrivateTable {
     name: String,
 }
 
-#[spacetimedb::table(accessor = points, private, index(accessor = multi_column_index, btree(columns = [x, y])))]
+#[spacetimedb::table(accessor = points, private, index(accessor = multi_column_index, name = "multi_column_index", btree(columns = [x, y])))]
 pub struct Point {
     x: i64,
     y: i64,
