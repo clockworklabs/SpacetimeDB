@@ -4,8 +4,8 @@ use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
-    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name, identifier,
-    CoreValidator, TableValidator, ViewValidator,
+    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name, CoreValidator,
+    TableValidator, ViewValidator,
 };
 use crate::def::*;
 use crate::error::ValidationError;
@@ -15,8 +15,10 @@ use crate::{def::validate::Result, error::TypeLocation};
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
-    let typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
+    let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
+    let case_policy = def.case_conversion_policy();
+    CoreValidator::typespace_case_conversion(case_policy, &mut typespace);
 
     let mut validator = ModuleValidatorV10 {
         core: CoreValidator {
@@ -25,6 +27,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
             type_namespace: Default::default(),
             lifecycle_reducers: Default::default(),
             typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
+            case_policy,
         },
     };
 
@@ -124,7 +127,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .into_iter()
                 .flatten()
                 .map(|lifecycle_def| {
-                    let function_name = ReducerName::new(identifier(lifecycle_def.function_name.clone())?);
+                    let function_name = ReducerName::new(
+                        validator
+                            .core
+                            .identifier_with_case(lifecycle_def.function_name.clone())?,
+                    );
 
                     let (pos, _) = reducers_vec
                         .iter()
@@ -281,7 +288,7 @@ impl<'a> ModuleValidatorV10<'a> {
             })?;
 
         let mut table_validator =
-            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core);
+            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
 
         // Validate columns first
         let mut columns: Vec<ColumnDef> = (0..product_type.elements.len())
@@ -341,7 +348,7 @@ impl<'a> ModuleValidatorV10<'a> {
         let name = table_validator
             .add_to_global_namespace(raw_table_name.clone())
             .and_then(|name| {
-                let name = identifier(name)?;
+                let name = self.core.identifier_with_case(name)?;
                 if table_type != TableType::System && name.starts_with("st_") {
                     Err(ValidationError::TableNameReserved { table: name }.into())
                 } else {
@@ -426,7 +433,7 @@ impl<'a> ModuleValidatorV10<'a> {
                     arg_name,
                 });
 
-        let name_result = identifier(source_name.clone());
+        let name_result = self.core.identifier_with_case(source_name.clone());
 
         let return_res: Result<_> = (ok_return_type.is_unit() && err_return_type.is_string())
             .then_some((ok_return_type.clone(), err_return_type.clone()))
@@ -462,7 +469,7 @@ impl<'a> ModuleValidatorV10<'a> {
         &mut self,
         schedule: RawScheduleDefV10,
         tables: &HashMap<Identifier, TableDef>,
-    ) -> Result<(ScheduleDef, RawIdentifier)> {
+    ) -> Result<(ScheduleDef, Identifier)> {
         let RawScheduleDefV10 {
             source_name,
             table_name,
@@ -470,7 +477,7 @@ impl<'a> ModuleValidatorV10<'a> {
             function_name,
         } = schedule;
 
-        let table_ident = identifier(table_name.clone())?;
+        let table_ident = self.core.identifier_with_case(table_name.clone())?;
 
         // Look up the table to validate the schedule
         let table = tables.get(&table_ident).ok_or_else(|| ValidationError::TableNotFound {
@@ -491,13 +498,13 @@ impl<'a> ModuleValidatorV10<'a> {
         self.core
             .validate_schedule_def(
                 table_name.clone(),
-                identifier(source_name)?,
+                self.core.identifier_with_case(source_name)?,
                 function_name,
                 product_type,
                 schedule_at_col,
                 table.primary_key,
             )
-            .map(|schedule_def| (schedule_def, table_name))
+            .map(|schedule_def| (schedule_def, table_ident))
     }
 
     fn validate_lifecycle_reducer(
@@ -537,7 +544,7 @@ impl<'a> ModuleValidatorV10<'a> {
             &return_type,
         );
 
-        let name_result = identifier(source_name);
+        let name_result = self.core.identifier_with_case(source_name);
 
         let (name_result, params_for_generate, return_type_for_generate) =
             (name_result, params_for_generate, return_type_for_generate).combine_errors()?;
@@ -619,9 +626,9 @@ impl<'a> ModuleValidatorV10<'a> {
             &params,
             &params_for_generate,
             &mut self.core,
-        );
+        )?;
 
-        let name_result = view_validator.add_to_global_namespace(name).and_then(identifier);
+        let name_result = view_validator.add_to_global_namespace(name);
 
         let n = product_type.elements.len();
         let return_columns = (0..n)
@@ -637,7 +644,7 @@ impl<'a> ModuleValidatorV10<'a> {
             (name_result, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name: name_result,
+            name: self.core.identifier_with_case(name_result)?,
             is_anonymous,
             is_public,
             params,
@@ -679,13 +686,13 @@ fn attach_lifecycles_to_reducers(
 
 fn attach_schedules_to_tables(
     tables: &mut HashMap<Identifier, TableDef>,
-    schedules: Vec<(ScheduleDef, RawIdentifier)>,
+    schedules: Vec<(ScheduleDef, Identifier)>,
 ) -> Result<()> {
     for schedule in schedules {
         let (schedule, table_name) = schedule;
         let table = tables.values_mut().find(|t| *t.name == *table_name).ok_or_else(|| {
             ValidationError::MissingScheduleTable {
-                table_name: table_name.clone(),
+                table_name: table_name.as_raw().clone(),
                 schedule_name: schedule.name.clone(),
             }
         })?;
@@ -715,11 +722,12 @@ mod tests {
         IndexAlgorithm, IndexDef, SequenceDef, UniqueConstraintData,
     };
     use crate::error::*;
+    use crate::identifier::Identifier;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
@@ -729,7 +737,7 @@ mod tests {
 
     /// This test attempts to exercise every successful path in the validation code.
     #[test]
-    fn valid_definition() {
+    fn test_valid_definition_with_default_policy() {
         let mut builder = RawModuleDefV10Builder::new();
 
         let product_type = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::String)]);
@@ -752,8 +760,8 @@ mod tests {
                 "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
-                    ("name", AlgebraicType::String),
-                    ("count", AlgebraicType::U16),
+                    ("Apple_name", AlgebraicType::String),
+                    ("countFresh", AlgebraicType::U16),
                     ("type", sum_type_ref.into()),
                 ]),
                 true,
@@ -816,9 +824,11 @@ mod tests {
 
         let def: ModuleDef = builder.finish().try_into().unwrap();
 
-        let apples = expect_identifier("Apples");
-        let bananas = expect_identifier("Bananas");
-        let deliveries = expect_identifier("Deliveries");
+        let casing_policy = CaseConversionPolicy::default();
+        assert_eq!(casing_policy, CaseConversionPolicy::SnakeCase);
+        let apples = Identifier::for_test("apples");
+        let bananas = Identifier::for_test("bananas");
+        let deliveries = Identifier::for_test("deliveries");
 
         assert_eq!(def.tables.len(), 3);
 
@@ -832,10 +842,10 @@ mod tests {
         assert_eq!(apples_def.columns[0].name, expect_identifier("id"));
         assert_eq!(apples_def.columns[0].ty, AlgebraicType::U64);
         assert_eq!(apples_def.columns[0].default_value, None);
-        assert_eq!(apples_def.columns[1].name, expect_identifier("name"));
+        assert_eq!(apples_def.columns[1].name, expect_identifier("apple_name"));
         assert_eq!(apples_def.columns[1].ty, AlgebraicType::String);
         assert_eq!(apples_def.columns[1].default_value, None);
-        assert_eq!(apples_def.columns[2].name, expect_identifier("count"));
+        assert_eq!(apples_def.columns[2].name, expect_identifier("count_fresh"));
         assert_eq!(apples_def.columns[2].ty, AlgebraicType::U16);
         assert_eq!(apples_def.columns[2].default_value, Some(AlgebraicValue::U16(37)));
         assert_eq!(apples_def.columns[3].name, expect_identifier("type"));
@@ -846,7 +856,7 @@ mod tests {
         assert_eq!(apples_def.primary_key, None);
 
         assert_eq!(apples_def.constraints.len(), 2);
-        let apples_unique_constraint = "Apples_type_key";
+        let apples_unique_constraint = "apples_type_key";
         assert_eq!(
             apples_def.constraints[apples_unique_constraint].data,
             ConstraintData::Unique(UniqueConstraintData {
@@ -945,7 +955,7 @@ mod tests {
         check_product_type(&def, bananas_def);
         check_product_type(&def, delivery_def);
 
-        let product_type_name = expect_type_name("scope1::scope2::ReferencedProduct");
+        let product_type_name = expect_type_name("Scope1::Scope2::ReferencedProduct");
         let sum_type_name = expect_type_name("ReferencedSum");
         let apples_type_name = expect_type_name("Apples");
         let bananas_type_name = expect_type_name("Bananas");
@@ -1355,7 +1365,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateTypeName { name } => {
-            name == &expect_type_name("scope1::scope2::Duplicate")
+            name == &expect_type_name("Scope1::Scope2::Duplicate")
         });
     }
 
@@ -1394,7 +1404,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::MissingScheduledFunction { schedule, function } => {
-            &schedule[..] == "Deliveries_sched" &&
+            &schedule[..] == "deliveries_sched" &&
                 function == &expect_identifier("check_deliveries")
         });
     }

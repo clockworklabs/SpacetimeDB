@@ -8233,6 +8233,7 @@ name = "spacetimedb-schema"
 version = "2.0.0"
 dependencies = [
  "anyhow",
+ "convert_case 0.6.0",
  "derive_more 0.99.20",
  "enum-as-inner",
  "enum-map",

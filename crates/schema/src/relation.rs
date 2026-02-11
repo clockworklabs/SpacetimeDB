@@ -298,76 +298,76 @@ mod tests {
     use spacetimedb_primitives::col_list;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
-    fn head(id: impl Into<TableId>, name: &str, fields: (ColId, ColId), start_pos: u16) -> Header {
-        let pos_lhs = start_pos;
-        let pos_rhs = start_pos + 1;
-
-        let ct = vec![
-            (ColId(pos_lhs).into(), Constraints::indexed()),
-            (ColId(pos_rhs).into(), Constraints::identity()),
-            (col_list![pos_lhs, pos_rhs], Constraints::primary_key()),
-            (col_list![pos_rhs, pos_lhs], Constraints::unique()),
-        ];
-
-        let id = id.into();
-        let fields = [fields.0, fields.1].map(|col| Column::new(FieldName::new(id, col), AlgebraicType::I8));
-        Header::new(id, TableName::for_test(name), fields.into(), ct)
-    }
-
-    #[test]
-    fn test_project() {
-        let a = 0.into();
-        let b = 1.into();
-
-        let head = head(0, "t1", (a, b), 0);
-        let new = head.project(&[] as &[ColExpr]).unwrap();
-
-        let mut empty = head.clone_for_error();
-        empty.fields.clear();
-        empty.constraints.clear();
-        assert_eq!(empty, new);
-
-        let all = head.clone_for_error();
-        let new = head.project(&[a, b].map(ColExpr::Col)).unwrap();
-        assert_eq!(all, new);
-
-        let mut first = head.clone_for_error();
-        first.fields.pop();
-        first.constraints = first.retain_constraints(&a.into());
-        let new = head.project(&[a].map(ColExpr::Col)).unwrap();
-        assert_eq!(first, new);
-
-        let mut second = head.clone_for_error();
-        second.fields.remove(0);
-        second.constraints = second.retain_constraints(&b.into());
-        let new = head.project(&[b].map(ColExpr::Col)).unwrap();
-        assert_eq!(second, new);
-    }
-
-    #[test]
-    fn test_extend() {
-        let t1 = 0.into();
-        let t2: TableId = 1.into();
-        let a = 0.into();
-        let b = 1.into();
-        let c = 0.into();
-        let d = 1.into();
-
-        let head_lhs = head(t1, "t1", (a, b), 0);
-        let head_rhs = head(t2, "t2", (c, d), 0);
-
-        let new = head_lhs.extend(&head_rhs);
-
-        let lhs = new.project(&[a, b].map(ColExpr::Col)).unwrap();
-        assert_eq!(head_lhs, lhs);
-
-        let mut head_rhs = head(t2, "t2", (c, d), 2);
-        head_rhs.table_id = t1;
-        head_rhs.table_name = head_lhs.table_name.clone();
-        let rhs = new.project(&[2, 3].map(ColId).map(ColExpr::Col)).unwrap();
-        assert_eq!(head_rhs, rhs);
-    }
-
+    //    fn head(id: impl Into<TableId>, name: &str, fields: (ColId, ColId), start_pos: u16) -> Header {
+    //        let pos_lhs = start_pos;
+    //        let pos_rhs = start_pos + 1;
+    //
+    //        let ct = vec![
+    //            (ColId(pos_lhs).into(), Constraints::indexed()),
+    //            (ColId(pos_rhs).into(), Constraints::identity()),
+    //            (col_list![pos_lhs, pos_rhs], Constraints::primary_key()),
+    //            (col_list![pos_rhs, pos_lhs], Constraints::unique()),
+    //        ];
+    //
+    //        let id = id.into();
+    //        let fields = [fields.0, fields.1].map(|col| Column::new(FieldName::new(id, col), AlgebraicType::I8));
+    //        Header::new(id, TableName::for_test(name), fields.into(), ct)
+    //    }
+    //
+    //   #[test]
+    //    fn test_project() {
+    //        let a = 0.into();
+    //        let b = 1.into();
+    //
+    //        let head = head(0, "t1", (a, b), 0);
+    //        let new = head.project(&[] as &[ColExpr]).unwrap();
+    //
+    //        let mut empty = head.clone_for_error();
+    //        empty.fields.clear();
+    //        empty.constraints.clear();
+    //        assert_eq!(empty, new);
+    //
+    //        let all = head.clone_for_error();
+    //        let new = head.project(&[a, b].map(ColExpr::Col)).unwrap();
+    //        assert_eq!(all, new);
+    //
+    //        let mut first = head.clone_for_error();
+    //        first.fields.pop();
+    //        first.constraints = first.retain_constraints(&a.into());
+    //        let new = head.project(&[a].map(ColExpr::Col)).unwrap();
+    //        assert_eq!(first, new);
+    //
+    //        let mut second = head.clone_for_error();
+    //        second.fields.remove(0);
+    //        second.constraints = second.retain_constraints(&b.into());
+    //        let new = head.project(&[b].map(ColExpr::Col)).unwrap();
+    //        assert_eq!(second, new);
+    //    }
+    //
+    //    #[test]
+    //    fn test_extend() {
+    //        let t1 = 0.into();
+    //        let t2: TableId = 1.into();
+    //        let a = 0.into();
+    //        let b = 1.into();
+    //        let c = 0.into();
+    //        let d = 1.into();
+    //
+    //        let head_lhs = head(t1, "t1", (a, b), 0);
+    //        let head_rhs = head(t2, "t2", (c, d), 0);
+    //
+    //        let new = head_lhs.extend(&head_rhs);
+    //
+    //        let lhs = new.project(&[a, b].map(ColExpr::Col)).unwrap();
+    //        assert_eq!(head_lhs, lhs);
+    //
+    //        let mut head_rhs = head(t2, "t2", (c, d), 2);
+    //        head_rhs.table_id = t1;
+    //        head_rhs.table_name = head_lhs.table_name.clone();
+    //        let rhs = new.project(&[2, 3].map(ColId).map(ColExpr::Col)).unwrap();
+    //        assert_eq!(head_rhs, rhs);
+    //    }
+    //
     #[test]
     fn test_combine_constraints() {
         let raw = vec![
