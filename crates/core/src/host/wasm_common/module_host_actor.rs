@@ -283,7 +283,7 @@ impl From<TypeRefError> for InitializationError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum DescribeError {
-    #[error("failed to call descriptor function: invalid signature or function does not exist: {0}")]
+    #[error("bad signature for descriptor function: {0}")]
     Signature(anyhow::Error),
     #[error("error when preparing descriptor function: {0}")]
     Setup(anyhow::Error),
@@ -304,9 +304,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             mcc.program_hash,
         );
 
-        let raw_def_version = detect_raw_def_version(&module)?;
         let func_names = {
-            FuncNames::check_required(raw_def_version, |name| module.get_export(name))?;
+            FuncNames::check_required(|name| module.get_export(name))?;
             let mut func_names = FuncNames::default();
             module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
             func_names.preinits.sort_unstable();

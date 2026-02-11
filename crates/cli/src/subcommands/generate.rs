@@ -218,10 +218,12 @@ pub async fn exec_ex(
         let fname = Path::new(&filename);
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
         if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
+            println!("Creating directory {}", out_dir.join(parent).display());
             fs::create_dir_all(out_dir.join(parent))?;
         }
         let path = out_dir.join(fname);
         if !path.exists() || fs::read_to_string(&path)? != code {
+            println!("Writing file {}", path.display());
             fs::write(&path, code)?;
         }
         paths.insert(path);

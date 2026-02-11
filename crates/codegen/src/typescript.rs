@@ -210,44 +210,39 @@ impl Lang for TypeScript {
         print_file_header(out, true, false);
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all reducer arg types");
+        writeln!(out, "// Import all reducer arg schemas");
         for reducer in iter_reducers(module, options.visibility) {
+            if !is_reducer_invokable(reducer) {
+                // Skip system-defined reducers
+                continue;
+            }
             let reducer_name = &reducer.name;
             let reducer_module_name = reducer_module_name(reducer_name);
             let args_type = reducer_args_type_name(reducer_name);
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
-            writeln!(out, "export {{ {args_type} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all procedure arg types");
+        writeln!(out, "// Import all procedure arg schemas");
         for procedure in iter_procedures(module, options.visibility) {
             let procedure_name = &procedure.name;
             let procedure_module_name = procedure_module_name(procedure_name);
             let args_type = procedure_args_type_name(&procedure.name);
             writeln!(out, "import * as {args_type} from \"./{procedure_module_name}\";");
-            writeln!(out, "export {{ {args_type} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all table handle types");
+        writeln!(out, "// Import all table schema definitions");
         for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
             let table_module_name = table_module_name(table_name);
             let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
             // `__t.object(...)`s.
             writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
-            writeln!(out, "export {{ {table_name_pascalcase}Row }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all types");
-        for ty in iter_types(module) {
-            let type_name = collect_case(Case::Pascal, ty.name.name_segments());
-            let type_module_name = type_module_name(&ty.name);
-            writeln!(out, "import {type_name} from \"./{type_module_name}\";");
-            writeln!(out, "export {{ {type_name} }};");
-        }
+        writeln!(out, "/** Type-only namespace exports for generated type groups. */");
 
         writeln!(out);
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
@@ -446,10 +441,128 @@ impl Lang for TypeScript {
         writeln!(out, "}}");
         out.newline();
 
-        vec![OutputFile {
+        let index_file = OutputFile {
             filename: "index.ts".to_string(),
             code: output.into_inner(),
-        }]
+        };
+
+        let reducers_file = generate_reducers_file(module);
+        let procedures_file = generate_procedures_file(module);
+        let types_file = generate_types_file(module);
+
+        vec![index_file, reducers_file, procedures_file, types_file]
+    }
+}
+
+fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    writeln!(out);
+    writeln!(out, "// Import all reducer arg schemas");
+    for reducer in iter_reducers(module) {
+        let reducer_name = &reducer.name;
+        let reducer_module_name = reducer_module_name(reducer_name);
+        let args_type = reducer_args_type_name(&reducer.name);
+        writeln!(out, "import {args_type} from \"../{reducer_module_name}\";");
+    }
+
+    writeln!(out);
+    for reducer in iter_reducers(module) {
+        let reducer_name_pascalcase = reducer.name.deref().to_case(Case::Pascal);
+        let args_type = reducer_args_type_name(&reducer.name);
+        writeln!(
+            out,
+            "export type {reducer_name_pascalcase}Params = __Infer<typeof {args_type}>;"
+        );
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/reducers.ts".to_string(),
+        code: output.into_inner(),
+    }
+}
+
+fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    writeln!(out);
+    writeln!(out, "// Import all procedure arg schemas");
+    for procedure in iter_procedures(module) {
+        let procedure_name = &procedure.name;
+        let procedure_module_name = procedure_module_name(procedure_name);
+        let args_type = procedure_args_type_name(&procedure.name);
+        writeln!(out, "import * as {args_type} from \"../{procedure_module_name}\";");
+    }
+
+    writeln!(out);
+    for procedure in iter_procedures(module) {
+        let procedure_name_pascalcase = procedure.name.deref().to_case(Case::Pascal);
+        let args_type = procedure_args_type_name(&procedure.name);
+        writeln!(
+            out,
+            "export type {procedure_name_pascalcase}Args = __Infer<typeof {args_type}.params>;"
+        );
+        writeln!(
+            out,
+            "export type {procedure_name_pascalcase}Result = __Infer<typeof {args_type}.returnType>;"
+        );
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/procedures.ts".to_string(),
+        code: output.into_inner(),
+    }
+}
+
+fn generate_types_file(module: &ModuleDef) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    let reducer_type_names = module
+        .reducers()
+        .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
+        .collect::<BTreeSet<_>>();
+
+    writeln!(out);
+    writeln!(out, "// Import all non-reducer types");
+    for ty in iter_types(module) {
+        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        if reducer_type_names.contains(&type_name) {
+            continue;
+        }
+        let type_module_name = type_module_name(&ty.name);
+        writeln!(out, "import {type_name} from \"../{type_module_name}\";");
+    }
+
+    writeln!(out);
+    for ty in iter_types(module) {
+        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        if reducer_type_names.contains(&type_name) {
+            continue;
+        }
+        writeln!(out, "export type {type_name} = __Infer<typeof {type_name}>;");
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/index.ts".to_string(),
+        code: output.into_inner(),
     }
 }
 

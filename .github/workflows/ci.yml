@@ -903,7 +903,7 @@ jobs:
           export CARGO_HOME="$HOME/.cargo"
           echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
           cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
+          cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
