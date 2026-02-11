@@ -3,6 +3,18 @@
   "compilerOptions": {
     "jsx": "react-jsx"
   },
-  "include": ["tests/**/*", "src/lib/**/*", "src/sdk/**/*", "src/react/**/*", "test-app/**/*"],
-  "exclude": ["node_modules", "dist/**/*", "src/svelte/**/*", "src/vue/**/*", "src/server/**/*"]
+  "include": [
+    "tests/**/*",
+    "src/lib/**/*",
+    "src/sdk/**/*",
+    "src/react/**/*",
+    "test-app/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist/**/*",
+    "src/svelte/**/*",
+    "src/vue/**/*",
+    "src/server/**/*"
+  ]
 }

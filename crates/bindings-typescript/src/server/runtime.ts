@@ -278,7 +278,13 @@ export const hooks: ModuleHooks = {
     );
     return writer.getBuffer();
   },
-  __call_reducer__(reducerId: number, sender: bigint, connId: bigint, timestamp: bigint, argsBuf: DataView) {
+  __call_reducer__(
+    reducerId: number,
+    sender: bigint,
+    connId: bigint,
+    timestamp: bigint,
+    argsBuf: DataView
+  ) {
     const moduleCtx = getRegisteredSchema();
     if (reducerArgsDeserializers == null) {
       reducerArgsDeserializers = moduleCtx.moduleDef.reducers.map(
@@ -362,7 +368,13 @@ export const hooks: ModuleHooks = {
     }
     return { data: retBuf.getBuffer() };
   },
-  __call_procedure__(id: number, sender: bigint, connection_id: bigint, timestamp: bigint, args: Uint8Array) {
+  __call_procedure__(
+    id: number,
+    sender: bigint,
+    connection_id: bigint,
+    timestamp: bigint,
+    args: Uint8Array
+  ) {
     return callProcedure(
       getRegisteredSchema(),
       id,

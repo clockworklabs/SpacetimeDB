@@ -74,11 +74,7 @@ describe('TableScan.toSql', () => {
 
   it('renders a WHERE clause for simple equality filters', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(
-      qb.person
-        .where(row => row.name.eq("O'Brian"))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => row.name.eq("O'Brian")).build());
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."name" = 'O''Brian'`
@@ -87,11 +83,7 @@ describe('TableScan.toSql', () => {
 
   it('renders numeric literals and column references', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(
-      qb.person
-        .where(row => row.age.eq(42))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => row.age.eq(42)).build());
 
     expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."age" = 42`);
   });
@@ -99,9 +91,7 @@ describe('TableScan.toSql', () => {
   it('renders AND clauses across multiple predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      qb.person
-        .where(row => and(row.name.eq('Alice'), row.age.eq(30)))
-        .build()
+      qb.person.where(row => and(row.name.eq('Alice'), row.age.eq(30))).build()
     );
 
     expect(sql).toBe(
@@ -111,11 +101,7 @@ describe('TableScan.toSql', () => {
 
   it('renders NOT clauses around subpredicates', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(
-      qb.person
-        .where(row => not(row.name.eq('Bob')))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => not(row.name.eq('Bob'))).build());
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE NOT ("person"."name" = 'Bob')`
@@ -154,11 +140,7 @@ describe('TableScan.toSql', () => {
     const identity = new Identity(
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     );
-    const sql = toSql(
-      qb.person
-        .where(row => row.id.eq(identity))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => row.id.eq(identity)).build());
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."id" = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
@@ -299,9 +281,7 @@ describe('TableScan.toSql', () => {
   it('method-style chaining with .and()', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      qb.person
-        .where(row => row.age.gt(20).and(row.age.lt(30)))
-        .build()
+      qb.person.where(row => row.age.gt(20).and(row.age.lt(30))).build()
     );
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE ("person"."age" > 20) AND ("person"."age" < 30)`
@@ -322,11 +302,7 @@ describe('TableScan.toSql', () => {
 
   it('method-style chaining with .not()', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(
-      qb.person
-        .where(row => row.name.eq('Bob').not())
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => row.name.eq('Bob').not()).build());
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE NOT ("person"."name" = 'Bob')`
     );
