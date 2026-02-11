@@ -19,7 +19,7 @@ const USER_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql(
 
 #[spacetimedb::reducer]
 pub fn add_user(ctx: &ReducerContext, name: String) {
-    ctx.db.users().insert(Users { name, identity: ctx.sender });
+    ctx.db.users().insert(Users { name, identity: ctx.sender() });
 }
 """
 
@@ -88,7 +88,7 @@ pub struct Users {
 
 #[spacetimedb::reducer]
 pub fn add_user(ctx: &ReducerContext, name: String) {
-    ctx.db.users().insert(Users { name, identity: ctx.sender });
+    ctx.db.users().insert(Users { name, identity: ctx.sender() });
 }
 """
     
