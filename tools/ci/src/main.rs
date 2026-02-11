@@ -11,6 +11,7 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod smoketest;
 
 /// SpacetimeDB CI tasks
 ///
@@ -95,7 +96,8 @@ fn check_global_json_policy() -> Result<()> {
 }
 
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
+    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
+    let skeleton_root = skeleton_base.join(pkg_id);
     if !skeleton_root.exists() {
         return Ok(());
     }
@@ -105,6 +107,15 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
         return Ok(());
     }
 
+    // Copy spacetimedb.<pkg>.meta
+    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
+    if pkg_root_meta.exists() {
+        if let Some(parent) = pkg_root.parent() {
+            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
+            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
+        }
+    }
+
     let versioned_dir = match find_only_subdir(&pkg_root) {
         Ok(dir) => dir,
         Err(err) => {
@@ -112,6 +123,18 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
             return Ok(());
         }
     };
+
+    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
+    let version_meta_template = skeleton_root.join("version.meta");
+    if version_meta_template.exists() {
+        if let Some(parent) = versioned_dir.parent() {
+            let version_name = versioned_dir
+                .file_name()
+                .expect("versioned directory should have a file name");
+            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
+            fs::copy(&version_meta_template, &version_meta_dst)?;
+        }
+    }
 
     copy_overlay_dir(&skeleton_root, &versioned_dir)
 }
@@ -214,13 +237,7 @@ enum CiCmd {
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
-    Smoketests {
-        #[arg(
-            trailing_var_arg = true,
-            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
-        )]
-        args: Vec<String>,
-    },
+    Smoketests(smoketest::SmoketestsArgs),
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -277,15 +294,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn infer_python() -> String {
-    let py3_available = cmd!("python3", "--version").run().is_ok();
-    if py3_available {
-        "python3".to_string()
-    } else {
-        "python".to_string()
-    }
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -295,8 +303,36 @@ fn main() -> Result<()> {
         Some(CiCmd::Test) => {
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
-            // cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
-            cmd!("cargo", "test", "--all", "--", "--test-threads=2", "--skip", "unreal").run()?;
+            // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
+            // Smoketests have their own dedicated command: `cargo ci smoketests`
+            cmd!(
+                "cargo",
+                "test",
+                "--all",
+                "--exclude",
+                "spacetimedb-smoketests",
+                "--exclude",
+                "spacetimedb-sdk",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // SDK procedure tests intentionally make localhost HTTP requests.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -456,16 +492,8 @@ fn main() -> Result<()> {
             .run()?;
         }
 
-        Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            let python = infer_python();
-            cmd(
-                python,
-                ["-m", "smoketests"]
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .chain(smoketest_args),
-            )
-            .run()?;
+        Some(CiCmd::Smoketests(args)) => {
+            smoketest::run(args)?;
         }
 
         Some(CiCmd::UpdateFlow {

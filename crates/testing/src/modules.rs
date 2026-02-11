@@ -204,7 +204,7 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+            JobCores::without_pinned_cores(),
         )
         .await
         .unwrap();
@@ -331,6 +331,20 @@ impl ModuleLanguage for TypeScript {
     fn get_module() -> &'static CompiledModule {
         lazy_static::lazy_static! {
             pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-ts", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct Cpp;
+
+impl ModuleLanguage for Cpp {
+    const NAME: &'static str = "cpp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cpp", COMPILATION_MODE);
         }
 
         &MODULE
