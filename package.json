@@ -7,7 +7,7 @@
   },
   "type": "module",
   "scripts": {
-    "run-all": "pnpm -F ./crates/bindings-typescript -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/test-app -F ./docs run",
+    "run-all": "pnpm -r -F ./crates/bindings-typescript -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/test-app -F ./docs -F \"./templates/**\" run",
     "format": "pnpm run-all format && prettier eslint.config.js --write",
     "lint": "pnpm run-all lint && prettier eslint.config.js --check",
     "build": "pnpm run-all build",
