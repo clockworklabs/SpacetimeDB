@@ -1,0 +1,31 @@
+# Build directories
+build/
+build_*/
+.cache/
+
+# Build outputs
+*.wasm
+*.o
+*.a
+
+# Build logs
+*.log
+
+# Test outputs
+*_output.txt
+*.json
+!module_comparisons/client-comparison/rust-module-schema.json
+
+# Temporary test files
+publish_test.sh
+run_*.sh
+dump_*.js
+test_*.js
+
+# IDE files
+.vscode/
+.idea/
+
+# CMake cache
+CMakeCache.txt
+CMakeFiles/

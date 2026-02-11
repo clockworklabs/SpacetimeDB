@@ -348,7 +348,7 @@ Add to `spacetimedb/src/lib.rs`:
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?;
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { name: Some(name), ..user });
         Ok(())
     } else {
@@ -439,7 +439,7 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?;
     log::info!("{}", text);
     ctx.db.message().insert(Message {
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     });
@@ -547,12 +547,12 @@ Add to `spacetimedb/src/lib.rs`:
 ```rust server
 #[reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { online: true, ..user });
     } else {
         ctx.db.user().insert(User {
             name: None,
-            identity: ctx.sender,
+            identity: ctx.sender(),
             online: true,
         });
     }
@@ -560,10 +560,10 @@ pub fn client_connected(ctx: &ReducerContext) {
 
 #[reducer(client_disconnected)]
 pub fn identity_disconnected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { online: false, ..user });
     } else {
-        log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender);
+        log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender());
     }
 }
 ```

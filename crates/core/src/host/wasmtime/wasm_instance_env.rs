@@ -14,6 +14,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_schema::identifier::Identifier;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::time::Instant;
@@ -220,7 +221,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: &str,
+        name: Identifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -237,16 +238,10 @@ impl WasmInstanceEnv {
         (args, errors)
     }
 
-    /// Returns the name of the most recent reducer or procedure to be run in this environment.
-    pub fn funcall_name(&self) -> &str {
-        &self.instance_env.func_name
-    }
-
     /// Returns the name of the most recent reducer or procedure to be run in this environment,
     /// or `None` if no reducer or procedure is actively being invoked.
-    fn log_record_function(&self) -> Option<&str> {
-        let function = self.funcall_name();
-        (!function.is_empty()).then_some(function)
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.instance_env.log_record_function()
     }
 
     /// Returns the start time of the most recent reducer or procedure to be run in this environment.

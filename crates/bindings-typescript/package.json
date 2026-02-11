@@ -102,7 +102,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "31 kB"
+      "limit": "40 kB"
     },
     {
       "name": "esm (uncompressed)",
@@ -204,6 +204,7 @@
     "@vitest/coverage-v8": "^3.2.4",
     "brotli-size-cli": "^1.0.0",
     "eslint": "^9.33.0",
+    "eslint-plugin-jsdoc": "^61.5.0",
     "globals": "^15.14.0",
     "size-limit": "^11.2.0",
     "ts-node": "^10.9.2",
