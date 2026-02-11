@@ -191,7 +191,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     } else {
         let original_sig = &original_function.sig;
         let returns_raw_query =
-            matches!(ret_ty, syn::Type::Path(p) if p.path.segments.last().map_or(false, |s| s.ident == "RawQuery"));
+            matches!(ret_ty, syn::Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "RawQuery"));
         let emitted_body = if returns_raw_query {
             quote! { { ::core::convert::Into::into(#original_body) } }
         } else {

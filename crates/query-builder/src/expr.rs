@@ -31,6 +31,7 @@ impl<T> BoolExpr<T> {
         BoolExpr::Or(Box::new(self), Box::new(other))
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> BoolExpr<T> {
         BoolExpr::Not(Box::new(self))
     }

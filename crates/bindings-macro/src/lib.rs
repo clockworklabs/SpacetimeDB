@@ -136,7 +136,7 @@ pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     };
     match view::view_impl(args, &original_function) {
         Ok(ts) => ts.into(),
-        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
     }
 }
 
