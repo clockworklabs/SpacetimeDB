@@ -102,7 +102,7 @@ pub fn process_data(ctx: &ReducerContext, value: u32) -> Result<(), String> {
         return Err("Value cannot be zero".to_string());
     }
     
-    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender);
+    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender());
     
     Ok(())
 }
@@ -114,6 +114,39 @@ Available log levels:
 - `log::info!()` - Informational messages
 - `log::debug!()` - Debug messages
 - `log::trace!()` - Trace messages
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Use the `LOG_*` macros to write logs from your reducers:
+
+```cpp
+using namespace SpacetimeDB;
+
+SPACETIMEDB_REDUCER(process_data, ReducerContext ctx, uint32_t value) {
+    LOG_INFO("Processing data with value: " + std::to_string(value));
+    
+    if (value > 100) {
+        LOG_WARN("Value " + std::to_string(value) + " exceeds threshold");
+    }
+    
+    if (value == 0) {
+        LOG_ERROR("Invalid value: 0");
+        return Err("Value cannot be zero");
+    }
+    
+    LOG_DEBUG("Debug information: ctx.sender = " + ctx.sender.to_string());
+    
+    return Ok();
+}
+```
+
+Available log macros:
+- `LOG_ERROR()` - Error messages
+- `LOG_WARN()` - Warning messages
+- `LOG_INFO()` - Informational messages
+- `LOG_DEBUG()` - Debug messages
+- `LOG_PANIC()` + `LOG_FATAL()` - Fatal errors (terminates the reducer)
 
 </TabItem>
 </Tabs>
@@ -220,7 +253,7 @@ use spacetimedb::log;
 pub fn transfer_credits(ctx: &ReducerContext, to_user: u64, amount: u32) -> Result<(), String> {
     log::info!(
         "Credit transfer: from={:?}, to={}, amount={}", 
-        ctx.sender, 
+        ctx.sender(), 
         to_user, 
         amount
     );
@@ -228,6 +261,25 @@ pub fn transfer_credits(ctx: &ReducerContext, to_user: u64, amount: u32) -> Resu
     // ... transfer logic
     
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Include relevant context in your log messages:
+
+```cpp
+using namespace SpacetimeDB;
+
+SPACETIMEDB_REDUCER(transfer_credits, ReducerContext ctx, uint64_t to_user, uint32_t amount) {
+    LOG_INFO("Credit transfer: from=" + ctx.sender.to_string() + 
+             ", to=" + std::to_string(to_user) + 
+             ", amount=" + std::to_string(amount));
+    
+    // ... transfer logic
+    
+    return Ok();
 }
 ```
 
