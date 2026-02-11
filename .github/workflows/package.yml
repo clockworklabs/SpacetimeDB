@@ -14,7 +14,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
+          # WARNING - do not upgrade this runner to 24.04 or the self hosted runners because it will break downloads for
+          #   anyone who uses a linux distro that doesn't have glibc >= GLIBC_2.38
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
           # Disabled because musl builds weren't working and we didn't want to investigate. See https://github.com/clockworklabs/SpacetimeDB/pull/2964.
           # - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
