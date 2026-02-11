@@ -87,6 +87,30 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Reminder {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+    std::string message;
+};
+SPACETIMEDB_STRUCT(Reminder, scheduled_id, scheduled_at, message)
+SPACETIMEDB_TABLE(Reminder, reminder, Public)
+FIELD_PrimaryKeyAutoInc(reminder, scheduled_id)
+SPACETIMEDB_SCHEDULE(reminder, 1, send_reminder)  // Column 1 is scheduled_at
+
+// Reducer invoked automatically by the scheduler
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder arg)
+{
+    // Invoked automatically by the scheduler
+    // arg.message, arg.scheduled_at, arg.scheduled_id
+    LOG_INFO("Scheduled reminder: " + arg.message);
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Inserting Schedules
@@ -175,6 +199,25 @@ fn schedule_periodic_tasks(ctx: &ReducerContext) {
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(100).into()),
     });
 }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Schedule to run every 5 seconds
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::interval(TimeDuration::from_seconds(5)),
+    "Check for updates"
+});
+
+// Schedule to run every 100 milliseconds
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::interval(TimeDuration::from_millis(100)),
+    "Game tick"
+});
 ```
 
 </TabItem>
@@ -268,6 +311,26 @@ fn schedule_timed_tasks(ctx: &ReducerContext) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Schedule for 10 seconds from now
+Timestamp tenSecondsFromNow = ctx.timestamp + TimeDuration::from_seconds(10);
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::time(tenSecondsFromNow),
+    "Your auction has ended"
+});
+
+// Schedule for immediate execution (current timestamp)
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::time(ctx.timestamp),
+    "Process now"
+});
+```
+
+</TabItem>
 </Tabs>
 
 ## How It Works
@@ -326,6 +389,22 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
     }
     // Process the scheduled reminder
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder arg)
+{
+    // Check if this reducer is being called by the scheduler (internal)
+    if (!ctx.sender_auth().is_internal()) {
+        return Err("This reducer can only be called by the scheduler");
+    }
+    
+    // Process the scheduled reminder
+    return Ok();
 }
 ```
 

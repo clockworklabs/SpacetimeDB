@@ -42,6 +42,16 @@ spacetime publish <DATABASE_NAME>
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime init --lang cpp --project-path my-project my-project
+cd my-project
+spacetime login
+spacetime publish <DATABASE_NAME>
+```
+
+</TabItem>
 </Tabs>
 
 ## Tables
@@ -155,6 +165,40 @@ pub enum Status {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+// Basic table
+struct Player {
+  uint64_t id;
+  std::string username;
+  int32_t score;
+};
+SPACETIMEDB_STRUCT(Player, id, username, score);
+SPACETIMEDB_TABLE(Player, player, Public);
+FIELD_PrimaryKeyAutoInc(player, id);
+FIELD_Unique(player, username);
+FIELD_Index(player, score);
+
+// Multi-column index
+struct Score {
+  uint64_t player_id;
+  uint32_t level;
+};
+SPACETIMEDB_STRUCT(Score, player_id, level);
+SPACETIMEDB_TABLE(Score, score, Private);
+// Named multi-column btree index on (player_id, level)
+FIELD_NamedMultiColumnIndex(score, idx, player_id, level);
+
+// Custom types (enums)
+// Note: 'Status' conflicts with a built-in SDK type; use a distinct name
+SPACETIMEDB_ENUM(PlayerStatus, Active, Inactive);
+```
+
+</TabItem>
 </Tabs>
 
 ## Reducers
@@ -248,6 +292,38 @@ ctx.db.player().id().delete(123);                      // Delete by primary key
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+// Basic reducer
+SPACETIMEDB_REDUCER(create_player, ReducerContext ctx, std::string username) {
+  ctx.db[player].insert(Player{0, username, 0});
+  return Ok();
+}
+
+// With error handling
+SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint64_t id, int32_t points) {
+  auto player_opt = ctx.db[player_id].find(id);
+  if (!player_opt) {
+    return Err("Player not found");
+  }
+  Player updated = *player_opt;
+  updated.score += points;
+  ctx.db[player_id].update(updated);
+  return Ok();
+}
+
+// Query examples
+auto player = ctx.db[player_id].find((uint64_t)123);            // Find by primary key
+auto player_by_name = ctx.db[player_username].find(std::string("Alice")); // Filter by unique index
+for (const auto& p : ctx.db[player]) { /* iterate all */ }      // Iterate all
+ctx.db[player_id].delete_by_key((uint64_t)123);                 // Delete by primary key
+```
+
+</TabItem>
 </Tabs>
 
 ## Lifecycle Reducers
@@ -289,6 +365,19 @@ pub fn on_connect(ctx: &ReducerContext) { /* ... */ }
 
 #[reducer(client_disconnected)]
 pub fn on_disconnect(ctx: &ReducerContext) { /* ... */ }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+using namespace SpacetimeDB;
+
+SPACETIMEDB_INIT(init, ReducerContext ctx) { /* ... */ }
+
+SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) { /* ... */ }
+
+SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) { /* ... */ }
 ```
 
 </TabItem>
@@ -351,6 +440,27 @@ pub struct Reminder {
 #[reducer]
 fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
     log::info!("Reminder: {}", reminder.message);
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Reminder {
+    uint64_t id;
+    std::string message;
+    ScheduleAt scheduled_at;
+};
+SPACETIMEDB_STRUCT(Reminder, id, message, scheduled_at)
+SPACETIMEDB_TABLE(Reminder, reminder, Private)
+FIELD_PrimaryKeyAutoInc(reminder, id)
+
+SPACETIMEDB_SCHEDULE(reminder, 2, send_reminder)
+
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder reminder) {
+    LOG_INFO("Reminder: " + reminder.message);
+    return Ok();
 }
 ```
 
@@ -428,6 +538,41 @@ fn fetch_data(ctx: &mut ProcedureContext, url: String) -> String {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// SPACETIMEDB_UNSTABLE_FEATURES is necessary to access Http + Transactions in C++ Procedures
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+// Cache table for fetched data
+struct Cache {
+    std::string data;
+};
+SPACETIMEDB_STRUCT(Cache, data)
+SPACETIMEDB_TABLE(Cache, cache, Private)
+
+SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string url) {
+    // Fetch from HTTP (outside transaction)
+    auto response = ctx.http.get(url);
+    if (!response.is_ok()) {
+        LOG_ERROR("HTTP request failed");
+        return std::string("");
+    }
+    
+    std::string body = response.value().body.to_string_utf8_lossy();
+    
+    // Insert into cache with transaction
+    ctx.with_tx([&body](TxContext& tx) {
+        tx.db[cache].insert(Cache{body});
+    });
+    
+    return body;
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Views
@@ -490,6 +635,23 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+using namespace SpacetimeDB;
+
+// Return single row using unique indexed field
+SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
+    return ctx.db[player_identity].find(ctx.sender);
+}
+
+// Return multiple rows using indexed field
+SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
+    return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Context Properties
@@ -530,6 +692,18 @@ ctx.rng()               // Random number generator
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+ctx.db                  // Database access (Table accessor)
+ctx.sender              // Identity of caller (Identity type)
+ctx.connection_id       // std::optional<ConnectionId>
+ctx.timestamp           // Timestamp of current transaction (Timestamp type)
+ctx.identity()          // Module's own identity (Identity type)
+ctx.rng()               // Random number generator (for seeded randomness)
+```
+
+</TabItem>
 </Tabs>
 
 ## Logging
@@ -562,6 +736,16 @@ log::error!("Error: {}", msg);
 log::warn!("Warning: {}", msg);
 log::info!("Info: {}", msg);
 log::debug!("Debug: {}", msg);
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+LOG_ERROR("Error: " + msg);
+LOG_WARN("Warning: " + msg);
+LOG_INFO("Info: " + msg);
+LOG_DEBUG("Debug: " + msg);
 ```
 
 </TabItem>
@@ -646,6 +830,26 @@ Option<T>, Vec<T>
 
 // SpacetimeDB types
 Identity, ConnectionId, Timestamp, Duration, ScheduleAt
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Primitives
+bool, std::string, float, double
+int8_t, int16_t, int32_t, int64_t
+uint8_t, uint16_t, uint32_t, uint64_t
+
+// Large integers (SpacetimeDB types)
+SpacetimeDB::i128, SpacetimeDB::u128
+SpacetimeDB::i256, SpacetimeDB::u256
+
+// Collections
+std::optional<T>, std::vector<T>
+
+// SpacetimeDB types
+Identity, ConnectionId, Timestamp, TimeDuration, ScheduleAt
 ```
 
 </TabItem>

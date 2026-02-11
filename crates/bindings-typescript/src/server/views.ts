@@ -159,16 +159,13 @@ export function registerView<
     ctx.registerTypesRecursively(paramsBuilder)
   );
 
-  ctx.moduleDef.miscExports.push({
-    tag: 'View',
-    value: {
-      name,
-      index: (anon ? ctx.anonViews : ctx.views).length,
-      isPublic: opts.public,
-      isAnonymous: anon,
-      params: paramType,
-      returnType,
-    },
+  ctx.moduleDef.views.push({
+    sourceName: name,
+    index: (anon ? ctx.anonViews : ctx.views).length,
+    isPublic: opts.public,
+    isAnonymous: anon,
+    params: paramType,
+    returnType,
   });
 
   // If it is an option, we wrap the function to make the return look like an array.

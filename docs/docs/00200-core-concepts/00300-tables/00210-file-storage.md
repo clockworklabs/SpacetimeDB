@@ -11,7 +11,7 @@ SpacetimeDB can store binary data directly in table columns, making it suitable 
 
 ## Storing Binary Data Inline
 
-Store binary data using `Vec<u8>` (Rust), `List<byte>` (C#), or `t.array(t.u8())` (TypeScript). This approach keeps data within the database, ensuring it participates in transactions and real-time updates.
+Store binary data using `Vec<u8>` (Rust), `List<byte>` (C#), `std::vector<uint8_t>` (C++), or `t.array(t.u8())` (TypeScript). This approach keeps data within the database, ensuring it participates in transactions and real-time updates.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -118,6 +118,37 @@ pub fn upload_avatar(
         data,
         uploaded_at: ctx.timestamp,
     });
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct UserAvatar {
+  uint64_t user_id;
+  std::string mime_type;
+  std::vector<uint8_t> data;  // Binary data stored inline
+  Timestamp uploaded_at;
+};
+SPACETIMEDB_STRUCT(UserAvatar, user_id, mime_type, data, uploaded_at)
+SPACETIMEDB_TABLE(UserAvatar, user_avatar, Public)
+FIELD_PrimaryKey(user_avatar, user_id)
+
+SPACETIMEDB_REDUCER(upload_avatar, ReducerContext ctx, 
+  uint64_t user_id, std::string mime_type, std::vector<uint8_t> data) {
+  // Delete existing avatar if present
+  ctx.db[user_avatar_user_id].delete_by_key(user_id);
+
+  // Insert new avatar
+  ctx.db[user_avatar].insert(UserAvatar{
+    .user_id = user_id,
+    .mime_type = mime_type,
+    .data = data,
+    .uploaded_at = ctx.timestamp,
+  });
+    
+  return Ok();
 }
 ```
 
@@ -272,6 +303,41 @@ pub fn register_document(
         storage_url,
         uploaded_at: ctx.timestamp,
     });
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Document {
+    uint64_t id;
+    Identity owner_id;
+    std::string filename;
+    std::string mime_type;
+    uint64_t size_bytes;
+    std::string storage_url;  // Reference to external storage
+    Timestamp uploaded_at;
+};
+SPACETIMEDB_STRUCT(Document, id, owner_id, filename, mime_type, size_bytes, storage_url, uploaded_at)
+SPACETIMEDB_TABLE(Document, document, Public)
+FIELD_PrimaryKeyAutoInc(document, id)
+FIELD_Index(document, owner_id)
+
+// Called after uploading file to external storage
+SPACETIMEDB_REDUCER(register_document, ReducerContext ctx,
+    std::string filename, std::string mime_type, uint64_t size_bytes, std::string storage_url) {
+    ctx.db[document].insert(Document{
+        .id = 0,  // auto-increment
+        .owner_id = ctx.sender,
+        .filename = filename,
+        .mime_type = mime_type,
+        .size_bytes = size_bytes,
+        .storage_url = storage_url,
+        .uploaded_at = ctx.timestamp,
+    });
+    
+    return Ok();
 }
 ```
 
@@ -734,6 +800,25 @@ pub struct Image {
     height: u32,
     uploaded_at: Timestamp,
 }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Image {
+    uint64_t id;
+    Identity owner_id;
+    std::vector<uint8_t> thumbnail;  // Small preview stored inline
+    std::string original_url;        // Large original in external storage
+    uint32_t width;
+    uint32_t height;
+    Timestamp uploaded_at;
+};
+SPACETIMEDB_STRUCT(Image, id, owner_id, thumbnail, original_url, width, height, uploaded_at)
+SPACETIMEDB_TABLE(Image, image, Public)
+FIELD_PrimaryKeyAutoInc(image, id)
+FIELD_Index(image, owner_id)
 ```
 
 </TabItem>

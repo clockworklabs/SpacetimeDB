@@ -109,6 +109,31 @@ If you see errors like "no method named `try_insert` found", add this import.
 :::
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+Use the `SPACETIMEDB_REDUCER` macro on a function:
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name, std::string email) {
+    // Validate input
+    if (name.empty()) {
+        return Err("Name cannot be empty");
+    }
+    
+    // Modify tables
+    User user{0, name, email};  // 0 for id - auto-increment will assign
+    ctx.db[user].insert(user);
+    
+    return Ok();
+}
+```
+
+Reducers must take `ReducerContext ctx` as their first parameter. Additional parameters can be any registered types. Reducers return `ReducerResult` (which is `Outcome<void>`): use `Ok()` on success or `Err(message)` on error for convenience.
+
+</TabItem>
 </Tabs>
 
 ## Transactional Execution
@@ -162,6 +187,17 @@ ctx.db.user().insert(User {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+ctx.db[user].insert(User{
+    0,  // auto-increment will assign
+    "Alice",
+    "alice@example.com"
+});
+```
+
+</TabItem>
 </Tabs>
 
 ### Finding Rows by Unique Column
@@ -205,6 +241,17 @@ let by_email = ctx.db.user().email().find("alice@example.com");
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+if (auto user = ctx.db[user_id].find(123)) {
+    LOG_INFO("Found: " + user->name);
+}
+
+auto by_email = ctx.db[user_email].find("alice@example.com");
+```
+
+</TabItem>
 </Tabs>
 
 ### Filtering Rows by Indexed Column
@@ -236,6 +283,15 @@ foreach (var user in ctx.Db.User.Name.Filter("Alice"))
 ```rust
 for user in ctx.db.user().name().filter("Alice") {
     log::info!("User {}: {}", user.id, user.email);
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+for (const auto& user : ctx.db[user_name].filter("Alice")) {
+    LOG_INFO("User " + std::to_string(user.id) + ": " + user.email);
 }
 ```
 
@@ -276,6 +332,16 @@ if (user is not null)
 if let Some(mut user) = ctx.db.user().id().find(123) {
     user.name = "Bob".to_string();
     ctx.db.user().id().update(user);
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+if (auto user = ctx.db[user_id].find(123)) {
+    user->name = "Bob";
+    ctx.db[user_id].update(*user);
 }
 ```
 
@@ -323,6 +389,22 @@ log::info!("Deleted {} row(s)", deleted);
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Delete by primary key
+ctx.db[user_id].delete_by_key(123);
+
+// Delete all matching an indexed column
+uint32_t deleted = 0;
+for (const auto& user : ctx.db[user_name].filter("Alice")) {
+    ctx.db[user_id].delete_by_key(user.id);
+    deleted++;
+}
+LOG_INFO("Deleted " + std::to_string(deleted) + " row(s)");
+```
+
+</TabItem>
 </Tabs>
 
 ### Iterating All Rows
@@ -358,6 +440,15 @@ for user in ctx.db.user().iter() {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+for (const auto& user : ctx.db[user]) {
+    LOG_INFO(std::to_string(user.id) + ": " + user.name);
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### Counting Rows
@@ -386,6 +477,14 @@ Log.Info($"Total users: {total}");
 ```rust
 let total = ctx.db.user().count();
 log::info!("Total users: {}", total);
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+auto total = ctx.db[user].count();
+LOG_INFO("Total users: " + std::to_string(total));
 ```
 
 </TabItem>
@@ -551,6 +650,48 @@ fn queue_fetch(ctx: &ReducerContext, url: String) {
         scheduled_at: ScheduleAt::Interval(Duration::ZERO.into()),
         url,
     });
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+// Define a table to store scheduled tasks
+struct FetchSchedule {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+    std::string url;
+};
+SPACETIMEDB_STRUCT(FetchSchedule, scheduled_id, scheduled_at, url);
+SPACETIMEDB_TABLE(FetchSchedule, fetch_schedule, Private);
+FIELD_PrimaryKeyAutoInc(fetch_schedule, scheduled_id);
+
+// Register the table for scheduling (column 1 = scheduled_at field, 0-based index)
+SPACETIMEDB_SCHEDULE(fetch_schedule, 1, fetch_external_data);
+
+// The procedure to be scheduled - called automatically when the time arrives
+SPACETIMEDB_PROCEDURE(uint32_t, fetch_external_data, ProcedureContext ctx, FetchSchedule schedule) {
+    LOG_INFO("Fetching data from: " + schedule.url);
+    // Process response...
+    return 0;  // Success
+}
+
+// From a reducer, schedule the procedure by inserting into the schedule table
+SPACETIMEDB_REDUCER(queue_fetch, ReducerContext ctx, std::string url) {
+    auto scheduled_at = ScheduleAt(TimeDuration::from_seconds(0));  // Run immediately
+    FetchSchedule fetch_task{
+        0,                // scheduled_id - auto-increment will assign
+        scheduled_at,     // When to execute
+        url
+    };
+    ctx.db[fetch_schedule].insert(fetch_task);
+    LOG_INFO("Fetch scheduled for URL: " + url);
+    return Ok();
 }
 ```
 

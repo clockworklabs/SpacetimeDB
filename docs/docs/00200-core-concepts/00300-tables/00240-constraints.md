@@ -63,6 +63,22 @@ pub struct User {
 Use the `#[primary_key]` attribute to mark a field as the primary key.
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct User {
+  uint64_t id;
+  std::string name;
+  std::string email;
+};
+SPACETIMEDB_STRUCT(User, id, name, email)
+SPACETIMEDB_TABLE(User, user, Public)
+FIELD_PrimaryKey(user, id)
+```
+
+Use `FIELD_PrimaryKey(table, field)` after table registration to mark the primary key.
+
+</TabItem>
 </Tabs>
 
 ### Primary Key Rules
@@ -132,6 +148,23 @@ pub struct Inventory {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Inventory {
+  uint64_t id;
+  uint64_t user_id;
+  uint64_t item_id;
+  uint32_t quantity;
+};
+SPACETIMEDB_STRUCT(Inventory, id, user_id, item_id, quantity)
+SPACETIMEDB_TABLE(Inventory, inventory, Public)
+FIELD_PrimaryKeyAutoInc(inventory, id)
+// Named multi-column btree index on (user_id, item_id)
+FIELD_NamedMultiColumnIndex(inventory, by_user_item, user_id, item_id)
+```
+
+</TabItem>
 </Tabs>
 
 This gives you efficient lookups by the column combination while using a simple auto-increment value as the primary key.
@@ -185,6 +218,21 @@ fn update_user_name(ctx: &ReducerContext, id: u64, new_name: String) -> Result<(
         ctx.db.user().id().update(user);
     }
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(update_user_name, ReducerContext ctx, uint64_t id, std::string new_name) {
+  auto user_opt = ctx.db[user_id].find(id);
+  if (user_opt.has_value()) {
+    User user_update = user_opt.value();
+    user_update.name = new_name;
+    ctx.db[user_id].update(user_update);
+  }
+  return Ok();
 }
 ```
 
@@ -288,6 +336,24 @@ pub struct User {
 ```
 
 Use the `#[unique]` attribute.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct User {
+  uint32_t id;
+  std::string email;
+  std::string username;
+};
+SPACETIMEDB_STRUCT(User, id, email, username)
+SPACETIMEDB_TABLE(User, user, Public)
+FIELD_PrimaryKey(user, id)
+FIELD_Unique(user, email)
+FIELD_Unique(user, username)
+```
+
+Use `FIELD_Unique(table, field)` after table registration to mark columns as unique.
 
 </TabItem>
 </Tabs>

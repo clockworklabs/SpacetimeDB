@@ -7,7 +7,7 @@ import {
   type Deserializer,
 } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
-import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
+import type RawTableDefV10 from '../lib/autogen/raw_table_def_v_10_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
@@ -286,7 +286,7 @@ class ModuleHooksImpl implements ModuleHooks {
     return (this.#dbView_ ??= freeze(
       Object.fromEntries(
         this.#schema.moduleDef.tables.map(table => [
-          toCamelCase(table.name),
+          toCamelCase(table.sourceName),
           makeTableView(this.#schema.typespace, table),
         ])
       )
@@ -304,7 +304,10 @@ class ModuleHooksImpl implements ModuleHooks {
 
   __describe_module__() {
     const writer = new BinaryWriter(128);
-    RawModuleDef.serialize(writer, RawModuleDef.V9(this.#schema.moduleDef));
+    RawModuleDef.serialize(
+      writer,
+      RawModuleDef.V10(this.#schema.rawModuleDefV10())
+    );
     return writer.getBuffer();
   }
 
@@ -414,9 +417,9 @@ const BINARY_READER = new BinaryReader(new Uint8Array());
 
 function makeTableView(
   typespace: Infer<typeof Typespace>,
-  table: Infer<typeof RawTableDefV9>
+  table: Infer<typeof RawTableDefV10>
 ): Table<any> {
-  const table_id = sys.table_id_from_name(table.name);
+  const table_id = sys.table_id_from_name(table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
     throw 'impossible';
@@ -510,7 +513,7 @@ function makeTableView(
   ) as Table<any>;
 
   for (const indexDef of table.indexes) {
-    const index_id = sys.index_id_from_name(indexDef.name!);
+    const index_id = sys.index_id_from_name(indexDef.sourceName!);
 
     let column_ids: number[];
     switch (indexDef.algorithm.tag) {

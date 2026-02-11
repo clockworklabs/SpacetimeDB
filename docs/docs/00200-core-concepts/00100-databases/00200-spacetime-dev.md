@@ -67,6 +67,7 @@ Choose from several built-in templates:
 - `basic-ts` - Basic TypeScript client and server stubs
 - `basic-cs` - Basic C# client and server stubs
 - `basic-rs` - Basic Rust client and server stubs
+- `basic-cpp` - Basic C++ server stubs
 - `react-ts` - React web app with TypeScript server
 - `chat-console-rs` - Complete Rust chat implementation
 - `chat-console-cs` - Complete C# chat implementation
@@ -81,6 +82,7 @@ Creates a server module only, without any client code. You'll choose your server
 - **TypeScript** - Server module in TypeScript
 - **Rust** - Server module in Rust
 - **C#** - Server module in C#
+- **C++** - Server module in C++
 
 The server code will be created in a `spacetimedb/` subdirectory within your project.
 
@@ -148,6 +150,18 @@ my-project/
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```text
+my-project/
+├── spacetimedb/            # Server module code (C++)
+│   ├── CMakeLists.txt
+│   └── src/
+│       └── lib.cpp
+└── README.md
+```
+
+</TabItem>
 </Tabs>
 
 ## Alternative: Manual Project Creation
@@ -196,6 +210,20 @@ This creates a new Rust project with:
 
 - A `Cargo.toml` configured for SpacetimeDB
 - A `src/lib.rs` with a sample module
+- Sample table and reducer definitions
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime init --lang cpp --project-path ./my-project my-project
+cd my-project
+```
+
+This creates a new C++ project with:
+
+- A `CMakeLists.txt` configured for SpacetimeDB
+- A `src/lib.cpp` with a sample module
 - Sample table and reducer definitions
 
 </TabItem>

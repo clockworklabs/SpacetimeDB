@@ -18,6 +18,7 @@ pub mod domains;
 pub mod energy;
 pub mod fail_initial_publish;
 pub mod filtering;
+pub mod http_egress;
 pub mod module_nested_op;
 pub mod modules;
 pub mod namespaces;

@@ -1,4 +1,6 @@
-import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
+import { AlgebraicType } from '../lib/algebraic_type';
+import FunctionVisibility from '../lib/autogen/function_visibility_type';
+import type Lifecycle from '../lib/autogen/lifecycle_type';
 import type { ParamsObj, Reducer } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { RowBuilder, type Infer, type RowObj } from '../lib/type_builders';
@@ -28,7 +30,7 @@ export function makeReducerExport<
   opts: ReducerOpts | undefined,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof RawReducerDefV9>['lifecycle']
+  lifecycle?: Infer<typeof Lifecycle>
 ): ReducerExport<S, Params> {
   const name = opts?.name;
 
@@ -54,7 +56,7 @@ export function registerReducer(
   name: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof RawReducerDefV9>['lifecycle']
+  lifecycle?: Infer<typeof Lifecycle>
 ): void {
   ctx.defineFunction(name);
 
@@ -68,12 +70,24 @@ export function registerReducer(
 
   const ref = ctx.registerTypesRecursively(params);
   const paramsType = ctx.resolveType(ref).value;
+  const isLifecycle = lifecycle != null;
 
   ctx.moduleDef.reducers.push({
-    name,
+    sourceName: name,
     params: paramsType,
-    lifecycle, // <- lifecycle flag lands here
+    //ModuleDef validation code is responsible to mark private reducers
+    visibility: FunctionVisibility.ClientCallable,
+    //Hardcoded for now - reducers do not return values yet
+    okReturnType: AlgebraicType.Product({ elements: [] }),
+    errReturnType: AlgebraicType.String,
   });
+
+  if (isLifecycle) {
+    ctx.moduleDef.lifeCycleReducers.push({
+      lifecycleSpec: lifecycle,
+      functionName: name,
+    });
+  }
 
   // If the function isn't named (e.g. `function foobar() {}`), give it the same
   // name as the reducer so that it's clear what it is in in backtraces.

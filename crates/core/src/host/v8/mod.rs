@@ -25,7 +25,7 @@ use crate::host::wasm_common::module_host_actor::{
     InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
     WasmInstance,
 };
-use crate::host::wasm_common::{RowIters, TimingSpanSet, DESCRIBE_MODULE_DUNDER};
+use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -932,8 +932,6 @@ fn extract_description<'scope>(
     replica_ctx: &ReplicaContext,
 ) -> Result<RawModuleDef, DescribeError> {
     run_describer(
-        //TODO(shub): make it work with `DESCRIBE_MODULE_DUNDER_V10`
-        DESCRIBE_MODULE_DUNDER,
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             Ok(catch_exception(scope, |scope| {
