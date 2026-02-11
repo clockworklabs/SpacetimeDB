@@ -156,14 +156,14 @@ type NormalizeIndexColumns<
 
 /**
  * Options for configuring a database table.
- * - `accessor`: The name of the table.
+ * - `name`: The name of the table.
  * - `public`: Whether the table is publicly accessible. Defaults to `false`.
  * - `indexes`: An array of index configurations for the table.
  * - `constraints`: An array of constraint configurations for the table.
  * - `scheduled`: The name of the reducer to be executed based on the scheduled rows in this table.
  */
 export type TableOpts<Row extends RowObj> = {
-  accessor: string;
+  name: string;
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
@@ -234,17 +234,17 @@ export interface TableMethods<TableDef extends UntypedTableDef>
 /**
  * Defines a database table with schema and options.
  *
- * @param opts - Table configuration including accessor, indexes, and access control
+ * @param opts - Table configuration including name, indexes, and access control
  * @param row - Product type defining the table's row structure
  * @returns Table handle for use in schema() function
  *
  * @example
  * ```ts
  * const playerTable = table(
- *   { accessor: 'player', public: true },
+ *   { name: 'player', public: true },
  *   {
  *     id: t.u32().primaryKey(),
- *     accessor: t.string().index('btree')
+ *     name: t.string().index('btree')
  *   }
  * );
  * ```
@@ -284,9 +284,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<Opts['accessor'], CoerceRow<Row>, OptsIndices<Opts>> {
+): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
   const {
-    accessor: name,
+    name,
     public: isPublic = false,
     indexes: userIndexes = [],
     scheduled,

@@ -4,7 +4,7 @@
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 const User = table(
-  { accessor: 'user', public: true },
+  { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
     name: t.string().optional(),
@@ -13,7 +13,7 @@ const User = table(
 );
 
 const Message = table(
-  { accessor: 'message', public: true },
+  { name: 'message', public: true },
   { sender: t.identity(), sent: t.timestamp(), text: t.string() }
 );
 

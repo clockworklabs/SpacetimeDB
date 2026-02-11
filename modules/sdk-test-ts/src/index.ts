@@ -806,7 +806,7 @@ const allTableDefs: ExtractTables<typeof allTables> = allTables.map(
 
 const ScheduledTable = table(
   {
-    accessor: 'scheduled_table',
+    name: 'scheduled_table',
     scheduled: 'send_scheduled_message',
     public: true,
   },
@@ -818,13 +818,13 @@ const ScheduledTable = table(
 );
 
 const IndexedTable = table(
-  { accessor: 'indexed_table' },
+  { name: 'indexed_table' },
   { player_id: t.u32().index('btree') }
 );
 
 const IndexedTable2 = table(
   {
-    accessor: 'indexed_table_2',
+    name: 'indexed_table_2',
     indexes: [
       {
         name: 'player_id_snazz_index',
@@ -840,7 +840,7 @@ const IndexedTable2 = table(
 );
 
 const BTreeU32 = table(
-  { accessor: 'btree_u32', public: true },
+  { name: 'btree_u32', public: true },
   t.row('BTreeU32', {
     n: t.u32().index('btree'),
     data: t.i32(),
@@ -848,7 +848,7 @@ const BTreeU32 = table(
 );
 
 const Users = table(
-  { accessor: 'users', public: true },
+  { name: 'users', public: true },
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
@@ -856,7 +856,7 @@ const Users = table(
 );
 
 const IndexedSimpleEnum = table(
-  { accessor: 'indexed_simple_enum', public: true },
+  { name: 'indexed_simple_enum', public: true },
   { n: SimpleEnum.index('btree') }
 );
 

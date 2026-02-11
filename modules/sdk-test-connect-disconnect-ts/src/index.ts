@@ -4,12 +4,12 @@
 import { schema, t, table } from 'spacetimedb/server';
 
 const Connected = table(
-  { accessor: 'connected', public: true },
+  { name: 'connected', public: true },
   { identity: t.identity() }
 );
 
 const Disconnected = table(
-  { accessor: 'disconnected', public: true },
+  { name: 'disconnected', public: true },
   { identity: t.identity() }
 );
 

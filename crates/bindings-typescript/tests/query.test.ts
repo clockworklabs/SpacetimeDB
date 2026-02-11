@@ -14,7 +14,7 @@ import { t } from '../src/lib/type_builders';
 
 const personTable = table(
   {
-    accessor: 'person',
+    name: 'person',
 
     indexes: [
       {
@@ -33,7 +33,7 @@ const personTable = table(
 
 const ordersTable = table(
   {
-    accessor: 'orders',
+    name: 'orders',
     indexes: [
       {
         name: 'orders_person_id_idx',
