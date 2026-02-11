@@ -350,7 +350,6 @@ spacetimedb.anonymousView(
   (ctx) =>
     ctx.from.player
       .where(p => p.score.gt(1000))
-      .build()
 );
 ```
 
