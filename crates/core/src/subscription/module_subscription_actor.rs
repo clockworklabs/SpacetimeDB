@@ -44,8 +44,15 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_primitives::ArgId;
+use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::static_assert_size;
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
 use tokio::sync::oneshot;
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
@@ -60,6 +67,7 @@ pub struct ModuleSubscriptions {
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
     stats: Arc<SubscriptionGauges>,
     metrics: Arc<SubscriptionMetricsForWorkloads>,
+    module_def_version: Arc<AtomicU8>,
 }
 
 #[derive(Debug, Clone)]
@@ -340,6 +348,32 @@ impl ModuleSubscriptions {
             stats,
             metrics,
             bsatn_rlb_pool,
+            module_def_version: Arc::new(AtomicU8::new(Self::encode_module_def_version(
+                RawModuleDefVersion::V9OrEarlier,
+            ))),
+        }
+    }
+
+    pub fn set_module_def_version(&self, version: RawModuleDefVersion) {
+        self.module_def_version
+            .store(Self::encode_module_def_version(version), Ordering::Release);
+    }
+
+    pub fn module_def_version(&self) -> RawModuleDefVersion {
+        Self::decode_module_def_version(self.module_def_version.load(Ordering::Acquire))
+    }
+
+    fn encode_module_def_version(version: RawModuleDefVersion) -> u8 {
+        match version {
+            RawModuleDefVersion::V9OrEarlier => 0,
+            RawModuleDefVersion::V10 => 1,
+        }
+    }
+
+    fn decode_module_def_version(version: u8) -> RawModuleDefVersion {
+        match version {
+            1 => RawModuleDefVersion::V10,
+            _ => RawModuleDefVersion::V9OrEarlier,
         }
     }
 
@@ -1625,6 +1659,7 @@ impl ModuleSubscriptions {
         let (update_metrics, failed_v2_subscriptions) = subscriptions.eval_updates_sequential(
             (&delta_read_tx, tx_offset),
             &self.bsatn_rlb_pool,
+            self.module_def_version(),
             event.clone(),
             caller,
         );

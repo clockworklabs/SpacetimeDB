@@ -30,6 +30,7 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
+use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
 use std::collections::BTreeMap;
@@ -566,6 +567,7 @@ struct ComputedQueries {
     v2_errs: Vec<(SubscriptionIdV2, Box<str>)>,
     event: Arc<ModuleEvent>,
     caller: Option<Arc<ClientConnectionSender>>,
+    module_def_version: RawModuleDefVersion,
 }
 
 // Wraps a sender so that it will increment a gauge.
@@ -1324,6 +1326,7 @@ impl SubscriptionManager {
         &self,
         (tx, tx_offset): (&DeltaTx, TransactionOffset),
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        module_def_version: RawModuleDefVersion,
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> (ExecutionMetrics, Vec<SubscriptionIdV2>) {
@@ -1354,6 +1357,7 @@ impl SubscriptionManager {
             v2_errs,
             event,
             caller,
+            module_def_version,
         };
 
         // We've now finished all of the work which needs to read from the datastore,
@@ -1848,6 +1852,7 @@ impl SendWorker {
         errs: Vec<(ClientId, Box<str>)>,
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
+        module_def_version: RawModuleDefVersion,
     ) {
         use ws_v1::FormatSwitch::{Bsatn, Json};
 
@@ -1932,11 +1937,17 @@ impl SendWorker {
         }
 
         // Send all the other updates.
+        let hide_reducer_info_for_non_callers = matches!(module_def_version, RawModuleDefVersion::V10);
+
         for (id, update) in client_id_updates.drain() {
             let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
             let client = self.clients[&id].outbound_ref.clone();
             // Conditionally send out a full update or a light one otherwise.
-            let event = client.config.tx_update_full.then(|| event.clone());
+            let event = if hide_reducer_info_for_non_callers {
+                None
+            } else {
+                client.config.tx_update_full.then(|| event.clone())
+            };
             let message = TransactionUpdateMessage { event, database_update };
             send_to_client_v1(&client, Some(tx_offset), message);
         }
@@ -2100,6 +2111,7 @@ impl SendWorker {
             v2_errs,
             event,
             caller,
+            module_def_version,
         }: ComputedQueries,
     ) {
         let (v1_caller, v2_caller) = match caller {
@@ -2107,7 +2119,7 @@ impl SendWorker {
             Some(caller) => (None, Some(caller)),
             None => (None, None),
         };
-        self.send_v1_computed_queries(tx_offset, updates, errs, event.clone(), v1_caller);
+        self.send_v1_computed_queries(tx_offset, updates, errs, event.clone(), v1_caller, module_def_version);
         self.send_v2_computed_queries(tx_offset, v2_updates, v2_errs, event, v2_caller);
     }
 }
@@ -2142,6 +2154,7 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::def::RawModuleDefVersion;
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
@@ -3140,6 +3153,7 @@ mod tests {
             let _ = subscriptions.eval_updates_sequential(
                 (&delta_tx, offset_rx),
                 &bsatn_rlb_pool,
+                RawModuleDefVersion::V9OrEarlier,
                 event,
                 Some(Arc::new(client0)),
             );

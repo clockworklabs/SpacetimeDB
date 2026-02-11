@@ -470,6 +470,7 @@ async fn ws_client_actor_inner(
         },
         unordered_tx.clone(),
         ws_recv,
+        client.config.version,
     ));
     let hotswap = {
         let client = client.clone();
@@ -746,6 +747,7 @@ async fn ws_recv_task<MessageHandler>(
     message_handler: impl Fn(DataMessage, Instant) -> MessageHandler,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
     ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
+    ws_version: WsVersion,
 ) where
     MessageHandler: Future<Output = Result<(), MessageHandleError>>,
 {
@@ -760,13 +762,15 @@ async fn ws_recv_task<MessageHandler>(
     while let Some((data, timer)) = recv_handler.next().await {
         let result = message_handler(data, timer).await;
         if let Err(e) = result {
-            if let MessageHandleError::Execution(err) = e {
-                log::error!("{err:#}");
-                // If the send task has exited, also exit this recv task.
-                if unordered_tx.send(err.into()).is_err() {
-                    break;
+            if ws_version == WsVersion::V1 {
+                if let MessageHandleError::Execution(err) = e {
+                    log::error!("{err:#}");
+                    // If the send task has exited, also exit this recv task.
+                    if unordered_tx.send(err.into()).is_err() {
+                        break;
+                    }
+                    continue;
                 }
-                continue;
             }
             log::debug!("Client caused error: {e}");
             let close = CloseFrame {
@@ -1308,11 +1312,15 @@ async fn ws_encode_task(
             }
             OutboundWsMessage::Message(message) => {
                 if config.version == WsVersion::V2 {
+                    let (workload, num_rows) = match &message {
+                        OutboundMessage::V2(_) => (message.workload(), message.num_rows()),
+                        OutboundMessage::V1(_) => (None, None),
+                    };
                     match message {
                         OutboundMessage::V2(server_message) => {
                             let (stats, in_use, mut frames) =
                                 ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
-                            metrics.report(None, None, stats);
+                            metrics.report(workload, num_rows, stats);
                             if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
                                 break;
                             }

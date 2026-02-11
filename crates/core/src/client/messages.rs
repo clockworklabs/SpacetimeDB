@@ -267,18 +267,66 @@ impl OutboundMessage {
     pub fn num_rows(&self) -> Option<usize> {
         match self {
             Self::V1(message) => message.num_rows(),
-            Self::V2(_) => {
-                // TODO: add row counting for v2 messages when v2 payloads are fully defined.
-                None
-            }
+            Self::V2(message) => v2_message_num_rows(message),
         }
     }
 
     pub fn workload(&self) -> Option<WorkloadType> {
         match self {
             Self::V1(message) => message.workload(),
-            Self::V2(_) => None,
+            Self::V2(message) => match message {
+                ws_v2::ServerMessage::InitialConnection(_) => None,
+                ws_v2::ServerMessage::SubscribeApplied(_) => Some(WorkloadType::Subscribe),
+                ws_v2::ServerMessage::UnsubscribeApplied(_) => Some(WorkloadType::Unsubscribe),
+                ws_v2::ServerMessage::SubscriptionError(_) => None,
+                ws_v2::ServerMessage::TransactionUpdate(_) => Some(WorkloadType::Update),
+                ws_v2::ServerMessage::OneOffQueryResult(_) => Some(WorkloadType::Sql),
+                ws_v2::ServerMessage::ReducerResult(_) => Some(WorkloadType::Reducer),
+                ws_v2::ServerMessage::ProcedureResult(_) => Some(WorkloadType::Procedure),
+            },
         }
+    }
+}
+
+fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
+    match message {
+        ws_v2::ServerMessage::InitialConnection(_) => None,
+        ws_v2::ServerMessage::SubscribeApplied(message) => Some(count_query_rows(&message.rows)),
+        ws_v2::ServerMessage::UnsubscribeApplied(message) => {
+            Some(message.rows.as_ref().map(count_query_rows).unwrap_or_default())
+        }
+        ws_v2::ServerMessage::SubscriptionError(_) => None,
+        ws_v2::ServerMessage::TransactionUpdate(message) => Some(count_transaction_update(message)),
+        ws_v2::ServerMessage::OneOffQueryResult(message) => match &message.result {
+            Ok(rows) => Some(count_query_rows(rows)),
+            Err(_) => None,
+        },
+        ws_v2::ServerMessage::ReducerResult(message) => match &message.result {
+            ws_v2::ReducerOutcome::Ok(ok) => Some(count_transaction_update(&ok.transaction_update)),
+            ws_v2::ReducerOutcome::Okmpty => Some(0),
+            ws_v2::ReducerOutcome::Err(_) | ws_v2::ReducerOutcome::InternalError(_) => None,
+        },
+        ws_v2::ServerMessage::ProcedureResult(_) => None,
+    }
+}
+
+fn count_query_rows(rows: &ws_v2::QueryRows) -> usize {
+    rows.tables.iter().map(|table| table.rows.len()).sum()
+}
+
+fn count_transaction_update(update: &ws_v2::TransactionUpdate) -> usize {
+    update
+        .query_sets
+        .iter()
+        .flat_map(|qs| qs.tables.iter())
+        .map(|table| table.rows.iter().map(count_table_update_rows).sum::<usize>())
+        .sum()
+}
+
+fn count_table_update_rows(rows: &ws_v2::TableUpdateRows) -> usize {
+    match rows {
+        ws_v2::TableUpdateRows::PersistentTable(rows) => rows.inserts.len() + rows.deletes.len(),
+        ws_v2::TableUpdateRows::EventTable(rows) => rows.events.len(),
     }
 }
 
