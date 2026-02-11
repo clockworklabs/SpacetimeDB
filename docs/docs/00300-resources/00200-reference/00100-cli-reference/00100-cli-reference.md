@@ -348,6 +348,8 @@ Run `spacetime help publish` for more detailed information.
 
   Default value: ``
 * `--include-private` — Include private tables and functions in generated code (types are always included).
+
+  Default value: `false`
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 
 
