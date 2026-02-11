@@ -79,20 +79,9 @@ jobs:
         with:
           run_install: true
 
-      # Install cmake and emscripten for C++ module compilation tests.
-      - name: Install cmake and emscripten (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install 4.0.21
-          ./emsdk activate 4.0.21
-
-      - name: Install emscripten (Windows)
-        if: runner.os == 'Windows'
+      # Install emscripten for C++ module compilation tests.
+      - name: Install emscripten (Linux/Windows)
+        if: runner.os == 'Linux' || runner.os == 'Windows'
         shell: bash
         run: |
           git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
