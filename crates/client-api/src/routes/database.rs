@@ -942,6 +942,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             new_module_hash,
             breaks_client,
             plan,
+            major_version_upgrade,
         } => {
             info!(
                 "planned auto-migration of database {} from {} to {}",
@@ -958,12 +959,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
+                major_version_upgrade,
             }))
         }
-        MigratePlanResult::AutoMigrationError(e) => {
+        MigratePlanResult::AutoMigrationError {
+            error: e,
+            major_version_upgrade,
+        } => {
             info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
+                major_version_upgrade,
             }))
         }
     }
