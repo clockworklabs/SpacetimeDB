@@ -326,7 +326,9 @@ impl ToProtocol for TransactionUpdateMessage {
 
             let status = match &event.status {
                 EventStatus::Committed(_) => ws_v1::UpdateStatus::Committed(update),
-                EventStatus::Failed(errmsg) => ws_v1::UpdateStatus::Failed(errmsg.clone().into()),
+                EventStatus::FailedUser(errmsg) | EventStatus::FailedInternal(errmsg) => {
+                    ws_v1::UpdateStatus::Failed(errmsg.clone().into())
+                }
                 EventStatus::OutOfEnergy => ws_v1::UpdateStatus::OutOfEnergy,
             };
 

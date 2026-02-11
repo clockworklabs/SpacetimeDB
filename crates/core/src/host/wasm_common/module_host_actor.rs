@@ -853,7 +853,7 @@ impl InstanceCommon {
                     &err,
                     &self.info.module_hash,
                 );
-                (EventStatus::Failed(err.into()), None)
+                (EventStatus::FailedUser(err.into()), None)
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
@@ -877,7 +877,7 @@ impl InstanceCommon {
                             &err,
                             &self.info.module_hash,
                         );
-                        (EventStatus::Failed(err), None)
+                        (EventStatus::FailedInternal(err), None)
                     }
                 }
             }
@@ -897,7 +897,7 @@ impl InstanceCommon {
 
         let status = match out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
-            ViewOutcome::Failed(err) => EventStatus::Failed(err),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
             ViewOutcome::Success => status,
         };
         if !matches!(status, EventStatus::Committed(_)) {
@@ -943,7 +943,7 @@ impl InstanceCommon {
         if energy.remaining.get() == 0 {
             EventStatus::OutOfEnergy
         } else {
-            EventStatus::Failed("The instance encountered a fatal error.".into())
+            EventStatus::FailedInternal("The instance encountered a fatal error.".into())
         }
     }
 

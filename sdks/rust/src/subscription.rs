@@ -201,8 +201,17 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// Applications where these resources are a constraint
     /// should register more precise queries via [`Self::subscribe`]
     /// in order to replicate only the subset of data which the client needs to function.
-    pub fn subscribe_to_all_tables(self) {
-        todo!("Repair or remove")
+    ///
+    /// If your client bindings were generated with the `--include-private` flag to `spacetime generate`,
+    /// this method will attempt to subscribe to private tables defined by the module.
+    /// Such subscriptions will lead to an error unless the client is authenticated as a privileged [`crate::Identity`].
+    pub fn subscribe_to_all_tables(self) -> M::SubscriptionHandle {
+        let all_subs = M::ALL_TABLE_NAMES
+            .iter()
+            .map(|table_name| format!("SELECT * FROM {table_name}"))
+            .collect::<Vec<_>>();
+        log::info!("Subscribing to queries: {all_subs:#?}");
+        self.subscribe(all_subs)
     }
 
     pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> TypedSubscriptionBuilder<M> {

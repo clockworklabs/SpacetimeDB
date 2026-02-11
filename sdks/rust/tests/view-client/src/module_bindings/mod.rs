@@ -897,4 +897,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
         player_location_table::register_table(client_cache);
         players_at_level_0_table::register_table(client_cache);
     }
+    const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "my_player",
+        "my_player_and_level",
+        "nearby_players",
+        "player",
+        "player_level",
+        "player_location",
+        "players_at_level_0",
+    ];
 }
