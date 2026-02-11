@@ -13,11 +13,7 @@ import type { RowType, UntypedTableDef } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
   type BooleanExpr,
-  type TypedTableDef,
-  isRowTypedQuery,
-  toSql,
   evaluateBooleanExpr,
-  getQueryTableName,
   getQueryAccessorName,
   getQueryWhereClause,
 } from '../lib/query';
@@ -69,7 +65,6 @@ export function useTable<TableDef extends UntypedTableDef>(
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
   type UseTableRowType = RowType<TableDef>;
-  const tableName = getQueryTableName(query);
   const accessorName = getQueryAccessorName(query);
   const whereExpr = getQueryWhereClause(query);
 

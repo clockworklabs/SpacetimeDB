@@ -1,4 +1,4 @@
-import { describe, expect, it, expectTypeOf, assertType } from 'vitest';
+import { describe, expect, it, assertType } from 'vitest';
 import { Identity } from '../src/lib/identity';
 import { and, not, or, toSql } from '../src/lib/query';
 import { tables } from '../test-app/src/module_bindings';

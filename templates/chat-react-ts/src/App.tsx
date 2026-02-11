@@ -26,32 +26,35 @@ function App() {
   const [messages] = useTable(tables.message);
 
   // Subscribe to all online users in the chat
-  const [onlineUsers] = useTable(tables.user.where(r => r.online.eq(true)), {
-    onInsert: user => {
-      // All users being inserted here are online
-      const name = user.name || user.identity.toHexString().substring(0, 8);
-      setSystemMessages(prev => [
-        ...prev,
-        {
-          sender: Identity.zero(),
-          text: `${name} has connected.`,
-          sent: Timestamp.now(),
-        },
-      ]);
-    },
-    onDelete: user => {
-      // All users being deleted here are offline
-      const name = user.name || user.identity.toHexString().substring(0, 8);
-      setSystemMessages(prev => [
-        ...prev,
-        {
-          sender: Identity.zero(),
-          text: `${name} has disconnected.`,
-          sent: Timestamp.now(),
-        },
-      ]);
-    },
-  });
+  const [onlineUsers] = useTable(
+    tables.user.where(r => r.online.eq(true)),
+    {
+      onInsert: user => {
+        // All users being inserted here are online
+        const name = user.name || user.identity.toHexString().substring(0, 8);
+        setSystemMessages(prev => [
+          ...prev,
+          {
+            sender: Identity.zero(),
+            text: `${name} has connected.`,
+            sent: Timestamp.now(),
+          },
+        ]);
+      },
+      onDelete: user => {
+        // All users being deleted here are offline
+        const name = user.name || user.identity.toHexString().substring(0, 8);
+        setSystemMessages(prev => [
+          ...prev,
+          {
+            sender: Identity.zero(),
+            text: `${name} has disconnected.`,
+            sent: Timestamp.now(),
+          },
+        ]);
+      },
+    }
+  );
 
   const [offlineUsers] = useTable(tables.user.where(r => r.online.eq(false)));
   const users = [...onlineUsers, ...offlineUsers];

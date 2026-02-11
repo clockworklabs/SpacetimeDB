@@ -16,7 +16,6 @@ import type { Prettify } from '../lib/type_util';
 import {
   type BooleanExpr,
   evaluateBooleanExpr,
-  getQueryTableName,
   getQueryAccessorName,
   getQueryWhereClause,
 } from '../lib/query';
