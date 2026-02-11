@@ -267,7 +267,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
     // type system will consider it an error.
     this.indexedCols = this.cols;
     this.tableDef = tableDef;
-    // Note: not using Object.freeze() since we have getters
+    Object.freeze(this);
   }
 
   asFrom(): FromBuilder<TableDef> {
