@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::client::consume_each_list::ConsumeEachBuffer;
+use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
@@ -9,14 +10,13 @@ use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::subscription::{collect_table_update, TableUpdateType};
-use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_client_api_messages::websocket::v1::{BsatnFormat, Compression};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_client_api_messages::websocket::v1::{BsatnFormat, Compression};
 use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
 
 use spacetimedb_schema::table_name::TableName;
