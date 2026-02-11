@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::TcpListener;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -55,8 +55,6 @@ fn spawn_redirect_server(location: &str) -> (u16, JoinHandle<std::io::Result<()>
                 Err(err) => return Err(err),
             }
         };
-        let mut buf = [0u8; 1024];
-        let _ = stream.read(&mut buf)?;
         let response =
             format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         stream.write_all(response.as_bytes())?;
