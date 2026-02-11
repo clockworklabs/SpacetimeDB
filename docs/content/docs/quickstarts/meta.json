@@ -1,0 +1,12 @@
+{
+  "title": "Quickstarts",
+  "defaultOpen": false,
+  "pages": [
+    "react",
+    "vue",
+    "svelte",
+    "typescript",
+    "rust",
+    "c-sharp"
+  ]
+}

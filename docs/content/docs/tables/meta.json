@@ -1,0 +1,15 @@
+{
+  "title": "Tables",
+  "defaultOpen": false,
+  "pages": [
+    "column-types",
+    "file-storage",
+    "auto-increment",
+    "constraints",
+    "default-values",
+    "indexes",
+    "access-permissions",
+    "schedule-tables",
+    "performance"
+  ]
+}

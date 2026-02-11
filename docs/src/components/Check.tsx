@@ -1,17 +1,3 @@
-import React from "react";
-
-/**
- * A green checkmark badge for use in tables.
- *
- * Usage in MDX:
- * ```mdx
- * import { Check } from "@site/src/components/Check";
- *
- * | Feature | Supported |
- * |---------|-----------|
- * | Thing   | <Check /> |
- * ```
- */
 export function Check() {
   return (
     <svg
@@ -20,7 +6,7 @@ export function Check() {
       height="20"
       viewBox="0 0 20 20"
       fill="none"
-      style={{ display: "block" }}
+      style={{ display: 'block' }}
     >
       <g clipPath="url(#clip0_check)">
         <path

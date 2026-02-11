@@ -1,0 +1,919 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+@source '../../../node_modules/fumadocs-ui/dist/**/*.js';
+
+/* ==========================================================================
+   Fumadocs theme overrides — map brand colors to Fumadocs CSS variables
+   ========================================================================== */
+
+@theme {
+  --color-fd-background: #060606;
+  --color-fd-foreground: #b6c0cf;
+  --color-fd-primary: #4cf490;
+  --color-fd-primary-foreground: #060606;
+  --color-fd-card: #0d0d0e;
+  --color-fd-muted: #363840;
+  --color-fd-muted-foreground: #6f7987;
+  --color-fd-border: rgba(244, 246, 252, 0.11);
+  --color-fd-accent: #141416;
+  --color-fd-accent-foreground: #e6e9f0;
+  --color-fd-popover: #0d0d0e;
+  --color-fd-popover-foreground: #b6c0cf;
+  --color-fd-secondary: #141416;
+  --color-fd-secondary-foreground: #ced3e0;
+  --color-fd-ring: #4cf490;
+}
+
+.dark {
+  --color-fd-background: #060606;
+  --color-fd-foreground: #b6c0cf;
+  --color-fd-primary: #4cf490;
+  --color-fd-primary-foreground: #060606;
+  --color-fd-card: #0d0d0e;
+  --color-fd-muted: #363840;
+  --color-fd-muted-foreground: #6f7987;
+  --color-fd-border: rgba(244, 246, 252, 0.11);
+  --color-fd-accent: #141416;
+  --color-fd-accent-foreground: #e6e9f0;
+  --color-fd-popover: #0d0d0e;
+  --color-fd-popover-foreground: #b6c0cf;
+  --color-fd-secondary: #141416;
+  --color-fd-secondary-foreground: #ced3e0;
+  --color-fd-ring: #4cf490;
+}
+
+/* ==========================================================================
+   px-to-rem variable system
+   ========================================================================== */
+
+:root {
+  --8px: 0.5rem;
+  --9px: 0.5625rem;
+  --10px: 0.625rem;
+  --11px: 0.6875rem;
+  --12px: 0.75rem;
+  --13px: 0.8125rem;
+  --14px: 0.875rem;
+  --15px: 0.9375rem;
+  --16px: 1rem;
+  --17px: 1.0625rem;
+  --18px: 1.125rem;
+  --19px: 1.1875rem;
+  --20px: 1.25rem;
+  --21px: 1.3125rem;
+  --22px: 1.375rem;
+  --23px: 1.4375rem;
+  --24px: 1.5rem;
+  --25px: 1.5625rem;
+  --26px: 1.625rem;
+  --27px: 1.6875rem;
+  --28px: 1.75rem;
+  --29px: 1.8125rem;
+  --30px: 1.875rem;
+  --31px: 1.9375rem;
+  --32px: 2rem;
+  --33px: 2.0625rem;
+  --34px: 2.125rem;
+  --35px: 2.1875rem;
+  --36px: 2.25rem;
+  --37px: 2.3125rem;
+  --38px: 2.375rem;
+  --39px: 2.4375rem;
+  --40px: 2.5rem;
+  --41px: 2.5625rem;
+  --42px: 2.625rem;
+  --43px: 2.6875rem;
+  --44px: 2.75rem;
+  --45px: 2.8125rem;
+  --46px: 2.875rem;
+  --47px: 2.9375rem;
+  --48px: 3rem;
+  --49px: 3.0625rem;
+  --50px: 3.125rem;
+  --51px: 3.1875rem;
+  --52px: 3.25rem;
+  --53px: 3.3125rem;
+  --54px: 3.375rem;
+  --55px: 3.4375rem;
+  --56px: 3.5rem;
+  --57px: 3.5625rem;
+  --58px: 3.625rem;
+  --59px: 3.6875rem;
+  --60px: 3.75rem;
+  --61px: 3.8125rem;
+  --62px: 3.875rem;
+  --63px: 3.9375rem;
+  --64px: 4rem;
+  --65px: 4.0625rem;
+  --66px: 4.125rem;
+  --67px: 4.1875rem;
+  --68px: 4.25rem;
+  --69px: 4.3125rem;
+  --70px: 4.375rem;
+  --71px: 4.4375rem;
+  --72px: 4.5rem;
+  --81px: 5.0625rem;
+  --90px: 5.625rem;
+  --108px: 6.75rem;
+  --118px: 7.40625rem;
+  --144px: 9rem;
+  --158px: 9.875rem;
+}
+
+/* ==========================================================================
+   Brand color variables
+   ========================================================================== */
+
+:root {
+  /* Primary green */
+  --clockworklabs-color-green: #4cf490;
+  --clockworklabs-color-green-75: #4cf490bf;
+  --clockworklabs-color-green-50: #4cf49080;
+  --clockworklabs-color-green-25: #4cf49040;
+  --clockworklabs-color-green-20: #4cf49033;
+  --clockworklabs-color-green-10: #4cf4901a;
+  --clockworklabs-color-green-dark: #2ef27d;
+  --clockworklabs-color-green-darker: #1ff174;
+  --clockworklabs-color-green-darkest: #0dd35d;
+  --clockworklabs-color-green-light: #6af6a3;
+  --clockworklabs-color-green-lighter: #79f7ac;
+  --clockworklabs-color-green-lightest: #a6fac8;
+  --clockworklabs-color-white: #f4f6fc;
+  --clockworklabs-color-white-rgb: 244 246 252;
+  --clockworklabs-color-yellow: #fbdc8e;
+  --clockworklabs-color-yellow-25: #fbdc8e40;
+  --clockworklabs-color-purple: #a880ff;
+  --clockworklabs-color-orange: #ff9e9e;
+  --clockworklabs-color-blue: #02befa;
+  --clockworklabs-color-blue-25: #02befa40;
+  --clockworklabs-color-pink: #ff80fb;
+  --clockworklabs-color-pink-10: #ff80fb1a;
+  --clockworklabs-color-pink-25: #ff80fb40;
+  --clockworklabs-color-teal: #00ccb4;
+  --clockworklabs-color-red: #ff4c4c;
+  --clockworklabs-color-red-2: #fc6897;
+  --clockworklabs-color-shade1: #141416;
+  --clockworklabs-color-shade2: #0d0d0e;
+  --clockworklabs-color-n1: #e6e9f0;
+  --clockworklabs-color-n1-rgb: 230, 233, 240;
+  --clockworklabs-color-n2: #ced3e0;
+  --clockworklabs-color-n3: #b6c0cf;
+  --clockworklabs-color-n3-rgb: 182, 192, 207;
+  --clockworklabs-color-n4: #6f7987;
+  --clockworklabs-color-n4-hover: rgba(111, 121, 135, 0.25);
+  --clockworklabs-color-n5: #363840;
+  --clockworklabs-color-n6: #202126;
+  --clockworklabs-color-n6-rgb: 32, 33, 38;
+  --clockworklabs-color-n7: #050505;
+  --clockworklabs-color-n8: #060606;
+  /* UI remapping */
+  --clockworklabs-title-color: var(--clockworklabs-color-white);
+  --clockworklabs-code-color: var(--clockworklabs-color-yellow);
+  --clockworklabs-code-border-color: var(--clockworklabs-color-n6);
+  --clockworklabs-code-background-color: var(--clockworklabs-color-shade2);
+  --clockworklabs-navbar-border-color: var(--clockworklabs-color-n6);
+  --clockworklabs-strong-color: var(--clockworklabs-color-n2);
+  --clockworklabs-font-source: 'Source Code Pro Variable', monospace;
+}
+
+/* ==========================================================================
+   Typography — type ramp based on Inter, Major Third scale (1.25 ratio)
+   See: https://www.modularscale.com/?16&px&1.25
+   ========================================================================== */
+
+.text-hero {
+  font-size: 144px;
+  line-height: var(--158px);
+  font-weight: 800;
+  letter-spacing: calc(var(--144px) * -0.04);
+  @media (max-width: 1023px) {
+    font-size: var(--108px);
+    line-height: var(--118px);
+  }
+  @media (max-width: 767px) {
+    font-size: var(--81px);
+    line-height: var(--90px);
+  }
+}
+.text-xl {
+  font-size: var(--61px);
+  line-height: var(--72px);
+  font-weight: 400;
+  letter-spacing: calc(var(--61px) * -0.04);
+}
+.text-l {
+  font-size: var(--49px);
+  line-height: var(--56px);
+  font-weight: 400;
+  letter-spacing: calc(var(--49px) * -0.04);
+}
+.text-m {
+  font-size: var(--39px);
+  line-height: var(--44px);
+  font-weight: 400;
+  letter-spacing: calc(var(--39px) * -0.04);
+}
+.text-s {
+  font-size: var(--31px);
+  line-height: var(--36px);
+  font-weight: 400;
+  letter-spacing: calc(var(--31px) * -0.04);
+}
+.text-xs {
+  font-size: var(--25px);
+  line-height: var(--28px);
+  font-weight: 500;
+  letter-spacing: calc(var(--25px) * -0.04);
+}
+.text-xxs {
+  font-size: var(--20px);
+  line-height: var(--24px);
+  font-weight: 600;
+  letter-spacing: calc(var(--20px) * -0.04);
+}
+.text-value-1 {
+  font-family: var(--font-source);
+  font-size: var(--49px);
+  line-height: var(--56px);
+  letter-spacing: calc(var(--49px) * 0);
+}
+.text-value-2 {
+  font-family: var(--font-source);
+  font-size: var(--31px);
+  line-height: var(--36px);
+  letter-spacing: calc(var(--31px) * 0);
+}
+.text-value-3 {
+  font-family: var(--font-source);
+  font-size: var(--14px);
+  line-height: var(--20px);
+  font-weight: 600;
+  letter-spacing: calc(var(--14px) * 0);
+}
+.text-body-1 {
+  font-size: var(--21px);
+  line-height: var(--32px);
+  letter-spacing: calc(var(--18px) * -0.01);
+}
+.text-body-2 {
+  font-size: var(--16px);
+  line-height: var(--24px);
+  letter-spacing: calc(var(--16px) * -0.01);
+}
+.text-body-3 {
+  font-size: var(--12px);
+  line-height: var(--16px);
+  letter-spacing: calc(var(--14px) * -0.01);
+}
+.text-code-1 {
+  font-family: var(--font-source);
+  font-size: var(--16px);
+  line-height: var(--24px);
+  letter-spacing: calc(var(--16px) * -0.05);
+}
+.text-code-2 {
+  font-family: var(--font-source);
+  font-size: var(--14px);
+  line-height: var(--20px);
+  letter-spacing: calc(var(--14px) * -0.05);
+}
+.text-menu {
+  font-family: var(--font-source);
+  font-size: var(--14px);
+  line-height: var(--16px);
+  font-weight: 600;
+  letter-spacing: calc(var(--14px) * 0.08);
+  text-transform: uppercase;
+}
+.text-tagline-1 {
+  font-family: var(--font-source);
+  font-size: var(--14px);
+  line-height: var(--16px);
+  font-weight: 600;
+  letter-spacing: calc(var(--14px) * 0);
+  text-transform: uppercase;
+}
+.text-tagline-2 {
+  font-family: var(--font-source);
+  font-size: var(--12px);
+  line-height: var(--12px);
+  font-weight: 600;
+  letter-spacing: calc(var(--12px) * 0.02);
+  text-transform: uppercase;
+}
+.text-caption-1 {
+  font-size: var(--12px);
+  line-height: var(--16px);
+  letter-spacing: calc(var(--12px) * 0.01);
+}
+.text-caption-2 {
+  font-size: var(--11px);
+  line-height: var(--12px);
+  letter-spacing: calc(var(--11px) * 0.01);
+}
+.text-caption-3 {
+  font-size: var(--10px);
+  line-height: var(--12px);
+  letter-spacing: calc(var(--10px) * 0.01);
+}
+
+/* ==========================================================================
+   Base styles
+   ========================================================================== */
+
+html {
+  background-color: #060606;
+}
+
+body {
+  font-family: 'Inter Variable', sans-serif;
+}
+
+/* ==========================================================================
+   Headings
+   ========================================================================== */
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--clockworklabs-title-color);
+}
+
+/* Page title — Fumadocs uses text-[1.75em], production is 39px/400 */
+article > h1 {
+  font-size: var(--39px) !important;
+  line-height: var(--44px) !important;
+  font-weight: 400 !important;
+  letter-spacing: calc(var(--39px) * -0.04);
+}
+
+/* ==========================================================================
+   Prose — markdown content heading overrides
+   (h1 renders at h3 size, h2 at h4, etc.)
+   ========================================================================== */
+
+.prose h1 {
+  font-size: var(--39px) !important;
+  line-height: var(--44px) !important;
+  font-weight: 400;
+  letter-spacing: calc(var(--39px) * -0.04);
+  margin-top: 1rem;
+}
+.prose h2 {
+  font-size: var(--31px) !important;
+  line-height: var(--36px) !important;
+  font-weight: 400;
+  letter-spacing: calc(var(--31px) * -0.04);
+  margin-top: 2rem;
+}
+.prose h3 {
+  font-size: var(--25px) !important;
+  line-height: var(--28px) !important;
+  font-weight: 500;
+  letter-spacing: calc(var(--25px) * -0.04);
+  margin-top: 1.5rem;
+}
+.prose h4 {
+  font-size: var(--20px) !important;
+  line-height: var(--24px) !important;
+  font-weight: 600;
+  letter-spacing: calc(var(--20px) * -0.04);
+  margin-top: 1.25rem;
+}
+.prose h5 {
+  font-size: var(--16px) !important;
+  line-height: var(--24px) !important;
+  font-weight: 600;
+  letter-spacing: calc(var(--16px) * -0.04);
+  margin-top: 1.25rem;
+}
+
+/* ==========================================================================
+   Prose — body text
+   ========================================================================== */
+
+.prose p {
+  font-weight: 350;
+  color: var(--clockworklabs-color-n3);
+  letter-spacing: -0.01em;
+  font-size: var(--16px);
+  line-height: 26.4px;
+  margin-bottom: 1.5rem;
+}
+
+/* ==========================================================================
+   Prose — links
+   ========================================================================== */
+
+.prose a {
+  color: var(--clockworklabs-color-n3);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-skip-ink: none;
+  text-underline-offset: auto;
+}
+.prose a:hover {
+  color: var(--clockworklabs-color-n1);
+}
+
+/* Heading anchors — don't underline heading text wrapped in anchor links */
+.prose h1 a[data-card],
+.prose h2 a[data-card],
+.prose h3 a[data-card],
+.prose h4 a[data-card],
+.prose h5 a[data-card],
+.prose h6 a[data-card] {
+  text-decoration: none;
+  color: inherit;
+}
+.prose h1 a[data-card]:hover,
+.prose h2 a[data-card]:hover,
+.prose h3 a[data-card]:hover,
+.prose h4 a[data-card]:hover,
+.prose h5 a[data-card]:hover,
+.prose h6 a[data-card]:hover {
+  color: inherit;
+}
+
+/* ==========================================================================
+   Code blocks and inline code
+   ========================================================================== */
+
+pre code {
+  background-color: var(--clockworklabs-code-background-color);
+  color: var(--clockworklabs-code-color);
+}
+
+/* Remove inner figure border inside tabbed code blocks to prevent double borders */
+[role="tabpanel"] figure.border {
+  border: none !important;
+}
+
+.prose p code,
+.prose li code {
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+  background-color: var(--clockworklabs-code-background-color);
+  padding: 0.125rem 0.25rem;
+}
+
+strong {
+  color: var(--clockworklabs-strong-color);
+}
+
+/* ==========================================================================
+   Tables
+   ========================================================================== */
+
+table {
+  display: table;
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  letter-spacing: -0.01em;
+  margin-top: 40px;
+  margin-bottom: 40px;
+  font-size: 16px;
+  line-height: var(--24px);
+  color: var(--clockworklabs-color-white);
+  border: 1px solid var(--clockworklabs-color-n6);
+  border-radius: 8px;
+  overflow: hidden;
+}
+table th,
+table td {
+  border: none;
+  text-align: left;
+  padding: 12px 24px;
+}
+table thead {
+  background-color: var(--clockworklabs-color-shade1);
+  color: var(--clockworklabs-color-n4);
+}
+table thead tr {
+  border-bottom: none;
+}
+table tbody tr {
+  border-top: 1px solid var(--clockworklabs-color-n6);
+}
+table tbody tr td {
+  border-top: 1px solid var(--clockworklabs-color-n6);
+}
+table tbody tr:nth-child(2n) {
+  background-color: var(--clockworklabs-color-shade2);
+}
+table tbody td code {
+  background-color: var(--clockworklabs-code-background-color);
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+}
+table .table-accent {
+  color: var(--clockworklabs-color-green);
+}
+
+/* ==========================================================================
+   Card component
+   ========================================================================== */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 16px 0;
+}
+@media (max-width: 768px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+a.card {
+  text-decoration: none;
+  color: inherit;
+}
+.card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--clockworklabs-color-n6);
+  background: var(--clockworklabs-code-background-color);
+  padding: 16px 24px;
+  transition: box-shadow 0.2s ease-in-out;
+  cursor: pointer;
+}
+.card:hover {
+  background-color: var(--clockworklabs-color-n5);
+}
+.card.card--invert-icon svg {
+  filter: invert(100%);
+}
+.card svg {
+  min-width: 40px;
+  max-width: 40px;
+}
+.card img {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  object-fit: contain;
+}
+.card .card--body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.card .card--body p {
+  margin: 0;
+}
+.card h6 {
+  margin: 0;
+}
+
+/* ==========================================================================
+   Steps component
+   ========================================================================== */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin: 24px 0;
+  counter-reset: step-counter;
+}
+.step {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+  counter-increment: step-counter;
+}
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.step-title {
+  color: var(--clockworklabs-color-n1);
+  font-size: 16px;
+  font-weight: 600;
+}
+.step-title::before {
+  content: counter(step-counter) ". ";
+  color: var(--clockworklabs-color-n4);
+  font-weight: 500;
+}
+.step-description {
+  color: var(--clockworklabs-color-n3);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.step-description p {
+  margin: 0 0 8px 0;
+}
+.step-description p:last-child {
+  margin-bottom: 0;
+}
+.step-description code {
+  background-color: var(--clockworklabs-code-background-color);
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.step-code {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.step-code pre {
+  margin: 0 !important;
+}
+@media (max-width: 768px) {
+  .step {
+    grid-template-columns: 1fr;
+  }
+  .step-code {
+    margin-top: 16px;
+  }
+}
+
+/* ==========================================================================
+   Admonition / Callout overrides for Fumadocs
+   ========================================================================== */
+
+[data-callout="info"] {
+  --callout-color: var(--clockworklabs-color-blue);
+  background-color: var(--clockworklabs-color-shade1);
+  border-color: var(--clockworklabs-color-blue);
+}
+[data-callout="warning"] {
+  --callout-color: var(--clockworklabs-color-orange);
+  background-color: var(--clockworklabs-color-shade1);
+  border-color: var(--clockworklabs-color-orange);
+}
+[data-callout="danger"] {
+  --callout-color: var(--clockworklabs-color-red);
+  background-color: var(--clockworklabs-color-shade1);
+  border-color: var(--clockworklabs-color-red);
+}
+[data-callout="tip"] {
+  --callout-color: var(--clockworklabs-color-green);
+  background-color: var(--clockworklabs-color-shade1);
+  border-color: var(--clockworklabs-color-green);
+}
+[data-callout="note"] {
+  --callout-color: var(--clockworklabs-color-n3);
+  background-color: var(--clockworklabs-color-shade1);
+  border-color: var(--clockworklabs-color-n3);
+}
+
+/* ==========================================================================
+   Top Navigation Bar
+   ========================================================================== */
+
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 57px;
+  padding: 8px 24px;
+  background-color: #060606;
+  border-bottom: 1px solid var(--clockworklabs-color-n6);
+}
+
+.topnav-logo img {
+  height: 32px;
+}
+
+.topnav-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--clockworklabs-color-n6);
+  background: var(--clockworklabs-color-shade2);
+  color: var(--clockworklabs-color-n4);
+  font-size: 14px;
+  cursor: pointer;
+  min-width: 280px;
+  height: 36px;
+}
+
+.topnav-search:hover {
+  border-color: var(--clockworklabs-color-n5);
+}
+
+.topnav-search kbd {
+  margin-left: auto;
+  font-family: var(--clockworklabs-font-source);
+  font-size: 12px;
+  color: var(--clockworklabs-color-n5);
+}
+
+.topnav-spacer {
+  flex: 1;
+}
+
+.topnav-links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.topnav-link {
+  font-family: var(--clockworklabs-font-source);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--clockworklabs-color-n4);
+  text-decoration: none;
+}
+
+.topnav-link:hover {
+  color: var(--clockworklabs-color-n1);
+}
+
+.topnav-link:last-child {
+  border: 1px solid rgb(32, 33, 38);
+  border-radius: 4px;
+  padding: 10px;
+  color: rgb(244, 246, 252);
+  background: rgb(13, 13, 14);
+  font-weight: 700;
+  letter-spacing: -0.28px;
+}
+
+.topnav-link:last-child:hover {
+  background-color: var(--clockworklabs-color-n6);
+}
+
+/* Hide on mobile - use Fumadocs mobile nav instead */
+@media (max-width: 767px) {
+  .topnav {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Hide Fumadocs mobile TOC popover bar on desktop
+   ========================================================================== */
+
+@media (min-width: 768px) {
+  #nd-docs-layout > div:has(> header:not([id])) {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   Sidebar overrides — match production Docusaurus measurements
+   ========================================================================== */
+
+/* Sidebar width — override Fumadocs default (268px) */
+:root {
+  --fd-sidebar-width: 300px !important;
+}
+#nd-docs-layout {
+  --fd-sidebar-width: 300px !important;
+}
+
+/* All sidebar text uses Source Code Pro */
+#nd-sidebar {
+  font-family: var(--clockworklabs-font-source);
+  background-color: #060606;
+}
+
+/* Section headers ("Intro", "Core Concepts", "Developer Resources")
+   These are <p> separator elements inside the sidebar */
+#nd-sidebar p {
+  font-family: var(--clockworklabs-font-source);
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: rgb(54, 56, 64) !important;
+  letter-spacing: 0.96px !important;
+  text-transform: uppercase !important;
+  padding: 16px 8px 8px !important;
+  margin: 8px 0 0 !important;
+  line-height: 1.2;
+}
+
+/* Sidebar menu item links */
+#nd-sidebar a[data-active] {
+  font-family: var(--clockworklabs-font-source);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: -0.7px;
+  color: rgba(182, 192, 207, 0.7);
+  padding: 8px;
+  line-height: 17.5px;
+}
+
+#nd-sidebar a[data-active]:hover {
+  color: rgba(230, 233, 240, 0.7);
+}
+
+/* Active sidebar item — no green, subtle highlight */
+#nd-sidebar a[data-active="true"] {
+  color: rgba(230, 233, 240, 0.7) !important;
+  background: rgb(20, 20, 22) !important;
+  font-weight: 400 !important;
+}
+
+/* Remove highlight from parent/folder items — only leaf pages should highlight */
+#nd-sidebar [data-collapsible] > a[data-active="true"] {
+  background: transparent !important;
+}
+
+/* Category / folder items (Quickstarts, Tutorials, Databases, etc.) */
+#nd-sidebar button {
+  font-family: var(--clockworklabs-font-source);
+  font-weight: 500;
+  color: rgb(206, 211, 224);
+  letter-spacing: -0.7px;
+}
+
+/* Also style collapsible trigger links used as categories */
+#nd-sidebar [data-collapsible] > a,
+#nd-sidebar [data-collapsible] > button {
+  font-weight: 500;
+  color: rgb(206, 211, 224);
+}
+
+/* Hide sidebar footer (theme toggle) — production doesn't have it */
+#nd-sidebar > div:last-child:has(button[aria-label="Toggle Theme"]) {
+  display: none !important;
+}
+
+/* Hide sidebar collapse button — production doesn't have it */
+#nd-sidebar button[aria-label="Collapse Sidebar"],
+button[aria-label="Collapse Sidebar"] {
+  display: none !important;
+}
+
+/* Hide the sidebar top section (logo/collapse row) on desktop — it's empty after hiding collapse */
+#nd-sidebar > div:first-child {
+  display: none !important;
+}
+@media (max-width: 767px) {
+  #nd-sidebar > div:first-child {
+    display: flex !important;
+  }
+}
+
+/* ==========================================================================
+   Tab overrides — match production Docusaurus tabs
+   ========================================================================== */
+
+[role="tablist"] button[aria-selected] {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  padding: 8px 16px !important;
+}
+
+/* Active tab */
+[role="tablist"] button[aria-selected="true"],
+[role="tablist"] button[data-state="active"] {
+  color: var(--clockworklabs-color-green) !important;
+  border-bottom: 1px solid var(--clockworklabs-color-green) !important;
+}
+
+/* Inactive tab */
+[role="tablist"] button[aria-selected="false"],
+[role="tablist"] button[data-state="inactive"] {
+  color: rgb(82, 88, 96) !important;
+  border-bottom: 1px solid transparent !important;
+}
+
+/* ==========================================================================
+   TOC (right sidebar "On this page") — match production
+   ========================================================================== */
+
+#nd-toc a {
+  font-size: 12.8px !important;
+}
+
+/* Active TOC link */
+#nd-toc a[data-active="true"] {
+  color: var(--clockworklabs-color-green) !important;
+}
+
+/* Inactive TOC link */
+#nd-toc a[data-active="false"] {
+  color: var(--clockworklabs-color-n4) !important;
+}
+
+/* TOC heading "On this page" — match production's subtle style */
+#toc-title {
+  font-size: 12.8px !important;
+  color: var(--clockworklabs-color-n4) !important;
+}

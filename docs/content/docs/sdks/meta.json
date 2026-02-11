@@ -1,0 +1,13 @@
+{
+  "title": "Client SDKs",
+  "defaultOpen": false,
+  "pages": [
+    "codegen",
+    "connection",
+    "api",
+    "rust",
+    "c-sharp",
+    "typescript",
+    "unreal"
+  ]
+}

@@ -1,12 +1,15 @@
 # Dependencies
 /node_modules
 
+# Next.js
+/.next
+/out
+
+# Fumadocs generated
+/.source
+
 # Production
 /build
-
-# Generated files
-.docusaurus
-.cache-loader
 
 # Misc
 .DS_Store
@@ -18,3 +21,4 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+next-env.d.ts

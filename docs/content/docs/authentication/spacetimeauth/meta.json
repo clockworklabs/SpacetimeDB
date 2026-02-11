@@ -1,0 +1,10 @@
+{
+  "title": "SpacetimeAuth",
+  "pages": [
+    "index",
+    "creating-a-project",
+    "configuring-a-project",
+    "testing",
+    "react-integration"
+  ]
+}

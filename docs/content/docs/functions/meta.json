@@ -1,0 +1,9 @@
+{
+  "title": "Functions",
+  "defaultOpen": false,
+  "pages": [
+    "reducers",
+    "procedures",
+    "views"
+  ]
+}

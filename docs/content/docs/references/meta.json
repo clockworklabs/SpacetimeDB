@@ -1,0 +1,5 @@
+{
+  "title": "References",
+  "defaultOpen": false,
+  "pages": ["cli-reference", "http", "reference", "webassembly-abi", "sats-json", "bsatn"]
+}

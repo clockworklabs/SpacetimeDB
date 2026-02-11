@@ -1,0 +1,21 @@
+{
+  "root": true,
+  "pages": [
+    "ask-ai",
+    "---Intro---",
+    "index",
+    "...intro",
+    "quickstarts",
+    "tutorials",
+    "---Core Concepts---",
+    "databases",
+    "functions",
+    "tables",
+    "subscriptions",
+    "authentication",
+    "sdks",
+    "---Developer Resources---",
+    "how-to",
+    "references"
+  ]
+}

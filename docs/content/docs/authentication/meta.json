@@ -1,0 +1,11 @@
+{
+  "title": "Authentication",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "spacetimeauth",
+    "auth0",
+    "clerk",
+    "usage"
+  ]
+}

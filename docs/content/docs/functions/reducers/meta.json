@@ -1,0 +1,9 @@
+{
+  "title": "Reducers",
+  "pages": [
+    "index",
+    "reducer-context",
+    "lifecycle",
+    "error-handling"
+  ]
+}

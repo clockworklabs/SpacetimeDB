@@ -1,26 +1,13 @@
-import React, { ReactNode } from "react";
-import Link from "@docusaurus/Link";
-import { useDocById } from "@docusaurus/plugin-content-docs/client";
-import Heading from "@theme/Heading";
-import clsx from "clsx";
+import Link from 'next/link';
+import { ReactNode } from 'react';
 
 export type Item = {
   href: string;
   label: string;
   icon?: ReactNode;
   invertIcon?: boolean;
-  docId?: string;
   description?: string;
 };
-
-function DocDescription({ docId }: { docId: string }) {
-  const doc = useDocById(docId);
-  return (
-    <p className={clsx("text--truncate", "text-body-3")} title={doc?.description}>
-      {doc?.description ?? ""}
-    </p>
-  );
-}
 
 export function CardLink({
   className,
@@ -33,21 +20,17 @@ export function CardLink({
   return (
     <Link
       href={item.href}
-      className={clsx(
-        "card",
-        className,
-        item.invertIcon && "card--invert-icon"
-      )}
+      className={`card ${item.invertIcon ? 'card--invert-icon' : ''} ${className ?? ''}`.trim()}
     >
       {icon}
-      <div className={clsx("card--body")}>
-        <Heading as="h6" className={clsx("text--truncate")} title={item.label}>
+      <div className="card--body">
+        <h6 className="text--truncate" title={item.label}>
           {item.label}
-        </Heading>
-        {item.docId ? (
-          <DocDescription docId={item.docId} />
-        ) : item.description ? (
-          <p className={clsx("text--truncate", "text-body-3")} title={item.description}>{item.description}</p>
+        </h6>
+        {item.description ? (
+          <p className="text--truncate text-body-3" title={item.description}>
+            {item.description}
+          </p>
         ) : null}
       </div>
     </Link>

@@ -1,0 +1,11 @@
+{
+  "title": "How To",
+  "defaultOpen": false,
+  "pages": [
+    "deploy",
+    "pg-wire",
+    "logging",
+    "rls",
+    "reject-client-connections"
+  ]
+}

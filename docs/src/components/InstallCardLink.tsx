@@ -1,10 +1,21 @@
-import { CardLink } from "./CardLink";
-import CLIIcon from "@site/static/images/icons/cli-icon.svg";
+import { CardLink } from './CardLink';
 
 export function InstallCardLink() {
-    return (
-        <div style={{ maxWidth: 400 }}>
-            <CardLink item={{ href: "https://spacetimedb.com/install", label: "Install the SpacetimeDB CLI tool", icon: <CLIIcon height={40} /> }} />
-        </div>
-    );
+  return (
+    <div style={{ maxWidth: 400 }}>
+      <CardLink
+        item={{
+          href: 'https://spacetimedb.com/install',
+          label: 'Install the SpacetimeDB CLI tool',
+          icon: (
+            <img
+              src="/docs/images/icons/cli-icon.svg"
+              height={40}
+              alt="CLI"
+            />
+          ),
+        }}
+      />
+    </div>
+  );
 }

@@ -1,0 +1,12 @@
+{
+  "title": "Databases",
+  "defaultOpen": false,
+  "pages": [
+    "transactions-atomicity",
+    "developing",
+    "building-publishing",
+    "cheat-sheet",
+    "automatic-migrations",
+    "incremental-migrations"
+  ]
+}

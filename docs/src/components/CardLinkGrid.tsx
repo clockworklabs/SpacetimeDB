@@ -1,4 +1,4 @@
-import { CardLink, Item } from "./CardLink";
+import { CardLink, Item } from './CardLink';
 
 export function CardLinkGrid(props: { items: Item[] }) {
   const { items } = props;

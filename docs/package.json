@@ -3,64 +3,33 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "docusaurus": "docusaurus",
-    "dev": "docusaurus start",
-    "build": "docusaurus build",
-    "swizzle": "docusaurus swizzle",
-    "deploy": "docusaurus deploy",
-    "clear": "docusaurus clear",
-    "serve": "docusaurus serve",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "generate-cli-docs": "node scripts/generate-cli-docs.mjs",
-    "write-translations": "docusaurus write-translations",
-    "write-heading-ids": "docusaurus write-heading-ids",
-    "typecheck": "tsc"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@docusaurus/core": "3.9.2",
-    "@docusaurus/plugin-client-redirects": "^3.9.2",
-    "@docusaurus/plugin-content-docs": "3.9.2",
-    "@docusaurus/preset-classic": "3.9.2",
-    "@docusaurus/theme-common": "3.9.2",
-    "@easyops-cn/docusaurus-search-local": "^0.49.2",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/source-code-pro": "^5.2.7",
-    "@inkeep/cxkit-docusaurus": "^0.5.98",
     "@inkeep/cxkit-react": "^0.5.101",
-    "@inkeep/widgets": "^0.2.292",
-    "@mdx-js/react": "^3.0.0",
-    "@shikijs/rehype": "^3.3.0",
-    "clsx": "^2.0.0",
-    "prism-react-renderer": "^2.3.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "shiki": "^3.3.0"
+    "fumadocs-core": "^16.5.4",
+    "fumadocs-mdx": "^14.2.7",
+    "fumadocs-ui": "^16.5.4",
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.0.0",
+    "remark-directive": "^4.0.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.9.2",
-    "@docusaurus/tsconfig": "3.9.2",
-    "@docusaurus/types": "3.9.2",
-    "@types/react": "^18.3.23",
-    "@types/react-dom": "^18.3.0",
-    "typescript": "~5.6.2"
-  },
-  "pnpm": {
-    "overrides": {
-      "@docusaurus/*": "3.9.2",
-      "react": "18.3.1",
-      "react-dom": "18.3.1"
-    }
-  },
-  "browserslist": {
-    "production": [
-      ">0.5%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 3 chrome version",
-      "last 3 firefox version",
-      "last 5 safari version"
-    ]
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/mdx": "^2.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.0.0",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.6.0"
   },
   "engines": {
     "node": ">=18.0"

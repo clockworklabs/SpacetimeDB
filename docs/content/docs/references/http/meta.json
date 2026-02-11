@@ -1,0 +1,9 @@
+{
+  "title": "HTTP API",
+  "defaultOpen": false,
+  "pages": [
+    "authorization",
+    "identity",
+    "database"
+  ]
+}

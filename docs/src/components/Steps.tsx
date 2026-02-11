@@ -1,4 +1,4 @@
-import React, { ReactNode, Children, isValidElement } from "react";
+import { ReactNode, Children, isValidElement } from 'react';
 
 interface StepTextProps {
   children: ReactNode;
@@ -22,17 +22,13 @@ interface StepProps {
 }
 
 export function Step({ title, children }: StepProps) {
-  // Separate StepText and StepCode from children
   let textContent: ReactNode = null;
   let codeContent: ReactNode = null;
 
   Children.forEach(children, (child) => {
     if (isValidElement(child)) {
-      if (child.type === StepText) {
-        textContent = child;
-      } else if (child.type === StepCode) {
-        codeContent = child;
-      }
+      if (child.type === StepText) textContent = child;
+      else if (child.type === StepCode) codeContent = child;
     }
   });
 
