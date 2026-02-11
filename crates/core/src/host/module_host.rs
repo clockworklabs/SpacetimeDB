@@ -169,7 +169,8 @@ impl UpdatesRelValue<'_> {
 #[derive(Debug, Clone)]
 pub enum EventStatus {
     Committed(DatabaseUpdate),
-    Failed(String),
+    FailedUser(String),
+    FailedInternal(String),
     OutOfEnergy,
 }
 
@@ -910,7 +911,7 @@ impl From<EventStatus> for ViewOutcome {
     fn from(status: EventStatus) -> Self {
         match status {
             EventStatus::Committed(_) => ViewOutcome::Success,
-            EventStatus::Failed(e) => ViewOutcome::Failed(e),
+            EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => ViewOutcome::Failed(e),
             EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
         }
     }

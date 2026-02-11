@@ -148,7 +148,7 @@ pub struct ModuleDef {
     raw_module_def_version: RawModuleDefVersion,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawModuleDefVersion {
     /// Represents [`RawModuleDefV9`] and earlier.
     V9OrEarlier,
@@ -157,6 +157,11 @@ pub enum RawModuleDefVersion {
 }
 
 impl ModuleDef {
+    /// Returns the raw module definition version this module was authored under.
+    pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
+        self.raw_module_def_version
+    }
+
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
