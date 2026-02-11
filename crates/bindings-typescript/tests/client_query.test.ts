@@ -146,17 +146,25 @@ describe('ClientQuery.toSql', () => {
   });
 
   it('basic where', () => {
-    const sql = toSql(tables.player.where(row => row.name.eq('Gadget')).build());
+    const sql = toSql(
+      tables.player.where(row => row.name.eq('Gadget')).build()
+    );
     expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."name" = 'Gadget'`);
   });
 
   it('basic where ne', () => {
-    const sql = toSql(tables.player.where(row => row.name.ne('Gadget')).build());
-    expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."name" <> 'Gadget'`);
+    const sql = toSql(
+      tables.player.where(row => row.name.ne('Gadget')).build()
+    );
+    expect(sql).toBe(
+      `SELECT * FROM "player" WHERE "player"."name" <> 'Gadget'`
+    );
   });
 
   it('basic where lt', () => {
-    const sql = toSql(tables.player.where(row => row.name.lt('Gadget')).build());
+    const sql = toSql(
+      tables.player.where(row => row.name.lt('Gadget')).build()
+    );
     expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."name" < 'Gadget'`);
   });
 
@@ -170,7 +178,9 @@ describe('ClientQuery.toSql', () => {
   });
 
   it('basic where gt', () => {
-    const sql = toSql(tables.player.where(row => row.name.gt('Gadget')).build());
+    const sql = toSql(
+      tables.player.where(row => row.name.gt('Gadget')).build()
+    );
     expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."name" > 'Gadget'`);
   });
 
@@ -211,9 +221,7 @@ describe('ClientQuery.toSql', () => {
 
   it('method-style chaining with .and()', () => {
     const sql = toSql(
-      tables.player
-        .where(row => row.id.gt(20).and(row.id.lt(30)))
-        .build()
+      tables.player.where(row => row.id.gt(20).and(row.id.lt(30))).build()
     );
     expect(sql).toBe(
       `SELECT * FROM "player" WHERE ("player"."id" > 20) AND ("player"."id" < 30)`
@@ -233,9 +241,7 @@ describe('ClientQuery.toSql', () => {
 
   it('method-style chaining with .not()', () => {
     const sql = toSql(
-      tables.player
-        .where(row => row.name.eq('Bob').not())
-        .build()
+      tables.player.where(row => row.name.eq('Bob').not()).build()
     );
     expect(sql).toBe(
       `SELECT * FROM "player" WHERE NOT ("player"."name" = 'Bob')`

@@ -85,7 +85,9 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
     query_sql: Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
-    queryFn: (tables: RemoteModule['tables'][number]) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
+    queryFn: (
+      tables: RemoteModule['tables'][number]
+    ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
     query_sql:

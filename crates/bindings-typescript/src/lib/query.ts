@@ -54,36 +54,44 @@ export function toSql(q: Query<any>): string {
 }
 
 // A query builder with a single table.
-type From<TableDef extends TypedTableDef> = RowTypedQuery<RowType<TableDef>, TableDef['rowType']> & Readonly<{
-  where(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): From<TableDef>;
-  rightSemijoin<RightTable extends TypedTableDef>(
-    other: TableRef<RightTable>,
-    on: (
-      left: IndexedRowExpr<TableDef>,
-      right: IndexedRowExpr<RightTable>
-    ) => BooleanExpr<TableDef | RightTable>
-  ): SemijoinBuilder<RightTable>;
-  leftSemijoin<RightTable extends TypedTableDef>(
-    other: TableRef<RightTable>,
-    on: (
-      left: IndexedRowExpr<TableDef>,
-      right: IndexedRowExpr<RightTable>
-    ) => BooleanExpr<TableDef | RightTable>
-  ): SemijoinBuilder<TableDef>;
-  /** @deprecated No longer needed — builder is already a valid query. */
-  build(): Query<TableDef>;
-}>;
+type From<TableDef extends TypedTableDef> = RowTypedQuery<
+  RowType<TableDef>,
+  TableDef['rowType']
+> &
+  Readonly<{
+    where(
+      predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+    ): From<TableDef>;
+    rightSemijoin<RightTable extends TypedTableDef>(
+      other: TableRef<RightTable>,
+      on: (
+        left: IndexedRowExpr<TableDef>,
+        right: IndexedRowExpr<RightTable>
+      ) => BooleanExpr<TableDef | RightTable>
+    ): SemijoinBuilder<RightTable>;
+    leftSemijoin<RightTable extends TypedTableDef>(
+      other: TableRef<RightTable>,
+      on: (
+        left: IndexedRowExpr<TableDef>,
+        right: IndexedRowExpr<RightTable>
+      ) => BooleanExpr<TableDef | RightTable>
+    ): SemijoinBuilder<TableDef>;
+    /** @deprecated No longer needed — builder is already a valid query. */
+    build(): Query<TableDef>;
+  }>;
 
 // A query builder with a semijoin.
-type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<RowType<TableDef>, TableDef['rowType']> & Readonly<{
-  where(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): SemijoinBuilder<TableDef>;
-  /** @deprecated No longer needed — builder is already a valid query. */
-  build(): Query<TableDef>;
-}>;
+type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
+  RowType<TableDef>,
+  TableDef['rowType']
+> &
+  Readonly<{
+    where(
+      predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+    ): SemijoinBuilder<TableDef>;
+    /** @deprecated No longer needed — builder is already a valid query. */
+    build(): Query<TableDef>;
+  }>;
 
 class SemijoinImpl<TableDef extends TypedTableDef>
   implements SemijoinBuilder<TableDef>, TableTypedQuery<TableDef>
@@ -235,10 +243,18 @@ class TableRefImpl<TableDef extends TypedTableDef>
   indexedCols: IndexedRowExpr<TableDef>;
   tableDef: TableDef;
   // Delegate UntypedTableDef properties from tableDef so this can be used as a table def.
-  get columns() { return this.tableDef.columns; }
-  get indexes() { return this.tableDef.indexes; }
-  get rowType() { return this.tableDef.rowType; }
-  get constraints() { return (this.tableDef as any).constraints; }
+  get columns() {
+    return this.tableDef.columns;
+  }
+  get indexes() {
+    return this.tableDef.indexes;
+  }
+  get rowType() {
+    return this.tableDef.rowType;
+  }
+  get constraints() {
+    return (this.tableDef as any).constraints;
+  }
   constructor(tableDef: TableDef) {
     this.name = tableDef.name;
     this.accessorName = tableDef.accessorName;
@@ -452,7 +468,9 @@ export class ColumnExpression<
     this.spacetimeType = spacetimeType;
   }
 
-  eq(literal: LiteralValue & RowType<TableDef>[ColumnName]): BooleanExpr<TableDef>;
+  eq(
+    literal: LiteralValue & RowType<TableDef>[ColumnName]
+  ): BooleanExpr<TableDef>;
   eq<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
   ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
@@ -707,13 +725,27 @@ export function not<T extends TypedTableDef>(
 export function and<T extends TypedTableDef>(
   ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
 ): BooleanExpr<T> {
-  return new BooleanExpr({ type: 'and', clauses: clauses.map(c => c.data) as [BooleanExprData<T>, BooleanExprData<T>, ...BooleanExprData<T>[]] });
+  return new BooleanExpr({
+    type: 'and',
+    clauses: clauses.map(c => c.data) as [
+      BooleanExprData<T>,
+      BooleanExprData<T>,
+      ...BooleanExprData<T>[],
+    ],
+  });
 }
 
 export function or<T extends TypedTableDef>(
   ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
 ): BooleanExpr<T> {
-  return new BooleanExpr({ type: 'or', clauses: clauses.map(c => c.data) as [BooleanExprData<T>, BooleanExprData<T>, ...BooleanExprData<T>[]] });
+  return new BooleanExpr({
+    type: 'or',
+    clauses: clauses.map(c => c.data) as [
+      BooleanExprData<T>,
+      BooleanExprData<T>,
+      ...BooleanExprData<T>[],
+    ],
+  });
 }
 
 function booleanExprToSql<Table extends TypedTableDef>(
@@ -832,7 +864,10 @@ function evaluateData(
   }
 }
 
-function resolveValue(expr: ValueExpr<any, any>, row: Record<string, any>): any {
+function resolveValue(
+  expr: ValueExpr<any, any>,
+  row: Record<string, any>
+): any {
   if (isLiteralExpr(expr)) {
     return expr.value;
   }
