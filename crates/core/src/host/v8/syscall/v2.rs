@@ -37,10 +37,10 @@ use v8::{
 
 macro_rules! create_synthetic_module {
     ($scope:expr, $module_name:expr $(, ($($fun:tt)*))* $(,)?) => {{
-        let export_names = &[$(create_synthetic_module!(@export_name ($($fun)*)).string($scope)),*];
+        let export_names = &[$(synthetic_module_export_name!($($fun)*).string($scope)),*];
         let eval_steps = |context: Local<v8::Context>, module: Local<Module>| {
             callback_scope!(unsafe scope, context);
-            $(create_synthetic_module!(@register scope, &module, ($($fun)*));)*
+            $(register_synthetic_module_export!(scope, &module, ($($fun)*));)*
 
             Some(v8::undefined(scope).into())
         };
@@ -52,20 +52,26 @@ macro_rules! create_synthetic_module {
             eval_steps,
         )
     }};
+}
+macro_rules! synthetic_module_export_name {
     // function exports
-    (@export_name ($wrapper:ident, $abi_call:expr, $fun:ident)) => {
+    ($wrapper:ident, $abi_call:expr, $fun:ident) => {
         str_from_ident!($fun)
     };
-    (@register $scope:expr, $module:expr, ($wrapper:ident, $abi_call:expr, $fun:ident)) => {
+    // value exports
+    ($name:ident = $value:expr) => {
+        str_from_ident!($name)
+    };
+}
+macro_rules! register_synthetic_module_export {
+    // function exports
+    ($scope:expr, $module:expr, ($wrapper:ident, $abi_call:expr, $fun:ident)) => {
         register_module_fun($scope, $module, str_from_ident!($fun), |s, a, rv| {
             $wrapper($abi_call, s, a, rv, $fun)
         })?;
     };
     // value exports
-    (@export_name ($name:ident = $value:expr)) => {
-        str_from_ident!($name)
-    };
-    (@register $scope:expr, $module:expr, ($name:ident = $value:expr)) => {
+    ($scope:expr, $module:expr, ($name:ident = $value:expr)) => {
         let name = str_from_ident!($name).string($scope);
         let value = $value($scope);
         $module.set_synthetic_module_export($scope, name, value.into())?;
