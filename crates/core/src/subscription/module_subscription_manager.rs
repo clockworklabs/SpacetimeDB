@@ -11,7 +11,7 @@ use crate::subscription::delta::eval_delta;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::worker_metrics::WORKER_METRICS;
-use bytes::Bytes;
+type V2EvalUpdatesResult = (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics);
 use core::mem;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -1374,7 +1374,7 @@ impl SubscriptionManager {
         tx: &DeltaTx,
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
         tables: &[DatabaseTableUpdate],
-    ) -> (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics) {
+    ) -> V2EvalUpdatesResult {
         #[derive(Default)]
         struct FoldState {
             updates: Vec<V2ClientUpdate>,
@@ -2051,7 +2051,7 @@ impl SendWorker {
                 Some(ref caller) if (caller.id.identity, caller.id.connection_id) == client => {
                     // Don't send the update to the caller, since they already have the most up-to-date information.
                     let rok = ws_v2::ReducerOk {
-                        ret_value: event.reducer_return_value.clone().unwrap_or(Bytes::new()),
+                        ret_value: event.reducer_return_value.clone().unwrap_or_default(),
                         transaction_update,
                     };
                     let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
@@ -2079,7 +2079,7 @@ impl SendWorker {
                     request_id: event.request_id.unwrap(), // TODO: Handle error here.
                     timestamp: event.timestamp,
                     result: ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
-                        ret_value: event.reducer_return_value.clone().unwrap_or(Bytes::new()),
+                        ret_value: event.reducer_return_value.clone().unwrap_or_default(),
                         transaction_update: ws_v2::TransactionUpdate {
                             query_sets: vec![].into_boxed_slice(),
                         },

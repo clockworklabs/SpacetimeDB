@@ -51,7 +51,8 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let sub_metrics = record_metrics(WorkloadType::Subscribe);
     let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
 
-    let res: Result<(), (Option<&Box<str>>, Option<ReducerId>, anyhow::Error)> = match message {
+    type HandleResult<'a> = Result<(), (Option<&'a Box<str>>, Option<ReducerId>, anyhow::Error)>;
+    let res: HandleResult<'_> = match message {
         ws_v1::ClientMessage::CallReducer(ws_v1::CallReducer {
             ref reducer,
             args,
