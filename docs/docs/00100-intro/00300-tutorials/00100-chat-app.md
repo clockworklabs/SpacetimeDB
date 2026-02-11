@@ -1189,7 +1189,7 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('quickstart-chat')
+  .withDatabaseName('quickstart-chat')
   .withToken(localStorage.getItem('auth_token') || undefined)
   .onConnect(onConnect)
   .onDisconnect(onDisconnect)
@@ -1563,7 +1563,7 @@ A connection to a SpacetimeDB database is represented by a `DbConnection`. We co
 In our case, we'll supply the following options:
 
 1. A `WithUri` call, to specify the URI of the SpacetimeDB host where our database is running.
-2. A `WithModuleName` call, to specify the name or `Identity` of our database. Make sure to pass the same name here as you supplied to `spacetime publish`.
+2. A `WithDatabaseName` call, to specify the name or `Identity` of our database. Make sure to pass the same name here as you supplied to `spacetime publish`.
 3. A `WithToken` call, to supply a token to authenticate with.
 4. An `OnConnect` callback, to run when the remote database acknowledges and accepts our connection.
 5. An `OnConnectError` callback, to run if the remote database is unreachable or it rejects our connection.
@@ -1584,7 +1584,7 @@ DbConnection ConnectToDB()
     DbConnection? conn = null;
     conn = DbConnection.Builder()
         .WithUri(HOST)
-        .WithModuleName(DB_NAME)
+        .WithDatabaseName(DB_NAME)
         .WithToken(AuthToken.Token)
         .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)
@@ -2120,7 +2120,7 @@ In our case, we'll supply the following options:
 2. An `on_connect_error` callback, to run if the remote database is unreachable or it rejects our connection.
 3. An `on_disconnect` callback, to run when our connection ends.
 4. A `with_token` call, to supply a token to authenticate with.
-5. A `with_module_name` call, to specify the name or `Identity` of our database. Make sure to pass the same name here as you supplied to `spacetime publish`.
+5. A `with_database_name` call, to specify the name or `Identity` of our database. Make sure to pass the same name here as you supplied to `spacetime publish`.
 6. A `with_uri` call, to specify the URI of the SpacetimeDB host where our database is running.
 
 To `src/main.rs`, add:
@@ -2146,7 +2146,7 @@ fn connect_to_db() -> DbConnection {
         // so we can re-authenticate as the same `Identity`.
         .with_token(creds_store().load().expect("Error loading credentials"))
         // Set the database name we chose when we called `spacetime publish`.
-        .with_module_name(DB_NAME)
+        .with_database_name(DB_NAME)
         // Set the URI of the SpacetimeDB host that's running our database.
         .with_uri(HOST)
         // Finalize configuration and connect!

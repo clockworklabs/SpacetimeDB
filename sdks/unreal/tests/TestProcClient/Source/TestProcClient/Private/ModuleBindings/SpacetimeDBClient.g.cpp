@@ -636,9 +636,9 @@ UDbConnectionBuilder* UDbConnectionBuilder::WithUri(const FString& InUri)
 {
 	return Cast<UDbConnectionBuilder>(WithUriBase(InUri));
 }
-UDbConnectionBuilder* UDbConnectionBuilder::WithModuleName(const FString& InName)
+UDbConnectionBuilder* UDbConnectionBuilder::WithDatabaseName(const FString& InName)
 {
-	return Cast<UDbConnectionBuilder>(WithModuleNameBase(InName));
+	return Cast<UDbConnectionBuilder>(WithDatabaseNameBase(InName));
 }
 UDbConnectionBuilder* UDbConnectionBuilder::WithToken(const FString& InToken)
 {
