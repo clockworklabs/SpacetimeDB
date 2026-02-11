@@ -9,7 +9,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
     panic!("This view is trapped")
 }

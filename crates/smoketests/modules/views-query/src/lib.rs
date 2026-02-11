@@ -50,12 +50,12 @@ fn init(ctx: &ReducerContext) {
     });
 }
 
-#[spacetimedb::view(name = online_users, public)]
+#[spacetimedb::view(accessor = online_users, public)]
 fn online_users(ctx: &ViewContext) -> Query<User> {
     ctx.from.user().r#where(|c| c.online.eq(true)).build()
 }
 
-#[spacetimedb::view(name = online_users_age, public)]
+#[spacetimedb::view(accessor = online_users_age, public)]
 fn online_users_age(ctx: &ViewContext) -> Query<Person> {
     ctx.from
         .user()
@@ -64,7 +64,7 @@ fn online_users_age(ctx: &ViewContext) -> Query<Person> {
         .build()
 }
 
-#[spacetimedb::view(name = offline_user_20_years_old, public)]
+#[spacetimedb::view(accessor = offline_user_20_years_old, public)]
 fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .person()
@@ -74,7 +74,7 @@ fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
         .build()
 }
 
-#[spacetimedb::view(name = users_whos_age_is_known, public)]
+#[spacetimedb::view(accessor = users_whos_age_is_known, public)]
 fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .user()
@@ -82,12 +82,12 @@ fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
         .build()
 }
 
-#[spacetimedb::view(name = users_who_are_above_20_and_below_30, public)]
+#[spacetimedb::view(accessor = users_who_are_above_20_and_below_30, public)]
 fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> Query<Person> {
     ctx.from.person().r#where(|p| p.age.gt(20).and(p.age.lt(30))).build()
 }
 
-#[spacetimedb::view(name = users_who_are_above_eq_20_and_below_eq_30, public)]
+#[spacetimedb::view(accessor = users_who_are_above_eq_20_and_below_eq_30, public)]
 fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> Query<Person> {
     ctx.from.person().r#where(|p| p.age.gte(20).and(p.age.lte(30))).build()
 }

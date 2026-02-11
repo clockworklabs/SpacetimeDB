@@ -9,7 +9,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }

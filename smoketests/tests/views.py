@@ -13,7 +13,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(0u64)
 }
@@ -46,7 +46,7 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb::view(name = person, public)]
+#[spacetimedb::view(accessor = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<Person> {
     None
 }
@@ -62,7 +62,7 @@ pub enum ABC {
     C,
 }
 
-#[spacetimedb::view(name = person, public)]
+#[spacetimedb::view(accessor = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<ABC> {
     None
 }
@@ -117,35 +117,35 @@ pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
     ctx.db.player_level().insert(PlayerState { id, level });
 }
 
-#[spacetimedb::view(name = my_player_and_level, public)]
+#[spacetimedb::view(accessor = my_player_and_level, public)]
 pub fn my_player_and_level(ctx: &AnonymousViewContext) -> Option<PlayerState> {
     ctx.db.player_level().id().find(0)
 }
 
-#[spacetimedb::view(name = player_and_level, public)]
+#[spacetimedb::view(accessor = player_and_level, public)]
 pub fn player_and_level(ctx: &AnonymousViewContext) -> Vec<PlayerState> {
     ctx.db.player_level().level().filter(2u64).collect()
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     log::info!("player view called");
     ctx.db.player_state().id().find(42)
 }
 
-#[spacetimedb::view(name = player_none, public)]
+#[spacetimedb::view(accessor = player_none, public)]
 pub fn player_none(_ctx: &ViewContext) -> Option<PlayerState> {
     None
 }
 
-#[spacetimedb::view(name = player_vec, public)]
+#[spacetimedb::view(accessor = player_vec, public)]
 pub fn player_vec(ctx: &ViewContext) -> Vec<PlayerState> {
     let first = ctx.db.player_state().id().find(42).unwrap();
     let second = PlayerState { id: 7, level: 3 };
     vec![first, second]
 }
 
-#[spacetimedb::view(name = player_info_multi_index, public)]
+#[spacetimedb::view(accessor = player_info_multi_index, public)]
 pub fn player_info_view(ctx: &ViewContext) -> Option<PlayerInfo> {
 
     log::info!("player_info called");
@@ -366,7 +366,7 @@ pub struct PlayerState {
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -383,7 +383,7 @@ pub struct PlayerState {
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }
@@ -439,7 +439,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -487,7 +487,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -511,7 +511,7 @@ pub struct PlayerState {
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -528,7 +528,7 @@ pub struct PlayerState {
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
     panic!("This view is trapped")
 }
@@ -545,7 +545,7 @@ pub struct PlayerState {
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }
@@ -607,7 +607,7 @@ pub struct PlayerState {
     name: String,
 }
 
-#[spacetimedb::view(name = my_player, public)]
+#[spacetimedb::view(accessor = my_player, public)]
 pub fn my_player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().identity().find(ctx.sender())
 }
@@ -723,12 +723,12 @@ fn init(ctx: &ReducerContext) {
 
 }
 
-#[spacetimedb::view(name = online_users, public)]
+#[spacetimedb::view(accessor = online_users, public)]
 fn online_users(ctx: &ViewContext) -> Query<User> {
     ctx.from.user().r#where(|c| c.online.eq(true)).build()
 }
 
-#[spacetimedb::view(name = online_users_age, public)]
+#[spacetimedb::view(accessor = online_users_age, public)]
 fn online_users_age(ctx: &ViewContext) -> Query<Person> {
     ctx.from
         .user()
@@ -737,7 +737,7 @@ fn online_users_age(ctx: &ViewContext) -> Query<Person> {
         .build()
 }
 
-#[spacetimedb::view(name = offline_user_20_years_old, public)]
+#[spacetimedb::view(accessor = offline_user_20_years_old, public)]
 fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .person()
@@ -747,7 +747,7 @@ fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
         .build()
 }
 
-#[spacetimedb::view(name = users_whos_age_is_known, public)]
+#[spacetimedb::view(accessor = users_whos_age_is_known, public)]
 fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .user()
@@ -755,7 +755,7 @@ fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
         .build()
 }
 
-#[spacetimedb::view(name = users_who_are_above_20_and_below_30, public)]
+#[spacetimedb::view(accessor = users_who_are_above_20_and_below_30, public)]
 fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> Query<Person> {
     ctx.from
         .person()
@@ -763,7 +763,7 @@ fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> Query<Person> {
         .build()
 }
 
-#[spacetimedb::view(name = users_who_are_above_eq_20_and_below_eq_30, public)]
+#[spacetimedb::view(accessor = users_who_are_above_eq_20_and_below_eq_30, public)]
 fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> Query<Person> {
     ctx.from
         .person()

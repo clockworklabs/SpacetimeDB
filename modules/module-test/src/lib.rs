@@ -204,7 +204,7 @@ impl Foo<'_> {
 // VIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[spacetimedb::view(name = my_player, public)]
+#[spacetimedb::view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
