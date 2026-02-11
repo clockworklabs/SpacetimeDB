@@ -449,7 +449,7 @@ spacetimedb.view('top_players', {}, t.array(player.rowType), ctx => {
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 spacetimedb.view('bottom_players', {}, t.array(player.rowType), ctx => {
-  return ctx.from.player.where(p => p.score.lt(1000)).build()
+  return ctx.from.player.where(p => p.score.lt(1000))
 });
 ```
 
@@ -476,9 +476,9 @@ public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 [SpacetimeDB.View(Public = true)]
-public static IEnumerable<Player> BottomPlayers(ViewContext ctx)
+public static IQuery<Player> BottomPlayers(ViewContext ctx)
 {
-    return ctx.From.Player.Where(p => p.Score.Lt(1000)).Build();
+    return ctx.From.Player.Where(p => p.Score.Lt(1000));
 }
 ```
 
@@ -503,8 +503,8 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 #[view(name = bottom_players, public)]
-fn bottom_players(ctx: &ViewContext) -> Query<Player> {
-    ctx.from.player().r#where(|p| p.score.lt(1000)).build()
+fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
+    ctx.from.player().r#where(|p| p.score.lt(1000))
 }
 ```
 

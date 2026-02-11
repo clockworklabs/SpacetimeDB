@@ -235,7 +235,7 @@ public sealed class SubscriptionBuilder
     /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
     /// </summary>
     public TypedSubscriptionBuilder AddQuery<TRow>(
-        Func<QueryBuilder, Query<TRow>> build
+        Func<QueryBuilder, IQuery<TRow>> build
     );
 }
 
@@ -245,7 +245,7 @@ public sealed class TypedSubscriptionBuilder
     /// Add a typed query to this subscription.
     /// </summary>
     public TypedSubscriptionBuilder AddQuery<TRow>(
-        Func<QueryBuilder, Query<TRow>> build
+        Func<QueryBuilder, IQuery<TRow>> build
     );
 
     /// <summary>
@@ -288,12 +288,12 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     pub fn subscribe_to_all_tables(self);
 
     /// Build a query and invoke `subscribe` in order to subscribe to its results.
-    pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> TypedSubscriptionBuilder<M>;
+    pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> impl Query<T>) -> TypedSubscriptionBuilder<M>;
 }
 
 impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
     /// Build a query and invoke `subscribe` in order to subscribe to its results.
-    pub fn add_query<T>(mut self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> Self;
+    pub fn add_query<T>(mut self, build: impl Fn(M::QueryBuilder) -> impl Query<T>) -> Self;
 
     /// Subscribe to the queries that have been built with `add_query`.
     pub fn subscribe(self) -> M::SubscriptionHandle;

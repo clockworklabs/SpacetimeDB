@@ -127,7 +127,7 @@ conn
   .onError((ctx, error) => {
     console.error(`Subscription failed: ${error}`);
   })
-  .subscribe([queries.user.build()]);
+  .subscribe([queries.user]);
 ```
 
 </TabItem>
@@ -144,7 +144,7 @@ conn.SubscriptionBuilder()
     {
         Console.WriteLine($"Subscription failed: {error}");
     })
-    .AddQuery(ctx => ctx.From.User().Build())
+    .AddQuery(ctx => ctx.From.User())
     .Subscribe();
 ```
 
@@ -160,7 +160,7 @@ conn.subscription_builder()
     .on_error(|ctx, error| {
         eprintln!("Subscription failed: {}", error);
     })
-    .add_query(|ctx| ctx.from.user().build())
+    .add_query(|ctx| ctx.from.user())
     .subscribe();
 ```
 
