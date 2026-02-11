@@ -48,16 +48,30 @@ const name = ref('');
 const { data: initialPeople } = await useFetch('/api/people');
 
 // On the client, use real-time composables
-let conn: ReturnType<typeof import('spacetimedb/vue').useSpacetimeDB> | undefined;
-let people: ReturnType<typeof import('spacetimedb/vue').useTable>[0] | undefined;
-let addReducer: ReturnType<typeof import('spacetimedb/vue').useReducer> | undefined;
+let conn:
+  | ReturnType<typeof import('spacetimedb/vue').useSpacetimeDB>
+  | undefined;
+let people:
+  | ReturnType<typeof import('spacetimedb/vue').useTable>[0]
+  | undefined;
+let isReady:
+  | ReturnType<typeof import('spacetimedb/vue').useTable>[1]
+  | undefined;
+let addReducer:
+  | ReturnType<typeof import('spacetimedb/vue').useReducer>
+  | undefined;
 
 if (import.meta.client) {
-  const { useSpacetimeDB, useTable, useReducer } = await import('spacetimedb/vue');
-  conn = useSpacetimeDB();
-  const [tableData] = useTable(tables.person);
-  people = tableData;
-  addReducer = useReducer(reducers.add);
+  try {
+    const { useSpacetimeDB, useTable, useReducer } = await import(
+      'spacetimedb/vue'
+    );
+    conn = useSpacetimeDB();
+    const [tableData, tableReady] = useTable(tables.person);
+    people = tableData;
+    isReady = tableReady;
+    addReducer = useReducer(reducers.add);
+  } catch {}
 }
 
 // Use real-time data once connected, fall back to SSR data

@@ -15,7 +15,7 @@ export default defineEventHandler(async (): Promise<PersonData[]> => {
     DbConnection.builder()
       .withUri(HOST)
       .withModuleName(DB_NAME)
-      .onConnect((conn) => {
+      .onConnect(conn => {
         conn
           .subscriptionBuilder()
           .onApplied(() => {
