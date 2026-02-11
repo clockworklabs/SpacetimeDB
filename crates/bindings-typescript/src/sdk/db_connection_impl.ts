@@ -47,7 +47,6 @@ import {
 import { stdbLogger } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type {
-  ReducerEventCallback,
   ReducerEventInfo,
   ReducersView,
   SetReducerFlags,
@@ -56,7 +55,7 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
-import { toCamelCase, toPascalCase } from '../lib/util.ts';
+import { toCamelCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
 
 export {
@@ -126,8 +125,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   db: ClientDbView<RemoteModule>;
 
   /**
-   * The accessor field to access the reducers in the database and associated
-   * callback functions.
+   * The accessor field to access the reducers in the database.
    */
   reducers: ReducersView<RemoteModule>;
 
@@ -139,8 +137,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   setReducerFlags: SetReducerFlags<RemoteModule>;
 
   /**
-   * The accessor field to access the reducers in the database and associated
-   * callback functions.
+   * The accessor field to access the procedures in the database.
    */
   procedures: ProceduresView<RemoteModule>;
 
@@ -153,14 +150,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #queryId = 0;
   #requestId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
-  #reducerEmitter: EventEmitter<string, ReducerEventCallback<RemoteModule>> =
-    new EventEmitter();
   #messageQueue = Promise.resolve();
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #callReducerFlags = new Map<string, CallReducerFlags>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
-  #pendingReducerCalls = new Map<number, { name: string; args: Uint8Array }>();
   #rowDeserializers: Record<string, Deserializer<any>>;
   #reducerArgsSerializers: Record<
     string,
@@ -319,26 +313,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
         this.callReducer(reducerName, argsBuffer, flags);
-      };
-
-      const onReducerEventKey = `on${toPascalCase(reducer.name)}`;
-      (out as any)[onReducerEventKey] = (
-        callback: ReducerEventCallback<
-          RemoteModule,
-          InferTypeOfRow<typeof reducer.params>
-        >
-      ) => {
-        this.onReducer(reducerName, callback);
-      };
-
-      const offReducerEventKey = `removeOn${toPascalCase(reducerName)}`;
-      (out as any)[offReducerEventKey] = (
-        callback: ReducerEventCallback<
-          RemoteModule,
-          InferTypeOfRow<typeof reducer.params>
-        >
-      ) => {
-        this.offReducer(reducerName, callback);
       };
     }
 
@@ -712,22 +686,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         break;
       }
       case 'ReducerResult': {
-        const { requestId, result, timestamp } = serverMessage.value;
-        const pending = this.#pendingReducerCalls.get(requestId);
-        if (pending) {
-          this.#pendingReducerCalls.delete(requestId);
-        }
-        const reducerName = pending?.name ?? '<unknown>';
-        const deserializeArgs =
-          this.#reducerArgsSerializers[reducerName]?.deserialize;
-        let reducerArgs: UntypedReducerDef['params'] | undefined = undefined;
-        if (deserializeArgs && pending?.args) {
-          try {
-            reducerArgs = deserializeArgs(new BinaryReader(pending.args));
-          } catch {
-            console.debug('Failed to deserialize reducer arguments');
-          }
-        }
+        const { result } = serverMessage.value;
 
         if (result.tag === 'Ok') {
           const tableUpdates = result.value.transactionUpdate.querySets.flatMap(
@@ -739,30 +698,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           for (const callback of callbacks) {
             callback.cb();
           }
-        }
-
-        if (pending && reducerArgs !== undefined) {
-          const reducerEvent = {
-            timestamp,
-            outcome: result,
-            reducer: {
-              name: reducerName,
-              args: reducerArgs,
-            },
-          };
-          const event: Event<typeof reducerEvent.reducer> = {
-            tag: 'Reducer',
-            value: reducerEvent,
-          };
-          const reducerEventContext = {
-            ...this.#makeEventContext(event as any),
-            event: reducerEvent,
-          };
-          this.#reducerEmitter.emit(
-            reducerName,
-            reducerEventContext,
-            reducerArgs
-          );
         }
         break;
       }
@@ -812,10 +747,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     flags: CallReducerFlags
   ): void {
     const requestId = this.#getNextRequestId();
-    this.#pendingReducerCalls.set(requestId, {
-      name: reducerName,
-      args: argsBuffer,
-    });
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
       args: argsBuffer,
@@ -964,23 +895,5 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);
-  }
-
-  // Note: This is required to be public because it needs to be
-  // called from the `RemoteReducers` class.
-  onReducer(
-    reducerName: string,
-    callback: ReducerEventCallback<RemoteModule>
-  ): void {
-    this.#reducerEmitter.on(reducerName, callback);
-  }
-
-  // Note: This is required to be public because it needs to be
-  // called from the `RemoteReducers` class.
-  offReducer(
-    reducerName: string,
-    callback: ReducerEventCallback<RemoteModule>
-  ): void {
-    this.#reducerEmitter.off(reducerName, callback);
   }
 }
