@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::de::DeserializeSeed as _;
@@ -126,7 +124,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .into_iter()
                 .flatten()
                 .map(|lifecycle_def| {
-                    let function_name = ReducerName::new_from_str(&identifier(lifecycle_def.function_name.clone())?);
+                    let function_name = ReducerName::new(identifier(lifecycle_def.function_name.clone())?);
 
                     let (pos, _) = reducers_vec
                         .iter()
@@ -158,8 +156,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .combine_errors()
         .and_then(
             |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
-                let (mut reducers, procedures, views) = check_function_names_are_unique(reducers, procedures, views)?;
-
+                let (mut reducers, mut procedures, views) =
+                    check_function_names_are_unique(reducers, procedures, views)?;
                 // Attach lifecycles to their respective reducers
                 attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
 
@@ -167,11 +165,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
+                change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
 
                 Ok((tables, types, reducers, procedures, views))
             },
         );
-
     let CoreValidator {
         stored_in_table_def,
         typespace_for_generate,
@@ -205,6 +203,50 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         procedures,
         raw_module_def_version: RawModuleDefVersion::V10,
     })
+}
+
+/// Change the visibility of scheduled functions and lifecycle reducers to Internal.
+///
+fn change_scheduled_functions_and_lifetimes_visibility(
+    tables: &HashMap<Identifier, TableDef>,
+    reducers: &mut IndexMap<Identifier, ReducerDef>,
+    procedures: &mut IndexMap<Identifier, ProcedureDef>,
+) -> Result<()> {
+    for sched_def in tables.iter().filter_map(|(_, t)| t.schedule.as_ref()) {
+        match sched_def.function_kind {
+            FunctionKind::Reducer => {
+                let def = reducers.get_mut(&sched_def.function_name).ok_or_else(|| {
+                    ValidationError::MissingScheduledFunction {
+                        schedule: sched_def.name.clone(),
+                        function: sched_def.function_name.clone(),
+                    }
+                })?;
+
+                def.visibility = crate::def::FunctionVisibility::Private;
+            }
+
+            FunctionKind::Procedure => {
+                let def = procedures.get_mut(&sched_def.function_name).ok_or_else(|| {
+                    ValidationError::MissingScheduledFunction {
+                        schedule: sched_def.name.clone(),
+                        function: sched_def.function_name.clone(),
+                    }
+                })?;
+
+                def.visibility = crate::def::FunctionVisibility::Private;
+            }
+
+            FunctionKind::Unknown => {}
+        }
+    }
+
+    for red_def in reducers.iter_mut().map(|(_, r)| r) {
+        if red_def.lifecycle.is_some() {
+            red_def.visibility = crate::def::FunctionVisibility::Private;
+        }
+    }
+
+    Ok(())
 }
 
 struct ModuleValidatorV10<'a> {
@@ -377,7 +419,7 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
-                    reducer_name: (&*source_name).into(),
+                    reducer_name: source_name.clone(),
                     position,
                     arg_name,
                 });
@@ -400,7 +442,7 @@ impl<'a> ModuleValidatorV10<'a> {
         let (ok_return_type, err_return_type) = return_res;
 
         Ok(ReducerDef {
-            name: ReducerName::new_from_str(&name_result),
+            name: ReducerName::new(name_result.clone()),
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -418,7 +460,7 @@ impl<'a> ModuleValidatorV10<'a> {
         &mut self,
         schedule: RawScheduleDefV10,
         tables: &HashMap<Identifier, TableDef>,
-    ) -> Result<(ScheduleDef, Box<str>)> {
+    ) -> Result<(ScheduleDef, RawIdentifier)> {
         let RawScheduleDefV10 {
             source_name,
             table_name,
@@ -481,14 +523,14 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
-                    procedure_name: Cow::Borrowed(&source_name),
+                    procedure_name: source_name.clone(),
                     position,
                     arg_name,
                 });
 
         let return_type_for_generate = self.core.validate_for_type_use(
-            &TypeLocation::ProcedureReturn {
-                procedure_name: Cow::Borrowed(&source_name),
+            || TypeLocation::ProcedureReturn {
+                procedure_name: source_name.clone(),
             },
             &return_type,
         );
@@ -556,14 +598,14 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
-                    view_name: Cow::Borrowed(&name),
+                    view_name: name.clone(),
                     position,
                     arg_name,
                 })?;
 
         let return_type_for_generate = self.core.validate_for_type_use(
-            &TypeLocation::ViewReturn {
-                view_name: Cow::Borrowed(&name),
+            || TypeLocation::ViewReturn {
+                view_name: name.clone(),
             },
             &return_type,
         );
@@ -635,7 +677,7 @@ fn attach_lifecycles_to_reducers(
 
 fn attach_schedules_to_tables(
     tables: &mut HashMap<Identifier, TableDef>,
-    schedules: Vec<(ScheduleDef, Box<str>)>,
+    schedules: Vec<(ScheduleDef, RawIdentifier)>,
 ) -> Result<()> {
     for schedule in schedules {
         let (schedule, table_name) = schedule;
@@ -946,9 +988,9 @@ mod tests {
 
         assert_eq!(
             def.reducers[&check_deliveries_name].visibility,
-            FunctionVisibility::Internal,
+            FunctionVisibility::Private,
         );
-        assert_eq!(def.reducers[&init_name].visibility, FunctionVisibility::Internal);
+        assert_eq!(def.reducers[&init_name].visibility, FunctionVisibility::Private);
         assert_eq!(
             def.reducers[&extra_reducer_name].visibility,
             FunctionVisibility::ClientCallable
@@ -1424,9 +1466,9 @@ mod tests {
         tables[0].sequences[0].source_name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
-        assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());
-        assert!(def.lookup::<IndexDef>("wacky.index()").is_some());
-        assert!(def.lookup::<SequenceDef>("wacky.sequence()").is_some());
+        assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
+        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
+        assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
     }
 
     #[test]

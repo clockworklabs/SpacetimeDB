@@ -24,10 +24,12 @@ use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
 use spacetimedb_schema::def::{
     BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
@@ -221,10 +223,10 @@ pub trait StFields: Copy + Sized {
     /// Returns the column name of the system table field a static string slice.
     fn name(self) -> &'static str;
 
-    /// Returns the column name of the system table field as a boxed slice.
+    /// Returns the column name of the system table field as a [`RawIdentifier`].
     #[inline]
-    fn col_name(self) -> Box<str> {
-        self.name().into()
+    fn col_name(self) -> Identifier {
+        Identifier::new_assume_valid(self.name().into())
     }
 
     /// Return all fields of this type, in order.
@@ -923,7 +925,7 @@ impl From<AlgebraicType> for AlgebraicTypeViaBytes {
 pub struct StColumnRow {
     pub table_id: TableId,
     pub col_pos: ColId,
-    pub col_name: Box<str>,
+    pub col_name: Identifier,
     pub col_type: AlgebraicTypeViaBytes,
 }
 
@@ -973,7 +975,7 @@ pub struct StViewColumnRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub col_pos: ColId,
-    pub col_name: Box<str>,
+    pub col_name: Identifier,
     pub col_type: AlgebraicTypeViaBytes,
 }
 
@@ -988,7 +990,7 @@ pub struct StViewParamRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub param_pos: ColId,
-    pub param_name: Box<str>,
+    pub param_name: RawIdentifier,
     pub param_type: AlgebraicTypeViaBytes,
 }
 
@@ -1038,7 +1040,7 @@ pub struct StViewArgRow {
 pub struct StIndexRow {
     pub index_id: IndexId,
     pub table_id: TableId,
-    pub index_name: Box<str>,
+    pub index_name: RawIdentifier,
     pub index_algorithm: StIndexAlgorithm,
 }
 
@@ -1138,7 +1140,7 @@ impl From<IndexSchema> for StIndexRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StSequenceRow {
     pub sequence_id: SequenceId,
-    pub sequence_name: Box<str>,
+    pub sequence_name: RawIdentifier,
     pub table_id: TableId,
     pub col_pos: ColId,
     pub increment: i128,
@@ -1189,7 +1191,7 @@ impl From<StSequenceRow> for SequenceSchema {
 #[sats(crate = spacetimedb_lib)]
 pub struct StConstraintRow {
     pub(crate) constraint_id: ConstraintId,
-    pub(crate) constraint_name: Box<str>,
+    pub(crate) constraint_name: RawIdentifier,
     pub table_id: TableId,
     pub(crate) constraint_data: StConstraintData,
 }
@@ -1604,8 +1606,8 @@ pub struct StScheduledRow {
     /// Note that, despite the column name, this may refer to either a reducer or a procedure.
     /// We cannot change the schema of existing system tables,
     /// so we are unable to rename this column.
-    pub(crate) reducer_name: Box<str>,
-    pub(crate) schedule_name: Box<str>,
+    pub(crate) reducer_name: Identifier,
+    pub(crate) schedule_name: Identifier,
     pub(crate) at_column: ColId,
 }
 

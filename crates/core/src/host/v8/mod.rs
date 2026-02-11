@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, ErrorOrException, ExcResult,
-    ExceptionThrown, JsStackTrace, TerminationError, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -25,7 +25,7 @@ use crate::host::wasm_common::module_host_actor::{
     InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
     WasmInstance,
 };
-use crate::host::wasm_common::{RowIters, TimingSpanSet, DESCRIBE_MODULE_DUNDER};
+use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -44,6 +44,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, LazyLock};
@@ -52,8 +53,8 @@ use tokio::sync::oneshot;
 use tracing::Instrument;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope_with_context, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope, ResolveModuleCallback,
-    ScriptOrigin, Value,
+    scope_with_context, ArrayBuffer, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
+    ResolveModuleCallback, ScriptOrigin, Value,
 };
 
 mod budget;
@@ -103,6 +104,13 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
+        // If the number in the name of this function is changed, update the version
+        // of the `deno_core_icudata` dep to match the number in the function name.
+        v8::icu::set_common_data_77(deno_core_icudata::ICU_DATA).ok();
+        // Set a default locale for functions like `toLocaleString()`.
+        // en-001 is "International English". <https://www.ctrl.blog/entry/en-001.html>
+        v8::icu::set_default_locale("en-001");
+
         // We don't want idle tasks nor background worker tasks,
         // as we intend to run on a single core.
         // Per the docs, `new_single_threaded_default_platform` requires
@@ -236,20 +244,14 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
+    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
         self.instance_env.start_funcall(name, ts, func_type);
-    }
-
-    /// Returns the name of the most recent reducer to be run in this environment.
-    fn funcall_name(&self) -> &str {
-        &self.instance_env.func_name
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
     /// or `None` if no reducer is actively being invoked.
     fn log_record_function(&self) -> Option<&str> {
-        let function = self.funcall_name();
-        (!function.is_empty()).then_some(function)
+        self.instance_env.log_record_function()
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.
@@ -615,10 +617,16 @@ async fn spawn_instance_worker(
         let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler);
         scope.set_slot(JsInstanceEnv::new(instance_env));
 
+        // Create a zero-initialized buffer for holding reducer args.
+        // Arguments needing more space will not use this.
+        const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096; // 1 page.
+        let reducer_args_buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+
         let mut inst = V8Instance {
             scope,
             replica_ctx,
             hooks: &hooks,
+            reducer_args_buf,
         };
 
         // Process requests to the worker.
@@ -807,7 +815,8 @@ fn call_free_fun<'scope>(
 struct V8Instance<'a, 'scope, 'isolate> {
     scope: &'a mut PinScope<'scope, 'isolate>,
     replica_ctx: &'a Arc<ReplicaContext>,
-    hooks: &'a HookFunctions<'a>,
+    hooks: &'a HookFunctions<'scope>,
+    reducer_args_buf: Local<'scope, ArrayBuffer>,
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
@@ -825,7 +834,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
         common_call(self.scope, budget, op, |scope, op| {
-            Ok(call_call_reducer(scope, self.hooks, op)?)
+            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
@@ -882,7 +891,7 @@ where
 
     // Start the timer.
     // We'd like this tightly around `call`.
-    env.start_funcall(op.name(), op.timestamp(), op.call_type());
+    env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
     let call_result = catch_exception(scope, |scope| call(scope, op)).map_err(|(e, can_continue)| {
         // Convert `can_continue` to whether the isolate has "trapped".
@@ -923,8 +932,6 @@ fn extract_description<'scope>(
     replica_ctx: &ReplicaContext,
 ) -> Result<RawModuleDef, DescribeError> {
     run_describer(
-        //TODO(shub): make it work with `DESCRIBE_MODULE_DUNDER_V10`
-        DESCRIBE_MODULE_DUNDER,
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             catch_exception(scope, |scope| {
@@ -969,13 +976,14 @@ mod test {
                 let hooks = get_hooks(scope).unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
-                    name: &ReducerName::new_from_str("foobar"),
+                    name: &ReducerName::for_test("foobar"),
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };
-                Ok(call_call_reducer(scope, &hooks, op)?)
+                let buffer = v8::ArrayBuffer::new(scope, 4096);
+                Ok(call_call_reducer(scope, &hooks, op, buffer)?)
             })
         };
 
