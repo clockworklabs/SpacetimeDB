@@ -15,10 +15,10 @@ error: scheduled table missing required columns; add these to your struct:
        #[auto_inc]
        scheduled_id: u64,
        scheduled_at: spacetimedb::ScheduleAt,
-  --> tests/ui/reducers.rs:28:59
+  --> tests/ui/reducers.rs:28:63
    |
-28 | #[spacetimedb::table(name = scheduled_table_missing_rows, scheduled(scheduled_table_missing_rows_reducer))]
-   |                                                           ^^^^^^^^^
+28 | #[spacetimedb::table(accessor = scheduled_table_missing_rows, scheduled(scheduled_table_missing_ro...
+   |                                                               ^^^^^^^^^
 
 error[E0277]: invalid reducer signature
  --> tests/ui/reducers.rs:6:4
@@ -260,12 +260,12 @@ note: required by a bound in `invoke_reducer`
    |                   ^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
 
 error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
-  --> tests/ui/reducers.rs:37:56
+  --> tests/ui/reducers.rs:37:60
    |
-37 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_reducer))]
-   | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^^^^---
-   | |                                                      |
-   | |                                                      expected function that takes 2 arguments
+37 | #[spacetimedb::table(accessor = scheduled_table, scheduled(scheduled_table_reducer))]
+   | -----------------------------------------------------------^^^^^^^^^^^^^^^^^^^^^^^---
+   | |                                                          |
+   | |                                                          expected function that takes 2 arguments
    | required by a bound introduced by this call
 ...
 48 | fn scheduled_table_reducer(_ctx: &ReducerContext, _x: u8, _y: u8) {}
@@ -276,5 +276,5 @@ error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
 note: required by a bound in `scheduled_typecheck`
   --> src/rt.rs
    |
-   | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
-   |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`
+   | ...FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`
