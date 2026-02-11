@@ -18,6 +18,7 @@ const Message = table(
 );
 
 const spacetimedb = schema(User, Message);
+export default spacetimedb;
 
 function validateName(name: string) {
   if (!name) throw new SenderError('Names must not be empty');

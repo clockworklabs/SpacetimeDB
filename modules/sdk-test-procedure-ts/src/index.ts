@@ -60,6 +60,7 @@ const spacetimedb = schema(
   ScheduledProcTableTable,
   ProcInsertsIntoTable
 );
+export default spacetimedb;
 
 export const return_primitive = spacetimedb.procedure(
   { lhs: t.u32(), rhs: t.u32() },
