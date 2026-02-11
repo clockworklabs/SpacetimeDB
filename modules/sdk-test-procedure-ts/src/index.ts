@@ -22,12 +22,12 @@ const ReturnEnum = t.enum('ReturnEnum', {
 });
 
 const MyTable = table(
-  { name: 'my_table', public: true },
+  { accessor: 'my_table', public: true },
   { field: ReturnStruct }
 );
 
 const PkTable = table(
-  { name: 'pk_uuid', public: true },
+  { accessor: 'pk_uuid', public: true },
   {u: t.uuid().primaryKey(), data: t.i32()}
 );
 
@@ -39,7 +39,7 @@ const ScheduledProcTable = t.row({
   y: t.u8(),
 });
 const ScheduledProcTableTable = table(
-  { name: 'scheduled_proc_table', scheduled: 'scheduled_proc' },
+  { accessor: 'scheduled_proc_table', scheduled: 'scheduled_proc' },
   ScheduledProcTable
 );
 
@@ -50,7 +50,7 @@ const ProcInsertsInto = t.row({
   y: t.u8(),
 });
 const ProcInsertsIntoTable = table(
-  { name: 'proc_inserts_into', public: true },
+  { accessor: 'proc_inserts_into', public: true },
   ProcInsertsInto
 );
 

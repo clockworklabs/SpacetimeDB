@@ -19,7 +19,7 @@ import { table } from '../src/lib/table';
 
 // Valid: default alone
 const validDefault = table(
-  { name: 'valid_default' },
+  { accessor: 'valid_default' },
   {
     id: t.u64().primaryKey(),
     score: t.u32().default(0),
@@ -28,7 +28,7 @@ const validDefault = table(
 
 // Valid: primaryKey alone
 const validPrimaryKey = table(
-  { name: 'valid_primary_key' },
+  { accessor: 'valid_primary_key' },
   {
     id: t.u64().primaryKey(),
     name: t.string(),
@@ -37,7 +37,7 @@ const validPrimaryKey = table(
 
 // Valid: unique alone
 const validUnique = table(
-  { name: 'valid_unique' },
+  { accessor: 'valid_unique' },
   {
     id: t.u64().primaryKey(),
     email: t.string().unique(),
@@ -46,7 +46,7 @@ const validUnique = table(
 
 // Valid: autoInc alone
 const validAutoInc = table(
-  { name: 'valid_auto_inc' },
+  { accessor: 'valid_auto_inc' },
   {
     id: t.u64().primaryKey().autoInc(),
     name: t.string(),
@@ -55,7 +55,7 @@ const validAutoInc = table(
 
 // Valid: index with default
 const validIndexWithDefault = table(
-  { name: 'valid_index_default' },
+  { accessor: 'valid_index_default' },
   {
     id: t.u64().primaryKey(),
     score: t.u32().index().default(0),
@@ -69,7 +69,7 @@ const validIndexWithDefault = table(
 // Invalid: default + primaryKey
 // @ts-expect-error - default() cannot be combined with primaryKey()
 const invalidDefaultPrimaryKey = table(
-  { name: 'invalid_default_pk' },
+  { accessor: 'invalid_default_pk' },
   {
     id: t.u64().default(0n).primaryKey(),
     name: t.string(),
@@ -79,7 +79,7 @@ const invalidDefaultPrimaryKey = table(
 // Invalid: primaryKey + default
 // @ts-expect-error - primaryKey() cannot be combined with default()
 const invalidPrimaryKeyDefault = table(
-  { name: 'invalid_pk_default' },
+  { accessor: 'invalid_pk_default' },
   {
     id: t.u64().primaryKey().default(0n),
     name: t.string(),
@@ -89,7 +89,7 @@ const invalidPrimaryKeyDefault = table(
 // Invalid: default + unique
 // @ts-expect-error - default() cannot be combined with unique()
 const invalidDefaultUnique = table(
-  { name: 'invalid_default_unique' },
+  { accessor: 'invalid_default_unique' },
   {
     id: t.u64().primaryKey(),
     email: t.string().default('').unique(),
@@ -99,7 +99,7 @@ const invalidDefaultUnique = table(
 // Invalid: unique + default
 // @ts-expect-error - unique() cannot be combined with default()
 const invalidUniqueDefault = table(
-  { name: 'invalid_unique_default' },
+  { accessor: 'invalid_unique_default' },
   {
     id: t.u64().primaryKey(),
     email: t.string().unique().default(''),
@@ -109,7 +109,7 @@ const invalidUniqueDefault = table(
 // Invalid: default + autoInc
 // @ts-expect-error - default() cannot be combined with autoInc()
 const invalidDefaultAutoInc = table(
-  { name: 'invalid_default_autoinc' },
+  { accessor: 'invalid_default_autoinc' },
   {
     id: t.u64().default(0n).autoInc(),
     name: t.string(),
@@ -119,7 +119,7 @@ const invalidDefaultAutoInc = table(
 // Invalid: autoInc + default
 // @ts-expect-error - autoInc() cannot be combined with default()
 const invalidAutoIncDefault = table(
-  { name: 'invalid_autoinc_default' },
+  { accessor: 'invalid_autoinc_default' },
   {
     id: t.u64().autoInc().default(0n),
     name: t.string(),

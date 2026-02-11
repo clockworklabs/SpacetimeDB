@@ -80,27 +80,27 @@ export const btree_each_column_u32_u64_u64_tRow = t.row({
 });
 
 const unique_0_u32_u64_strTable = table(
-  { name: 'unique_0_u32_u64_str' },
+  { accessor: 'unique_0_u32_u64_str' },
   unique_0_u32_u64_str_tRow
 );
 const no_index_u32_u64_strTable = table(
-  { name: 'no_index_u32_u64_str' },
+  { accessor: 'no_index_u32_u64_str' },
   no_index_u32_u64_str_tRow
 );
 const btree_each_column_u32_u64_strTable = table(
-  { name: 'btree_each_column_u32_u64_str' },
+  { accessor: 'btree_each_column_u32_u64_str' },
   btree_each_column_u32_u64_str_tRow
 );
 const unique_0_u32_u64_u64Table = table(
-  { name: 'unique_0_u32_u64_u64' },
+  { accessor: 'unique_0_u32_u64_u64' },
   unique_0_u32_u64_u64_tRow
 );
 const no_index_u32_u64_u64Table = table(
-  { name: 'no_index_u32_u64_u64' },
+  { accessor: 'no_index_u32_u64_u64' },
   no_index_u32_u64_u64_tRow
 );
 const btree_each_column_u32_u64_u64Table = table(
-  { name: 'btree_each_column_u32_u64_u64' },
+  { accessor: 'btree_each_column_u32_u64_u64' },
   btree_each_column_u32_u64_u64_tRow
 );
 
@@ -192,31 +192,31 @@ const velocityTable = table({ name: 'velocity' }, velocity);
 const positionTable = table({ name: 'position' }, position);
 const gameEnemyAiAgentStateTable = table(
   {
-    name: 'game_enemy_ai_agent_state',
+    accessor: 'game_enemy_ai_agent_state',
   },
   gameEnemyAiAgentState
 );
 const gameTargetableStateTable = table(
   {
-    name: 'game_targetable_state',
+    accessor: 'game_targetable_state',
   },
   gameTargetableState
 );
 const gameLiveTargetableStateTable = table(
   {
-    name: 'game_live_targetable_state',
+    accessor: 'game_live_targetable_state',
   },
   gameLiveTargetableState
 );
 const gameEnemyStateTable = table(
   {
-    name: 'game_enemy_state',
+    accessor: 'game_enemy_state',
   },
   gameEnemyState
 );
 const gameHerdCacheTable = table(
   {
-    name: 'game_herd_cache',
+    accessor: 'game_herd_cache',
   },
   gameHerdCache
 );

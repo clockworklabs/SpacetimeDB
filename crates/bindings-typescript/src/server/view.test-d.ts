@@ -4,7 +4,7 @@ import t from '../lib/type_builders';
 
 const person = table(
   {
-    name: 'person',
+    accessor: 'person',
     indexes: [
       {
         name: 'name_id_idx',
@@ -20,7 +20,7 @@ const person = table(
 );
 
 const personWithExtra = table(
-  { name: 'personWithExtra' },
+  { accessor: 'personWithExtra' },
   {
     id: t.u32(),
     name: t.string(),
@@ -29,14 +29,14 @@ const personWithExtra = table(
 );
 
 const personWithMissing = table(
-  { name: 'personWithMissing' },
+  { accessor: 'personWithMissing' },
   {
     id: t.u32(),
   }
 );
 
 const personReordered = table(
-  { name: 'personReordered' },
+  { accessor: 'personReordered' },
   {
     name: t.string(),
     id: t.u32(),
@@ -45,7 +45,7 @@ const personReordered = table(
 
 const order = table(
   {
-    name: 'order',
+    accessor: 'order',
     indexes: [
       {
         name: 'id_person_id', // We are adding this to make sure `person_id` still isn't considered indexed.

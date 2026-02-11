@@ -4,7 +4,7 @@ import t from '../lib/type_builders';
 
 const person = table(
   {
-    name: 'person',
+    accessor: 'person',
     indexes: [
       {
         name: 'id_name_idx',
