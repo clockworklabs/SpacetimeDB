@@ -912,43 +912,7 @@ impl RawModuleDefV10Builder {
 
     /// Finish building, consuming the builder and returning the module.
     /// The module should be validated before use.
-    ///
-    /// This method automatically marks functions used in lifecycle or schedule functions
-    /// as `Internal` visibility.
-    pub fn finish(mut self) -> RawModuleDefV10 {
-        let internal_functions = self
-            .module
-            .lifecycle_reducers()
-            .cloned()
-            .into_iter()
-            .flatten()
-            .map(|lcr| lcr.function_name.clone())
-            .chain(
-                self.module
-                    .schedules()
-                    .cloned()
-                    .into_iter()
-                    .flatten()
-                    .map(|sched| sched.function_name.clone()),
-            );
-
-        for internal_function in internal_functions {
-            if let Some(r) = self
-                .reducers_mut()
-                .iter_mut()
-                .find(|r| r.source_name == internal_function)
-            {
-                r.visibility = FunctionVisibility::Private;
-            }
-
-            if let Some(p) = self
-                .procedures_mut()
-                .iter_mut()
-                .find(|p| p.source_name == internal_function)
-            {
-                p.visibility = FunctionVisibility::Private;
-            }
-        }
+    pub fn finish(self) -> RawModuleDefV10 {
         self.module
     }
 }
