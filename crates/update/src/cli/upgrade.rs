@@ -3,7 +3,7 @@ use std::io::Write;
 use anyhow::Context;
 use spacetimedb_paths::SpacetimePaths;
 
-use super::install::{download_and_install, download_with_progress, make_progress_bar};
+use super::install::{download_and_install, download_with_progress, make_progress_bar, mirror_asset_url};
 
 /// Upgrade and switch to the latest available version of SpacetimeDB.
 #[derive(clap::Args)]
@@ -18,30 +18,41 @@ impl Upgrade {
 
             let cur_version = semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
             if version > cur_version {
-                if let Some(asset) = release.assets.iter().find(|asset| asset.name == UPDATE_BIN_NAME) {
-                    let pb = make_progress_bar().with_prefix("Self-updating `spacetime version`: ");
-                    pb.set_message("downloading...");
-                    let bin = download_with_progress(&pb, &client, &asset.browser_download_url).await?;
-                    pb.set_message("installing...");
-                    let cli_bin_file = paths.cli_bin_file.clone();
-                    tokio::task::spawn_blocking(move || {
-                        // TODO(noa): try and see if `self_replace` could support providing the binary
-                        // in a buffer, instead of an already existing file, since we're doing the same
-                        // work they are right now
-                        let mut file = tempfile::NamedTempFile::with_prefix_in(
-                            ".spacetimedb-self-replace",
-                            cli_bin_file.0.parent().unwrap(),
-                        )?;
-                        file.write_all(&bin.to_bytes())?;
-                        self_replace::self_replace(file.path())
-                            .context("failed to overwrite the original spacetime binary")
-                    })
-                    .await??;
+                let mirror_url = mirror_asset_url(&version, UPDATE_BIN_NAME);
+                let download_url = match release.assets.iter().find(|asset| asset.name == UPDATE_BIN_NAME) {
+                    Some(asset) => asset.browser_download_url.clone(),
+                    None => mirror_url.clone(),
+                };
 
-                    pb.finish_with_message("done!");
-                } else {
-                    eprintln!("Tried to self-update `spacetime version`, but no release asset was found.");
-                }
+                let pb = make_progress_bar().with_prefix("Self-updating `spacetime version`: ");
+                pb.set_message("downloading...");
+                let bin = match download_with_progress(&pb, &client, &download_url).await {
+                    Ok(bin) => bin,
+                    Err(primary_err) => {
+                        if download_url == mirror_url {
+                            return Err(primary_err);
+                        }
+                        pb.set_message("download failed, trying mirror...");
+                        download_with_progress(&pb, &client, &mirror_url).await?
+                    }
+                };
+                pb.set_message("installing...");
+                let cli_bin_file = paths.cli_bin_file.clone();
+                tokio::task::spawn_blocking(move || {
+                    // TODO(noa): try and see if `self_replace` could support providing the binary
+                    // in a buffer, instead of an already existing file, since we're doing the same
+                    // work they are right now
+                    let mut file = tempfile::NamedTempFile::with_prefix_in(
+                        ".spacetimedb-self-replace",
+                        cli_bin_file.0.parent().unwrap(),
+                    )?;
+                    file.write_all(&bin.to_bytes())?;
+                    self_replace::self_replace(file.path())
+                        .context("failed to overwrite the original spacetime binary")
+                })
+                .await??;
+
+                pb.finish_with_message("done!");
             }
 
             Ok(())
