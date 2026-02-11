@@ -678,7 +678,7 @@ pub trait RowLevelSecurityInfo {
 }
 
 /// A function which will be registered by [`register_describer`] into [`DESCRIBERS`],
-/// which will be called by [`__describe_module_v10__`] to construct a module definition.
+/// which will be called by [`__describe_module__`] to construct a module definition.
 ///
 /// May be a closure over static data, so that e.g.
 /// [`register_row_level_security`] doesn't need to take a type parameter.
@@ -874,7 +874,7 @@ static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 /// including when modules are updated (re-publishing).
 /// After initialization, the module cannot alter the schema.
 #[no_mangle]
-extern "C" fn __describe_module_v10__(description: BytesSink) {
+extern "C" fn __describe_module__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
     for describer in &mut *DESCRIBERS.lock().unwrap() {
