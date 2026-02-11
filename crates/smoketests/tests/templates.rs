@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_macros)]
 //! Template tests - ensure all project templates can be initialized, built, and published.
 //!
 //! These tests verify that:
