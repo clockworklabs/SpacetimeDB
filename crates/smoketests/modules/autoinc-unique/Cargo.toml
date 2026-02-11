@@ -1,0 +1,12 @@
+[package]
+name = "smoketest-module-autoinc-unique"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { path = "../../../../crates/bindings" }
+log = "0.4"
+paste = "1.0"

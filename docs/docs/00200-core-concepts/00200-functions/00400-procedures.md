@@ -97,6 +97,27 @@ fn add_two_numbers(ctx: &mut spacetimedb::ProcedureContext, lhs: u32, rhs: u32) 
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+:::warning Unstable Feature
+Procedures in C++ are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
+:::
+
+Define a procedure using the `SPACETIMEDB_PROCEDURE` macro.
+
+The macro's first parameter is the return type, followed by the procedure name. The function's first argument must be of type `ProcedureContext`. By convention, this argument is named `ctx`. A procedure may accept any number of additional arguments and must return a value.
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+SPACETIMEDB_PROCEDURE(uint64_t, add_two_numbers, ProcedureContext ctx, uint32_t lhs, uint32_t rhs) {
+    return static_cast<uint64_t>(lhs) + static_cast<uint64_t>(rhs);
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### Accessing the database
@@ -245,6 +266,55 @@ Avoid capturing mutable state within functions passed to `with_tx`.
 :::
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+Unlike reducers, procedures don't automatically run in database transactions.
+This means there's no `ctx.db` field to access the database.
+Instead, procedure code must manage transactions explicitly with `ctx.with_tx`.
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct MyTable {
+    uint32_t a;
+    std::string b;
+};
+SPACETIMEDB_STRUCT(MyTable, a, b)
+SPACETIMEDB_TABLE(MyTable, my_table, Public)
+
+SPACETIMEDB_PROCEDURE(Unit, insert_a_value, ProcedureContext ctx, uint32_t a, std::string b) {
+    ctx.with_tx([&](TxContext& tx) {
+        tx.db[my_table].insert(MyTable{a, b});
+    });
+    return Unit{};
+}
+```
+
+`ctx.with_tx` takes a lambda function with signature `[](TxContext& tx) -> T`.
+Within that function, the `TxContext` can be used to access the database
+[in all the same ways as a `ReducerContext`](/functions/reducers/reducer-context).
+When the function returns, the transaction will be committed,
+and its changes to the database state will become permanent and be broadcast to clients.
+If the function throws an exception, the transaction will be rolled back, and its changes will be discarded.
+However, for transactions that may fail,
+[prefer calling `try_with_tx` and returning `bool`](#fallible-database-operations) rather than throwing.
+
+:::warning
+The function passed to `ctx.with_tx` may be invoked multiple times,
+possibly seeing a different version of the database state each time.
+
+If invoked more than once with reference to the same database state,
+it must perform the same operations and return the same result each time.
+
+If invoked more than once with reference to different database states,
+values observed during prior runs must not influence the behavior of the function or the calling procedure.
+
+Avoid capturing mutable state within functions passed to `with_tx`.
+:::
+
+</TabItem>
 </Tabs>
 
 #### Fallible database operations
@@ -314,6 +384,36 @@ fn maybe_insert_a_value(ctx: &mut ProcedureContext, a: u32, b: String) {
 If the function returns `Ok`, the transaction will be committed,
 and its changes to the database state will become permanent and be broadcast to clients.
 If that function returns `Err`, the transaction will be rolled back, and its changes will be discarded.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+For fallible database operations, use `ctx.try_with_tx` with a lambda that returns `bool`:
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+SPACETIMEDB_PROCEDURE(bool, maybe_insert_a_value, ProcedureContext ctx, uint32_t a, std::string b) {
+    return ctx.try_with_tx([&](TxContext& tx) -> bool {
+        if (a < 10) {
+            return false;  // Rollback transaction
+        }
+        tx.db[my_table].insert(MyTable{a, b});
+        return true;  // Commit transaction
+    });
+}
+```
+
+`ctx.try_with_tx` takes a lambda function with signature `[](TxContext& tx) -> bool`.
+If the function returns `true`, the transaction will be committed,
+and its changes to the database state will become permanent and be broadcast to clients.
+If the function returns `false`, the transaction will be rolled back, and its changes will be discarded.
+
+:::note
+For non-bool return types, `try_with_tx` always commits the transaction. To abort in those cases, use `LOG_PANIC`.
+:::
 
 </TabItem>
 </Tabs>
@@ -431,6 +531,47 @@ fn find_highest_level_player(ctx: &mut ProcedureContext) {
         Some(player) => log::info!("Congratulations to {}", player.id),
         None => log::warn!("No players..."),
     }
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Functions passed to
+[`ctx.with_tx`](#accessing-the-database) and [`ctx.try_with_tx`](#fallible-database-operations)
+may return a value, and that value will be returned to the calling procedure.
+
+Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Player {
+    Identity id;
+    uint32_t level;
+};
+SPACETIMEDB_STRUCT(Player, id, level)
+SPACETIMEDB_TABLE(Player, player, Public)
+
+SPACETIMEDB_PROCEDURE(Unit, find_highest_level_player, ProcedureContext ctx) {
+    auto highest_level_player = ctx.with_tx([](TxContext& tx) -> std::optional<Player> {
+        std::optional<Player> highest;
+        for (const auto& player : tx.db[player]) {
+            if (!highest || player.level > highest->level) {
+                highest = player;
+            }
+        }
+        return highest;
+    });
+    
+    if (highest_level_player) {
+        LOG_INFO("Congratulations to " + highest_level_player->id.to_hex_string());
+    } else {
+        LOG_WARN("No players...");
+    }
+    return Unit{};
 }
 ```
 
@@ -640,6 +781,103 @@ fn get_request_with_short_timeout(ctx: &mut spacetimedb::ProcedureContext) {
 Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+:::warning Unstable Feature
+HTTP requests in C++ procedures are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
+:::
+
+Procedures can make HTTP requests to external services using methods on `ctx.http`.
+
+`ctx.http.get` performs simple `GET` requests:
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+SPACETIMEDB_PROCEDURE(Unit, get_request, ProcedureContext ctx) {
+    auto result = ctx.http.get("https://example.invalid");
+    
+    if (result.is_ok()) {
+        auto& response = result.value();
+        auto body = response.body.to_string_utf8_lossy();
+        LOG_INFO("Got response with status " + std::to_string(response.status_code) + 
+                 " and body " + body);
+    } else {
+        LOG_ERROR("Request failed: " + result.error());
+    }
+    
+    return Unit{};
+}
+```
+
+`ctx.http.send` sends an `HttpRequest` with custom method, headers, and body:
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+SPACETIMEDB_PROCEDURE(Unit, post_request, ProcedureContext ctx) {
+    HttpRequest request{
+        .uri = "https://example.invalid/upload",
+        .method = HttpMethod::post(),
+        .headers = {HttpHeader{"Content-Type", "text/plain"}},
+        .body = HttpBody::from_string("This is the body of the HTTP request")
+    };
+    
+    auto result = ctx.http.send(request);
+    
+    if (result.is_ok()) {
+        auto& response = result.value();
+        auto body = response.body.to_string_utf8_lossy();
+        LOG_INFO("Got response with status " + std::to_string(response.status_code) + 
+                 " and body " + body);
+    } else {
+        LOG_ERROR("Request failed: " + result.error());
+    }
+    
+    return Unit{};
+}
+```
+
+Set a timeout for a request using `TimeDuration::from_millis()`:
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+SPACETIMEDB_PROCEDURE(Unit, get_request_with_short_timeout, ProcedureContext ctx) {
+    HttpRequest request{
+        .uri = "https://example.invalid",
+        .method = HttpMethod::get(),
+        .timeout = TimeDuration::from_millis(10)
+    };
+    
+    auto result = ctx.http.send(request);
+    
+    if (result.is_ok()) {
+        auto& response = result.value();
+        auto body = response.body.to_string_utf8_lossy();
+        LOG_INFO("Got response with status " + std::to_string(response.status_code) + 
+                 " and body " + body);
+    } else {
+        LOG_ERROR("Request failed: " + result.error());
+    }
+    
+    return Unit{};
+}
+```
+
+:::note
+All timeouts are clamped to a maximum of 500ms by the host.
+:::
+
+Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
+
+</TabItem>
 </Tabs>
 
 ## Calling Reducers from Procedures
@@ -733,6 +971,60 @@ fn fetch_and_process(ctx: &mut ProcedureContext, url: String) -> Result<(), Stri
     });
 
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+:::warning Unstable Feature
+Procedures in C++ are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
+:::
+
+In C++, `TxContext` and `ReducerContext` share the same database API, so it’s common to move shared logic into a helper that takes a `DatabaseContext&` and call it from both the reducer and the procedure.
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct ProcessedItem {
+    uint64_t id;
+};
+SPACETIMEDB_STRUCT(ProcessedItem, id)
+SPACETIMEDB_TABLE(ProcessedItem, processed_item_proc, Public)
+FIELD_PrimaryKey(processed_item_proc, id)
+
+static void process_item_logic(DatabaseContext& db, uint64_t item_id) {
+    db[processed_item_proc].insert(ProcessedItem{item_id});
+}
+
+SPACETIMEDB_REDUCER(process_item, ReducerContext& ctx, uint64_t item_id) {
+    process_item_logic(ctx.db, item_id);
+    return Ok();
+}
+
+SPACETIMEDB_PROCEDURE(Unit, fetch_and_process, ProcedureContext ctx, std::string url) {
+    auto result = ctx.http.get(url);
+    if (!result.is_ok()) {
+        LOG_ERROR("Request failed: " + result.error());
+        return Unit{};
+    }
+
+    auto& response = result.value();
+    if (response.status_code != 200) {
+        LOG_ERROR("HTTP status: " + std::to_string(response.status_code));
+        return Unit{};
+    }
+
+    auto body = response.body.to_string_utf8_lossy();
+    uint64_t item_id = std::stoull(body);
+
+    ctx.with_tx([&](TxContext& tx) {
+        process_item_logic(tx.db, item_id);
+    });
+
+    return Unit{};
 }
 ```
 

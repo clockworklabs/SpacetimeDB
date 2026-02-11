@@ -41,6 +41,8 @@ jobs:
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}

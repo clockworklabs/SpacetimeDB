@@ -165,6 +165,24 @@ The `pub` modifier on the struct follows normal Rust visibility rules and has no
 :::
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+Register the struct with `SPACETIMEDB_STRUCT`, the table with `SPACETIMEDB_TABLE`, then add field constraints:
+
+```cpp
+struct Person {
+    uint32_t id;
+    std::string name;
+    std::string email;
+};
+SPACETIMEDB_STRUCT(Person, id, name, email)
+SPACETIMEDB_TABLE(Person, person, Public)
+FIELD_PrimaryKeyAutoInc(person, id)
+FIELD_Index(person, name)
+FIELD_Unique(person, email)
+```
+
+</TabItem>
 </Tabs>
 
 ## Table Naming and Accessors
@@ -240,6 +258,29 @@ ctx.db.player().insert(Player { /* ... */ });
 | `name = game_session` | `ctx.db.game_session()` |
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+The accessor name matches the table identifier you pass to `SPACETIMEDB_TABLE`:
+
+```cpp
+struct PlayerScores {
+  uint64_t id;
+};
+SPACETIMEDB_STRUCT(PlayerScores, id)
+SPACETIMEDB_TABLE(PlayerScores, player_scores, Public)
+FIELD_PrimaryKeyAutoInc(player_scores, id)
+
+// Accessor matches the table identifier
+ctx.db[player_scores].insert(PlayerScores{ /* ... */ });
+```
+
+| Table Identifier | Accessor |
+|------------------|----------|
+| `user` | `ctx.db[user]` |
+| `player_scores` | `ctx.db[player_scores]` |
+| `game_session` | `ctx.db[game_session]` |
+
+</TabItem>
 </Tabs>
 
 ### Recommended Naming Conventions
@@ -251,6 +292,7 @@ Use idiomatic naming conventions for each language:
 | **TypeScript** | snake_case | `'player_score'` | `ctx.db.playerScore` |
 | **C#** | PascalCase | `Name = "PlayerScore"` | `ctx.Db.PlayerScore` |
 | **Rust** | lower_snake_case | `name = player_score` | `ctx.db.player_score()` |
+| **C++** | lower_snake_case | `player_score` | `ctx.db[player_score]` |
 
 These conventions align with each language's standard style guides and make your code feel natural within its ecosystem.
 
@@ -289,6 +331,25 @@ pub struct User { /* ... */ }
 
 #[spacetimedb::table(name = secret)]
 pub struct Secret { /* ... */ }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct User {
+  uint64_t id;
+};
+SPACETIMEDB_STRUCT(User, id)
+SPACETIMEDB_TABLE(User, user, Public)
+FIELD_PrimaryKeyAutoInc(user, id)
+
+struct Secret {
+  uint64_t id;
+};
+SPACETIMEDB_STRUCT(Secret, id)
+SPACETIMEDB_TABLE(Secret, secret, Private)
+FIELD_PrimaryKeyAutoInc(secret, id)
 ```
 
 </TabItem>
@@ -382,9 +443,36 @@ ctx.db.player().insert(Player { /* ... */ });
 ctx.db.logged_out_player().insert(Player { /* ... */ });
 
 // Move a row between tables
-if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
+if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender()) {
     ctx.db.player().insert(player.clone());
     ctx.db.logged_out_player().identity().delete(&player.identity);
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Apply multiple `SPACETIMEDB_TABLE` macros to the same struct:
+
+```cpp
+struct Player {
+  Identity identity;
+  int32_t player_id;
+  std::string name;
+};
+SPACETIMEDB_STRUCT(Player, identity, player_id, name)
+SPACETIMEDB_TABLE(Player, player, Public)
+SPACETIMEDB_TABLE(Player, logged_out_player, Private)
+FIELD_PrimaryKey(player, identity)
+FIELD_PrimaryKey(logged_out_player, identity)
+FIELD_UniqueAutoInc(player, player_id)
+FIELD_UniqueAutoInc(logged_out_player, player_id)
+
+// Move a row between tables
+auto maybe_logged_out = ctx.db[logged_out_player_identity].find(ctx.sender);
+if (maybe_logged_out) {
+  ctx.db[player].insert(*maybe_logged_out);
+  ctx.db[logged_out_player_identity].delete_by_key(ctx.sender);
 }
 ```
 

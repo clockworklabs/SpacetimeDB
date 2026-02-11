@@ -194,3 +194,9 @@ export function coerceParams<Params extends ParamsObj>(
     ])
   ) as CoerceParams<Params>;
 }
+
+export const hasOwn: <K extends PropertyKey>(
+  o: object,
+  k: K
+) => o is K extends PropertyKey ? { [k in K]: unknown } : never =
+  Object.hasOwn as any;
