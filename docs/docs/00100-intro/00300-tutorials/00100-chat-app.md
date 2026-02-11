@@ -37,8 +37,8 @@ SpacetimeDB runs your module inside the database host (not Node.js). There's no 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-- Each table is defined as a Rust struct annotated with `#[table(name = table_name)]`. An instance of the struct represents a row, and each field represents a column.
-- By default, tables are **private**. The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
+- Each table is defined as a Rust struct annotated with `#[table(accessor = table_name)]`. An instance of the struct represents a row, and each field represents a column.
+- By default, tables are **private**. The `#[table(accessor = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
 - A reducer is a function that traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. Reducers may return a `Result<()>`, with an `Err` return aborting the transaction.
 
 </TabItem>
@@ -266,7 +266,7 @@ public partial class Message
 Add to `spacetimedb/src/lib.rs`:
 
 ```rust server
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: Identity,
@@ -274,7 +274,7 @@ pub struct User {
     online: bool,
 }
 
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,

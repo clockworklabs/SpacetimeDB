@@ -1337,7 +1337,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, procedure, ProcedureContext, Identity, Timestamp};
 
-#[table(name = ai_message, public)]
+#[table(accessor = ai_message, public)]
 pub struct AiMessage {
     user: Identity,
     prompt: String,

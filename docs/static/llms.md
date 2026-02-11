@@ -339,7 +339,7 @@ The `[lib]` section in your module's `Cargo.toml` must contain `crate-type = ["c
 
 Database tables store the application's persistent state. They are defined using Rust structs annotated with the `#[table]` macro.
 
-- **Core Attribute:** `#[table(name = my_table_name, ...)]` marks a struct as a database table definition. The specified `name` (an identifier, _not_ a string literal) is how the table will be referenced in SQL queries and generated APIs.
+- **Core Attribute:** `#[table(accessor = my_table_name, ...)]` marks a struct as a database table definition. The specified `name` (an identifier, _not_ a string literal) is how the table will be referenced in SQL queries and generated APIs.
 - **Derivations:** The `#[table]` macro automatically handles deriving necessary traits like `SpacetimeType`, `Serialize`, `Deserialize`, and `Debug`. **Do not** manually add `#[derive(SpacetimeType)]` to a `#[table]` struct, as it will cause compilation conflicts.
 - **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, mark it as `public` using `#[table(..., public)]`. This is a common source of errors if forgotten.
 - **Primary Keys:** Designate a single field as the primary key using `#[primary_key]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
@@ -381,7 +381,7 @@ pub struct PlayerState {
     last_login: Option<Timestamp>, // Nullable timestamp
 }
 
-#[table(name = inventory_item, public)]
+#[table(accessor = inventory_item, public)]
 #[derive(Clone, Debug)]
 pub struct InventoryItem {
     #[primary_key]
@@ -394,7 +394,7 @@ pub struct InventoryItem {
 }
 
 // Example of a private table
-#[table(name = internal_game_data)] // No `public` flag
+#[table(accessor = internal_game_data)] // No `public` flag
 #[derive(Clone, Debug)]
 struct InternalGameData {
     #[primary_key]
@@ -418,8 +418,8 @@ use spacetimedb::{table, Identity, Timestamp, Table}; // Added Table import
 // Note: #[table] automatically derives SpacetimeType, Serialize, Deserialize
 // Do NOT add #[derive(SpacetimeType)] here.
 #[derive(Clone, Debug)]
-#[table(name = logged_in_players, public)]  // Identifier name
-#[table(name = players_in_lobby, public)]   // Identifier name
+#[table(accessor = logged_in_players, public)]  // Identifier name
+#[table(accessor = players_in_lobby, public)]   // Identifier name
 pub struct PlayerSessionData {
     #[primary_key]
     player_id: Identity,
@@ -491,9 +491,9 @@ Reducers are the functions within your server module responsible for atomically 
 use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 
 // Assume User and Message tables are defined as previously
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 #[derive(Clone, Debug)] pub struct User { #[primary_key] identity: Identity, name: Option<String>, online: bool }
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 #[derive(Clone, Debug)] pub struct Message { #[primary_key] #[auto_inc] id: u64, sender: Identity, text: String, sent: Timestamp }
 
 // Example: Basic reducer to set a user's name
@@ -575,7 +575,7 @@ These reducers cannot take arguments beyond `&ReducerContext`.
 ```rust
 use spacetimedb::{reducer, table, ReducerContext, Table, log};
 
-#[table(name = settings)]
+#[table(accessor = settings)]
 #[derive(Clone, Debug)]
 pub struct Settings {
     #[primary_key]
@@ -640,10 +640,10 @@ SpacetimeDB provides powerful ways to filter and delete table rows using B-tree 
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, Table, log};
 
-#[table(name = points, index(name = idx_xy, btree(columns = [x, y])))]
+#[table(accessor = points, index(name = idx_xy, btree(columns = [x, y])))]
 #[derive(Clone, Debug)]
 pub struct Point { #[primary_key] id: u64, x: i64, y: i64 }
-#[table(name = items, index(btree(columns = [name])))]
+#[table(accessor = items, index(btree(columns = [name])))]
 #[derive(Clone, Debug)] // No SpacetimeType derive
 pub struct Item { #[primary_key] item_key: u32, name: String }
 
@@ -699,7 +699,7 @@ The `TryInsertError` enum provides specific variants detailing the cause of fail
 ````rust
 use spacetimedb::{table, reducer, ReducerContext, Table, log, TryInsertError};
 
-#[table(name = items)]
+#[table(accessor = items)]
 #[derive(Clone, Debug)]
 pub struct Item {
     #[primary_key] #[auto_inc] id: u64,
@@ -772,7 +772,7 @@ use spacetimedb::{table, reducer, ReducerContext, Timestamp, TimeDuration, Sched
 use log::debug;
 
 // 1. Declare the table with scheduling information, linking it to `send_message`.
-#[table(name = send_message_schedule, scheduled(send_message))]
+#[table(accessor = send_message_schedule, scheduled(send_message))]
 struct SendMessageSchedule {
     // Mandatory fields:
     // ============================

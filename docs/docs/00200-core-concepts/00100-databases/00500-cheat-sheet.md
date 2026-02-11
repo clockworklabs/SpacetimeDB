@@ -138,7 +138,7 @@ public enum Status
 use spacetimedb::{table, SpacetimeType};
 
 // Basic table
-#[table(name = player, public)]
+#[table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -150,7 +150,7 @@ pub struct Player {
 }
 
 // Multi-column index
-#[table(name = score, index(name = idx, btree(columns = [player_id, level])))]
+#[table(accessor = score, index(name = idx, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u64,
     level: u32,
@@ -427,7 +427,7 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[table(name = reminder, scheduled(send_reminder))]
+#[table(accessor = reminder, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
