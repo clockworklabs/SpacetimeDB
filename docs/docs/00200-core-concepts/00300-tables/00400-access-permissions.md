@@ -88,6 +88,32 @@ pub struct Player {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Private table (default) - only accessible from server-side code
+struct InternalConfig {
+    std::string key;
+    std::string value;
+};
+SPACETIMEDB_STRUCT(InternalConfig, key, value)
+SPACETIMEDB_TABLE(InternalConfig, internal_config, Private)
+FIELD_PrimaryKey(internal_config, key)
+
+// Public table - clients can subscribe and query
+struct Player {
+    uint64_t id;
+    std::string name;
+    uint64_t score;
+};
+SPACETIMEDB_STRUCT(Player, id, name, score)
+SPACETIMEDB_TABLE(Player, player, Public)
+FIELD_PrimaryKeyAutoInc(player, id)
+```
+
+Use `Private` or `Public` as the third parameter to `SPACETIMEDB_TABLE` to control table visibility.
+
+</TabItem>
 </Tabs>
 
 Use private tables for:
@@ -191,6 +217,35 @@ fn example(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
+    // Insert
+    ctx.db[user].insert(User{.id = 0, .name = "Alice", .email = "alice@example.com"});
+
+    // Read: iterate all rows
+    for (const auto& user_row : ctx.db[user]) {
+        LOG_INFO("User: " + user_row.name);
+    }
+
+    // Read: find by unique column
+    auto found_user = ctx.db[user_id].find(123);
+    if (found_user.has_value()) {
+        // Update
+        auto updated = found_user.value();
+        updated.name = "Bob";
+        ctx.db[user_id].update(updated);
+    }
+
+    // Delete
+    ctx.db[user_id].delete_by_key(456);
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Procedures with Transactions - Read-Write Access
@@ -220,7 +275,28 @@ spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.strin
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Support for procedures in C# modules is coming soon!
+```csharp
+#pragma warning disable STDB_UNSTABLE
+
+[SpacetimeDB.Procedure]
+public static void UpdateUserProcedure(ProcedureContext ctx, ulong userId, string newName)
+{
+    // Must explicitly open a transaction
+    ctx.WithTx(txCtx =>
+    {
+        // Full read-write access within the transaction
+        var user = txCtx.Db.User.Id.Find(userId);
+        if (user != null)
+        {
+            var updated = user.Value;
+            updated.Name = newName;
+            txCtx.Db.User.Id.Update(updated);
+        }
+        return 0;
+    });
+    // Transaction is committed when the lambda returns
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -237,6 +313,26 @@ fn update_user_procedure(ctx: &mut ProcedureContext, user_id: u64, new_name: Str
         }
     });
     // Transaction is committed when the closure returns
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_PROCEDURE(Unit, update_user_procedure, ProcedureContext ctx, uint64_t userId, std::string newName) {
+    // Must explicitly open a transaction
+    ctx.with_tx([userId, newName](TxContext& tx) {
+        // Full read-write access within the transaction
+        auto user_opt = tx.db[user_id].find(userId);
+        if (user_opt.has_value()) {
+            User updated = user_opt.value();
+            updated.name = newName;
+            tx.db[user_id].update(updated);
+        }
+    });
+    // Transaction is committed when the lambda returns
+    return Unit{};
 }
 ```
 
@@ -295,6 +391,17 @@ fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_VIEW(std::vector<User>, find_users_by_name, Public, ViewContext ctx) {
+    return ctx.db[user_name].filter("Alice").collect();
+    // Cannot insert, update, or delete
+    // ctx.db[user].insert(...) // ❌ Methods not available in ViewContext
+}
+```
+
+</TabItem>
 </Tabs>
 
 See the [Views documentation](/functions/views) for more details on defining and querying views.
@@ -309,7 +416,7 @@ Views can only access table data through indexed lookups, not by scanning all ro
 
 ### Filtering Rows by Caller
 
-Use views with `ViewContext` to return only the rows that belong to the caller. The view accesses the caller's identity through `ctx.sender` and uses it to look up rows via an index.
+Use views with `ViewContext` to return only the rows that belong to the caller. The view accesses the caller's identity through `ctx.sender()` and uses it to look up rows via an index.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -405,9 +512,37 @@ pub struct Message {
 #[spacetimedb::view(name = my_messages, public)]
 fn my_messages(ctx: &ViewContext) -> Vec<Message> {
     // Look up messages by index where caller is sender or recipient
-    let sent: Vec<_> = ctx.db.message().sender().filter(&ctx.sender).collect();
-    let received: Vec<_> = ctx.db.message().recipient().filter(&ctx.sender).collect();
+    let sent: Vec<_> = ctx.db.message().sender().filter(&ctx.sender()).collect();
+    let received: Vec<_> = ctx.db.message().recipient().filter(&ctx.sender()).collect();
     sent.into_iter().chain(received).collect()
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Message {
+    uint64_t id;
+    Identity sender;
+    Identity recipient;
+    std::string content;
+};
+SPACETIMEDB_STRUCT(Message, id, sender, recipient, content)
+SPACETIMEDB_TABLE(Message, message, Private)  // Private by default
+FIELD_PrimaryKeyAutoInc(message, id)
+FIELD_Index(message, sender)
+FIELD_Index(message, recipient)
+
+// Public view that only returns messages the caller can see
+SPACETIMEDB_VIEW(std::vector<Message>, my_messages, Public, ViewContext ctx) {
+    // Look up messages by index where caller is sender or recipient
+    auto sent = ctx.db[message_sender].filter(ctx.sender).collect();
+    auto received = ctx.db[message_recipient].filter(ctx.sender).collect();
+    
+    // Combine both vectors
+    sent.insert(sent.end(), received.begin(), received.end());
+    return sent;
 }
 ```
 
@@ -553,7 +688,7 @@ pub struct PublicUserProfile {
 #[spacetimedb::view(name = my_profile, public)]
 fn my_profile(ctx: &ViewContext) -> Option<PublicUserProfile> {
     // Look up the caller's account by their identity (unique index)
-    let user = ctx.db.user_account().identity().find(&ctx.sender)?;
+    let user = ctx.db.user_account().identity().find(&ctx.sender())?;
     Some(PublicUserProfile {
         id: user.id,
         username: user.username,
@@ -564,13 +699,57 @@ fn my_profile(ctx: &ViewContext) -> Option<PublicUserProfile> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct UserAccount {
+    uint64_t id;
+    Identity identity;
+    std::string username;
+    std::string email;
+    std::string password_hash;  // Sensitive - not exposed in view
+    std::string api_key;        // Sensitive - not exposed in view
+    Timestamp created_at;
+};
+SPACETIMEDB_STRUCT(UserAccount, id, identity, username, email, password_hash, api_key, created_at)
+SPACETIMEDB_TABLE(UserAccount, user_account, Private)  // Private by default
+FIELD_PrimaryKeyAutoInc(user_account, id)
+FIELD_Unique(user_account, identity)
+
+// Public type without sensitive columns
+struct PublicUserProfile {
+    uint64_t id;
+    std::string username;
+    Timestamp created_at;
+};
+SPACETIMEDB_STRUCT(PublicUserProfile, id, username, created_at)
+
+// Public view that returns the caller's profile without sensitive data
+SPACETIMEDB_VIEW(std::optional<PublicUserProfile>, my_profile, Public, ViewContext ctx) {
+    // Look up the caller's account by their identity (unique index)
+    auto user_opt = ctx.db[user_account_identity].find(ctx.sender);
+    if (!user_opt.has_value()) {
+        return std::nullopt;
+    }
+    
+    UserAccount user = user_opt.value();
+    return PublicUserProfile{
+        user.id,
+        user.username,
+        user.created_at
+        // email, password_hash, and api_key are not included
+    };
+}
+```
+
+</TabItem>
 </Tabs>
 
 Clients can query `my_profile` to see their username and creation date, but never see their email address, password hash, or API key.
 
 ### Combining Both Techniques
 
-Views can combine row filtering and column projection. This example returns team members who report to the caller, with salary information hidden:
+Views can combine row filtering and column projection. This example returns colleagues in the same department as the caller, with salary information hidden:
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -580,42 +759,36 @@ import { table, t, schema } from 'spacetimedb/server';
 
 // Private table with all employee data
 const employee = table(
-  {
-    name: 'employee',
-    indexes: [
-      { name: 'idx_manager_id', algorithm: 'btree', columns: ['managerId'] },
-    ],
-  },
+  { name: 'employee' },
   {
     id: t.u64().primaryKey(),
     identity: t.identity().unique(),
     name: t.string(),
-    department: t.string(),
+    department: t.string().index('btree'),
     salary: t.u64(),           // Sensitive
-    managerId: t.option(t.u64()),
   }
 );
 
 const spacetimedb = schema(employee);
 
-// Public type for team members (no salary)
-const teamMember = t.row('TeamMember', {
+// Public type for colleagues (no salary)
+const colleague = t.row('Colleague', {
   id: t.u64(),
   name: t.string(),
   department: t.string(),
 });
 
-// View that returns only the caller's team members, without salary info
+// View that returns colleagues in the caller's department, without salary info
 spacetimedb.view(
-  { name: 'my_team', public: true },
-  t.array(teamMember),
+  { name: 'my_colleagues', public: true },
+  t.array(colleague),
   (ctx) => {
     // Find the caller's employee record by identity (unique index)
     const me = ctx.db.employee.identity.find(ctx.sender);
     if (!me) return [];
 
-    // Look up employees who report to the caller by manager_id index
-    return Array.from(ctx.db.employee.idx_manager_id.filter(me.id)).map(emp => ({
+    // Look up employees in the same department
+    return Array.from(ctx.db.employee.department.filter(me.department)).map(emp => ({
       id: emp.id,
       name: emp.name,
       department: emp.department,
@@ -642,34 +815,33 @@ public partial class Module
         [SpacetimeDB.Unique]
         public Identity Identity;
         public string Name;
+        [SpacetimeDB.Index.BTree]
         public string Department;
         public ulong Salary;           // Sensitive
-        [SpacetimeDB.Index.BTree]
-        public ulong? ManagerId;
     }
 
-    // Public type for team members (no salary)
+    // Public type for colleagues (no salary)
     [SpacetimeDB.Type]
-    public partial struct TeamMember
+    public partial struct Colleague
     {
         public ulong Id;
         public string Name;
         public string Department;
     }
 
-    // View that returns only the caller's team members, without salary info
-    [SpacetimeDB.View(Name = "MyTeam", Public = true)]
-    public static List<TeamMember> MyTeam(ViewContext ctx)
+    // View that returns colleagues in the caller's department, without salary info
+    [SpacetimeDB.View(Name = "MyColleagues", Public = true)]
+    public static List<Colleague> MyColleagues(ViewContext ctx)
     {
         // Find the caller's employee record by identity (unique index)
         if (ctx.Db.Employee.Identity.Find(ctx.Sender) is not Employee me)
         {
-            return new List<TeamMember>();
+            return new List<Colleague>();
         }
 
-        // Look up employees who report to the caller by ManagerId index
-        return ctx.Db.Employee.ManagerId.Filter(me.Id)
-            .Select(emp => new TeamMember
+        // Look up employees in the same department
+        return ctx.Db.Employee.Department.Filter(me.Department)
+            .Select(emp => new Colleague
             {
                 Id = emp.Id,
                 Name = emp.Name,
@@ -695,37 +867,82 @@ pub struct Employee {
     #[unique]
     identity: Identity,
     name: String,
+    #[index(btree)]
     department: String,
     salary: u64,           // Sensitive
-    #[index(btree)]
-    manager_id: Option<u64>,
 }
 
-// Public type for team members (no salary)
+// Public type for colleagues (no salary)
 #[derive(SpacetimeType)]
-pub struct TeamMember {
+pub struct Colleague {
     id: u64,
     name: String,
     department: String,
 }
 
-// View that returns only the caller's team members, without salary info
-#[spacetimedb::view(name = my_team, public)]
-fn my_team(ctx: &ViewContext) -> Vec<TeamMember> {
+// View that returns colleagues in the caller's department, without salary info
+#[spacetimedb::view(name = my_colleagues, public)]
+fn my_colleagues(ctx: &ViewContext) -> Vec<Colleague> {
     // Find the caller's employee record by identity (unique index)
-    let Some(me) = ctx.db.employee().identity().find(&ctx.sender) else {
+    let Some(me) = ctx.db.employee().identity().find(&ctx.sender()) else {
         return vec![];
     };
 
-    // Look up employees who report to the caller by manager_id index
-    ctx.db.employee().manager_id().filter(&Some(me.id))
-        .map(|emp| TeamMember {
+    // Look up employees in the same department
+    ctx.db.employee().department().filter(&me.department)
+        .map(|emp| Colleague {
             id: emp.id,
-            name: emp.name,
-            department: emp.department,
+            name: emp.name.clone(),
+            department: emp.department.clone(),
             // salary is not included
         })
         .collect()
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Private table with all employee data
+struct Employee {
+    uint64_t id;
+    Identity identity;
+    std::string name;
+    std::string department;
+    uint64_t salary;           // Sensitive - not exposed in view
+};
+SPACETIMEDB_STRUCT(Employee, id, identity, name, department, salary)
+SPACETIMEDB_TABLE(Employee, employee, Private)
+FIELD_PrimaryKey(employee, id)
+FIELD_Unique(employee, identity)
+FIELD_Index(employee, department)
+
+// Public type for colleagues (no salary)
+struct Colleague {
+    uint64_t id;
+    std::string name;
+    std::string department;
+};
+SPACETIMEDB_STRUCT(Colleague, id, name, department)
+
+// View that returns colleagues in the caller's department, without salary info
+SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx) {
+    // Find the caller's employee record by identity (unique index)
+    auto me_opt = ctx.db[employee_identity].find(ctx.sender);
+    if (!me_opt.has_value()) {
+        return std::vector<Colleague>();
+    }
+    
+    Employee me = me_opt.value();
+    std::vector<Colleague> results;
+    
+    // Look up employees in the same department
+    for (auto row : ctx.db[employee_department].filter(me.department)) {
+        results.push_back(Colleague{row.id, row.name, row.department});
+    }
+    
+    return results;
 }
 ```
 

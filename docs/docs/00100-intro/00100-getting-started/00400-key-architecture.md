@@ -16,9 +16,9 @@ A SpacetimeDB **database** is an application that runs on a [host](#host).
 
 A database exports [tables](#table), which store data, and [reducers](#reducer), which allow [clients](#client) to make requests.
 
-A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C# or Rust.
+A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C#, C++, Rust or TypeScript.
 
-(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
+(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
 
 ## Table
 
@@ -69,6 +69,21 @@ pub struct Player {
    age: u32,
    user: Identity,
 }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Player {
+    uint64_t id;
+    std::string name;
+    uint32_t age;
+    Identity user;
+};
+SPACETIMEDB_STRUCT(Player, id, name, age, user)
+SPACETIMEDB_TABLE(Player, players, Public)
+FIELD_PrimaryKey(players, id)
 ```
 
 </TabItem>
@@ -148,6 +163,28 @@ fn main() {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+A reducer can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_REDUCER(set_player_name, ReducerContext ctx, uint64_t id, std::string name) {
+   // ...
+   return Ok();
+}
+```
+
+And an Unreal C++ [client](#client) can call that reducer:
+
+```cpp
+void AMyGameManager::UpdatePlayerName()
+{
+   // ...setup code, then...
+   Conn->Reducers->SetPlayerName(57, "Marceline");
+}
+```
+
+</TabItem>
 </Tabs>
 
 These look mostly like regular function calls, but under the hood,
@@ -185,7 +222,7 @@ spacetimedb.reducer('hello', (ctx) => {
    }
 });
 
-spacetimedb.reducer('world', (ctx) => {
+const world = spacetimedb.reducer('world', (ctx) => {
    clearAllTables(ctx);
    // ...
 });
@@ -240,6 +277,27 @@ pub fn world(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
 
 While SpacetimeDB doesn't support nested transactions,
 a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
+or at a specific time.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(world, ReducerContext ctx) {
+    clear_all_tables(ctx);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(hello, ReducerContext ctx) {
+    if (world(ctx).is_err()) {
+        other_changes(ctx);
+    }
+    return Ok();
+}
+```
+
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -361,7 +419,21 @@ fn main() {
 ```
 
 </TabItem>
-<TabItem value="cpp" label="Unreal C++">
+<TabItem value="cpp" label="C++">
+
+A procedure can be defined in a C++ module:
+
+```cpp
+SPACETIMEDB_PROCEDURE(std::string, make_request, ProcedureContext ctx) {
+   // ...
+   return std::string{"result"};
+}
+```
+
+Use the other tabs (TypeScript/C#/Rust/Unreal C++/Blueprint) for client call examples.
+
+</TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
 
 An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
 
@@ -451,7 +523,18 @@ A view can be written in Rust like so:
 ```rust
 #[spacetimedb::view(name = my_player, public)]
 fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+A view can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
+   return ctx.db[player_identity].find(ctx.sender);
 }
 ```
 

@@ -97,8 +97,12 @@ pub fn merge_task_runs(path: &Path, mode: &str, runs: &[RunOutcome]) -> Result<(
             // Always replace with the latest value (even if None)
             model_v.route_api_model = r.route_api_model.clone();
 
+            // Sanitize volatile fields before saving to reduce git diff noise
+            let mut sanitized = r.clone();
+            sanitized.sanitize_for_commit();
+
             // Always overwrite the task result
-            model_v.tasks.insert(r.task.clone(), r.clone());
+            model_v.tasks.insert(r.task.clone(), sanitized);
         }
 
         save_atomic(path, &root)

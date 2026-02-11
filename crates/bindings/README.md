@@ -608,7 +608,7 @@ struct PlayerAndLevel {
 // At-most-one row: return Option<T>
 #[view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // Multiple rows: return Vec<T>
