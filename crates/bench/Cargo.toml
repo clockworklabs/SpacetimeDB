@@ -38,6 +38,7 @@ bench = false
 
 [dependencies]
 spacetimedb-client-api = { path = "../client-api" }
+spacetimedb-client-api-messages = { path = "../client-api-messages" }
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-data-structures.workspace = true
 spacetimedb-datastore.workspace = true

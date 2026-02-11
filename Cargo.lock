@@ -7394,6 +7394,7 @@ dependencies = [
  "serial_test",
  "smallvec",
  "spacetimedb-client-api",
+ "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-datastore",
