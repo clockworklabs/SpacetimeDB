@@ -307,10 +307,6 @@ class TableRefImpl<TableDef extends TypedTableDef>
   }
 }
 
-export type RefSource<TableDef extends TypedTableDef> =
-  | TableRef<TableDef>
-  | { ref(): TableRef<TableDef> };
-
 export function createTableRefFromDef<TableDef extends TypedTableDef>(
   tableDef: TableDef
 ): TableRef<TableDef> {
@@ -349,22 +345,6 @@ function createRowExpr<TableDef extends TypedTableDef>(
     row[columnName] = Object.freeze(column);
   }
   return Object.freeze(row) as RowExpr<TableDef>;
-}
-
-/** @deprecated Use table references directly: `tables.person.where(...)` instead of `from(tables.person).where(...)` */
-export function from<TableDef extends TypedTableDef>(
-  source: RefSource<TableDef>
-): From<TableDef> {
-  return new FromBuilder(resolveTableRef(source));
-}
-
-function resolveTableRef<TableDef extends TypedTableDef>(
-  source: RefSource<TableDef>
-): TableRef<TableDef> {
-  if (typeof (source as { ref?: unknown }).ref === 'function') {
-    return (source as { ref(): TableRef<TableDef> }).ref();
-  }
-  return source as TableRef<TableDef>;
 }
 
 function renderSelectSqlWithJoins<Table extends TypedTableDef>(
