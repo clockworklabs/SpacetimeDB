@@ -1,7 +1,7 @@
 error: views must be `public`, e.g. `#[view(public)]`
   --> tests/ui/views.rs:76:1
    |
-76 | #[view(name = view_def_no_public)]
+76 | #[view(accessor = view_def_no_public)]
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -9,19 +9,19 @@ error: views must be `public`, e.g. `#[view(public)]`
 error: `public` already specified
   --> tests/ui/views.rs:82:44
    |
-82 | #[view(name = view_def_dup_public, public, public)]
+82 | #[view(accessor = view_def_dup_public, public, public)]
    |                                            ^^^^^^
 
 error: `name` already specified
   --> tests/ui/views.rs:88:34
    |
-88 | #[view(name = view_def_dup_name, name = view_def_dup_name, public)]
+88 | #[view(accessor = view_def_dup_name, name = view_def_dup_name, public)]
    |                                  ^^^^
 
 error: expected `name` or `public`
   --> tests/ui/views.rs:94:49
    |
-94 | #[view(name = view_def_unsupported_arg, public, anonymous)]
+94 | #[view(accessor = view_def_unsupported_arg, public, anonymous)]
    |                                                 ^^^^^^^^^
 
 error: Views must always have a context parameter: `&ViewContext` or `&AnonymousViewContext`
@@ -80,7 +80,7 @@ error[E0425]: cannot find type `T` in this scope
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:106:1
     |
-106 | #[view(name = view_def_wrong_context, public)]
+106 | #[view(accessor = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<ReducerContext>`
     |
 help: the following other types implement trait `ViewKindTrait`
@@ -96,7 +96,7 @@ help: the following other types implement trait `ViewKindTrait`
 error[E0276]: impl has stricter requirements than trait
    --> tests/ui/views.rs:106:1
     |
-106 | #[view(name = view_def_wrong_context, public)]
+106 | #[view(accessor = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<ReducerContext>: ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -198,7 +198,7 @@ error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly<Tbl
 error[E0599]: no function or associated item named `register` found for struct `ViewRegistrar<ReducerContext>` in the current scope
    --> tests/ui/views.rs:106:1
     |
-106 | #[view(name = view_def_wrong_context, public)]
+106 | #[view(accessor = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<ReducerContext>`
     |
     = note: the function or associated item was found for
@@ -223,7 +223,7 @@ help: the following other types implement trait `ViewContextArg`
 error[E0599]: no function or associated item named `invoke` found for struct `ViewDispatcher<ReducerContext>` in the current scope
    --> tests/ui/views.rs:106:1
     |
-106 | #[view(name = view_def_wrong_context, public)]
+106 | #[view(accessor = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<ReducerContext>`
     |
     = note: the function or associated item was found for
@@ -234,7 +234,7 @@ error[E0599]: no function or associated item named `invoke` found for struct `Vi
 error[E0277]: invalid view signature
    --> tests/ui/views.rs:128:1
     |
-128 | #[view(name = view_def_wrong_return, public)]
+128 | #[view(accessor = view_def_wrong_return, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Player {view_def_wrong_return}`
@@ -279,7 +279,7 @@ help: the following other types implement trait `ViewReturn`
 error[E0277]: invalid view signature
    --> tests/ui/views.rs:128:1
     |
-128 | #[view(name = view_def_wrong_return, public)]
+128 | #[view(accessor = view_def_wrong_return, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Player {view_def_wrong_return}`
@@ -301,7 +301,7 @@ note: required by a bound in `ViewDispatcher::<ViewContext>::invoke`
 error[E0277]: invalid anonymous view signature
    --> tests/ui/views.rs:136:1
     |
-136 | #[view(name = view_def_returns_not_a_spacetime_type, public)]
+136 | #[view(accessor = view_def_returns_not_a_spacetime_type, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`
@@ -370,7 +370,7 @@ help: the trait `Serialize` is not implemented for `NotSpacetimeType`
 error[E0277]: invalid anonymous view signature
    --> tests/ui/views.rs:136:1
     |
-136 | #[view(name = view_def_returns_not_a_spacetime_type, public)]
+136 | #[view(accessor = view_def_returns_not_a_spacetime_type, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`

@@ -1,4 +1,4 @@
-﻿# .cargo/config.toml
+﻿#[table(name =# .cargo/config.toml
 [build]
 rustflags = ["-C","debuginfo=0","-C","split-debuginfo=off"]
 

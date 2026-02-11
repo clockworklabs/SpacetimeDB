@@ -17,6 +17,7 @@ use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
     access: Option<TableAccess>,
+    _name: Option<LitStr>,
     scheduled: Option<ScheduledArg>,
     accessor: Ident,
     indices: Vec<IndexArg>,
@@ -77,6 +78,7 @@ impl TableArgs {
         let mut access = None;
         let mut scheduled = None;
         let mut accessor = None;
+        let mut name = None;
         let mut indices = Vec::new();
         syn::meta::parser(|meta| {
             match_meta!(match meta {
@@ -92,6 +94,11 @@ impl TableArgs {
                     check_duplicate(&accessor, &meta)?;
                     let value = meta.value()?;
                     accessor = Some(value.parse()?);
+                }
+                sym::name => {
+                    check_duplicate(&accessor, &meta)?;
+                    let value = meta.value()?;
+                    name = Some(value.parse()?);
                 }
                 sym::index => indices.push(IndexArg::parse_meta(meta)?),
                 sym::scheduled => {
@@ -114,6 +121,7 @@ impl TableArgs {
             scheduled,
             accessor,
             indices,
+            _name: name,
         })
     }
 }

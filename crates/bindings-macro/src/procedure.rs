@@ -29,11 +29,11 @@ impl ProcedureArgs {
     }
 }
 
-pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
+pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
-    let procedure_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
+    let procedure_name = ident_to_litstr(func_name);
 
     assert_only_lifetime_generics(original_function, "procedures")?;
 

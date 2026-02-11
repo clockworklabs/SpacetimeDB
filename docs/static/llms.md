@@ -920,14 +920,14 @@ pub struct PlayerAndLevel {
 
 // View that returns the caller's player (user-specific)
 // Returns Option<T> for at-most-one row
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
 
 // View that returns all players at a specific level (same for all callers)
 // Returns Vec<T> for multiple rows
-#[view(name = players_for_level, public)]
+#[view(accessor = players_for_level, public)]
 fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
     ctx.db
         .player_level()
@@ -980,7 +980,7 @@ use spacetimedb::{view, ViewContext, Query};
 
 // This view can scan the whole table efficiently because
 // Query<T> results are computed incrementally
-#[view(name = my_messages, public)]
+#[view(accessor = my_messages, public)]
 fn my_messages(ctx: &ViewContext) -> Query<Message> {
     // Build a typed query using the query builder
     ctx.db.message()

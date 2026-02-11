@@ -620,13 +620,13 @@ public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 use spacetimedb::{view, ViewContext};
 
 // Return single row
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
 
 // Return multiple rows
-#[view(name = top_players, public)]
+#[view(accessor = top_players, public)]
 fn top_players(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().iter()
         .filter(|p| p.score > 1000)

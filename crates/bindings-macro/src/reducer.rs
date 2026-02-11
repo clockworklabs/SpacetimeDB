@@ -96,7 +96,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
-    let reducer_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
+    let reducer_name = ident_to_litstr(func_name);
 
     assert_only_lifetime_generics(original_function, "reducers")?;
 

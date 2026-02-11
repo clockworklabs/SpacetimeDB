@@ -814,19 +814,19 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // A view that selects at most one row from a table
-/// #[view(name = my_player, public)]
+/// #[view(accessor = my_player, public)]
 /// fn my_player(ctx: &ViewContext) -> Option<Player> {
 ///     ctx.db.player().identity().find(ctx.sender())
 /// }
 ///
 /// // An example of column projection
-/// #[view(name = my_player_id, public)]
+/// #[view(accessor = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
 ///     ctx.db.player().identity().find(ctx.sender()).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql
-/// #[view(name = players_at_coordinates, public)]
+/// #[view(accessor = players_at_coordinates, public)]
 /// fn players_at_coordinates(ctx: &AnonymousViewContext) -> Vec<Player> {
 ///     ctx
 ///         .db
@@ -838,7 +838,7 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // An example of a join that combines fields from two different tables
-/// #[view(name = players_with_coordinates, public)]
+/// #[view(accessor = players_with_coordinates, public)]
 /// fn players_with_coordinates(ctx: &AnonymousViewContext) -> Vec<PlayerAndLocation> {
 ///     ctx
 ///         .db

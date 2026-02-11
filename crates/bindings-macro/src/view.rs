@@ -3,53 +3,63 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use syn::ext::IdentExt;
 use syn::parse::Parser;
-use syn::{FnArg, ItemFn};
+use syn::{FnArg, ItemFn, LitStr};
 
 use crate::sym;
 use crate::util::{check_duplicate_msg, match_meta};
 
 pub(crate) struct ViewArgs {
-    name: Ident,
+    _name: Option<LitStr>,
+    accessor: Ident,
     #[allow(unused)]
     public: bool,
 }
 
 impl ViewArgs {
-    /// Parse `#[view(name = ..., public)]` where both `name` and `public` are required.
+    /// Parse `#[view(accessor = ..., public)]` where both `name` and `public` are required.
     pub(crate) fn parse(input: TokenStream, func_ident: &Ident) -> syn::Result<Self> {
         let mut name = None;
+        let mut accessor = None;
         let mut public = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
                 sym::name => {
                     check_duplicate_msg(&name, &meta, "`name` already specified")?;
-                    name = Some(meta.value()?.parse()?);
+                    name = Some(meta.value()?.parse::<LitStr>()?);
                 }
                 sym::public => {
                     check_duplicate_msg(&public, &meta, "`public` already specified")?;
                     public = Some(());
                 }
+                sym::accessor => {
+                    check_duplicate_msg(&accessor, &meta, "`accessor` already specified")?;
+                    accessor = Some(meta.value()?.parse()?);
+                }
             });
             Ok(())
         })
         .parse2(input)?;
-        let name = name.ok_or_else(|| {
+        let accessor = accessor.ok_or_else(|| {
             let view = func_ident.to_string().to_snake_case();
             syn::Error::new(
                 Span::call_site(),
-                format_args!("must specify view name, e.g. `#[spacetimedb::view(name = {view})]"),
+                format_args!("must specify view accessor, e.g. `#[spacetimedb::view(accessor = {view})]"),
             )
         })?;
         let () = public
             .ok_or_else(|| syn::Error::new(Span::call_site(), "views must be `public`, e.g. `#[view(public)]`"))?;
-        Ok(Self { name, public: true })
+        Ok(Self {
+            _name: name,
+            public: true,
+            accessor,
+        })
     }
 }
 
 pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
     let vis = &original_function.vis;
     let func_name = &original_function.sig.ident;
-    let view_ident = args.name;
+    let view_ident = args.accessor;
     let view_name = view_ident.unraw().to_string();
 
     for param in &original_function.sig.generics.params {
