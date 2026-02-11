@@ -1,7 +1,7 @@
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
-use crate::spacetime_config::{detect_client_command, CommandConfig, SpacetimeConfig};
+use crate::spacetime_config::{detect_client_command, CommandConfig, CommandSchema, SpacetimeConfig};
 use crate::subcommands::init;
 use crate::util::{
     add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
@@ -19,7 +19,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use serde::Deserialize;
+use serde_json::json;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -156,8 +158,52 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     };
 
-    // Check if we are in a SpacetimeDB project directory
-    if !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir() {
+    // Fetch the database name if it was passed through a CLI arg
+    let database_name_from_cli: Option<String> = args
+        .get_one::<String>("database")
+        .or_else(|| args.get_one::<String>("database-flag"))
+        .map(|name| {
+            if args.get_one::<String>("database-flag").is_some() {
+                println!(
+                    "{} {}",
+                    "Warning:".yellow().bold(),
+                    "--database flag is deprecated. Use positional argument instead: spacetime dev <database>".dimmed()
+                );
+            }
+            name.clone()
+        });
+
+    // Build publish configs. It is easier to work with one type of data,
+    // so if we don't have publish configs from the config file, we build a single
+    // publish config based on the CLI args
+    let publish_cmd = publish::cli();
+    let publish_schema = publish::build_publish_schema(&publish_cmd)?;
+
+    // Create ArgMatches for publish command to use with get_one()
+    let mut publish_argv: Vec<String> = vec!["publish".to_string()];
+    if let Some(db) = &database_name_from_cli {
+        publish_argv.push(db.clone());
+    }
+    if let Some(srv) = args.get_one::<String>("server") {
+        publish_argv.push(srv.clone());
+    }
+
+    let publish_args = publish_cmd
+        .clone()
+        .try_get_matches_from(publish_argv)
+        .context("Failed to create publish arguments")?;
+
+    let mut publish_configs = determine_publish_configs(
+        database_name_from_cli,
+        spacetime_config.as_ref(),
+        &publish_schema,
+        &publish_args,
+        resolved_server,
+    )?;
+
+    // Check if we are in a SpacetimeDB project directory, but only if we don't have any
+    // publish_configs that would specify desired modules
+    if publish_configs.is_empty() && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
             .with_prompt("Would you like to initialize a new project?")
@@ -195,6 +241,55 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             "{}",
             "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
         );
+    }
+
+    if let Some(config) = publish_configs.first() {
+        // if we have publish configs and we're past spacetimedb_dir manipulation,
+        // we should set spacetimedb_dir to the path of the first config as this will be
+        // later used for next steps
+        spacetimedb_dir = config.get_one::<PathBuf>("module_path").expect("module_path");
+    }
+
+    let use_local = resolved_server == "local";
+
+    // If we don't have any publish configs by now, we need to ask the user about the
+    // database they want to use. This should only happen if no configs are available
+    // in the config file and no database name has been passed through the CLI
+    if publish_configs.is_empty() {
+        println!("\n{}", "Found existing SpacetimeDB project.".green());
+        println!("Now we need to select a database to publish to.\n");
+
+        let selected = if use_local {
+            generate_database_name()
+        } else {
+            // If not logged in before, but login was successful just now, this will have the token
+            let token = get_login_token_or_log_in(&mut config, Some(resolved_server), !force).await?;
+
+            let choice = FuzzySelect::with_theme(&ColorfulTheme::default())
+                .with_prompt("Database selection")
+                .items(&["Create new database with random name", "Select from existing databases"])
+                .default(0)
+                .interact()?;
+
+            if choice == 0 {
+                generate_database_name()
+            } else {
+                select_database(&config, resolved_server, &token).await?
+            }
+        };
+
+        println!("\n{} {}", "Selected database:".green().bold(), selected.cyan());
+        println!(
+            "{} {}",
+            "Tip:".yellow().bold(),
+            format!("Use `spacetime dev {}` to skip this question next time", selected).dimmed()
+        );
+
+        let mut config_map = HashMap::new();
+        config_map.insert("database".to_string(), json!(selected));
+        config_map.insert("server".to_string(), json!(resolved_server));
+
+        publish_configs = vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?];
     }
 
     if !module_bindings_dir.exists() {
@@ -253,59 +348,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             get_login_token_or_log_in(&mut config, Some(resolved_server), !force).await?;
         }
     }
-    let use_local = resolved_server == "local";
-
-    // Check positional argument first, then deprecated --database flag, then config file
-    let database_name: Option<String> = if let Some(name) = args
-        .get_one::<String>("database")
-        .or_else(|| args.get_one::<String>("database-flag"))
-    {
-        if args.get_one::<String>("database-flag").is_some() {
-            println!(
-                "{} {}",
-                "Warning:".yellow().bold(),
-                "--database flag is deprecated. Use positional argument instead: spacetime dev <database>".dimmed()
-            );
-        }
-        Some(name.clone())
-    } else if spacetime_config.as_ref().and_then(|c| c.publish.as_ref()).is_some() {
-        // If we have publish configs in spacetime.json, skip the database prompt
-        // The actual database names will be taken from the configs during publish
-        None
-    } else {
-        println!("\n{}", "Found existing SpacetimeDB project.".green());
-        println!("Now we need to select a database to publish to.\n");
-
-        let selected = if use_local {
-            generate_database_name()
-        } else {
-            // If not logged in before, but login was successful just now, this will have the token
-            let token = get_login_token_or_log_in(&mut config, Some(resolved_server), !force).await?;
-
-            let choice = FuzzySelect::with_theme(&ColorfulTheme::default())
-                .with_prompt("Database selection")
-                .items(&["Create new database with random name", "Select from existing databases"])
-                .default(0)
-                .interact()?;
-
-            if choice == 0 {
-                generate_database_name()
-            } else {
-                select_database(&config, resolved_server, &token).await?
-            }
-        };
-
-        println!("\n{} {}", "Selected database:".green().bold(), selected.cyan());
-        println!(
-            "{} {}",
-            "Tip:".yellow().bold(),
-            format!("Use `spacetime dev {}` to skip this question next time", selected).dimmed()
-        );
-
-        Some(selected)
-    };
-
-    let publish_configs = determine_publish_configs(database_name, args, spacetime_config)?;
 
     // Determine client command: CLI flag > config file > auto-detect (and save)
     let server_only = args.get_flag("server-only");
@@ -511,37 +553,22 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 }
 
-fn determine_publish_configs(
+fn determine_publish_configs<'a>(
     database_name: Option<String>,
-    args: &ArgMatches,
-    spacetime_config: Option<SpacetimeConfig>,
-) -> anyhow::Result<Vec<CommandConfig>> {
+    spacetime_config: Option<&'a SpacetimeConfig>,
+    publish_schema: &'a CommandSchema,
+    publish_args: &'a ArgMatches,
+    resolved_server: &str,
+) -> anyhow::Result<Vec<CommandConfig<'a>>> {
     // Build publish configs. It is easier to work with one type of data,
     // so if we don't have publish configs from the config file, we build a single
     // publish config based on the CLI args
-    let publish_cmd = publish::cli();
-    let publish_schema = publish::build_publish_schema(&publish_cmd)?;
-
-    // Create ArgMatches for publish command to use with get_one()
-    let mut publish_argv = vec!["publish".to_string()];
-    if let Some(ref db) = database_name {
-        publish_argv.push(db.clone());
-    }
-    if let Some(srv) = args.get_one::<String>("server") {
-        publish_argv.push(srv.clone());
-    }
-
-    let publish_args = publish_cmd
-        .clone()
-        .try_get_matches_from(publish_argv)
-        .context("Failed to create publish arguments")?;
-
     let mut publish_configs: Vec<CommandConfig> = vec![];
 
-    if let Some(ref config) = spacetime_config {
+    if let Some(config) = spacetime_config {
         // Get and filter publish configs
         if config.publish.is_some() {
-            publish_configs = publish::get_filtered_publish_configs(config, &publish_schema, &publish_args)?;
+            publish_configs = publish::get_filtered_publish_configs(config, publish_schema, publish_args)?;
         }
     }
 
@@ -552,15 +579,16 @@ fn determine_publish_configs(
     // If we still have no configs, it means that filtering by the database name filtered out
     // all configs, we assume the user wants to run with a different DB
     if let Some(ref db_name) = database_name {
-        use serde_json::json;
-        use std::collections::HashMap;
-
         let mut config_map = HashMap::new();
         config_map.insert("database".to_string(), json!(db_name));
+        config_map.insert("server".to_string(), json!(resolved_server));
+        config_map.insert("module-path".to_string(), json!("spacetimedb"));
 
-        return Ok(vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?]);
+        Ok(vec![CommandConfig::new(publish_schema, config_map, publish_args)?])
     } else {
-        anyhow::bail!("No database name provided and no publish configurations found");
+        // If there is no provided database name nor publish configs return no
+        // configs, we will handle it by asking user for a database or auto-generate one
+        Ok(vec![])
     }
 }
 
