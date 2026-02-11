@@ -11,7 +11,7 @@ use crate::subscription::delta::eval_delta;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::worker_metrics::WORKER_METRICS;
-use bytes::Bytes;
+type V2EvalUpdatesResult = (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics);
 use core::mem;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -1204,10 +1204,30 @@ impl SubscriptionManager {
 
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
+        for (subscription_id, queries) in client_info.v2_subscriptions {
+            for query_hash in queries {
+                let Some(query_state) = self.queries.get_mut(&query_hash) else {
+                    tracing::warn!("Query state not found for query hash: {:?}", query_hash);
+                    continue;
+                };
+                query_state.v2_subscriptions.remove(&subscription_id);
+                if !query_state.has_subscribers() {
+                    queries_to_remove.push(query_hash);
+                    SubscriptionManager::remove_query_from_tables(
+                        &mut self.tables,
+                        &mut self.join_edges,
+                        &mut self.indexes,
+                        &mut self.search_args,
+                        &query_state.query,
+                    );
+                }
+            }
+        }
+        // This loop can be removed once v1 subscriptions are removed.
         for query_hash in client_info.subscription_ref_count.keys() {
             let Some(query_state) = self.queries.get_mut(query_hash) else {
-                tracing::warn!("Query state not found for query hash: {:?}", query_hash);
-                return;
+                // This can happen if they are cliented up in the v2 loop above.
+                continue;
             };
             query_state.subscriptions.remove(client);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
@@ -1354,7 +1374,7 @@ impl SubscriptionManager {
         tx: &DeltaTx,
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
         tables: &[DatabaseTableUpdate],
-    ) -> (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics) {
+    ) -> V2EvalUpdatesResult {
         #[derive(Default)]
         struct FoldState {
             updates: Vec<V2ClientUpdate>,
@@ -2031,7 +2051,7 @@ impl SendWorker {
                 Some(ref caller) if (caller.id.identity, caller.id.connection_id) == client => {
                     // Don't send the update to the caller, since they already have the most up-to-date information.
                     let rok = ws_v2::ReducerOk {
-                        ret_value: event.reducer_return_value.clone().unwrap_or(Bytes::new()),
+                        ret_value: event.reducer_return_value.clone().unwrap_or_default(),
                         transaction_update,
                     };
                     let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
@@ -2059,7 +2079,7 @@ impl SendWorker {
                     request_id: event.request_id.unwrap(), // TODO: Handle error here.
                     timestamp: event.timestamp,
                     result: ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
-                        ret_value: event.reducer_return_value.clone().unwrap_or(Bytes::new()),
+                        ret_value: event.reducer_return_value.clone().unwrap_or_default(),
                         transaction_update: ws_v2::TransactionUpdate {
                             query_sets: vec![].into_boxed_slice(),
                         },
