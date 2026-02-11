@@ -859,4 +859,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         proc_inserts_into_table::register_table(client_cache);
         scheduled_proc_table_table::register_table(client_cache);
     }
+    const ALL_TABLE_NAMES: &'static [&'static str] =
+        &["my_table", "pk_uuid", "proc_inserts_into", "scheduled_proc_table"];
 }

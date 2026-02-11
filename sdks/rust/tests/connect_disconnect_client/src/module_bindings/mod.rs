@@ -786,4 +786,5 @@ impl __sdk::SpacetimeModule for RemoteModule {
         connected_table::register_table(client_cache);
         disconnected_table::register_table(client_cache);
     }
+    const ALL_TABLE_NAMES: &'static [&'static str] = &["connected", "disconnected"];
 }
