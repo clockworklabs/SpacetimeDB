@@ -91,25 +91,26 @@ impl Default for RowSizeHint {
 }
 
 impl RowSizeHint {
-    pub(crate) fn index_to_range(&self, index: usize, data_end: usize) -> Option<Range<usize>> {
+    fn index_to_range(&self, index: usize, data_end: usize) -> Option<Range<usize>> {
         match self {
             Self::FixedSize(size) => {
                 let size = *size as usize;
                 let start = index * size;
                 if start >= data_end {
                     // We've reached beyond `data_end`,
+                    // so this is a row that doesn't exist, so we are beyond the count.
                     return None;
                 }
-                Some(start..(start + size).min(data_end))
+                let end = (index + 1) * size;
+                Some(start..end)
             }
-            Self::RowOffsets(offsets) => offsets.get(index).map(|start| {
-                let start = *start as usize;
-                let end = offsets
-                    .get(index + 1)
-                    .map(|offset| *offset as usize)
-                    .unwrap_or(data_end);
-                start..end
-            }),
+            Self::RowOffsets(offsets) => {
+                let offsets = offsets.as_ref();
+                let start = *offsets.get(index)? as usize;
+                // The end is either the start of the next element or the end.
+                let end = offsets.get(index + 1).map(|e| *e as usize).unwrap_or(data_end);
+                Some(start..end)
+            }
         }
     }
 }

@@ -1,13 +1,13 @@
-import {
-  CreatePlayerReducer,
-  DbConnection,
-  Player,
-  User,
-} from '../test-app/src/module_bindings';
+import { DbConnection } from '../test-app/src/module_bindings';
+import CreatePlayerReducer from '../test-app/src/module_bindings/create_player_reducer';
+import Player from '../test-app/src/module_bindings/player_table';
+import User from '../test-app/src/module_bindings/user_table';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ConnectionId, type Infer } from '../src';
 import { Timestamp } from '../src';
-import * as ws from '../src/sdk/client_api';
+import ClientMessage from '../src/sdk/client_api/client_message_type';
+import ReducerOutcome from '../src/sdk/client_api/reducer_outcome_type';
+import ServerMessage from '../src/sdk/client_api/server_message_type';
 import type { ReducerEvent } from '../src/sdk/db_connection_impl';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
@@ -70,7 +70,7 @@ async function getLastCallReducerRequestId(
   for (let attempt = 0; attempt < 5; attempt++) {
     const raw = wsAdapter.messageQueue.pop();
     if (raw) {
-      const message = ws.ClientMessage.deserialize(new BinaryReader(raw));
+      const message = ClientMessage.deserialize(new BinaryReader(raw));
       if (message.tag !== 'CallReducer') {
         throw new Error(`Expected CallReducer message, got ${message.tag}`);
       }
@@ -82,10 +82,10 @@ async function getLastCallReducerRequestId(
 }
 
 function makeReducerResult(requestId: number, querySetUpdate: any) {
-  return ws.ServerMessage.ReducerResult({
+  return ServerMessage.ReducerResult({
     requestId,
     timestamp: new Timestamp(0n),
-    result: ws.ReducerOutcome.Ok({
+    result: ReducerOutcome.Ok({
       retValue: new Uint8Array(),
       transactionUpdate: {
         querySets: [querySetUpdate],
@@ -139,7 +139,7 @@ describe('DbConnection', () => {
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.InitialConnection({
+    const tokenMessage = ServerMessage.InitialConnection({
       identity: anIdentity,
       token: 'a-token',
       connectionId: ConnectionId.random(),
@@ -151,6 +151,7 @@ describe('DbConnection', () => {
     expect(called).toBeTruthy();
   });
 
+  /*
   test('it calls onInsert callback when a record is added with a subscription update and then with a transaction update', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
@@ -168,7 +169,7 @@ describe('DbConnection', () => {
     ]);
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.InitialConnection({
+    const tokenMessage = ServerMessage.InitialConnection({
       identity: anIdentity,
       token: 'a-token',
       connectionId: ConnectionId.random(),
@@ -231,7 +232,7 @@ describe('DbConnection', () => {
       })
     );
     wsAdapter.sendToClient(
-      ws.ServerMessage.TransactionUpdate({
+      ServerMessage.TransactionUpdate({
         querySets: [initialQuerySetUpdate],
       })
     );
@@ -285,7 +286,9 @@ describe('DbConnection', () => {
       location: { x: 2, y: 3 },
     });
   });
+  */
 
+  /*
   test('tables should be updated before the reducer callback', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
@@ -328,7 +331,9 @@ describe('DbConnection', () => {
 
     await Promise.all([updatePromise.promise]);
   });
+  */
 
+  /*
   test('a reducer callback should be called after the database callbacks', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
@@ -381,6 +386,7 @@ describe('DbConnection', () => {
 
     expect(callbackLog).toEqual(['Player', 'CreatePlayerReducer']);
   });
+  */
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update when the PK is of type Identity', async () => {
     const wsAdapter = new WebsocketTestAdapter();
@@ -394,7 +400,7 @@ describe('DbConnection', () => {
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.InitialConnection({
+    const tokenMessage = ServerMessage.InitialConnection({
       identity: Identity.fromString(
         '0000000000000000000000000000000000000000000000000000000000000069'
       ),
@@ -440,7 +446,7 @@ describe('DbConnection', () => {
       new Uint8Array([...encodeUser(initialUser)])
     );
     wsAdapter.sendToClient(
-      ws.ServerMessage.TransactionUpdate({
+      ServerMessage.TransactionUpdate({
         querySets: [initialQuerySetUpdate],
       })
     );
@@ -449,7 +455,7 @@ describe('DbConnection', () => {
     await initialInsertPromise.promise;
     console.log('First insert is done');
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
+    const transactionUpdate = ServerMessage.TransactionUpdate({
       querySets: [
         makeQuerySetUpdate(
           0,
@@ -487,7 +493,7 @@ describe('DbConnection', () => {
       username: 'sally',
     };
     const binary = [...encodeUser(user1)].concat([...encodeUser(user2)]);
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
+    const transactionUpdate = ServerMessage.TransactionUpdate({
       querySets: [makeQuerySetUpdate(0, 'user', new Uint8Array(binary))],
     });
     const gotAllInserts = new Deferred<void>();

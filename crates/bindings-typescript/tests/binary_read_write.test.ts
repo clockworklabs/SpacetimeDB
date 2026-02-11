@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { anIdentity, bobIdentity, encodeUser, sallyIdentity } from './utils';
-import * as ws from '../src/sdk/client_api';
 import ServerMessage from '../src/sdk/client_api/server_message_type';
+import RowSizeHint from '../src/sdk/client_api/row_size_hint_type';
+import TableUpdateRows from '../src/sdk/client_api/table_update_rows_type';
 import BinaryReader from '../src/lib/binary_reader';
 import BinaryWriter from '../src/lib/binary_writer';
 
@@ -127,13 +128,13 @@ describe('BinaryReader/Writer', () => {
             {
               tableName: 'user',
               rows: [
-                ws.TableUpdateRows.PersistentTable({
+                TableUpdateRows.PersistentTable({
                   inserts: {
-                    sizeHint: ws.RowSizeHint.FixedSize(0),
+                    sizeHint: RowSizeHint.FixedSize(0),
                     rowsData: new Uint8Array(binary),
                   },
                   deletes: {
-                    sizeHint: ws.RowSizeHint.FixedSize(0),
+                    sizeHint: RowSizeHint.FixedSize(0),
                     rowsData: new Uint8Array([]),
                   },
                 }),
