@@ -86,8 +86,8 @@ async fn mirror_release(
         }
     };
     let ver_str = tag.strip_prefix('v').unwrap_or(&tag);
-    let release_version = semver::Version::parse(ver_str)
-        .with_context(|| format!("Could not parse version from mirror: {tag}"))?;
+    let release_version =
+        semver::Version::parse(ver_str).with_context(|| format!("Could not parse version from mirror: {tag}"))?;
     let release = Release {
         tag_name: tag.clone(),
         assets: vec![ReleaseAsset {
@@ -149,9 +149,7 @@ pub(super) async fn download_and_install(
             mirror_release(client, version.as_ref(), download_name)
                 .await
                 .map_err(|mirror_err| {
-                    anyhow::anyhow!(
-                        "GitHub failed: {github_err:#}\nMirror also failed: {mirror_err:#}"
-                    )
+                    anyhow::anyhow!("GitHub failed: {github_err:#}\nMirror also failed: {mirror_err:#}")
                 })?
         }
     };
@@ -182,9 +180,7 @@ pub(super) async fn download_and_install(
             download_with_progress(&pb, client, &mirror_url)
                 .await
                 .map_err(|mirror_err| {
-                    anyhow::anyhow!(
-                        "Primary download failed: {primary_err:#}\nMirror also failed: {mirror_err:#}"
-                    )
+                    anyhow::anyhow!("Primary download failed: {primary_err:#}\nMirror also failed: {mirror_err:#}")
                 })?
         }
     };
@@ -229,7 +225,19 @@ impl ArtifactType {
 
 pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Result<Vec<String>> {
     let url = releases_url();
-    match async { anyhow::Ok(client.get(url).send().await?.error_for_status()?.json::<Vec<Release>>().await?) }.await {
+    match async {
+        anyhow::Ok(
+            client
+                .get(url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Vec<Release>>()
+                .await?,
+        )
+    }
+    .await
+    {
         Ok(releases) => releases
             .into_iter()
             .map(|release| Ok(release.version()?.to_string()))

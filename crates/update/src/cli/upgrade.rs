@@ -47,8 +47,7 @@ impl Upgrade {
                         cli_bin_file.0.parent().unwrap(),
                     )?;
                     file.write_all(&bin.to_bytes())?;
-                    self_replace::self_replace(file.path())
-                        .context("failed to overwrite the original spacetime binary")
+                    self_replace::self_replace(file.path()).context("failed to overwrite the original spacetime binary")
                 })
                 .await??;
 
