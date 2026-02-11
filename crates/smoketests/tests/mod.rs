@@ -32,5 +32,6 @@ pub mod rls;
 pub mod schedule_reducer;
 pub mod servers;
 pub mod sql;
+pub mod templates;
 pub mod timestamp_route;
 pub mod views;
