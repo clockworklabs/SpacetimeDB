@@ -1,5 +1,5 @@
 use super::{Index, KeySize};
-use crate::table_index::uniquemap::UniqueMapPointIter;
+use crate::table_index::uniquemap::UniquePointIter;
 use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
 use core::hash::Hash;
 use spacetimedb_data_structures::map::hash_map::Entry;
@@ -87,12 +87,11 @@ impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
     }
 
     type PointIter<'a>
-        = UniqueMapPointIter<'a>
+        = UniquePointIter
     where
         Self: 'a;
 
     fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
-        let iter = self.map.get(point).into_iter();
-        UniqueMapPointIter { iter }
+        UniquePointIter::new(self.map.get(point).copied())
     }
 }

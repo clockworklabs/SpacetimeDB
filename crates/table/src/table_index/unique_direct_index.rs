@@ -1,10 +1,10 @@
 use super::index::{Despecialize, Index, RangedIndex};
+use super::uniquemap::UniquePointIter;
 use super::{BtreeUniqueIndex, KeySize};
 use crate::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Bound, RangeBounds};
-use core::option::IntoIter;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::sum_value::SumTag;
 
@@ -226,7 +226,7 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
     }
 
     type PointIter<'a>
-        = UniqueDirectIndexPointIter
+        = UniquePointIter
     where
         Self: 'a;
 
@@ -239,7 +239,7 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
             .and_then(|x| x.as_ref())
             .map(|inner| inner.get(inner_key))
             .filter(|slot| *slot != NONE_PTR);
-        UniqueDirectIndexPointIter::new(point)
+        UniquePointIter::new(point)
     }
 
     fn num_keys(&self) -> usize {
@@ -312,25 +312,6 @@ impl<K: ToFromUsize + KeySize> RangedIndex for UniqueDirectIndex<K> {
             start,
             end,
         }
-    }
-}
-
-/// An iterator over the potential value in a [`UniqueDirectMap`] for a given key.
-pub struct UniqueDirectIndexPointIter {
-    iter: IntoIter<RowPointer>,
-}
-
-impl UniqueDirectIndexPointIter {
-    pub(super) fn new(point: Option<RowPointer>) -> Self {
-        let iter = point.map(expose).into_iter();
-        Self { iter }
-    }
-}
-
-impl Iterator for UniqueDirectIndexPointIter {
-    type Item = RowPointer;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
     }
 }
 

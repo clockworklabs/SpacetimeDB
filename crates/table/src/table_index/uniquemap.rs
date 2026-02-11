@@ -66,13 +66,12 @@ impl<K: Ord + KeySize> Index for UniqueMap<K> {
     }
 
     type PointIter<'a>
-        = UniqueMapPointIter<'a>
+        = UniquePointIter
     where
         Self: 'a;
 
-    fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
-        let iter = self.map.get(key).into_iter();
-        UniqueMapPointIter { iter }
+    fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
+        UniquePointIter::new(self.map.get(point).copied())
     }
 
     /// Deletes all entries from the map, leaving it empty.
@@ -96,16 +95,24 @@ impl<K: Ord + KeySize> Index for UniqueMap<K> {
 }
 
 /// An iterator over the potential value in a [`UniqueMap`] for a given key.
-pub struct UniqueMapPointIter<'a> {
+pub struct UniquePointIter {
     /// The iterator seeking for matching keys in the range.
-    pub(super) iter: IntoIter<&'a RowPointer>,
+    pub(super) iter: IntoIter<RowPointer>,
 }
 
-impl<'a> Iterator for UniqueMapPointIter<'a> {
+impl UniquePointIter {
+    /// Returns a new iterator over the possibly found row pointer.
+    pub fn new(point: Option<RowPointer>) -> Self {
+        let iter = point.into_iter();
+        Self { iter }
+    }
+}
+
+impl Iterator for UniquePointIter {
     type Item = RowPointer;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().copied()
+        self.iter.next()
     }
 }
 
