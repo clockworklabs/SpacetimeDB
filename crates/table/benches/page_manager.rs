@@ -11,6 +11,7 @@ use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::layout::{row_size_for_bytes, row_size_for_type, Size};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
@@ -68,7 +69,7 @@ unsafe trait Row {
         // so that its accepted when used in a `ModuleDef` as a row type.
         for (idx, elem) in ty.elements.iter_mut().enumerate() {
             if elem.name.is_none() {
-                elem.name = Some(format!("col_{idx}").into());
+                elem.name = Some(RawIdentifier::new(format!("col_{idx}")));
             }
         }
         ty
@@ -491,7 +492,7 @@ criterion_group!(
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
     let mut result = TableSchema::from_product_type(ty);
-    result.table_name = TableName::new_from_str(name);
+    result.table_name = TableName::for_test(name);
     result
 }
 
@@ -705,7 +706,7 @@ trait IndexedRow: Row + Sized {
     }
     /// Don't call this in a loop, it runs validation code.
     fn make_schema() -> TableSchema {
-        let name = Self::table_name();
+        let name = RawIdentifier::new(Self::table_name());
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(name.clone(), Self::row_type_for_schema(), true)
@@ -716,7 +717,7 @@ trait IndexedRow: Row + Sized {
                 "accessor_name_doesnt_matter",
             );
         let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
-        def.table_schema(&name[..], TableId::SENTINEL).unwrap()
+        def.table_schema(&*name, TableId::SENTINEL).unwrap()
     }
     fn throughput() -> Throughput {
         Throughput::Bytes(mem::size_of::<Self>() as u64)

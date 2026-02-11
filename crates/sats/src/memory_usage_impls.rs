@@ -1,7 +1,8 @@
 use crate::{
-    algebraic_value::Packed, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType, ProductTypeElement,
-    ProductValue, SumType, SumTypeVariant, SumValue,
+    algebraic_value::Packed, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue,
+    ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant, SumValue,
 };
+use core::mem;
 use spacetimedb_memory_usage::MemoryUsage;
 
 impl MemoryUsage for AlgebraicValue {
@@ -105,5 +106,15 @@ impl MemoryUsage for ArrayType {
 impl<T: MemoryUsage + Copy> MemoryUsage for Packed<T> {
     fn heap_usage(&self) -> usize {
         { self.0 }.heap_usage()
+    }
+}
+
+impl MemoryUsage for RawIdentifier {
+    fn heap_usage(&self) -> usize {
+        if self.0.len() <= 15 {
+            0
+        } else {
+            self.0.len() + 2 * mem::size_of::<usize>()
+        }
     }
 }
