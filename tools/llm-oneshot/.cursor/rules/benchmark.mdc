@@ -1,0 +1,126 @@
+---
+description: Rules for executing benchmark prompts. Ensures clean, uncontaminated code generation for fair AI comparison.
+globs: apps/**/*
+---
+
+# Benchmark Generation Rules
+
+## ⛔ CRITICAL: No Cross-Contamination
+
+When executing prompts from any `apps/*/prompts/` folder:
+
+### NEVER read or reference:
+- Other timestamped implementation folders (e.g., `app-name-YYYYMMDD-HHMMSS/`)
+- Any folder under `apps/*/<language>/<llm>/` containing previously generated code
+- Any folder under `apps/*/staging/` containing other implementations
+- Any other AI-generated implementations in the workspace
+
+These folders contain other AI-generated code. Looking at them contaminates the benchmark and invalidates results.
+
+### ONLY use these sources:
+1. **The prompt itself** — The specific `.md` file being executed
+2. **Official documentation** — `docs/docs/**/*.md`
+3. **Language/framework rules** — `.cursor/rules/*.mdc`
+4. **Test harness** — `apps/*/test-harness/` (for understanding test expectations, not implementations)
+
+## Prompt Execution Process
+
+### Project Location
+
+All new benchmark apps must be created in the **staging** folder:
+```
+apps/<app-name>/staging/<language>/<llm-model>/<backend-type>/app-YYYYMMDD-HHMMSS/
+```
+
+Example: `apps/chat-app/staging/typescript/opus-4-5/spacetime/chat-app-20260108-120000/`
+
+Use the test harness to scaffold:
+```bash
+cd apps/chat-app/test-harness
+npm run create -- --lang=typescript --llm=opus-4-5 --backend=spacetime
+```
+
+### For SpacetimeDB Apps (5-Phase Workflow)
+
+**Phase 1: Backend**
+1. Read the prompt file completely
+2. Read relevant documentation (never existing implementations)
+3. Create timestamped folder in `staging/<language>/<llm>/<backend>/`
+4. Write backend code (`schema.ts`, reducers, `index.ts`)
+5. Install backend dependencies: `cd <backend-dir> && npm install`
+6. Publish to SpacetimeDB: `spacetime publish <folder-name> --project-path <backend-dir>`
+
+**Phase 2: Bindings**
+7. Generate client bindings: `spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>`
+
+**Phase 3: Client**
+8. Write client code (imports from `./module_bindings` now resolve)
+9. Implement ONLY the features listed in the prompt
+10. Do NOT add features not explicitly requested
+
+**Phase 4: Verify**
+11. Install client dependencies: `cd <client-dir> && npm install`
+12. Type-check: `npx tsc --noEmit`
+13. Build: `npm run build`
+14. **Both must pass before proceeding**
+
+**Phase 5: Deploy**
+15. Ask to deploy when verification passes
+
+### For PostgreSQL Apps
+
+1. Read the prompt file completely
+2. Read relevant documentation (never existing implementations)
+3. Create timestamped folder as specified in the prompt
+4. Implement ONLY the features listed in the prompt
+5. Do NOT add features not explicitly requested
+6. Do NOT add "nice to have" improvements
+7. Ask to deploy when done
+
+## Feature Scope
+
+- Implement exactly what the prompt requests — nothing more, nothing less
+- Do not carry over patterns from other sessions or existing code
+- Each generation must be independent and uncontaminated
+- If uncertain about a feature, implement the minimal interpretation
+
+## Implementation Patterns
+
+### Database Time in Containers
+When using containerized databases (Docker), calculate time-based expiration entirely within the database using its native functions (e.g., `NOW() + INTERVAL '60 seconds'`) rather than passing timestamps from JavaScript. Container and host clocks may differ significantly.
+
+---
+
+## Running the Test Harness
+
+**After deploying a benchmark app, ALWAYS ask:**
+
+> "The app is running. Would you like me to run the benchmark test harness?"
+
+**If yes:**
+```bash
+cd apps/<app-name>/test-harness
+npm install
+npx playwright install chromium
+
+# Use --level=N matching the prompt (path is in staging folder)
+CLIENT_URL=http://localhost:5173 npm run benchmark -- ../staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/ --level=N
+```
+
+**Prompt level mapping (for chat-app):**
+| Prompt | Level |
+|--------|-------|
+| `01_*_basic` | `--level=1` |
+| `05_*_edit_history` | `--level=5` |
+| `08_*_threading` | `--level=8` |
+| `12_*_anonymous` | `--level=12` |
+
+## After Grading
+
+After grading is complete, ask to promote:
+
+> "Grading complete! Would you like me to promote this app from staging to the final location?"
+
+```bash
+npm run promote -- ../staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
+```

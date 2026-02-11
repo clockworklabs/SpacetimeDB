@@ -6,11 +6,6 @@ alwaysApply: true
 
 # SpacetimeDB TypeScript SDK
 
-> **Tested with:** SpacetimeDB runtime 1.11.x, npm `spacetimedb` 1.11.x  
-> **Last updated:** 2026-01-06
-
----
-
 ## ⛔ HALLUCINATED APIs — DO NOT USE
 
 **These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
@@ -26,6 +21,11 @@ connection.call("reducer_name", [arg1, arg2]);
 
 // ❌ WRONG — positional reducer arguments
 conn.reducers.doSomething("value");  // WRONG!
+
+// ❌ WRONG — static methods on generated types don't exist
+User.filterByName('alice');
+Message.findById(123n);
+tables.user.filter(u => u.name === 'alice');  // No .filter() on tables object!
 ```
 
 ### ✅ CORRECT PATTERNS:
@@ -65,9 +65,15 @@ const [items, isLoading] = useTable(tables.item);
 | `insert({ ...without id })` | `insert({ id: 0n, ... })` | "Property 'id' is missing" |
 | `const id = table.insert(...)` | `const row = table.insert(...)` | `.insert()` returns ROW, not ID |
 | `.unique()` + explicit index | Just use `.unique()` | "name is used for multiple entities" |
+| Index on `.primaryKey()` column | Don't — already indexed | "name is used for multiple entities" |
+| Same index name in multiple tables | Prefix with table name | "name is used for multiple entities" |
+| `.indexName.filter()` after removing index | Use `.iter()` + manual filter | "Cannot read properties of undefined" |
 | Import spacetimedb from index.ts | Import from schema.ts | "Cannot access before initialization" |
 | Multi-column index `.filter()` | **⚠️ BROKEN** — use single-column | PANIC or silent empty results |
-| `.iter()` in views | Use index lookups only | Views can't scan tables |
+| `JSON.stringify({ id: row.id })` | Convert BigInt first: `{ id: row.id.toString() }` | "Do not know how to serialize a BigInt" |
+| `ScheduleAt.Time(timestamp)` | `ScheduleAt.time(timestamp)` (lowercase) | "ScheduleAt.Time is not a function" |
+| `ctx.db.foo.myIndexName.filter()` | Use exact name: `ctx.db.foo.my_index_name.filter()` | "Cannot read properties of undefined" |
+| `.iter()` in views | Use index lookups | Severe performance issues (re-evaluates on any change) |
 | `ctx.db` in procedures | `ctx.withTx(tx => tx.db...)` | Procedures need explicit transactions |
 | `ctx.myTable` in procedure tx | `tx.db.myTable` | Wrong context variable |
 
@@ -126,6 +132,11 @@ t.u64().primaryKey()            // Primary key
 t.u64().primaryKey().autoInc()  // Auto-increment primary key
 ```
 
+> ⚠️ **BIGINT SYNTAX:** All `u64`, `i64`, and ID fields use JavaScript BigInt.
+> - Literals: `0n`, `1n`, `100n` (NOT `0`, `1`, `100`)
+> - Comparisons: `row.id === 5n` (NOT `row.id === 5`)
+> - Arithmetic: `row.count + 1n` (NOT `row.count + 1`)
+
 ### Auto-increment placeholder
 ```typescript
 // ✅ MUST provide 0n placeholder for auto-inc fields
@@ -152,11 +163,72 @@ export const spacetimedb = schema(Table1, Table2, Table3);
 
 ## 3) Index Access
 
-### Naming convention
-- **Tables**: camelCase in `ctx.db` even if snake_case in schema
-  - `table({ name: 'my_table' })` → `ctx.db.myTable`
-- **Indexes**: exact declared name
-  - `indexes: [{ name: 'by_owner' }]` → `ctx.db.myTable.by_owner`
+### TypeScript Query Patterns
+
+```typescript
+// 1. PRIMARY KEY — use .pkColumn.find()
+const user = ctx.db.user.identity.find(ctx.sender);
+const msg = ctx.db.message.id.find(messageId);
+
+// 2. EXPLICIT INDEX — use .indexName.filter(value)
+const msgs = [...ctx.db.message.message_room_id.filter(roomId)];
+
+// 3. NO INDEX — use .iter() + manual filter
+for (const m of ctx.db.roomMember.iter()) {
+  if (m.roomId === roomId) { /* ... */ }
+}
+```
+
+### Index Definition Syntax
+
+```typescript
+// In table OPTIONS (first argument), not columns
+export const Message = table({ 
+  name: 'message',
+  public: true,
+  indexes: [{ name: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
+}, {
+  id: t.u64().primaryKey().autoInc(),
+  roomId: t.u64(),
+  // ...
+});
+```
+
+### Naming conventions
+
+**Table names — automatic transformation:**
+- Schema: `table({ name: 'my_messages' })` 
+- Access: `ctx.db.myMessages` (automatic snake_case → camelCase)
+
+**Index names — NO transformation, use EXACTLY as defined:**
+```typescript
+// Schema definition
+indexes: [{ name: 'canvas_member_canvas_id', algorithm: 'btree', columns: ['canvasId'] }]
+
+// ❌ WRONG — don't assume camelCase transformation
+ctx.db.canvasMember.canvasMember_canvas_id.filter(...)  // WRONG!
+ctx.db.canvasMember.canvasMemberCanvasId.filter(...)    // WRONG!
+
+// ✅ RIGHT — use exact name from schema
+ctx.db.canvasMember.canvas_member_canvas_id.filter(...)
+```
+
+> ⚠️ **Index names are used VERBATIM** — pick a convention (snake_case or camelCase) and stick with it.
+
+**Index naming pattern — use `{tableName}_{columnName}`:**
+```typescript
+// ✅ GOOD — unique names across entire module
+indexes: [{ name: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
+indexes: [{ name: 'reaction_message_id', algorithm: 'btree', columns: ['messageId'] }]
+
+// ❌ BAD — will collide if multiple tables use same index name
+indexes: [{ name: 'by_owner', ... }]  // in Task table
+indexes: [{ name: 'by_owner', ... }]  // in Note table — CONFLICT!
+```
+
+**Client-side table names:**
+- Check generated `module_bindings/index.ts` for exact export names
+- Usage: `useTable(tables.MyMessages)` or `tables.myMessages` (varies by SDK version)
 
 ### Filter vs Find
 ```typescript
@@ -199,6 +271,24 @@ spacetimedb.reducer('reducer_name', { param1: t.string(), param2: t.u64() }, (ct
   ctx.db.myTable.primaryKey.update({ ...row, newField: value });
   ctx.db.myTable.primaryKey.delete(param2);
 });
+```
+
+### Update pattern (CRITICAL)
+```typescript
+// ✅ CORRECT — spread existing row, override specific fields
+const existing = ctx.db.task.id.find(taskId);
+if (!existing) throw new SenderError('Task not found');
+ctx.db.task.id.update({ ...existing, title: newTitle, updatedAt: ctx.timestamp });
+
+// ❌ WRONG — partial update nulls out other fields!
+ctx.db.task.id.update({ id: taskId, title: newTitle });
+```
+
+### Delete pattern
+```typescript
+// Delete by primary key VALUE (not row object)
+ctx.db.task.id.delete(taskId);          // taskId is the u64 value
+ctx.db.player.identity.delete(ctx.sender);  // delete by identity
 ```
 
 ### Lifecycle hooks
@@ -296,18 +386,47 @@ if (scheduleAt.tag === 'Time') {
 
 ---
 
-## 7) Data Visibility
+## 7) Data Visibility & Subscriptions
 
 **`public: true` exposes ALL rows to ALL clients.**
 
 | Scenario | Pattern |
 |----------|---------|
 | Everyone sees all rows | `public: true` |
-| Users see only their data | Private table + public view |
+| Users see only their data | Private table + filtered subscription |
 
-### Private table + view pattern
+### Subscription patterns (client-side)
+```typescript
+// Subscribe to ALL public tables (simplest)
+conn.subscriptionBuilder().subscribeToAll();
 
-⚠️ **CRITICAL: Views can ONLY access data via index lookups, NOT `.iter()`**
+// Subscribe to specific tables with SQL
+conn.subscriptionBuilder().subscribe([
+  'SELECT * FROM message',
+  'SELECT * FROM room WHERE is_public = true',
+]);
+
+// Handle subscription lifecycle
+conn.subscriptionBuilder()
+  .onApplied(() => console.log('Initial data loaded'))
+  .onError((e) => console.error('Subscription failed:', e))
+  .subscribeToAll();
+```
+
+### Private table + view pattern (RECOMMENDED)
+
+**Views are the recommended approach** for controlling data visibility. They provide:
+- Server-side filtering (reduces network traffic)
+- Real-time updates when underlying data changes
+- Full control over what data clients can access
+
+> ⚠️ **Do NOT use Row Level Security (RLS)** — it is deprecated.
+
+⚠️ **CRITICAL: Views SHOULD use index lookups, NOT `.iter()` (performance)**
+
+Using `.iter()` in views is technically possible but causes severe performance issues:
+- Every change to ANY row in the table triggers a full re-evaluation of the view
+- For large tables, this becomes prohibitively expensive
 
 ```typescript
 // Private table with index on ownerId
@@ -322,14 +441,14 @@ export const PrivateData = table(
   }
 );
 
-// ❌ WRONG — views cannot use .iter()
+// ❌ BAD — .iter() causes performance issues (re-evaluates on ANY row change)
 spacetimedb.view(
-  { name: 'my_data_wrong', public: true },
+  { name: 'my_data_slow', public: true },
   t.array(PrivateData.rowType),
-  (ctx) => [...ctx.db.privateData.iter()]  // ❌ NOT ALLOWED
+  (ctx) => [...ctx.db.privateData.iter()]  // Works but VERY slow at scale
 );
 
-// ✅ RIGHT — use index lookup
+// ✅ GOOD — index lookup enables targeted invalidation
 spacetimedb.view(
   { name: 'my_data', public: true },
   t.array(PrivateData.rowType),
@@ -362,23 +481,9 @@ conn.subscriptionBuilder().subscribe([
 
 ## 8) React Integration
 
-### Connection setup
+### Key patterns
 ```typescript
-// Store connection and identity globally
-declare global {
-  interface Window {
-    __db_conn: DbConnection | null;
-    __my_identity: Identity | null;
-  }
-}
-
-// In onConnect callback
-window.__db_conn = conn;
-window.__my_identity = identity;
-```
-
-### Memoize connectionBuilder
-```typescript
+// Memoize connectionBuilder to prevent reconnects on re-render
 const builder = useMemo(() => 
   DbConnection.builder()
     .withUri(SPACETIMEDB_URI)
@@ -388,58 +493,17 @@ const builder = useMemo(() =>
     .onConnectError(onConnectError),
   []  // Empty deps - only create once
 );
-```
 
-### Stale token handling
-```typescript
-const onConnectError = (_ctx: ErrorContext, err: Error) => {
-  if (err.message?.includes('Unauthorized') || err.message?.includes('401')) {
-    localStorage.removeItem('auth_token');
-    window.location.reload();
-  }
-};
-```
-
-### useTable returns tuple
-```typescript
+// useTable returns tuple [rows, isLoading]
 const [rows, isLoading] = useTable(tables.myTable);
-```
 
-### Identity comparison
-```typescript
 // Compare identities using toHexString()
 const isOwner = row.ownerId.toHexString() === myIdentity.toHexString();
 ```
 
 ---
 
-## 9) Project Structure
-
-### Server (`backend/spacetimedb/`)
-```
-src/schema.ts   → Tables, export spacetimedb
-src/index.ts    → Reducers, lifecycle, import schema
-package.json    → { "type": "module", "dependencies": { "spacetimedb": "^1.11.0" } }
-tsconfig.json   → Standard config
-```
-
-### Avoiding circular imports
-```
-schema.ts → defines tables AND exports spacetimedb
-index.ts  → imports spacetimedb from ./schema, defines reducers
-```
-
-### Client (`client/`)
-```
-src/module_bindings/ → Generated (spacetime generate)
-src/main.tsx         → Provider, connection setup
-src/App.tsx          → UI components
-src/config.ts        → MODULE_NAME, SPACETIMEDB_URI
-```
-
----
-
-## 10) Procedures (Beta)
+## 9) Procedures (Beta)
 
 **Procedures are for side effects (HTTP requests, etc.) that reducers can't do.**
 
@@ -495,6 +559,32 @@ spacetimedb.procedure('save_fetched_data', { url: t.string() }, t.unit(), (ctx, 
 
 ---
 
+## 10) Project Structure
+
+### Server (`backend/spacetimedb/`)
+```
+src/schema.ts   → Tables, export spacetimedb
+src/index.ts    → Reducers, lifecycle, import schema
+package.json    → { "type": "module", "dependencies": { "spacetimedb": "^1.11.0" } }
+tsconfig.json   → Standard config
+```
+
+### Avoiding circular imports
+```
+schema.ts → defines tables AND exports spacetimedb
+index.ts  → imports spacetimedb from ./schema, defines reducers
+```
+
+### Client (`client/`)
+```
+src/module_bindings/ → Generated (spacetime generate)
+src/main.tsx         → Provider, connection setup
+src/App.tsx          → UI components
+src/config.ts        → MODULE_NAME, SPACETIMEDB_URI
+```
+
+---
+
 ## 11) Commands
 
 ```bash
@@ -518,8 +608,14 @@ spacetime logs <module-name>
 
 ## 12) Hard Requirements
 
-1. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
-2. **Reducers are transactional** — they do not return data
-3. **Reducers must be deterministic** — no filesystem, network, timers, random
-4. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
-5. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
+**TypeScript-specific:**
+
+1. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
+2. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
+3. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
+4. **Indexes go in OPTIONS (1st arg)** — not in COLUMNS (2nd arg) of `table()`
+5. **Use BigInt for u64/i64 fields** — `0n`, `1n`, not `0`, `1`
+6. **Reducers are transactional** — they do not return data
+7. **Reducers must be deterministic** — no filesystem, network, timers, random
+8. **Views should use index lookups** — `.iter()` causes severe performance issues
+9. **Procedures need `ctx.withTx()`** — `ctx.db` doesn't exist in procedures
