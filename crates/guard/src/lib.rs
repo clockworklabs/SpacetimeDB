@@ -79,7 +79,7 @@ pub fn ensure_binaries_built() -> PathBuf {
                     \n\
                     Or build manually:\n\
                     \n\
-                    cargo build -p spacetimedb-cli -p spacetimedb-standalone\n\
+                    cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests\n\
                     ========================================================================\n",
                     cli_path.display()
                 );
