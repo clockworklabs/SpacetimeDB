@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void Delete(uint id)
         {
-            conn.InternalCallReducer(new Reducer.Delete(id), this.SetCallReducerFlags.DeleteFlags);
+            conn.InternalCallReducer(new Reducer.Delete(id));
         }
 
         public bool InvokeDelete(ReducerEventContext ctx, Reducer.Delete args)
@@ -62,11 +62,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "Delete";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags DeleteFlags;
-        public void Delete(CallReducerFlags flags) => DeleteFlags = flags;
     }
 }

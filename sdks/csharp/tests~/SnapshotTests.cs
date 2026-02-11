@@ -250,8 +250,8 @@ public class SnapshotTests
         return [.. o.ToArray()];
     }
 
-    private static readonly string USER_TABLE_NAME = "user";
-    private static readonly string MESSAGE_TABLE_NAME = "message";
+    private static readonly string USER_TABLE_NAME = "User";
+    private static readonly string MESSAGE_TABLE_NAME = "Message";
 
 
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
@@ -395,7 +395,7 @@ public class SnapshotTests
         // to populate DbConnectionBase.pendingReducerCalls. Without priming this map, a v2 ReducerResult
         // is treated as unknown request_id and exercises the strict error path instead of reducer callbacks.
         // We use reflection to seed the internal correlation state for deterministic reducer-result coverage.
-        static void PrimePendingReducerCall(DbConnection client, uint requestId, string reducerName, List<byte> reducerArgs)
+        static void PrimePendingReducerCall(DbConnection client, uint requestId, Reducer reducer)
         {
             var baseType = client.GetType().BaseType ?? throw new InvalidOperationException("DbConnection has no base type.");
             var pendingCallsField = baseType.GetField("pendingReducerCalls", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -405,8 +405,7 @@ public class SnapshotTests
             var pendingCallType = pendingCallsObj.GetType().GetGenericArguments()[1];
             var pendingCall = Activator.CreateInstance(pendingCallType)
                 ?? throw new InvalidOperationException("Failed to construct PendingReducerCall.");
-            pendingCallType.GetField("ReducerName", BindingFlags.Instance | BindingFlags.Public)?.SetValue(pendingCall, reducerName);
-            pendingCallType.GetField("ReducerArgs", BindingFlags.Instance | BindingFlags.Public)?.SetValue(pendingCall, reducerArgs);
+            pendingCallType.GetField("Reducer", BindingFlags.Instance | BindingFlags.Public)?.SetValue(pendingCall, reducer);
 
             var tryAdd = pendingCallsObj.GetType().GetMethod("TryAdd")
                 ?? throw new InvalidOperationException("Failed to find TryAdd on pendingReducerCalls.");
@@ -446,15 +445,15 @@ public class SnapshotTests
                             }
                             if (reducerResult.RequestId == 1)
                             {
-                                PrimePendingReducerCall(client, reducerResult.RequestId, "SetName", [.. Encode(new Reducer.SetName { Name = "A" })]);
+                                PrimePendingReducerCall(client, reducerResult.RequestId, new Reducer.SetName { Name = "A" });
                             }
                             else if (reducerResult.RequestId == 2)
                             {
-                                PrimePendingReducerCall(client, reducerResult.RequestId, "SetName", [.. Encode(new Reducer.SetName { Name = "" })]);
+                                PrimePendingReducerCall(client, reducerResult.RequestId, new Reducer.SetName { Name = "" });
                             }
                             else if (reducerResult.RequestId == 3)
                             {
-                                PrimePendingReducerCall(client, reducerResult.RequestId, "SendMessage", [.. Encode(new Reducer.SendMessage { Text = "internal" })]);
+                                PrimePendingReducerCall(client, reducerResult.RequestId, new Reducer.SendMessage { Text = "internal" });
                             }
                             break;
                         }
