@@ -722,7 +722,7 @@ pub fn register_table<T: Table>() {
             table = table.with_unique_constraint(col);
         }
         for index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.accessor_name);
+            table = table.with_index(index.algo.into(), index.accessor_name, Some(index.index_name));
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
             table = table.with_primary_key(primary_key);

@@ -12,6 +12,7 @@ use syn::parse::Parse;
 use syn::parse::Parser as _;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::LitStr;
 use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
@@ -46,12 +47,13 @@ struct ScheduledArg {
 
 struct IndexArg {
     accessor: Ident,
+    name: Option<LitStr>,
     is_unique: bool,
     kind: IndexType,
 }
 
 impl IndexArg {
-    fn new(accessor: Ident, kind: IndexType) -> Self {
+    fn new(accessor: Ident, kind: IndexType, name: Option<LitStr>) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
@@ -59,6 +61,7 @@ impl IndexArg {
             accessor,
             is_unique,
             kind,
+            name,
         }
     }
 }
@@ -157,6 +160,7 @@ impl ScheduledArg {
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let mut accessor = None;
+        let mut name = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
@@ -164,6 +168,11 @@ impl IndexArg {
                 sym::accessor => {
                     check_duplicate(&accessor, &meta)?;
                     accessor = Some(meta.value()?.parse()?);
+                }
+                sym::name => {
+                    check_duplicate(&name, &meta)?;
+                    let litstr: LitStr = meta.value()?.parse()?;
+                    name = Some(litstr);
                 }
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
@@ -188,7 +197,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(accessor, kind))
+        Ok(IndexArg::new(accessor, kind, name))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -248,6 +257,8 @@ impl IndexArg {
     /// Parses an inline `#[index(btree)]`, `#[index(hash)]`, or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
+        let mut accessor: Option<Ident> = None;
+        let mut name: Option<LitStr> = None;
         attr.parse_nested_meta(|meta| {
             match_meta!(match meta {
                 sym::btree => {
@@ -266,13 +277,27 @@ impl IndexArg {
                     check_duplicate_msg(&kind, &meta, "index type specified twice")?;
                     kind = Some(IndexType::Direct { column: field.clone() })
                 }
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
+                    accessor = Some(meta.value()?.parse()?);
+                }
+                sym::name => {
+                    check_duplicate(&name, &meta)?;
+                    name = Some(meta.value()?.parse()?);
+                }
             });
             Ok(())
         })?;
-        let kind = kind
-            .ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `direct`)"))?;
-        let name = field.clone();
-        Ok(IndexArg::new(name, kind))
+        let kind = kind.ok_or_else(|| {
+            syn::Error::new_spanned(
+                &attr.meta,
+                "must specify kind of index (`btree` , `direct`, `name` or `value`)",
+            )
+        })?;
+
+        // Default accessor = field name if not provided
+        let accessor = accessor.unwrap_or_else(|| field.clone());
+        Ok(IndexArg::new(accessor, kind, name))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -299,17 +324,19 @@ impl IndexArg {
                 (ValidatedIndexType::Direct { col }, "direct")
             }
         };
-        // See crates/schema/src/validate/v9.rs for the format of index names.
-        // It's slightly unnerving that we just trust that component to generate this format correctly,
-        // but what can you do.
-        let cols = kind.columns();
-        let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
-        let cols = cols.join("_");
-        let index_name = format!("{table_name}_{cols}_idx_{kind_str}");
+        let gen_index_name = || {
+            // See crates/schema/src/validate/v9.rs for the format of index names.
+            // It's slightly unnerving that we just trust that component to generate this format correctly,
+            // but what can you do.
+            let cols = kind.columns();
+            let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
+            let cols = cols.join("_");
+            format!("{table_name}_{cols}_idx_{kind_str}")
+        };
 
         Ok(ValidatedIndex {
             is_unique: self.is_unique,
-            index_name,
+            index_name: self.name.as_ref().map(|s| s.value()).unwrap_or_else(gen_index_name),
             accessor_name: &self.accessor,
             kind,
         })
@@ -417,10 +444,12 @@ impl ValidatedIndex<'_> {
             }
         };
         let accessor_name = ident_to_litstr(self.accessor_name);
+        let index_name = &self.index_name;
         // Note: we do not pass the index_name through here.
         // We trust the schema validation logic to reconstruct the name we've stored in `self.name`.
         quote!(spacetimedb::table::IndexDesc {
             accessor_name: #accessor_name,
+            index_name: #index_name,
             algo: #algo,
         })
     }
@@ -800,10 +829,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
         // as it's the safest choice of index for the general case,
         // even if isn't optimal in specific cases.
-        let name = unique_col.ident.clone();
-        let columns = vec![name.clone()];
+        let accessor = unique_col.ident.clone();
+        let columns = vec![accessor.clone()];
         args.indices.push(IndexArg {
-            accessor: name,
+            accessor,
+            name: None,
             is_unique: true,
             kind: IndexType::BTree { columns },
         })

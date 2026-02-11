@@ -1036,11 +1036,16 @@ impl RawTableDefBuilderV10<'_> {
     }
 
     /// Generates a [RawIndexDefV10] using the supplied `columns`.
-    pub fn with_index(mut self, algorithm: RawIndexAlgorithm, accessor_name: impl Into<RawIdentifier>) -> Self {
+    pub fn with_index(
+        mut self,
+        algorithm: RawIndexAlgorithm,
+        accessor_name: impl Into<RawIdentifier>,
+        index_name: Option<impl Into<RawIdentifier>>,
+    ) -> Self {
         let accessor_name = accessor_name.into();
 
         self.table.indexes.push(RawIndexDefV10 {
-            source_name: None,
+            source_name: index_name.map(Into::into),
             accessor_name: Some(accessor_name),
             algorithm,
         });
