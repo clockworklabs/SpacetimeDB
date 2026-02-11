@@ -11,7 +11,7 @@
 
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
-use spacetimedb_smoketests::{allow_dotnet, have_dotnet, pnpm_path, random_string, workspace_root, Smoketest};
+use spacetimedb_smoketests::{pnpm_path, random_string, workspace_root, Smoketest};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
