@@ -341,6 +341,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         case 'btree':
           algorithm = RawIndexAlgorithm.BTree([id]);
           break;
+        case 'hash':
+          algorithm = RawIndexAlgorithm.Hash([id]);
+          break;
         case 'direct':
           algorithm = RawIndexAlgorithm.Direct(id);
           break;
@@ -395,6 +398,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       case 'btree':
         algorithm = {
           tag: 'BTree',
+          value: indexOpts.columns.map(c => colIds.get(c)!),
+        };
+        break;
+      case 'hash':
+        algorithm = {
+          tag: 'Hash',
           value: indexOpts.columns.map(c => colIds.get(c)!),
         };
         break;
