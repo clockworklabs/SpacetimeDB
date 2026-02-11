@@ -8,14 +8,14 @@ use std::collections::btree_map::{BTreeMap, Entry, Range};
 ///
 /// (This is just a `BTreeMap<K, RowPointer>`) with a slightly modified interface.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct UniqueMap<K: KeySize> {
+pub struct UniqueBTreeIndex<K: KeySize> {
     /// The map is backed by a `BTreeMap` for relating a key to a value.
     map: BTreeMap<K, RowPointer>,
     /// Storage for [`Index::num_key_bytes`].
     num_key_bytes: K::MemoStorage,
 }
 
-impl<K: KeySize> Default for UniqueMap<K> {
+impl<K: KeySize> Default for UniqueBTreeIndex<K> {
     fn default() -> Self {
         Self {
             map: <_>::default(),
@@ -24,14 +24,14 @@ impl<K: KeySize> Default for UniqueMap<K> {
     }
 }
 
-impl<K: KeySize + MemoryUsage> MemoryUsage for UniqueMap<K> {
+impl<K: KeySize + MemoryUsage> MemoryUsage for UniqueBTreeIndex<K> {
     fn heap_usage(&self) -> usize {
         let Self { map, num_key_bytes } = self;
         map.heap_usage() + num_key_bytes.heap_usage()
     }
 }
 
-impl<K: Ord + KeySize> Index for UniqueMap<K> {
+impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
     type Key = K;
 
     fn clone_structure(&self) -> Self {
@@ -94,7 +94,7 @@ impl<K: Ord + KeySize> Index for UniqueMap<K> {
     }
 }
 
-/// An iterator over the potential value in a [`UniqueMap`] for a given key.
+/// An iterator over the potential value in a unique index for a given key.
 pub struct UniquePointIter {
     /// The iterator seeking for matching keys in the range.
     pub(super) iter: IntoIter<RowPointer>,
@@ -116,27 +116,27 @@ impl Iterator for UniquePointIter {
     }
 }
 
-impl<K: Ord + KeySize> RangedIndex for UniqueMap<K> {
+impl<K: Ord + KeySize> RangedIndex for UniqueBTreeIndex<K> {
     type RangeIter<'a>
-        = UniqueMapRangeIter<'a, K>
+        = UniqueBTreeIndexRangeIter<'a, K>
     where
         Self: 'a;
 
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
-        UniqueMapRangeIter {
+        UniqueBTreeIndexRangeIter {
             iter: self.map.range((range.start_bound(), range.end_bound())),
         }
     }
 }
 
-/// An iterator over values in a [`UniqueMap`] where the keys are in a certain range.
+/// An iterator over values in a [`UniqueBTreeIndex`] where the keys are in a certain range.
 #[derive(Clone)]
-pub struct UniqueMapRangeIter<'a, K> {
+pub struct UniqueBTreeIndexRangeIter<'a, K> {
     /// The iterator seeking for matching keys in the range.
     iter: Range<'a, K, RowPointer>,
 }
 
-impl<'a, K> Iterator for UniqueMapRangeIter<'a, K> {
+impl<'a, K> Iterator for UniqueBTreeIndexRangeIter<'a, K> {
     type Item = RowPointer;
 
     fn next(&mut self) -> Option<Self::Item> {
