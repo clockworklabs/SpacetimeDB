@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - name: Linux
-            runner: spacetimedb-new-runner-2
+            runner: boppy-experimental
           - name: Windows
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
