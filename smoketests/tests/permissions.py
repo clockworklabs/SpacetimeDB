@@ -80,12 +80,12 @@ class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = secret, private)]
+#[spacetimedb::table(accessor = secret, private)]
 pub struct Secret {
     answer: u8,
 }
 
-#[spacetimedb::table(name = common_knowledge, public)]
+#[spacetimedb::table(accessor = common_knowledge, public)]
 pub struct CommonKnowledge {
     thing: String,
 }

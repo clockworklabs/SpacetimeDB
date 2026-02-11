@@ -1,8 +1,8 @@
 use spacetimedb::{AnonymousViewContext, ReducerContext, Table, ViewContext};
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
-#[spacetimedb::table(name = player_level)]
+#[spacetimedb::table(accessor = player_state)]
+#[spacetimedb::table(accessor = player_level)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -11,7 +11,7 @@ pub struct PlayerState {
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(name = player_info, index(name=age_level_index, btree(columns = [age, level])))]
+#[spacetimedb::table(accessor = player_info, index(name=age_level_index, btree(columns = [age, level])))]
 pub struct PlayerInfo {
     #[primary_key]
     id: u64,

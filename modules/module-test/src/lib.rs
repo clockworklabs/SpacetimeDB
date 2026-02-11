@@ -15,7 +15,7 @@ pub type TestAlias = TestA;
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(feature = "test-add-column")]
-#[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = person, public, index(name = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -27,7 +27,7 @@ pub struct Person {
 }
 
 #[cfg(not(feature = "test-add-column"))]
-#[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = person, public, index(name = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -37,12 +37,12 @@ pub struct Person {
 }
 
 #[cfg(not(feature = "test-remove-table"))]
-#[spacetimedb::table(name = table_to_remove)]
+#[spacetimedb::table(accessor = table_to_remove)]
 pub struct RemoveTable {
     pub id: u32,
 }
 
-#[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
+#[spacetimedb::table(accessor = test_a, index(name = foo, btree(columns = [x])))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
@@ -62,7 +62,7 @@ pub enum TestC {
 }
 
 const DEFAULT_TEST_C: TestC = TestC::Foo;
-#[table(name = test_d, public)]
+#[table(accessor = test_d, public)]
 pub struct TestD {
     #[default(Some(DEFAULT_TEST_C))]
     test_c: Option<TestC>,
@@ -77,7 +77,7 @@ const fn get_table_access<Tbl: spacetimedb::Table>(_: impl Fn(&spacetimedb::Loca
 // This table was specified as public.
 const _: () = assert!(matches!(get_table_access(test_d::test_d), TableAccess::Public));
 
-#[spacetimedb::table(name = test_e)]
+#[spacetimedb::table(accessor = test_e)]
 #[derive(Debug)]
 pub struct TestE {
     #[primary_key]
@@ -99,7 +99,7 @@ pub enum Foobar {
     Har(u32),
 }
 
-#[table(name = test_f, public)]
+#[table(accessor = test_f, public)]
 pub struct TestFoobar {
     pub field: Foobar,
 }
@@ -118,17 +118,17 @@ const _: () = assert!(matches!(get_table_access(test_e::test_e), TableAccess::Pr
 // FIXME: Table named "private" doesn't compile in C#
 // Must be commented here because the schemas are compared between Rust and C#
 // in the testing.
-// #[spacetimedb::table(name = private)]
+// #[spacetimedb::table(accessor = private)]
 // pub struct Private {
 //     name: String,
 // }
 
-#[spacetimedb::table(name = private_table, private)]
+#[spacetimedb::table(accessor = private_table, private)]
 pub struct PrivateTable {
     name: String,
 }
 
-#[spacetimedb::table(name = points, private, index(name = multi_column_index, btree(columns = [x, y])))]
+#[spacetimedb::table(accessor = points, private, index(name = multi_column_index, btree(columns = [x, y])))]
 pub struct Point {
     x: i64,
     y: i64,
@@ -138,7 +138,7 @@ pub struct Point {
 const _: () = assert!(matches!(get_table_access(points::points), TableAccess::Private));
 
 // Test we can compile multiple constraints
-#[spacetimedb::table(name = pk_multi_identity)]
+#[spacetimedb::table(accessor = pk_multi_identity)]
 struct PkMultiIdentity {
     #[primary_key]
     id: u32,
@@ -150,7 +150,7 @@ struct PkMultiIdentity {
 // #[spacetimedb::migrate]
 // pub fn migrate() {}
 
-#[spacetimedb::table(name = repeating_test_arg, scheduled(repeating_test))]
+#[spacetimedb::table(accessor = repeating_test_arg, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
     #[primary_key]
     #[auto_inc]
@@ -159,7 +159,7 @@ pub struct RepeatingTestArg {
     prev_time: Timestamp,
 }
 
-#[spacetimedb::table(name = has_special_stuff)]
+#[spacetimedb::table(accessor = has_special_stuff)]
 pub struct HasSpecialStuff {
     identity: Identity,
     connection_id: ConnectionId,
@@ -172,8 +172,8 @@ pub struct HasSpecialStuff {
 /// would try to emit its own `impl` block for `SpacetimeType` (and some other traits),
 /// resulting in duplicate/conflicting trait definitions.
 /// See e.g. [SpacetimeDB issue #2097](https://github.com/clockworklabs/SpacetimeDB/issues/2097).
-#[spacetimedb::table(public, name = player)]
-#[spacetimedb::table(public, name = logged_out_player)]
+#[spacetimedb::table(public, accessor = player)]
+#[spacetimedb::table(public, accessor = logged_out_player)]
 pub struct Player {
     #[primary_key]
     identity: Identity,

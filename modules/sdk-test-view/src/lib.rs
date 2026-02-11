@@ -2,7 +2,7 @@ use spacetimedb::{
     reducer, table, view, AnonymousViewContext, Identity, ReducerContext, SpacetimeType, Table, ViewContext,
 };
 
-#[table(name = player, public)]
+#[table(accessor = player, public)]
 struct Player {
     #[primary_key]
     #[auto_inc]
@@ -11,7 +11,7 @@ struct Player {
     identity: Identity,
 }
 
-#[table(name = player_level, public)]
+#[table(accessor = player_level, public)]
 struct PlayerLevel {
     #[unique]
     entity_id: u64,
@@ -19,7 +19,7 @@ struct PlayerLevel {
     level: u64,
 }
 
-#[table(name = player_location)]
+#[table(accessor = player_location)]
 pub struct PlayerLocation {
     #[unique]
     pub entity_id: u64,

@@ -1,6 +1,6 @@
 use spacetimedb::{Query, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: u8,
@@ -8,7 +8,7 @@ pub struct User {
     online: bool,
 }
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     identity: u8,

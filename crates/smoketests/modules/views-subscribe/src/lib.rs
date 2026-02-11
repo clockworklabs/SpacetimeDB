@@ -1,6 +1,6 @@
 use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     identity: Identity,

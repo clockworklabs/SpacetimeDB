@@ -117,7 +117,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ```ignore
 /// use spacetimedb::{table, ReducerContext};
 ///
-/// #[table(name = user, public,
+/// #[table(accessor = user, public,
 ///         index(name = popularity_and_username, btree(columns = [popularity, username])),
 /// )]
 /// pub struct User {
@@ -194,7 +194,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// For a table *table*, use `ctx.db.{table}()` to do this.
 /// For example:
 /// ```ignore
-///  #[table(name = user)]
+///  #[table(accessor = user)]
 ///  pub struct User {
 ///      #[auto_inc]
 ///      #[primary_key]
@@ -314,7 +314,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// type CountryCode = String;
 ///
-/// #[table(name = country)]
+/// #[table(accessor = country)]
 /// struct Country {
 ///     #[unique]
 ///     code: CountryCode,
@@ -378,7 +378,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// # Generated code
 ///
-/// For each `[table(name = {name})]` annotation on a type `{T}`, generates a struct
+/// For each `[table(accessor = {name})]` annotation on a type `{T}`, generates a struct
 /// `{name}__TableHandle` implementing [`Table<Row={T}>`](crate::Table), and a trait that allows looking up such a
 /// `{name}Handle` in a [`ReducerContext`].
 ///
@@ -577,7 +577,7 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// // First, we declare the table with scheduling information.
 ///
-/// #[table(name = send_message_schedule, scheduled(send_message))]
+/// #[table(accessor = send_message_schedule, scheduled(send_message))]
 /// struct SendMessageSchedule {
 ///     // Mandatory fields:
 ///     // ============================
@@ -768,7 +768,7 @@ pub use spacetimedb_bindings_macro::procedure;
 /// use spacetimedb::{view, table, AnonymousViewContext, SpacetimeType, ViewContext};
 /// use spacetimedb_lib::Identity;
 ///
-/// #[table(name = player)]
+/// #[table(accessor = player)]
 /// struct Player {
 ///     #[auto_inc]
 ///     #[primary_key]
@@ -797,7 +797,7 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     id: u64,
 /// }
 ///
-/// #[table(name = location, index(name = coordinates, btree(columns = [x, y])))]
+/// #[table(accessor = location, index(name = coordinates, btree(columns = [x, y])))]
 /// struct Location {
 ///     #[unique]
 ///     player_id: u64,
@@ -955,7 +955,7 @@ pub struct ReducerContext {
     /// # #![cfg(target_arch = "wasm32")]
     /// use spacetimedb::{table, reducer, ReducerContext};
     ///
-    /// #[table(name = book)]
+    /// #[table(accessor = book)]
     /// #[derive(Debug)]
     /// struct Book {
     ///     #[primary_key]

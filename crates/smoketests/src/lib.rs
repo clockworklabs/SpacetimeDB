@@ -28,7 +28,7 @@
 //! const MODULE_CODE: &str = r#"
 //! use spacetimedb::{table, reducer};
 //!
-//! #[spacetimedb::table(name = person, public)]
+//! #[spacetimedb::table(accessor = person, public)]
 //! pub struct Person {
 //!     name: String,
 //! }

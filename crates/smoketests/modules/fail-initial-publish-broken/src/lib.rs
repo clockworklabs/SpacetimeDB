@@ -1,6 +1,6 @@
 use spacetimedb::{client_visibility_filter, Filter};
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
 }

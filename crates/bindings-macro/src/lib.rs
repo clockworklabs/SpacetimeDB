@@ -39,6 +39,7 @@ mod sym {
         };
     }
 
+    symbol!(accessor);
     symbol!(at);
     symbol!(auto_inc);
     symbol!(btree);

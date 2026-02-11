@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, Query, ReducerContext, ViewContext};
 
-#[table(name = test)]
+#[table(accessor = test)]
 struct Test {
     #[unique]
     id: u32,
@@ -64,7 +64,7 @@ fn read_only_btree_index_no_delete(ctx: &ReducerContext) {
     read_only.db.test().x().delete(0u32..);
 }
 
-#[table(name = player)]
+#[table(accessor = player)]
 struct Player {
     #[unique]
     identity: Identity,
@@ -145,7 +145,7 @@ fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
 }
 
 
-#[table(name = player_info)]
+#[table(accessor = player_info)]
 struct PlayerInfo {
     #[unique]
     identity: Identity,

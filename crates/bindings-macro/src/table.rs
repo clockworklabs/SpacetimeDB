@@ -17,7 +17,7 @@ use syn::{parse_quote, Ident, Path, Token};
 pub(crate) struct TableArgs {
     access: Option<TableAccess>,
     scheduled: Option<ScheduledArg>,
-    name: Ident,
+    accessor: Ident,
     indices: Vec<IndexArg>,
 }
 
@@ -69,7 +69,7 @@ impl TableArgs {
     pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
-        let mut name = None;
+        let mut accessor = None;
         let mut indices = Vec::new();
         syn::meta::parser(|meta| {
             match_meta!(match meta {
@@ -81,10 +81,10 @@ impl TableArgs {
                     check_duplicate_msg(&access, &meta, "already specified access level")?;
                     access = Some(TableAccess::Private(meta.path.span()));
                 }
-                sym::name => {
-                    check_duplicate(&name, &meta)?;
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
                     let value = meta.value()?;
-                    name = Some(value.parse()?);
+                    accessor = Some(value.parse()?);
                 }
                 sym::index => indices.push(IndexArg::parse_meta(meta)?),
                 sym::scheduled => {
@@ -95,17 +95,17 @@ impl TableArgs {
             Ok(())
         })
         .parse2(input)?;
-        let name = name.ok_or_else(|| {
+        let accessor = accessor.ok_or_else(|| {
             let table = struct_ident.to_string().to_snake_case();
             syn::Error::new(
                 Span::call_site(),
-                format_args!("must specify table name, e.g. `#[spacetimedb::table(name = {table})]"),
+                format_args!("must specify table name, e.g. `#[spacetimedb::table(accessor = {table})]"),
             )
         })?;
         Ok(TableArgs {
             access,
             scheduled,
-            name,
+            accessor,
             indices,
         })
     }
@@ -672,7 +672,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
-    let table_ident = &args.name;
+    let table_ident = &args.accessor;
     let view_trait_ident = format_ident!("{}__view", table_ident);
     let query_trait_ident = format_ident!("{}__query", table_ident);
     let query_cols_struct = format_ident!("{}Cols", original_struct_ident);

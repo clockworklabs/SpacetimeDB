@@ -2,7 +2,7 @@ use spacetimedb::sats::{i256, u256};
 use spacetimedb::{ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration, SpacetimeType, Uuid};
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = t_ints)]
+#[spacetimedb::table(accessor = t_ints)]
 pub struct TInts {
     i8: i8,
     i16: i16,
@@ -12,13 +12,13 @@ pub struct TInts {
     i256: i256,
 }
 
-#[spacetimedb::table(name = t_ints_tuple)]
+#[spacetimedb::table(accessor = t_ints_tuple)]
 pub struct TIntsTuple {
     tuple: TInts,
 }
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = t_uints)]
+#[spacetimedb::table(accessor = t_uints)]
 pub struct TUints {
     u8: u8,
     u16: u16,
@@ -28,13 +28,13 @@ pub struct TUints {
     u256: u256,
 }
 
-#[spacetimedb::table(name = t_uints_tuple)]
+#[spacetimedb::table(accessor = t_uints_tuple)]
 pub struct TUintsTuple {
     tuple: TUints,
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(name = t_others)]
+#[spacetimedb::table(accessor = t_others)]
 pub struct TOthers {
     bool: bool,
     f32: f32,
@@ -48,7 +48,7 @@ pub struct TOthers {
     uuid: Uuid,
 }
 
-#[spacetimedb::table(name = t_others_tuple)]
+#[spacetimedb::table(accessor = t_others_tuple)]
 pub struct TOthersTuple {
     tuple: TOthers
 }
@@ -60,14 +60,14 @@ pub enum Action {
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(name = t_enums)]
+#[spacetimedb::table(accessor = t_enums)]
 pub struct TEnums {
     bool_opt: Option<bool>,
     bool_result: Result<bool, String>,
     action: Action,
 }
 
-#[spacetimedb::table(name = t_enums_tuple)]
+#[spacetimedb::table(accessor = t_enums_tuple)]
 pub struct TEnumsTuple {
     tuple: TEnums,
 }

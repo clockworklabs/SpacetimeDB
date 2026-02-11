@@ -1,6 +1,6 @@
 use spacetimedb::{table, view, Identity, Query, ViewContext};
 
-#[table(name = player_info)]
+#[table(accessor = player_info)]
 struct PlayerInfo {
     #[unique]
     identity: Identity,

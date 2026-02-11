@@ -5,7 +5,7 @@ class Views(Smoketest):
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -41,7 +41,7 @@ class FailPublish(Smoketest):
     MODULE_CODE_BROKEN_NAMESPACE = """
 use spacetimedb::ViewContext;
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
 }
@@ -93,8 +93,8 @@ class SqlViews(Smoketest):
 use spacetimedb::{AnonymousViewContext, ReducerContext, Table, ViewContext};
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
-#[spacetimedb::table(name = player_level)]
+#[spacetimedb::table(accessor = player_state)]
+#[spacetimedb::table(accessor = player_level)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -104,7 +104,7 @@ pub struct PlayerState {
 
 
 #[derive(Clone)]
-#[spacetimedb::table(name = player_info, index(name=age_level_index, btree(columns = [age, level])))]
+#[spacetimedb::table(accessor = player_info, index(name=age_level_index, btree(columns = [age, level])))]
 pub struct PlayerInfo {
     #[primary_key]
     id: u64,
@@ -359,7 +359,7 @@ class AutoMigrateViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -376,7 +376,7 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -431,7 +431,7 @@ class AutoMigrateDropView(Smoketest):
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -447,7 +447,7 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 
     MODULE_CODE_DROP_VIEW = """
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -466,7 +466,7 @@ pub struct PlayerState {
 class AutoMigrateAddView(Smoketest):
     MODULE_CODE = """
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -479,7 +479,7 @@ pub struct PlayerState {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -504,7 +504,7 @@ class AutoMigrateViewsTrapped(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -521,7 +521,7 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -538,7 +538,7 @@ pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -599,7 +599,7 @@ class SubscribeViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     identity: Identity,
@@ -669,7 +669,7 @@ class QueryView(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Query, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: u8,
@@ -677,7 +677,7 @@ pub struct User {
     online: bool,
 }
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     identity: u8,

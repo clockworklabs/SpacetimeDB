@@ -1,6 +1,6 @@
 use spacetimedb::ViewContext;
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
 }

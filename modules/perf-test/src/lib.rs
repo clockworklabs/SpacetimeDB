@@ -1,6 +1,6 @@
 use spacetimedb::{log_stopwatch::LogStopwatch, ReducerContext, Table};
 
-#[spacetimedb::table(name = location, index(name = coordinates, btree(columns = [x, z, dimension])))]
+#[spacetimedb::table(accessor = location, index(name = coordinates, btree(columns = [x, z, dimension])))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Location {
     #[primary_key]
