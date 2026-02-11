@@ -407,7 +407,7 @@ class ModuleHooksImpl implements ModuleHooks {
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
       new Timestamp(timestamp),
       args,
-      this.#dbView
+      () => this.#dbView
     );
   }
 }

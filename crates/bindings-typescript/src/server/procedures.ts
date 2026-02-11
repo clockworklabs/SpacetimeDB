@@ -138,7 +138,7 @@ export function callProcedure(
   connectionId: ConnectionId | null,
   timestamp: Timestamp,
   argsBuf: Uint8Array,
-  dbView: DbView<any>
+  dbView: () => DbView<any>
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
     moduleCtx.procedures[id];
@@ -164,13 +164,13 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #identity: Identity | undefined;
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
-  #dbView: DbView<any>;
+  #dbView: () => DbView<any>;
 
   constructor(
     readonly sender: Identity,
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
-    dbView: DbView<any>
+    dbView: () => DbView<any>
   ) {
     this.#dbView = dbView;
   }
@@ -196,7 +196,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
           this.sender,
           new Timestamp(timestamp),
           this.connectionId,
-          this.#dbView
+          this.#dbView()
         );
         return body(ctx);
       } catch (e) {
