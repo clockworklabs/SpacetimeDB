@@ -33,39 +33,17 @@ import {
   type SubscriptionHandleImpl as __SubscriptionHandleImpl,
 } from 'spacetimedb';
 
-// Import and reexport all reducer arg types
+// Import all reducer arg schemas
 import SetNameReducer from './set_name_reducer';
-export { SetNameReducer };
 import SendMessageReducer from './send_message_reducer';
-export { SendMessageReducer };
-import OnConnectReducer from './on_connect_reducer';
-export { OnConnectReducer };
-import OnDisconnectReducer from './on_disconnect_reducer';
-export { OnDisconnectReducer };
 
-// Import and reexport all procedure arg types
+// Import all procedure arg schemas
 
-// Import and reexport all table handle types
+// Import all table schema definitions
 import MessageRow from './message_table';
-export { MessageRow };
 import UserRow from './user_table';
-export { UserRow };
 
-// Import and reexport all types
-import Init from './init_type';
-export { Init };
-import Message from './message_type';
-export { Message };
-import OnConnect from './on_connect_type';
-export { OnConnect };
-import OnDisconnect from './on_disconnect_type';
-export { OnDisconnect };
-import SendMessage from './send_message_type';
-export { SendMessage };
-import SetName from './set_name_type';
-export { SetName };
-import User from './user_type';
-export { User };
+/** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema(
