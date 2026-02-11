@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
@@ -17,8 +17,8 @@ use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
+use smallvec::SmallVec;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
@@ -26,7 +26,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
-use spacetimedb_schema::relation::FieldName;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
@@ -42,7 +42,7 @@ pub struct StmtResult {
 
 pub(crate) fn collect_result(
     result: &mut Vec<MemTable>,
-    updates: &mut Vec<DatabaseTableUpdate>,
+    updates: &mut SmallVec<[DatabaseTableUpdate; 1]>,
     r: CodeResult,
 ) -> Result<(), DBError> {
     match r {
@@ -74,7 +74,7 @@ fn execute(
     p: &mut DbProgram<'_, '_>,
     ast: Vec<CrudExpr>,
     sql: &str,
-    updates: &mut Vec<DatabaseTableUpdate>,
+    updates: &mut SmallVec<[DatabaseTableUpdate; 1]>,
 ) -> Result<Vec<MemTable>, DBError> {
     let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
         p.db.query_limit(tx)?.map(Duration::from_millis)
@@ -102,7 +102,7 @@ pub fn execute_sql(
     subs: Option<&ModuleSubscriptions>,
 ) -> Result<Vec<MemTable>, DBError> {
     if CrudExpr::is_reads(&ast) {
-        let mut updates = Vec::new();
+        let mut updates = SmallVec::new();
         db.with_read_only(Workload::Sql, |tx| {
             execute(
                 &mut DbProgram::new(db, &mut TxMode::Tx(tx), auth),
@@ -112,7 +112,7 @@ pub fn execute_sql(
             )
         })
     } else if subs.is_none() {
-        let mut updates = Vec::new();
+        let mut updates = SmallVec::new();
         db.with_auto_commit(Workload::Sql, |mut_tx| {
             execute(
                 &mut DbProgram::new(db, &mut mut_tx.into(), auth),
@@ -123,7 +123,7 @@ pub fn execute_sql(
         })
     } else {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
-        let mut updates = Vec::with_capacity(ast.len());
+        let mut updates = SmallVec::with_capacity(ast.len());
         let res = execute(
             &mut DbProgram::new(db, &mut (&mut tx).into(), auth.clone()),
             ast,
@@ -136,7 +136,7 @@ pub fn execute_sql(
                 caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: <_>::default(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
@@ -170,7 +170,7 @@ pub fn execute_sql_tx<'a>(
         return Ok(None);
     }
 
-    let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
+    let mut updates = SmallVec::new(); // No subscription updates in this path, because it requires owning the tx.
     execute(&mut DbProgram::new(db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
@@ -198,7 +198,7 @@ pub async fn run(
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
     module: Option<ModuleHost>,
-    head: &mut Vec<(Box<str>, AlgebraicType)>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     match module {
         Some(module) => module.call_view_sql(db, sql_text, auth, subs, head).await,
@@ -215,7 +215,7 @@ pub(crate) fn run_with_instance<I: WasmInstance>(
     sql_text: String,
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
-    head: &mut Vec<(Box<str>, AlgebraicType)>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<(SqlResult, bool), DBError> {
     run_inner::<I>(Some(instance), db, sql_text, auth, subs, head)
 }
@@ -226,7 +226,7 @@ fn run_inner<I: WasmInstance>(
     sql_text: String,
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
-    head: &mut Vec<(Box<str>, AlgebraicType)>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<(SqlResult, bool), DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
@@ -257,7 +257,7 @@ fn run_inner<I: WasmInstance>(
 
             // Compute the header for the result set
             stmt.for_each_return_field(|col_name, col_type| {
-                head.push((col_name.into(), col_type.clone()));
+                head.push((col_name.clone(), col_type.clone()));
             });
 
             // Evaluate the query
@@ -341,7 +341,7 @@ fn run_inner<I: WasmInstance>(
                 caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: <_>::default(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
@@ -362,16 +362,6 @@ fn run_inner<I: WasmInstance>(
             ))
         }
     }
-}
-
-/// Translates a `FieldName` to the field's name.
-pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
-    Some(
-        tx.get_schema(field.table)?
-            .get_column(field.col.idx())?
-            .col_name
-            .clone(),
-    )
 }
 
 #[cfg(test)]

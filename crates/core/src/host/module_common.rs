@@ -8,7 +8,7 @@ use crate::{
         wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
         Scheduler,
     },
-    module_host_context::ModuleCreationContextLimited,
+    module_host_context::ModuleCreationContext,
     replica_context::ReplicaContext,
 };
 use spacetimedb_lib::{Identity, RawModuleDef};
@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 /// Builds a [`ModuleCommon`] from a [`RawModuleDef`].
 pub fn build_common_module_from_raw(
-    mcc: ModuleCreationContextLimited,
+    mcc: ModuleCreationContext,
     raw_def: RawModuleDef,
 ) -> Result<ModuleCommon, ValidationErrors> {
     // Perform a bunch of validation on the raw definition.

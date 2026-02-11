@@ -26,6 +26,9 @@ public static class GeneratorSnapshotTests
             return new(projectDir, (CSharpCompilation)compilation!);
         }
 
+        public Task Verify(string fileName, object target) =>
+            Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
+
         private static CSharpGeneratorDriver CreateDriver(
             IIncrementalGenerator generator,
             LanguageVersion languageVersion
@@ -41,9 +44,6 @@ public static class GeneratorSnapshotTests
                 parseOptions: new(languageVersion)
             );
         }
-
-        public Task Verify(string fileName, object target) =>
-            Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
 
         private async Task<IEnumerable<SyntaxTree>> RunAndCheckGenerator(
             IIncrementalGenerator generator

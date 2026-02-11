@@ -61,7 +61,7 @@ impl DeletePlan {
     pub(crate) fn compile(delete: TableDelete) -> Self {
         let TableDelete { table, filter } = delete;
         let schema = table.clone();
-        let alias = table.table_name.clone();
+        let alias = table.table_name.clone().into();
         let relvar = RelExpr::RelVar(Relvar {
             schema,
             alias,
@@ -95,7 +95,7 @@ impl UpdatePlan {
     pub(crate) fn compile(update: TableUpdate) -> Self {
         let TableUpdate { table, columns, filter } = update;
         let schema = table.clone();
-        let alias = table.table_name.clone();
+        let alias = table.table_name.clone().into();
         let relvar = RelExpr::RelVar(Relvar {
             schema,
             alias,

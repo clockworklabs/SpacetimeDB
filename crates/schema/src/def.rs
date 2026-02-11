@@ -21,6 +21,7 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
@@ -31,15 +32,15 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
-    Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
-    RawIndexDefV9, RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
+    Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
+    RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
     RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewFnPtr};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
-use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
 
 pub mod deserialize;
 pub mod error;
@@ -48,8 +49,8 @@ pub mod validate;
 /// A map from `Identifier`s to values of type `T`.
 pub type IdentifierMap<T> = HashMap<Identifier, T>;
 
-/// A map from `Box<str>`s to values of type `T`.
-pub type StrMap<T> = HashMap<Box<str>, T>;
+/// A map from `RawIdentifier`s to values of type `T`.
+pub type StrMap<T> = HashMap<RawIdentifier, T>;
 
 // We may eventually want to reorganize this module to look more
 // like the system tables, with numeric IDs used for lookups
@@ -64,6 +65,7 @@ pub type StrMap<T> = HashMap<Box<str>, T>;
 ///
 /// ```rust
 /// use spacetimedb_lib::RawModuleDef;
+/// use spacetimedb_sats::raw_identifier::RawIdentifier;
 /// use spacetimedb_schema::def::{ModuleDef, TableDef, IndexDef, TypeDef, ModuleDefLookup, ScopedTypeName};
 /// use spacetimedb_schema::identifier::Identifier;
 ///
@@ -76,11 +78,11 @@ pub type StrMap<T> = HashMap<Box<str>, T>;
 /// let module_def = ModuleDef::try_from(raw_module_def).expect("valid module def");
 ///
 /// let table_name = Identifier::new("my_table".into()).expect("valid table name");
-/// let index_name = "my_table_my_column_idx_btree";
+/// let index_name: RawIdentifier = "my_table_my_column_idx_btree".into();
 /// let scoped_type_name = ScopedTypeName::try_new([], "MyType").expect("valid scoped type name");
 ///
 /// let table: Option<&TableDef> = module_def.lookup(&table_name);
-/// let index: Option<&IndexDef> = module_def.lookup(index_name);
+/// let index: Option<&IndexDef> = module_def.lookup(&index_name);
 /// let type_def: Option<&TypeDef> = module_def.lookup(&scoped_type_name);
 /// // etc.
 /// ```
@@ -139,6 +141,19 @@ pub struct ModuleDef {
     ///
     /// **Note**: Are only validated syntax-wise.
     row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
+
+    /// Indicates which raw module definition semantics this module
+    /// was authored under.
+    #[allow(unused)]
+    raw_module_def_version: RawModuleDefVersion,
+}
+
+#[derive(Debug, Clone)]
+pub enum RawModuleDefVersion {
+    /// Represents [`RawModuleDefV9`] and earlier.
+    V9OrEarlier,
+    /// Represents [`RawModuleDefV10`].
+    V10,
 }
 
 impl ModuleDef {
@@ -221,7 +236,7 @@ impl ModuleDef {
     /// The `TableDef` an entity in the global namespace is stored in, if any.
     ///
     /// Generally, you will want to use the `lookup` method on the entity type instead.
-    pub fn stored_in_table_def(&self, name: &str) -> Option<&TableDef> {
+    pub fn stored_in_table_def(&self, name: &RawIdentifier) -> Option<&TableDef> {
         self.stored_in_table_def
             .get(name)
             .and_then(|table_name| self.tables.get(table_name))
@@ -376,6 +391,7 @@ impl TryFrom<RawModuleDef> for ModuleDef {
         match raw {
             RawModuleDef::V8BackCompat(v8_mod) => Self::try_from(v8_mod),
             RawModuleDef::V9(v9_mod) => Self::try_from(v9_mod),
+            RawModuleDef::V10(v10_mod) => Self::try_from(v10_mod),
             _ => unimplemented!(),
         }
     }
@@ -410,21 +426,45 @@ impl From<ModuleDef> for RawModuleDefV9 {
             refmap: _,
             row_level_security_raw,
             procedures,
+            raw_module_def_version: _,
         } = val;
+
+        // Extract column defaults from tables before consuming tables
+        let column_defaults: Vec<_> = tables
+            .iter()
+            .flat_map(|(table_name, table_def)| {
+                table_def.columns.iter().enumerate().filter_map(|(col_id, col)| {
+                    col.default_value.as_ref().map(|default_val| {
+                        RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {
+                            table: table_name.clone().into(),
+                            col_id: ColId(col_id as u16),
+                            value: spacetimedb_sats::bsatn::to_vec(default_val).unwrap().into(),
+                        })
+                    })
+                })
+            })
+            .collect();
 
         RawModuleDefV9 {
             tables: to_raw(tables),
             reducers: reducers.into_iter().map(|(_, def)| def.into()).collect(),
             types: to_raw(types),
-            // TODO: Do we need to include default values here?
-            misc_exports: procedures
+            misc_exports: column_defaults
                 .into_iter()
-                .map(|(_, def)| def.into())
+                .chain(procedures.into_iter().map(|(_, def)| def.into()))
                 .chain(views.into_iter().map(|(_, def)| def.into()))
                 .collect(),
             typespace,
             row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
+    }
+}
+
+impl TryFrom<raw_def::v10::RawModuleDefV10> for ModuleDef {
+    type Error = ValidationErrors;
+
+    fn try_from(v10_mod: raw_def::v10::RawModuleDefV10) -> Result<Self, Self::Error> {
+        validate::v10::validate(v10_mod)
     }
 }
 
@@ -571,7 +611,7 @@ impl From<ViewDef> for TableDef {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
     /// The name of the sequence. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -617,7 +657,7 @@ impl From<SequenceDef> for RawSequenceDefV9 {
 #[non_exhaustive]
 pub struct IndexDef {
     /// The name of the index. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -662,7 +702,7 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
-    /// Implemented using a rust `std::collections::HashMap`.
+    /// Implemented using a rust `HashMap`.
     Hash(HashAlgorithm),
     /// Implemented using `DirectUniqueIndex`.
     Direct(DirectAlgorithm),
@@ -901,7 +941,7 @@ pub struct ViewParamDef {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConstraintDef {
     /// The name of the constraint. Unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// The data for the constraint.
     pub data: ConstraintData,
@@ -1019,7 +1059,7 @@ impl fmt::Display for FunctionKind {
 #[non_exhaustive]
 pub struct ScheduleDef {
     /// The name of the schedule. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: Identifier,
 
     /// The name of the column that stores the desired invocation time.
     ///
@@ -1041,7 +1081,7 @@ pub struct ScheduleDef {
 impl From<ScheduleDef> for RawScheduleDefV9 {
     fn from(val: ScheduleDef) -> Self {
         RawScheduleDefV9 {
-            name: Some(val.name),
+            name: Some(val.name.into()),
             reducer_name: val.function_name.into(),
             scheduled_at_column: val.at_column,
         }
@@ -1163,7 +1203,7 @@ impl TryFrom<RawScopedTypeNameV9> for ScopedTypeName {
 impl From<ScopedTypeName> for RawScopedTypeNameV9 {
     fn from(val: ScopedTypeName) -> Self {
         RawScopedTypeNameV9 {
-            scope: val.scope.into_vec().into_iter().map_into().collect(),
+            scope: val.scope.into_vec().into_iter().map(|id| id.into()).collect(),
             name: val.name.into(),
         }
     }
@@ -1272,12 +1312,41 @@ impl From<ViewDef> for RawMiscModuleExportV9 {
     }
 }
 
+/// The visibility of a function (reducer or procedure).
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum FunctionVisibility {
+    /// Not callable by arbitrary clients.
+    ///
+    /// Still callable by the module owner, collaborators,
+    /// and internal module code.
+    Private,
+
+    /// Callable from client code.
+    ClientCallable,
+}
+
+impl FunctionVisibility {
+    pub fn is_private(&self) -> bool {
+        matches!(self, FunctionVisibility::Private)
+    }
+}
+
+use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawFunctionVisibility;
+impl From<RawFunctionVisibility> for FunctionVisibility {
+    fn from(val: RawFunctionVisibility) -> Self {
+        match val {
+            RawFunctionVisibility::Private => FunctionVisibility::Private,
+            RawFunctionVisibility::ClientCallable => FunctionVisibility::ClientCallable,
+        }
+    }
+}
+
 /// A reducer exported by the module.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReducerDef {
     /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
-    pub name: Identifier,
+    pub name: ReducerName,
 
     /// The parameters of the reducer.
     ///
@@ -1291,6 +1360,15 @@ pub struct ReducerDef {
 
     /// The special role of this reducer in the module lifecycle, if any.
     pub lifecycle: Option<Lifecycle>,
+
+    /// The visibility of this reducer.
+    pub visibility: FunctionVisibility,
+
+    /// The return type of the reducer on success.
+    pub ok_return_type: AlgebraicType,
+
+    /// The return type of the reducer on error.
+    pub err_return_type: AlgebraicType,
 }
 
 impl From<ReducerDef> for RawReducerDefV9 {
@@ -1332,6 +1410,9 @@ pub struct ProcedureDef {
     /// If this is a non-special compound type, it should be registered in the module's `TypespaceForGenerate`
     /// and indirected through an [`AlgebraicTypeUse::Ref`].
     pub return_type_for_generate: AlgebraicTypeUse,
+
+    /// The visibility of this procedure.
+    pub visibility: FunctionVisibility,
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {
@@ -1363,7 +1444,7 @@ impl ModuleDefLookup for TableDef {
 }
 
 impl ModuleDefLookup for SequenceDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -1375,7 +1456,7 @@ impl ModuleDefLookup for SequenceDef {
 }
 
 impl ModuleDefLookup for IndexDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -1439,7 +1520,7 @@ impl ModuleDefLookup for ViewParamDef {
 }
 
 impl ModuleDefLookup for ConstraintDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -1463,15 +1544,15 @@ impl ModuleDefLookup for RawRowLevelSecurityDefV9 {
 }
 
 impl ModuleDefLookup for ScheduleDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a Identifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        let schedule = module_def.stored_in_table_def(key)?.schedule.as_ref()?;
-        if &schedule.name[..] == key {
+        let schedule = module_def.stored_in_table_def(key.as_raw())?.schedule.as_ref()?;
+        if &schedule.name == key {
             Some(schedule)
         } else {
             None
@@ -1492,13 +1573,14 @@ impl ModuleDefLookup for TypeDef {
 }
 
 impl ModuleDefLookup for ReducerDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a ReducerName;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        let key = &**key;
         module_def.reducers.get(key)
     }
 }
