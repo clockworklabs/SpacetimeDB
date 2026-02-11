@@ -11,25 +11,25 @@ namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class OneOffTable
+    public sealed partial class SingleTableRows
     {
-        [DataMember(Name = "table_name")]
-        public string TableName;
+        [DataMember(Name = "table")]
+        public string Table;
         [DataMember(Name = "rows")]
         public BsatnRowList Rows;
 
-        public OneOffTable(
-            string TableName,
+        public SingleTableRows(
+            string Table,
             BsatnRowList Rows
         )
         {
-            this.TableName = TableName;
+            this.Table = Table;
             this.Rows = Rows;
         }
 
-        public OneOffTable()
+        public SingleTableRows()
         {
-            this.TableName = "";
+            this.Table = "";
             this.Rows = new();
         }
     }

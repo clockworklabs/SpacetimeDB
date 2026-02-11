@@ -8,9 +8,9 @@ using System;
 namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
-    public partial record UpdateStatus : SpacetimeDB.TaggedEnum<(
-        DatabaseUpdate Committed,
-        string Failed,
-        SpacetimeDB.Unit OutOfEnergy
-    )>;
+    public enum UnsubscribeFlags
+    {
+        Default,
+        SendDroppedRows,
+    }
 }

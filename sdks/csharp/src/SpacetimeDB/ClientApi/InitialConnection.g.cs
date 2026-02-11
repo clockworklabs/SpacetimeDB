@@ -11,27 +11,27 @@ namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class IdentityToken
+    public sealed partial class InitialConnection
     {
         [DataMember(Name = "identity")]
         public SpacetimeDB.Identity Identity;
-        [DataMember(Name = "token")]
-        public string Token;
         [DataMember(Name = "connection_id")]
         public SpacetimeDB.ConnectionId ConnectionId;
+        [DataMember(Name = "token")]
+        public string Token;
 
-        public IdentityToken(
+        public InitialConnection(
             SpacetimeDB.Identity Identity,
-            string Token,
-            SpacetimeDB.ConnectionId ConnectionId
+            SpacetimeDB.ConnectionId ConnectionId,
+            string Token
         )
         {
             this.Identity = Identity;
-            this.Token = Token;
             this.ConnectionId = ConnectionId;
+            this.Token = Token;
         }
 
-        public IdentityToken()
+        public InitialConnection()
         {
             this.Token = "";
         }

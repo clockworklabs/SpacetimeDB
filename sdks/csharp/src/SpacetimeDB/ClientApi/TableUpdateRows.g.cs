@@ -8,11 +8,8 @@ using System;
 namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
-    public partial record ClientMessage : SpacetimeDB.TaggedEnum<(
-        Subscribe Subscribe,
-        Unsubscribe Unsubscribe,
-        OneOffQuery OneOffQuery,
-        CallReducer CallReducer,
-        CallProcedure CallProcedure
+    public partial record TableUpdateRows : SpacetimeDB.TaggedEnum<(
+        PersistentTableRows PersistentTable,
+        EventTableRows EventTable
     )>;
 }

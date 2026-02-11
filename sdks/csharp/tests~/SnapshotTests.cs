@@ -1,6 +1,8 @@
 namespace SpacetimeDB.Tests;
 
 using System.IO.Compression;
+using System.Reflection;
+using System.Threading;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 using SpacetimeDB.Types;
@@ -96,7 +98,7 @@ public class SnapshotTests
         }
     }
 
-    private static ServerMessage.IdentityToken SampleId(string identity, string token, string address) =>
+    private static ServerMessage.InitialConnection SampleId(string identity, string token, string address) =>
         new(new()
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
@@ -104,106 +106,116 @@ public class SnapshotTests
             ConnectionId = ConnectionId.From(Convert.FromBase64String(address)) ?? throw new InvalidDataException("address")
         });
 
-    private static ServerMessage.InitialSubscription SampleLegacyInitialSubscription(
+    private static ServerMessage.SubscribeApplied SampleSubscribeApplied(
         uint requestId,
-        long hostExecutionDuration,
-        List<TableUpdate> updates
+        uint querySetId,
+        List<SingleTableRows> tables
     ) => new(new()
     {
         RequestId = requestId,
-        TotalHostExecutionDuration = new TimeDuration(hostExecutionDuration),
-        DatabaseUpdate = new DatabaseUpdate
+        QuerySetId = new(querySetId),
+        Rows = new QueryRows
         {
-            Tables = updates
+            Tables = tables
         }
     });
 
-    private static ServerMessage.SubscribeMultiApplied SampleSubscribeApplied(
+    private static ServerMessage.UnsubscribeApplied SampleUnsubscribeApplied(
         uint requestId,
-        uint queryId,
-        ulong hostExecutionDuration,
-        TableUpdate tableUpdate
+        uint querySetId,
+        List<SingleTableRows>? tables
     ) => new(new()
     {
         RequestId = requestId,
-        QueryId = new(queryId),
-        TotalHostExecutionDurationMicros = hostExecutionDuration,
-        Update = new(new List<TableUpdate> { tableUpdate })
-    });
-
-    private static ServerMessage.UnsubscribeMultiApplied SampleUnsubscribeApplied(
-        uint requestId,
-        uint queryId,
-        ulong hostExecutionDuration,
-        TableUpdate tableUpdate
-    ) => new(new()
-    {
-        RequestId = requestId,
-        TotalHostExecutionDurationMicros = hostExecutionDuration,
-        QueryId = new(queryId),
-        Update = new(new List<TableUpdate> { tableUpdate })
+        QuerySetId = new(querySetId),
+        Rows = tables == null ? null : new QueryRows { Tables = tables }
     });
 
     private static ServerMessage.SubscriptionError SampleSubscriptionError(
         uint? requestId,
-        uint? queryId,
-        uint? tableId,
-        string error,
-        ulong hostExecutionDuration
+        uint querySetId,
+        string error
     ) => new(new()
     {
         RequestId = requestId,
-        QueryId = queryId,
-        TableId = tableId,
+        QuerySetId = new(querySetId),
         Error = error,
-        TotalHostExecutionDurationMicros = hostExecutionDuration,
     });
 
     private static ServerMessage.TransactionUpdate SampleTransactionUpdate(
-        long microsecondsSinceUnixEpoch,
-        string callerIdentity,
-        string callerConnectionId,
-        uint requestId,
-        string reducerName,
-        ulong energyQuantaUsed,
-        long hostExecutionDurationMicros,
-        List<TableUpdate> updates,
-        byte[]? args
+        uint querySetId,
+        List<TableUpdate> updates
     ) => new(new()
     {
-        Timestamp = new Timestamp { MicrosecondsSinceUnixEpoch = microsecondsSinceUnixEpoch },
-        CallerIdentity = Identity.From(Convert.FromBase64String(callerIdentity)),
-        CallerConnectionId = ConnectionId.From(Convert.FromBase64String(callerConnectionId)) ?? throw new InvalidDataException("callerConnectionId"),
-        TotalHostExecutionDuration = new TimeDuration(hostExecutionDurationMicros),
-        EnergyQuantaUsed = new()
+        QuerySets = new()
         {
-            Quanta = new U128(0, energyQuantaUsed),
+            new QuerySetUpdate
+            {
+                QuerySetId = new(querySetId),
+                Tables = updates
+            }
         },
-        ReducerCall = new()
+    });
+
+    private static ServerMessage.ReducerResult SampleReducerResultOk(
+        uint requestId,
+        long timestampMicros,
+        TransactionUpdate update
+    ) => new(new()
+    {
+        RequestId = requestId,
+        Timestamp = new Timestamp(timestampMicros),
+        Result = new ReducerOutcome.Ok(new ReducerOk
         {
-            RequestId = requestId,
-            ReducerName = reducerName,
-            Args = [.. (args ?? [])]
-        },
-        Status = new UpdateStatus.Committed(new()
-        {
-            Tables = updates
-        })
+            RetValue = [],
+            TransactionUpdate = update
+        }),
+    });
+
+    private static ServerMessage.ReducerResult SampleReducerResultErr(
+        uint requestId,
+        long timestampMicros,
+        string error
+    ) => new(new()
+    {
+        RequestId = requestId,
+        Timestamp = new Timestamp(timestampMicros),
+        Result = new ReducerOutcome.Err(EncodeBsatnString(error)),
+    });
+
+    private static ServerMessage.ReducerResult SampleReducerResultInternalError(
+        uint requestId,
+        long timestampMicros,
+        string error
+    ) => new(new()
+    {
+        RequestId = requestId,
+        Timestamp = new Timestamp(timestampMicros),
+        Result = new ReducerOutcome.InternalError(error),
     });
 
     private static TableUpdate SampleUpdate<T>(
-        uint tableId,
         string tableName,
         List<T> inserts,
         List<T> deletes
     ) where T : IStructuralReadWrite => new()
     {
-        TableId = tableId,
         TableName = tableName,
-        NumRows = (ulong)(inserts.Count + deletes.Count),
-        Updates = [new CompressableQueryUpdate.Uncompressed(new QueryUpdate(
-            EncodeRowList<T>(deletes), EncodeRowList<T>(inserts)))]
+        Rows =
+        [
+            new TableUpdateRows.PersistentTable(new PersistentTableRows(
+                EncodeRowList<T>(inserts),
+                EncodeRowList<T>(deletes)
+            ))
+        ]
     };
+
+    private static SingleTableRows SampleRows<T>(string tableName, List<T> rows)
+        where T : IStructuralReadWrite => new()
+        {
+            Table = tableName,
+            Rows = EncodeRowList(rows)
+        };
 
     private static BsatnRowList EncodeRowList<T>(in List<T> list) where T : IStructuralReadWrite
     {
@@ -230,22 +242,36 @@ public class SnapshotTests
         return o.ToArray();
     }
 
-    private static readonly uint USER_TABLE_ID = 4097;
+    private static List<byte> EncodeBsatnString(string value)
+    {
+        var o = new MemoryStream();
+        var w = new BinaryWriter(o);
+        new SpacetimeDB.BSATN.String().Write(w, value);
+        return [.. o.ToArray()];
+    }
+
     private static readonly string USER_TABLE_NAME = "user";
-    private static readonly uint MESSAGE_TABLE_ID = 4098;
     private static readonly string MESSAGE_TABLE_NAME = "message";
 
 
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
-        SampleUpdate(USER_TABLE_ID, USER_TABLE_NAME, [new User
+        SampleUpdate(USER_TABLE_NAME, [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = name,
             Online = online
         }], []);
 
+    private static SingleTableRows SampleUserRows(string identity, string? name, bool online) =>
+        SampleRows(USER_TABLE_NAME, [new User
+        {
+            Identity = Identity.From(Convert.FromBase64String(identity)),
+            Name = name,
+            Online = online
+        }]);
+
     private static TableUpdate SampleUserUpdate(string identity, string? oldName, string? newName, bool oldOnline, bool newOnline) =>
-        SampleUpdate(USER_TABLE_ID, USER_TABLE_NAME, [new User
+        SampleUpdate(USER_TABLE_NAME, [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = newName,
@@ -266,10 +292,10 @@ public class SnapshotTests
     };
 
     private static TableUpdate SampleMessageInsert(List<Message> messages) =>
-        SampleUpdate(MESSAGE_TABLE_ID, MESSAGE_TABLE_NAME, messages, []);
+        SampleUpdate(MESSAGE_TABLE_NAME, messages, []);
 
-    private static TableUpdate SampleMessageDelete(List<Message> messages) =>
-        SampleUpdate(MESSAGE_TABLE_ID, MESSAGE_TABLE_NAME, [], messages);
+    private static SingleTableRows SampleMessageRows(List<Message> messages) =>
+        SampleRows(MESSAGE_TABLE_NAME, messages);
 
     public static IEnumerable<object[]> SampleDump()
     {
@@ -285,62 +311,31 @@ public class SnapshotTests
                 "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwNDgzMTUyZDY0MmM3ZDQwMmRlMDZjYWNjMzZkY2IwYzJhMWYyYmJlYjhlN2Q1YTY3M2YyNDM1Y2NhOTc1Iiwic3ViIjoiNmQ0YjU0MzAtMDBjZi00YTk5LTkzMmMtYWQyZDA3YmFiODQxIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTczNzY2NTc2OSwiZXhwIjpudWxsfQ.GaKhvswWYW6wpPpK70_-Tw8DKjKJ2qnidwwj1fTUf3mctcsm_UusPYSws_pSW3qGnMNnGjEXt7rRNvGvuWf9ow",
                 "Vd4dFzcEzhLHJ6uNL8VXFg=="
             ),
-            SampleLegacyInitialSubscription(
-                1, 366, [SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)]
-            ),
-            SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "unknown-reducer", 0, 40, [
-SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
-                ], null
-            ),
-            SampleTransactionUpdate(
-                1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "identity_connected", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
-                null
-            ),
-            SampleTransactionUpdate(
-                1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-                1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
-                Encode(new Reducer.SetName { Name = "A" })
-            ),
-            SampleTransactionUpdate(
-                1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                1, "send_message", 2779615, 57, [SampleMessageInsert([
-                    sampleMessage0
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Hello, A!" })
-            ),
-            SampleTransactionUpdate(
-                1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
-                Encode(new Reducer.SetName { Name = "B" })
-            ),
-            SampleTransactionUpdate(
-                1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-                2, "send_message", 2677615, 40, [SampleMessageInsert([
-                    sampleMessage1
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Hello, B!" })
-            ),
-            SampleTransactionUpdate(
-                1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                3, "send_message", 2636615, 28, [SampleMessageInsert([
-                    sampleMessage2
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
-            ),
-            SampleTransactionUpdate(
-                1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "identity_disconnected", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
-                null
-            ),
-            SampleTransactionUpdate(
-                1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-                3, "send_message", 2636615, 34, [SampleMessageInsert([
-                    sampleMessage3
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
-            ),
+            SampleSubscribeApplied(1, 1, [
+                SampleUserRows("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true),
+                SampleMessageRows([])
+            ]),
+            SampleTransactionUpdate(1, [
+                SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
+            ]),
+            SampleTransactionUpdate(1, [
+                SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)
+            ]),
+            SampleReducerResultOk(1, 1718487768057579, SampleTransactionUpdate(1, [
+                SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)
+            ]).TransactionUpdate_),
+            SampleReducerResultErr(2, 1718487770000000, "name cannot be empty"),
+            SampleReducerResultInternalError(3, 1718487771000000, "internal reducer failure"),
+            SampleTransactionUpdate(1, [
+                SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)
+            ]),
+            SampleTransactionUpdate(1, [SampleMessageInsert([sampleMessage0])]),
+            SampleTransactionUpdate(1, [SampleMessageInsert([sampleMessage1])]),
+            SampleTransactionUpdate(1, [SampleMessageInsert([sampleMessage2])]),
+            SampleTransactionUpdate(1, [
+                SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)
+            ]),
+            SampleTransactionUpdate(1, [SampleMessageInsert([sampleMessage3])]),
             }
         };
         yield return new object[] { "SubscribeApplied",
@@ -350,72 +345,30 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
                 "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwNDgzMTUyZDY0MmM3ZDQwMmRlMDZjYWNjMzZkY2IwYzJhMWYyYmJlYjhlN2Q1YTY3M2YyNDM1Y2NhOTc1Iiwic3ViIjoiNmQ0YjU0MzAtMDBjZi00YTk5LTkzMmMtYWQyZDA3YmFiODQxIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTczNzY2NTc2OSwiZXhwIjpudWxsfQ.GaKhvswWYW6wpPpK70_-Tw8DKjKJ2qnidwwj1fTUf3mctcsm_UusPYSws_pSW3qGnMNnGjEXt7rRNvGvuWf9ow",
                 "Vd4dFzcEzhLHJ6uNL8VXFg=="
             ),
-            SampleSubscribeApplied(
-                1, 1, 366, SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
-            ),
-            SampleSubscribeApplied(
-                1, 2, 277, SampleUpdate<Message>(MESSAGE_TABLE_ID, MESSAGE_TABLE_NAME, [], [])
-            ),
-            SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "unknown-reducer", 0, 40, [
-                    SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
-                ], null
-            ),
-            SampleTransactionUpdate(
-                1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "identity_connected", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
-                null
-            ),
-            SampleTransactionUpdate(
-                1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-                1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
-                Encode(new Reducer.SetName { Name = "A" })
-            ),
-            SampleTransactionUpdate(
-                1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                1, "send_message", 2779615, 57, [SampleMessageInsert([
-                    sampleMessage0
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Hello, A!" })
-            ),
-            SampleTransactionUpdate(
-                1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
-                Encode(new Reducer.SetName { Name = "B" })
-            ),
-            SampleTransactionUpdate(
-                1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-                2, "send_message", 2677615, 40, [SampleMessageInsert([
-                    sampleMessage1
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Hello, B!" })
-            ),
-            SampleTransactionUpdate(
-                1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                3, "send_message", 2636615, 28, [SampleMessageInsert([
-                    sampleMessage2
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
-            ),
-            SampleTransactionUpdate(
-                1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "identity_disconnected", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
-                null
-            ),
-            SampleTransactionUpdate(
-                1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-                3, "send_message", 2636615, 34, [SampleMessageInsert([
-                    sampleMessage3
-                ])],
-                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
-            ),
+            SampleSubscribeApplied(1, 1, [
+                SampleUserRows("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true),
+            ]),
+            SampleSubscribeApplied(2, 2, [
+                SampleMessageRows([])
+            ]),
+            SampleTransactionUpdate(1, [SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)]),
+            SampleTransactionUpdate(1, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)]),
+            SampleReducerResultOk(1, 1718487768057579, SampleTransactionUpdate(1, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)]).TransactionUpdate_),
+            SampleReducerResultErr(2, 1718487770000000, "name cannot be empty"),
+            SampleTransactionUpdate(1, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)]),
+            SampleTransactionUpdate(2, [SampleMessageInsert([sampleMessage0])]),
+            SampleTransactionUpdate(2, [SampleMessageInsert([sampleMessage1])]),
+            SampleTransactionUpdate(2, [SampleMessageInsert([sampleMessage2])]),
+            SampleTransactionUpdate(1, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)]),
+            SampleTransactionUpdate(2, [SampleMessageInsert([sampleMessage3])]),
             // Let's pretend the user unsubscribed from the table Messages...
-            SampleUnsubscribeApplied(0,
-            2, 55, SampleMessageDelete([sampleMessage0, sampleMessage1, sampleMessage2, sampleMessage3])),
-            // Tried to resubscribe unsuccessfully...
-            SampleSubscriptionError(0, 3, MESSAGE_TABLE_ID, "bad query dude", 69),
+            SampleUnsubscribeApplied(3, 2, [SampleMessageRows([sampleMessage0, sampleMessage1, sampleMessage2, sampleMessage3])]),
+            // Subscription failed during recompilation after being applied.
+            SampleSubscriptionError(null, 4, "bad query dude"),
             // Then successfully resubscribed.
-            SampleSubscribeApplied(0, 4, 53, SampleMessageInsert([sampleMessage0, sampleMessage1, sampleMessage2, sampleMessage3]))
+            SampleSubscribeApplied(4, 4, [SampleMessageRows([sampleMessage0, sampleMessage1, sampleMessage2, sampleMessage3])]),
+            // Unsubscribe without requesting dropped rows.
+            SampleUnsubscribeApplied(5, 4, null)
             }
         };
 
@@ -438,6 +391,32 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
             .OnConnect((conn, identity, token) => events.Add("OnConnect", new { identity, token }))
             .Build();
 
+        // Snapshot tests inject raw server messages directly, so there is no real outgoing reducer call
+        // to populate DbConnectionBase.pendingReducerCalls. Without priming this map, a v2 ReducerResult
+        // is treated as unknown request_id and exercises the strict error path instead of reducer callbacks.
+        // We use reflection to seed the internal correlation state for deterministic reducer-result coverage.
+        static void PrimePendingReducerCall(DbConnection client, uint requestId, string reducerName, List<byte> reducerArgs)
+        {
+            var baseType = client.GetType().BaseType ?? throw new InvalidOperationException("DbConnection has no base type.");
+            var pendingCallsField = baseType.GetField("pendingReducerCalls", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Failed to find pendingReducerCalls field.");
+            var pendingCallsObj = pendingCallsField.GetValue(client)
+                ?? throw new InvalidOperationException("pendingReducerCalls is null.");
+            var pendingCallType = pendingCallsObj.GetType().GetGenericArguments()[1];
+            var pendingCall = Activator.CreateInstance(pendingCallType)
+                ?? throw new InvalidOperationException("Failed to construct PendingReducerCall.");
+            pendingCallType.GetField("ReducerName", BindingFlags.Instance | BindingFlags.Public)?.SetValue(pendingCall, reducerName);
+            pendingCallType.GetField("ReducerArgs", BindingFlags.Instance | BindingFlags.Public)?.SetValue(pendingCall, reducerArgs);
+
+            var tryAdd = pendingCallsObj.GetType().GetMethod("TryAdd")
+                ?? throw new InvalidOperationException("Failed to find TryAdd on pendingReducerCalls.");
+            var added = (bool)(tryAdd.Invoke(pendingCallsObj, [requestId, pendingCall]) ?? false);
+            if (!added)
+            {
+                throw new InvalidOperationException($"Failed to prime pending reducer call for request_id={requestId}");
+            }
+        }
+
         // But for proper testing we need to convert it back to raw binary messages as if it was received over network.
         var sampleDumpBinary = sampleDumpParsed.Select(
             (message, i) =>
@@ -445,15 +424,40 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
                 // Start tracking requests in the stats handler so that those request IDs can later be found.
                 switch (message)
                 {
-                    case ServerMessage.InitialSubscription(var _):
-                        client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
-                        break;
                     case ServerMessage.SubscribeApplied(var _):
                         client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
                         break;
-                    case ServerMessage.TransactionUpdate(var _):
-                        client.stats.ReducerRequestTracker.StartTrackingRequest($"sample#{i}");
+                    case ServerMessage.UnsubscribeApplied(var _):
+                        client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
                         break;
+                    case ServerMessage.SubscriptionError(var s) when s.RequestId.HasValue:
+                        client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
+                        break;
+                    case ServerMessage.ReducerResult(var reducerResult):
+                        {
+                            // Keep stats request IDs aligned with synthetic reducer results so tracker snapshots
+                            // and correlation behavior match what happens in real client/server traffic.
+                            var started = client.stats.ReducerRequestTracker.StartTrackingRequest($"sample#{i}");
+                            if (started != reducerResult.RequestId)
+                            {
+                                throw new InvalidOperationException(
+                                    $"Reducer request_id mismatch in sample dump. expected={reducerResult.RequestId}, started={started}"
+                                );
+                            }
+                            if (reducerResult.RequestId == 1)
+                            {
+                                PrimePendingReducerCall(client, reducerResult.RequestId, "SetName", [.. Encode(new Reducer.SetName { Name = "A" })]);
+                            }
+                            else if (reducerResult.RequestId == 2)
+                            {
+                                PrimePendingReducerCall(client, reducerResult.RequestId, "SetName", [.. Encode(new Reducer.SetName { Name = "" })]);
+                            }
+                            else if (reducerResult.RequestId == 3)
+                            {
+                                PrimePendingReducerCall(client, reducerResult.RequestId, "SendMessage", [.. Encode(new Reducer.SendMessage { Text = "internal" })]);
+                            }
+                            break;
+                        }
                 }
                 using var output = new MemoryStream();
                 output.WriteByte(1); // Write compression tag.
@@ -465,10 +469,6 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
                 return output.ToArray();
             }
         );
-
-        client.Reducers.OnSendMessage += (eventContext, _text) =>
-            events.Add("OnSendMessage", eventContext);
-        client.Reducers.OnSetName += (eventContext, _name) => events.Add("OnSetName", eventContext);
 
         client.Db.User.OnDelete += (eventContext, user) =>
             events.Add("OnDeleteUser", new { eventContext, user });
@@ -489,6 +489,10 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
             events.Add("OnDeleteMessage", new { eventContext, message });
         client.Db.Message.OnInsert += (eventContext, message) =>
             events.Add("OnInsertMessage", new { eventContext, message });
+        client.Reducers.OnSetName += (eventContext, name) =>
+            events.Add("OnSetName", new { eventContext, name });
+        client.Reducers.OnSendMessage += (eventContext, text) =>
+            events.Add("OnSendMessage", new { eventContext, text });
 
         // Simulate receiving WebSocket messages.
         foreach (var sample in sampleDumpBinary)
@@ -496,10 +500,20 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
             client.OnMessageReceived(sample, DateTime.UtcNow);
             // Wait for this message to be picked up by the background thread, preprocessed and stored in the preprocessed queue.
             // Otherwise we'll get inconsistent output order between test reruns.
-            while (!client.HasMessageToApply) { }
+            var deadline = DateTime.UtcNow.AddSeconds(2);
+            while (!client.HasMessageToApply)
+            {
+                if (DateTime.UtcNow >= deadline)
+                {
+                    throw new TimeoutException("Timed out waiting for parsed message to be queued.");
+                }
+                Thread.Sleep(1);
+            }
             // Once the message is in the preprocessed queue, we can invoke Update() to handle events on the main thread.
             client.FrameTick();
         }
+
+        client.Disconnect();
 
         // Verify dumped events and the final client state.
         events.Freeze();
@@ -521,7 +535,6 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
                 new TimestampConverter(),
                 new EnergyQuantaConverter()
             ]))
-            .ScrubMember<TransactionUpdate>(x => x.Status)
             .ScrubMember<EventContext>(x => x.Db)
             .ScrubMember<EventContext>(x => x.Reducers);
     }

@@ -11,17 +11,17 @@ namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class QueryId
+    public sealed partial class QuerySetId
     {
         [DataMember(Name = "id")]
         public uint Id;
 
-        public QueryId(uint Id)
+        public QuerySetId(uint Id)
         {
             this.Id = Id;
         }
 
-        public QueryId()
+        public QuerySetId()
         {
         }
     }
