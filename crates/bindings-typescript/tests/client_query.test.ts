@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, expectTypeOf, assertType } from 'vitest';
 import { Identity } from '../src/lib/identity';
 import { and, not, or, toSql } from '../src/lib/query';
 import { tables } from '../test-app/src/module_bindings';
@@ -261,5 +261,67 @@ describe('ClientQuery.toSql', () => {
     expect(sql).toBe(
       `SELECT "unindexed_player".* FROM "player" JOIN "unindexed_player" ON "unindexed_player"."id" = "player"."id" WHERE ("player"."id" = 42) AND ("unindexed_player"."name" = 'Gadget')`
     );
+  });
+});
+
+// Type-level tests: verify query builder expressions expose toSql() and are
+// compatible with useTable's parameter type ({ toSql(): string } & Record<string, any>).
+// These use assertType which causes a *compile-time* failure if the types are wrong.
+describe('useTable type compatibility', () => {
+  type UseTableQuery = { toSql(): string } & Record<string, any>;
+
+  it('table ref (bare table) is assignable to useTable query param', () => {
+    assertType<UseTableQuery>(tables.player);
+  });
+
+  it('.where() result is assignable to useTable query param', () => {
+    assertType<UseTableQuery>(tables.player.where(r => r.name.eq('Hello')));
+  });
+
+  it('chained .where() result is assignable to useTable query param', () => {
+    assertType<UseTableQuery>(
+      tables.player.where(r => r.name.eq('Hello')).where(r => r.id.eq(1))
+    );
+  });
+
+  it('rightSemijoin result is assignable to useTable query param', () => {
+    assertType<UseTableQuery>(
+      tables.player.rightSemijoin(tables.unindexedPlayer, (p, o) =>
+        o.id.eq(p.id)
+      )
+    );
+  });
+
+  it('leftSemijoin result is assignable to useTable query param', () => {
+    assertType<UseTableQuery>(
+      tables.player.leftSemijoin(tables.unindexedPlayer, (p, o) =>
+        o.id.eq(p.id)
+      )
+    );
+  });
+
+  it('semijoin with .where() is assignable to useTable query param', () => {
+    assertType<UseTableQuery>(
+      tables.player
+        .rightSemijoin(tables.unindexedPlayer, (p, o) => o.id.eq(p.id))
+        .where(r => r.name.eq('test'))
+    );
+  });
+
+  it('table ref exposes toSql() returning string', () => {
+    const sql: string = tables.player.toSql();
+    expect(typeof sql).toBe('string');
+  });
+
+  it('.where() result exposes toSql() returning string', () => {
+    const sql: string = tables.player.where(r => r.name.eq('x')).toSql();
+    expect(typeof sql).toBe('string');
+  });
+
+  it('semijoin result exposes toSql() returning string', () => {
+    const sql: string = tables.player
+      .rightSemijoin(tables.unindexedPlayer, (p, o) => o.id.eq(p.id))
+      .toSql();
+    expect(typeof sql).toBe('string');
   });
 });

@@ -30,6 +30,7 @@
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "test": "vitest run",
+    "test:typecheck": "vitest typecheck --run",
     "coverage": "vitest run --coverage",
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",

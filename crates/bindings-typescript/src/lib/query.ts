@@ -59,6 +59,7 @@ type From<TableDef extends TypedTableDef> = RowTypedQuery<
   TableDef['rowType']
 > &
   Readonly<{
+    toSql(): string;
     where(
       predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
     ): From<TableDef>;
@@ -86,6 +87,7 @@ type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
   TableDef['rowType']
 > &
   Readonly<{
+    toSql(): string;
     where(
       predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
     ): SemijoinBuilder<TableDef>;

@@ -278,7 +278,7 @@ export const hooks: ModuleHooks = {
     );
     return writer.getBuffer();
   },
-  __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
+  __call_reducer__(reducerId: number, sender: bigint, connId: bigint, timestamp: bigint, argsBuf: DataView) {
     const moduleCtx = getRegisteredSchema();
     if (reducerArgsDeserializers == null) {
       reducerArgsDeserializers = moduleCtx.moduleDef.reducers.map(
@@ -315,7 +315,7 @@ export const hooks: ModuleHooks = {
       throw e;
     }
   },
-  __call_view__(id, sender, argsBuf) {
+  __call_view__(id: number, sender: bigint, argsBuf: Uint8Array) {
     const moduleCtx = getRegisteredSchema();
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.views[id];
@@ -339,7 +339,7 @@ export const hooks: ModuleHooks = {
     }
     return { data: retBuf.getBuffer() };
   },
-  __call_view_anon__(id, argsBuf) {
+  __call_view_anon__(id: number, argsBuf: Uint8Array) {
     const moduleCtx = getRegisteredSchema();
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.anonViews[id];
@@ -362,7 +362,7 @@ export const hooks: ModuleHooks = {
     }
     return { data: retBuf.getBuffer() };
   },
-  __call_procedure__(id, sender, connection_id, timestamp, args) {
+  __call_procedure__(id: number, sender: bigint, connection_id: bigint, timestamp: bigint, args: Uint8Array) {
     return callProcedure(
       getRegisteredSchema(),
       id,
