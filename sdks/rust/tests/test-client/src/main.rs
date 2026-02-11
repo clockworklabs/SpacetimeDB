@@ -1865,7 +1865,7 @@ fn exec_subscribe_all_select_star() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             }
         })
-        .on_error(|_, _| panic!("Subscription error"))
+        .on_error(|_, e| panic!("Subscription error: {e:?}"))
         .subscribe_to_all_tables();
 
     test_counter.wait_for_all();

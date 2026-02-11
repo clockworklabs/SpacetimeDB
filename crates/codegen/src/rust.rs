@@ -1513,6 +1513,15 @@ type QueryBuilder = __sdk::QueryBuilder;
                 },
                 "}\n",
             );
+            out.delimited_block(
+                "const ALL_TABLE_NAMES: &'static [&'static str] = &[",
+                |out| {
+                    for (table_name, _) in iter_table_names_and_types(module) {
+                        writeln!(out, "\"{table_name}\",");
+                    }
+                },
+                "];\n",
+            );
         },
         "}\n",
     );
