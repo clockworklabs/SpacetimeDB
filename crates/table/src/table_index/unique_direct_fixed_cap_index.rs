@@ -1,5 +1,5 @@
 use super::index::{Index, RangedIndex};
-use super::uniquemap::UniquePointIter;
+use super::unique_btree_index::UniquePointIter;
 use super::unique_direct_index::{expose, injest, ToFromUsize, NONE_PTR};
 use crate::indexes::RowPointer;
 use crate::table_index::KeySize;

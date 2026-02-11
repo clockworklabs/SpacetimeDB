@@ -1,5 +1,5 @@
+use super::unique_btree_index::UniquePointIter;
 use super::{Index, KeySize};
-use crate::table_index::uniquemap::UniquePointIter;
 use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
 use core::hash::Hash;
 use spacetimedb_data_structures::map::hash_map::Entry;

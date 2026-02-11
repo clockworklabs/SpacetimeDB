@@ -1,6 +1,6 @@
 use super::index::{Despecialize, Index, RangedIndex};
-use super::uniquemap::UniquePointIter;
-use super::{BtreeUniqueIndex, KeySize};
+use super::key_size::KeySize;
+use super::unique_btree_index::{UniqueBTreeIndex as UniqueBtreeIndex, UniquePointIter};
 use crate::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
 use core::marker::PhantomData;
 use core::mem;
@@ -361,8 +361,8 @@ impl Iterator for UniqueDirectIndexRangeIter<'_> {
 
 impl<K: KeySize + Ord + ToFromUsize> UniqueDirectIndex<K> {
     /// Convert this Direct index into a B-Tree index.
-    pub fn into_btree(&self) -> BtreeUniqueIndex<K> {
-        let mut new_index: BtreeUniqueIndex<K> = <_>::default();
+    pub fn into_btree(&self) -> UniqueBtreeIndex<K> {
+        let mut new_index: UniqueBtreeIndex<K> = <_>::default();
 
         for (key_outer, inner) in self.outer.iter().enumerate() {
             let Some(inner) = inner else {
