@@ -116,6 +116,7 @@ pub fn cli() -> clap::Command {
             Arg::new("include_private")
                 .long("include-private")
                 .action(SetTrue)
+                .default_value("false")
                 .help("Include private tables and functions in generated code (types are always included)."),
         )
         .arg(common_args::yes())
