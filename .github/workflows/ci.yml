@@ -91,6 +91,15 @@ jobs:
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
 
+      - name: Install emscripten (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
@@ -140,7 +149,7 @@ jobs:
         # It also seemed to improve performance a fair amount (11m -> 6m)
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
+          if [ -f ~/emsdk/emsdk_env.sh ]; then
             source ~/emsdk/emsdk_env.sh
           fi
           cargo ci smoketests -- --test-threads=1
