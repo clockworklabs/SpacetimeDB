@@ -1,5 +1,6 @@
+import { AlgebraicType } from '../lib/algebraic_type';
+import FunctionVisibility from '../lib/autogen/function_visibility_type';
 import Lifecycle from '../lib/autogen/lifecycle_type';
-import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
 import type {
   ParamsAsObject,
   ParamsObj,
@@ -30,7 +31,7 @@ export function pushReducer(
   name: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof RawReducerDefV9>['lifecycle']
+  lifecycle?: Infer<typeof Lifecycle>
 ): void {
   ctx.defineFunction(name);
 
@@ -44,12 +45,24 @@ export function pushReducer(
 
   const ref = ctx.registerTypesRecursively(params);
   const paramsType = ctx.resolveType(ref).value;
+  const isLifecycle = lifecycle != null;
 
   ctx.moduleDef.reducers.push({
-    name,
+    sourceName: name,
     params: paramsType,
-    lifecycle, // <- lifecycle flag lands here
+    //ModuleDef validation code is responsible to mark private reducers
+    visibility: FunctionVisibility.ClientCallable,
+    //Hardcoded for now - reducers do not return values yet
+    okReturnType: AlgebraicType.Product({ elements: [] }),
+    errReturnType: AlgebraicType.String,
   });
+
+  if (isLifecycle) {
+    ctx.moduleDef.lifeCycleReducers.push({
+      lifecycleSpec: lifecycle,
+      functionName: name,
+    });
+  }
 
   // If the function isn't named (e.g. `function foobar() {}`), give it the same
   // name as the reducer so that it's clear what it is in in backtraces.

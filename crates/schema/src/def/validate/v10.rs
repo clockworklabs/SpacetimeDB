@@ -156,8 +156,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .combine_errors()
         .and_then(
             |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
-                let (mut reducers, procedures, views) = check_function_names_are_unique(reducers, procedures, views)?;
-
+                let (mut reducers, mut procedures, views) =
+                    check_function_names_are_unique(reducers, procedures, views)?;
                 // Attach lifecycles to their respective reducers
                 attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
 
@@ -165,11 +165,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
+                change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
 
                 Ok((tables, types, reducers, procedures, views))
             },
         );
-
     let CoreValidator {
         stored_in_table_def,
         typespace_for_generate,
@@ -203,6 +203,50 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         procedures,
         raw_module_def_version: RawModuleDefVersion::V10,
     })
+}
+
+/// Change the visibility of scheduled functions and lifecycle reducers to Internal.
+///
+fn change_scheduled_functions_and_lifetimes_visibility(
+    tables: &HashMap<Identifier, TableDef>,
+    reducers: &mut IndexMap<Identifier, ReducerDef>,
+    procedures: &mut IndexMap<Identifier, ProcedureDef>,
+) -> Result<()> {
+    for sched_def in tables.iter().filter_map(|(_, t)| t.schedule.as_ref()) {
+        match sched_def.function_kind {
+            FunctionKind::Reducer => {
+                let def = reducers.get_mut(&sched_def.function_name).ok_or_else(|| {
+                    ValidationError::MissingScheduledFunction {
+                        schedule: sched_def.name.clone(),
+                        function: sched_def.function_name.clone(),
+                    }
+                })?;
+
+                def.visibility = crate::def::FunctionVisibility::Private;
+            }
+
+            FunctionKind::Procedure => {
+                let def = procedures.get_mut(&sched_def.function_name).ok_or_else(|| {
+                    ValidationError::MissingScheduledFunction {
+                        schedule: sched_def.name.clone(),
+                        function: sched_def.function_name.clone(),
+                    }
+                })?;
+
+                def.visibility = crate::def::FunctionVisibility::Private;
+            }
+
+            FunctionKind::Unknown => {}
+        }
+    }
+
+    for red_def in reducers.iter_mut().map(|(_, r)| r) {
+        if red_def.lifecycle.is_some() {
+            red_def.visibility = crate::def::FunctionVisibility::Private;
+        }
+    }
+
+    Ok(())
 }
 
 struct ModuleValidatorV10<'a> {
