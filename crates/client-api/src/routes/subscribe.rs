@@ -1312,11 +1312,15 @@ async fn ws_encode_task(
             }
             OutboundWsMessage::Message(message) => {
                 if config.version == WsVersion::V2 {
+                    let (workload, num_rows) = match &message {
+                        OutboundMessage::V2(_) => (message.workload(), message.num_rows()),
+                        OutboundMessage::V1(_) => (None, None),
+                    };
                     match message {
                         OutboundMessage::V2(server_message) => {
                             let (stats, in_use, mut frames) =
                                 ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
-                            metrics.report(None, None, stats);
+                            metrics.report(workload, num_rows, stats);
                             if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
                                 break;
                             }

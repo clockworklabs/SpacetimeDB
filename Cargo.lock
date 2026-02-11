@@ -1678,6 +1678,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 
 [[package]]
+name = "deno_core_icudata"
+version = "0.77.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9efff8990a82c1ae664292507e1a5c6749ddd2312898cdf9cd7cb1fd4bc64c6"
+
+[[package]]
 name = "deranged"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7394,6 +7400,7 @@ dependencies = [
  "serial_test",
  "smallvec",
  "spacetimedb-client-api",
+ "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-datastore",
@@ -7680,6 +7687,7 @@ dependencies = [
  "criterion",
  "crossbeam-channel",
  "crossbeam-queue",
+ "deno_core_icudata",
  "derive_more 0.99.20",
  "dirs 5.0.1",
  "enum-as-inner",

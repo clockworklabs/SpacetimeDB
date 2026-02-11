@@ -30,7 +30,7 @@ you MUST rebuild before running tests:
 cargo smoketest
 
 # Option 2: Manually rebuild, then run tests directly
-cargo build -p spacetimedb-cli -p spacetimedb-standalone
+cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests
 cargo nextest run -p spacetimedb-smoketests
 ```
 
@@ -54,7 +54,7 @@ Pre-building avoids this entirely.
 Standard `cargo test` also works, but you must rebuild first:
 
 ```bash
-cargo build -p spacetimedb-cli -p spacetimedb-standalone
+cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests
 cargo test -p spacetimedb-smoketests
 ```
 
