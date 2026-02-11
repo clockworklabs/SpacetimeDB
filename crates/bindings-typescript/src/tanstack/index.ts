@@ -13,5 +13,14 @@ export {
 export * from '../react/SpacetimeDBProvider';
 export { useSpacetimeDB } from '../react/useSpacetimeDB';
 export { useReducer } from '../react/useReducer';
-export { where, eq, and, or, isEq, isAnd, isOr } from '../react/useTable';
-export { type Expr, type ColumnsFromRow } from '../lib/filter';
+export {
+  where,
+  eq,
+  and,
+  or,
+  isEq,
+  isAnd,
+  isOr,
+  type Expr,
+  type ColumnsFromRow,
+} from '../lib/filter';
