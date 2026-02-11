@@ -19,6 +19,7 @@ pub enum BoolExpr<T> {
     Lte(Operand<T>, Operand<T>),
     And(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
     Or(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
+    Not(Box<BoolExpr<T>>),
 }
 
 impl<T> BoolExpr<T> {
@@ -28,6 +29,10 @@ impl<T> BoolExpr<T> {
 
     pub fn or(self, other: BoolExpr<T>) -> BoolExpr<T> {
         BoolExpr::Or(Box::new(self), Box::new(other))
+    }
+
+    pub fn not(self) -> BoolExpr<T> {
+        BoolExpr::Not(Box::new(self))
     }
 }
 
@@ -62,6 +67,7 @@ pub fn format_expr<T>(expr: &BoolExpr<T>) -> String {
         BoolExpr::Lte(l, r) => format!("({} <= {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::And(a, b) => format!("({} AND {})", format_expr(a), format_expr(b)),
         BoolExpr::Or(a, b) => format!("({} OR {})", format_expr(a), format_expr(b)),
+        BoolExpr::Not(inner) => format!("(NOT {})", format_expr(inner)),
     }
 }
 

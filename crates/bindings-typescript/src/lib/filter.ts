@@ -1,3 +1,5 @@
+/** @deprecated Use the query builder API instead. This module is deprecated and will be removed in a future version. */
+
 import type { RowType, UntypedTableDef } from './table';
 import { Uuid } from './uuid';
 

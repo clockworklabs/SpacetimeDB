@@ -46,6 +46,26 @@ impl ViewArgs {
     }
 }
 
+/// If `ty` is `impl Query<T>`, returns `Some(T)`. Otherwise `None`.
+fn extract_impl_query_inner(ty: &syn::Type) -> Option<&syn::Type> {
+    if let syn::Type::ImplTrait(impl_trait) = ty {
+        for bound in &impl_trait.bounds {
+            if let syn::TypeParamBound::Trait(trait_bound) = bound {
+                if let Some(seg) = trait_bound.path.segments.last() {
+                    if seg.ident == "Query" {
+                        if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                            if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                                return Some(inner);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
     let vis = &original_function.vis;
     let func_name = &original_function.sig.ident;
@@ -137,7 +157,61 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         }
     };
 
+    let original_attrs = &original_function.attrs;
+    let original_body = &original_function.block;
+
+    // Detect `impl Query<T>` return type and extract `T`.
+    let impl_query_inner = extract_impl_query_inner(ret_ty);
+
+    // When the return type is `impl Query<T>`:
+    //   - Rewrite the function to return `RawQuery<T>`
+    //   - Wrap the body: `RawQuery::new(Query::into_sql({ body }))`
+    //   - Use `RawQuery<T>` for SpacetimeType/ViewReturn assertions
+    // When the return type is `RawQuery<T>` (concrete query struct):
+    //   - Wrap with `.into()` so builder types auto-convert
+    // Otherwise (Vec<T>, Option<T>):
+    //   - Emit unchanged to preserve type inference
+    let (emitted_fn, effective_ret_ty) = if let Some(inner_ty) = impl_query_inner {
+        let original_sig = &original_function.sig;
+        // Build a new signature with the return type replaced
+        let mut new_sig = original_sig.clone();
+        new_sig.output = syn::parse_quote!(-> spacetimedb::RawQuery<#inner_ty>);
+        let effective_ty: syn::Type = syn::parse_quote!(spacetimedb::RawQuery<#inner_ty>);
+        (
+            quote! {
+                #(#original_attrs)*
+                #new_sig {
+                    spacetimedb::RawQuery::new(
+                        Query::into_sql(#original_body)
+                    )
+                }
+            },
+            effective_ty,
+        )
+    } else {
+        let original_sig = &original_function.sig;
+        let returns_raw_query =
+            matches!(ret_ty, syn::Type::Path(p) if p.path.segments.last().map_or(false, |s| s.ident == "RawQuery"));
+        let emitted_body = if returns_raw_query {
+            quote! { { ::core::convert::Into::into(#original_body) } }
+        } else {
+            quote! { #original_body }
+        };
+        (
+            quote! {
+                #(#original_attrs)*
+                #original_sig
+                    #emitted_body
+            },
+            ret_ty.clone(),
+        )
+    };
+
+    let eff_ret_ty = &effective_ret_ty;
+
     Ok(quote! {
+        #emitted_fn
+
         const _: () = { #generated_describe_function };
 
         #[allow(non_camel_case_types)]
@@ -146,7 +220,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         const _: () = {
             fn _assert_args #lt_params () #lt_where_clause {
                 let _ = <#ctx_ty as spacetimedb::rt::ViewContextArg>::_ITEM;
-                let _ = <#ret_ty as spacetimedb::rt::ViewReturn>::_ITEM;
+                let _ = <#eff_ret_ty as spacetimedb::rt::ViewReturn>::_ITEM;
             }
         };
 
@@ -183,7 +257,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
             fn return_type(
                 ts: &mut impl spacetimedb::sats::typespace::TypespaceBuilder
             ) -> Option<spacetimedb::sats::AlgebraicType> {
-                Some(<#ret_ty as spacetimedb::SpacetimeType>::make_type(ts))
+                Some(<#eff_ret_ty as spacetimedb::SpacetimeType>::make_type(ts))
             }
         }
     })

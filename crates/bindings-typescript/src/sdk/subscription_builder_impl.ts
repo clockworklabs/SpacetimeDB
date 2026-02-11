@@ -85,12 +85,23 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
     query_sql: Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
+    queryFn: (tables: RemoteModule['tables'][number]) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
+  ): SubscriptionHandleImpl<RemoteModule>;
+  subscribe(
     query_sql:
       | string
       | RowTypedQuery<any, any>
       | Array<string | RowTypedQuery<any, any>>
+      | ((tables: any) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[])
   ): SubscriptionHandleImpl<RemoteModule> {
-    const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
+    let queries: Array<string | RowTypedQuery<any, any>>;
+    if (typeof query_sql === 'function') {
+      const tablesMap = this.db.getTablesMap?.();
+      const result = query_sql(tablesMap);
+      queries = Array.isArray(result) ? result : [result];
+    } else {
+      queries = Array.isArray(query_sql) ? query_sql : [query_sql];
+    }
     if (queries.length === 0) {
       throw new Error('Subscriptions must have at least one query');
     }

@@ -243,6 +243,14 @@ describe('TableScan.toSql', () => {
     );
   });
 
+  it('basic where ne', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.orders.where(o => o.item_name.ne('Gadget')).build());
+    expect(sql).toBe(
+      `SELECT * FROM "orders" WHERE "orders"."item_name" <> 'Gadget'`
+    );
+  });
+
   it('basic where lt', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(qb.orders.where(o => o.item_name.lt('Gadget')).build());
@@ -295,6 +303,42 @@ describe('TableScan.toSql', () => {
     );
   });
 
+  it('method-style chaining with .and()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      from(qb.person)
+        .where(row => row.age.gt(20).and(row.age.lt(30)))
+        .build()
+    );
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE ("person"."age" > 20) AND ("person"."age" < 30)`
+    );
+  });
+
+  it('method-style chaining with .or()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      from(qb.person)
+        .where(row => row.name.eq('Carol').or(row.name.eq('Dave')))
+        .build()
+    );
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE ("person"."name" = 'Carol') OR ("person"."name" = 'Dave')`
+    );
+  });
+
+  it('method-style chaining with .not()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      from(qb.person)
+        .where(row => row.name.eq('Bob').not())
+        .build()
+    );
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE NOT ("person"."name" = 'Bob')`
+    );
+  });
+
   it('semijoin with filters on both sides', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
@@ -307,5 +351,17 @@ describe('TableScan.toSql', () => {
     expect(sql).toBe(
       `SELECT "orders".* FROM "person" JOIN "orders" ON "person"."id" = "orders"."person_id" WHERE ("person"."age" = 42) AND ("orders"."item_name" = 'Gadget')`
     );
+  });
+
+  it('passes builder directly to toSql() without .build()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person.where(row => row.age.eq(42)));
+    expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."age" = 42`);
+  });
+
+  it('passes table ref directly to toSql() without .build()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person);
+    expect(sql).toBe('SELECT * FROM "person"');
   });
 });
