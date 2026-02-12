@@ -14,7 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="1.12.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="2.0.*" />
   </ItemGroup>
 
 </Project>

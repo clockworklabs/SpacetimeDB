@@ -1257,7 +1257,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnectionBuilder* WithUri(const FString& InUri);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-    UDbConnectionBuilder* WithModuleName(const FString& InName);
+    UDbConnectionBuilder* WithDatabaseName(const FString& InName);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnectionBuilder* WithToken(const FString& InToken);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")

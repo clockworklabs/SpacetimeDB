@@ -26,7 +26,7 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 
 const connectionBuilder = DbConnection.builder()
   .withUri(HOST)
-  .withModuleName(DB_NAME)
+  .withDatabaseName(DB_NAME)
   .withToken(localStorage.getItem('auth_token') || undefined)
   .onConnect(onConnect)
   .onDisconnect(onDisconnect)

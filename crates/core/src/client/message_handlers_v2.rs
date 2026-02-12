@@ -7,6 +7,7 @@ use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::{bsatn, Timestamp};
 use spacetimedb_primitives::ReducerId;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use std::time::Instant;
 
 pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Instant) -> Result<(), MessageHandleError> {
@@ -33,7 +34,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     };
     let sub_metrics = record_metrics(WorkloadType::Subscribe);
     let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
-    type HandleResult<'a> = Result<(), (Option<&'a Box<str>>, Option<ReducerId>, anyhow::Error)>;
+    type HandleResult<'a> = Result<(), (Option<&'a RawIdentifier>, Option<ReducerId>, anyhow::Error)>;
     let res: HandleResult<'_> = match message {
         ws_v2::ClientMessage::Subscribe(subscribe) => {
             let res = client.subscribe_v2(subscribe, timer).await.map(sub_metrics);

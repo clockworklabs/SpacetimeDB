@@ -189,13 +189,26 @@ export default defineConfig([
         '(globalThis.window=globalThis.window||globalThis));',
     },
     treeshake: {
-      moduleSideEffects: [
-        'src/server/polyfills.ts',
-        'src/server/register_hooks.ts',
-      ],
+      moduleSideEffects: ['src/server/polyfills.ts'],
     },
     external: ['undici', /^spacetime:sys.*$/],
     noExternal: ['base64-js', 'fast-text-encoding', 'statuses', 'pure-rand'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // TanStack subpath (SSR-friendly): dist/tanstack/index.{mjs,cjs}
+  {
+    entry: { index: 'src/tanstack/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/tanstack',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['react', '@tanstack/react-query'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },

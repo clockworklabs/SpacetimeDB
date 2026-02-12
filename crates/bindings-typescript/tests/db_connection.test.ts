@@ -64,7 +64,7 @@ describe('DbConnection', () => {
     let connectCalled = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(() => {
         return Promise.reject(new Error('Failed to connect'));
       })
@@ -90,7 +90,7 @@ describe('DbConnection', () => {
     let called = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {
         called = true;
@@ -118,7 +118,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -255,7 +255,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -300,7 +300,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -354,7 +354,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -445,7 +445,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .build();
     await client['wsPromise'];

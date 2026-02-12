@@ -10,8 +10,9 @@ export const User = table({
 });
 
 const spacetimedb = schema(User);
+export default spacetimedb;
 
-spacetimedb.reducer('insertUser', { id: t.i32(), name: t.string(), age: t.i32(), active: t.bool() },
+export const insertUser = spacetimedb.reducer( { id: t.i32(), name: t.string(), age: t.i32(), active: t.bool() },
   (ctx, { id, name, age, active }) => {
     ctx.db.user.insert({ id, name, age, active });
   }
