@@ -210,14 +210,15 @@ SPACETIMEDB_ENUM(PlayerStatus, Active, Inactive);
 import { schema } from 'spacetimedb/server';
 
 const spacetimedb = schema(player);
+export default spacetimedb;
 
 // Basic reducer
-spacetimedb.reducer('create_player', { username: t.string() }, (ctx, { username }) => {
+export const create_player = spacetimedb.reducer({ username: t.string() }, (ctx, { username }) => {
   ctx.db.player.insert({ id: 0n, username, score: 0 });
 });
 
 // With error handling
-spacetimedb.reducer('update_score', { id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
+export const update_score = spacetimedb.reducer({ id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
   const player = ctx.db.player.id.find(id);
   if (!player) throw new Error('Player not found');
   player.score += points;
@@ -331,11 +332,11 @@ ctx.db[player_id].delete_by_key((uint64_t)123);                 // Delete by pri
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.init(ctx => { /* ... */ });
+export const init = spacetimedb.init(ctx => { /* ... */ });
 
-spacetimedb.clientConnected(ctx => { /* ... */ });
+export const onConnect = spacetimedb.clientConnected(ctx => { /* ... */ });
 
-spacetimedb.clientDisconnected(ctx => { /* ... */ });
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => { /* ... */ });
 ```
 
 </TabItem>
@@ -397,7 +398,7 @@ const reminder = table(
   }
 );
 
-spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (ctx, { arg }) => {
   console.log(`Reminder: ${arg.message}`);
 });
 ```
@@ -472,8 +473,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder reminder) {
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.procedure(
-  'fetch_data',
+export const fetch_data = spacetimedb.procedure(
   { url: t.string() },
   t.string(),
   (ctx, { url }) => {
@@ -582,18 +582,18 @@ SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string
 
 ```typescript
 // Return single row
-spacetimedb.view('my_player', {}, t.option(player.rowType), ctx => {
+export const my_player = spacetimedb.view({ name: 'my_player' }, {}, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
 // Return potentially multiple rows
-spacetimedb.view('top_players', {}, t.array(player.rowType), ctx => {
+export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-spacetimedb.view('bottom_players', {}, t.array(player.rowType), ctx => {
+export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
 ```

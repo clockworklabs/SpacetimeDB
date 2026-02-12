@@ -1,6 +1,7 @@
 //! Minimal C++ code generation for SpacetimeDB module definitions.
 //! Generates only schema definitions - framework provides all functionality.
 
+use crate::CodegenOptions;
 use crate::Lang;
 use crate::OutputFile;
 use spacetimedb_lib::sats::layout::PrimitiveType;
@@ -557,7 +558,7 @@ impl Lang for Cpp<'_> {
         }
     }
 
-    fn generate_global_files(&self, _module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, _module: &ModuleDef, _options: &CodegenOptions) -> Vec<OutputFile> {
         vec![]
     }
 }

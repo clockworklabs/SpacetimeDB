@@ -4,7 +4,7 @@
     "module": "ESNext",
 
     "strict": true,
-    "declaration": true,
+    "declaration": false,
     "emitDeclarationOnly": false,
     "noEmit": true,
     "skipLibCheck": true,
