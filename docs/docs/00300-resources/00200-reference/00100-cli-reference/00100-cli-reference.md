@@ -233,7 +233,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 * `--module-bindings-path <MODULE-BINDINGS-PATH>` — The path to the module bindings directory relative to the project directory, defaults to `<project-path>/src/module_bindings`
 
   Default value: `src/module_bindings`
-* `--module-project-path <MODULE-PROJECT-PATH>` — The path to the SpacetimeDB server module project relative to the project directory, defaults to `<project-path>/spacetimedb`
+* `--module-path <MODULE-PATH>` — The path to the SpacetimeDB server module project relative to the project directory, defaults to `<project-path>/spacetimedb`
 
   Default value: `spacetimedb`
 * `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project.
