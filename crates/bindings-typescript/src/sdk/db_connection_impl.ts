@@ -52,7 +52,6 @@ import { fromByteArray } from 'base64-js';
 import type {
   ReducerEventInfo,
   ReducersView,
-  SetReducerFlags,
   SubscriptionEventCallback,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
@@ -81,11 +80,6 @@ export type {
 };
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
-export type CallReducerFlags = 'Default';
-
-function callReducerFlagsToNumber(_flags: CallReducerFlags): number {
-  return 0;
-}
 
 export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   uri: URL;
@@ -132,13 +126,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   reducers: ReducersView<RemoteModule>;
 
   /**
-   * The accessor field to access functions related to setting flags on
-   * reducers regarding how the server should handle the reducer call and
-   * the events that it sends back to the client.
-   */
-  setReducerFlags: SetReducerFlags<RemoteModule>;
-
-  /**
    * The accessor field to access the procedures in the database.
    */
   procedures: ProceduresView<RemoteModule>;
@@ -155,7 +142,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #messageQueue = Promise.resolve();
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
-  #callReducerFlags = new Map<string, CallReducerFlags>();
   #reducerCallbacks = new Map<
     number,
     (result: ReducerResultMessage['result']) => void
@@ -242,7 +228,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.clientCache = new ClientCache<RemoteModule>();
     this.db = this.#makeDbView(remoteModule);
     this.reducers = this.#makeReducers(remoteModule);
-    this.setReducerFlags = this.#makeSetReducerFlags(remoteModule);
     this.procedures = this.#makeProcedures(remoteModule);
 
     this.wsPromise = createWSFn({
@@ -314,30 +299,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#reducerArgsSerializers[reducerName];
 
       (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
-        const flags = this.#callReducerFlags.get(reducerName) ?? 'Default';
         const writer = new BinaryWriter(1024);
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
-        return this.callReducer(reducerName, argsBuffer, flags);
+        return this.callReducer(reducerName, argsBuffer);
       };
     }
 
     return out as ReducersView<RemoteModule>;
-  }
-
-  #makeSetReducerFlags(defs: RemoteModule): SetReducerFlags<RemoteModule> {
-    const out = Object.create(null) as SetReducerFlags<RemoteModule>;
-    for (const r of defs.reducers) {
-      const key = toCamelCase(r.name);
-      Object.defineProperty(out, key, {
-        enumerable: true,
-        configurable: false,
-        value: (flags: CallReducerFlags) => {
-          this.#callReducerFlags.set(r.name, flags);
-        },
-      });
-    }
-    return out;
   }
 
   #makeProcedures(def: RemoteModule): ProceduresView<RemoteModule> {
@@ -377,7 +346,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return {
       db: this.db,
       reducers: this.reducers,
-      setReducerFlags: this.setReducerFlags,
       isActive: this.isActive,
       subscriptionBuilder: this.subscriptionBuilder.bind(this),
       disconnect: this.disconnect.bind(this),
@@ -750,18 +718,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * @param reducerName The name of the reducer to call
    * @param argsSerializer The arguments to pass to the reducer
    */
-  callReducer(
-    reducerName: string,
-    argsBuffer: Uint8Array,
-    flags: CallReducerFlags
-  ): Promise<void> {
+  callReducer(reducerName: string, argsBuffer: Uint8Array): Promise<void> {
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
       args: argsBuffer,
       requestId,
-      flags: callReducerFlagsToNumber(flags),
+      flags: 0,
     });
     this.#sendMessage(message);
     this.#reducerCallbacks.set(requestId, result => {
@@ -784,13 +748,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     reducerName: string,
     // TODO: remove
     _paramsType: ProductType,
-    params: object,
-    flags: CallReducerFlags
+    params: object
   ): Promise<void> {
     const writer = new BinaryWriter(1024);
     this.#reducerArgsSerializers[reducerName].serialize(writer, params);
     const argsBuffer = writer.getBuffer();
-    return this.callReducer(reducerName, argsBuffer, flags);
+    return this.callReducer(reducerName, argsBuffer);
   }
 
   /**
