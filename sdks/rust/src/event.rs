@@ -22,7 +22,6 @@ pub enum Event<R> {
     /// ran to completion in the remote module and its mutations were committed.
     ///
     /// This event is passed to row callbacks resulting from modifications by the reducer.
-    // TODO(ws-v2): remove
     Reducer(ReducerEvent<R>),
 
     /// Event when one of our subscriptions is applied.

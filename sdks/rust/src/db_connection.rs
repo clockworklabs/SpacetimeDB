@@ -1105,8 +1105,7 @@ async fn parse_loop<M: SpacetimeModule>(
                 timestamp,
             }) => {
                 match result {
-                    // TODO(ws-v2): ParsedMessage::ReducerOutcome
-                    ws::v2::ReducerOutcome::Okmpty => ParsedMessage::ReducerResult {
+                    ws::v2::ReducerOutcome::OkEmpty => ParsedMessage::ReducerResult {
                         request_id,
                         timestamp,
                         result: Ok(Ok(M::DbUpdate::default())),
