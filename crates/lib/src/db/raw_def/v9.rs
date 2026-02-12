@@ -1075,8 +1075,8 @@ impl From<RawIndexDefV10> for RawIndexDefV9 {
     fn from(raw: RawIndexDefV10) -> Self {
         RawIndexDefV9 {
             accessor_name: raw.source_name,
-            name: raw.name,
             algorithm: raw.algorithm,
+            name: None,
         }
     }
 }

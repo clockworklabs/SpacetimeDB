@@ -744,7 +744,6 @@ mod tests {
         let schedule_at_type = builder.add_type::<ScheduleAt>();
 
         let red_delicious = AlgebraicValue::Sum(SumValue::new(2, ()));
-        let none = Option::<&str>::None;
 
         builder
             .build_table_with_new_type(
@@ -757,10 +756,10 @@ mod tests {
                 ]),
                 true,
             )
-            .with_index(btree([1, 2]), "apples_id", none)
-            .with_index(direct(2), "Apples_count_direct", none)
+            .with_index(btree([1, 2]), "apples_id")
+            .with_index(direct(2), "Apples_count_direct")
             .with_unique_constraint(2)
-            .with_index(btree(3), "Apples_type_btree", none)
+            .with_index(btree(3), "Apples_type_btree")
             .with_unique_constraint(3)
             .with_default_column_value(2, AlgebraicValue::U16(37))
             .with_default_column_value(3, red_delicious.clone())
@@ -784,8 +783,8 @@ mod tests {
             .with_unique_constraint(ColId(0))
             .with_primary_key(0)
             .with_access(TableAccess::Private)
-            .with_index(btree(0), "bananas_count", none)
-            .with_index(btree([0, 1, 2]), "bananas_count_id_name", none)
+            .with_index(btree(0), "bananas_count")
+            .with_index(btree([0, 1, 2]), "bananas_count_id_name")
             .finish();
 
         let deliveries_product_type = builder
@@ -799,7 +798,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(btree(2), "scheduled_id_index", none)
+            .with_index(btree(2), "scheduled_id_index")
             .with_type(TableType::System)
             .finish();
 
@@ -1071,7 +1070,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_index(btree([0, 55]), "bananas_a_b", Option::<&str>::None)
+            .with_index(btree([0, 55]), "bananas_a_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1150,7 +1149,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_index(btree([0, 0]), "bananas_b_b", None::<&str>)
+            .with_index(btree([0, 0]), "bananas_b_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1232,7 +1231,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 true,
             )
-            .with_index(hash(0), "bananas_b", None::<&str>)
+            .with_index(hash(0), "bananas_b")
             .finish();
         let def: ModuleDef = builder.finish().try_into().unwrap();
         let indexes = def.indexes().collect::<Vec<_>>();
@@ -1270,7 +1269,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::I32), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_index(direct(0), "bananas_b", None::<&str>)
+            .with_index(direct(0), "bananas_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1385,7 +1384,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(btree(2), "scheduled_id_index", None::<&str>)
+            .with_index(btree(2), "scheduled_id_index")
             .with_type(TableType::System)
             .finish();
 
@@ -1413,7 +1412,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(direct(2), "scheduled_id_idx", None::<&str>)
+            .with_index(direct(2), "scheduled_id_idx")
             .with_type(TableType::System)
             .finish();
 
@@ -1446,8 +1445,8 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(direct(2), "scheduled_id_index", None::<&str>)
-            .with_index(btree([0, 2]), "nice_index_name", None::<&str>)
+            .with_index(direct(2), "scheduled_id_index")
+            .with_index(btree([0, 2]), "nice_index_name")
             .with_type(TableType::System)
             .finish();
 

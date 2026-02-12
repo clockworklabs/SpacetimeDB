@@ -1099,7 +1099,9 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             RawModuleDefVersion::V9OrEarlier => accessor_name.map(identifier).transpose(),
 
             // In V10, `name` is used both for internal purpose and client codefen.
-            RawModuleDefVersion::V10 => identifier(name.clone()).map(Some),
+            RawModuleDefVersion::V10 => {
+                identifier(generate_index_name(&self.raw_name, self.product_type, &algorithm_raw)).map(Some)
+            }
         };
 
         let name = self.add_to_global_namespace(name);

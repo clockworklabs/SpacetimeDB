@@ -106,16 +106,23 @@ pub enum CaseConversionPolicy {
     PascalCase,
 }
 
+
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
 #[non_exhaustive]
-pub struct ExplicitNameEntry {
-    /// The original name as written in the raw module definition.
-    source_name: RawIdentifier,
+pub struct NameMapping {
+    pub source_name: RawIdentifier,
+    pub canonical_name: RawIdentifier,
+}
 
-    /// The canonical name after applying case conversion.
-    canonical_name: RawIdentifier,
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub enum ExplicitNameEntry {
+    Table(NameMapping),
+    Function(NameMapping)
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -123,29 +130,44 @@ pub struct ExplicitNameEntry {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
 #[non_exhaustive]
 pub struct ExplicitNames {
-    tables: Vec<ExplicitNameEntry>,
-    funcs: Vec<ExplicitNameEntry>,
+    entries: Vec<ExplicitNameEntry>,
 }
 
 impl ExplicitNames {
-    pub fn insert_table(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
-        self.tables.push(ExplicitNameEntry {
-            source_name: source_name.into(),
-            canonical_name: canonical_name.into(),
-        });
+    fn insert(
+        &mut self,
+        entry: ExplicitNameEntry,
+    ) {
+        self.entries.push(entry);
     }
-    pub fn insert_function(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
-        self.funcs.push(ExplicitNameEntry {
+
+    pub fn insert_table(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        canonical_name: impl Into<RawIdentifier>,
+    ) {
+        self.insert(ExplicitNameEntry::Table(NameMapping {
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
-        });
+        }));
+    }
+
+    pub fn insert_function(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        canonical_name: impl Into<RawIdentifier>,
+    ) {
+        self.insert(ExplicitNameEntry::Function(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
     }
 
     pub fn merge(&mut self, other: ExplicitNames) {
-        self.tables.extend(other.tables);
-        self.funcs.extend(other.funcs);
+        self.entries.extend(other.entries);
     }
 }
+
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
 
 /// The definition of a database table.
@@ -349,15 +371,6 @@ pub struct RawIndexDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     pub source_name: Option<RawIdentifier>,
-
-    /// name for the index used internally and in client codegen
-    ///
-    /// This is set the user and should not be assumed to follow
-    /// any particular format.
-    ///
-    /// May be set to `None` if this is an auto-generated index for which the user
-    /// has not supplied a name.
-    pub name: Option<RawIdentifier>,
 
     /// The algorithm parameters for the index.
     pub algorithm: RawIndexAlgorithm,
@@ -1128,17 +1141,9 @@ impl RawTableDefBuilderV10<'_> {
     }
 
     /// Generates a [RawIndexDefV10] using the supplied `columns`.
-    pub fn with_index(
-        mut self,
-        algorithm: RawIndexAlgorithm,
-        accessor_name: impl Into<RawIdentifier>,
-        index_name: Option<impl Into<RawIdentifier>>,
-    ) -> Self {
-        let accessor_name = accessor_name.into();
-
+    pub fn with_index(mut self, algorithm: RawIndexAlgorithm, source_name: impl Into<RawIdentifier>) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
-            name: index_name.map(Into::into),
-            source_name: Some(accessor_name),
+            source_name: Some(source_name.into()),
             algorithm,
         });
         self
@@ -1148,7 +1153,6 @@ impl RawTableDefBuilderV10<'_> {
     pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
             source_name: None,
-            name: None,
             algorithm,
         });
         self

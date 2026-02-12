@@ -13,7 +13,6 @@ import RawIndexAlgorithm from './raw_index_algorithm_type';
 
 export default __t.object('RawIndexDefV10', {
   sourceName: __t.option(__t.string()),
-  name: __t.option(__t.string()),
   get algorithm() {
     return RawIndexAlgorithm;
   },
