@@ -291,7 +291,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|index| {
                 table_validator
-                    .validate_index_def(index.into())
+                    .validate_index_def(index.into(), RawModuleDefVersion::V10)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();

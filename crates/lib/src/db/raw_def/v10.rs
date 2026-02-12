@@ -7,8 +7,6 @@
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
 use core::fmt;
-use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_data_structures::small_map::SmallHashMap;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;

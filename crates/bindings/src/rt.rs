@@ -4,7 +4,7 @@ use crate::query_builder::Query;
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
-use spacetimedb_lib::db::raw_def::v10::{ExplicitNameEntry, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder};
+use spacetimedb_lib::db::raw_def::v10::{ExplicitNames as RawExplicitNames, RawModuleDefV10Builder};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};

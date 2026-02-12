@@ -129,5 +129,7 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
                 Some(<#ret_ty_for_info as spacetimedb::SpacetimeType>::make_type(ts))
             }
         }
+
+        #generate_explicit_names
     })
 }

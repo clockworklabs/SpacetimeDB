@@ -211,7 +211,7 @@ impl ModuleValidatorV9<'_> {
             .into_iter()
             .map(|index| {
                 table_in_progress
-                    .validate_index_def(index)
+                    .validate_index_def(index, RawModuleDefVersion::V9OrEarlier)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -1047,16 +1047,20 @@ impl<'a, 'b> TableValidator<'a, 'b> {
     }
 
     /// Validate an index definition.
-    pub(crate) fn validate_index_def(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
+    pub(crate) fn validate_index_def(
+        &mut self,
+        index: RawIndexDefV9,
+        raw_def_version: RawModuleDefVersion,
+    ) -> Result<IndexDef> {
         let RawIndexDefV9 {
             name,
-            algorithm,
+            algorithm: algorithm_raw,
             accessor_name,
         } = index;
 
-        let name = name.unwrap_or_else(|| generate_index_name(&self.raw_name, self.product_type, &algorithm));
+        let name = name.unwrap_or_else(|| generate_index_name(&self.raw_name, self.product_type, &algorithm_raw));
 
-        let algorithm: Result<IndexAlgorithm> = match algorithm {
+        let algorithm: Result<IndexAlgorithm> = match algorithm_raw.clone() {
             RawIndexAlgorithm::BTree { columns } => self
                 .validate_col_ids(&name, columns)
                 .map(|columns| BTreeAlgorithm { columns }.into()),
@@ -1089,8 +1093,16 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             }),
             algo => unreachable!("unknown algorithm {algo:?}"),
         };
+
+        let accessor_name = match raw_def_version {
+            // In V9, `name`field is used for database internals but `accessor_name` supplied by module is used for client codegen.
+            RawModuleDefVersion::V9OrEarlier => accessor_name.map(identifier).transpose(),
+
+            // In V10, `name` is used both for internal purpose and client codefen.
+            RawModuleDefVersion::V10 => identifier(name.clone()).map(Some),
+        };
+
         let name = self.add_to_global_namespace(name);
-        let accessor_name = accessor_name.map(identifier).transpose();
 
         let (name, accessor_name, algorithm) = (name, accessor_name, algorithm).combine_errors()?;
 
