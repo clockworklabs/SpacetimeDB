@@ -9,12 +9,13 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import RawIndexAlgorithm from './raw_index_algorithm_type';
+import ExplicitNameEntry from './explicit_name_entry_type';
 
-export default __t.object('RawIndexDefV10', {
-  sourceName: __t.option(__t.string()),
-  name: __t.option(__t.string()),
-  get algorithm() {
-    return RawIndexAlgorithm;
+export default __t.object('ExplicitNames', {
+  get tables() {
+    return __t.array(ExplicitNameEntry);
+  },
+  get funcs() {
+    return __t.array(ExplicitNameEntry);
   },
 });
