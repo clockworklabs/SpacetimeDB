@@ -2238,7 +2238,7 @@ import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 // Define a User table with columns
 // table() takes two objects: options first, then columns
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -2248,7 +2248,7 @@ const User = table(
 );
 
 // Define a Message table
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -2258,7 +2258,7 @@ const Message = table(
 );
 
 // Compose the schema - this gives us ctx.db.user and ctx.db.message
-const spacetimedb = schema({ User, Message });
+const spacetimedb = schema({ user, message });
 export default spacetimedb;
 ```
 
@@ -2305,7 +2305,7 @@ const GameState = t.enum('GameState', {
 });
 
 // Use in a table - note table() takes options object first, then columns
-const Player = table(
+const player = table(
   { name: 'player', public: true },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -2315,7 +2315,7 @@ const Player = table(
   }
 );
 
-const spacetimedb = schema({ Player });
+const spacetimedb = schema({ player });
 export default spacetimedb;
 ```
 
@@ -2326,7 +2326,7 @@ Reducers are functions that modify database state. They are defined using `space
 ```typescript
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -2335,7 +2335,7 @@ const User = table(
   }
 );
 
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -2344,7 +2344,7 @@ const Message = table(
   }
 );
 
-const spacetimedb = schema({ User, Message });
+const spacetimedb = schema({ user, message });
 export default spacetimedb;
 
 // Helper function for validation

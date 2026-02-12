@@ -156,7 +156,7 @@ const newId = row.id;  // Extract .id from returned row
 ### Schema export
 ```typescript
 // At end of schema.ts
-export const spacetimedb = schema({ Table1, Table2, Table3 });
+export const spacetimedb = schema({ table1, table2, table3 });
 ```
 
 ---

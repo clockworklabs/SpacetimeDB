@@ -5,14 +5,14 @@ export const Score = t.object('Score', {
   right: t.i32(),
 });
 
-export const Result = table({
+export const result = table({
   name: 'result',
 }, {
   id: t.i32().primaryKey(),
   value: Score,
 });
 
-const spacetimedb = schema({ Result });
+const spacetimedb = schema({ result });
 export default spacetimedb;
 
 export const setScore = spacetimedb.reducer({ id: t.i32(), left: t.i32(), right: t.i32() },

@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Account = table({
+export const account = table({
   name: 'account',
   indexes: [{ name: 'byName', algorithm: 'btree', columns: ['name'] }],
 }, {
@@ -9,7 +9,7 @@ export const Account = table({
   name: t.string(),
 });
 
-const spacetimedb = schema({ Account });
+const spacetimedb = schema({ account });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(

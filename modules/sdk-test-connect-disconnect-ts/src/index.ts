@@ -3,17 +3,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { schema, t, table } from 'spacetimedb/server';
 
-const Connected = table(
+const connected = table(
   { name: 'connected', public: true },
   { identity: t.identity() }
 );
 
-const Disconnected = table(
+const disconnected = table(
   { name: 'disconnected', public: true },
   { identity: t.identity() }
 );
 
-const spacetimedb = schema({ Connected, Disconnected });
+const spacetimedb = schema({ connected, disconnected });
 export default spacetimedb;
 
 export const identity_connected = spacetimedb.clientConnected(ctx => {

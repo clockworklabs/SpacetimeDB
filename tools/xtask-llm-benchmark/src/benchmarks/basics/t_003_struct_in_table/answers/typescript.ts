@@ -5,12 +5,12 @@ export const Position = t.object('Position', {
   y: t.i32(),
 });
 
-export const Entity = table({
+export const entity = table({
   name: 'entity',
 }, {
   id: t.i32().primaryKey(),
   pos: Position,
 });
 
-const spacetimedb = schema({ Entity });
+const spacetimedb = schema({ entity });
 export default spacetimedb;

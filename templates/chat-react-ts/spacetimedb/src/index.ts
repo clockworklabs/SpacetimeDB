@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -12,12 +12,12 @@ const User = table(
   }
 );
 
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   { sender: t.identity(), sent: t.timestamp(), text: t.string() }
 );
 
-const spacetimedb = schema({ User, Message });
+const spacetimedb = schema({ user, message });
 export default spacetimedb;
 
 function validateName(name: string) {
