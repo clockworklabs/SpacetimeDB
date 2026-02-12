@@ -56,10 +56,11 @@ impl ConsumeEachBuffer for ws_v2::ServerMessage {
             UnsubscribeApplied(x) => x.rows.consume_each_list(each),
             SubscriptionError(_) | InitialConnection(_) | ProcedureResult(_) => {}
             TransactionUpdate(x) => x.consume_each_list(each),
-            ReducerResult(x) => match x.result {
-                ws_v2::ReducerOutcome::Ok(ro) => ro.transaction_update.consume_each_list(each),
-                _ => {}
-            },
+            ReducerResult(x) => {
+                if let ws_v2::ReducerOutcome::Ok(ro) = x.result {
+                    ro.transaction_update.consume_each_list(each);
+                }
+            }
         }
     }
 }
