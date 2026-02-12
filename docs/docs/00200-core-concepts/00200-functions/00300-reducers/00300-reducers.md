@@ -21,7 +21,7 @@ Use the `spacetimedb.reducer` function:
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-spacetimedb.reducer('create_user', { name: t.string(), email: t.string() }, (ctx, { name, email }) => {
+export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
     throw new Error('Name cannot be empty');
@@ -552,6 +552,7 @@ const fetchSchedule = table(
 );
 
 const spacetimedb = schema(fetchSchedule);
+export default spacetimedb;
 
 // The procedure to be scheduled
 const fetchExternalData = spacetimedb.procedure(

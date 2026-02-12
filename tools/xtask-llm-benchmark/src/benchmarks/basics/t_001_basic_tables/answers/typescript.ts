@@ -28,3 +28,4 @@ export const Note = table({
 });
 
 const spacetimedb = schema(User, Product, Note);
+export default spacetimedb;

@@ -20,8 +20,7 @@
   "author": "Clockwork Labs",
   "type": "module",
   "sideEffects": [
-    "./src/server/polyfills.ts",
-    "./src/server/register_hooks.ts"
+    "./src/server/polyfills.ts"
   ],
   "scripts": {
     "build:js": "tsup",
