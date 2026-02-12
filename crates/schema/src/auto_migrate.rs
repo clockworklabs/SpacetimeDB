@@ -2357,20 +2357,12 @@ mod tests {
         // non-event → event
         let old = create_v10_module_def(|builder| {
             builder
-                .build_table_with_new_type(
-                    "Events",
-                    ProductType::from([("id", AlgebraicType::U64)]),
-                    true,
-                )
+                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
                 .finish();
         });
         let new = create_v10_module_def(|builder| {
             builder
-                .build_table_with_new_type(
-                    "Events",
-                    ProductType::from([("id", AlgebraicType::U64)]),
-                    true,
-                )
+                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
                 .with_event(true)
                 .finish();
         });
@@ -2394,21 +2386,13 @@ mod tests {
         // Both event → no error
         let old = create_v10_module_def(|builder| {
             builder
-                .build_table_with_new_type(
-                    "Events",
-                    ProductType::from([("id", AlgebraicType::U64)]),
-                    true,
-                )
+                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
                 .with_event(true)
                 .finish();
         });
         let new = create_v10_module_def(|builder| {
             builder
-                .build_table_with_new_type(
-                    "Events",
-                    ProductType::from([("id", AlgebraicType::U64)]),
-                    true,
-                )
+                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
                 .with_event(true)
                 .finish();
         });

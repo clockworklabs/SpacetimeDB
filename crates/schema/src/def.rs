@@ -162,6 +162,11 @@ pub enum RawModuleDefVersion {
 }
 
 impl ModuleDef {
+    /// The raw module definition version this module was authored under.
+    pub fn raw_module_def_version(&self) -> &RawModuleDefVersion {
+        &self.raw_module_def_version
+    }
+
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
