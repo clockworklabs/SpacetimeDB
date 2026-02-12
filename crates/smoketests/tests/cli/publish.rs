@@ -213,26 +213,24 @@ fn cli_can_publish_breaking_change_with_on_conflict_flag() {
 #[test]
 fn cli_publish_with_config_but_no_match_uses_cli_args() {
     // Test that when config exists but doesn't match CLI args, we use CLI args
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
+    let test = Smoketest::builder().autopublish(false).build();
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
     // Initialize a new project (creates test-project/spacetimedb/)
-    let mut init_cmd = cargo_bin_cmd!("spacetimedb-cli");
-    init_cmd
-        .args(["init", "--non-interactive", "--lang", "rust", "test-project"])
-        .current_dir(temp_dir.path())
-        .assert()
-        .success();
+    test.spacetime(&[
+        "init",
+        "--non-interactive",
+        "--lang",
+        "rust",
+        temp_dir.path().join("test-project").to_str().unwrap(),
+    ])
+    .unwrap();
 
-    let project_dir = temp_dir.path().join("test-project");
-    let module_dir = project_dir.join("spacetimedb");
+    let module_dir = temp_dir.path().join("test-project").join("spacetimedb");
 
     // Build the module first
-    let mut build_cmd = cargo_bin_cmd!("spacetimedb-cli");
-    build_cmd
-        .args(["build", "--project-path", module_dir.to_str().unwrap()])
-        .assert()
-        .success();
+    test.spacetime(&["build", "--project-path", module_dir.to_str().unwrap()])
+        .unwrap();
 
     // Create a config with a different database name
     let config_content = r#"{
@@ -243,16 +241,13 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
     std::fs::write(module_dir.join("spacetime.json"), config_content).expect("failed to write config");
 
     // Publish with a different database name from CLI - should use CLI args, not config
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
+    test.spacetime(&[
         "publish",
         "--server",
-        &spacetime.host_url.to_string(),
+        &test.server_url,
         "cli-db-name",
         "--project-path",
         module_dir.to_str().unwrap(),
     ])
-    .current_dir(&module_dir)
-    .assert()
-    .success();
+    .unwrap();
 }

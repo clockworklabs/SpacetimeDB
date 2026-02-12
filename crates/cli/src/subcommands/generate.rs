@@ -161,7 +161,6 @@ pub fn cli() -> clap::Command {
             Arg::new("uproject_dir")
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("uproject-dir")
-                .long("foo-bar")
                 .help("Path to the Unreal project directory, replaces --out-dir for Unreal generation (only used with --lang unrealcpp)")
         )
         .arg(

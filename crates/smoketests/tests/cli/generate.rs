@@ -1,4 +1,10 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use predicates::prelude::*;
+use spacetimedb_guard::ensure_binaries_built;
+use std::process::Command;
+
+fn cli_cmd() -> Command {
+    Command::new(ensure_binaries_built())
+}
 
 #[test]
 fn cli_generate_with_config_but_no_match_uses_cli_args() {
@@ -6,12 +12,16 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
     // Initialize a new project (creates test-project/spacetimedb/)
-    let mut init_cmd = cargo_bin_cmd!("spacetimedb-cli");
-    init_cmd
+    let output = cli_cmd()
         .args(["init", "--non-interactive", "--lang", "rust", "test-project"])
         .current_dir(temp_dir.path())
-        .assert()
-        .success();
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let project_dir = temp_dir.path().join("test-project");
     let module_dir = project_dir.join("spacetimedb");
@@ -29,33 +39,43 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
     std::fs::write(module_dir.join("spacetime.json"), config_content).expect("failed to write config");
 
     // Build the module first
-    let mut build_cmd = cargo_bin_cmd!("spacetimedb-cli");
-    build_cmd
+    let output = cli_cmd()
         .args(["build", "--project-path", module_dir.to_str().unwrap()])
-        .assert()
-        .success();
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let output_dir = module_dir.join("cli-output");
     std::fs::create_dir(&output_dir).expect("failed to create output dir");
 
     // Generate with different module-path from CLI - should use CLI args, not config
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "generate",
-        "--lang",
-        "rust",
-        "--out-dir",
-        output_dir.to_str().unwrap(),
-        "--project-path",
-        module_dir.to_str().unwrap(),
-    ])
-    .current_dir(&module_dir)
-    .assert()
-    .success();
+    let output = cli_cmd()
+        .args([
+            "generate",
+            "--lang",
+            "rust",
+            "--out-dir",
+            output_dir.to_str().unwrap(),
+            "--project-path",
+            module_dir.to_str().unwrap(),
+        ])
+        .current_dir(&module_dir)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "generate failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Verify files were generated in the CLI-specified output directory
     assert!(
-        output_dir.join("lib.rs").exists() || output_dir.join("mod.rs").exists(),
+        predicate::path::exists().eval(&output_dir.join("lib.rs"))
+            || predicate::path::exists().eval(&output_dir.join("mod.rs")),
         "Generated files should exist in CLI-specified output directory"
     );
 }
