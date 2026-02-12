@@ -25,7 +25,7 @@ use crate::host::wasm_common::module_host_actor::{
     InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
     WasmInstance,
 };
-use crate::host::wasm_common::{RowIters, TimingSpanSet, DESCRIBE_MODULE_DUNDER};
+use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -104,6 +104,13 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
+        // If the number in the name of this function is changed, update the version
+        // of the `deno_core_icudata` dep to match the number in the function name.
+        v8::icu::set_common_data_77(deno_core_icudata::ICU_DATA).ok();
+        // Set a default locale for functions like `toLocaleString()`.
+        // en-001 is "International English". <https://www.ctrl.blog/entry/en-001.html>
+        v8::icu::set_default_locale("en-001");
+
         // We don't want idle tasks nor background worker tasks,
         // as we intend to run on a single core.
         // Per the docs, `new_single_threaded_default_platform` requires
@@ -925,8 +932,6 @@ fn extract_description<'scope>(
     replica_ctx: &ReplicaContext,
 ) -> Result<RawModuleDef, DescribeError> {
     run_describer(
-        //TODO(shub): make it work with `DESCRIBE_MODULE_DUNDER_V10`
-        DESCRIBE_MODULE_DUNDER,
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             catch_exception(scope, |scope| {

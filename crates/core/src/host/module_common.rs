@@ -3,7 +3,11 @@
 
 use crate::{
     energy::EnergyMonitor,
-    host::{module_host::ModuleInfo, wasm_common::module_host_actor::DescribeError, Scheduler},
+    host::{
+        module_host::ModuleInfo,
+        wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
+        Scheduler,
+    },
     module_host_context::ModuleCreationContext,
     replica_context::ReplicaContext,
 };
@@ -89,10 +93,11 @@ impl ModuleCommon {
 
 /// Runs the describer of modules in `run` and does some logging around it.
 pub(crate) fn run_describer<T>(
-    describer_func_name: &str,
     log_traceback: impl Copy + FnOnce(&str, &str, &anyhow::Error),
     run: impl FnOnce() -> anyhow::Result<T>,
 ) -> Result<T, DescribeError> {
+    let describer_func_name = DESCRIBE_MODULE_DUNDER;
+
     let start = std::time::Instant::now();
     log::trace!("Start describer \"{describer_func_name}\"...");
 

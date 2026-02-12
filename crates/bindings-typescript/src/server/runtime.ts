@@ -7,8 +7,7 @@ import {
   type Deserializer,
 } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
-import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
-import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
+import type RawTableDefV10 from '../lib/autogen/raw_table_def_v_10_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
@@ -29,7 +28,7 @@ import {
   type JwtClaims,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
+import { type ModuleDef, type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import type { Infer } from '../lib/type_builders';
 import { hasOwn, toCamelCase } from '../lib/util';
@@ -275,7 +274,7 @@ export const hooks: ModuleHooks = {
     const writer = new BinaryWriter(128);
     RawModuleDef.serialize(
       writer,
-      RawModuleDef.V9(getRegisteredSchema().moduleDef)
+      RawModuleDef.V10(getRegisteredSchema().rawModuleDefV10())
     );
     return writer.getBuffer();
   },
@@ -381,11 +380,11 @@ function getDbView() {
   return DB_VIEW;
 }
 
-function makeDbView(moduleDef: Infer<typeof RawModuleDefV9>): DbView<any> {
+function makeDbView(moduleDef: ModuleDef): DbView<any> {
   return freeze(
     Object.fromEntries(
       moduleDef.tables.map(table => [
-        toCamelCase(table.name),
+        toCamelCase(table.sourceName),
         makeTableView(moduleDef.typespace, table),
       ])
     )
@@ -397,9 +396,9 @@ const BINARY_READER = new BinaryReader(new Uint8Array());
 
 function makeTableView(
   typespace: Infer<typeof Typespace>,
-  table: Infer<typeof RawTableDefV9>
+  table: Infer<typeof RawTableDefV10>
 ): Table<any> {
-  const table_id = sys.table_id_from_name(table.name);
+  const table_id = sys.table_id_from_name(table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
     throw 'impossible';
@@ -493,7 +492,7 @@ function makeTableView(
   ) as Table<any>;
 
   for (const indexDef of table.indexes) {
-    const index_id = sys.index_id_from_name(indexDef.name!);
+    const index_id = sys.index_id_from_name(indexDef.sourceName!);
 
     let column_ids: number[];
     switch (indexDef.algorithm.tag) {

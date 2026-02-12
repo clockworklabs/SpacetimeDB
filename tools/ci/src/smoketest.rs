@@ -59,6 +59,8 @@ fn build_binaries() -> Result<()> {
         "spacetimedb-cli",
         "-p",
         "spacetimedb-standalone",
+        "--features",
+        "spacetimedb-standalone/allow_loopback_http_for_tests",
     ]);
 
     // Remove cargo/rust env vars that could cause fingerprint mismatches
