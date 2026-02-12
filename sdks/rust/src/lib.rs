@@ -44,7 +44,7 @@ pub mod __codegen {
     //! These may change incompatibly without a major version bump.
     pub use http;
     pub use log;
-    pub use spacetimedb_client_api_messages::websocket as __ws;
+    pub use spacetimedb_client_api_messages::websocket::v1 as __ws;
     pub use spacetimedb_lib as __lib;
     pub use spacetimedb_query_builder as __query_builder;
     pub use spacetimedb_sats as __sats;

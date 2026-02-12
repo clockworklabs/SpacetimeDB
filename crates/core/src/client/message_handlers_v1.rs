@@ -51,7 +51,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let sub_metrics = record_metrics(WorkloadType::Subscribe);
     let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
 
-    type HandleResult<'a> = Result<(), (Option<&'a Box<str>>, Option<ReducerId>, anyhow::Error)>;
+    type HandleResult<'a> = Result<(), (Option<&'a RawIdentifier>, Option<ReducerId>, anyhow::Error)>;
     let res: HandleResult<'_> = match message {
         ws_v1::ClientMessage::CallReducer(ws_v1::CallReducer {
             ref reducer,
@@ -153,7 +153,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:#})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<Box<str>>,
+    pub reducer: Option<RawIdentifier>,
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
     pub caller_connection_id: Option<ConnectionId>,

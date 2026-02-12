@@ -1,5 +1,6 @@
 use crate::websocket::WsError;
 use spacetimedb_client_api_messages::websocket as ws;
+use spacetimedb_sats::bsatn;
 use std::borrow::Cow;
 use std::io::{self, Read as _};
 use std::sync::Arc;
