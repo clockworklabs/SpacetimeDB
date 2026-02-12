@@ -1,4 +1,4 @@
-/// Regression tests run with a live server.
+///  tests run with a live server.
 /// To run these, run a local SpacetimeDB via `spacetime start`,
 /// then in a separate terminal run `tools~/run-regression-tests.sh PATH_TO_SPACETIMEDB_REPO_CHECKOUT`.
 /// This is done on CI in .github/workflows/test.yml.
@@ -14,6 +14,8 @@ using SpacetimeDB.Types;
 const string HOST = "http://localhost:3000";
 const string DBNAME = "btree-repro";
 const string THROW_ERROR_MESSAGE = "this is an error";
+const uint UPDATED_WHERE_TEST_VALUE = 42;
+const string UPDATED_WHERE_TEST_NAME = "this_name_was_updated";
 
 DbConnection ConnectToDB()
 {
@@ -21,7 +23,7 @@ DbConnection ConnectToDB()
     conn = DbConnection
         .Builder()
         .WithUri(HOST)
-        .WithModuleName(DBNAME)
+        .WithDatabaseName(DBNAME)
         .OnConnect(OnConnected)
         .OnConnectError(
             (err) =>
@@ -94,6 +96,9 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.ScoresPlayer123Level5().Build())
         .AddQuery(qb => qb.From.User().Build())
         .AddQuery(qb => qb.From.Score().Build())
+        .AddQuery(qb => qb.From.WhereTestView().Build())
+        .AddQuery(qb => qb.From.FindWhereTest().Build())
+        .AddQuery(qb => qb.From.WhereTestQuery().Build())
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -197,6 +202,29 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             ctx.Db.NullStringNullable.Iter().Any(r => r.Name == null),
             "Expected a row inserted into null_string_nullable with Name == null"
         );
+    };
+
+    conn.Reducers.OnUpdateWhereTest += (
+        ReducerEventContext ctx,
+        uint id,
+        uint value,
+        string name
+    ) =>
+    {
+        Log.Info("Got UpdateWhereTest callback");
+        waiting--;
+        Debug.Assert(id == 2, $"Expected UpdateWhereTest to target id=2, got {id}");
+        Debug.Assert(
+            value == UPDATED_WHERE_TEST_VALUE,
+            $"Expected UpdateWhereTest value {UPDATED_WHERE_TEST_VALUE}, got {value}"
+        );
+        Debug.Assert(
+            name == UPDATED_WHERE_TEST_NAME,
+            $"Expected UpdateWhereTest name {UPDATED_WHERE_TEST_NAME}, got {name}"
+        );
+
+        ValidateWhereSubscription(ctx, UPDATED_WHERE_TEST_NAME);
+        ValidateWhereTestViews(ctx, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
     };
 }
 
@@ -331,7 +359,7 @@ void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
     );
 }
 
-void ValidateWhereSubscription(IRemoteDbContext conn)
+void ValidateWhereSubscription(IRemoteDbContext conn, string expectedTestName = "this_name_will_get_updated")
 {
     Log.Debug("Checking typed WHERE subscription...");
     Debug.Assert(conn.Db.WhereTest != null, "conn.Db.WhereTest != null");
@@ -340,13 +368,70 @@ void ValidateWhereSubscription(IRemoteDbContext conn)
     Debug.Assert(rows.Count == 2, $"Expected 2 where_test rows, got {rows.Count}");
     Debug.Assert(rows.All(r => r.Value > 10), "Expected all where_test.Value > 10");
     Debug.Assert(
-        rows.Any(r => r.Id == 2 && r.Name == "high"),
-        "Expected where_test row id=2 name=high"
+        rows.Any(r => r.Id == 2 && r.Name == expectedTestName),
+        $"Expected where_test row id=2 name={expectedTestName}"
     );
     Debug.Assert(
-        rows.Any(r => r.Id == 3 && r.Name == "alsohigh"),
-        "Expected where_test row id=3 name=alsohigh"
+        rows.Any(r => r.Id == 3 && r.Name == "this_name_will_not_be_updated"),
+        "Expected where_test row id=3 name=this_name_will_not_be_updated"
     );
+}
+
+void ValidateWhereTestViews(
+    IRemoteDbContext conn,
+    uint expectedId2Value = 15,
+    string expectedId2Name = "this_name_will_get_updated"
+)
+{
+    Log.Debug("Checking where_test views...");
+    Debug.Assert(
+        conn.Db.WhereTestView != null,
+        "WhereTestView should not be null"
+    );
+    Debug.Assert(
+        conn.Db.WhereTestView.Count == 1,
+        $"Expected exactly one WhereTestView row, got {conn.Db.WhereTestView.Count}"
+    );
+    var viewRow = conn.Db.WhereTestView.Iter().First();
+    Debug.Assert(viewRow.Id == 2, $"Expected WhereTestView row id=2, got {viewRow.Id}");
+    Debug.Assert(
+        viewRow.Value == expectedId2Value,
+        $"Expected WhereTestView row value={expectedId2Value}, got {viewRow.Value}"
+    );
+    Debug.Assert(
+        viewRow.Name == expectedId2Name,
+        $"Expected WhereTestView row name={expectedId2Name}, got {viewRow.Name}"
+    );
+
+    Debug.Assert(
+        conn.Db.WhereTestQuery != null,
+        "WhereTestQuery should not be null"
+    );
+    Debug.Assert(
+        conn.Db.WhereTestQuery.Count == 1,
+        $"Expected exactly one WhereTestQuery row, got {conn.Db.WhereTestQuery.Count}"
+    );
+    var queryRow = conn.Db.WhereTestQuery.Iter().First();
+    Debug.Assert(queryRow.Id == 2, $"Expected WhereTestQuery row id=2, got {queryRow.Id}");
+    Debug.Assert(
+        queryRow.Value == expectedId2Value,
+        $"Expected WhereTestQuery row value={expectedId2Value}, got {queryRow.Value}"
+    );
+    Debug.Assert(
+        queryRow.Name == expectedId2Name,
+        $"Expected WhereTestQuery row name={expectedId2Name}, got {queryRow.Name}"
+    );
+
+    Debug.Assert(
+        conn.Db.FindWhereTest != null,
+        "FindWhereTest should not be null"
+    );
+    Debug.Assert(
+        conn.Db.FindWhereTest.Count == 1,
+        $"Expected exactly one FindWhereTest row, got {conn.Db.FindWhereTest.Count}"
+    );
+    var anonRow = conn.Db.FindWhereTest.Iter().First();
+    Debug.Assert(anonRow.Id == 3, $"Expected FindWhereTest row id=3, got {anonRow.Id}");
 }
 
 void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
@@ -380,6 +465,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     applied = true;
 
     ValidateWhereSubscription(context);
+    ValidateWhereTestViews(context);
     ValidateSemijoinSubscriptions(context, context.Identity!.Value);
 
     // Do some operations that alter row state;
@@ -395,6 +481,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling Add");
     waiting++;
     context.Reducers.Add(1, 1);
+
+    Log.Debug("Updating where_test row via reducer");
+    waiting++;
+    context.Reducers.UpdateWhereTest(2, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
 
     Log.Debug("Calling ThrowError");
     waiting++;

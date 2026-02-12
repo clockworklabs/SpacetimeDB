@@ -300,6 +300,24 @@ public static partial class Module
         return rows;
     }
 
+    [SpacetimeDB.View(Name = "where_test_view", Public = true)]
+    public static WhereTest? WhereTestView(ViewContext ctx)
+    {
+        return ctx.Db.where_test.Id.Find(2);
+    }
+
+    [SpacetimeDB.View(Name = "where_test_query", Public = true)]
+    public static Query<WhereTest> WhereTestQuery(ViewContext ctx)
+    {
+        return ctx.From.where_test().Where(cols => cols.Id.Eq(SqlLit.Int(2u))).Build();
+    }
+
+    [SpacetimeDB.View(Name = "find_where_test", Public = true)]
+    public static WhereTest? FindWhereTest(AnonymousViewContext ctx)
+    {
+        return ctx.Db.where_test.Id.Find(3);
+    }
+
     [SpacetimeDB.View(Name = "nullable_vec_view", Public = true)]
     public static List<NullableVec> NullableVecView(AnonymousViewContext ctx)
     {
@@ -379,6 +397,24 @@ public static partial class Module
     public static void InsertWhereTest(ReducerContext ctx, uint id, uint value, string name)
     {
         ctx.Db.where_test.Insert(
+            new WhereTest
+            {
+                Id = id,
+                Value = value,
+                Name = name,
+            }
+        );
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void UpdateWhereTest(ReducerContext ctx, uint id, uint value, string name)
+    {
+        if (ctx.Db.where_test.Id.Find(id) is null)
+        {
+            throw new Exception($"where_test id={id} missing");
+        }
+
+        ctx.Db.where_test.Id.Update(
             new WhereTest
             {
                 Id = id,
@@ -479,7 +515,7 @@ public static partial class Module
                 {
                     Id = 1,
                     Value = 5,
-                    Name = "low",
+                    Name = "this_name_is_unimportant",
                 }
             );
         }
@@ -490,7 +526,7 @@ public static partial class Module
                 {
                     Id = 2,
                     Value = 15,
-                    Name = "high",
+                    Name = "this_name_will_get_updated",
                 }
             );
         }
@@ -501,7 +537,7 @@ public static partial class Module
                 {
                     Id = 3,
                     Value = 15,
-                    Name = "alsohigh",
+                    Name = "this_name_will_not_be_updated",
                 }
             );
         }

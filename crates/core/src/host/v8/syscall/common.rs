@@ -1,11 +1,11 @@
 use super::super::{
-    call_free_fun,
+    call_recv_fun,
     de::deserialize_js,
     de::scratch_buf,
     env_on_isolate,
     error::{
-        exception_already_thrown, no_such_iter, CodeError, ErrorOrException, ExceptionThrown, JsStackTrace,
-        SysCallError, SysCallResult, Throwable, TypeError,
+        exception_already_thrown, ErrorOrException, ExceptionThrown, JsStackTrace, SysCallError, SysCallResult,
+        Throwable, TypeError,
     },
     from_value::cast,
     ser::serialize_to_js,
@@ -22,7 +22,7 @@ use crate::{
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId};
 use spacetimedb_sats::bsatn;
 use v8::{FunctionCallbackArguments, Isolate, Local, PinScope, Value};
 
@@ -51,7 +51,7 @@ pub fn call_call_procedure(
     let args = &[procedure_id, sender, connection_id, timestamp, procedure_args];
 
     // Call the function.
-    let ret = call_free_fun(scope, fun, args)?;
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
 
     // Deserialize the user result.
     let ret =
@@ -67,7 +67,7 @@ pub fn call_describe_module(
     hooks: &HookFunctions<'_>,
 ) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     // Call the function.
-    let raw_mod_js = call_free_fun(scope, hooks.describe_module, &[])?;
+    let raw_mod_js = call_recv_fun(scope, hooks.describe_module, hooks.recv, &[])?;
 
     // Deserialize the raw module.
     let raw_mod = cast!(
@@ -330,7 +330,7 @@ pub fn row_iter_bsatn_close<'scope>(
 
     // Retrieve the iterator by `row_iter_idx`, or error.
     if env.iters.take(row_iter_idx).is_none() {
-        return Err(no_such_iter(scope));
+        return Err(SysCallError::NO_SUCH_ITER);
     } else {
         // TODO(Centril): consider putting these into a pool for reuse.
     }
@@ -499,10 +499,10 @@ pub fn console_timer_end<'scope>(
     let span_id: u32 = deserialize_js(scope, args.get(0))?;
 
     let env = get_env(scope)?;
-    let Some(span) = env.timing_spans.take(TimingSpanIdx(span_id)) else {
-        let exc = CodeError::from_code(scope, errno::NO_SUCH_CONSOLE_TIMER.get())?;
-        return Err(exc.throw(scope).into());
-    };
+    let span = env
+        .timing_spans
+        .take(TimingSpanIdx(span_id))
+        .ok_or(SysCallError::NO_SUCH_CONSOLE_TIMER)?;
     let function = env.log_record_function();
     env.instance_env.console_timer_end(&span, function);
 

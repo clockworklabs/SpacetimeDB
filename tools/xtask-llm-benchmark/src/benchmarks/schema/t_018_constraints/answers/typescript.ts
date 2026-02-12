@@ -10,8 +10,9 @@ export const Account = table({
 });
 
 const spacetimedb = schema(Account);
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.account.insert({ id: 1, email: "a@example.com", name: "Alice" });
     ctx.db.account.insert({ id: 2, email: "b@example.com", name: "Bob" });

@@ -1,14 +1,13 @@
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 
-import type { ModuleHooks, u16, u32 } from 'spacetime:sys@2.0';
+import type { ModuleHooks, u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import {
   AlgebraicType,
   ProductType,
   type Deserializer,
 } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
-import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
-import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
+import type RawTableDefV10 from '../lib/autogen/raw_table_def_v_10_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
@@ -19,6 +18,7 @@ import BinaryWriter, { ResizableBuffer } from '../lib/binary_writer';
 import {
   type Index,
   type IndexVal,
+  type PointIndex,
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
@@ -36,15 +36,15 @@ import { hasOwn, toCamelCase } from '../lib/util';
 import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
-import { SenderError, SpacetimeHostError } from './errors';
+import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
 import { makeRandom, type Random } from './rng';
-import { getRegisteredSchema } from './schema';
+import type { SchemaInner } from './schema';
 
 const { freeze } = Object;
 
-export const sys = freeze(wrapSyscalls(_syscalls2_0));
+export const sys = _syscalls2_0;
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -177,9 +177,6 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
-/** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
-let REDUCER_CTX: InstanceType<typeof ReducerCtxImpl> | undefined;
-
 // Using a class expression rather than declaration keeps the class out of the
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
@@ -198,13 +195,14 @@ export const ReducerCtxImpl = class ReducerCtx<
   constructor(
     sender: Identity,
     timestamp: Timestamp,
-    connectionId: ConnectionId | null
+    connectionId: ConnectionId | null,
+    dbView: DbView<any>
   ) {
     Object.seal(this);
     this.sender = sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
-    this.db = getDbView();
+    this.db = dbView;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -268,56 +266,88 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
   return fn(...args);
 };
 
-let reducerArgsDeserializers: Deserializer<any>[];
+export const makeHooks = (schema: SchemaInner): ModuleHooks =>
+  new ModuleHooksImpl(schema);
 
-export const hooks: ModuleHooks = {
+class ModuleHooksImpl implements ModuleHooks {
+  #schema: SchemaInner;
+  #dbView_: DbView<any> | undefined;
+  #reducerArgsDeserializers;
+  /** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
+  #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
+
+  constructor(schema: SchemaInner) {
+    this.#schema = schema;
+    this.#reducerArgsDeserializers = schema.moduleDef.reducers.map(
+      ({ params }) => ProductType.makeDeserializer(params, schema.typespace)
+    );
+  }
+
+  get #dbView() {
+    return (this.#dbView_ ??= freeze(
+      Object.fromEntries(
+        this.#schema.moduleDef.tables.map(table => [
+          toCamelCase(table.sourceName),
+          makeTableView(this.#schema.typespace, table),
+        ])
+      )
+    ));
+  }
+
+  get #reducerCtx() {
+    return (this.#reducerCtx_ ??= new ReducerCtxImpl(
+      Identity.zero(),
+      Timestamp.UNIX_EPOCH,
+      null,
+      this.#dbView
+    ));
+  }
+
   __describe_module__() {
     const writer = new BinaryWriter(128);
     RawModuleDef.serialize(
       writer,
-      RawModuleDef.V9(getRegisteredSchema().moduleDef)
+      RawModuleDef.V10(this.#schema.rawModuleDefV10())
     );
     return writer.getBuffer();
-  },
-  __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
-    const moduleCtx = getRegisteredSchema();
-    if (reducerArgsDeserializers == null) {
-      reducerArgsDeserializers = moduleCtx.moduleDef.reducers.map(
-        ({ params }) =>
-          ProductType.makeDeserializer(params, moduleCtx.typespace)
-      );
-    }
-    const deserializeArgs = reducerArgsDeserializers[reducerId];
+  }
+
+  __get_error_constructor__(code: number): new (msg: string) => Error {
+    return getErrorConstructor(code);
+  }
+
+  get __sender_error_class__() {
+    return SenderError;
+  }
+
+  __call_reducer__(
+    reducerId: u32,
+    sender: u256,
+    connId: u128,
+    timestamp: bigint,
+    argsBuf: DataView
+  ): void {
+    const moduleCtx = this.#schema;
+    const deserializeArgs = this.#reducerArgsDeserializers[reducerId];
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
-    let ctx;
-    if (REDUCER_CTX == null) {
-      ctx = REDUCER_CTX = new ReducerCtxImpl(
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      );
-    } else {
-      ctx = REDUCER_CTX;
-      ReducerCtxImpl.reset(
-        REDUCER_CTX,
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      );
-    }
-    try {
-      callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
-    } catch (e) {
-      if (e instanceof SenderError) {
-        return { tag: 'err', value: e.message };
-      }
-      throw e;
-    }
-  },
-  __call_view__(id, sender, argsBuf) {
-    const moduleCtx = getRegisteredSchema();
+    const ctx = this.#reducerCtx;
+    ReducerCtxImpl.reset(
+      ctx,
+      senderIdentity,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId))
+    );
+    callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
+  }
+
+  __call_view__(
+    id: u32,
+    sender: u256,
+    argsBuf: Uint8Array
+  ): { data: Uint8Array } {
+    const moduleCtx = this.#schema;
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.views[id];
     const ctx: ViewCtx<any> = freeze({
@@ -325,7 +355,7 @@ export const hooks: ModuleHooks = {
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: getDbView(),
+      db: this.#dbView,
       from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
@@ -339,16 +369,17 @@ export const hooks: ModuleHooks = {
       serializeReturn(retBuf, ret);
     }
     return { data: retBuf.getBuffer() };
-  },
-  __call_view_anon__(id, argsBuf) {
-    const moduleCtx = getRegisteredSchema();
+  }
+
+  __call_view_anon__(id: u32, argsBuf: Uint8Array): { data: Uint8Array } {
+    const moduleCtx = this.#schema;
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.anonViews[id];
     const ctx: AnonymousViewCtx<any> = freeze({
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: getDbView(),
+      db: this.#dbView,
       from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
@@ -362,34 +393,25 @@ export const hooks: ModuleHooks = {
       serializeReturn(retBuf, ret);
     }
     return { data: retBuf.getBuffer() };
-  },
-  __call_procedure__(id, sender, connection_id, timestamp, args) {
+  }
+
+  __call_procedure__(
+    id: u32,
+    sender: u256,
+    connection_id: u128,
+    timestamp: bigint,
+    args: Uint8Array
+  ): Uint8Array {
     return callProcedure(
-      getRegisteredSchema(),
+      this.#schema,
       id,
       new Identity(sender),
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
       new Timestamp(timestamp),
-      args
+      args,
+      () => this.#dbView
     );
-  },
-};
-
-let DB_VIEW: DbView<any> | null = null;
-function getDbView() {
-  DB_VIEW ??= makeDbView(getRegisteredSchema().moduleDef);
-  return DB_VIEW;
-}
-
-function makeDbView(moduleDef: Infer<typeof RawModuleDefV9>): DbView<any> {
-  return freeze(
-    Object.fromEntries(
-      moduleDef.tables.map(table => [
-        toCamelCase(table.name),
-        makeTableView(moduleDef.typespace, table),
-      ])
-    )
-  );
+  }
 }
 
 const BINARY_WRITER = new BinaryWriter(0);
@@ -397,9 +419,9 @@ const BINARY_READER = new BinaryReader(new Uint8Array());
 
 function makeTableView(
   typespace: Infer<typeof Typespace>,
-  table: Infer<typeof RawTableDefV9>
+  table: Infer<typeof RawTableDefV10>
 ): Table<any> {
-  const table_id = sys.table_id_from_name(table.name);
+  const table_id = sys.table_id_from_name(table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
     throw 'impossible';
@@ -493,15 +515,18 @@ function makeTableView(
   ) as Table<any>;
 
   for (const indexDef of table.indexes) {
-    const index_id = sys.index_id_from_name(indexDef.name!);
+    const index_id = sys.index_id_from_name(indexDef.sourceName!);
 
     let column_ids: number[];
+    let isHashIndex = false;
     switch (indexDef.algorithm.tag) {
+      case 'Hash':
+        isHashIndex = true;
+        column_ids = indexDef.algorithm.value;
+        break;
       case 'BTree':
         column_ids = indexDef.algorithm.value;
         break;
-      case 'Hash':
-        throw new Error('impossible');
       case 'Direct':
         column_ids = [indexDef.algorithm.value];
         break;
@@ -629,7 +654,7 @@ function makeTableView(
       } as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
       // numColumns == 1
-      index = {
+      const rawIndex = {
         filter: (range: any): IteratorObject<RowType<any>> => {
           const buf = LEAF_BUF;
           const point_len = serializeSinglePoint(buf, range);
@@ -649,7 +674,35 @@ function makeTableView(
             point_len
           );
         },
-      } as RangedIndex<any, any>;
+      };
+      if (isHashIndex) {
+        index = rawIndex as PointIndex<any, any>;
+      } else {
+        index = rawIndex as RangedIndex<any, any>;
+      }
+    } else if (isHashIndex) {
+      // numColumns != 1
+      index = {
+        filter: (range: any[]): IteratorObject<RowType<any>> => {
+          const buf = LEAF_BUF;
+          const point_len = serializePoint(buf, range);
+          const iter_id = sys.datastore_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+          return tableIterator(iter_id, deserializeRow);
+        },
+        delete: (range: any[]): u32 => {
+          const buf = LEAF_BUF;
+          const point_len = serializePoint(buf, range);
+          return sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            buf.buffer,
+            point_len
+          );
+        },
+      } as PointIndex<any, any>;
     } else {
       // numColumns != 1
       const serializeRange = (
@@ -852,49 +905,6 @@ class IteratorHandle implements Disposable {
       sys.row_iter_bsatn_close(id);
     }
   }
-}
-
-type Intersections<Ts extends readonly any[]> = Ts extends [
-  infer T,
-  ...infer Rest,
-]
-  ? T & Intersections<Rest>
-  : unknown;
-
-function wrapSyscalls<
-  Modules extends Record<string, (...args: any[]) => any>[],
->(...modules: Modules): Intersections<Modules> {
-  return Object.fromEntries(
-    modules.flatMap(Object.entries).map(([k, v]) => [k, wrapSyscall(v)])
-  ) as Intersections<Modules>;
-}
-
-function wrapSyscall<F extends (...args: any[]) => any>(
-  func: F
-): (...args: Parameters<F>) => ReturnType<F> {
-  const name = func.name;
-  return {
-    [name](...args: Parameters<F>) {
-      try {
-        return func(...args);
-      } catch (e) {
-        if (
-          e !== null &&
-          typeof e === 'object' &&
-          hasOwn(e, '__code_error__') &&
-          typeof e.__code_error__ == 'number'
-        ) {
-          const message =
-            hasOwn(e, '__error_message__') &&
-            typeof e.__error_message__ === 'string'
-              ? e.__error_message__
-              : undefined;
-          throw new SpacetimeHostError(e.__code_error__, message);
-        }
-        throw e;
-      }
-    },
-  }[name];
 }
 
 function fmtLog(...data: any[]) {

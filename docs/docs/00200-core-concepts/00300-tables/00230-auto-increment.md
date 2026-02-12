@@ -24,8 +24,9 @@ const post = table(
 );
 
 const spacetimedb = schema(post);
+export default spacetimedb;
 
-spacetimedb.reducer('add_post', { title: t.string() }, (ctx, { title }) => {
+export const add_post = spacetimedb.reducer({ title: t.string() }, (ctx, { title }) => {
   // Pass 0 for the auto-increment field
   const inserted = ctx.db.post.insert({ id: 0n, title });
   // inserted.id now contains the assigned value
@@ -34,6 +35,8 @@ spacetimedb.reducer('add_post', { title: t.string() }, (ctx, { title }) => {
 ```
 
 Use the `.autoInc()` method on a column builder.
+
+Auto-increment columns must be integer types: `t.i8()`, `t.u8()`, `t.i16()`, `t.u16()`, `t.i32()`, `t.u32()`, `t.i64()`, `t.u64()`, `t.i128()`, `t.u128()`, `t.i256()`, or `t.u256()`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -59,6 +62,8 @@ public static void AddPost(ReducerContext ctx, string title)
 ```
 
 Use the `[SpacetimeDB.AutoInc]` attribute.
+
+Auto-increment columns must be integer types: `sbyte`, `byte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `SpacetimeDB.I128`, `SpacetimeDB.U128`, `SpacetimeDB.I256`, or `SpacetimeDB.U256`.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -86,10 +91,35 @@ fn add_post(ctx: &ReducerContext, title: String) -> Result<(), String> {
 
 Use the `#[auto_inc]` attribute.
 
+Auto-increment columns must be integer types: `i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, or `u128`.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Post {
+    uint64_t id;
+    std::string title;
+};
+SPACETIMEDB_STRUCT(Post, id, title)
+SPACETIMEDB_TABLE(Post, post, Public)
+FIELD_PrimaryKeyAutoInc(post, id)
+
+SPACETIMEDB_REDUCER(add_post, ReducerContext ctx, std::string title) {
+    // Pass 0 for the auto-increment field
+    auto inserted = ctx.db[post].insert(Post{0, title});
+    // inserted.id now contains the assigned value
+    LOG_INFO("Created post with id: " + std::to_string(inserted.id));
+    return Ok();
+}
+```
+
+Use the `FIELD_PrimaryKeyAutoInc(table, field)` macro after table registration.
+
+Auto-increment columns must be integer types: `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `SpacetimeDB::i128`, `SpacetimeDB::u128`, `SpacetimeDB::i256`, or `SpacetimeDB::u256`.
+
 </TabItem>
 </Tabs>
-
-Auto-increment columns must be integer types (`u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, etc.).
 
 ## Trigger Value
 
@@ -154,7 +184,7 @@ const user = table(
   }
 );
 
-spacetimedb.reducer('insert_user', { name: t.string() }, (ctx, { name }) => {
+export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.user.insert({ user_id: 0n, name });
 });
 ```

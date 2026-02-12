@@ -1,0 +1,144 @@
+---
+description: "⛔ MANDATORY: Read this ENTIRE file before writing ANY PostgreSQL real-time app code. PostgreSQL does NOT auto-sync — manual WebSocket broadcasting required."
+globs: **/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.sql
+alwaysApply: true
+---
+
+# ⛔ STOP - READ THIS ENTIRE FILE FIRST
+
+**Before writing ANY PostgreSQL real-time app code, you MUST:**
+
+1. Read this ENTIRE document from start to finish
+2. Pay special attention to section 3 (Real-time sync pattern) — PostgreSQL does NOT auto-sync
+3. Internalize the do-not-do list in section 6
+
+**Do NOT skim. Do NOT skip sections. Do NOT start coding until you've read everything.**
+
+Unlike SpacetimeDB, PostgreSQL requires manual WebSocket broadcasting for every database mutation. Forgetting this creates apps that appear broken — data saves but clients never see updates.
+
+---
+
+# PostgreSQL TypeScript Real-Time App Guidelines
+
+These rules cover:
+- **PostgreSQL database** (Drizzle ORM)
+- **Node.js/Express backend** (REST API + Socket.io)
+- **React client** (Vite + TypeScript)
+
+---
+
+## 0) Hard requirements (always)
+
+- **Use Drizzle ORM** for type-safe database access.
+- **All database changes must broadcast via WebSocket** — clients don't auto-sync.
+- **Use connection pooling** — Drizzle with `postgres` driver handles this.
+- **Validate all inputs server-side** — never trust client data.
+- **Use JWT for authentication** — for both REST API and WebSocket connections.
+
+---
+
+## 1) Project structure
+
+A PostgreSQL real-time app typically has separate **server** and **client** folders, each with their own `package.json`. Key components:
+
+**Server side:**
+- Express + Socket.io entry point
+- Drizzle ORM schema definitions and database client
+- JWT authentication middleware
+- WebSocket event handlers
+- REST API routes
+
+**Client side:**
+- Vite + React setup
+- REST API client utilities
+- Socket.io client for real-time updates
+
+Organize files logically based on app complexity — small apps can be flatter, larger apps may need more subdirectories.
+
+---
+
+## 2) Database schema rules (Drizzle ORM)
+
+### 2.1 Schema best practices
+
+- Use `uuid().defaultRandom()` for user IDs — more secure, no enumeration attacks.
+- Use `serial()` for internal IDs — simpler, auto-incrementing.
+- Always add `onDelete: 'cascade'` or `onDelete: 'set null'` for foreign keys.
+- Add unique constraints with `.unique()`.
+- Create indexes on foreign keys and frequently queried columns.
+- Use `varchar({ length: n })` with length limits, not unlimited `text()` for user input.
+- Export inferred types (`$inferSelect`, `$inferInsert`) for type safety in routes.
+
+### 2.2 Required dependencies
+
+**Server:** `drizzle-orm`, `postgres`, `express`, `socket.io`, `jsonwebtoken`, `cors`
+**Client:** `react`, `react-dom`, `socket.io-client`
+
+### 2.3 Default ports
+
+- **PostgreSQL:** 5432
+- **Server API:** 3001
+- **Client:** 5174
+
+---
+
+## 3) Real-time sync pattern (CRITICAL)
+
+PostgreSQL does not auto-sync changes to clients. You MUST manually broadcast every database mutation:
+
+1. **After INSERT** — emit `entity:created` with the new row
+2. **After UPDATE** — emit `entity:updated` with the updated row  
+3. **After DELETE** — emit `entity:deleted` with the deleted ID
+
+Broadcast to appropriate channels:
+- Global events: `io.emit('event', data)`
+- Room-scoped events: `io.to('room:123').emit('event', data)`
+
+Clients must listen for these events and update their local state accordingly.
+
+---
+
+## 4) Authentication pattern
+
+- Generate JWT tokens on user registration/login
+- Store tokens in client localStorage
+- Include `Authorization: Bearer <token>` header on all API requests
+- Verify JWT in Express middleware and attach `userId` to request
+- For WebSocket: pass token in `socket.handshake.auth.token` and verify on connection
+
+---
+
+## 5) Rate limiting
+
+Implement rate limiting for user-triggered actions to prevent spam:
+- Store last action timestamp per user in database
+- Check elapsed time before allowing action
+- Return 429 status when rate limited
+
+---
+
+## 6) Do-not-do list
+
+### Database
+- Do NOT write raw SQL — use Drizzle's query builder for type safety.
+- Do NOT create a new connection per request — use connection pooling.
+- Do NOT skip indexes on foreign keys and frequently queried columns.
+- Do NOT use `serial()` for user IDs — use `uuid().defaultRandom()` for security.
+- Do NOT use unlimited `text()` for user input — use `varchar({ length: n })`.
+
+### Backend
+- Do NOT store JWT secret in code — use environment variables.
+- Do NOT trust client-provided user IDs — always use the ID from the JWT.
+- Do NOT skip input validation — validate length, format, and required fields.
+- Do NOT forget to broadcast changes — clients won't auto-sync.
+- Do NOT return database errors to clients — log them and return generic messages.
+
+### Client
+- Do NOT store tokens in memory only — use localStorage for persistence.
+- Do NOT assume socket is connected — check before emitting.
+- Do NOT fetch data on every render — cache in state and update via socket events.
+- Do NOT forget to clean up socket listeners — return cleanup functions from useEffect.
+
+---
+
+> **Next:** See `deployment.mdc` for deployment commands and running the app.

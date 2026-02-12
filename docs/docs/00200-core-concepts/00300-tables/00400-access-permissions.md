@@ -88,6 +88,32 @@ pub struct Player {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Private table (default) - only accessible from server-side code
+struct InternalConfig {
+    std::string key;
+    std::string value;
+};
+SPACETIMEDB_STRUCT(InternalConfig, key, value)
+SPACETIMEDB_TABLE(InternalConfig, internal_config, Private)
+FIELD_PrimaryKey(internal_config, key)
+
+// Public table - clients can subscribe and query
+struct Player {
+    uint64_t id;
+    std::string name;
+    uint64_t score;
+};
+SPACETIMEDB_STRUCT(Player, id, name, score)
+SPACETIMEDB_TABLE(Player, player, Public)
+FIELD_PrimaryKeyAutoInc(player, id)
+```
+
+Use `Private` or `Public` as the third parameter to `SPACETIMEDB_TABLE` to control table visibility.
+
+</TabItem>
 </Tabs>
 
 Use private tables for:
@@ -107,7 +133,7 @@ Reducers receive a `ReducerContext` which provides full read-write access to all
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('example', {}, (ctx) => {
+export const example = spacetimedb.reducer({}, (ctx) => {
   // Insert
   ctx.db.user.insert({ id: 0, name: 'Alice', email: 'alice@example.com' });
 
@@ -191,6 +217,35 @@ fn example(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
+    // Insert
+    ctx.db[user].insert(User{.id = 0, .name = "Alice", .email = "alice@example.com"});
+
+    // Read: iterate all rows
+    for (const auto& user_row : ctx.db[user]) {
+        LOG_INFO("User: " + user_row.name);
+    }
+
+    // Read: find by unique column
+    auto found_user = ctx.db[user_id].find(123);
+    if (found_user.has_value()) {
+        // Update
+        auto updated = found_user.value();
+        updated.name = "Bob";
+        ctx.db[user_id].update(updated);
+    }
+
+    // Delete
+    ctx.db[user_id].delete_by_key(456);
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Procedures with Transactions - Read-Write Access
@@ -201,7 +256,7 @@ Procedures receive a `ProcedureContext` and can access tables through transactio
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.string() }, t.unit(), (ctx, { userId, newName }) => {
+export const updateUserProcedure = spacetimedb.procedure({ userId: t.u64(), newName: t.string() }, t.unit(), (ctx, { userId, newName }) => {
   // Must explicitly open a transaction
   ctx.withTx(ctx => {
     // Full read-write access within the transaction
@@ -262,6 +317,26 @@ fn update_user_procedure(ctx: &mut ProcedureContext, user_id: u64, new_name: Str
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_PROCEDURE(Unit, update_user_procedure, ProcedureContext ctx, uint64_t userId, std::string newName) {
+    // Must explicitly open a transaction
+    ctx.with_tx([userId, newName](TxContext& tx) {
+        // Full read-write access within the transaction
+        auto user_opt = tx.db[user_id].find(userId);
+        if (user_opt.has_value()) {
+            User updated = user_opt.value();
+            updated.name = newName;
+            tx.db[user_id].update(updated);
+        }
+    });
+    // Transaction is committed when the lambda returns
+    return Unit{};
+}
+```
+
+</TabItem>
 </Tabs>
 
 See the [Procedures documentation](/functions/procedures) for more details on using procedures, including making HTTP requests to external services.
@@ -274,7 +349,7 @@ See the [Procedures documentation](/functions/procedures) for more details on us
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.view(
+export const findUsersByName = spacetimedb.view(
   { name: 'findUsersByName', public: true },
   t.array(user.rowType),
   (ctx) => {
@@ -316,6 +391,17 @@ fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_VIEW(std::vector<User>, find_users_by_name, Public, ViewContext ctx) {
+    return ctx.db[user_name].filter("Alice").collect();
+    // Cannot insert, update, or delete
+    // ctx.db[user].insert(...) // ❌ Methods not available in ViewContext
+}
+```
+
+</TabItem>
 </Tabs>
 
 See the [Views documentation](/functions/views) for more details on defining and querying views.
@@ -351,9 +437,10 @@ const message = table(
 );
 
 const spacetimedb = schema(message);
+export default spacetimedb;
 
 // Public view that only returns messages the caller can see
-spacetimedb.view(
+export const my_messages = spacetimedb.view(
   { name: 'my_messages', public: true },
   t.array(message.rowType),
   (ctx) => {
@@ -433,6 +520,34 @@ fn my_messages(ctx: &ViewContext) -> Vec<Message> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Message {
+    uint64_t id;
+    Identity sender;
+    Identity recipient;
+    std::string content;
+};
+SPACETIMEDB_STRUCT(Message, id, sender, recipient, content)
+SPACETIMEDB_TABLE(Message, message, Private)  // Private by default
+FIELD_PrimaryKeyAutoInc(message, id)
+FIELD_Index(message, sender)
+FIELD_Index(message, recipient)
+
+// Public view that only returns messages the caller can see
+SPACETIMEDB_VIEW(std::vector<Message>, my_messages, Public, ViewContext ctx) {
+    // Look up messages by index where caller is sender or recipient
+    auto sent = ctx.db[message_sender].filter(ctx.sender).collect();
+    auto received = ctx.db[message_recipient].filter(ctx.sender).collect();
+    
+    // Combine both vectors
+    sent.insert(sent.end(), received.begin(), received.end());
+    return sent;
+}
+```
+
+</TabItem>
 </Tabs>
 
 Clients querying `my_messages` will only see their own messages, even though all messages are stored in the same table.
@@ -462,6 +577,7 @@ const userAccount = table(
 );
 
 const spacetimedb = schema(userAccount);
+export default spacetimedb;
 
 // Public type without sensitive columns
 const publicUserProfile = t.row('PublicUserProfile', {
@@ -471,7 +587,7 @@ const publicUserProfile = t.row('PublicUserProfile', {
 });
 
 // Public view that returns the caller's profile without sensitive data
-spacetimedb.view(
+export const my_profile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(publicUserProfile),
   (ctx) => {
@@ -585,6 +701,50 @@ fn my_profile(ctx: &ViewContext) -> Option<PublicUserProfile> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct UserAccount {
+    uint64_t id;
+    Identity identity;
+    std::string username;
+    std::string email;
+    std::string password_hash;  // Sensitive - not exposed in view
+    std::string api_key;        // Sensitive - not exposed in view
+    Timestamp created_at;
+};
+SPACETIMEDB_STRUCT(UserAccount, id, identity, username, email, password_hash, api_key, created_at)
+SPACETIMEDB_TABLE(UserAccount, user_account, Private)  // Private by default
+FIELD_PrimaryKeyAutoInc(user_account, id)
+FIELD_Unique(user_account, identity)
+
+// Public type without sensitive columns
+struct PublicUserProfile {
+    uint64_t id;
+    std::string username;
+    Timestamp created_at;
+};
+SPACETIMEDB_STRUCT(PublicUserProfile, id, username, created_at)
+
+// Public view that returns the caller's profile without sensitive data
+SPACETIMEDB_VIEW(std::optional<PublicUserProfile>, my_profile, Public, ViewContext ctx) {
+    // Look up the caller's account by their identity (unique index)
+    auto user_opt = ctx.db[user_account_identity].find(ctx.sender);
+    if (!user_opt.has_value()) {
+        return std::nullopt;
+    }
+    
+    UserAccount user = user_opt.value();
+    return PublicUserProfile{
+        user.id,
+        user.username,
+        user.created_at
+        // email, password_hash, and api_key are not included
+    };
+}
+```
+
+</TabItem>
 </Tabs>
 
 Clients can query `my_profile` to see their username and creation date, but never see their email address, password hash, or API key.
@@ -612,6 +772,7 @@ const employee = table(
 );
 
 const spacetimedb = schema(employee);
+export default spacetimedb;
 
 // Public type for colleagues (no salary)
 const colleague = t.row('Colleague', {
@@ -621,7 +782,7 @@ const colleague = t.row('Colleague', {
 });
 
 // View that returns colleagues in the caller's department, without salary info
-spacetimedb.view(
+export const my_colleagues = spacetimedb.view(
   { name: 'my_colleagues', public: true },
   t.array(colleague),
   (ctx) => {
@@ -739,6 +900,52 @@ fn my_colleagues(ctx: &ViewContext) -> Vec<Colleague> {
             // salary is not included
         })
         .collect()
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Private table with all employee data
+struct Employee {
+    uint64_t id;
+    Identity identity;
+    std::string name;
+    std::string department;
+    uint64_t salary;           // Sensitive - not exposed in view
+};
+SPACETIMEDB_STRUCT(Employee, id, identity, name, department, salary)
+SPACETIMEDB_TABLE(Employee, employee, Private)
+FIELD_PrimaryKey(employee, id)
+FIELD_Unique(employee, identity)
+FIELD_Index(employee, department)
+
+// Public type for colleagues (no salary)
+struct Colleague {
+    uint64_t id;
+    std::string name;
+    std::string department;
+};
+SPACETIMEDB_STRUCT(Colleague, id, name, department)
+
+// View that returns colleagues in the caller's department, without salary info
+SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx) {
+    // Find the caller's employee record by identity (unique index)
+    auto me_opt = ctx.db[employee_identity].find(ctx.sender);
+    if (!me_opt.has_value()) {
+        return std::vector<Colleague>();
+    }
+    
+    Employee me = me_opt.value();
+    std::vector<Colleague> results;
+    
+    // Look up employees in the same department
+    for (auto row : ctx.db[employee_department].filter(me.department)) {
+        results.push_back(Colleague{row.id, row.name, row.department});
+    }
+    
+    return results;
 }
 ```
 
