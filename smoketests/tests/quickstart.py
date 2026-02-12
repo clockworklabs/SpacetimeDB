@@ -172,7 +172,7 @@ class BaseQuickstart(Smoketest):
             "--non-interactive",
             "--lang",
             self.lang,
-            "--module-path",
+            "--project-path",
             server_path,
             "spacetimedb-project",
             capture_stderr=True,

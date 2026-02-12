@@ -279,26 +279,6 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         let server = server_opt.as_deref();
         let name_or_identity_opt = command_config.get_one::<String>("database")?;
         let name_or_identity = name_or_identity_opt.as_deref();
-        let path_to_project = match command_config.get_one::<PathBuf>("module_path")? {
-            Some(path) => path,
-            None if using_config => {
-                anyhow::bail!("module-path must be specified for each publish target when using spacetime.json");
-            }
-            None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
-                     Use --module-path to specify the module location."
-                )
-            })?,
-        };
-
-        if using_config {
-            println!(
-                "Publishing module {} to database '{}'",
-                path_to_project.display(),
-                name_or_identity.unwrap()
-            );
-        }
         let clear_database = args
             .get_one::<ClearMode>("clear-database")
             .copied()
@@ -307,6 +287,37 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
+        let path_to_project = if wasm_file.is_some() || js_file.is_some() {
+            command_config.get_one::<PathBuf>("module_path")?
+        } else {
+            Some(match command_config.get_one::<PathBuf>("module_path")? {
+                Some(path) => path,
+                None if using_config => {
+                    anyhow::bail!("module-path must be specified for each publish target when using spacetime.json");
+                }
+                None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
+                         Use --module-path to specify the module location."
+                    )
+                })?,
+            })
+        };
+
+        if using_config {
+            if let Some(path_to_project) = path_to_project.as_ref() {
+                println!(
+                    "Publishing module {} to database '{}'",
+                    path_to_project.display(),
+                    name_or_identity.unwrap()
+                );
+            } else {
+                println!(
+                    "Publishing precompiled module to database '{}'",
+                    name_or_identity.unwrap()
+                );
+            }
+        }
         let database_host = config.get_host_url(server)?;
         let build_options = command_config
             .get_one::<String>("build_options")?
@@ -326,11 +337,13 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
-        if !path_to_project.exists() {
-            return Err(anyhow::anyhow!(
-                "Project path does not exist: {}",
-                path_to_project.display()
-            ));
+        if let Some(path_to_project) = path_to_project.as_ref() {
+            if !path_to_project.exists() {
+                return Err(anyhow::anyhow!(
+                    "Project path does not exist: {}",
+                    path_to_project.display()
+                ));
+            }
         }
 
         // Decide program file path and read program.
@@ -342,7 +355,14 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
             println!("(JS) Skipping build. Instead we are publishing {}", path.display());
             (path.clone(), "Js")
         } else {
-            build::exec_with_argstring(config.clone(), &path_to_project, &build_options).await?
+            build::exec_with_argstring(
+                config.clone(),
+                path_to_project
+                    .as_ref()
+                    .expect("path_to_project must exist when publishing from source"),
+                &build_options,
+            )
+            .await?
         };
         let program_bytes = fs::read(path_to_program)?;
 

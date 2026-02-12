@@ -514,7 +514,7 @@ impl QuickstartTest {
             "--non-interactive",
             "--lang",
             self.config.lang,
-            "--module-path",
+            "--project-path",
             server_path.to_str().unwrap(),
             "spacetimedb-project",
         ])?;

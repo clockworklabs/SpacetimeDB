@@ -556,7 +556,7 @@ mod tests {
         // Filter by module1
         let matches = cmd.clone().get_matches_from(vec![
             "generate",
-            "--project-path",
+            "--module-path",
             module1.to_str().unwrap(),
             "--lang",
             "rust",
@@ -650,7 +650,7 @@ mod tests {
         let cli_path = module_dir.join("..").join("mymodule");
         let matches = cmd.clone().get_matches_from(vec![
             "generate",
-            "--project-path",
+            "--module-path",
             cli_path.to_str().unwrap(),
             "--lang",
             "rust",
