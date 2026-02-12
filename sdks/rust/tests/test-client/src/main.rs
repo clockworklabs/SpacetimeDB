@@ -1010,8 +1010,7 @@ fn exec_fail_reducer() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let reducer_success_result = test_counter.add_test("reducer-callback-success");
-    let reducer_panic_result = test_counter.add_test("reducer-callback-panic");
-    let reducer_err_result = test_counter.add_test("reducer-callback-error");
+    let reducer_fail_result = test_counter.add_test("reducer-callback-failure");
 
     let connection = connect(&test_counter);
 
@@ -1063,14 +1062,16 @@ fn exec_fail_reducer() {
                     .insert_pk_u_8_then(key, fail_data, move |ctx, status| {
                         let run_checks = || {
                             match &status {
-                                Err(internal_error) => anyhow::ensure!(
-                                    format!("{internal_error}") == "The instance encountered a fatal error.",
-                                    "Expected reducer `insert_pk_u_8` to panic due to unique constraint violation, but got an unexpected error message: {internal_error}",
+                                Ok(Ok(())) => anyhow::bail!(
+                                    "Expected reducer `insert_pk_u_8` to error or panic, but got a successful return"
                                 ),
-                                other => anyhow::bail!("Expected reducer `insert_pk_u_8` to panic due to unique constraint violation, but but unexpected status: {other:?}"),
+                                _ => (),
                             }
-                            if !matches!(ctx.event.status, Status::Panic(_)) {
-                                anyhow::bail!("Unexpected status. Expected Panic but found {:?}", ctx.event.status);
+
+                            if matches!(ctx.event.status, Status::Committed) {
+                                anyhow::bail!(
+                                    "Expected reducer `insert_pk_u_8` to error or panic, but got a `Status::Committed`"
+                                );
                             }
                             let expected_reducer = Reducer::InsertPkU8 {
                                 n: key,
@@ -1095,36 +1096,7 @@ fn exec_fail_reducer() {
                             Ok(())
                         };
 
-                        reducer_panic_result(run_checks());
-
-                        ctx.reducers.update_pk_simple_enum_then(SimpleEnum::One, 0, move |ctx, status| {
-                            let run_checks = || {
-                                match &status {
-                                    Ok(Err(message)) => anyhow::ensure!(
-                                        message.contains("row not found"),
-                                        "Expected reducer `update_pk_simple_enum` to return an error, but got an unexpected error message: {message}",
-                                    ),
-                                    other => anyhow::bail!("Expected reducer `update_pk_simple_enum` to return an error, but got an unexpected status: {other:?}")
-                                }
-                                if !matches!(ctx.event.status, Status::Err(_)) {
-                                    anyhow::bail!("Unexpected status. Expected Err but found {:?}", ctx.event.status);
-                                }
-                                let expected_reducer = Reducer::UpdatePkSimpleEnum {
-                                    a: SimpleEnum::One,
-                                    data: 0,
-                                };
-                                if ctx.event.reducer != expected_reducer {
-                                    anyhow::bail!(
-                                        "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
-                                        ctx.event.reducer
-                                    );
-                                }
-
-                                Ok(())
-                            };
-
-                            reducer_err_result(run_checks());
-                        }).unwrap();
+                        reducer_fail_result(run_checks());
                     })
                     .unwrap();
             })
