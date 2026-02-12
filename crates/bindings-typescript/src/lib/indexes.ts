@@ -73,9 +73,7 @@ export type Index<
 > = I['unique'] extends true
   ? AllColumnsPrimaryKey<TableDef, I['columns']> extends true
     ? UniqueIndex<TableDef, I> & {
-        update(
-          row: Prettify<RowType<TableDef>>
-        ): Prettify<RowType<TableDef>>;
+        update(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
       }
     : UniqueIndex<TableDef, I>
   : I['algorithm'] extends 'hash'

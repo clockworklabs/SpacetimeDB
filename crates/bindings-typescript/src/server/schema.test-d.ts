@@ -47,8 +47,16 @@ spacetimedb.init(ctx => {
   ctx.db.person.id.find(2);
 
   // update() is allowed on primary key indexes
-  ctx.db.person.id.update({ id: 1, name: '', name2: '', married: false, id2: '' as any, age: 0, age2: 0 });
+  ctx.db.person.id.update({
+    id: 1,
+    name: '',
+    name2: '',
+    married: false,
+    id2: '' as any,
+    age: 0,
+    age2: 0,
+  });
 
   // @ts-expect-error update() is NOT allowed on non-PK unique indexes
-  ctx.db.person.name2.update;
+  const _update = ctx.db.person.name2.update;
 });

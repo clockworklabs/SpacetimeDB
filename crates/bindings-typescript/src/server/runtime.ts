@@ -538,9 +538,10 @@ function makeTableView(
       .filter(x => x.data.tag === 'Unique')
       .some(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
 
-    const isPrimaryKey = isUnique
-      && column_ids.length === table.primaryKey.length
-      && column_ids.every((id, i) => table.primaryKey[i] === id);
+    const isPrimaryKey =
+      isUnique &&
+      column_ids.length === table.primaryKey.length &&
+      column_ids.every((id, i) => table.primaryKey[i] === id);
 
     const indexSerializers = column_ids.map(id =>
       AlgebraicType.makeSerializer(
