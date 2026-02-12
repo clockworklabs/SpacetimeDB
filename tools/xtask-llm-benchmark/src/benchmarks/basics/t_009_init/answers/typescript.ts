@@ -10,8 +10,9 @@ export const User = table({
 });
 
 const spacetimedb = schema(User);
+export default spacetimedb;
 
-spacetimedb.init(ctx => {
+export const init = spacetimedb.init(ctx => {
   ctx.db.user.insert({ id: 1, name: "Alice", age: 30, active: true });
   ctx.db.user.insert({ id: 2, name: "Bob", age: 22, active: false });
 });

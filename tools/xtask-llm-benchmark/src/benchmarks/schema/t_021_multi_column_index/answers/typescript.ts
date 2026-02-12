@@ -11,8 +11,9 @@ export const Log = table({
 });
 
 const spacetimedb = schema(Log);
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.log.insert({ id: 1, userId: 7, day: 1, message: "a" });
     ctx.db.log.insert({ id: 2, userId: 7, day: 2, message: "b" });

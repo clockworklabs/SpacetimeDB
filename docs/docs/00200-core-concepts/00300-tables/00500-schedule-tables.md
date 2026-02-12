@@ -32,7 +32,7 @@ const reminder = table(
   }
 );
 
-spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (_ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ctx, { arg }) => {
   // Invoked automatically by the scheduler
   // arg.message, arg.scheduled_at, arg.scheduled_id
 });
@@ -87,6 +87,30 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Reminder {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+    std::string message;
+};
+SPACETIMEDB_STRUCT(Reminder, scheduled_id, scheduled_at, message)
+SPACETIMEDB_TABLE(Reminder, reminder, Public)
+FIELD_PrimaryKeyAutoInc(reminder, scheduled_id)
+SPACETIMEDB_SCHEDULE(reminder, 1, send_reminder)  // Column 1 is scheduled_at
+
+// Reducer invoked automatically by the scheduler
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder arg)
+{
+    // Invoked automatically by the scheduler
+    // arg.message, arg.scheduled_at, arg.scheduled_id
+    LOG_INFO("Scheduled reminder: " + arg.message);
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Inserting Schedules
@@ -107,8 +131,9 @@ Use intervals for periodic tasks like game ticks, heartbeats, or recurring maint
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 const spacetimedb = schema();
+export default spacetimedb;
 
-spacetimedb.reducer('schedule_periodic_tasks', (ctx) => {
+export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
   // Schedule to run every 5 seconds (5,000,000 microseconds)
   ctx.db.reminder.insert({
     scheduled_id: 0n,
@@ -177,6 +202,25 @@ fn schedule_periodic_tasks(ctx: &ReducerContext) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Schedule to run every 5 seconds
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::interval(TimeDuration::from_seconds(5)),
+    "Check for updates"
+});
+
+// Schedule to run every 100 milliseconds
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::interval(TimeDuration::from_millis(100)),
+    "Game tick"
+});
+```
+
+</TabItem>
 </Tabs>
 
 ### Scheduling at Specific Times
@@ -190,8 +234,9 @@ Use specific times for one-shot actions like sending a reminder at a particular 
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 const spacetimedb = schema();
+export default spacetimedb;
 
-spacetimedb.reducer('schedule_timed_tasks', (ctx) => {
+export const schedule_timed_tasks = spacetimedb.reducer((ctx) => {
   // Schedule for 10 seconds from now
   const tenSecondsFromNow = ctx.timestamp.microsSinceUnixEpoch + 10_000_000n;
   ctx.db.reminder.insert({
@@ -266,6 +311,26 @@ fn schedule_timed_tasks(ctx: &ReducerContext) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Schedule for 10 seconds from now
+Timestamp tenSecondsFromNow = ctx.timestamp + TimeDuration::from_seconds(10);
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::time(tenSecondsFromNow),
+    "Your auction has ended"
+});
+
+// Schedule for immediate execution (current timestamp)
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::time(ctx.timestamp),
+    "Process now"
+});
+```
+
+</TabItem>
 </Tabs>
 
 ## How It Works
@@ -285,7 +350,7 @@ Scheduled reducers are normal reducers that can also be invoked by external clie
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: Reminder.rowType }, (ctx, { arg }) => {
   if (!ctx.senderAuth.isInternal) {
     throw new SenderError('This reducer can only be called by the scheduler');
   }
@@ -324,6 +389,22 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
     }
     // Process the scheduled reminder
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder arg)
+{
+    // Check if this reducer is being called by the scheduler (internal)
+    if (!ctx.sender_auth().is_internal()) {
+        return Err("This reducer can only be called by the scheduler");
+    }
+    
+    // Process the scheduled reminder
+    return Ok();
 }
 ```
 

@@ -7,7 +7,7 @@ import { DbConnection, query } from './module_bindings/index.ts';
 
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('game')
+  .withDatabaseName('game')
   .withLightMode(true)
   .onDisconnect(() => {
     console.log('disconnected');

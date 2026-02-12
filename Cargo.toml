@@ -255,6 +255,7 @@ rayon-core = "1.11.0"
 regex = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
+rolldown_common = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
@@ -325,6 +326,9 @@ uuid = { version = "1.18.1", default-features = false }
 # When updating the V8 crate, either update the version and hashes in that file,
 # or ping phoebe @gefjon to do so.
 v8 = "=145.0.0"
+# This version is kept in sync with the version of ICU required by v8.
+# When that changes, the `v8::icu::set_common_data_XX()` function is renamed.
+deno_core_icudata = "0.77"
 
 walkdir = "2.2.5"
 wasmbin = "0.6"

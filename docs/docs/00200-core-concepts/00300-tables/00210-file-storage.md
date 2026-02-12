@@ -11,7 +11,7 @@ SpacetimeDB can store binary data directly in table columns, making it suitable 
 
 ## Storing Binary Data Inline
 
-Store binary data using `Vec<u8>` (Rust), `List<byte>` (C#), or `t.array(t.u8())` (TypeScript). This approach keeps data within the database, ensuring it participates in transactions and real-time updates.
+Store binary data using `Vec<u8>` (Rust), `List<byte>` (C#), `std::vector<uint8_t>` (C++), or `t.array(t.u8())` (TypeScript). This approach keeps data within the database, ensuring it participates in transactions and real-time updates.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -30,8 +30,9 @@ const userAvatar = table(
 );
 
 const spacetimedb = schema(userAvatar);
+export default spacetimedb;
 
-spacetimedb.reducer('upload_avatar', {
+export const upload_avatar = spacetimedb.reducer({
   userId: t.u64(),
   mimeType: t.string(),
   data: t.array(t.u8()),
@@ -121,6 +122,37 @@ pub fn upload_avatar(
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct UserAvatar {
+  uint64_t user_id;
+  std::string mime_type;
+  std::vector<uint8_t> data;  // Binary data stored inline
+  Timestamp uploaded_at;
+};
+SPACETIMEDB_STRUCT(UserAvatar, user_id, mime_type, data, uploaded_at)
+SPACETIMEDB_TABLE(UserAvatar, user_avatar, Public)
+FIELD_PrimaryKey(user_avatar, user_id)
+
+SPACETIMEDB_REDUCER(upload_avatar, ReducerContext ctx, 
+  uint64_t user_id, std::string mime_type, std::vector<uint8_t> data) {
+  // Delete existing avatar if present
+  ctx.db[user_avatar_user_id].delete_by_key(user_id);
+
+  // Insert new avatar
+  ctx.db[user_avatar].insert(UserAvatar{
+    .user_id = user_id,
+    .mime_type = mime_type,
+    .data = data,
+    .uploaded_at = ctx.timestamp,
+  });
+    
+  return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### When to Use Inline Storage
@@ -166,9 +198,10 @@ const document = table(
 );
 
 const spacetimedb = schema(document);
+export default spacetimedb;
 
 // Called after uploading file to external storage
-spacetimedb.reducer('register_document', {
+export const register_document = spacetimedb.reducer({
   filename: t.string(),
   mimeType: t.string(),
   sizeBytes: t.u64(),
@@ -274,6 +307,41 @@ pub fn register_document(
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Document {
+    uint64_t id;
+    Identity owner_id;
+    std::string filename;
+    std::string mime_type;
+    uint64_t size_bytes;
+    std::string storage_url;  // Reference to external storage
+    Timestamp uploaded_at;
+};
+SPACETIMEDB_STRUCT(Document, id, owner_id, filename, mime_type, size_bytes, storage_url, uploaded_at)
+SPACETIMEDB_TABLE(Document, document, Public)
+FIELD_PrimaryKeyAutoInc(document, id)
+FIELD_Index(document, owner_id)
+
+// Called after uploading file to external storage
+SPACETIMEDB_REDUCER(register_document, ReducerContext ctx,
+    std::string filename, std::string mime_type, uint64_t size_bytes, std::string storage_url) {
+    ctx.db[document].insert(Document{
+        .id = 0,  // auto-increment
+        .owner_id = ctx.sender,
+        .filename = filename,
+        .mime_type = mime_type,
+        .size_bytes = size_bytes,
+        .storage_url = storage_url,
+        .uploaded_at = ctx.timestamp,
+    });
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### External Storage Options
@@ -320,10 +388,10 @@ const document = table(
 );
 
 const spacetimedb = schema(document);
+export default spacetimedb;
 
 // Upload file to S3 and register in database
-spacetimedb.procedure(
-  'upload_to_s3',
+export const upload_to_s3 = spacetimedb.procedure(
   {
     filename: t.string(),
     contentType: t.string(),
@@ -535,8 +603,7 @@ For larger files, generate a pre-signed URL and let the client upload directly:
 
 ```typescript
 // Procedure returns a pre-signed URL for client-side upload
-spacetimedb.procedure(
-  'get_upload_url',
+export const get_upload_url = spacetimedb.procedure(
   { filename: t.string(), contentType: t.string() },
   t.object('UploadInfo', { uploadUrl: t.string(), s3Key: t.string() }),
   (ctx, { filename, contentType }) => {
@@ -550,7 +617,7 @@ spacetimedb.procedure(
 );
 
 // Client uploads directly to S3 using the pre-signed URL, then calls:
-spacetimedb.reducer('confirm_upload', { filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
+export const confirm_upload = spacetimedb.reducer({ filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
   ctx.db.document.insert({
     id: 0n,
     ownerId: ctx.sender,
@@ -733,6 +800,25 @@ pub struct Image {
     height: u32,
     uploaded_at: Timestamp,
 }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Image {
+    uint64_t id;
+    Identity owner_id;
+    std::vector<uint8_t> thumbnail;  // Small preview stored inline
+    std::string original_url;        // Large original in external storage
+    uint32_t width;
+    uint32_t height;
+    Timestamp uploaded_at;
+};
+SPACETIMEDB_STRUCT(Image, id, owner_id, thumbnail, original_url, width, height, uploaded_at)
+SPACETIMEDB_TABLE(Image, image, Public)
+FIELD_PrimaryKeyAutoInc(image, id)
+FIELD_Index(image, owner_id)
 ```
 
 </TabItem>

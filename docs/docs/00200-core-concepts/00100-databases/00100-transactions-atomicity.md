@@ -71,7 +71,7 @@ When a reducer calls another reducer directly (not via scheduling), they execute
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('parent_reducer', (ctx) => {
+export const parent_reducer = spacetimedb.reducer((ctx) => {
     TableA.insert({ /* ... */ });
     
     // This runs in the SAME transaction
@@ -149,6 +149,42 @@ pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
     }
     
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+using namespace SpacetimeDB;
+
+// Forward declare child reducer to allow calling it before its definition
+ReducerResult child_reducer(ReducerContext&, bool some_condition);
+
+SPACETIMEDB_REDUCER(parent_reducer, ReducerContext ctx, bool some_condition) {
+    ctx.db[table_a].insert(RowA{ /* ... */ });
+    
+    // This runs in the SAME transaction
+    ReducerResult result = child_reducer(ctx, some_condition);
+    if (result.is_err()) {
+        return result;
+    }
+    
+    ctx.db[table_b].insert(RowB{ /* ... */ });
+    
+    // All changes from both parent and child commit together
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(child_reducer, ReducerContext ctx, bool some_condition) {
+    ctx.db[table_c].insert(RowC{ /* ... */ });
+    
+    // If this returns Err, the parent's changes also roll back
+    if (some_condition) {
+        return Err("Child failed");
+    }
+    
+    return Ok();
 }
 ```
 

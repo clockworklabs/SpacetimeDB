@@ -1,3 +1,5 @@
+import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
+import Lifecycle from '../lib/autogen/lifecycle_type';
 import {
   type ParamsAsObject,
   type ParamsObj,
@@ -12,33 +14,32 @@ import {
 } from '../lib/schema';
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
-import { procedure, type ProcedureFn, type Procedures } from './procedures';
 import {
-  clientConnected,
-  clientDisconnected,
-  init,
-  reducer,
+  makeProcedureExport,
+  type ProcedureExport,
+  type ProcedureFn,
+  type ProcedureOpts,
+  type Procedures,
+} from './procedures';
+import {
+  makeReducerExport,
+  type ReducerExport,
+  type ReducerOpts,
   type Reducers,
 } from './reducers';
+import { makeHooks } from './runtime';
 
 import {
-  defineView,
+  makeAnonViewExport,
+  makeViewExport,
   type AnonViews,
   type AnonymousViewFn,
+  type ViewExport,
   type ViewFn,
   type ViewOpts,
   type ViewReturnTypeBuilder,
   type Views,
 } from './views';
-
-let REGISTERED_SCHEMA: SchemaInner | null = null;
-
-export function getRegisteredSchema(): SchemaInner {
-  if (REGISTERED_SCHEMA == null) {
-    throw new Error('Schema has not been registered yet. Call schema() first.');
-  }
-  return REGISTERED_SCHEMA;
-}
 
 export class SchemaInner<
   S extends UntypedSchemaDef = UntypedSchemaDef,
@@ -99,12 +100,30 @@ export class SchemaInner<
 // TODO(cloutiertyler): It might be nice to have a way to access the types
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
-class Schema<S extends UntypedSchemaDef> {
+export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   #ctx: SchemaInner<S>;
 
   constructor(ctx: SchemaInner<S>) {
     // TODO: TableSchema and TableDef should really be unified
     this.#ctx = ctx;
+  }
+
+  [moduleHooks](exports: object) {
+    // if (!(hasOwn(exports, 'default') && exports.default instanceof Schema)) {
+    //   throw new TypeError('must export schema as default export');
+    // }
+    const registeredSchema = this.#ctx;
+    for (const [name, moduleExport] of Object.entries(exports)) {
+      if (name === 'default') continue;
+      if (!isModuleExport(moduleExport)) {
+        throw new TypeError(
+          'exporting something that is not a spacetime export'
+        );
+      }
+      checkExportContext(moduleExport, registeredSchema);
+      moduleExport[registerExport](registeredSchema, name);
+    }
+    return makeHooks(registeredSchema);
   }
 
   get schemaType(): S {
@@ -129,7 +148,6 @@ class Schema<S extends UntypedSchemaDef> {
    * @template S - The inferred schema type of the SpacetimeDB module.
    * @template Params - The type of the parameters object expected by the reducer.
    *
-   * @param {string} name - The name of the reducer. This name will be used to call the reducer from clients.
    * @param {Params} params - An object defining the parameters that the reducer accepts.
    *                          Each key-value pair represents a parameter name and its corresponding
    *                          {@link TypeBuilder} or {@link ColumnBuilder}.
@@ -140,8 +158,7 @@ class Schema<S extends UntypedSchemaDef> {
    * @example
    * ```typescript
    * // Define a reducer named 'create_user' that takes 'username' (string) and 'email' (string)
-   * spacetime.reducer(
-   *   'create_user',
+   * export const create_user = spacetime.reducer(
    *   {
    *     username: t.string(),
    *     email: t.string(),
@@ -155,29 +172,42 @@ class Schema<S extends UntypedSchemaDef> {
    * ```
    */
   reducer<Params extends ParamsObj>(
-    name: string,
     params: Params,
     fn: Reducer<S, Params>
-  ): Reducer<S, Params>;
-  reducer(name: string, fn: Reducer<S, {}>): Reducer<S, {}>;
+  ): ReducerExport<S, Params>;
+  reducer(fn: Reducer<S, {}>): ReducerExport<S, {}>;
   reducer<Params extends ParamsObj>(
-    name: string,
-    paramsOrFn: Params | Reducer<S, any>,
-    fn?: Reducer<S, Params>
-  ): Reducer<S, Params> {
-    if (typeof paramsOrFn === 'function') {
-      // This is the case where params are omitted.
-      // The second argument is the reducer function.
-      // We pass an empty object for the params.
-      reducer(this.#ctx, name, {}, paramsOrFn);
-      return paramsOrFn;
-    } else {
-      // This is the case where params are provided.
-      // The second argument is the params object, and the third is the function.
-      // The `fn` parameter is guaranteed to be defined here.
-      reducer(this.#ctx, name, paramsOrFn, fn!);
-      return fn!;
+    opts: ReducerOpts,
+    params: Params,
+    fn: Reducer<S, Params>
+  ): ReducerExport<S, Params>;
+  reducer(opts: ReducerOpts, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  reducer<Params extends ParamsObj>(
+    ...args:
+      | [Params, Reducer<S, Params>]
+      | [Reducer<S, {}>]
+      | [ReducerOpts, Params, Reducer<S, Params>]
+      | [ReducerOpts, Reducer<S, {}>]
+  ): ReducerExport<S, Params> {
+    let opts: ReducerOpts | undefined,
+      params: Params = {} as Params,
+      fn: Reducer<S, Params>;
+    switch (args.length) {
+      case 1:
+        [fn] = args;
+        break;
+      case 2: {
+        let arg1;
+        [arg1, fn] = args;
+        if (typeof arg1.name === 'string') opts = arg1 as ReducerOpts;
+        else params = arg1 as Params;
+        break;
+      }
+      case 3:
+        [opts, params, fn] = args;
+        break;
     }
+    return makeReducerExport(this.#ctx, opts, params, fn);
   }
 
   /**
@@ -192,17 +222,26 @@ class Schema<S extends UntypedSchemaDef> {
    *  - `ctx`: The reducer context, providing access to `sender`, `timestamp`, `connection_id`, and `db`.
    * @example
    * ```typescript
-   * spacetime.init((ctx) => {
+   * export const init = spacetime.init((ctx) => {
    *   ctx.db.user.insert({ username: 'admin', email: 'admin@example.com' });
    * });
    * ```
    */
-  init(fn: Reducer<S, {}>): void;
-  init(name: string, fn: Reducer<S, {}>): void;
-  init(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
-    const [name, fn] =
-      typeof nameOrFn === 'string' ? [nameOrFn, maybeFn] : ['init', nameOrFn];
-    init(this.#ctx, name, {}, fn);
+  init(fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  init(opts: ReducerOpts, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  init(
+    ...args: [Reducer<S, {}>] | [ReducerOpts, Reducer<S, {}>]
+  ): ReducerExport<S, {}> {
+    let opts: ReducerOpts | undefined, fn: Reducer<S, {}>;
+    switch (args.length) {
+      case 1:
+        [fn] = args;
+        break;
+      case 2:
+        [opts, fn] = args;
+        break;
+    }
+    return makeReducerExport(this.#ctx, opts, {}, fn, Lifecycle.Init);
   }
 
   /**
@@ -215,20 +254,27 @@ class Schema<S extends UntypedSchemaDef> {
    *
    * @example
    * ```typescript
-   * spacetime.clientConnected(
+   * export const onConnect = spacetime.clientConnected(
    *   (ctx) => {
    *     console.log(`Client ${ctx.connectionId} connected`);
    *   }
    * );
    */
-  clientConnected(fn: Reducer<S, {}>): void;
-  clientConnected(name: string, fn: Reducer<S, {}>): void;
-  clientConnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
-    const [name, fn] =
-      typeof nameOrFn === 'string'
-        ? [nameOrFn, maybeFn]
-        : ['on_connect', nameOrFn];
-    clientConnected(this.#ctx, name, {}, fn);
+  clientConnected(fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  clientConnected(opts: ReducerOpts, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  clientConnected(
+    ...args: [Reducer<S, {}>] | [ReducerOpts, Reducer<S, {}>]
+  ): ReducerExport<S, {}> {
+    let opts: ReducerOpts | undefined, fn: Reducer<S, {}>;
+    switch (args.length) {
+      case 1:
+        [fn] = args;
+        break;
+      case 2:
+        [opts, fn] = args;
+        break;
+    }
+    return makeReducerExport(this.#ctx, opts, {}, fn, Lifecycle.OnConnect);
   }
 
   /**
@@ -241,29 +287,39 @@ class Schema<S extends UntypedSchemaDef> {
    *
    * @example
    * ```typescript
-   * spacetime.clientDisconnected(
+   * export const onDisconnect = spacetime.clientDisconnected(
    *   (ctx) => {
    *     console.log(`Client ${ctx.connectionId} disconnected`);
    *   }
    * );
    * ```
    */
-  clientDisconnected(fn: Reducer<S, {}>): void;
-  clientDisconnected(name: string, fn: Reducer<S, {}>): void;
-  clientDisconnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
-    const [name, fn] =
-      typeof nameOrFn === 'string'
-        ? [nameOrFn, maybeFn]
-        : ['on_disconnect', nameOrFn];
-    clientDisconnected(this.#ctx, name, {}, fn);
+  clientDisconnected(fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  clientDisconnected(
+    opts: ReducerOpts,
+    fn: Reducer<S, {}>
+  ): ReducerExport<S, {}>;
+  clientDisconnected(
+    ...args: [Reducer<S, {}>] | [ReducerOpts, Reducer<S, {}>]
+  ): ReducerExport<S, {}> {
+    let opts: ReducerOpts | undefined, fn: Reducer<S, {}>;
+    switch (args.length) {
+      case 1:
+        [fn] = args;
+        break;
+      case 2:
+        [opts, fn] = args;
+        break;
+    }
+    return makeReducerExport(this.#ctx, opts, {}, fn, Lifecycle.OnDisconnect);
   }
 
-  view<Ret extends ViewReturnTypeBuilder>(
+  view<Ret extends ViewReturnTypeBuilder, F extends ViewFn<S, {}, Ret>>(
     opts: ViewOpts,
     ret: Ret,
-    fn: ViewFn<S, {}, Ret>
-  ): void {
-    defineView(this.#ctx, opts, false, {}, ret, fn);
+    fn: F
+  ): ViewExport<F> {
+    return makeViewExport(this.#ctx, opts, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -291,12 +347,11 @@ class Schema<S extends UntypedSchemaDef> {
   //   }
   // }
 
-  anonymousView<Ret extends ViewReturnTypeBuilder>(
-    opts: ViewOpts,
-    ret: Ret,
-    fn: AnonymousViewFn<S, {}, Ret>
-  ): void {
-    defineView(this.#ctx, opts, true, {}, ret, fn);
+  anonymousView<
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, {}, Ret>,
+  >(opts: ViewOpts, ret: Ret, fn: F): ViewExport<F> {
+    return makeAnonViewExport(this.#ctx, opts, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -325,36 +380,101 @@ class Schema<S extends UntypedSchemaDef> {
   // }
 
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
-    name: string,
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
   ): ProcedureFn<S, Params, Ret>;
   procedure<Ret extends TypeBuilder<any, any>>(
-    name: string,
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
   ): ProcedureFn<S, {}, Ret>;
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
-    name: string,
-    paramsOrRet: Ret | Params,
-    retOrFn: ProcedureFn<S, {}, Ret> | Ret,
-    maybeFn?: ProcedureFn<S, Params, Ret>
-  ): ProcedureFn<S, Params, Ret> {
-    if (typeof retOrFn === 'function') {
-      procedure(this.#ctx, name, {}, paramsOrRet as Ret, retOrFn);
-      return retOrFn;
-    } else {
-      procedure(this.#ctx, name, paramsOrRet as Params, retOrFn, maybeFn!);
-      return maybeFn!;
+    opts: ProcedureOpts,
+    params: Params,
+    ret: Ret,
+    fn: ProcedureFn<S, Params, Ret>
+  ): ProcedureFn<S, Params, Ret>;
+  procedure<Ret extends TypeBuilder<any, any>>(
+    opts: ProcedureOpts,
+    ret: Ret,
+    fn: ProcedureFn<S, {}, Ret>
+  ): ProcedureFn<S, {}, Ret>;
+  procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
+    ...args:
+      | [Params, Ret, ProcedureFn<S, Params, Ret>]
+      | [Ret, ProcedureFn<S, Params, Ret>]
+      | [ProcedureOpts, Params, Ret, ProcedureFn<S, Params, Ret>]
+      | [ProcedureOpts, Ret, ProcedureFn<S, Params, Ret>]
+  ): ProcedureExport<S, Params, Ret> {
+    let opts: ProcedureOpts | undefined,
+      params: Params = {} as Params,
+      ret: Ret,
+      fn: ProcedureFn<S, Params, Ret>;
+    switch (args.length) {
+      case 2:
+        [ret, fn] = args;
+        break;
+      case 3: {
+        let arg1;
+        [arg1, ret, fn] = args;
+        if (typeof arg1.name === 'string') opts = arg1 as ProcedureOpts;
+        else params = arg1 as Params;
+        break;
+      }
+      case 4:
+        [opts, params, ret, fn] = args;
+        break;
     }
+    return makeProcedureExport(this.#ctx, opts, params, ret, fn);
+  }
+
+  /**
+   * Bundle multiple reducers, procedures, etc into one value to export.
+   * The name they will be exported with is their corresponding key in the `exports` argument.
+   */
+  exportGroup(exports: Record<string, ModuleExport>): ModuleExport {
+    return {
+      [exportContext]: this.#ctx,
+      [registerExport](ctx, _exportName) {
+        for (const [exportName, moduleExport] of Object.entries(exports)) {
+          checkExportContext(moduleExport, ctx);
+          moduleExport[registerExport](ctx, exportName);
+        }
+      },
+    };
   }
 
   clientVisibilityFilter = {
-    sql: (filter: string) => {
-      this.#ctx.moduleDef.rowLevelSecurity.push({ sql: filter });
-    },
+    sql: (filter: string): ModuleExport => ({
+      [exportContext]: this.#ctx,
+      [registerExport](ctx, _exportName) {
+        ctx.moduleDef.rowLevelSecurity.push({ sql: filter });
+      },
+    }),
   };
+}
+
+export const registerExport = Symbol('SpacetimeDB.registerExport');
+export const exportContext = Symbol('SpacetimeDB.exportContext');
+
+export interface ModuleExport {
+  [registerExport](ctx: SchemaInner, exportName: string): void;
+  [exportContext]?: SchemaInner;
+}
+
+function isModuleExport(x: unknown): x is ModuleExport {
+  return (
+    (typeof x === 'function' || typeof x === 'object') &&
+    x !== null &&
+    registerExport in x
+  );
+}
+
+/** Verify that the ModuleContext that `exp` comes from is the same as `schema` */
+function checkExportContext(exp: ModuleExport, schema: SchemaInner) {
+  if (exp[exportContext] != null && exp[exportContext] !== schema) {
+    throw new TypeError('multiple schemas are not supported');
+  }
 }
 
 /**
@@ -410,11 +530,11 @@ export function schema<const H extends readonly UntypedTableSchema[]>(
   const ctx = new SchemaInner(ctx => {
     const tableDefs = handles.map(h => h.tableDef(ctx));
     ctx.moduleDef.tables.push(...tableDefs);
+    const schedules = handles.map(h => h.schedule).filter(s => s !== undefined);
+    ctx.moduleDef.schedules.push(...schedules);
 
     return tablesToSchema(ctx, handles);
   });
-
-  REGISTERED_SCHEMA = ctx;
 
   return new Schema(ctx);
 }
