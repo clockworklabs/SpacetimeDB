@@ -1,6 +1,6 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-export const spacetimedb = schema(
+const spacetimedb = schema(
   table(
     { name: 'person', public: true },
     {
@@ -8,6 +8,8 @@ export const spacetimedb = schema(
     }
   )
 );
+
+export default spacetimedb;
 
 spacetimedb.init((_ctx) => {
   // Called when the module is initially published
