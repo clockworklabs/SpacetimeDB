@@ -65,15 +65,6 @@ enum IndexType {
     Direct { column: Ident },
 }
 
-impl IndexType {
-    fn columns_idents(&self) -> &[Ident] {
-        match self {
-            IndexType::BTree { columns } | IndexType::Hash { columns } => columns,
-            IndexType::Direct { column } => std::slice::from_ref(column),
-        }
-    }
-}
-
 impl TableArgs {
     pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
@@ -280,7 +271,7 @@ impl IndexArg {
         Ok(IndexArg::new(name, kind))
     }
 
-    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>], is_pk: bool) -> syn::Result<ValidatedIndex<'a>> {
+    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| find_column(cols, ident);
         let (kind, kind_str) = match &self.kind {
             IndexType::BTree { columns } => {
@@ -314,7 +305,6 @@ impl IndexArg {
 
         Ok(ValidatedIndex {
             is_unique: self.is_unique,
-            is_pk,
             index_name,
             accessor_name: &self.name,
             kind,
@@ -375,7 +365,6 @@ struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
     is_unique: bool,
-    is_pk: bool,
     kind: ValidatedIndexType<'a>,
 }
 
@@ -510,7 +499,7 @@ impl ValidatedIndex<'_> {
         }
     }
 
-    fn marker_type(&self, vis: &syn::Visibility, tablehandle_ident: &Ident) -> TokenStream {
+    fn marker_type(&self, vis: &syn::Visibility, tablehandle_ident: &Ident, primary_key_column: Option<&Column<'_>>) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
 
@@ -571,7 +560,7 @@ impl ValidatedIndex<'_> {
                     }
                 }
             });
-            if self.is_pk {
+            if primary_key_column.is_some_and(|pk| col.ident == pk.ident) {
                 decl.extend(quote!(impl spacetimedb::table::PrimaryKey for #index_ident {}));
             }
         }
@@ -822,14 +811,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let mut indices = args
         .indices
         .iter()
-        .map(|index| {
-            // An index is for the primary key if it's unique and covers exactly the PK column.
-            let is_pk = index.is_unique
-                && primary_key_column.as_ref().is_some_and(|pk| {
-                    index.kind.columns_idents() == [pk.ident.clone()]
-                });
-            index.validate(&table_name, &columns, is_pk)
-        })
+        .map(|index| index.validate(&table_name, &columns))
         .collect::<syn::Result<Vec<_>>>()?;
 
     // Order unique accessors before index accessors.
@@ -845,7 +827,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let index_accessors_ro = indices
         .iter()
         .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::Read));
-    let index_marker_types = indices.iter().map(|index| index.marker_type(vis, &tablehandle_ident));
+    let index_marker_types: Vec<_> = indices.iter().map(|index| index.marker_type(vis, &tablehandle_ident, primary_key_column.as_ref())).collect();
 
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.

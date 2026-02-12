@@ -48,14 +48,36 @@ export type Indexes<
 };
 
 /**
+ * Check whether every column in an index is a primary key column.
+ */
+type AllColumnsPrimaryKey<
+  TableDef extends UntypedTableDef,
+  Columns extends readonly string[],
+> = Columns extends readonly [
+  infer Head extends keyof TableDef['columns'] & string,
+  ...infer Tail extends readonly string[],
+]
+  ? TableDef['columns'][Head]['columnMetadata'] extends { isPrimaryKey: true }
+    ? AllColumnsPrimaryKey<TableDef, Tail>
+    : false
+  : true;
+
+/**
  * A type representing a database index,
  * which can either be unique or filter for a single value or range of values.
+ * Unique indexes on primary key columns additionally support `update`.
  */
 export type Index<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > = I['unique'] extends true
-  ? UniqueIndex<TableDef, I>
+  ? AllColumnsPrimaryKey<TableDef, I['columns']> extends true
+    ? UniqueIndex<TableDef, I> & {
+        update(
+          row: Prettify<RowType<TableDef>>
+        ): Prettify<RowType<TableDef>>;
+      }
+    : UniqueIndex<TableDef, I>
   : I['algorithm'] extends 'hash'
     ? PointIndex<TableDef, I>
     : RangedIndex<TableDef, I>;
@@ -103,7 +125,6 @@ export interface UniqueIndex<
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > extends ReadonlyUniqueIndex<TableDef, I> {
   delete(colVal: IndexVal<TableDef, I>): boolean;
-  update(colVal: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
 }
 
 /**
