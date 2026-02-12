@@ -1010,7 +1010,7 @@ fn exec_fail_reducer() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let reducer_success_result = test_counter.add_test("reducer-callback-success");
-    let reducer_fail_result = test_counter.add_test("reducer-callback-failure");
+    let reducer_fail_result = test_counter.add_test("reducer-callback-fail");
 
     let connection = connect(&test_counter);
 
@@ -1061,16 +1061,12 @@ fn exec_fail_reducer() {
                 ctx.reducers
                     .insert_pk_u_8_then(key, fail_data, move |ctx, status| {
                         let run_checks = || {
-                            if let Ok(Ok(())) = &status {
-                                anyhow::bail!(
-                                    "Expected reducer `insert_pk_u_8` to error or panic, but got a successful return"
-                                )
+                            match &status {
+                                Ok(Err(_err_msg)) => {}
+                                other => anyhow::bail!("Expected reducer error but got {other:?}"),
                             }
-
-                            if matches!(ctx.event.status, Status::Committed) {
-                                anyhow::bail!(
-                                    "Expected reducer `insert_pk_u_8` to error or panic, but got a `Status::Committed`"
-                                );
+                            if !matches!(ctx.event.status, Status::Err(_)) {
+                                anyhow::bail!("Unexpected status. Expected Err but found {:?}", ctx.event.status);
                             }
                             let expected_reducer = Reducer::InsertPkU8 {
                                 n: key,
@@ -1869,7 +1865,7 @@ fn exec_subscribe_all_select_star() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             }
         })
-        .on_error(|_, e| panic!("Subscription error: {e:?}"))
+        .on_error(|_, _| panic!("Subscription error"))
         .subscribe_to_all_tables();
 
     test_counter.wait_for_all();
