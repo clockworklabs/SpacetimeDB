@@ -43,6 +43,7 @@ pub use return_enum_type::ReturnEnum;
 pub use return_primitive_procedure::return_primitive;
 pub use return_struct_procedure::return_struct;
 pub use return_struct_type::ReturnStruct;
+pub use schedule_proc_reducer::schedule_proc;
 pub use scheduled_proc_table_type::ScheduledProcTable;
 pub use sorted_uuids_insert_procedure::sorted_uuids_insert;
 pub use will_panic_procedure::will_panic;
@@ -140,9 +141,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "proc_inserts_into" => db_update
                     .proc_inserts_into
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "scheduled_proc_table" => db_update
-                    .scheduled_proc_table
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -162,9 +160,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "proc_inserts_into" => db_update
                     .proc_inserts_into
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "scheduled_proc_table" => db_update
-                    .scheduled_proc_table
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
@@ -842,6 +837,5 @@ impl __sdk::SpacetimeModule for RemoteModule {
         pk_uuid_table::register_table(client_cache);
         proc_inserts_into_table::register_table(client_cache);
     }
-    const ALL_TABLE_NAMES: &'static [&'static str] =
-        &["my_table", "pk_uuid", "proc_inserts_into", "scheduled_proc_table"];
+    const ALL_TABLE_NAMES: &'static [&'static str] = &["my_table", "pk_uuid", "proc_inserts_into"];
 }

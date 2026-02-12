@@ -1289,19 +1289,11 @@ fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
                 let mut db_update = DbUpdate::default();
 for table_rows in raw.tables {
             match &table_rows.table[..] {
-                                "has_special_stuff" => db_update.has_special_stuff.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "logged_out_player" => db_update.logged_out_player.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                                "logged_out_player" => db_update.logged_out_player.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "my_player" => db_update.my_player.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "person" => db_update.person.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_multi_identity" => db_update.pk_multi_identity.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "player" => db_update.player.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "points" => db_update.points.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "private_table" => db_update.private_table.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "repeating_test_arg" => db_update.repeating_test_arg.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "table_to_remove" => db_update.table_to_remove.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "test_a" => db_update.test_a.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "test_d" => db_update.test_d.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "test_e" => db_update.test_e.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "test_f" => db_update.test_f.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
 }}        Ok(db_update)
@@ -1310,19 +1302,11 @@ fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
                 let mut db_update = DbUpdate::default();
 for table_rows in raw.tables {
             match &table_rows.table[..] {
-                                "has_special_stuff" => db_update.has_special_stuff.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "logged_out_player" => db_update.logged_out_player.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                                "logged_out_player" => db_update.logged_out_player.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "my_player" => db_update.my_player.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "person" => db_update.person.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_multi_identity" => db_update.pk_multi_identity.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "player" => db_update.player.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "points" => db_update.points.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "private_table" => db_update.private_table.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "repeating_test_arg" => db_update.repeating_test_arg.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "table_to_remove" => db_update.table_to_remove.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "test_a" => db_update.test_a.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "test_d" => db_update.test_d.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "test_e" => db_update.test_e.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "test_f" => db_update.test_f.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
 }}        Ok(db_update)
@@ -2004,19 +1988,11 @@ fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         test_f_table::register_table(client_cache);
 }
 const ALL_TABLE_NAMES: &'static [&'static str] = &[
-                "has_special_stuff",
-        "logged_out_player",
+                "logged_out_player",
         "my_player",
         "person",
-        "pk_multi_identity",
         "player",
-        "points",
-        "private_table",
-        "repeating_test_arg",
-        "table_to_remove",
-        "test_a",
         "test_d",
-        "test_e",
         "test_f",
 ];
 }

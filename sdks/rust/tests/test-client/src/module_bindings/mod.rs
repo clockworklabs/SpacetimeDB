@@ -3277,12 +3277,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "indexed_simple_enum" => db_update
                     .indexed_simple_enum
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "indexed_table" => db_update
-                    .indexed_table
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "indexed_table_2" => db_update
-                    .indexed_table_2
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "large_table" => db_update
                     .large_table
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3614,12 +3608,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "indexed_simple_enum" => db_update
                     .indexed_simple_enum
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "indexed_table" => db_update
-                    .indexed_table
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "indexed_table_2" => db_update
-                    .indexed_table_2
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "large_table" => db_update
                     .large_table
@@ -4983,8 +4971,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "btree_u32",
         "indexed_simple_enum",
-        "indexed_table",
-        "indexed_table_2",
         "large_table",
         "one_bool",
         "one_byte_struct",
