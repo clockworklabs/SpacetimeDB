@@ -338,6 +338,41 @@ impl ModuleSubscriptions {
         }
     }
 
+    fn send_reducer_failure_result_v2(
+        &self,
+        client: Arc<ClientConnectionSender>,
+        event: &ModuleEvent,
+        request_id: u32,
+    ) {
+        let error = match &event.status {
+            EventStatus::FailedUser(err) => err.clone(),
+            EventStatus::FailedInternal(err) => err.clone(),
+            EventStatus::OutOfEnergy => "reducer ran out of energy".into(),
+            EventStatus::Committed(_) => {
+                tracing::warn!("Unexpected committed status in reducer failure branch");
+                "reducer failed".into()
+            }
+        };
+        let result = match &event.status {
+            EventStatus::FailedUser(_) => ws_v2::ReducerOutcome::Err(
+                bsatn::to_vec(&error)
+                    .expect("failed to bsatn encode reducer error")
+                    .into(),
+            ),
+            _ => ws_v2::ReducerOutcome::InternalError(error.into()),
+        };
+        let message = ws_v2::ReducerResult {
+            request_id,
+            timestamp: event.timestamp,
+            result,
+        };
+        let _ = self.broadcast_queue.send_client_message_v2(
+            client,
+            None, // This should arguably have a tx_offset, but it shouldn't matter as long as we wait for previous messages to be sent.
+            message,
+        );
+    }
+
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
     /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
     pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> (ModuleSubscriptions, tokio::runtime::Runtime) {
@@ -1562,33 +1597,7 @@ impl ModuleSubscriptions {
                         }
                         WsVersion::V2 => {
                             if let Some(request_id) = event.request_id {
-                                let error = match &event.status {
-                                    EventStatus::FailedUser(err) => err.clone(),
-                                    EventStatus::FailedInternal(err) => err.clone(),
-                                    EventStatus::OutOfEnergy => "reducer ran out of energy".into(),
-                                    EventStatus::Committed(_) => {
-                                        tracing::warn!("Unexpected committed status in reducer failure branch");
-                                        "reducer failed".into()
-                                    }
-                                };
-                                let result = match &event.status {
-                                    EventStatus::FailedUser(_) => ws_v2::ReducerOutcome::Err(
-                                        bsatn::to_vec(&error)
-                                            .expect("failed to bsatn encode reducer error")
-                                            .into(),
-                                    ),
-                                    _ => ws_v2::ReducerOutcome::InternalError(error.into()),
-                                };
-                                let message = ws_v2::ReducerResult {
-                                    request_id,
-                                    timestamp: event.timestamp,
-                                    result,
-                                };
-                                let _ = self.broadcast_queue.send_client_message_v2(
-                                    client,
-                                    None, // This should arguably have a tx_offset, but it shouldn't matter as long as we wait for previous messages to be sent.
-                                    message,
-                                );
+                                self.send_reducer_failure_result_v2(client, &event, request_id);
                             }
                         }
                     }
