@@ -1,9 +1,16 @@
 import { defineConfig, defineDocs } from 'fumadocs-mdx/config';
 import remarkDirective from 'remark-directive';
 import { remarkDirectiveAdmonition } from 'fumadocs-core/mdx-plugins';
+import { pageSchema } from 'fumadocs-core/source/schema';
 
 export const docs = defineDocs({
   dir: 'content/docs',
+  docs: {
+    schema: pageSchema,
+    postprocess: {
+      includeProcessedMarkdown: true,
+    },
+  },
 });
 
 export default defineConfig({

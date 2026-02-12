@@ -1,4 +1,4 @@
-import { source } from '@/lib/source';
+import { source, getLLMText } from '@/lib/source';
 import type { InferPageType } from 'fumadocs-core/source';
 import {
   DocsBody,
@@ -9,10 +9,25 @@ import {
 } from 'fumadocs-ui/layouts/docs/page';
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '../../../../mdx-components';
-import { createRelativeLink } from 'fumadocs-ui/mdx';
+import mdxComponents, { createRelativeLink } from 'fumadocs-ui/mdx';
 import type { Metadata } from 'next';
+import type { ComponentProps } from 'react';
+import { CopyPageButton } from '@/components/copy-page-button';
 
 type Page = InferPageType<typeof source>;
+
+function normalizeLegacyDocsHref(href: string): string {
+  if (!href.startsWith('/docs')) return href;
+
+  const nextChar = href.charAt('/docs'.length);
+  if (nextChar && nextChar !== '/' && nextChar !== '?' && nextChar !== '#') {
+    return href;
+  }
+
+  const stripped = href.slice('/docs'.length);
+  if (stripped.length === 0) return '/';
+  return stripped.startsWith('/') ? stripped : `/${stripped}`;
+}
 
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
@@ -22,6 +37,19 @@ export default async function Page(props: {
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const llmText = await getLLMText(page);
+  const RelativeLink = createRelativeLink(
+    source,
+    page,
+    function LegacyDocsLink({ href, ...props }: ComponentProps<'a'>) {
+      return (
+        <mdxComponents.a
+          href={typeof href === 'string' ? normalizeLegacyDocsHref(href) : href}
+          {...props}
+        />
+      );
+    },
+  );
 
   return (
     <DocsPage
@@ -36,12 +64,17 @@ export default async function Page(props: {
         ),
       }}
     >
-      <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription>{page.data.description}</DocsDescription>
+      <div className="relative">
+        <DocsTitle>{page.data.title}</DocsTitle>
+        <DocsDescription>{page.data.description}</DocsDescription>
+        <div className="absolute right-0 top-0">
+          <CopyPageButton content={llmText} />
+        </div>
+      </div>
       <DocsBody>
         <MDX
           components={getMDXComponents({
-            a: createRelativeLink(source, page),
+            a: RelativeLink,
           })}
         />
       </DocsBody>

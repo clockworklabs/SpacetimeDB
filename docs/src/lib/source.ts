@@ -1,5 +1,6 @@
 import { docs } from 'fumadocs-mdx:collections/server';
 import { loader } from 'fumadocs-core/source';
+import type { InferPageType } from 'fumadocs-core/source';
 import { createElement } from 'react';
 
 function SparkleIcon() {
@@ -24,3 +25,13 @@ export const source = loader({
     return undefined;
   },
 });
+
+export type Page = InferPageType<typeof source>;
+
+export async function getLLMText(page: Page) {
+  const processed = await page.data.getText('processed');
+
+  return `# ${page.data.title}
+
+${processed}`;
+}
