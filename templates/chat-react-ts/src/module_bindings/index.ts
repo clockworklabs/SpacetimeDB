@@ -34,8 +34,8 @@ import {
 } from 'spacetimedb';
 
 // Import all reducer arg schemas
-import SetNameReducer from './set_name_reducer';
 import SendMessageReducer from './send_message_reducer';
+import SetNameReducer from './set_name_reducer';
 
 // Import all procedure arg schemas
 
@@ -75,8 +75,8 @@ const tablesSchema = __schema(
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
-  __reducerSchema('set_name', SetNameReducer),
-  __reducerSchema('send_message', SendMessageReducer)
+  __reducerSchema('send_message', SendMessageReducer),
+  __reducerSchema('set_name', SetNameReducer)
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

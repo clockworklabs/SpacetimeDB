@@ -71,7 +71,7 @@ When a reducer calls another reducer directly (not via scheduling), they execute
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('parent_reducer', (ctx) => {
+export const parent_reducer = spacetimedb.reducer((ctx) => {
     TableA.insert({ /* ... */ });
     
     // This runs in the SAME transaction

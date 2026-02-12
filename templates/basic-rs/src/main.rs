@@ -14,7 +14,7 @@ fn main() {
 
     // Connect to the database
     let conn = DbConnection::builder()
-        .with_module_name(db_name)
+        .with_database_name(db_name)
         .with_uri(host)
         .on_connect(|_, _, _| {
             println!("Connected to SpacetimeDB");

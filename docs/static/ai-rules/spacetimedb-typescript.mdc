@@ -487,7 +487,7 @@ conn.subscriptionBuilder().subscribe([
 const builder = useMemo(() => 
   DbConnection.builder()
     .withUri(SPACETIMEDB_URI)
-    .withModuleName(MODULE_NAME)
+    .withDatabaseName(MODULE_NAME)
     .withToken(localStorage.getItem('auth_token') || undefined)
     .onConnect(onConnect)
     .onConnectError(onConnectError),
