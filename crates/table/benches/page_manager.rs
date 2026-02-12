@@ -801,7 +801,7 @@ fn clear_all_same<R: IndexedRow>(tbl: &mut Table, index_id: IndexId, val_same: u
     let ptrs = tbl
         .get_index_by_id(index_id)
         .unwrap()
-        .seek_point(&R::column_value_from_u64(val_same))
+        .seek_point_via_algebraic_value(&R::column_value_from_u64(val_same))
         .collect::<Vec<_>>();
     for ptr in ptrs {
         tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();

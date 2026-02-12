@@ -206,7 +206,7 @@ impl TxState {
         self.insert_tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_point(point))
+            .map(|i| i.seek_point_via_algebraic_value(point))
     }
 
     /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.

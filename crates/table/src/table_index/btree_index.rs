@@ -1,6 +1,7 @@
 use super::same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter};
 use super::{key_size::KeyBytesStorage, Index, KeySize, RangedIndex};
 use crate::indexes::RowPointer;
+use core::borrow::Borrow;
 use core::ops::RangeBounds;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Range};
@@ -56,7 +57,7 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     /// and multimaps do not bind one `key` to the same `ptr`.
     fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
         self.num_rows += 1;
-        self.num_key_bytes.add_to_key_bytes::<Self>(&key);
+        self.num_key_bytes.add_to_key_bytes(&key);
         self.map.entry(key).or_default().push(ptr);
         Ok(())
     }
@@ -65,22 +66,7 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     ///
     /// Returns whether `key -> ptr` was present.
     fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
-        let Some(vset) = self.map.get_mut(key) else {
-            return false;
-        };
-
-        let (deleted, is_empty) = vset.delete(ptr);
-
-        if is_empty {
-            self.map.remove(key);
-        }
-
-        if deleted {
-            self.num_rows -= 1;
-            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
-        }
-
-        deleted
+        self.delete(key, ptr)
     }
 
     type PointIter<'a>
@@ -88,8 +74,8 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     where
         Self: 'a;
 
-    fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
-        same_key_iter(self.map.get(key))
+    fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
+        self.seek_point(point)
     }
 
     fn num_keys(&self) -> usize {
@@ -118,6 +104,43 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     }
 }
 
+impl<K: KeySize + Ord> BTreeIndex<K> {
+    /// See [`Index::delete`].
+    /// This version has relaxed bounds.
+    pub fn delete<Q>(&mut self, key: &Q, ptr: RowPointer) -> bool
+    where
+        Q: ?Sized + KeySize + Ord,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        let Some(vset) = self.map.get_mut(key) else {
+            return false;
+        };
+
+        let (deleted, is_empty) = vset.delete(ptr);
+
+        if is_empty {
+            self.map.remove(key);
+        }
+
+        if deleted {
+            self.num_rows -= 1;
+            self.num_key_bytes.sub_from_key_bytes(key);
+        }
+
+        deleted
+    }
+
+    /// See [`Index::seek_point`].
+    /// This version has relaxed bounds.
+    pub fn seek_point<Q>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
+    where
+        Q: ?Sized + Ord,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        same_key_iter(self.map.get(point))
+    }
+}
+
 impl<K: Ord + KeySize> RangedIndex for BTreeIndex<K> {
     type RangeIter<'a>
         = BTreeIndexRangeIter<'a, K>
@@ -127,6 +150,17 @@ impl<K: Ord + KeySize> RangedIndex for BTreeIndex<K> {
     /// Returns an iterator over the multimap that yields all the `V`s
     /// of the `K`s that fall within the specified `range`.
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
+        self.seek_range(range)
+    }
+}
+
+impl<K: KeySize + Ord> BTreeIndex<K> {
+    /// See [`RangedIndex::seek_range`].
+    /// This version has relaxed bounds.
+    pub fn seek_range<Q: ?Sized + Ord>(&self, range: &impl RangeBounds<Q>) -> <Self as RangedIndex>::RangeIter<'_>
+    where
+        <Self as Index>::Key: Borrow<Q>,
+    {
         BTreeIndexRangeIter {
             outer: self.map.range((range.start_bound(), range.end_bound())),
             inner: SameKeyEntry::empty_iter(),

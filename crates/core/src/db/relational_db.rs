@@ -55,6 +55,7 @@ use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotReposit
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
+use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
 use std::num::NonZeroUsize;
@@ -1414,12 +1415,12 @@ impl RelationalDB {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 
-    pub fn index_scan_point<'a>(
+    pub fn index_scan_point<'a, 'p>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
-        point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
+        point: &'p [u8],
+    ) -> Result<(TableId, IndexKey<'p>, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
         Ok(tx.index_scan_point(index_id, point)?)
     }
 

@@ -9,10 +9,10 @@ use spacetimedb_sats::{
 /// Storage for memoizing `KeySize` statistics.
 pub trait KeyBytesStorage: Default + MemoryUsage {
     /// Add `key.key_size_in_bytes()` to the statistics.
-    fn add_to_key_bytes<I: Index>(&mut self, key: &I::Key);
+    fn add_to_key_bytes(&mut self, key: &(impl KeySize + ?Sized));
 
     /// Subtract `key.key_size_in_bytes()` from the statistics.
-    fn sub_from_key_bytes<I: Index>(&mut self, key: &I::Key);
+    fn sub_from_key_bytes(&mut self, key: &(impl KeySize + ?Sized));
 
     /// Resets the statistics to zero.
     fn reset_to_zero(&mut self);
@@ -22,8 +22,8 @@ pub trait KeyBytesStorage: Default + MemoryUsage {
 }
 
 impl KeyBytesStorage for () {
-    fn add_to_key_bytes<I: Index>(&mut self, _: &I::Key) {}
-    fn sub_from_key_bytes<I: Index>(&mut self, _: &I::Key) {}
+    fn add_to_key_bytes(&mut self, _: &(impl KeySize + ?Sized)) {}
+    fn sub_from_key_bytes(&mut self, _: &(impl KeySize + ?Sized)) {}
     fn reset_to_zero(&mut self) {}
     fn get<I: Index>(&self, index: &I) -> u64 {
         index.num_keys() as u64 * mem::size_of::<I::Key>() as u64
@@ -31,10 +31,10 @@ impl KeyBytesStorage for () {
 }
 
 impl KeyBytesStorage for u64 {
-    fn add_to_key_bytes<I: Index>(&mut self, key: &I::Key) {
+    fn add_to_key_bytes(&mut self, key: &(impl KeySize + ?Sized)) {
         *self += key.key_size_in_bytes() as u64;
     }
-    fn sub_from_key_bytes<I: Index>(&mut self, key: &I::Key) {
+    fn sub_from_key_bytes(&mut self, key: &(impl KeySize + ?Sized)) {
         *self -= key.key_size_in_bytes() as u64;
     }
     fn reset_to_zero(&mut self) {
@@ -79,6 +79,20 @@ pub trait KeySize {
     }
 }
 
+impl<T: ?Sized + KeySize> KeySize for &T {
+    type MemoStorage = T::MemoStorage;
+    fn key_size_in_bytes(&self) -> usize {
+        (**self).key_size_in_bytes()
+    }
+}
+
+impl<T: ?Sized + KeySize> KeySize for Box<T> {
+    type MemoStorage = T::MemoStorage;
+    fn key_size_in_bytes(&self) -> usize {
+        (**self).key_size_in_bytes()
+    }
+}
+
 macro_rules! impl_key_size_primitive {
     ($prim:ty) => {
         impl KeySize for $prim {
@@ -112,7 +126,7 @@ impl_key_size_primitive!(
     F64,
 );
 
-impl KeySize for Box<str> {
+impl KeySize for str {
     type MemoStorage = u64;
     fn key_size_in_bytes(&self) -> usize {
         self.len()

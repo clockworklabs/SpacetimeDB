@@ -66,7 +66,7 @@ impl StandaloneEnv {
         let meta_path = data_dir.metadata_toml();
         let mut meta = MetadataFile::new("standalone");
         if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
-            meta = existing_meta.check_compatibility_and_update(meta)?;
+            meta = existing_meta.check_compatibility_and_update(meta, meta_path.as_ref())?;
         }
         meta.write(&meta_path).context("failed writing metadata.toml")?;
 

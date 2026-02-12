@@ -1,6 +1,6 @@
 use crate::{
     blob_store::NullBlobStore,
-    table_index::{IndexCannotSeekRange, IndexKind},
+    table_index::{IndexCannotSeekRange, IndexKey, IndexKind},
 };
 
 use super::{
@@ -560,12 +560,13 @@ impl Table {
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (&index_id, index) in adapt(self.indexes.iter()).filter(|(_, index)| index.is_unique()) {
-            // SAFETY: Caller promised that `row´ has the same layout as `self`.
-            // Thus, as `index.indexed_columns` is in-bounds of `self`'s layout,
-            // it's also in-bounds of `row`'s layout.
-            let value = unsafe { row.project_unchecked(&index.indexed_columns) };
-            if index.seek_point(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
-                return Err(self.build_error_unique(index, index_id, value));
+            // SAFETY: Caller promised that `row` has the same layout as `self`.
+            // The projection of `row`'s type onto the index's columns
+            // is therefore the same as the key type.
+            let key = unsafe { index.key_from_row(row) };
+
+            if index.seek_point(&key).next().is_some_and(|ptr| !is_deleted(ptr)) {
+                return Err(self.build_error_unique(index, index_id, row));
             }
         }
         Ok(())
@@ -915,8 +916,7 @@ impl Table {
                 }
 
                 let index = self.indexes.get(&index_id).unwrap();
-                let value = new.project(&index.indexed_columns).unwrap();
-                let error = self.build_error_unique(index, index_id, value).into();
+                let error = self.build_error_unique(index, index_id, new).into();
                 (index_id, error)
             })
             .map_err(|(index_id, error)| {
@@ -959,10 +959,13 @@ impl Table {
             .expect("there should be at least one unique index");
         // Project the needle row to the columns of the index, and then seek.
         // As this is a unique index, there are 0-1 rows for this key.
+        // SAFETY: `needle_table.is_row_present(needle_ptr)` holds.
         let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
-        let key = needle_row
-            .project(&target_index.indexed_columns)
-            .expect("needle row should be valid");
+        // SAFETY: Caller promised that the row layout of both tables are the same.
+        // As `target_index` comes from `target_table`,
+        // it follows that `needle_row`'s type projected to `target_index`'s columns
+        // is the same as the index's key type.
+        let key = unsafe { target_index.key_from_row(needle_row) };
         target_index.seek_point(&key).next().filter(|&target_ptr| {
             // SAFETY:
             // - Caller promised that the row layouts were the same.
@@ -1252,7 +1255,8 @@ impl Table {
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for (_, index) in self.indexes.range_mut(..index_id) {
-            index.delete(row_ref).unwrap();
+            // SAFETY: any index in this table was constructed with the same row type as this table.
+            unsafe { index.delete(row_ref) };
         }
     }
 
@@ -1264,7 +1268,8 @@ impl Table {
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for index in self.indexes.values_mut() {
-            index.delete(row_ref).unwrap();
+            // SAFETY: any index in this table was constructed with the same row type as this table.
+            unsafe { index.delete(row_ref) };
         }
     }
 
@@ -2098,12 +2103,20 @@ impl<'a> TableAndIndex<'a> {
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
     /// Matching is defined by `Eq for AlgebraicValue`.
-    pub fn seek_point(&self, key: &AlgebraicValue) -> IndexScanPointIter<'a> {
+    pub fn seek_point(&self, key: &IndexKey<'_>) -> IndexScanPointIter<'a> {
         IndexScanPointIter {
             table: self.table,
             blob_store: self.blob_store,
             btree_index_iter: self.index.seek_point(key),
         }
+    }
+
+    /// Returns an iterator yielding all rows in this index for `key`.
+    ///
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    pub fn seek_point_via_algebraic_value(&self, key: &AlgebraicValue) -> IndexScanPointIter<'a> {
+        let key = self.index.key_from_algebraic_value(key);
+        self.seek_point(&key)
     }
 
     /// Returns an iterator yielding all rows in this index that fall within `range`,
@@ -2232,14 +2245,15 @@ impl UniqueConstraintViolation {
 // Private API:
 impl Table {
     /// Returns a unique constraint violation error for the given `index`
-    /// and the `value` that would have been duplicated.
+    /// and the `row` that caused the violation.
     #[cold]
     pub fn build_error_unique(
         &self,
         index: &TableIndex,
         index_id: IndexId,
-        value: AlgebraicValue,
+        row: RowRef<'_>,
     ) -> UniqueConstraintViolation {
+        let value = row.project(&index.indexed_columns).unwrap();
         let schema = self.get_schema();
         UniqueConstraintViolation::build(schema, index, index_id, value)
     }
