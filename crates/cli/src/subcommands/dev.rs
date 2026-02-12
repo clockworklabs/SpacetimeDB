@@ -247,7 +247,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         // if we have publish configs and we're past spacetimedb_dir manipulation,
         // we should set spacetimedb_dir to the path of the first config as this will be
         // later used for next steps
-        spacetimedb_dir = config.get_one::<PathBuf>("module_path").expect("module_path");
+        spacetimedb_dir = config
+            .get_one::<PathBuf>("module_path")
+            .expect("module_path")
+            .expect("module_path is required");
     }
 
     let use_local = resolved_server == "local";
