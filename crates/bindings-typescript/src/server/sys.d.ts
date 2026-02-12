@@ -15,13 +15,16 @@ declare module 'spacetime:sys@2.0' {
   export interface ModuleHooks {
     __describe_module__(): Uint8Array;
 
+    __get_error_constructor__(code: number): new (msg: string) => Error;
+    __sender_error_class__: new (msg: string) => Error;
+
     __call_reducer__(
       reducerId: u32,
       sender: u256,
       connId: u128,
       timestamp: bigint,
       argsBuf: DataView
-    ): undefined | { tag: 'ok' } | { tag: 'err'; value: string };
+    ): void;
 
     __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
 
