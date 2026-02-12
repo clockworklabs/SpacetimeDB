@@ -1,6 +1,5 @@
 ---
 source: crates/codegen/tests/codegen.rs
-assertion_line: 37
 expression: outfiles
 ---
 "add_player_reducer.ts" = '''
@@ -257,13 +256,13 @@ const tablesSchema = __schema(
   __table({
     name: 'logged_out_player',
     indexes: [
-      { name: 'identity', algorithm: 'btree', columns: [
+      { name: 'logged_out_player_identity_idx_btree', algorithm: 'btree', columns: [
         'identity',
       ] },
-      { name: 'name', algorithm: 'btree', columns: [
+      { name: 'logged_out_player_name_idx_btree', algorithm: 'btree', columns: [
         'name',
       ] },
-      { name: 'player_id', algorithm: 'btree', columns: [
+      { name: 'logged_out_player_player_id_idx_btree', algorithm: 'btree', columns: [
         'playerId',
       ] },
     ],
@@ -279,7 +278,7 @@ const tablesSchema = __schema(
       { name: 'age', algorithm: 'btree', columns: [
         'age',
       ] },
-      { name: 'id', algorithm: 'btree', columns: [
+      { name: 'person_id_idx_btree', algorithm: 'btree', columns: [
         'id',
       ] },
     ],
@@ -290,13 +289,13 @@ const tablesSchema = __schema(
   __table({
     name: 'player',
     indexes: [
-      { name: 'identity', algorithm: 'btree', columns: [
+      { name: 'player_identity_idx_btree', algorithm: 'btree', columns: [
         'identity',
       ] },
-      { name: 'name', algorithm: 'btree', columns: [
+      { name: 'player_name_idx_btree', algorithm: 'btree', columns: [
         'name',
       ] },
-      { name: 'player_id', algorithm: 'btree', columns: [
+      { name: 'player_player_id_idx_btree', algorithm: 'btree', columns: [
         'playerId',
       ] },
     ],
