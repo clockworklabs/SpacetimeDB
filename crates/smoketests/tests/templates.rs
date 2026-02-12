@@ -69,6 +69,22 @@ fn get_templates() -> Vec<Template> {
     templates
 }
 
+/// Converts a filesystem path into a dependency path string suitable for
+/// Cargo.toml/package.json entries.
+///
+/// On Windows, `canonicalize()` can return verbatim paths like `\\?\D:\...`.
+/// Cargo path dependencies reject that as `//?/D:/...`, so strip `\\?\` first.
+fn normalize_dependency_path(local_path: &Path) -> String {
+    let abs_path = local_path.canonicalize().unwrap_or_else(|_| local_path.to_path_buf());
+    let mut path_str = abs_path.to_string_lossy().into_owned();
+
+    if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
+        path_str = stripped.to_string();
+    }
+
+    path_str.replace('\\', "/")
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -118,9 +134,8 @@ fn update_cargo_toml_dependency(cargo_toml_path: &Path, package_name: &str, loca
         return Ok(());
     }
 
-    // Use forward slashes even on Windows so TOML/Cargo accepts the path.
-    let abs_path = local_path.canonicalize().unwrap_or_else(|_| local_path.to_path_buf());
-    let path_str = abs_path.to_str().unwrap().replace('\\', "/");
+    // Use a normalized path string that is accepted by Cargo on all platforms.
+    let path_str = normalize_dependency_path(local_path);
 
     let mut table = toml::value::Table::new();
     table.insert("path".to_string(), toml::Value::String(path_str));
@@ -140,8 +155,7 @@ fn update_package_json_dependency(package_json_path: &Path, package_name: &str, 
     let mut data: Value =
         serde_json::from_str(&content).with_context(|| format!("Failed to parse {:?}", package_json_path))?;
 
-    let abs_path = local_path.canonicalize().unwrap_or_else(|_| local_path.to_path_buf());
-    let path_str = abs_path.to_str().unwrap().replace('\\', "/");
+    let path_str = normalize_dependency_path(local_path);
 
     if let Some(deps) = data.get_mut("dependencies") {
         if deps.get(package_name).is_some() {
