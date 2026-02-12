@@ -275,7 +275,7 @@ const tablesSchema = __schema(
   __table({
     name: 'person',
     indexes: [
-      { name: 'age', algorithm: 'btree', columns: [
+      { name: 'person_age_idx_btree', algorithm: 'btree', columns: [
         'age',
       ] },
       { name: 'person_id_idx_btree', algorithm: 'btree', columns: [

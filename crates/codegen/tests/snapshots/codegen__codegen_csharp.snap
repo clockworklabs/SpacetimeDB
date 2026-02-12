@@ -1998,14 +1998,14 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "person";
 
-            public sealed class AgeIndex : BTreeIndexBase<byte>
+            public sealed class PersonAgeIdxBtreeIndex : BTreeIndexBase<byte>
             {
                 protected override byte GetKey(Person row) => row.Age;
 
-                public AgeIndex(PersonHandle table) : base(table) { }
+                public PersonAgeIdxBtreeIndex(PersonHandle table) : base(table) { }
             }
 
-            public readonly AgeIndex Age;
+            public readonly PersonAgeIdxBtreeIndex PersonAgeIdxBtree;
 
             public sealed class PersonIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
@@ -2018,7 +2018,7 @@ namespace SpacetimeDB
 
             internal PersonHandle(DbConnection conn) : base(conn)
             {
-                Age = new(this);
+                PersonAgeIdxBtree = new(this);
                 PersonIdIdxBtree = new(this);
             }
 
