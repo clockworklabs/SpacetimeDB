@@ -251,7 +251,7 @@ pub async fn exec_ex(
         let force = args.get_flag("force");
         let build_options = command_config
             .get_one::<String>("build_options")?
-            .unwrap_or_else(|| String::new());
+            .unwrap_or_else(String::new);
 
         // Validate namespace is only used with csharp
         if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
@@ -641,7 +641,6 @@ mod tests {
         use crate::config::Config;
         use spacetimedb_paths::cli::CliTomlPath;
         use spacetimedb_paths::FromPathUnchecked;
-        use std::path::PathBuf;
 
         let cmd = cli();
         let config = Config::new_with_localhost(CliTomlPath::from_path_unchecked("/tmp/test-config.toml"));
@@ -655,8 +654,7 @@ mod tests {
         // The error should be about missing output directory
         assert!(
             err_msg.contains("--out-dir") || err_msg.contains("--uproject-dir"),
-            "Expected error about missing output directory, got: {}",
-            err_msg
+            "Expected error about missing output directory, got: {err_msg}"
         );
     }
 
@@ -665,7 +663,6 @@ mod tests {
         use crate::config::Config;
         use spacetimedb_paths::cli::CliTomlPath;
         use spacetimedb_paths::FromPathUnchecked;
-        use std::path::PathBuf;
 
         let cmd = cli();
         let config = Config::new_with_localhost(CliTomlPath::from_path_unchecked("/tmp/test-config.toml"));
@@ -680,8 +677,7 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("--uproject-dir is required for --lang unrealcpp"),
-            "Expected error about missing --uproject-dir, got: {}",
-            err_msg
+            "Expected error about missing --uproject-dir, got: {err_msg}",
         );
 
         // Test missing --module-name
@@ -694,8 +690,7 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("--module-name is required for --lang unrealcpp"),
-            "Expected error about missing --module-name, got: {}",
-            err_msg
+            "Expected error about missing --module-name, got: {err_msg}"
         );
     }
 

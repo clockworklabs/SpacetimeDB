@@ -306,7 +306,7 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         let database_host = config.get_host_url(server)?;
         let build_options = command_config
             .get_one::<String>("build_options")?
-            .unwrap_or_else(|| String::new());
+            .unwrap_or_else(String::new);
         let num_replicas = command_config.get_one::<u8>("num_replicas")?;
         let force_break_clients = command_config.get_one::<bool>("break_clients")?.unwrap_or(false);
         let parent_opt = command_config.get_one::<String>("parent")?;

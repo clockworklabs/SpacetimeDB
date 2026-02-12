@@ -1148,8 +1148,6 @@ mod tests {
             )
             .arg(Arg::new("yes").long("yes").action(clap::ArgAction::SetTrue));
 
-        let matches = cmd.clone().get_matches_from(vec!["test"]);
-
         // Try to build schema but don't define all keys (missing "server" key)
         let result = CommandSchemaBuilder::new()
             .key(Key::new::<bool>("yes"))
@@ -1375,8 +1373,6 @@ mod tests {
                 .value_parser(clap::value_parser!(String)),
         );
 
-        let matches = cmd.clone().get_matches_from(vec!["test"]);
-
         // Try to map to a non-existent clap arg
         let result = CommandSchemaBuilder::new()
             .key(Key::new::<String>("module-path").from_clap("non-existent"))
@@ -1399,8 +1395,6 @@ mod tests {
                 .long("module-path")
                 .value_parser(clap::value_parser!(String)),
         );
-
-        let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         // Try to alias a non-existent clap arg
         let result = CommandSchemaBuilder::new()
@@ -1452,8 +1446,6 @@ mod tests {
 
         // Command has "lang" argument
         let cmd = Command::new("test").arg(Arg::new("lang").long("lang").value_parser(clap::value_parser!(String)));
-
-        let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         // Try to create a key that references "language" via from_clap, but clap has "lang"
         let result = CommandSchemaBuilder::new()
@@ -1653,8 +1645,6 @@ mod tests {
                 .long("server")
                 .value_parser(clap::value_parser!(String)),
         );
-
-        let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         // Try to exclude a non-existent arg
         let result = CommandSchemaBuilder::new()
