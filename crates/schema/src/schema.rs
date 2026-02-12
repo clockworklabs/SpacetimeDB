@@ -236,7 +236,7 @@ impl TableSchema {
 
     /// Create a `TableSchema` corresponding to a product type.
     /// For use in tests.
-    #[cfg(feature = "test")]
+    #[cfg(any(test, feature = "test"))]
     pub fn from_product_type(ty: ProductType) -> TableSchema {
         let columns = ty
             .elements
