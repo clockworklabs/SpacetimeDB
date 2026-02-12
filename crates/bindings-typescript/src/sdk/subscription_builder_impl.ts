@@ -1,4 +1,5 @@
 import type { DbConnectionImpl } from './db_connection_impl';
+import { INTERNAL_REMOTE_MODULE } from './internal';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
@@ -125,7 +126,11 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * including dropping subscriptions, corrupting the client cache, or throwing errors.
    */
   subscribeToAllTables(): void {
-    this.subscribe('SELECT * FROM *');
+    const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
+    const queries = remoteModule.tables.map(
+      table => `SELECT * FROM ${table.name}`
+    );
+    this.subscribe(queries);
   }
 }
 

@@ -11,6 +11,7 @@ import TableUpdateRows from './client_api/table_update_rows_type.ts';
 import UnsubscribeFlags from './client_api/unsubscribe_flags_type.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
+import { INTERNAL_REMOTE_MODULE } from './internal.ts';
 import { type DbContext } from './db_context.ts';
 import type { Event } from './event.ts';
 import {
@@ -113,6 +114,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * This connection's private authentication token.
    */
   token?: string = undefined;
+
+  /** @internal */
+  [INTERNAL_REMOTE_MODULE](): RemoteModule {
+    return this.#remoteModule;
+  }
 
   /**
    * The accessor field to access the tables in the database and associated
