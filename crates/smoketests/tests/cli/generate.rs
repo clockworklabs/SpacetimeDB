@@ -24,7 +24,7 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
     );
 
     let project_dir = temp_dir.path().join("test-project");
-    let module_dir = project_dir.join("spacetimedb");
+    let module_dir = project_dir;
 
     // Create a config with a different module-path filter
     let config_content = r#"{
