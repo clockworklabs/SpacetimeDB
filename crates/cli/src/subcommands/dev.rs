@@ -10,6 +10,7 @@ use crate::util::{
 use crate::{common_args, generate};
 use crate::{publish, tasks};
 use anyhow::Context;
+use clap::parser::ValueSource;
 use clap::{Arg, ArgMatches, Command};
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
@@ -162,6 +163,34 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             std::process::exit(1);
         }
     };
+    let using_spacetime_config = spacetime_config.is_some();
+    let has_publish_targets_in_config = spacetime_config.as_ref().and_then(|c| c.publish.as_ref()).is_some();
+    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> = spacetime_config
+        .as_ref()
+        .and_then(|c| c.generate.clone())
+        .unwrap_or_default();
+    let has_generate_targets_in_config = !generate_configs_from_file.is_empty();
+
+    let module_path_from_cli_flag = args.value_source("module-path") == Some(ValueSource::CommandLine);
+    let project_path_from_cli_flag = args.value_source("project-path") == Some(ValueSource::CommandLine);
+    let module_bindings_path_from_cli_flag =
+        args.value_source("module-bindings-path") == Some(ValueSource::CommandLine);
+
+    if has_publish_targets_in_config && module_path_from_cli_flag {
+        anyhow::bail!(
+            "`--module-path` cannot be used when `spacetime.json` contains publish targets. \
+             Remove `--module-path` or run without publish targets in config."
+        );
+    }
+
+    if has_generate_targets_in_config
+        && (module_path_from_cli_flag || project_path_from_cli_flag || module_bindings_path_from_cli_flag)
+    {
+        anyhow::bail!(
+            "`--module-path`, `--project-path`, and `--module-bindings-path` cannot be used when \
+             `spacetime.json` contains generate targets. Remove these flags or remove generate targets from config."
+        );
+    }
 
     // Fetch the database name if it was passed through a CLI arg
     let database_name_from_cli: Option<String> = args
@@ -184,12 +213,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let publish_cmd = publish::cli();
     let publish_schema = publish::build_publish_schema(&publish_cmd)?;
 
-    // Create ArgMatches for publish command to use with get_one()
+    // Create ArgMatches for publish command
     let mut publish_argv: Vec<String> = vec!["publish".to_string()];
     if let Some(db) = &database_name_from_cli {
         publish_argv.push(db.clone());
     }
     if let Some(srv) = args.get_one::<String>("server") {
+        publish_argv.push("--server".to_string());
         publish_argv.push(srv.clone());
     }
 
@@ -445,6 +475,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         client_language,
         clear_database,
         &publish_configs,
+        &generate_configs_from_file,
+        using_spacetime_config,
         server_from_cli,
         force,
     )
@@ -548,6 +580,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 client_language,
                 clear_database,
                 &publish_configs,
+                &generate_configs_from_file,
+                using_spacetime_config,
                 server_from_cli,
                 force,
             )
@@ -656,74 +690,99 @@ async fn generate_build_and_publish(
     client_language: Option<&Language>,
     clear_database: ClearMode,
     publish_configs: &[CommandConfig<'_>],
+    generate_configs: &[HashMap<String, serde_json::Value>],
+    using_spacetime_config: bool,
     server: Option<&str>,
     yes: bool,
 ) -> Result<(), anyhow::Error> {
-    let module_language = detect_module_language(spacetimedb_dir)?;
-    let client_language = client_language.unwrap_or(match module_language {
-        crate::util::ModuleLanguage::Rust => &Language::Rust,
-        crate::util::ModuleLanguage::Csharp => &Language::Csharp,
-        crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
-        crate::util::ModuleLanguage::Cpp => &Language::Rust,
-    });
-    let client_language_str = match client_language {
-        Language::Rust => "rust",
-        Language::Csharp => "csharp",
-        Language::TypeScript => "typescript",
-        Language::UnrealCpp => "unrealcpp",
-    };
-
-    // For TypeScript client, update .env.local with first database name
-    if client_language == &Language::TypeScript {
-        let first_config = publish_configs.first().expect("publish_configs cannot be empty");
-        let first_db_name = first_config
-            .get_config_value("database")
-            .and_then(|v| v.as_str())
-            .expect("database is a required field");
-
-        // CLI server takes precedence, otherwise use server from config
-        let server_for_env = server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
-
-        println!(
-            "{} {}...",
-            "Updating .env.local with database name".cyan(),
-            first_db_name
-        );
-        let env_path = project_dir.join(".env.local");
-        let server_host_url = config.get_host_url(server_for_env)?;
-        upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
-    }
-
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) =
         tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
-    println!("{}", "Generating module bindings...".cyan());
-    let mut generate_argv = vec![
-        "generate",
-        "--lang",
-        client_language_str,
-        "--project-path",
-        spacetimedb_dir.to_str().unwrap(),
-        "--out-dir",
-        module_bindings_dir.to_str().unwrap(),
-    ];
-    if yes {
-        generate_argv.push("--yes");
+    if using_spacetime_config {
+        if generate_configs.is_empty() {
+            println!(
+                "{}",
+                "No generate targets in spacetime.json. Skipping module bindings generation.".dimmed()
+            );
+        } else {
+            println!("{}", "Generating module bindings from spacetime.json...".cyan());
+            let mut generate_argv = vec!["generate"];
+            if yes {
+                generate_argv.push("--yes");
+            }
+            let generate_args = generate::cli().get_matches_from(generate_argv);
+            generate::exec_ex(
+                config.clone(),
+                &generate_args,
+                crate::generate::extract_descriptions,
+                true,
+            )
+            .await?;
+        }
+    } else {
+        let module_language = detect_module_language(spacetimedb_dir)?;
+        let client_language = client_language.unwrap_or(match module_language {
+            crate::util::ModuleLanguage::Rust => &Language::Rust,
+            crate::util::ModuleLanguage::Csharp => &Language::Csharp,
+            crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
+            crate::util::ModuleLanguage::Cpp => &Language::Rust,
+        });
+        let client_language_str = match client_language {
+            Language::Rust => "rust",
+            Language::Csharp => "csharp",
+            Language::TypeScript => "typescript",
+            Language::UnrealCpp => "unrealcpp",
+        };
+
+        // For TypeScript client, update .env.local with first database name
+        if client_language == &Language::TypeScript {
+            let first_config = publish_configs.first().expect("publish_configs cannot be empty");
+            let first_db_name = first_config
+                .get_config_value("database")
+                .and_then(|v| v.as_str())
+                .expect("database is a required field");
+
+            // CLI server takes precedence, otherwise use server from config
+            let server_for_env = server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
+
+            println!(
+                "{} {}...",
+                "Updating .env.local with database name".cyan(),
+                first_db_name
+            );
+            let env_path = project_dir.join(".env.local");
+            let server_host_url = config.get_host_url(server_for_env)?;
+            upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
+        }
+
+        println!("{}", "Generating module bindings...".cyan());
+        let mut generate_argv = vec![
+            "generate",
+            "--lang",
+            client_language_str,
+            "--module-path",
+            spacetimedb_dir.to_str().unwrap(),
+            "--out-dir",
+            module_bindings_dir.to_str().unwrap(),
+        ];
+        if yes {
+            generate_argv.push("--yes");
+        }
+        let generate_args = generate::cli().get_matches_from(generate_argv);
+        generate::exec_ex(
+            config.clone(),
+            &generate_args,
+            crate::generate::extract_descriptions,
+            true,
+        )
+        .await?;
     }
-    let generate_args = generate::cli().get_matches_from(generate_argv);
-    generate::exec_ex(
-        config.clone(),
-        &generate_args,
-        crate::generate::extract_descriptions,
-        true,
-    )
-    .await?;
 
     println!("{}", "Publishing...".cyan());
 
-    let project_path_str = spacetimedb_dir.to_str().unwrap();
+    let module_path_str = spacetimedb_dir.to_str().unwrap();
     let clear_flag = match clear_database {
         ClearMode::Always => "always",
         ClearMode::Never => "never",
@@ -744,8 +803,8 @@ async fn generate_build_and_publish(
         let mut publish_args = vec![
             "publish".to_string(),
             db_name.to_string(),
-            "--project-path".to_string(),
-            project_path_str.to_string(),
+            "--module-path".to_string(),
+            module_path_str.to_string(),
             "--yes".to_string(),
             format!("--delete-data={}", clear_flag),
         ];
