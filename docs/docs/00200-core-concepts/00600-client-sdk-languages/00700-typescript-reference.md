@@ -115,12 +115,12 @@ class DbConnection {
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withModuleName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
+Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withDatabaseName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
 
 | Name                                                      | Description                                                                          |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+|-----------------------------------------------------------|--------------------------------------------------------------------------------------|
 | [`withUri` method](#method-withuri)                       | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
-| [`withModuleName` method](#method-withmodulename)         | Set the name or `Identity` of the remote database.                                   |
+| [`withDatabaseName` method](#method-withdatabasename)     | Set the name or `Identity` of the remote database.                                   |
 | [`withConfirmedReads` method](#method-withconfirmedreads) | Enable or disable confirmed reads.                                                   |
 | [`onConnect` callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.          |
 | [`onConnectError` callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
@@ -138,11 +138,11 @@ class DbConnectionBuilder {
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote database.
 
-#### Method `withModuleName`
+#### Method `withDatabaseName`
 
 ```typescript
 class DbConnectionBuilder {
-  public withModuleName(name_or_identity: string): DbConnectionBuilder;
+  public withDatabaseName(name_or_identity: string): DbConnectionBuilder;
 }
 ```
 
