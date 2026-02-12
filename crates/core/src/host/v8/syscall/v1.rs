@@ -1,7 +1,7 @@
 use super::super::de::deserialize_js;
 use super::super::error::{
-    handle_sys_call_error, no_such_iter, throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult,
-    ExceptionThrown, SysCallResult,
+    collapse_exc_thrown, terminate_execution, throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult,
+    ExceptionThrown, ExceptionValue, RangeError, SysCallError, SysCallResult,
 };
 use super::super::from_value::cast;
 use super::super::ser::serialize_to_js;
@@ -16,7 +16,9 @@ use super::common::{
 use super::hooks::HookFunctions;
 use super::hooks::{get_hook_function, set_hook_slots};
 use super::{AbiVersion, FnRet, ModuleHookKey};
+use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
+use crate::host::wasm_common::err_to_errno_and_log;
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
 use crate::host::AbiCall;
@@ -276,6 +278,76 @@ fn with_span<'scope, T, E: From<ExceptionThrown>>(
     }
 
     result
+}
+
+/// Converts a `SysCallError` into a `ExceptionThrown`.
+pub(super) fn handle_sys_call_error<'scope>(
+    abi_call: AbiCall,
+    scope: &mut PinScope<'scope, '_>,
+    err: SysCallError,
+) -> ExceptionThrown {
+    const ENV_NOT_SET: u16 = 1;
+    match err {
+        SysCallError::NoEnv => code_error(scope, ENV_NOT_SET),
+        SysCallError::Errno(errno) => code_error(scope, errno.get()),
+        SysCallError::OutOfBounds => RangeError("length argument was out of bounds for `ArrayBuffer`").throw(scope),
+        SysCallError::Exception(exc) => exc,
+        SysCallError::Error(error) => throw_nodes_error(abi_call, scope, error),
+    }
+}
+
+/// A catchable error code thrown in callbacks
+/// to indicate bad arguments to a syscall.
+#[derive(Serialize)]
+struct CodeError {
+    __code_error__: u16,
+}
+
+impl CodeError {
+    /// Create a code error from a code.
+    fn from_code<'scope>(scope: &PinScope<'scope, '_>, __code_error__: u16) -> ExcResult<ExceptionValue<'scope>> {
+        let error = Self { __code_error__ };
+        serialize_to_js(scope, &error).map(ExceptionValue)
+    }
+}
+
+/// A catchable error code thrown in callbacks
+/// to indicate bad arguments to a syscall.
+#[derive(Serialize)]
+struct CodeMessageError {
+    __code_error__: u16,
+    __error_message__: String,
+}
+
+impl CodeMessageError {
+    /// Create a code error from a code.
+    fn from_code<'scope>(
+        scope: &PinScope<'scope, '_>,
+        __code_error__: u16,
+        __error_message__: String,
+    ) -> ExcResult<ExceptionValue<'scope>> {
+        let error = Self {
+            __code_error__,
+            __error_message__,
+        };
+        serialize_to_js(scope, &error).map(ExceptionValue)
+    }
+}
+
+/// Throws `{ __code_error__: code }`.
+fn code_error(scope: &PinScope<'_, '_>, code: u16) -> ExceptionThrown {
+    let res = CodeError::from_code(scope, code);
+    collapse_exc_thrown(scope, res)
+}
+
+/// Turns a [`NodesError`] into a thrown exception.
+fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
+    let res = match err_to_errno_and_log::<u16>(abi_call, error) {
+        Ok((code, None)) => CodeError::from_code(scope, code),
+        Ok((code, Some(message))) => CodeMessageError::from_code(scope, code, message),
+        Err(err) => terminate_execution(scope, &err),
+    };
+    collapse_exc_thrown(scope, res)
 }
 
 /// Module ABI that registers the functions called by the host.
@@ -721,9 +793,7 @@ fn row_iter_bsatn_advance<'scope>(
 
     // Retrieve the iterator by `row_iter_idx`, or error.
     let env = get_env(scope)?;
-    let Some(iter) = env.iters.get_mut(row_iter_idx) else {
-        return Err(no_such_iter(scope));
-    };
+    let iter = env.iters.get_mut(row_iter_idx).ok_or(SysCallError::NO_SUCH_ITER)?;
 
     // Allocate a buffer with `buffer_max_len` capacity.
     let mut buffer = vec![0; buffer_max_len as usize];

@@ -22,6 +22,12 @@ impl IntoJsString for String {
     }
 }
 
+impl IntoJsString for &'static StringConst {
+    fn into_string<'scope>(self, scope: &PinScope<'scope, '_>) -> StringResult<'scope> {
+        Ok(self.string(scope))
+    }
+}
+
 /// A string known at compile time to be ASCII.
 pub(super) struct StringConst(OneByteConst);
 

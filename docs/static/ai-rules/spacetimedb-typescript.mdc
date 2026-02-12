@@ -422,11 +422,8 @@ conn.subscriptionBuilder()
 
 > ⚠️ **Do NOT use Row Level Security (RLS)** — it is deprecated.
 
-⚠️ **CRITICAL: Views SHOULD use index lookups, NOT `.iter()` (performance)**
-
-Using `.iter()` in views is technically possible but causes severe performance issues:
-- Every change to ANY row in the table triggers a full re-evaluation of the view
-- For large tables, this becomes prohibitively expensive
+> ⚠️ **CRITICAL:** Procedural views (views that compute results in code) can ONLY access data via index lookups, NOT `.iter()`.
+> If you need a view that scans/filters across many rows (including the entire table), return a **query** built with the query builder (`ctx.from...`).
 
 ```typescript
 // Private table with index on ownerId
@@ -453,6 +450,20 @@ spacetimedb.view(
   { name: 'my_data', public: true },
   t.array(PrivateData.rowType),
   (ctx) => [...ctx.db.privateData.by_owner.filter(ctx.sender)]
+);
+```
+
+### Query builder view pattern (can scan)
+
+```typescript
+// Query-builder views return a query; the SQL engine maintains the result incrementally.
+// This can scan the whole table if needed (e.g. leaderboard-style queries).
+spacetimedb.anonymousView(
+  { name: 'top_players', public: true },
+  t.array(Player.rowType),
+  (ctx) =>
+    ctx.from.player
+      .where(p => p.score.gt(1000))
 );
 ```
 
