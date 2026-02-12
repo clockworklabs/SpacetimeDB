@@ -106,7 +106,6 @@ pub enum CaseConversionPolicy {
     PascalCase,
 }
 
-
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
@@ -122,7 +121,7 @@ pub struct NameMapping {
 #[non_exhaustive]
 pub enum ExplicitNameEntry {
     Table(NameMapping),
-    Function(NameMapping)
+    Function(NameMapping),
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -134,29 +133,18 @@ pub struct ExplicitNames {
 }
 
 impl ExplicitNames {
-    fn insert(
-        &mut self,
-        entry: ExplicitNameEntry,
-    ) {
+    fn insert(&mut self, entry: ExplicitNameEntry) {
         self.entries.push(entry);
     }
 
-    pub fn insert_table(
-        &mut self,
-        source_name: impl Into<RawIdentifier>,
-        canonical_name: impl Into<RawIdentifier>,
-    ) {
+    pub fn insert_table(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
         self.insert(ExplicitNameEntry::Table(NameMapping {
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
         }));
     }
 
-    pub fn insert_function(
-        &mut self,
-        source_name: impl Into<RawIdentifier>,
-        canonical_name: impl Into<RawIdentifier>,
-    ) {
+    pub fn insert_function(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
         self.insert(ExplicitNameEntry::Function(NameMapping {
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
