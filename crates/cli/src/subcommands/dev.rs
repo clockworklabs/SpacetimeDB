@@ -72,7 +72,7 @@ pub fn cli() -> Command {
             Arg::new("module-path")
                 .long("module-path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("Path to the SpacetimeDB server module, relative to current directory. Defaults to <project-path>/spacetimedb."),
+                .help("Path to the SpacetimeDB server module, relative to current directory. Defaults to `<project-path>/spacetimedb`."),
         )
         .arg(
             Arg::new("client-lang")
