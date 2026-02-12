@@ -1365,7 +1365,7 @@ impl __sdk::InModule for DbUpdate {{
                             out.delimited_block(
                                 "match &table_rows.table[..] {",
                                 |out| {
-                                    for (table_name, _) in iter_table_names_and_types(module) {
+                                    for (table_name, _) in iter_table_names_and_types(module, visibility) {
                                         writeln!(
                                             out,
                                             "{:?} => db_update.{}.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),",
@@ -1398,7 +1398,7 @@ impl __sdk::InModule for DbUpdate {{
                             out.delimited_block(
                                 "match &table_rows.table[..] {",
                                 |out| {
-                                    for (table_name, _) in iter_table_names_and_types(module) {
+                                    for (table_name, _) in iter_table_names_and_types(module, visibility) {
                                         writeln!(
                                             out,
                                             "{:?} => db_update.{}.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),",
@@ -1517,7 +1517,7 @@ type QueryBuilder = __sdk::QueryBuilder;
             out.delimited_block(
                 "const ALL_TABLE_NAMES: &'static [&'static str] = &[",
                 |out| {
-                    for (table_name, _) in iter_table_names_and_types(module) {
+                    for (table_name, _) in iter_table_names_and_types(module, visibility) {
                         writeln!(out, "\"{table_name}\",");
                     }
                 },
