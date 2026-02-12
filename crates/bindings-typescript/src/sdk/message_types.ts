@@ -15,6 +15,7 @@ export type TransactionUpdateMessage = {
   tableUpdates: TableUpdate<UntypedTableDef>[];
   identity: Identity;
   connectionId: ConnectionId | null;
+  requestId?: number;
   reducerInfo?: {
     reducerName: string;
     args: Uint8Array;

@@ -5,7 +5,6 @@ import type { CoerceRow } from '../lib/table';
 import { RowBuilder, type InferTypeOfRow } from '../lib/type_builders';
 import type { CamelCase, PascalCase } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
-import type { CallReducerFlags } from './db_connection_impl';
 import type {
   ReducerEventContextInterface,
   SubscriptionEventContextInterface,
@@ -85,12 +84,6 @@ export type UntypedReducerDef = {
 
 export type UntypedReducersDef = {
   reducers: readonly UntypedReducerDef[];
-};
-
-export type SetReducerFlags<R extends UntypedReducersDef> = {
-  [K in keyof R['reducers'] as CamelCase<R['reducers'][number]['name']>]: (
-    flags: CallReducerFlags
-  ) => void;
 };
 
 class Reducers<ReducersDef extends UntypedReducersDef> {
