@@ -45,7 +45,7 @@ impl List {
         };
 
         // Sort versions using semver ordering. Versions that fail to parse are
-        // placed at the end in their original listed.
+        // placed at the end in their original listed order.
         let mut parsed: Vec<(semver::Version, String)> = Vec::new();
         let mut unparsed: Vec<String> = Vec::new();
         for ver in versions {
@@ -57,45 +57,8 @@ impl List {
         parsed.sort_by(|(a, _), (b, _)| b.cmp(a));
 
         let sorted_versions: Vec<String> = parsed.into_iter().map(|(_, s)| s).chain(unparsed).collect();
-
-        // Check for a newer version available on GitHub.
-        let latest = if !self.all {
-            let client = super::reqwest_client().ok();
-            client.and_then(|c| {
-                super::tokio_block_on(super::install::fetch_latest_version(&c))
-                    .ok()
-                    .and_then(|r| r.ok())
-            })
-        } else {
-            None
-        };
-
-        // Determine whether the latest version is newer than any installed version.
-        let newest_installed = sorted_versions.first().and_then(|v| semver::Version::parse(v).ok());
-
-        let show_latest = match (&latest, &newest_installed) {
-            (Some(lat), Some(cur)) if lat > cur => Some(lat.to_string()),
-            _ => None,
-        };
-
-        // If there's no current version set but a latest is available,
-        // still show it first.
-        if current.is_none() {
-            if let Some(ref new_ver) = show_latest {
-                println!("{} {}", new_ver, "(available - run `spacetime version upgrade`)");
-            }
-        }
-
         for ver in &sorted_versions {
             let is_current = Some(ver) == current.as_ref();
-
-            // If this is the current version and there's a newer version
-            // available, print the newer version first.
-            if is_current {
-                if let Some(ref new_ver) = show_latest {
-                    println!("{} {}", new_ver, "(available - run `spacetime version upgrade`)");
-                }
-            }
 
             if is_current {
                 println!("{} {}", ver, "(current)");
