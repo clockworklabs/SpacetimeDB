@@ -6,8 +6,8 @@ use crate::system_tables::{
     ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
     StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
     StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewRow,
-    SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID,
-    ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    StEventTableFields, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID,
+    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -159,6 +159,12 @@ pub trait StateView {
             .unwrap_or(None)
             .transpose()?;
 
+        // Check if this table is an event table by looking up st_event_table.
+        let is_event = self
+            .iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, value_eq)
+            .map(|mut iter| iter.next().is_some())
+            .unwrap_or(false);
+
         Ok(TableSchema::new(
             table_id,
             table_name,
@@ -171,6 +177,7 @@ pub trait StateView {
             table_access,
             schedule,
             table_primary_key,
+            is_event,
         ))
     }
 
