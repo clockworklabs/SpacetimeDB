@@ -85,7 +85,12 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
         Self: 'a;
 
     fn seek_point(&self, &key: &Self::Key) -> Self::PointIter<'_> {
-        let point = self.array.get(key.to_usize()).copied().filter(|slot| *slot != NONE_PTR);
+        let point = self
+            .array
+            .get(key.to_usize())
+            .copied()
+            .filter(|slot| *slot != NONE_PTR)
+            .map(expose);
         UniquePointIter::new(point)
     }
 

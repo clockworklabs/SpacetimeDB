@@ -232,13 +232,15 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
 
     fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
         let key = key.to_usize();
+        dbg!(key);
         let (outer_key, inner_key) = split_key(key);
         let point = self
             .outer
             .get(outer_key)
             .and_then(|x| x.as_ref())
             .map(|inner| inner.get(inner_key))
-            .filter(|slot| *slot != NONE_PTR);
+            .filter(|slot| *slot != NONE_PTR)
+            .map(expose);
         UniquePointIter::new(point)
     }
 

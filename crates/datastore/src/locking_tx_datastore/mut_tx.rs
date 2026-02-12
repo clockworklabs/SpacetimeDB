@@ -71,7 +71,7 @@ use spacetimedb_table::{
         BlobNumBytes, DuplicateError, IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table,
         TableAndIndex, UniqueConstraintViolation,
     },
-    table_index::{IndexCannotSeekRange, IndexSeekRangeResult, TableIndex},
+    table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, TableIndex},
 };
 use std::{
     marker::PhantomData,
@@ -316,9 +316,10 @@ impl MutTxId {
         op: &FuncCallType,
         table_id: TableId,
         index_id: IndexId,
-        val: AlgebraicValue,
+        val: IndexKey<'_>,
     ) {
         if let FuncCallType::View(view) = op {
+            let val = val.into_algebraic_value();
             self.record_index_scan_point_inner(view, table_id, index_id, val);
         };
     }
@@ -462,7 +463,8 @@ impl Datastore for MutTxId {
             .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
 
-        Ok(self.index_scan_point_inner(table_id, tx_index, commit_index, point))
+        let point = commit_index.index().key_from_algebraic_value(point);
+        Ok(self.index_scan_point_inner(table_id, tx_index, commit_index, &point))
     }
 }
 
@@ -1321,31 +1323,21 @@ impl MutTxId {
 
     /// Returns an iterator yielding rows by performing a point index scan
     /// on the index identified by `index_id`.
-    pub fn index_scan_point<'a>(
+    pub fn index_scan_point<'a, 'p>(
         &'a self,
         index_id: IndexId,
-        mut point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, IndexScanPoint<'a>)> {
+        point: &'p [u8],
+    ) -> Result<(TableId, IndexKey<'p>, IndexScanPoint<'a>)> {
         // Extract the table id, and commit/tx indices.
         let (table_id, commit_index, tx_index) = self
             .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
-        // Extract the index type.
-        let index_ty = &commit_index.index().key_type;
 
-        // We have the index key type, so we can decode the key.
-        let index_ty = WithTypespace::empty(index_ty);
-        let point = index_ty
-            .deserialize(Deserializer::new(&mut point))
-            .map_err(IndexError::Decode)?;
+        // Decode the key.
+        let point = commit_index.index().key_from_bsatn(point).map_err(IndexError::Decode)?;
 
-        // Get an index seek iterator for the tx and committed state.
-        let tx_iter = tx_index.map(|i| i.seek_point(&point));
-        let commit_iter = commit_index.seek_point(&point);
-
-        let dt = self.tx_state.get_delete_table(table_id);
-        let iter = ScanMutTx::combine(dt, tx_iter, commit_iter);
-
+        // Get index seek iterators for the tx and committed state.
+        let iter = self.index_scan_point_inner(table_id, tx_index, commit_index, &point);
         Ok((table_id, point, iter))
     }
 
@@ -1355,7 +1347,7 @@ impl MutTxId {
         table_id: TableId,
         tx_index: Option<TableAndIndex<'a>>,
         commit_index: TableAndIndex<'a>,
-        point: &AlgebraicValue,
+        point: &IndexKey<'_>,
     ) -> IndexScanPoint<'a> {
         // Get an index seek iterator for the tx and committed state.
         let tx_iter = tx_index.map(|i| i.seek_point(point));
@@ -2893,10 +2885,12 @@ impl MutTxId {
                 throw!(IndexError::NotUnique(index_id));
             }
 
-            // Project the row to the index's type.
+            // Derive the key of `tx_row_ref` for `commit_index`.
             // SAFETY: `tx_row_ref`'s table is derived from `commit_index`'s table,
-            // so all `index.indexed_columns` will be in-bounds of the row layout.
-            let index_key = unsafe { tx_row_ref.project_unchecked(&commit_index.indexed_columns) };
+            // so the row layouts match and thus,
+            // `commit_index`'s key type is the same as the type of `row_ref`
+            // projected to `commit_index.indexed_columns`.
+            let index_key = unsafe { commit_index.key_from_row(tx_row_ref) };
 
             // Try to find the old row first in the committed state using the `index_key`.
             let mut old_commit_del_ptr = None;
@@ -3006,6 +3000,9 @@ impl MutTxId {
 
                 tx_row_ptr
             } else {
+                let index_key = tx_row_ref
+                    .project(&commit_index.indexed_columns)
+                    .expect("`tx_row_ref` should be compatible with `commit_index`");
                 throw!(IndexError::KeyNotFound(index_id, index_key));
             };
 
