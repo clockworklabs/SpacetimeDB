@@ -1061,11 +1061,10 @@ fn exec_fail_reducer() {
                 ctx.reducers
                     .insert_pk_u_8_then(key, fail_data, move |ctx, status| {
                         let run_checks = || {
-                            match &status {
-                                Ok(Ok(())) => anyhow::bail!(
+                            if let Ok(Ok(())) = &status {
+                                anyhow::bail!(
                                     "Expected reducer `insert_pk_u_8` to error or panic, but got a successful return"
-                                ),
-                                _ => (),
+                                )
                             }
 
                             if matches!(ctx.event.status, Status::Committed) {
