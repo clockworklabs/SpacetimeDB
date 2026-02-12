@@ -142,6 +142,11 @@ impl Plan {
     pub fn sql(&self) -> &str {
         &self.sql
     }
+
+    /// Does this plan return rows from an event table?
+    pub fn returns_event_table(&self) -> bool {
+        self.plans.iter().any(|p| p.returns_event_table())
+    }
 }
 
 /// For each client, we hold a handle for sending messages, and we track the queries they are subscribed to.
