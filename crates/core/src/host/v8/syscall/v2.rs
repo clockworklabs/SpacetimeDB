@@ -4,7 +4,7 @@ use super::super::error::{
     SysCallError,
 };
 use super::super::error::{
-    no_such_iter, throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult, ExceptionThrown, SysCallResult, OOB,
+    throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult, ExceptionThrown, SysCallResult, TypeError, OOB,
 };
 use super::super::from_value::cast;
 use super::super::ser::serialize_to_js;
@@ -34,7 +34,6 @@ use core::slice;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::u256;
-use std::num::NonZero;
 use v8::{
     callback_scope, ArrayBuffer, ConstructorBehavior, DataView, Function, FunctionCallbackArguments, Local, Module,
     Object, PinScope, Value,
@@ -268,7 +267,12 @@ pub(super) fn handle_sys_call_error<'scope>(
     const ENV_NOT_SET: u16 = 1;
     match err {
         SysCallError::NoEnv => {
-            let exc = code_error(scope, ENV_NOT_SET, None);
+            let msg = "cannot call this function during module initialization";
+            let exc = code_error(scope, ENV_NOT_SET, Some(msg));
+            collapse_exc_thrown(scope, exc)
+        }
+        SysCallError::Errno(errno) => {
+            let exc = code_error(scope, errno.get(), None);
             collapse_exc_thrown(scope, exc)
         }
         SysCallError::OutOfBounds => RangeError("length argument was out of bounds for `ArrayBuffer`").throw(scope),
@@ -277,17 +281,30 @@ pub(super) fn handle_sys_call_error<'scope>(
     }
 }
 
+macro_rules! def_errnos {
+    ($($err_name:ident($errno:literal, $errmsg:literal),)*) => {
+        /// Get the error message for an error number, if it exists.
+        const fn strerror(num: u16) -> Option<&'static StringConst> {
+            match num {
+                $($errno => Some(const { &StringConst::new($errmsg) }),)*
+                _ => None,
+            }
+        }
+    };
+}
+errno::errnos!(def_errnos);
+
+/// Construct a `SpacetimeHostError` value given an errno and message.
 fn code_error<'scope>(
     scope: &mut PinScope<'scope, '_>,
     code: u16,
     message: Option<&str>,
 ) -> ExcResult<ExceptionValue<'scope>> {
-    let message = message
-        .or_else(|| errno::strerror(NonZero::new(code)?))
-        .unwrap_or_else(|| errno::strerror(NonZero::<u16>::MIN).unwrap());
-    let message = message
-        .into_string(scope)
-        .map_err(|e| e.into_range_error().throw(scope))?;
+    const DEFAULT_MESSAGE: &StringConst = &StringConst::new("Unknown error");
+    let message = match message {
+        Some(msg) => msg.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?,
+        None => strerror(code).unwrap_or(DEFAULT_MESSAGE).string(scope),
+    };
     let exc = match scope
         .get_current_context()
         .get_embedder_data(scope, super::super::GET_ERROR_CONSTRUCTOR_SLOT)
@@ -295,10 +312,9 @@ fn code_error<'scope>(
         // get_error_constructor: (code: number) => new (message: string) => Error
         Some(get_error_constructor) => {
             let errno_value = code.to_value(scope);
-            let class = call_free_fun(scope, get_error_constructor.cast(), &[errno_value])?;
-            let class = cast!(scope, class, v8::Function, "function").map_err(|e| e.throw(scope))?;
-            class
-                .new_instance(scope, &[message.into()])
+            let cls = call_free_fun(scope, get_error_constructor.cast(), &[errno_value])?;
+            let cls = cast!(scope, cls, v8::Function, "function").map_err(|e| e.throw(scope))?;
+            cls.new_instance(scope, &[message.into()])
                 .ok_or_else(exception_already_thrown)?
                 .into()
         }
@@ -369,8 +385,8 @@ pub fn get_hooks_from_default_export<'scope>(
     let hooks = cast!(scope, hooks, Object, "hooks object").map_err(|e| e.throw(scope))?;
 
     let describe_module = get_hook_function(scope, hooks, str_from_ident!(__describe_module__))?;
-    let get_error_constructor = get_hook_function(scope, hooks, str_from_ident!(getErrorConstructor))?;
-    let sender_error_class = get_hook_function(scope, hooks, str_from_ident!(senderErrorClass))?;
+    let get_error_constructor = get_hook_function(scope, hooks, str_from_ident!(__get_error_constructor__))?;
+    let sender_error_class = get_hook_function(scope, hooks, str_from_ident!(__sender_error_class__))?;
     let call_reducer = get_hook_function(scope, hooks, str_from_ident!(__call_reducer__))?;
     let call_view = get_hook_function(scope, hooks, str_from_ident!(__call_view__))?;
     let call_view_anon = get_hook_function(scope, hooks, str_from_ident!(__call_view_anon__))?;
@@ -418,24 +434,33 @@ pub(super) fn call_call_reducer<'scope>(
 
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
-    let res: ExcResult<()> = call_recv_fun(scope, hooks.call_reducer, hooks.recv, args).map(drop);
-    res.map(Ok).or_else(|e| {
-        // TODO: let chains
-        if scope.can_continue() {
-            if let Some(exc) = scope.exception().and_then(|exc| exc.try_cast::<Object>().ok()) {
-                if exc
-                    .instance_of(scope, hooks.sender_error_class.unwrap().into())
-                    .ok_or_else(exception_already_thrown)?
-                {
-                    let key = str_from_ident!(message).string(scope);
-                    let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
-                    let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
-                    return Ok(Err(message.to_rust_string_lossy(scope).into()));
+    match call_recv_fun(scope, hooks.call_reducer, hooks.recv, args) {
+        Ok(val) if val.is_undefined() => Ok(Ok(())),
+        // TODO(reducer-return-values): replace error with deserialization
+        Ok(_) => Err(TypeError("Reducer returned a value other than `undefined`").throw(scope)),
+        Err(e) => {
+            // If any of these operations throw an exception, the try-catch scope will catch it
+            // and overwrite the previously caught exception, which is our desired behavior.
+
+            // If we're terminating execution, don't try to check `instanceof`.
+            if scope.can_continue() {
+                if let Some(exc) = scope.exception().and_then(|exc| exc.try_cast::<Object>().ok()) {
+                    // if (exc instanceof SenderError)
+                    if exc
+                        .instance_of(scope, hooks.sender_error_class.unwrap().into())
+                        .ok_or_else(exception_already_thrown)?
+                    {
+                        // let message = String(exc.message)
+                        let key = str_from_ident!(message).string(scope);
+                        let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
+                        let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
+                        return Ok(Err(message.to_rust_string_lossy(scope).into()));
+                    }
                 }
             }
+            Err(e)
         }
-        Err(e)
-    })
+    }
 }
 
 /// Converts `args` into a `Value`.
@@ -742,9 +767,7 @@ fn row_iter_bsatn_advance<'scope>(
 
     // Retrieve the iterator by `row_iter_idx`, or error.
     let env = get_env(scope)?;
-    let Some(iter) = env.iters.get_mut(row_iter_idx) else {
-        return Err(no_such_iter(scope));
-    };
+    let iter = env.iters.get_mut(row_iter_idx).ok_or(SysCallError::NO_SUCH_ITER)?;
 
     // Fill the buffer as much as possible.
     let written = with_arraybuffer_mut(array_buffer, |buf| {

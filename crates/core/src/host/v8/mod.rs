@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
     catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
-    ExceptionThrown, Throwable,
+    ExceptionThrown, PinTryCatch, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -34,7 +34,6 @@ use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
 use core::any::type_name;
 use core::str;
 use enum_as_inner::EnumAsInner;
-use error::PinTryCatch;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
@@ -752,6 +751,8 @@ async fn spawn_instance_worker(
     })
 }
 
+/// The embedder data slot for the `__get_error_constructor__` function.
+/// One greater than the greatest value of [`syscall::ModuleHookKey`].
 const GET_ERROR_CONSTRUCTOR_SLOT: i32 = 5;
 
 /// Compiles, instantiate, and evaluate `code` as a module.
@@ -909,6 +910,7 @@ where
     // We'd like this tightly around `call`.
     env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
+    // By default, we can continue execution, but an exception might mean that we can't.
     let mut can_continue = CanContinue::Yes;
     let call_result = catch_exception(scope, |scope| {
         let res = call(scope, op);
@@ -997,7 +999,6 @@ mod test {
     fn call_call_reducer_works() {
         let call = |code| {
             with_module_catch(code, |scope, exports| {
-                builtins::evaluate_builtins(scope).unwrap();
                 let hooks = get_hooks(scope, exports)?.unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),

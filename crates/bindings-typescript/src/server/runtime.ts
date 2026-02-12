@@ -312,11 +312,11 @@ class ModuleHooksImpl implements ModuleHooks {
     return writer.getBuffer();
   }
 
-  getErrorConstructor(code: number): new (msg: string) => Error {
+  __get_error_constructor__(code: number): new (msg: string) => Error {
     return getErrorConstructor(code);
   }
 
-  get senderErrorClass() {
+  get __sender_error_class__() {
     return SenderError;
   }
 

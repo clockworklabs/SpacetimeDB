@@ -15,8 +15,8 @@ declare module 'spacetime:sys@2.0' {
   export interface ModuleHooks {
     __describe_module__(): Uint8Array;
 
-    getErrorConstructor(code: number): new (msg: string) => Error;
-    senderErrorClass: new (msg: string) => Error;
+    __get_error_constructor__(code: number): new (msg: string) => Error;
+    __sender_error_class__: new (msg: string) => Error;
 
     __call_reducer__(
       reducerId: u32,
