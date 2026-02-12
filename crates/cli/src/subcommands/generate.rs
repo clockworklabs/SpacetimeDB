@@ -42,6 +42,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new::<String>("namespace"))
         .key(Key::new::<String>("module_name"))
         .key(Key::new::<String>("build_options"))
+        .key(Key::new::<String>("include_private"))
         .exclude("json_module")
         .exclude("force")
         .build(command)
