@@ -48,7 +48,7 @@ fn test_build_csharp_module() {
             "init",
             "--non-interactive",
             "--lang=csharp",
-            "--project-path",
+            "--module-path",
             tmpdir.path().to_str().unwrap(),
             "csharp-project",
         ])

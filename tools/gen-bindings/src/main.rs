@@ -60,7 +60,7 @@ fn main() -> Result<()> {
             "typescript",
             "--out-dir",
             &args.out_dir,
-            "--project-path",
+            "--module-path",
             &args.project_path,
         ],
     )?;

@@ -34,7 +34,7 @@ Add the SpacetimeDB Unreal SDK to your project as a plugin. The SDK provides bot
 Each SpacetimeDB client depends on some bindings specific to your module. Generate the Unreal interface files using the Spacetime CLI. From your project directory, run:
 
 ```bash
-spacetime generate --lang unrealcpp --uproject-dir <uproject_directory> --project-path <module_path> --module-name <module_name>
+spacetime generate --lang unrealcpp --uproject-dir <uproject_directory> --module-path <module_path> --module-name <module_name>
 ```
 
 Replace:
@@ -46,7 +46,7 @@ Replace:
 **Example:**
 
 ```bash
-spacetime generate --lang unrealcpp --uproject-dir /path/to/MyGame --project-path /path/to/quickstart-chat --module-name QuickstartChat
+spacetime generate --lang unrealcpp --uproject-dir /path/to/MyGame --module-path /path/to/quickstart-chat --module-name QuickstartChat
 ```
 
 This generates module-specific bindings in your project's `ModuleBindings` directory.

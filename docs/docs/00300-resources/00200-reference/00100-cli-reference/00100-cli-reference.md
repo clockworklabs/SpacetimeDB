@@ -97,7 +97,7 @@ Run `spacetime help publish` for more detailed information.
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: ``
-* `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the module project
+* `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module project
 
   Default value: `.`
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project.
@@ -325,7 +325,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
 
 Run `spacetime help publish` for more detailed information.
 
@@ -333,7 +333,7 @@ Run `spacetime help publish` for more detailed information.
 
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should inspect
 * `-j`, `--js-path <JS_FILE>` — The system path (absolute or relative) to the bundled javascript file we should inspect
-* `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the project you would like to inspect
+* `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module you would like to inspect
 
   Default value: `.`
 * `-o`, `--out-dir <OUT_DIR>` — The system path (absolute or relative) to the generate output directory
@@ -444,7 +444,7 @@ Builds a spacetime module.
 
 ###### **Options:**
 
-* `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the project you would like to build
+* `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module you would like to build
 
   Default value: `.`
 * `--lint-dir <LINT_DIR>` — The directory to lint for nonfunctional print statements. If set to the empty string, skips linting.
@@ -655,4 +655,3 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
-

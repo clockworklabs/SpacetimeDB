@@ -16,26 +16,12 @@ fn cli_can_publish_spacetimedb_on_disk() {
 
     let dir = dir.to_string();
     let _ = test
-        .spacetime(&[
-            "publish",
-            "--project-path",
-            &dir,
-            "--server",
-            &test.server_url,
-            "foobar",
-        ])
+        .spacetime(&["publish", "--module-path", &dir, "--server", &test.server_url, "foobar"])
         .unwrap();
 
     // Can republish without error to the same name
     let _ = test
-        .spacetime(&[
-            "publish",
-            "--project-path",
-            &dir,
-            "--server",
-            &test.server_url,
-            "foobar",
-        ])
+        .spacetime(&["publish", "--module-path", &dir, "--server", &test.server_url, "foobar"])
         .unwrap();
 }
 
@@ -55,7 +41,7 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
     let _ = test
         .spacetime(&[
             "publish",
-            "--project-path",
+            "--module-path",
             &dir,
             "--server",
             &test.server_url,
@@ -66,7 +52,7 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
     let dir = dir.to_string();
     let mut args = vec![
         "publish",
-        "--project-path",
+        "--module-path",
         &dir,
         "--server",
         &test.server_url,
@@ -229,7 +215,7 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
     let module_dir = temp_dir.path().join("test-project").join("spacetimedb");
 
     // Build the module first
-    test.spacetime(&["build", "--project-path", module_dir.to_str().unwrap()])
+    test.spacetime(&["build", "--module-path", module_dir.to_str().unwrap()])
         .unwrap();
 
     // Create a config with a different database name
@@ -246,7 +232,7 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
         "--server",
         &test.server_url,
         "cli-db-name",
-        "--project-path",
+        "--module-path",
         module_dir.to_str().unwrap(),
     ])
     .unwrap();

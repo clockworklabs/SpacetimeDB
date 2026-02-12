@@ -27,7 +27,7 @@ class CreateProject(unittest.TestCase):
                     "init",
                     "--non-interactive",
                     "--lang=csharp",
-                    "--project-path",
+                    "--module-path",
                     tmpdir,
                     "csharp-project",
                 )

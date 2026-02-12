@@ -172,7 +172,7 @@ class BaseQuickstart(Smoketest):
             "--non-interactive",
             "--lang",
             self.lang,
-            "--project-path",
+            "--module-path",
             server_path,
             "spacetimedb-project",
             capture_stderr=True,
@@ -205,7 +205,7 @@ class BaseQuickstart(Smoketest):
         self.spacetime(
             "generate", "--lang", client_lang,
             "--out-dir", client_path / self.module_bindings,
-            "--project-path", self.project_path, capture_stderr=True
+            "--module-path", self.project_path, capture_stderr=True
         )
         # Replay the quickstart guide steps
         main = _parse_quickstart(self.client_doc, client_lang, self._module_name, server=False)

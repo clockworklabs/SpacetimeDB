@@ -514,7 +514,7 @@ impl QuickstartTest {
             "--non-interactive",
             "--lang",
             self.config.lang,
-            "--project-path",
+            "--module-path",
             server_path.to_str().unwrap(),
             "spacetimedb-project",
         ])?;
@@ -714,7 +714,7 @@ log = "0.4"
             "publish",
             "--server",
             &self.test.server_url,
-            "--project-path",
+            "--module-path",
             &project_path_str,
             "--yes",
             "--clear-database",
@@ -755,7 +755,7 @@ log = "0.4"
             self.config.client_lang,
             "--out-dir",
             bindings_path.to_str().unwrap(),
-            "--project-path",
+            "--module-path",
             &project_path_str,
         ])?;
 

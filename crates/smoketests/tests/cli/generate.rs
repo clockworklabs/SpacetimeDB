@@ -40,7 +40,7 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
 
     // Build the module first
     let output = cli_cmd()
-        .args(["build", "--project-path", module_dir.to_str().unwrap()])
+        .args(["build", "--module-path", module_dir.to_str().unwrap()])
         .output()
         .expect("failed to execute");
     assert!(
@@ -60,7 +60,7 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
             "rust",
             "--out-dir",
             output_dir.to_str().unwrap(),
-            "--project-path",
+            "--module-path",
             module_dir.to_str().unwrap(),
         ])
         .current_dir(&module_dir)

@@ -304,20 +304,20 @@ To generate UnrealCPP bindings for your SpacetimeDB module, use the SpacetimeDB 
 ### Basic Command
 
 ```bash
-cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir <uproject_directory> --project-path <module_path> --module-name <ModuleName>
+cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir <uproject_directory> --module-path <module_path> --module-name <ModuleName>
 ```
 
 ### Example
 
 ```bash
-cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crates/sdk-unreal/examples/QuickstartChat --project-path modules/quickstart-chat --module-name QuickstartChat
+cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crates/sdk-unreal/examples/QuickstartChat --module-path modules/quickstart-chat --module-name QuickstartChat
 ```
 
 ### Parameters
 
 - `--lang unrealcpp`: Specifies the UnrealCPP code generator
 - `--uproject-dir`: Directory containing Unreal's .uproject or .uplugin file
-- `--project-path`: Path to your SpacetimeDB module source code
+- `--module-path`: Path to your SpacetimeDB module source code
 - `--module-name`: **Required** - Name used for generated classes, API prefix and putting generated module bindings in the correct Module's Source
 
 ### Why Module Name is Required

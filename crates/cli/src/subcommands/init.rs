@@ -1305,41 +1305,41 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
     match (config.template_type, config.server_lang, config.client_lang) {
         (TemplateType::Builtin, Some(ServerLanguage::Rust), Some(ClientLanguage::Rust)) => {
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             println!("  cargo run");
         }
         (TemplateType::Builtin, Some(ServerLanguage::TypeScript), Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb");
             println!("  npm run dev");
         }
         (TemplateType::Builtin, Some(ServerLanguage::Csharp), Some(ClientLanguage::Csharp)) => {
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang csharp --out-dir module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb");
         }
         (TemplateType::Empty, _, Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");
             if config.server_lang.is_some() {
                 println!(
-                    "  spacetime publish --project-path spacetimedb {}{}",
+                    "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
                 println!(
-                    "  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+                    "  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
                 );
             }
             println!("  npm run dev");
@@ -1347,11 +1347,11 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
         (TemplateType::Empty, _, Some(ClientLanguage::Rust)) => {
             if config.server_lang.is_some() {
                 println!(
-                    "  spacetime publish --project-path spacetimedb {}{}",
+                    "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
-                println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+                println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             }
             println!("  cargo run");
         }

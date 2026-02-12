@@ -621,13 +621,13 @@ log::error!("Error occurred");
 spacetime start
 
 # Publish module
-spacetime publish <module-name> --project-path <backend-dir>
+spacetime publish <module-name> --module-path <backend-dir>
 
 # Clear database and republish
-spacetime publish <module-name> --clear-database -y --project-path <backend-dir>
+spacetime publish <module-name> --clear-database -y --module-path <backend-dir>
 
 # Generate bindings
-spacetime generate --lang rust --out-dir <client>/src/module_bindings --project-path <backend-dir>
+spacetime generate --lang rust --out-dir <client>/src/module_bindings --module-path <backend-dir>
 
 # View logs
 spacetime logs <module-name>

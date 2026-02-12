@@ -766,7 +766,7 @@ log = "0.4"
         let cli_path = ensure_binaries_built();
 
         let mut cmd = Command::new(&cli_path);
-        cmd.args(["build", "--project-path", project_path])
+        cmd.args(["build", "--module-path", project_path])
             .current_dir(self.project_dir.path())
             .env("CARGO_TARGET_DIR", shared_target_dir());
 
@@ -842,7 +842,7 @@ log = "0.4"
 
             let mut build_cmd = Command::new(&cli_path);
             build_cmd
-                .args(["build", "--project-path", &project_path])
+                .args(["build", "--module-path", &project_path])
                 .current_dir(self.project_dir.path())
                 .env("CARGO_TARGET_DIR", &target_dir);
 
