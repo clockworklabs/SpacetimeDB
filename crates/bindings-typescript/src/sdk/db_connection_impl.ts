@@ -54,7 +54,6 @@ import type {
   ReducersView,
   SetReducerFlags,
   SubscriptionEventCallback,
-  UntypedReducerDef,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';

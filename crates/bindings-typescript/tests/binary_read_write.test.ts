@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { anIdentity, bobIdentity, encodeUser, sallyIdentity } from './utils';
+import { bobIdentity, encodeUser, sallyIdentity } from './utils';
 import ServerMessage from '../src/sdk/client_api/server_message_type';
 import RowSizeHint from '../src/sdk/client_api/row_size_hint_type';
 import TableUpdateRows from '../src/sdk/client_api/table_update_rows_type';

@@ -1,21 +1,13 @@
 import { DbConnection } from '../test-app/src/module_bindings';
-import CreatePlayerReducer from '../test-app/src/module_bindings/create_player_reducer';
-import Player from '../test-app/src/module_bindings/player_table';
 import User from '../test-app/src/module_bindings/user_table';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ConnectionId, type Infer } from '../src';
-import { Timestamp } from '../src';
-import ClientMessage from '../src/sdk/client_api/client_message_type';
-import ReducerOutcome from '../src/sdk/client_api/reducer_outcome_type';
 import ServerMessage from '../src/sdk/client_api/server_message_type';
-import type { ReducerEvent } from '../src/sdk/db_connection_impl';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
-import BinaryReader from '../src/lib/binary_reader';
 import {
   anIdentity,
   bobIdentity,
-  encodePlayer,
   encodeUser,
   makeQuerySetUpdate,
   sallyIdentity,
@@ -63,36 +55,6 @@ class Deferred<T> {
 }
 
 beforeEach(() => {});
-
-async function getLastCallReducerRequestId(
-  wsAdapter: WebsocketTestAdapter
-): Promise<number> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const raw = wsAdapter.messageQueue.pop();
-    if (raw) {
-      const message = ClientMessage.deserialize(new BinaryReader(raw));
-      if (message.tag !== 'CallReducer') {
-        throw new Error(`Expected CallReducer message, got ${message.tag}`);
-      }
-      return message.value.requestId;
-    }
-    await Promise.resolve();
-  }
-  throw new Error('Expected a call reducer message to be sent');
-}
-
-function makeReducerResult(requestId: number, querySetUpdate: any) {
-  return ServerMessage.ReducerResult({
-    requestId,
-    timestamp: new Timestamp(0n),
-    result: ReducerOutcome.Ok({
-      retValue: new Uint8Array(),
-      transactionUpdate: {
-        querySets: [querySetUpdate],
-      },
-    }),
-  });
-}
 
 describe('DbConnection', () => {
   test('call onConnectError callback after websocket connection failed to be established', async () => {
