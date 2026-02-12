@@ -163,7 +163,7 @@ pub trait StateView {
         let is_event = self
             .iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, value_eq)?
             .next()
-            .is_some()
+            .is_some();
         Ok(TableSchema::new(
             table_id,
             table_name,
