@@ -5,7 +5,7 @@
 
 use fs_err as fs;
 use regex::Regex;
-use spacetimedb_codegen::{generate, typescript, OutputFile};
+use spacetimedb_codegen::{generate, typescript, CodegenOptions, OutputFile};
 use spacetimedb_lib::db::raw_def::v9::ViewResultHeader;
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 use spacetimedb_schema::def::ModuleDef;
@@ -38,7 +38,7 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir(dir)?;
 
     let module: ModuleDef = module.try_into()?;
-    generate(&module, &typescript::TypeScript)
+    generate(&module, &typescript::TypeScript, &CodegenOptions::default())
         .into_iter()
         .try_for_each(|OutputFile { filename, code }| {
             // Skip the index.ts since we don't need it.

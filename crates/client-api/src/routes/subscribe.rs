@@ -1299,7 +1299,7 @@ async fn ws_encode_task(
         let in_use_buf = match message {
             OutboundWsMessage::Error(message) => {
                 if config.version == WsVersion::V2 {
-                    log::warn!("dropping v2 error message until v2 serialization is implemented");
+                    log::warn!("dropping v1 error message sent to a v2 client: {:?}", message);
                     continue;
                 }
                 let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await;
@@ -1311,47 +1311,44 @@ async fn ws_encode_task(
                 in_use
             }
             OutboundWsMessage::Message(message) => {
-                if config.version == WsVersion::V2 {
-                    let (workload, num_rows) = match &message {
-                        OutboundMessage::V2(_) => (message.workload(), message.num_rows()),
-                        OutboundMessage::V1(_) => (None, None),
-                    };
-                    match message {
-                        OutboundMessage::V2(server_message) => {
-                            let (stats, in_use, mut frames) =
-                                ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
-                            metrics.report(workload, num_rows, stats);
-                            if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                                break;
-                            }
-
-                            in_use
+                let workload = message.workload();
+                let num_rows = message.num_rows();
+                match message {
+                    OutboundMessage::V2(server_message) => {
+                        if config.version != WsVersion::V2 {
+                            log::warn!("dropping v2 message on v1 connection");
+                            continue;
                         }
-                        OutboundMessage::V1(message) => {
+
+                        let (stats, in_use, mut frames) =
+                            ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
+                        metrics.report(workload, num_rows, stats);
+                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                            break;
+                        }
+
+                        in_use
+                    }
+                    OutboundMessage::V1(message) => {
+                        if config.version == WsVersion::V2 {
                             log::warn!(
                                 "dropping v1 message for v2 connection until v2 serialization is implemented: {:?}",
                                 message
                             );
                             continue;
                         }
-                    }
-                } else {
-                    let OutboundMessage::V1(message) = message else {
-                        log::warn!("dropping v2 message on v1 connection");
-                        continue;
-                    };
-                    let workload = message.workload();
-                    let num_rows = message.num_rows();
-                    let is_large = num_rows.is_some_and(|n| n > 1024);
 
-                    let (stats, in_use, mut frames) =
-                        ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
-                    metrics.report(workload, num_rows, stats);
-                    if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                        break;
-                    }
+                        let is_large = num_rows.is_some_and(|n| n > 1024);
 
-                    in_use
+                        let (stats, in_use, mut frames) =
+                            ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
+                        metrics.report(workload, num_rows, stats);
+                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                            break;
+                        }
+
+                        in_use
+                    }
                 }
             }
         };
@@ -1443,12 +1440,17 @@ async fn ws_encode_message_v2(
     config: ClientConfig,
     buf: SerializeBuffer,
     message: ws_v2::ServerMessage,
-    _is_large_message: bool,
-    _bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    is_large_message: bool,
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
 ) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
-    let _ = (_is_large_message, _bsatn_rlb_pool);
     let start = Instant::now();
-    let (in_use, data) = serialize_v2(buf, message, config.compression);
+
+    let (in_use, data) = if is_large_message {
+        let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+        spawn_rayon(move || serialize_v2(&bsatn_rlb_pool, buf, message, config.compression)).await
+    } else {
+        serialize_v2(bsatn_rlb_pool, buf, message, config.compression)
+    };
 
     let metrics = EncodeMetrics {
         timing: start.elapsed(),

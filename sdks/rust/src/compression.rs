@@ -1,4 +1,5 @@
 use crate::websocket::WsError;
+use spacetimedb_client_api_messages::websocket::common as ws_common;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_sats::bsatn;
 use std::borrow::Cow;
@@ -44,11 +45,11 @@ pub(crate) fn decompress_server_message(raw: &[u8]) -> Result<Cow<'_, [u8]>, WsE
     };
     match raw {
         [] => Err(WsError::EmptyMessage),
-        [ws_v1::SERVER_MSG_COMPRESSION_TAG_NONE, bytes @ ..] => Ok(Cow::Borrowed(bytes)),
-        [ws_v1::SERVER_MSG_COMPRESSION_TAG_BROTLI, bytes @ ..] => brotli_decompress(bytes)
+        [ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, bytes @ ..] => Ok(Cow::Borrowed(bytes)),
+        [ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, bytes @ ..] => brotli_decompress(bytes)
             .map(Cow::Owned)
             .map_err(err_decompress("brotli")),
-        [ws_v1::SERVER_MSG_COMPRESSION_TAG_GZIP, bytes @ ..] => {
+        [ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, bytes @ ..] => {
             gzip_decompress(bytes).map(Cow::Owned).map_err(err_decompress("gzip"))
         }
         [c, ..] => Err(WsError::UnknownCompressionScheme { scheme: *c }),

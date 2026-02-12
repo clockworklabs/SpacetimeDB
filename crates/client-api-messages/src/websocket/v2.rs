@@ -244,11 +244,10 @@ pub struct SingleTableRows {
 #[sats(crate = spacetimedb_lib)]
 pub struct UnsubscribeApplied {
     /// Provided by the client via the `Subscribe` message.
-    /// TODO: switch to subscription id?
     pub request_id: u32,
     /// The ID included in the `SubscribeApplied` and `Unsubscribe` messages.
     pub query_set_id: QuerySetId,
-    /// Rows to be removed from the client cache. Only populated if the Unsubscribe message requested it.
+    /// Rows to be removed from the client cache. Only populated if the Unsubscribe message requested it with the SendDroppedRows flag.
     pub rows: Option<QueryRows>,
 }
 
@@ -391,7 +390,7 @@ pub enum ReducerOutcome {
     /// This variant is an optimization which saves 8 bytes of wire size,
     /// due to the BSATN format's using 4 bytes for the length of a variable-length object,
     /// such as the `ret_value` of [`ReducerOk`] and the `query_sets` of [`TransactionUpdate`].
-    Okmpty,
+    OkEmpty,
     /// The reducer returned an expected, structured error,
     /// and its transaction did not commit.
     ///
@@ -407,7 +406,9 @@ pub enum ReducerOutcome {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerOk {
+    /// Value returned by the reducer.
     pub ret_value: Bytes,
+    /// Transaction update with rows being broadcast for this clients query sets.
     pub transaction_update: TransactionUpdate,
 }
 
