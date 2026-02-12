@@ -4,8 +4,7 @@ use crate::generate::Language;
 use crate::spacetime_config::{detect_client_command, CommandConfig, CommandSchema, SpacetimeConfig};
 use crate::subcommands::init;
 use crate::util::{
-    add_auth_header_opt, database_identity, detect_module_language, find_module_path, get_auth_header,
-    get_login_token_or_log_in, spacetime_reverse_dns, ResponseExt,
+    add_auth_header_opt, database_identity, detect_module_language, get_auth_header, spacetime_reverse_dns, ResponseExt,
 };
 use crate::{common_args, generate};
 use crate::{publish, tasks};
