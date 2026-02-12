@@ -1094,8 +1094,8 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             algo => unreachable!("unknown algorithm {algo:?}"),
         };
 
-        let accessor_name = match raw_def_version {
-            // In V9, `name`field is used for database internals but `accessor_name` supplied by module is used for client codegen.
+        let codegen_name = match raw_def_version {
+            // In V9, `name` field is used for database internals but `accessor_name` supplied by module is used for client codegen.
             RawModuleDefVersion::V9OrEarlier => accessor_name.map(identifier).transpose(),
 
             // In V10, `name` is used both for internal purpose and client codefen.
@@ -1104,12 +1104,12 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
         let name = self.add_to_global_namespace(name);
 
-        let (name, accessor_name, algorithm) = (name, accessor_name, algorithm).combine_errors()?;
+        let (name, codegen_name, algorithm) = (name, codegen_name, algorithm).combine_errors()?;
 
         Ok(IndexDef {
             name,
             algorithm,
-            accessor_name,
+            codegen_name,
         })
     }
 
@@ -1606,17 +1606,17 @@ mod tests {
             [
                 &IndexDef {
                     name: "Apples_count_idx_direct".into(),
-                    accessor_name: Some(expect_identifier("Apples_count_direct")),
+                    codegen_name: Some(expect_identifier("Apples_count_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
-                    accessor_name: Some(expect_identifier("apples_id")),
+                    codegen_name: Some(expect_identifier("apples_id")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
-                    accessor_name: Some(expect_identifier("Apples_type_btree")),
+                    codegen_name: Some(expect_identifier("Apples_type_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
                 }
             ]

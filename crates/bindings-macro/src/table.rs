@@ -344,6 +344,8 @@ impl IndexArg {
 
         Ok(ValidatedIndex {
             is_unique: self.is_unique,
+            // This must be the canonical name (name used internally in database),
+            // as it is used in `index_id_from_name` abi.
             index_name: self.name.as_ref().map(|s| s.value()).unwrap_or_else(gen_index_name),
             accessor_name: &self.accessor,
             kind,

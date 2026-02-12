@@ -7992,7 +7992,6 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb-bindings-macro 1.12.0",
- "spacetimedb-data-structures",
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-primitives 1.12.0",
