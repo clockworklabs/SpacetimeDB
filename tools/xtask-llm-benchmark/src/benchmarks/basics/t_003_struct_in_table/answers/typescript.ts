@@ -13,3 +13,4 @@ export const Entity = table({
 });
 
 const spacetimedb = schema(Entity);
+export default spacetimedb;

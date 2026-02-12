@@ -2070,7 +2070,7 @@ export class UuidBuilder
  * The type of index types that can be applied to a column.
  * `undefined` is the default
  */
-export type IndexTypes = 'btree' | 'direct' | undefined;
+export type IndexTypes = 'btree' | 'direct' | 'hash' | undefined;
 
 /**
  * Metadata describing column constraints and index type

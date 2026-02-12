@@ -71,12 +71,12 @@ class UDbConnection
 };
 ```
 
-Construct a `UDbConnection` by calling `UDbConnection::Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the database's name or identity.
+Construct a `UDbConnection` by calling `UDbConnection::Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithDatabaseName` to specify the database's name or identity.
 
 | Name                                                | Description                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
+|-----------------------------------------------------|--------------------------------------------------------------------------------------|
 | [WithUri method](#method-withuri)                   | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
-| [WithModuleName method](#method-withmodulename)     | Set the name or identity of the remote database.                                     |
+| [WithDatabaseName method](#method-withdatabasename) | Set the name or identity of the remote database.                                     |
 | [WithToken method](#method-withtoken)               | Supply a token to authenticate with the remote database.                             |
 | [WithCompression method](#method-withcompression)   | Set the compression method for WebSocket communication.                              |
 | [OnConnect callback](#callback-onconnect)           | Register a callback to run when the connection is successfully established.          |
@@ -96,13 +96,13 @@ class UDbConnectionBuilder
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module and database.
 
-#### Method `WithModuleName`
+#### Method `WithDatabaseName`
 
 ```cpp
 class UDbConnectionBuilder
 {
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-    UDbConnectionBuilder* WithModuleName(const FString& InName);
+    UDbConnectionBuilder* WithDatabaseName(const FString& InName);
 };
 ```
 
@@ -707,7 +707,7 @@ void AMyActor::BeginPlay()
     // Build and connect
     Conn = UDbConnection::Builder()
         ->WithUri(TEXT("127.0.0.1:3000"))
-        ->WithModuleName(TEXT("my-module"))
+        ->WithDatabaseName(TEXT("my-module"))
         ->OnConnect(ConnectDelegate)
         ->OnDisconnect(DisconnectDelegate)
         ->Build();

@@ -8,17 +8,18 @@ use super::super::ser::serialize_to_js;
 use super::super::string::{str_from_ident, StringConst};
 use super::super::to_value::ToValue;
 use super::super::util::{make_dataview, make_uint8array};
-use super::super::{call_free_fun, env_on_isolate, Throwable};
+use super::super::{call_recv_fun, env_on_isolate, Throwable};
 use super::common::{
     console_log, console_timer_end, console_timer_start, datastore_index_scan_range_bsatn_inner,
     datastore_table_row_count, datastore_table_scan_bsatn, deserialize_row_iter_idx, get_env, identity,
     index_id_from_name, procedure_abort_mut_tx, procedure_commit_mut_tx, procedure_http_request,
     procedure_start_mut_tx, row_iter_bsatn_close, table_id_from_name, volatile_nonatomic_schedule_immediate,
 };
+use super::hooks::get_hook_function;
 use super::hooks::HookFunctions;
-use super::hooks::{get_hook_function, set_hook_slots};
-use super::{AbiVersion, ModuleHookKey};
+use super::AbiVersion;
 use crate::host::instance_env::InstanceEnv;
+use crate::host::v8::exception_already_thrown;
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
 use crate::host::wasm_common::RowIterIdx;
@@ -31,19 +32,15 @@ use spacetimedb_primitives::{ColId, IndexId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::u256;
 use v8::{
     callback_scope, ArrayBuffer, ConstructorBehavior, DataView, Function, FunctionCallbackArguments, Local, Module,
-    Object, PinCallbackScope, PinScope, Value,
+    Object, PinScope, Value,
 };
 
 macro_rules! create_synthetic_module {
-    ($scope:expr, $module_name:expr $(, ($wrapper:ident, $abi_call:expr, $fun:ident))* $(,)?) => {{
-        let export_names = &[$(str_from_ident!($fun).string($scope)),*];
-        let eval_steps = |context, module| {
+    ($scope:expr, $module_name:expr $(, ($($fun:tt)*))* $(,)?) => {{
+        let export_names = &[$(synthetic_module_export_name!($($fun)*).string($scope)),*];
+        let eval_steps = |context: Local<v8::Context>, module: Local<Module>| {
             callback_scope!(unsafe scope, context);
-            $(
-                register_module_fun(scope, &module, str_from_ident!($fun), |s, a, rv| {
-                    $wrapper($abi_call, s, a, rv, $fun)
-                })?;
-            )*
+            $(register_synthetic_module_export!(scope, &module, ($($fun)*));)*
 
             Some(v8::undefined(scope).into())
         };
@@ -54,16 +51,39 @@ macro_rules! create_synthetic_module {
             export_names,
             eval_steps,
         )
-    }}
+    }};
+}
+macro_rules! synthetic_module_export_name {
+    // function exports
+    ($wrapper:ident, $abi_call:expr, $fun:ident) => {
+        str_from_ident!($fun)
+    };
+    // value exports
+    ($name:ident = $value:expr) => {
+        str_from_ident!($name)
+    };
+}
+macro_rules! register_synthetic_module_export {
+    // function exports
+    ($scope:expr, $module:expr, ($wrapper:ident, $abi_call:expr, $fun:ident)) => {
+        register_module_fun($scope, $module, str_from_ident!($fun), |s, a, rv| {
+            $wrapper($abi_call, s, a, rv, $fun)
+        })?;
+    };
+    // value exports
+    ($scope:expr, $module:expr, ($name:ident = $value:expr)) => {
+        let name = str_from_ident!($name).string($scope);
+        let value = $value($scope);
+        $module.set_synthetic_module_export($scope, name, value.into())?;
+    };
 }
 
 /// Registers all module -> host syscalls in the JS module `spacetimedb_sys`.
 pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    use register_hooks_v2_0 as register_hooks;
     create_synthetic_module!(
         scope,
         "spacetime:sys@2.0",
-        (with_nothing, (), register_hooks),
+        (moduleHooks = hooks_symbol),
         (with_sys_result, AbiCall::TableIdFromName, table_id_from_name),
         (with_sys_result, AbiCall::IndexIdFromName, index_id_from_name),
         (
@@ -137,7 +157,7 @@ pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
 /// Registers a function in `module`
 /// where the function has `name` and does `body`.
 fn register_module_fun(
-    scope: &mut PinCallbackScope<'_, '_>,
+    scope: &mut PinScope<'_, '_>,
     module: &Local<'_, Module>,
     name: &'static StringConst,
     body: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>),
@@ -234,19 +254,6 @@ fn with_sys_result<'scope, O: JsReturnValue>(
     }
 }
 
-/// A higher order function conforming to the interface of [`with_sys_result`].
-fn with_nothing<'scope, O: JsReturnValue>(
-    (): (),
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-    rv: v8::ReturnValue<'_>,
-    run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> ExcResult<O>,
-) {
-    if let Ok(ret) = run(scope, args) {
-        ret.set_return(scope, rv)
-    }
-}
-
 /// Module ABI that registers the functions called by the host.
 ///
 /// # Signature
@@ -280,9 +287,24 @@ fn with_nothing<'scope, O: JsReturnValue>(
 ///
 /// Throws a `TypeError` if:
 /// - `hooks` is not an object that has functions `__describe_module__` and `__call_reducer__`.
-fn register_hooks_v2_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> ExcResult<()> {
+pub fn get_hooks_from_default_export<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    default_export: Local<'_, Value>,
+    exports_obj: Local<'_, Object>,
+) -> ExcResult<Option<HookFunctions<'scope>>> {
     // Convert `hooks` to an object.
-    let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
+    let hooks_fn = default_export
+        .try_cast::<Object>()
+        .ok()
+        .map(|obj| {
+            let symbol = hooks_symbol(scope);
+            obj.get(scope, symbol.into()).ok_or_else(exception_already_thrown)
+        })
+        .transpose()?;
+    let Some(hooks_fn) = hooks_fn else { return Ok(None) };
+    let hooks_fn = cast!(scope, hooks_fn, Function, "hooks function").map_err(|e| e.throw(scope))?;
+    let hooks = call_recv_fun(scope, hooks_fn, default_export, &[exports_obj.into()])?;
+    let hooks = cast!(scope, hooks, Object, "hooks object").map_err(|e| e.throw(scope))?;
 
     let describe_module = get_hook_function(scope, hooks, str_from_ident!(__describe_module__))?;
     let call_reducer = get_hook_function(scope, hooks, str_from_ident!(__call_reducer__))?;
@@ -291,19 +313,19 @@ fn register_hooks_v2_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
     let call_procedure = get_hook_function(scope, hooks, str_from_ident!(__call_procedure__))?;
 
     // Set the hooks.
-    set_hook_slots(
-        scope,
-        AbiVersion::V2,
-        &[
-            (ModuleHookKey::DescribeModule, describe_module),
-            (ModuleHookKey::CallReducer, call_reducer),
-            (ModuleHookKey::CallView, call_view),
-            (ModuleHookKey::CallAnonymousView, call_view_anon),
-            (ModuleHookKey::CallProcedure, call_procedure),
-        ],
-    )?;
+    Ok(Some(HookFunctions {
+        abi: AbiVersion::V2,
+        recv: hooks.into(),
+        describe_module,
+        call_reducer,
+        call_view: Some(call_view),
+        call_view_anon: Some(call_view_anon),
+        call_procedure: Some(call_procedure),
+    }))
+}
 
-    Ok(())
+fn hooks_symbol<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, v8::Symbol> {
+    const { StringConst::new("SpacetimeDB.moduleHooks.v2") }.symbol(scope)
 }
 
 /// Calls the `__call_reducer__` function `fun`.
@@ -331,7 +353,7 @@ pub(super) fn call_call_reducer<'scope>(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Call the function.
-    let ret = call_free_fun(scope, hooks.call_reducer, args)?;
+    let ret = call_recv_fun(scope, hooks.call_reducer, hooks.recv, args)?;
 
     // Deserialize the user result.
     let user_res = if ret.is_undefined() {
@@ -398,7 +420,7 @@ pub(super) fn call_call_view(
     let args = &[view_id, sender, view_args];
 
     // Call the function.
-    let ret = call_free_fun(scope, fun, args)?;
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
 
     // Returns an object with a `data` field containing the bytes.
     let ret = cast!(scope, ret, v8::Object, "object return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
@@ -446,7 +468,7 @@ pub(super) fn call_call_view_anon(
     let args = &[view_id, view_args];
 
     // Call the function.
-    let ret = call_free_fun(scope, fun, args)?;
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
 
     let ret = cast!(scope, ret, v8::Object, "object return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
 

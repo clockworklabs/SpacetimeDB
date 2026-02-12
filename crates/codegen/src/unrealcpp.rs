@@ -2854,7 +2854,7 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, api_macro
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(
         output,
-        "    UDbConnectionBuilder* WithModuleName(const FString& InName);"
+        "    UDbConnectionBuilder* WithDatabaseName(const FString& InName);"
     );
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(output, "    UDbConnectionBuilder* WithToken(const FString& InToken);");
@@ -3455,12 +3455,12 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
-        "UDbConnectionBuilder* UDbConnectionBuilder::WithModuleName(const FString& InName)"
+        "UDbConnectionBuilder* UDbConnectionBuilder::WithDatabaseName(const FString& InName)"
     );
     writeln!(output, "{{");
     writeln!(
         output,
-        "\treturn Cast<UDbConnectionBuilder>(WithModuleNameBase(InName));"
+        "\treturn Cast<UDbConnectionBuilder>(WithDatabaseNameBase(InName));"
     );
     writeln!(output, "}}");
     writeln!(
