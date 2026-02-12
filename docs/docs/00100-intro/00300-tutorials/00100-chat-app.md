@@ -42,6 +42,13 @@ SpacetimeDB runs your module inside the database host (not Node.js). There's no 
 - A reducer is a function that traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. Reducers may return a `Result<()>`, with an `Err` return aborting the transaction.
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+- Each table is defined as a C++ struct with the `SPACETIMEDB_STRUCT` macro to register its fields, and the `SPACETIMEDB_TABLE` macro to create the table. An instance of the struct represents a row, and each field represents a column.
+- By default, tables are **private**. Use `SPACETIMEDB_TABLE(StructName, table_name, Public)` to make a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
+- A reducer is a function defined with the `SPACETIMEDB_REDUCER` macro that traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. Reducers may return `Err("message")` to abort the transaction.
+
+</TabItem>
 </Tabs>
 
 ## Install SpacetimeDB
@@ -86,6 +93,25 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 If you're on Windows, go [here](https://learn.microsoft.com/en-us/windows/dev-environment/rust/setup).
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+Next we need to [install Emscripten](https://emscripten.org/docs/getting_started/downloads.html) so that we can compile our C++ module to WebAssembly.
+
+Install the Emscripten SDK:
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install 4.0.21
+./emsdk activate 4.0.21
+source ./emsdk_env.sh
+```
+
+On Windows, use `emsdk_env.bat` or `emsdk_env.ps1` instead of `source ./emsdk_env.sh`.
+
+You'll also need CMake installed on your system. On macOS: `brew install cmake`. On Ubuntu/Debian: `sudo apt install cmake`. On Windows, download from [cmake.org](https://cmake.org/download/).
+
+</TabItem>
 </Tabs>
 
 ## Project structure
@@ -111,6 +137,13 @@ spacetime init --lang csharp quickstart-chat
 
 ```bash
 spacetime init --lang rust quickstart-chat
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime init --lang cpp quickstart-chat
 ```
 
 </TabItem>
@@ -142,6 +175,16 @@ Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (require
 cd spacetimedb
 spacetime build
 ```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+`spacetime init` generates a few files:
+
+1. `spacetimedb/src/lib.cpp` - your module code
+2. `spacetimedb/CMakeLists.txt` - build configuration for Emscripten
+
+Clear out the example code in `src/lib.cpp` so we can write our chat module.
 
 </TabItem>
 </Tabs>
@@ -198,6 +241,27 @@ From `spacetimedb`, we import:
 - `ReducerContext`, a special argument passed to each reducer.
 - `Identity`, a unique identifier for each user.
 - `Timestamp`, a point in time.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Open `spacetimedb/src/lib.cpp` and add the SpacetimeDB header:
+
+```cpp server
+#include <spacetimedb.h>
+
+using namespace SpacetimeDB;
+```
+
+This gives us access to:
+
+- `SPACETIMEDB_STRUCT` macro to register struct fields.
+- `SPACETIMEDB_TABLE` macro to define SpacetimeDB tables.
+- `SPACETIMEDB_REDUCER` macro to define SpacetimeDB reducers.
+- `FIELD_*` macros to define primary keys, indexes, and constraints.
+- `ReducerContext` passed to each reducer.
+- `Identity` for unique user identifiers.
+- `Timestamp` for points in time.
 
 </TabItem>
 </Tabs>
@@ -283,6 +347,30 @@ pub struct Message {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+In `spacetimedb/src/lib.cpp`, define the `User` and `Message` structs with the `SPACETIMEDB_STRUCT` macro, then create tables with the `SPACETIMEDB_TABLE` macro:
+
+```cpp server
+struct User {
+    Identity identity;
+    std::optional<std::string> name;
+    bool online;
+};
+SPACETIMEDB_STRUCT(User, identity, name, online);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKey(user, identity);
+
+struct Message {
+    Identity sender;
+    Timestamp sent;
+    std::string text;
+};
+SPACETIMEDB_STRUCT(Message, sender, sent, text);
+SPACETIMEDB_TABLE(Message, message, Public);
+```
+
+</TabItem>
 </Tabs>
 
 ## Set users' names
@@ -348,7 +436,7 @@ Add to `spacetimedb/src/lib.rs`:
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?;
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { name: Some(name), ..user });
         Ok(())
     } else {
@@ -362,6 +450,38 @@ fn validate_name(name: String) -> Result<String, String> {
     } else {
         Ok(name)
     }
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Add to `spacetimedb/src/lib.cpp`:
+
+```cpp server
+Outcome<std::string> validate_name(const std::string& name) {
+    if (name.empty()) {
+        return Err<std::string>("Names must not be empty");
+    }
+    return Ok(name);
+}
+
+SPACETIMEDB_REDUCER(set_name, ReducerContext ctx, std::string name) {
+    auto validated = validate_name(name);
+    if (validated.is_err()) {
+        return Err(validated.error());
+    }
+    
+    // Find and update the user by identity (primary key)
+    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    if (user_row.has_value()) {
+        auto user = user_row.value();
+        user.name = validated.value();
+        ctx.db[user_identity].update(user);
+        return Ok();
+    }
+    
+    return Err("Cannot set name for unknown user");
 }
 ```
 
@@ -439,7 +559,7 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?;
     log::info!("{}", text);
     ctx.db.message().insert(Message {
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     });
@@ -452,6 +572,31 @@ fn validate_message(text: String) -> Result<String, String> {
     } else {
         Ok(text)
     }
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Add to `spacetimedb/src/lib.cpp`:
+
+```cpp server
+Outcome<std::string> validate_message(const std::string& text) {
+    if (text.empty()) {
+        return Err<std::string>("Messages must not be empty");
+    }
+    return Ok(text);
+}
+
+SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, std::string text) {
+    auto validated = validate_message(text);
+    if (validated.is_err()) {
+        return Err(validated.error());
+    }
+    
+    Message msg{ctx.sender, ctx.timestamp, validated.value()};
+    ctx.db[message].insert(msg);
+    return Ok();
 }
 ```
 
@@ -547,12 +692,12 @@ Add to `spacetimedb/src/lib.rs`:
 ```rust server
 #[reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { online: true, ..user });
     } else {
         ctx.db.user().insert(User {
             name: None,
-            identity: ctx.sender,
+            identity: ctx.sender(),
             online: true,
         });
     }
@@ -560,11 +705,43 @@ pub fn client_connected(ctx: &ReducerContext) {
 
 #[reducer(client_disconnected)]
 pub fn identity_disconnected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { online: false, ..user });
     } else {
-        log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender);
+        log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender());
     }
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+Add to `spacetimedb/src/lib.cpp`:
+
+```cpp server
+SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
+    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    if (user_row.has_value()) {
+        auto user = user_row.value();
+        user.online = true;
+        ctx.db[user_identity].update(user);
+    } else {
+        User new_user{ctx.sender, std::nullopt, true};
+        ctx.db[user].insert(new_user);
+    }
+    return Ok();
+}
+
+SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected, ReducerContext ctx) {
+    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    if (user_row.has_value()) {
+        auto user = user_row.value();
+        user.online = false;
+        ctx.db[user_identity].update(user);
+    } else {
+        LOG_WARN("Disconnect event for unknown user");
+    }
+    return Ok();
 }
 ```
 
@@ -605,6 +782,13 @@ spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime publish --server local --project-path spacetimedb quickstart-chat
+```
+
+</TabItem>
 </Tabs>
 
 You can choose any unique database name in place of `quickstart-chat`. Must 
@@ -636,6 +820,13 @@ spacetime call --server local quickstart-chat send_message 'Hello, World!'
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime call --server local quickstart-chat send_message 'Hello, World!'
+```
+
+</TabItem>
 </Tabs>
 
 Check that it ran by viewing logs:
@@ -661,9 +852,15 @@ Output will resemble:
 ```
 
 You've just set up your first SpacetimeDB module! You can find the full code for this module:
-- [TypeScript server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-typescript)
-- [C# server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-c-sharp/spacetimedb)
-- [Rust server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-rust/spacetimedb)
+- [TypeScript server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-react-ts)
+- [C# server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-console-cs/spacetimedb)
+- [Rust server module](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-console-rs/spacetimedb)
+
+:::note
+
+For C++ modules, there is not yet a dedicated C++ client SDK. To test your C++ module with a client, use one of the available client libraries: [TypeScript (React)](#creating-the-client), [C# (Console)](#creating-the-client), or [Rust (Console)](#creating-the-client). We recommend starting with the [Rust client](#creating-the-client) for testing C++ modules.
+
+:::
 
 ---
 
@@ -1429,7 +1626,7 @@ You've just experienced the core features of SpacetimeDB: real-time synchronizat
 
 ### Conclusion
 
-Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for the client we've created in this quickstart tutorial [here](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-typescript).
+Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for the client we've created in this quickstart tutorial [here](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-react-ts).
 
 At this point you've learned how to create a basic TypeScript client for your SpacetimeDB `quickstart-chat` module. You've learned how to connect to SpacetimeDB and call reducers to update data. You've learned how to subscribe to table data, and hook it up so that it updates reactively in a React application.
 

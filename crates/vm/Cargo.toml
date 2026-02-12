@@ -6,6 +6,9 @@ license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
 rust-version.workspace = true
 
+[features]
+test = ["spacetimedb-schema/test"]
+
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-execution.workspace = true
@@ -25,6 +28,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+spacetimedb-schema = { path = "../schema", features = ["test"] }
 tempfile.workspace = true
 typed-arena.workspace = true
 

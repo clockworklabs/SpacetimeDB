@@ -3,11 +3,12 @@
 //! They are mirrored in the system tables -- see `spacetimedb_core::db::datastore::system_tables`.
 //! Types in this file are not public ABI or API and may be changed at any time; it's the system tables that cannot.
 
-// TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
+// TODO(1.0): change all the `RawIdentifier`s in this file to `Identifier`.
 // This doesn't affect the ABI so can wait until 1.0.
 
 use crate::def::error::{DefType, SchemaError};
 use crate::relation::{combine_constraints, Column, DbTable, FieldName, Header};
+use crate::table_name::TableName;
 use core::mem;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -15,6 +16,7 @@ use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, WithTypespace};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -68,7 +70,7 @@ impl ViewDefInfo {
 pub struct TableOrViewSchema {
     pub table_id: TableId,
     pub view_info: Option<ViewDefInfo>,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub table_access: StAccess,
     inner: Arc<TableSchema>,
 }
@@ -151,8 +153,7 @@ pub struct TableSchema {
     pub table_id: TableId,
 
     /// The name of the table.
-    // TODO(perf): This should likely be an `Arc<str>`, not a `Box<str>`, as we `Clone` it somewhat frequently.
-    pub table_name: Box<str>,
+    pub table_name: TableName,
 
     /// Is this the backing table of a view?
     pub view_info: Option<ViewDefInfo>,
@@ -201,7 +202,7 @@ impl TableSchema {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         table_id: TableId,
-        table_name: Box<str>,
+        table_name: TableName,
         view_info: Option<ViewDefInfo>,
         columns: Vec<ColumnSchema>,
         indexes: Vec<IndexSchema>,
@@ -239,14 +240,18 @@ impl TableSchema {
             .map(|(col_pos, element)| ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: ColId(col_pos as _),
-                col_name: element.name.clone().unwrap_or_else(|| format!("col{col_pos}").into()),
+                col_name: element
+                    .name
+                    .clone()
+                    .map(Identifier::new_assume_valid)
+                    .unwrap_or_else(|| Identifier::for_test(format!("col{col_pos}"))),
                 col_type: element.algebraic_type.clone(),
             })
             .collect();
 
         TableSchema::new(
             TableId::SENTINEL,
-            "TestTable".into(),
+            TableName::for_test("TestTable"),
             None,
             columns,
             vec![],
@@ -527,12 +532,6 @@ impl TableSchema {
     pub fn validated(self) -> Result<Self, Vec<SchemaError>> {
         let mut errors = Vec::new();
 
-        if self.table_name.is_empty() {
-            errors.push(SchemaError::EmptyTableName {
-                table_id: self.table_id,
-            });
-        }
-
         let columns_not_found = self
             .sequences
             .iter()
@@ -650,11 +649,9 @@ impl TableSchema {
     /// This method works around this problem by copying the column types from the module def into the table schema.
     /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
     pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
-        let table_name = Identifier::new(self.table_name.clone()).unwrap();
+        let table_name = self.table_name.clone().into();
         for col in &mut self.columns {
-            let def: &ColumnDef = module_def
-                .lookup((&table_name, &Identifier::new(col.col_name.clone()).unwrap()))
-                .unwrap();
+            let def: &ColumnDef = module_def.lookup((&table_name, &col.col_name)).unwrap();
             col.col_type = def.ty.clone();
         }
         let table_def: &TableDef = module_def.expect_lookup(&table_name);
@@ -746,7 +743,7 @@ impl TableSchema {
 
         TableSchema::new(
             TableId::SENTINEL,
-            (*name).clone().into(),
+            TableName::new(name.clone()),
             Some(view_info),
             columns,
             vec![],
@@ -807,16 +804,16 @@ impl TableSchema {
         let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
         let mut meta_cols = 0;
-        let mut index_name = format!("{name}");
+        let mut index_name = name.as_raw().clone().into_inner();
 
-        let mut push_column = |name, col_type| {
+        let mut push_column = |name: &'static str, col_type| {
             meta_cols += 1;
             index_name += "_";
             index_name += name;
             columns.push(ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: columns.len().into(),
-                col_name: name.into(),
+                col_name: Identifier::new_assume_valid(name.into()),
                 col_type,
             });
         };
@@ -843,7 +840,7 @@ impl TableSchema {
             IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id: TableId::SENTINEL,
-                index_name: index_name.into_boxed_str(),
+                index_name: RawIdentifier::new(index_name),
                 index_algorithm: IndexAlgorithm::BTree(col_list.into()),
             }
         };
@@ -868,7 +865,7 @@ impl TableSchema {
 
         TableSchema::new(
             TableId::SENTINEL,
-            (*name).clone().into(),
+            TableName::new(name.clone()),
             Some(view_info),
             columns,
             indexes,
@@ -934,7 +931,7 @@ impl Schema for TableSchema {
 
         TableSchema::new(
             table_id,
-            (*name).clone().into(),
+            TableName::new(name.clone()),
             None,
             columns,
             indexes,
@@ -967,7 +964,7 @@ impl Schema for TableSchema {
         for index in &self.indexes {
             let index_def = def
                 .indexes
-                .get(&index.index_name[..])
+                .get(&index.index_name)
                 .ok_or_else(|| anyhow::anyhow!("Index {} not found in definition", index.index_id.0))?;
             index.check_compatible(module_def, index_def)?;
         }
@@ -976,7 +973,7 @@ impl Schema for TableSchema {
         for constraint in &self.constraints {
             let constraint_def = def
                 .constraints
-                .get(&constraint.constraint_name[..])
+                .get(&constraint.constraint_name)
                 .ok_or_else(|| anyhow::anyhow!("Constraint {} not found in definition", constraint.constraint_id.0))?;
             constraint.check_compatible(module_def, constraint_def)?;
         }
@@ -989,7 +986,7 @@ impl Schema for TableSchema {
         for sequence in &self.sequences {
             let sequence_def = def
                 .sequences
-                .get(&sequence.sequence_name[..])
+                .get(&sequence.sequence_name)
                 .ok_or_else(|| anyhow::anyhow!("Sequence {} not found in definition", sequence.sequence_id.0))?;
             sequence.check_compatible(module_def, sequence_def)?;
         }
@@ -1060,7 +1057,7 @@ pub struct ColumnSchema {
     /// The position of the column within the table.
     pub col_pos: ColId,
     /// The name of the column. Unique within the table.
-    pub col_name: Box<str>,
+    pub col_name: Identifier,
     /// The type of the column. This will never contain any `AlgebraicTypeRef`s,
     /// that is, it will be resolved.
     pub col_type: AlgebraicType,
@@ -1079,11 +1076,12 @@ impl spacetimedb_memory_usage::MemoryUsage for ColumnSchema {
 }
 
 impl ColumnSchema {
-    pub fn for_test(pos: impl Into<ColId>, name: impl Into<Box<str>>, ty: AlgebraicType) -> Self {
+    #[cfg(any(test, feature = "test"))]
+    pub fn for_test(pos: impl Into<ColId>, name: impl AsRef<str>, ty: AlgebraicType) -> Self {
         Self {
             table_id: TableId::SENTINEL,
             col_pos: pos.into(),
-            col_name: name.into(),
+            col_name: Identifier::for_test(name),
             col_type: ty,
         }
     }
@@ -1095,7 +1093,7 @@ impl ColumnSchema {
         ColumnSchema {
             table_id: TableId::SENTINEL,
             col_pos: def.col_id,
-            col_name: (*def.name).into(),
+            col_name: def.name.clone(),
             col_type,
         }
     }
@@ -1120,7 +1118,7 @@ impl Schema for ColumnSchema {
         ColumnSchema {
             table_id,
             col_pos,
-            col_name: (*def.name).into(),
+            col_name: def.name.clone(),
             col_type,
         }
     }
@@ -1137,7 +1135,7 @@ impl Schema for ColumnSchema {
 impl From<&ColumnSchema> for ProductTypeElement {
     fn from(value: &ColumnSchema) -> Self {
         Self {
-            name: Some(value.col_name.clone()),
+            name: Some(value.col_name.clone().into()),
             algebraic_type: value.col_type.clone(),
         }
     }
@@ -1161,12 +1159,15 @@ pub struct ColumnSchemaRef<'a> {
     /// The column we are referring to.
     pub column: &'a ColumnSchema,
     /// The name of the table the column is attached to.
-    pub table_name: &'a str,
+    pub table_name: &'a RawIdentifier,
 }
 
 impl From<ColumnSchemaRef<'_>> for ProductTypeElement {
     fn from(value: ColumnSchemaRef) -> Self {
-        ProductTypeElement::new(value.column.col_type.clone(), Some(value.column.col_name.clone()))
+        ProductTypeElement::new(
+            value.column.col_type.clone(),
+            Some(value.column.col_name.clone().into()),
+        )
     }
 }
 
@@ -1177,7 +1178,7 @@ pub struct SequenceSchema {
     pub sequence_id: SequenceId,
     /// The name of the sequence.
     /// Deprecated. In the future, sequences will be identified by col_pos.
-    pub sequence_name: Box<str>,
+    pub sequence_name: RawIdentifier,
     /// The ID of the table associated with the sequence.
     pub table_id: TableId,
     /// The position of the column associated with this sequence.
@@ -1225,7 +1226,7 @@ impl Schema for SequenceSchema {
 
         SequenceSchema {
             sequence_id: id,
-            sequence_name: (*def.name).into(),
+            sequence_name: def.name.clone(),
             table_id: parent_id,
             col_pos: def.column,
             increment: def.increment,
@@ -1263,22 +1264,23 @@ pub struct ScheduleSchema {
     pub schedule_id: ScheduleId,
 
     /// The name of the schedule.
-    pub schedule_name: Box<str>,
+    pub schedule_name: Identifier,
 
     /// The name of the reducer or procedure to call.
-    pub function_name: Box<str>,
+    pub function_name: Identifier,
 
     /// The column containing the `ScheduleAt` enum.
     pub at_column: ColId,
 }
 
 impl ScheduleSchema {
-    pub fn for_test(name: impl Into<Box<str>>, function: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
+    #[cfg(any(test, feature = "test"))]
+    pub fn for_test(name: impl AsRef<str>, function: impl AsRef<str>, at: impl Into<ColId>) -> Self {
         Self {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
-            schedule_name: name.into(),
-            function_name: function.into(),
+            schedule_name: Identifier::for_test(name.as_ref()),
+            function_name: Identifier::for_test(function.as_ref()),
             at_column: at.into(),
         }
     }
@@ -1297,8 +1299,8 @@ impl Schema for ScheduleSchema {
         ScheduleSchema {
             table_id: parent_id,
             schedule_id: id,
-            schedule_name: (*def.name).into(),
-            function_name: (*def.function_name).into(),
+            schedule_name: def.name.clone(),
+            function_name: def.function_name.clone(),
             at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
@@ -1324,7 +1326,7 @@ pub struct IndexSchema {
     pub table_id: TableId,
     /// The name of the index. This should not be assumed to follow any particular format.
     /// Unique within the database.
-    pub index_name: Box<str>,
+    pub index_name: RawIdentifier,
     /// The data for the schema.
     pub index_algorithm: IndexAlgorithm,
 }
@@ -1342,11 +1344,11 @@ impl spacetimedb_memory_usage::MemoryUsage for IndexSchema {
 }
 
 impl IndexSchema {
-    pub fn for_test(name: impl Into<Box<str>>, algo: impl Into<IndexAlgorithm>) -> Self {
+    pub fn for_test(name: impl AsRef<str>, algo: impl Into<IndexAlgorithm>) -> Self {
         Self {
             index_id: IndexId::SENTINEL,
             table_id: TableId::SENTINEL,
-            index_name: name.into(),
+            index_name: RawIdentifier::new(name.as_ref()),
             index_algorithm: algo.into(),
         }
     }
@@ -1364,7 +1366,7 @@ impl Schema for IndexSchema {
         IndexSchema {
             index_id: id,
             table_id: parent_id,
-            index_name: (*def.name).into(),
+            index_name: def.name.clone(),
             index_algorithm,
         }
     }
@@ -1387,7 +1389,7 @@ pub struct ConstraintSchema {
     /// The unique ID of the constraint within the database.
     pub constraint_id: ConstraintId,
     /// The name of the constraint.
-    pub constraint_name: Box<str>,
+    pub constraint_name: RawIdentifier,
     /// The data for the constraint.
     pub data: ConstraintData, // this reuses the type from Def, which is fine, neither of `schema` nor `def` are ABI modules.
 }
@@ -1405,11 +1407,11 @@ impl spacetimedb_memory_usage::MemoryUsage for ConstraintSchema {
 }
 
 impl ConstraintSchema {
-    pub fn unique_for_test(name: impl Into<Box<str>>, cols: impl Into<ColSet>) -> Self {
+    pub fn unique_for_test(name: impl AsRef<str>, cols: impl Into<ColSet>) -> Self {
         Self {
             table_id: TableId::SENTINEL,
             constraint_id: ConstraintId::SENTINEL,
-            constraint_name: name.into(),
+            constraint_name: RawIdentifier::new(name.as_ref()),
             data: ConstraintData::Unique(UniqueConstraintData { columns: cols.into() }),
         }
     }
@@ -1425,7 +1427,7 @@ impl ConstraintSchema {
         if constraint.constraints.has_unique() {
             Some(ConstraintSchema {
                 constraint_id: ConstraintId::SENTINEL, // Set to 0 as it may be assigned later.
-                constraint_name: constraint.constraint_name.trim().into(),
+                constraint_name: RawIdentifier::new(constraint.constraint_name.trim()),
                 table_id,
                 data: ConstraintData::Unique(UniqueConstraintData {
                     columns: constraint.columns.into(),
@@ -1447,7 +1449,7 @@ impl Schema for ConstraintSchema {
 
         ConstraintSchema {
             constraint_id: id,
-            constraint_name: (*def.name).into(),
+            constraint_name: def.name.clone(),
             table_id: parent_id,
             data: def.data.clone(),
         }

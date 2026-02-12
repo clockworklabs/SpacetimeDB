@@ -1,13 +1,7 @@
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-    ops::{Bound, Deref, DerefMut},
-    sync::Arc,
-};
-
 use anyhow::{bail, Result};
 use derive_more::From;
 use either::Either;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
@@ -17,6 +11,11 @@ use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
+use std::{
+    borrow::Cow,
+    ops::{Bound, Deref, DerefMut},
+    sync::Arc,
+};
 
 use crate::rules::{
     ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
@@ -1426,7 +1425,9 @@ mod tests {
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
+        identifier::Identifier,
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
+        table_name::TableName,
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
@@ -1468,14 +1469,14 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            table_name.to_owned().into_boxed_str(),
+            TableName::for_test(table_name),
             None,
             columns
                 .iter()
                 .enumerate()
                 .map(|(i, (name, ty))| ColumnSchema {
                     table_id,
-                    col_name: (*name).to_owned().into_boxed_str(),
+                    col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
                 })
@@ -1486,7 +1487,7 @@ mod tests {
                 .map(|(i, cols)| IndexSchema {
                     table_id,
                     index_id: i.into(),
-                    index_name: "".to_owned().into_boxed_str(),
+                    index_name: "".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
@@ -1498,7 +1499,7 @@ mod tests {
                 .map(|(i, cols)| ConstraintSchema {
                     table_id,
                     constraint_id: i.into(),
-                    constraint_name: "".to_owned().into_boxed_str(),
+                    constraint_name: "".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: ColSet::from_iter(cols.iter().copied()),
                     }),

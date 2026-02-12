@@ -9,6 +9,10 @@ import TabItem from '@theme/TabItem';
 
 Tables can trigger [reducers](/functions/reducers) or [procedures](/functions/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
+:::tip Scheduling Procedures
+Procedures use the same scheduling pattern as reducers. Simply reference the procedure name in the `scheduled` attribute. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](/functions/reducers#scheduling-procedures) for an example.
+:::
+
 ## Defining a Schedule Table
 
 :::note Why "scheduled" in the code?
@@ -38,21 +42,26 @@ spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (_ctx, { arg }) 
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Scheduled = "SendReminder", ScheduledAt = "ScheduleAt")]
-public partial struct Reminder
-{
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong Id;
-    public uint UserId;
-    public string Message;
-    public ScheduleAt ScheduleAt;
-}
+using SpacetimeDB;
 
-[SpacetimeDB.Reducer()]
-public static void SendReminder(ReducerContext ctx, Reminder reminder)
+public static partial class Module
 {
-    // Process the scheduled reminder
+    [SpacetimeDB.Table(Scheduled = "SendReminder", ScheduledAt = "ScheduleAt")]
+    public partial struct Reminder
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        public uint UserId;
+        public string Message;
+        public ScheduleAt ScheduleAt;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SendReminder(ReducerContext ctx, Reminder reminder)
+    {
+        // Process the scheduled reminder
+    }
 }
 ```
 
@@ -78,6 +87,30 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Reminder {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+    std::string message;
+};
+SPACETIMEDB_STRUCT(Reminder, scheduled_id, scheduled_at, message)
+SPACETIMEDB_TABLE(Reminder, reminder, Public)
+FIELD_PrimaryKeyAutoInc(reminder, scheduled_id)
+SPACETIMEDB_SCHEDULE(reminder, 1, send_reminder)  // Column 1 is scheduled_at
+
+// Reducer invoked automatically by the scheduler
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder arg)
+{
+    // Invoked automatically by the scheduler
+    // arg.message, arg.scheduled_at, arg.scheduled_id
+    LOG_INFO("Scheduled reminder: " + arg.message);
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Inserting Schedules
@@ -96,19 +129,23 @@ Use intervals for periodic tasks like game ticks, heartbeats, or recurring maint
 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+const spacetimedb = schema();
 
-// Schedule to run every 5 seconds (5,000,000 microseconds)
-ctx.db.reminder.insert({
-  scheduled_id: 0n,
-  scheduled_at: ScheduleAt.interval(5_000_000n),
-  message: "Check for updates",
-});
+spacetimedb.reducer('schedule_periodic_tasks', (ctx) => {
+  // Schedule to run every 5 seconds (5,000,000 microseconds)
+  ctx.db.reminder.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(5_000_000n),
+    message: "Check for updates",
+  });
 
-// Schedule to run every 100 milliseconds
-ctx.db.reminder.insert({
-  scheduled_id: 0n,
-  scheduled_at: ScheduleAt.interval(100_000n), // 100ms in microseconds
-  message: "Game tick",
+  // Schedule to run every 100 milliseconds
+  ctx.db.reminder.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(100_000n), // 100ms in microseconds
+    message: "Game tick",
+  });
 });
 ```
 
@@ -116,39 +153,69 @@ ctx.db.reminder.insert({
 <TabItem value="csharp" label="C#">
 
 ```csharp
-// Schedule to run every 5 seconds
-ctx.Db.Reminder.Insert(new Reminder
+public partial class Module
 {
-    Message = "Check for updates",
-    ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
-});
+    [SpacetimeDB.Reducer]
+    public static void SchedulePeriodicTasks(ReducerContext ctx)
+    {
+        // Schedule to run every 5 seconds
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Check for updates",
+            ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
+        });
 
-// Schedule to run every 100 milliseconds
-ctx.Db.Reminder.Insert(new Reminder
-{
-    Message = "Game tick",
-    ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
-});
+        // Schedule to run every 100 milliseconds
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Game tick",
+            ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
+        });
+    }
+}
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{ScheduleAt, Duration};
+use spacetimedb::{ScheduleAt, ReducerContext};
+use std::time::Duration;
 
+#[spacetimedb::reducer]
+fn schedule_periodic_tasks(ctx: &ReducerContext) {
+    // Schedule to run every 5 seconds
+    ctx.db.reminder().insert(Reminder {
+        id: 0,
+        message: "Check for updates".to_string(),
+        scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).into()),
+    });
+
+    // Schedule to run every 100 milliseconds
+    ctx.db.reminder().insert(Reminder {
+        id: 0,
+        message: "Game tick".to_string(),
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(100).into()),
+    });
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
 // Schedule to run every 5 seconds
-ctx.db.reminder().insert(Reminder {
-    id: 0,
-    message: "Check for updates".to_string(),
-    scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).into()),
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::interval(TimeDuration::from_seconds(5)),
+    "Check for updates"
 });
 
 // Schedule to run every 100 milliseconds
-ctx.db.reminder().insert(Reminder {
-    id: 0,
-    message: "Game tick".to_string(),
-    scheduled_at: ScheduleAt::Interval(Duration::from_millis(100).into()),
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::interval(TimeDuration::from_millis(100)),
+    "Game tick"
 });
 ```
 
@@ -164,21 +231,25 @@ Use specific times for one-shot actions like sending a reminder at a particular 
 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+const spacetimedb = schema();
 
-// Schedule for 10 seconds from now
-const tenSecondsFromNow = ctx.timestamp.microseconds + 10_000_000n;
-ctx.db.reminder.insert({
-  scheduled_id: 0n,
-  scheduled_at: ScheduleAt.time(tenSecondsFromNow),
-  message: "Your auction has ended",
-});
+spacetimedb.reducer('schedule_timed_tasks', (ctx) => {
+  // Schedule for 10 seconds from now
+  const tenSecondsFromNow = ctx.timestamp.microsSinceUnixEpoch + 10_000_000n;
+  ctx.db.reminder.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.time(tenSecondsFromNow),
+    message: "Your auction has ended",
+  });
 
-// Schedule for a specific Unix timestamp (microseconds since epoch)
-const targetTime = 1735689600_000_000n; // Jan 1, 2025 00:00:00 UTC
-ctx.db.reminder.insert({
-  scheduled_id: 0n,
-  scheduled_at: ScheduleAt.time(targetTime),
-  message: "Happy New Year!",
+  // Schedule for a specific Unix timestamp (microseconds since epoch)
+  const targetTime = 1735689600_000_000n; // Jan 1, 2025 00:00:00 UTC
+  ctx.db.reminder.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.time(targetTime),
+    message: "Happy New Year!",
+  });
 });
 ```
 
@@ -186,41 +257,74 @@ ctx.db.reminder.insert({
 <TabItem value="csharp" label="C#">
 
 ```csharp
-// Schedule for 10 seconds from now
-ctx.Db.Reminder.Insert(new Reminder
-{
-    Message = "Your auction has ended",
-    ScheduleAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
-});
+using SpacetimeDB;
 
-// Schedule for a specific time
-var targetTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
-ctx.Db.Reminder.Insert(new Reminder
+public static partial class Module
 {
-    Message = "Happy New Year!",
-    ScheduleAt = new ScheduleAt.Time(targetTime)
-});
+    [SpacetimeDB.Reducer]
+    public static void ScheduleTimedTasks(ReducerContext ctx)
+    {
+        // Schedule for 10 seconds from now
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Your auction has ended",
+            ScheduleAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
+        });
+
+        // Schedule for a specific time
+        var targetTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Happy New Year!",
+            ScheduleAt = new ScheduleAt.Time(targetTime)
+        });
+    }
+}
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{ScheduleAt, Duration};
+use spacetimedb::{ScheduleAt, ReducerContext};
+use std::time::Duration;
 
+#[spacetimedb::reducer]
+fn schedule_timed_tasks(ctx: &ReducerContext) {
+    // Schedule for 10 seconds from now
+    let ten_seconds_from_now = ctx.timestamp + Duration::from_secs(10);
+    ctx.db.reminder().insert(Reminder {
+        id: 0,
+        message: "Your auction has ended".to_string(),
+        scheduled_at: ScheduleAt::Time(ten_seconds_from_now),
+    });
+
+    // Schedule for immediate execution (current timestamp)
+    ctx.db.reminder().insert(Reminder {
+        id: 0,
+        message: "Process now".to_string(),
+        scheduled_at: ScheduleAt::Time(ctx.timestamp.clone()),
+    });
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
 // Schedule for 10 seconds from now
-let ten_seconds_from_now = ctx.timestamp + Duration::from_secs(10);
-ctx.db.reminder().insert(Reminder {
-    id: 0,
-    message: "Your auction has ended".to_string(),
-    scheduled_at: ScheduleAt::Time(ten_seconds_from_now),
+Timestamp tenSecondsFromNow = ctx.timestamp + TimeDuration::from_seconds(10);
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::time(tenSecondsFromNow),
+    "Your auction has ended"
 });
 
 // Schedule for immediate execution (current timestamp)
-ctx.db.reminder().insert(Reminder {
-    id: 0,
-    message: "Process now".to_string(),
-    scheduled_at: ScheduleAt::Time(ctx.timestamp.clone()),
+ctx.db[reminder].insert(Reminder{
+    0,
+    ScheduleAt::time(ctx.timestamp),
+    "Process now"
 });
 ```
 
@@ -256,14 +360,19 @@ spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (ctx, { arg }) =
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Reducer()]
-public static void SendReminder(ReducerContext ctx, Reminder reminder)
+using SpacetimeDB;
+
+public static partial class Module
 {
-    if (!ctx.SenderAuth.IsInternal)
+    [SpacetimeDB.Reducer]
+    public static void SendReminder(ReducerContext ctx, Reminder reminder)
     {
-        throw new Exception("This reducer can only be called by the scheduler");
+        if (!ctx.SenderAuth.IsInternal)
+        {
+            throw new Exception("This reducer can only be called by the scheduler");
+        }
+        // Process the scheduled reminder
     }
-    // Process the scheduled reminder
 }
 ```
 
@@ -278,6 +387,22 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
     }
     // Process the scheduled reminder
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder arg)
+{
+    // Check if this reducer is being called by the scheduler (internal)
+    if (!ctx.sender_auth().is_internal()) {
+        return Err("This reducer can only be called by the scheduler");
+    }
+    
+    // Process the scheduled reminder
+    return Ok();
 }
 ```
 

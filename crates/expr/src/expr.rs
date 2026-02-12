@@ -1,9 +1,10 @@
-use std::{collections::HashSet, sync::Arc};
-
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::{TableId, ViewId};
-use spacetimedb_schema::schema::TableOrViewSchema;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+use std::sync::Arc;
 
 pub trait CollectViews {
     fn collect_views(&self, views: &mut HashSet<ViewId>);
@@ -40,7 +41,7 @@ impl<T: CollectViews> CollectViews for Vec<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProjectName {
     None(RelExpr),
-    Some(RelExpr, Box<str>),
+    Some(RelExpr, RawIdentifier),
 }
 
 impl CollectViews for ProjectName {
@@ -61,10 +62,10 @@ impl ProjectName {
 
     /// What is the name of the return table?
     /// This is either the table name itself or its alias.
-    pub fn return_name(&self) -> Option<&str> {
+    pub fn return_name(&self) -> Option<&RawIdentifier> {
         match self {
             Self::None(input) => input.return_name(),
-            Self::Some(_, name) => Some(name.as_ref()),
+            Self::Some(_, name) => Some(name),
         }
     }
 
@@ -89,7 +90,7 @@ impl ProjectName {
     }
 
     /// Iterate over the returned column names and types
-    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&Identifier, &AlgebraicType)) {
         if let Some(schema) = self.return_table() {
             for schema in schema.public_columns() {
                 f(&schema.col_name, &schema.col_type);
@@ -162,9 +163,9 @@ impl ProjectName {
 #[derive(Debug)]
 pub enum ProjectList {
     Name(Vec<ProjectName>),
-    List(Vec<RelExpr>, Vec<(Box<str>, FieldProject)>),
+    List(Vec<RelExpr>, Vec<(RawIdentifier, FieldProject)>),
     Limit(Box<ProjectList>, u64),
-    Agg(Vec<RelExpr>, AggType, Box<str>, AlgebraicType),
+    Agg(Vec<RelExpr>, AggType, RawIdentifier, AlgebraicType),
 }
 
 #[derive(Debug)]
@@ -216,10 +217,12 @@ impl ProjectList {
     }
 
     /// Iterate over the projected column names and types
-    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&RawIdentifier, &AlgebraicType)) {
         match self {
             Self::Name(input) => {
-                input.first().inspect(|expr| expr.for_each_return_field(f));
+                input
+                    .first()
+                    .inspect(|expr| expr.for_each_return_field(|n, at| f(n.as_raw(), at)));
             }
             Self::Limit(input, _) => {
                 input.for_each_return_field(f);
@@ -253,7 +256,7 @@ pub struct Relvar {
     /// The table schema of this relvar
     pub schema: Arc<TableOrViewSchema>,
     /// The name of this relvar
-    pub alias: Box<str>,
+    pub alias: RawIdentifier,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
 }
@@ -353,9 +356,9 @@ impl RelExpr {
 
     /// Does this expression return a single relvar?
     /// If so, return its name or equivalently its alias.
-    pub fn return_name(&self) -> Option<&str> {
+    pub fn return_name(&self) -> Option<&RawIdentifier> {
         match self {
-            Self::RelVar(Relvar { alias, .. }) => Some(alias.as_ref()),
+            Self::RelVar(Relvar { alias, .. }) => Some(alias),
             Self::Select(input, _) => input.return_name(),
             _ => None,
         }
@@ -431,7 +434,7 @@ impl Expr {
 /// A typed qualified field projection
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProject {
-    pub table: Box<str>,
+    pub table: RawIdentifier,
     pub field: usize,
     pub ty: AlgebraicType,
 }

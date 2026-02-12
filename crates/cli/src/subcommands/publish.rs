@@ -32,6 +32,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new::<bool>("break_clients"))
         .key(Key::new::<bool>("anon_identity"))
         .key(Key::new::<String>("parent"))
+        .key(Key::new::<String>("organization"))
         .exclude("clear-database")
         .exclude("force")
         .build(command)
@@ -170,6 +171,18 @@ A parent can only be set when a database is created, not when it is updated."
             )
         )
         .arg(
+            Arg::new("organization")
+            .help("Name or identity of an organization for this database")
+            .long("organization")
+            .alias("org")
+            .long_help(
+"The name or identity of an existing organization this database should be created under.
+
+If an organization is given, the organization member's permissions apply to the new database.
+An organization can only be set when a database is created, not when it is updated."
+            )
+        )
+        .arg(
             Arg::new("name|identity")
                 .help("A valid domain or identity for this database")
                 .long_help(
@@ -205,6 +218,27 @@ fn confirm_and_clear(
 
     builder = builder.query(&[("clear", true)]);
     Ok(builder)
+}
+
+fn confirm_major_version_upgrade() -> Result<(), anyhow::Error> {
+    println!(
+        "It looks like you're trying to do a major version upgrade from 1.0 to 2.0. We recommend first looking at the upgrade notes before committing to this upgrade: https://spacetimedb.com/docs/upgrade"
+    );
+    println!();
+    println!("WARNING: Once you publish you cannot revert back to version 1.0.");
+    println!();
+
+    let mut input = String::new();
+    print!("Please type 'upgrade' to accept this change: ");
+    let mut stdout = std::io::stdout();
+    std::io::Write::flush(&mut stdout)?;
+    std::io::stdin().read_line(&mut input)?;
+
+    if input.trim() == "upgrade" {
+        return Ok(());
+    }
+
+    anyhow::bail!("Aborting because major version upgrade was not accepted.");
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -277,6 +311,8 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         let force_break_clients = command_config.get_one::<bool>("break_clients")?.unwrap_or(false);
         let parent_opt = command_config.get_one::<String>("parent")?;
         let parent = parent_opt.as_deref();
+        let org_opt = command_config.get_one::<String>("organization")?;
+        let org = org_opt.as_deref();
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
@@ -363,6 +399,9 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         }
         if let Some(parent) = parent {
             builder = builder.query(&[("parent", parent)]);
+        }
+        if let Some(org) = org {
+            builder = builder.query(&[("org", org)]);
         }
 
         println!("Publishing module...");
@@ -499,6 +538,14 @@ async fn apply_pre_publish_if_needed(
     )
     .await?
     {
+        let major_version_upgrade = match &pre {
+            PrePublishResult::AutoMigrate(auto) => auto.major_version_upgrade,
+            PrePublishResult::ManualMigrate(manual) => manual.major_version_upgrade,
+        };
+        if major_version_upgrade {
+            confirm_major_version_upgrade()?;
+        }
+
         match pre {
             PrePublishResult::ManualMigrate(manual) => {
                 if clear_database == ClearMode::Never {
