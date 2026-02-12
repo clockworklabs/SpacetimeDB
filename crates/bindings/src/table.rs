@@ -1,4 +1,4 @@
-use crate::{bsatn, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
+use crate::{bsatn, rt::ExplicitNames, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
 use core::borrow::Borrow;
 use core::convert::Infallible;
 use core::fmt;
@@ -17,7 +17,7 @@ pub use spacetimedb_primitives::{ColId, IndexId};
 ///
 /// To get a `TableHandle`
 // TODO: should we rename this `TableHandle`? Documenting this, I think that's much clearer.
-pub trait Table: TableInternal {
+pub trait Table: TableInternal + ExplicitNames {
     /// The type of rows stored in this table.
     type Row: SpacetimeType + Serialize + DeserializeOwned + Sized + 'static;
 

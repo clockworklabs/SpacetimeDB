@@ -17,7 +17,7 @@ use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
     access: Option<TableAccess>,
-    _name: Option<LitStr>,
+    name: Option<LitStr>,
     scheduled: Option<ScheduledArg>,
     accessor: Ident,
     indices: Vec<IndexArg>,
@@ -96,7 +96,7 @@ impl TableArgs {
                     accessor = Some(value.parse()?);
                 }
                 sym::name => {
-                    check_duplicate(&accessor, &meta)?;
+                    check_duplicate(&name, &meta)?;
                     let value = meta.value()?;
                     name = Some(value.parse()?);
                 }
@@ -121,7 +121,7 @@ impl TableArgs {
             scheduled,
             accessor,
             indices,
-            _name: name,
+            name,
         })
     }
 }
@@ -714,6 +714,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.accessor;
+    let explicit_table_name = args.name.as_ref().map(|s| s.value());
     let view_trait_ident = format_ident!("{}__view", table_ident);
     let query_trait_ident = format_ident!("{}__query", table_ident);
     let query_cols_struct = format_ident!("{}Cols", original_struct_ident);
@@ -1019,6 +1020,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    let explicit_names_impl = generate_explicit_names_impl(&table_name, &tablehandle_ident, &explicit_table_name);
+
     let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
 
     let describe_table_func = quote! {
@@ -1178,6 +1181,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
             #tabletype_impl
 
+            #explicit_names_impl
+
             #[allow(non_camel_case_types)]
             mod __indices {
                 #[allow(unused)]
@@ -1197,4 +1202,33 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     }
 
     Ok(emission)
+}
+
+fn generate_explicit_names_impl(
+    table_name: &str,
+    tablehandle_ident: &Ident,
+    explicit_table_name: &Option<String>,
+) -> TokenStream {
+    let mut explicit_names_body = Vec::new();
+
+    // Table name
+    if let Some(explicit_table_name) = explicit_table_name {
+        explicit_names_body.push(quote! {
+            names.insert_table(
+                #table_name,
+                #explicit_table_name,
+            );
+        });
+    };
+
+    quote! {
+
+        impl spacetimedb::rt::ExplicitNames for #tablehandle_ident {
+            fn explicit_names() -> spacetimedb::spacetimedb_lib::ExplicitNames {
+                let mut names = spacetimedb::spacetimedb_lib::ExplicitNames::default();
+                #(#explicit_names_body)*
+                names
+            }
+        }
+    }
 }

@@ -7,6 +7,8 @@
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
 use core::fmt;
+use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::small_map::SmallHashMap;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
@@ -83,8 +85,69 @@ pub enum RawModuleDefV10Section {
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
 
     RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
+
+    CaseConversionPolicy(CaseConversionPolicy),
+
+    ExplicitNames(ExplicitNames),
 }
 
+/// Specifies how identifiers should be converted when interpreting module definitions.
+#[derive(Debug, Clone, Copy, Default, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[sats(crate = crate)]
+#[non_exhaustive]
+pub enum CaseConversionPolicy {
+    /// No conversion - names used verbatim as canonical names
+    None,
+    /// Convert to snake_case (SpacetimeDB default)
+    #[default]
+    SnakeCase,
+    /// Convert to camelCase
+    CamelCase,
+    /// Convert to PascalCase (UpperCamelCase)
+    PascalCase,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub struct ExplicitNameEntry {
+    /// The original name as written in the raw module definition.
+    source_name: RawIdentifier,
+
+    /// The canonical name after applying case conversion.
+    canonical_name: RawIdentifier,
+}
+
+#[derive(Debug, Default, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub struct ExplicitNames {
+    tables: Vec<ExplicitNameEntry>,
+    funcs: Vec<ExplicitNameEntry>,
+}
+
+impl ExplicitNames {
+    pub fn insert_table(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.tables.push(ExplicitNameEntry {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        });
+    }
+    pub fn insert_function(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.funcs.push(ExplicitNameEntry {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        });
+    }
+
+    pub fn merge(&mut self, other: ExplicitNames) {
+        self.tables.extend(other.tables);
+        self.funcs.extend(other.funcs);
+    }
+}
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
 
 /// The definition of a database table.
@@ -489,6 +552,16 @@ impl RawModuleDefV10 {
             _ => None,
         })
     }
+
+    pub fn case_conversion_policy(&self) -> CaseConversionPolicy {
+        self.sections
+            .iter()
+            .find_map(|s| match s {
+                RawModuleDefV10Section::CaseConversionPolicy(policy) => Some(*policy),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -663,6 +736,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
             _ => unreachable!("Just ensured RowLevelSecurity section exists"),
+        }
+    }
+
+    /// Get mutable access to the case conversion policy, creating it if missing.
+    fn explicit_names_mut(&mut self) -> &mut ExplicitNames {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ExplicitNames(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::ExplicitNames(ExplicitNames::default()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ExplicitNames(names) => names,
+            _ => unreachable!("Just ensured ExplicitNames section exists"),
         }
     }
 
@@ -908,6 +1001,10 @@ impl RawModuleDefV10Builder {
     pub fn add_row_level_security(&mut self, sql: &str) {
         self.row_level_security_mut()
             .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
+    }
+
+    pub fn add_explicit_names(&mut self, names: ExplicitNames) {
+        self.explicit_names_mut().merge(names);
     }
 
     /// Finish building, consuming the builder and returning the module.

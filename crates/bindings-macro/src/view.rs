@@ -5,11 +5,12 @@ use syn::ext::IdentExt;
 use syn::parse::Parser;
 use syn::{FnArg, ItemFn, LitStr};
 
+use crate::reducer::generate_explicit_names_impl;
 use crate::sym;
 use crate::util::{check_duplicate_msg, match_meta};
 
 pub(crate) struct ViewArgs {
-    _name: Option<LitStr>,
+    name: Option<LitStr>,
     accessor: Ident,
     #[allow(unused)]
     public: bool,
@@ -49,7 +50,7 @@ impl ViewArgs {
         let () = public
             .ok_or_else(|| syn::Error::new(Span::call_site(), "views must be `public`, e.g. `#[view(public)]`"))?;
         Ok(Self {
-            _name: name,
+            name,
             public: true,
             accessor,
         })
@@ -147,6 +148,10 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         }
     };
 
+    let explicit_name = args.name.as_ref();
+
+    let generate_explicit_names = generate_explicit_names_impl(&view_name, func_name, explicit_name);
+
     Ok(quote! {
         const _: () = { #generated_describe_function };
 
@@ -196,5 +201,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
                 Some(<#ret_ty as spacetimedb::SpacetimeType>::make_type(ts))
             }
         }
+
+        #generate_explicit_names
     })
 }
