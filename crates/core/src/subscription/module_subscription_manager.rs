@@ -215,8 +215,9 @@ struct QueryState {
     query: Query,
     // For legacy clients that subscribe to a set of queries, we track them here.
     legacy_subscribers: HashSet<ClientId>,
-    // For clients that subscribe to a single query, we track them here.
+    // For v1 clients that subscribe to a single query, we track them here.
     subscriptions: HashSet<ClientId>,
+    // The set of (client, query_set_id) pairs that are subscribed to this query.
     v2_subscriptions: HashSet<SubscriptionIdV2>,
 }
 

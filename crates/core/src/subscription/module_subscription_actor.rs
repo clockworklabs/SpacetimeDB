@@ -1620,6 +1620,8 @@ impl ModuleSubscriptions {
             caller,
         );
         drop(subscriptions);
+        // For subscriptions that had an error, we have send the client an error message,
+        // but we also need to remove the subscription so that we don't keep trying to send updates.
         if !failed_v2_subscriptions.is_empty() {
             let mut subscriptions = {
                 let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
