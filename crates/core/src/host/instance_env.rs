@@ -745,6 +745,7 @@ impl InstanceEnv {
             caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.

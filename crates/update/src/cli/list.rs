@@ -36,19 +36,37 @@ impl List {
                 Some(file_name.to_string())
             }
         };
+
         let versions = if self.all {
             let client = super::reqwest_client()?;
             super::tokio_block_on(super::install::available_releases(&client))??
         } else {
             paths.cli_bin_dir.installed_versions()?
         };
+
+        // Sort versions using semver ordering. Versions that fail to parse are
+        // placed at the end in their original listed order.
+        let mut parsed: Vec<(semver::Version, String)> = Vec::new();
+        let mut unparsed: Vec<String> = Vec::new();
         for ver in versions {
-            print!("{ver}");
-            if Some(&ver) == current.as_ref() {
-                print!(" (current)");
+            match semver::Version::parse(&ver) {
+                Ok(sv) => parsed.push((sv, ver)),
+                Err(_) => unparsed.push(ver),
             }
-            println!();
         }
+        parsed.sort_by(|(a, _), (b, _)| b.cmp(a));
+
+        let sorted_versions: Vec<String> = parsed.into_iter().map(|(_, s)| s).chain(unparsed).collect();
+        for ver in &sorted_versions {
+            let is_current = Some(ver) == current.as_ref();
+
+            if is_current {
+                println!("{} (current)", ver);
+            } else {
+                println!("{ver}");
+            }
+        }
+
         Ok(())
     }
 }

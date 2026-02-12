@@ -160,7 +160,7 @@ impl ExecutionTimings {
 }
 
 /// The result that `__call_reducer__` produces during normal non-trap execution.
-pub type ReducerResult = Result<(), Box<str>>;
+pub type ReducerResult = Result<Option<Bytes>, Box<str>>;
 
 pub struct ExecutionStats {
     pub energy: EnergyStats,
@@ -195,7 +195,7 @@ pub struct ExecutionResult<T, E> {
     pub call_result: Result<T, E>,
 }
 
-pub type ReducerExecuteResult = ExecutionResult<(), ExecutionError>;
+pub type ReducerExecuteResult = ExecutionResult<Option<Bytes>, ExecutionError>;
 
 impl<T, E> ExecutionResult<T, E> {
     pub fn map_result<X, Y>(self, f: impl FnOnce(Result<T, E>) -> Result<X, Y>) -> ExecutionResult<X, Y> {
@@ -602,6 +602,7 @@ impl InstanceCommon {
                         caller_connection_id: None,
                         function_call: ModuleFunctionCall::update(),
                         status: EventStatus::Committed(DatabaseUpdate::default()),
+                        reducer_return_value: None,
                         energy_quanta_used: energy_quanta_used.into(),
                         host_execution_duration,
                         request_id: None,
@@ -837,11 +838,11 @@ impl InstanceCommon {
         // However, that does not necessarily apply to e.g., V8.
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let status = match result.call_result {
+        let (status, mut reducer_return_value) = match result.call_result {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                self.handle_outer_error(&result.stats.energy, reducer_name)
+                (self.handle_outer_error(&result.stats.energy, reducer_name), None)
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(
@@ -851,11 +852,11 @@ impl InstanceCommon {
                     &err,
                     &self.info.module_hash,
                 );
-                EventStatus::Failed(err.into())
+                (EventStatus::FailedUser(err.into()), None)
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            Ok(()) => {
+            Ok(return_value) => {
                 // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
                 // We handle OnConnect events before running the reducer.
                 let res = match reducer_def.lifecycle {
@@ -865,7 +866,7 @@ impl InstanceCommon {
                     _ => Ok(()),
                 };
                 match res {
-                    Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
+                    Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
                         let err = err.to_string();
                         log_reducer_error(
@@ -875,7 +876,7 @@ impl InstanceCommon {
                             &err,
                             &self.info.module_hash,
                         );
-                        EventStatus::Failed(err)
+                        (EventStatus::FailedInternal(err), None)
                     }
                 }
             }
@@ -895,9 +896,12 @@ impl InstanceCommon {
 
         let status = match out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
-            ViewOutcome::Failed(err) => EventStatus::Failed(err),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
             ViewOutcome::Success => status,
         };
+        if !matches!(status, EventStatus::Committed(_)) {
+            reducer_return_value = None;
+        }
 
         let energy_quanta_used = result.stats.energy_used().into();
         let total_duration = result.stats.total_duration();
@@ -912,6 +916,7 @@ impl InstanceCommon {
                 args,
             },
             status,
+            reducer_return_value,
             energy_quanta_used,
             host_execution_duration: total_duration,
             request_id,
@@ -937,7 +942,7 @@ impl InstanceCommon {
         if energy.remaining.get() == 0 {
             EventStatus::OutOfEnergy
         } else {
-            EventStatus::Failed("The instance encountered a fatal error.".into())
+            EventStatus::FailedInternal("The instance encountered a fatal error.".into())
         }
     }
 
@@ -996,7 +1001,7 @@ impl InstanceCommon {
                 sender,
                 auth,
                 request,
-                timer,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1011,7 +1016,7 @@ impl InstanceCommon {
                 sender,
                 auth,
                 subscribe,
-                timer,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1027,11 +1032,41 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-            ViewCommand::AddMultiSubscription {
+            ViewCommand::AddSubscriptionV2 {
+                sender,
+                auth,
+                request,
+                _timer: timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::RemoveSubscriptionV2 {
                 sender,
                 auth,
                 request,
                 timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::AddMultiSubscription {
+                sender,
+                auth,
+                request,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1042,7 +1077,6 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-
             ViewCommand::Sql {
                 db,
                 sql_text,
