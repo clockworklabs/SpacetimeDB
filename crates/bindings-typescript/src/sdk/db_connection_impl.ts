@@ -729,7 +729,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     });
     this.#sendMessage(message);
     this.#reducerCallbacks.set(requestId, result => {
-      if (result.tag === 'Ok' || result.tag === 'Okmpty') {
+      if (result.tag === 'Ok' || result.tag === 'OkEmpty') {
         resolve();
       } else {
         reject(result.value);

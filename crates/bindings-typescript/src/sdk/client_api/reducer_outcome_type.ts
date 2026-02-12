@@ -16,7 +16,7 @@ const ReducerOutcome = __t.enum('ReducerOutcome', {
   get Ok() {
     return ReducerOk;
   },
-  Okmpty: __t.unit(),
+  OkEmpty: __t.unit(),
   Err: __t.byteArray(),
   InternalError: __t.string(),
 });
