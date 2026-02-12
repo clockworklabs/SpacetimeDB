@@ -549,7 +549,6 @@ struct ClientUpdate {
 struct V2ClientUpdate {
     id: ClientId,
     query_set_id: ClientQuerySetId,
-    //table_update: ws_v2::TableUpdate,
     table_name: TableName,
     rows: TableUpdateRows,
 }

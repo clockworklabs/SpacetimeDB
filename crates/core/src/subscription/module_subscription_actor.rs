@@ -23,12 +23,10 @@ use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
-use bytes::BytesMut;
 use core::panic;
 use parking_lot::RwLock;
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use scopeguard::ScopeGuard;
-use spacetimedb_client_api_messages::websocket::common::ByteListLen as _;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
@@ -212,52 +210,16 @@ type SubscriptionUpdate =
 type FullSubscriptionUpdate =
     ws_v1::FormatSwitch<ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>, ws_v1::DatabaseUpdate<ws_v1::JsonFormat>>;
 
-fn merge_bsatn_row_lists(lists: Vec<ws_v1::BsatnRowList>) -> ws_v1::BsatnRowList {
-    if lists.is_empty() {
-        return ws_v1::BsatnRowList::default();
-    }
-    if lists.len() == 1 {
-        return lists.into_iter().next().unwrap();
-    }
-    let total_len: usize = lists.iter().map(|list| list.num_bytes()).sum();
-    let mut rows_data = BytesMut::with_capacity(total_len);
-    let mut offsets: Vec<ws_v1::RowOffset> = Vec::new();
-    let mut base: usize = 0;
-
-    for list in lists {
-        let (hint, bytes) = list.into_inner();
-        let data_len = bytes.len();
-        rows_data.extend_from_slice(&bytes);
-
-        match hint {
-            ws_v1::RowSizeHint::FixedSize(size) => {
-                let size = size as usize;
-                let count = data_len / size;
-                for i in 0..count {
-                    offsets.push((base + i * size) as u64);
-                }
-            }
-            ws_v1::RowSizeHint::RowOffsets(offs) => {
-                offsets.extend(offs.iter().map(|o| (base + *o as usize) as u64));
-            }
-        }
-        base += data_len;
-    }
-
-    ws_v1::BsatnRowList::new(ws_v1::RowSizeHint::RowOffsets(offsets.into()), rows_data.freeze())
-}
-
 fn query_rows_from_update(
     update: ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>,
     use_deletes: bool,
 ) -> Result<ws_v2::QueryRows, DBError> {
-    // TODO: Group by table name so each table appears once with merged rows.
     let tables = update
         .tables
         .into_iter()
-        .map(|table_update| {
-            let mut inserts = Vec::new();
-            for single_update in table_update.updates {
+        .flat_map(|table_update| {
+            let table_name = table_update.table_name;
+            table_update.updates.into_iter().map(move |single_update| {
                 let ws_v1::CompressableQueryUpdate::Uncompressed(query_update) = single_update else {
                     return Err(DBError::Other(anyhow::anyhow!(
                         "unexpected compressed v1 update for v2 subscribe"
@@ -268,11 +230,10 @@ fn query_rows_from_update(
                 } else {
                     query_update.inserts
                 };
-                inserts.push(rows);
-            }
-            Ok(ws_v2::SingleTableRows {
-                table: table_update.table_name,
-                rows: merge_bsatn_row_lists(inserts),
+                Ok(ws_v2::SingleTableRows {
+                    table: table_name.clone(),
+                    rows,
+                })
             })
         })
         .collect::<Result<Vec<_>, DBError>>()?;
@@ -1134,11 +1095,6 @@ impl ModuleSubscriptions {
         match host {
             Some(host) => host.call_view_add_v2_subscription(sender, auth, request, timer).await,
             None => panic!("v2 subscriptions without a module host are not supported yet"),
-            // self
-            //     .add_multi_subscription_inner::<host::wasmtime::WasmtimeInstance>(
-            //         None, sender, auth, request, timer, _assert,
-            //     )
-            //     .map(|(metrics, _)| metrics),
         }
     }
     /// Add a subscription consisting of multiple queries.
