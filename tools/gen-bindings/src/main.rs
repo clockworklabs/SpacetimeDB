@@ -13,9 +13,9 @@ struct Cli {
     #[arg(long, default_value = "src/module_bindings")]
     out_dir: String,
 
-    /// Project path passed to spacetimedb-cli
-    #[arg(long, default_value = "server")]
-    project_path: String,
+    /// Module path passed to spacetimedb-cli
+    #[arg(long, alias = "project-path", default_value = "server")]
+    module_path: String,
 
     /// Replacement for 'spacetimedb' (relative string used in imports)
     #[arg(long)]
@@ -61,7 +61,7 @@ fn main() -> Result<()> {
             "--out-dir",
             &args.out_dir,
             "--module-path",
-            &args.project_path,
+            &args.module_path,
         ],
     )?;
 
