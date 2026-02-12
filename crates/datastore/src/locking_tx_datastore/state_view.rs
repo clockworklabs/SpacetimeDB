@@ -159,12 +159,11 @@ pub trait StateView {
             .unwrap_or(None)
             .transpose()?;
 
-        // Check if this table is an event table by looking up st_event_table.
+        // Check if this table is an event table by looking up `st_event_table`.
         let is_event = self
-            .iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, value_eq)
-            .map(|mut iter| iter.next().is_some())
-            .unwrap_or(false);
-
+            .iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, value_eq)?
+            .next()
+            .is_some()
         Ok(TableSchema::new(
             table_id,
             table_name,
