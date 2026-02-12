@@ -16,6 +16,11 @@ pub trait HasIxCols {
     fn ix_cols(name: TableNameStr) -> Self::IxCols;
 }
 
+/// Marker trait for tables that can appear as the right/inner/lookup
+/// table in a semi-join. Event tables do NOT implement this trait,
+/// preventing them from being used as the lookup side of a join.
+pub trait CanBeLookupTable: HasIxCols {}
+
 pub struct Table<T> {
     pub(super) table_name: TableNameStr,
     _marker: PhantomData<T>,
