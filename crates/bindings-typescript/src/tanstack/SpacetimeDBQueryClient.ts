@@ -42,11 +42,11 @@ export function spacetimeDBQuery<TableDef extends UntypedTableDef>(
   table: TableDef,
   whereOrSkip?: Expr<ColumnsFromRow<RowType<TableDef>>> | 'skip'
 ): SpacetimeDBQueryOptions | SpacetimeDBQueryOptionsSkipped {
-  tableRegistry.set(table.name, table);
+  tableRegistry.set(table.sourceName, table);
 
   if (whereOrSkip === 'skip') {
     return {
-      queryKey: ['spacetimedb', table.name, 'skip'] as const,
+      queryKey: ['spacetimedb', table.sourceName, 'skip'] as const,
       staleTime: Infinity,
       enabled: false,
     };
@@ -56,12 +56,12 @@ export function spacetimeDBQuery<TableDef extends UntypedTableDef>(
   const whereStr = where ? toString(table, where) : '';
 
   if (where) {
-    const whereKey = `${table.name}:${whereStr}`;
+    const whereKey = `${table.sourceName}:${whereStr}`;
     whereRegistry.set(whereKey, where);
   }
 
   return {
-    queryKey: ['spacetimedb', table.name, whereStr] as const,
+    queryKey: ['spacetimedb', table.sourceName, whereStr] as const,
     staleTime: Infinity,
   };
 }
