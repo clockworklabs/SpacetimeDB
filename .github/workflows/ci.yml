@@ -151,7 +151,7 @@ jobs:
           if [ -f ~/emsdk/emsdk_env.sh ]; then
             source ~/emsdk/emsdk_env.sh
           fi
-          cargo ci smoketests -- --test-threads=1
+          cargo ci smoketests -- --test-threads=1 --no-capture test_all_templates
 
       # Due to Emscripten PATH issues this was separated to make sure OpenSSL still builds correctly
       - name: Run smoketests (Windows)
@@ -161,7 +161,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          cargo ci smoketests -- --test-threads=1
+          cargo ci smoketests -- --test-threads=1 --no-capture test_all_templates
 
   smoketests-python:
     needs: [lints]
