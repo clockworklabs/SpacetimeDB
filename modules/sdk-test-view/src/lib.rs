@@ -62,7 +62,8 @@ pub fn move_player(ctx: &ReducerContext, dx: i32, dy: i32) {
         Some(loc @ PlayerLocation { mut x, mut y, .. }) => {
             x += dx;
             y += dy;
-            ctx.db.player_location().entity_id().update(PlayerLocation {
+            ctx.db.player_location().entity_id().delete(loc.entity_id);
+            ctx.db.player_location().insert(PlayerLocation {
                 entity_id: loc.entity_id,
                 active: loc.active,
                 x,
