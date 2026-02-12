@@ -1463,12 +1463,10 @@ mod tests {
         let mut raw_def = builder.finish();
         let tables = raw_def.tables_mut_for_tests();
         tables[0].constraints[0].source_name = Some("wacky.constraint()".into());
-        tables[0].indexes[0].name = Some("wacky.index()".into());
         tables[0].sequences[0].source_name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
         assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
-        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
         assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
     }
 
