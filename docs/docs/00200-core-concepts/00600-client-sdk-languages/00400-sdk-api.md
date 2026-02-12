@@ -24,7 +24,7 @@ Subscriptions replicate a subset of the database to your client, maintaining a l
 
 ### Creating Subscriptions
 
-Subscribe to tables or queries using SQL:
+Subscribe to tables or queries using raw SQL:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -105,6 +105,63 @@ void OnSubscriptionError(const FErrorContext& Ctx)
 {
     UE_LOG(LogTemp, Error, TEXT("Subscription failed: %s"), *Ctx.Error);
 }
+```
+
+</TabItem>
+</Tabs>
+
+Or use the query builder:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { queries } from './module_bindings';
+
+// Subscribe with callbacks
+conn
+  .subscriptionBuilder()
+  .onApplied(ctx => {
+    console.log(`Subscription ready with ${ctx.db.User.count()} users`);
+  })
+  .onError((ctx, error) => {
+    console.error(`Subscription failed: ${error}`);
+  })
+  .subscribe([queries.user]);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// Subscribe with callbacks
+conn.SubscriptionBuilder()
+    .OnApplied(ctx =>
+    {
+        Console.WriteLine($"Subscription ready with {ctx.Db.User.Count()} users");
+    })
+    .OnError((ctx, error) =>
+    {
+        Console.WriteLine($"Subscription failed: {error}");
+    })
+    .AddQuery(ctx => ctx.From.User())
+    .Subscribe();
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// Subscribe with callbacks
+conn.subscription_builder()
+    .on_applied(|ctx| {
+        println!("Subscription ready with {} users", ctx.db().user().count());
+    })
+    .on_error(|ctx, error| {
+        eprintln!("Subscription failed: {}", error);
+    })
+    .add_query(|ctx| ctx.from.user())
+    .subscribe();
 ```
 
 </TabItem>
