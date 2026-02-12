@@ -19,7 +19,6 @@ concurrency:
 
 jobs:
   smoketests:
-    needs: [lints]
     name: Smoketests (${{ matrix.name }})
     strategy:
       matrix:
