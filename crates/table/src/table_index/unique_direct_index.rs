@@ -238,7 +238,8 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
             .get(outer_key)
             .and_then(|x| x.as_ref())
             .map(|inner| inner.get(inner_key))
-            .filter(|slot| *slot != NONE_PTR);
+            .filter(|slot| *slot != NONE_PTR)
+            .map(expose);
         UniquePointIter::new(point)
     }
 

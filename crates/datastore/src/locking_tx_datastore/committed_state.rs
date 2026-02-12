@@ -987,7 +987,10 @@ impl CommittedState {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_point(value))
+            .map(|i| {
+                let key = i.index().key_from_algebraic_value(value);
+                i.seek_point(&key)
+            })
     }
 
     /// Returns the table associated with the given `index_id`, if any.

@@ -61,11 +61,12 @@ impl MetadataFile {
     /// `self` is the metadata file read from a database, and current is
     /// the default metadata file that the active database version would
     /// right to a new database.
-    pub fn check_compatibility_and_update(mut self, current: Self) -> anyhow::Result<Self> {
+    pub fn check_compatibility_and_update(mut self, current: Self, path: &Path) -> anyhow::Result<Self> {
         anyhow::ensure!(
             self.edition == current.edition,
-            "metadata.toml indicates that this database is from a different \
+            "metadata.toml at {} indicates that this database is from a different \
              edition of SpacetimeDB (running {:?}, but this database is {:?})",
+            path.display(),
             current.edition,
             self.edition,
         );
@@ -78,9 +79,10 @@ impl MetadataFile {
         };
         anyhow::ensure!(
             cmp.matches(&current.version),
-            "metadata.toml indicates that this database is from a newer, \
+            "metadata.toml at {} indicates that this database is from a newer, \
              incompatible version of SpacetimeDB (running {:?}, but this \
              database is from {:?})",
+            path.display(),
             current.version,
             self.version,
         );
@@ -165,24 +167,24 @@ mod tests {
     fn check_metadata_compatibility_checking() {
         assert_eq!(
             mkmeta(1, 0, 0)
-                .check_compatibility_and_update(mkmeta(1, 0, 1))
+                .check_compatibility_and_update(mkmeta(1, 0, 1), Path::new("metadata.toml"))
                 .unwrap()
                 .version,
             mkver(1, 0, 1)
         );
         assert_eq!(
             mkmeta(1, 0, 1)
-                .check_compatibility_and_update(mkmeta(1, 0, 0))
+                .check_compatibility_and_update(mkmeta(1, 0, 0), Path::new("metadata.toml"))
                 .unwrap()
                 .version,
             mkver(1, 0, 1)
         );
 
         mkmeta(1, 1, 0)
-            .check_compatibility_and_update(mkmeta(1, 0, 5))
+            .check_compatibility_and_update(mkmeta(1, 0, 5), Path::new("metadata.toml"))
             .unwrap_err();
         mkmeta(2, 0, 0)
-            .check_compatibility_and_update(mkmeta(1, 3, 5))
+            .check_compatibility_and_update(mkmeta(1, 3, 5), Path::new("metadata.toml"))
             .unwrap_err();
     }
 }

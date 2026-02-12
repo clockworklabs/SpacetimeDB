@@ -1,6 +1,6 @@
 use super::{Index, KeySize, RangedIndex};
 use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
-use core::{ops::RangeBounds, option::IntoIter};
+use core::{borrow::Borrow, ops::RangeBounds, option::IntoIter};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Entry, Range};
 
@@ -41,7 +41,7 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
     fn insert(&mut self, key: K, val: RowPointer) -> Result<(), RowPointer> {
         match self.map.entry(key) {
             Entry::Vacant(e) => {
-                self.num_key_bytes.add_to_key_bytes::<Self>(e.key());
+                self.num_key_bytes.add_to_key_bytes(e.key());
                 e.insert(val);
                 Ok(())
             }
@@ -49,12 +49,8 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
         }
     }
 
-    fn delete(&mut self, key: &K, _: RowPointer) -> bool {
-        let ret = self.map.remove(key).is_some();
-        if ret {
-            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
-        }
-        ret
+    fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
+        self.delete(key, ptr)
     }
 
     fn num_keys(&self) -> usize {
@@ -94,6 +90,32 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
     }
 }
 
+impl<K: KeySize + Ord> UniqueBTreeIndex<K> {
+    /// See [`Index::delete`].
+    /// This version has relaxed bounds.
+    pub fn delete<Q>(&mut self, key: &Q, _: RowPointer) -> bool
+    where
+        Q: ?Sized + KeySize + Ord,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        let ret = self.map.remove(key).is_some();
+        if ret {
+            self.num_key_bytes.sub_from_key_bytes(key);
+        }
+        ret
+    }
+
+    /// See [`Index::seek_point`].
+    /// This version has relaxed bounds.
+    pub fn seek_point<Q>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
+    where
+        Q: ?Sized + Ord,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        UniquePointIter::new(self.map.get(point).copied())
+    }
+}
+
 /// An iterator over the potential value in a unique index for a given key.
 pub struct UniquePointIter {
     /// The iterator seeking for matching keys in the range.
@@ -123,6 +145,17 @@ impl<K: Ord + KeySize> RangedIndex for UniqueBTreeIndex<K> {
         Self: 'a;
 
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
+        self.seek_range(range)
+    }
+}
+
+impl<K: KeySize + Ord> UniqueBTreeIndex<K> {
+    /// See [`RangedIndex::seek_range`].
+    /// This version has relaxed bounds.
+    pub fn seek_range<Q: ?Sized + Ord>(&self, range: &impl RangeBounds<Q>) -> <Self as RangedIndex>::RangeIter<'_>
+    where
+        <Self as Index>::Key: Borrow<Q>,
+    {
         UniqueBTreeIndexRangeIter {
             iter: self.map.range((range.start_bound(), range.end_bound())),
         }

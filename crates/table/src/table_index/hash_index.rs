@@ -4,6 +4,7 @@ use super::{
     Index, KeySize,
 };
 use crate::indexes::RowPointer;
+use core::borrow::Borrow;
 use core::hash::Hash;
 use spacetimedb_data_structures::map::hash_map::EntryRef;
 use spacetimedb_sats::memory_usage::MemoryUsage;
@@ -63,7 +64,7 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     /// and multimaps do not bind one `key` to the same `ptr`.
     fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
         self.num_rows += 1;
-        self.num_key_bytes.add_to_key_bytes::<Self>(&key);
+        self.num_key_bytes.add_to_key_bytes(&key);
         self.map.entry(key).or_default().push(ptr);
         Ok(())
     }
@@ -72,22 +73,7 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     ///
     /// Returns whether `key -> ptr` was present.
     fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
-        let EntryRef::Occupied(mut entry) = self.map.entry_ref(key) else {
-            return false;
-        };
-
-        let (deleted, is_empty) = entry.get_mut().delete(ptr);
-
-        if deleted {
-            self.num_rows -= 1;
-            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
-        }
-
-        if is_empty {
-            entry.remove();
-        }
-
-        deleted
+        self.delete(key, ptr)
     }
 
     type PointIter<'a>
@@ -95,8 +81,8 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     where
         Self: 'a;
 
-    fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
-        same_key_iter(self.map.get(key))
+    fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
+        self.seek_point(point)
     }
 
     fn num_keys(&self) -> usize {
@@ -118,5 +104,41 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     fn can_merge(&self, _: &Self, _: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
         // `self.insert` always returns `Ok(_)`.
         Ok(())
+    }
+}
+
+impl<K: KeySize + Eq + Hash> HashIndex<K> {
+    /// See [`Index::delete`].
+    /// This version has relaxed bounds.
+    pub fn delete<Q>(&mut self, key: &Q, ptr: RowPointer) -> bool
+    where
+        Q: ?Sized + KeySize + Hash + Eq,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        let EntryRef::Occupied(mut entry) = self.map.entry_ref(key) else {
+            return false;
+        };
+
+        let (deleted, is_empty) = entry.get_mut().delete(ptr);
+
+        if deleted {
+            self.num_rows -= 1;
+            self.num_key_bytes.sub_from_key_bytes(entry.key());
+        }
+
+        if is_empty {
+            entry.remove();
+        }
+
+        deleted
+    }
+
+    /// See [`Index::seek_point`].
+    /// This version has relaxed bounds.
+    pub fn seek_point<Q: ?Sized + Eq + Hash>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
+    where
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        same_key_iter(self.map.get(point))
     }
 }
