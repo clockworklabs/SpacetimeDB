@@ -680,7 +680,7 @@ jobs:
     name: Verify LLM benchmark is up to date
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: none
     # Disable the tests because they are causing us headaches with merge conflicts and re-runs etc.
     if: false
     steps:
@@ -981,7 +981,7 @@ jobs:
       && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: none
     env:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
@@ -1100,7 +1100,7 @@ jobs:
 
   global_json_policy:
     name: Verify global.json files are symlinks
-    runs-on: ubuntu-latest
+    runs-on: none
     permissions:
       contents: read
     steps:
@@ -1137,7 +1137,7 @@ jobs:
 
   warn-python-smoketests:
     name: Check for Python smoketest edits
-    runs-on: ubuntu-latest
+    runs-on: none
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
