@@ -17,7 +17,7 @@ error: scheduled table missing required columns; add these to your struct:
        scheduled_at: spacetimedb::ScheduleAt,
   --> tests/ui/reducers.rs:28:63
    |
-28 | #[spacetimedb::table(accessor = scheduled_table_missing_rows, scheduled(scheduled_table_missing_ro...
+28 | #[spacetimedb::table(accessor = scheduled_table_missing_rows, scheduled(scheduled_table_missing_rows_reducer))]
    |                                                               ^^^^^^^^^
 
 error[E0277]: invalid reducer signature
@@ -276,5 +276,5 @@ error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
 note: required by a bound in `scheduled_typecheck`
   --> src/rt.rs
    |
-   | ...FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
-   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`
+   | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
+   |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`

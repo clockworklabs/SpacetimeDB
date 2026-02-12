@@ -114,8 +114,8 @@ help: the trait `Serialize` is not implemented for `Test`
 note: required by a bound in `spacetimedb::spacetimedb_lib::ser::SerializeNamedProduct::serialize_element`
  --> $WORKSPACE/crates/sats/src/ser.rs
   |
-  | ...ment<T: Serialize + ?Sized>(&mut self, name: Option<&str>, elem: &T) -> Result<(), Self::Error>;
-  |            ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
+  |     fn serialize_element<T: Serialize + ?Sized>(&mut self, name: Option<&str>, elem: &T) -> Result<(), Self::Error>;
+  |                             ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
 
 error[E0277]: the column type `Test` does not implement `SpacetimeType`
  --> tests/ui/tables.rs:5:8
