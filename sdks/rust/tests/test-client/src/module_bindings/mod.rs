@@ -52,7 +52,9 @@ pub mod every_primitive_struct_type;
 pub mod every_vec_struct_type;
 pub mod indexed_simple_enum_table;
 pub mod indexed_simple_enum_type;
+pub mod indexed_table_2_table;
 pub mod indexed_table_2_type;
+pub mod indexed_table_table;
 pub mod indexed_table_type;
 pub mod insert_call_timestamp_reducer;
 pub mod insert_call_uuid_v_4_reducer;
@@ -295,6 +297,7 @@ pub mod result_vec_i_32_string_table;
 pub mod result_vec_i_32_string_type;
 pub mod scheduled_table_table;
 pub mod scheduled_table_type;
+pub mod send_scheduled_message_reducer;
 pub mod simple_enum_type;
 pub mod sorted_uuids_insert_reducer;
 pub mod table_holds_table_table;
@@ -472,7 +475,9 @@ pub use every_primitive_struct_type::EveryPrimitiveStruct;
 pub use every_vec_struct_type::EveryVecStruct;
 pub use indexed_simple_enum_table::*;
 pub use indexed_simple_enum_type::IndexedSimpleEnum;
+pub use indexed_table_2_table::*;
 pub use indexed_table_2_type::IndexedTable2;
+pub use indexed_table_table::*;
 pub use indexed_table_type::IndexedTable;
 pub use insert_call_timestamp_reducer::insert_call_timestamp;
 pub use insert_call_uuid_v_4_reducer::insert_call_uuid_v_4;
@@ -715,6 +720,7 @@ pub use result_vec_i_32_string_table::*;
 pub use result_vec_i_32_string_type::ResultVecI32String;
 pub use scheduled_table_table::*;
 pub use scheduled_table_type::ScheduledTable;
+pub use send_scheduled_message_reducer::send_scheduled_message;
 pub use simple_enum_type::SimpleEnum;
 pub use sorted_uuids_insert_reducer::sorted_uuids_insert;
 pub use table_holds_table_table::*;
@@ -1399,6 +1405,9 @@ pub enum Reducer {
         u: Vec<__sdk::Uuid>,
     },
     NoOpSucceeds,
+    SendScheduledMessage {
+        arg: ScheduledTable,
+    },
     SortedUuidsInsert,
     UpdateIndexedSimpleEnum {
         a: SimpleEnum,
@@ -1716,6 +1725,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertVecUnitStruct { .. } => "insert_vec_unit_struct",
             Reducer::InsertVecUuid { .. } => "insert_vec_uuid",
             Reducer::NoOpSucceeds => "no_op_succeeds",
+            Reducer::SendScheduledMessage { .. } => "send_scheduled_message",
             Reducer::SortedUuidsInsert => "sorted_uuids_insert",
             Reducer::UpdateIndexedSimpleEnum { .. } => "update_indexed_simple_enum",
             Reducer::UpdatePkBool { .. } => "update_pk_bool",
@@ -2435,6 +2445,9 @@ impl __sdk::Reducer for Reducer {
                 __sats::bsatn::to_vec(&insert_vec_uuid_reducer::InsertVecUuidArgs { u: u.clone() })
             }
             Reducer::NoOpSucceeds => __sats::bsatn::to_vec(&no_op_succeeds_reducer::NoOpSucceedsArgs {}),
+            Reducer::SendScheduledMessage { arg } => {
+                __sats::bsatn::to_vec(&send_scheduled_message_reducer::SendScheduledMessageArgs { arg: arg.clone() })
+            }
             Reducer::SortedUuidsInsert => __sats::bsatn::to_vec(&sorted_uuids_insert_reducer::SortedUuidsInsertArgs {}),
             Reducer::UpdateIndexedSimpleEnum { a, b } => {
                 __sats::bsatn::to_vec(&update_indexed_simple_enum_reducer::UpdateIndexedSimpleEnumArgs {
@@ -2641,6 +2654,8 @@ impl __sdk::Reducer for Reducer {
 pub struct DbUpdate {
     btree_u_32: __sdk::TableUpdate<BTreeU32>,
     indexed_simple_enum: __sdk::TableUpdate<IndexedSimpleEnum>,
+    indexed_table: __sdk::TableUpdate<IndexedTable>,
+    indexed_table_2: __sdk::TableUpdate<IndexedTable2>,
     large_table: __sdk::TableUpdate<LargeTable>,
     one_bool: __sdk::TableUpdate<OneBool>,
     one_byte_struct: __sdk::TableUpdate<OneByteStruct>,
@@ -2760,6 +2775,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "indexed_simple_enum" => db_update
                     .indexed_simple_enum
                     .append(indexed_simple_enum_table::parse_table_update(table_update)?),
+                "indexed_table" => db_update
+                    .indexed_table
+                    .append(indexed_table_table::parse_table_update(table_update)?),
+                "indexed_table_2" => db_update
+                    .indexed_table_2
+                    .append(indexed_table_2_table::parse_table_update(table_update)?),
                 "large_table" => db_update
                     .large_table
                     .append(large_table_table::parse_table_update(table_update)?),
@@ -3090,6 +3111,8 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.btree_u_32 = cache.apply_diff_to_table::<BTreeU32>("btree_u32", &self.btree_u_32);
         diff.indexed_simple_enum =
             cache.apply_diff_to_table::<IndexedSimpleEnum>("indexed_simple_enum", &self.indexed_simple_enum);
+        diff.indexed_table = cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
+        diff.indexed_table_2 = cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
         diff.large_table = cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
         diff.one_bool = cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
         diff.one_byte_struct = cache.apply_diff_to_table::<OneByteStruct>("one_byte_struct", &self.one_byte_struct);
@@ -3276,6 +3299,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "indexed_simple_enum" => db_update
                     .indexed_simple_enum
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "indexed_table" => db_update
+                    .indexed_table
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "indexed_table_2" => db_update
+                    .indexed_table_2
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "large_table" => db_update
                     .large_table
@@ -3609,6 +3638,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "indexed_simple_enum" => db_update
                     .indexed_simple_enum
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "indexed_table" => db_update
+                    .indexed_table
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "indexed_table_2" => db_update
+                    .indexed_table_2
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "large_table" => db_update
                     .large_table
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3939,6 +3974,8 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     btree_u_32: __sdk::TableAppliedDiff<'r, BTreeU32>,
     indexed_simple_enum: __sdk::TableAppliedDiff<'r, IndexedSimpleEnum>,
+    indexed_table: __sdk::TableAppliedDiff<'r, IndexedTable>,
+    indexed_table_2: __sdk::TableAppliedDiff<'r, IndexedTable2>,
     large_table: __sdk::TableAppliedDiff<'r, LargeTable>,
     one_bool: __sdk::TableAppliedDiff<'r, OneBool>,
     one_byte_struct: __sdk::TableAppliedDiff<'r, OneByteStruct>,
@@ -4059,6 +4096,8 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.indexed_simple_enum,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
+        callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
         callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
         callbacks.invoke_table_row_callbacks::<OneBool>("one_bool", &self.one_bool, event);
         callbacks.invoke_table_row_callbacks::<OneByteStruct>("one_byte_struct", &self.one_byte_struct, event);
@@ -4862,6 +4901,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         btree_u_32_table::register_table(client_cache);
         indexed_simple_enum_table::register_table(client_cache);
+        indexed_table_table::register_table(client_cache);
+        indexed_table_2_table::register_table(client_cache);
         large_table_table::register_table(client_cache);
         one_bool_table::register_table(client_cache);
         one_byte_struct_table::register_table(client_cache);
@@ -4971,6 +5012,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "btree_u32",
         "indexed_simple_enum",
+        "indexed_table",
+        "indexed_table_2",
         "large_table",
         "one_bool",
         "one_byte_struct",
