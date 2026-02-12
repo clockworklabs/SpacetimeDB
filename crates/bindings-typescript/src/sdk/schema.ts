@@ -16,10 +16,10 @@ class Tables<S extends UntypedSchemaDef> {
  * @returns ColumnBuilder representing the complete database schema
  * @example
  * ```ts
- * const s = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
+ * const spacetimedb = schema({
+ *   user: table({}, userType),
+ *   post: table({}, postType)
+ * });
  * ```
  */
 export function schema<const H extends Record<string, UntypedTableSchema>>(

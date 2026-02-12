@@ -12,7 +12,7 @@ export const Result = table({
   value: Score,
 });
 
-const spacetimedb = schema(Result);
+const spacetimedb = schema({ Result });
 export default spacetimedb;
 
 export const setScore = spacetimedb.reducer({ id: t.i32(), left: t.i32(), right: t.i32() },

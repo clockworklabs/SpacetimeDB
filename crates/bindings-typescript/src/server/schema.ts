@@ -108,11 +108,11 @@ type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
  *
  * @example
  * ```typescript
- * const spacetime = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
- * spacetime.reducer(
+ * const spacetimedb = schema({
+ *   user: table({}, userType),
+ *   post: table({}, postType)
+ * });
+ * spacetimedb.reducer(
  *   'create_user',
  *   {  username: t.string(), email: t.string() },
  *   (ctx, { username, email }) => {
@@ -515,10 +515,10 @@ export type InferSchema<SchemaDef extends Schema<any>> =
  * @returns ColumnBuilder representing the complete database schema
  * @example
  * ```ts
- * const s = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
+ * const spacetimedb = schema({
+ *   user: table({}, userType),
+ *   post: table({}, postType)
+ * });
  * ```
  */
 export function schema<const H extends Record<string, UntypedTableSchema>>(

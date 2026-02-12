@@ -17,7 +17,7 @@ const Message = table(
   { sender: t.identity(), sent: t.timestamp(), text: t.string() }
 );
 
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ User, Message });
 export default spacetimedb;
 
 function validateName(name: string) {

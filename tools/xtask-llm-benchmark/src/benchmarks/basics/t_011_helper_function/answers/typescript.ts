@@ -7,7 +7,7 @@ export const Result = table({
   sum: t.i32(),
 });
 
-const spacetimedb = schema(Result);
+const spacetimedb = schema({ Result });
 export default spacetimedb;
 
 function add(a: number, b: number): number {

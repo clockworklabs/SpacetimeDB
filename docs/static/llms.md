@@ -2258,7 +2258,7 @@ const Message = table(
 );
 
 // Compose the schema - this gives us ctx.db.user and ctx.db.message
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ User, Message });
 export default spacetimedb;
 ```
 
@@ -2315,7 +2315,7 @@ const Player = table(
   }
 );
 
-const spacetimedb = schema(Player);
+const spacetimedb = schema({ Player });
 export default spacetimedb;
 ```
 
@@ -2344,7 +2344,7 @@ const Message = table(
   }
 );
 
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ User, Message });
 export default spacetimedb;
 
 // Helper function for validation

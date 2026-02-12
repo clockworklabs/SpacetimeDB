@@ -27,5 +27,5 @@ export const Note = table({
   pinned: t.bool(),
 });
 
-const spacetimedb = schema(User, Product, Note);
+const spacetimedb = schema({ User, Product, Note });
 export default spacetimedb;

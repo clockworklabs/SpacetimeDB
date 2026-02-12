@@ -30,7 +30,7 @@ export const NextPosition = table({
   y: t.i32(),
 });
 
-const spacetimedb = schema(Entity, Position, Velocity, NextPosition);
+const spacetimedb = schema({ Entity, Position, Velocity, NextPosition });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(

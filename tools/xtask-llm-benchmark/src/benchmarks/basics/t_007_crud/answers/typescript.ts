@@ -9,7 +9,7 @@ export const User = table({
   active: t.bool(),
 });
 
-const spacetimedb = schema(User);
+const spacetimedb = schema({ User });
 export default spacetimedb;
 
 export const crud = spacetimedb.reducer(

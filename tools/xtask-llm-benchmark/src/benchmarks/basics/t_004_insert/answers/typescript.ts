@@ -9,7 +9,7 @@ export const User = table({
   active: t.bool(),
 });
 
-const spacetimedb = schema(User);
+const spacetimedb = schema({ User });
 export default spacetimedb;
 
 export const insertUser = spacetimedb.reducer( { id: t.i32(), name: t.string(), age: t.i32(), active: t.bool() },

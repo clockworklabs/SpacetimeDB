@@ -9,7 +9,7 @@ export const Account = table({
   name: t.string(),
 });
 
-const spacetimedb = schema(Account);
+const spacetimedb = schema({ Account });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(

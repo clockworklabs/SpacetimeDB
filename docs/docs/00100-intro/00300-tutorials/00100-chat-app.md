@@ -297,7 +297,7 @@ const Message = table(
 );
 
 // Compose the schema (gives us ctx.db.user and ctx.db.message, etc.)
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ User, Message });
 export default spacetimedb;
 ```
 

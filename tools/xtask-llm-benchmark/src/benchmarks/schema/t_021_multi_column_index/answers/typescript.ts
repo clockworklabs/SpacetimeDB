@@ -10,7 +10,7 @@ export const Log = table({
   message: t.string(),
 });
 
-const spacetimedb = schema(Log);
+const spacetimedb = schema({ Log });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(

@@ -137,7 +137,7 @@ const MyTable = table(
     },
 )
 
-const spacetimedb = schema(MyTable);
+const spacetimedb = schema({ MyTable });
 export default spacetimedb;
 
 export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
@@ -437,7 +437,7 @@ const Player = table(
     },
 );
 
-const spacetimedb = schema(Player);
+const spacetimedb = schema({ Player });
 export default spacetimedb;
 
 export const find_highest_level_player = spacetimedb.procedure(t.unit(), ctx => {
@@ -1200,7 +1200,7 @@ const AiMessage = table(
   }
 );
 
-const spacetimedb = schema(AiMessage);
+const spacetimedb = schema({ AiMessage });
 export default spacetimedb;
 
 export const ask_ai = spacetimedb.procedure(

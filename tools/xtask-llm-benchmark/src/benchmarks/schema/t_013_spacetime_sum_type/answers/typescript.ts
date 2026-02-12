@@ -17,7 +17,7 @@ export const Result = table({
   value: Shape,
 });
 
-const spacetimedb = schema(Result);
+const spacetimedb = schema({ Result });
 export default spacetimedb;
 
 export const setCircle = spacetimedb.reducer({ id: t.i32(), radius: t.i32() },

@@ -7,7 +7,7 @@ export const Event = table({
   kind: t.string(),
 });
 
-const spacetimedb = schema(Event);
+const spacetimedb = schema({ Event });
 export default spacetimedb;
 
 export const onConnect = spacetimedb.clientConnected(ctx => {

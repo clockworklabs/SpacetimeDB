@@ -26,7 +26,7 @@ export const Membership = table({
   groupId: t.i32(),
 });
 
-const spacetimedb = schema(User, Group, Membership);
+const spacetimedb = schema({ User, Group, Membership });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(

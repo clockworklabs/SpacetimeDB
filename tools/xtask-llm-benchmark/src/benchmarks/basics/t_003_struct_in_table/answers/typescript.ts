@@ -12,5 +12,5 @@ export const Entity = table({
   pos: Position,
 });
 
-const spacetimedb = schema(Entity);
+const spacetimedb = schema({ Entity });
 export default spacetimedb;

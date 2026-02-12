@@ -16,7 +16,7 @@ export const Result = table({
   name: t.string(),
 });
 
-const spacetimedb = schema(User, Result);
+const spacetimedb = schema({ User, Result });
 export default spacetimedb;
 
 export const lookupUserName = spacetimedb.reducer({ id: t.i32() },

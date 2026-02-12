@@ -19,7 +19,7 @@ export const Profile = table({
   pos: Position,
 });
 
-const spacetimedb = schema(Profile);
+const spacetimedb = schema({ Profile });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(

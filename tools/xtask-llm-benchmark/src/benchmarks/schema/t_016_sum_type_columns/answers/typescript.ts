@@ -18,7 +18,7 @@ export const Drawing = table({
   b: Shape,
 });
 
-const spacetimedb = schema(Drawing);
+const spacetimedb = schema({ Drawing });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(

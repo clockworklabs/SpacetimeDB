@@ -12,7 +12,7 @@ export const Primitive = table({
   name: t.string(),
 });
 
-const spacetimedb = schema(Primitive);
+const spacetimedb = schema({ Primitive });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(
