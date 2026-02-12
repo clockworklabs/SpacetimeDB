@@ -12,6 +12,8 @@ import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDef } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
+  type Query,
+  toSql,
   type BooleanExpr,
   evaluateBooleanExpr,
   getQueryAccessorName,
@@ -61,7 +63,7 @@ function classifyMembership(
  * ```
  */
 export function useTable<TableDef extends UntypedTableDef>(
-  query: { toSql(): string } & Record<string, any>,
+  query: Query<TableDef>,
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
   type UseTableRowType = RowType<TableDef>;
@@ -80,7 +82,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     );
   }
 
-  const querySql = query.toSql();
+  const querySql = toSql(query);
 
   const latestTransactionEvent = useRef<any>(null);
   const lastSnapshotRef = useRef<
