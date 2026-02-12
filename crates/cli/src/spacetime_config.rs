@@ -416,6 +416,14 @@ impl CommandSchema {
             .map(|k| k.config_name())
             .collect()
     }
+
+    /// Get the clap argument name for a config key.
+    pub fn clap_arg_name_for<'a>(&'a self, config_name: &'a str) -> &'a str {
+        self.config_to_clap
+            .get(config_name)
+            .map(|s| s.as_str())
+            .unwrap_or(config_name)
+    }
 }
 
 /// Configuration for a single key in the CommandConfig.

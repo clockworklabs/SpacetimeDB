@@ -38,6 +38,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
 /// Get filtered publish configs based on CLI arguments
 pub fn get_filtered_publish_configs<'a>(
     spacetime_config: &'a SpacetimeConfig,
+    command: &clap::Command,
     schema: &'a CommandSchema,
     args: &'a ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
@@ -85,10 +86,23 @@ pub fn get_filtered_publish_configs<'a>(
     if filtered_configs.len() > 1 {
         let module_specific_args = schema.module_specific_cli_args(args);
         if !module_specific_args.is_empty() {
+            let display_args = module_specific_args
+                .iter()
+                .map(|arg| {
+                    let clap_name = schema.clap_arg_name_for(arg);
+                    command
+                        .get_arguments()
+                        .find(|a| a.get_id().as_str() == clap_name)
+                        .and_then(|a| a.get_long())
+                        .map(|long| format!("--{long}"))
+                        .unwrap_or_else(|| format!("--{}", clap_name.replace('_', "-")))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             anyhow::bail!(
                 "Cannot use module-specific arguments ({}) when publishing to multiple targets. \
-                 Please specify a database filter (--database) or remove these arguments.",
-                module_specific_args.join(", ")
+                 Please specify the database name or identity to select a single target, or remove these arguments.",
+                display_args
             );
         }
     }
@@ -255,7 +269,7 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         if !quiet_config {
             println!("Using configuration from {}", config_path.display());
         }
-        let filtered = get_filtered_publish_configs(spacetime_config, &schema, args)?;
+        let filtered = get_filtered_publish_configs(spacetime_config, &cmd, &schema, args)?;
         // If filtering resulted in no matches, use CLI args with empty config
         if filtered.is_empty() {
             (
@@ -744,7 +758,7 @@ mod tests {
 
         // Filter by db1 (should only match config1, not parent or config2)
         let matches = cmd.clone().get_matches_from(vec!["publish", "db1"]);
-        let filtered = get_filtered_publish_configs(&spacetime_config, &schema, &matches).unwrap();
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
         assert_eq!(filtered.len(), 1, "Should only match db1");
         assert_eq!(
@@ -792,7 +806,7 @@ mod tests {
 
         // No database provided via CLI
         let matches = cmd.clone().get_matches_from(vec!["publish"]);
-        let filtered = get_filtered_publish_configs(&spacetime_config, &schema, &matches).unwrap();
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
         // Should return all configs (parent + 2 children)
         assert_eq!(filtered.len(), 3);
@@ -828,7 +842,7 @@ mod tests {
 
         // Filter by non-existent database
         let matches = cmd.clone().get_matches_from(vec!["publish", "nonexistent"]);
-        let filtered = get_filtered_publish_configs(&spacetime_config, &schema, &matches).unwrap();
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
         assert_eq!(filtered.len(), 0);
     }

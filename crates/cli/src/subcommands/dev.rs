@@ -231,6 +231,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let mut publish_configs = determine_publish_configs(
         database_name_from_cli,
         spacetime_config.as_ref(),
+        &publish_cmd,
         &publish_schema,
         &publish_args,
         resolved_server,
@@ -600,6 +601,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 fn determine_publish_configs<'a>(
     database_name: Option<String>,
     spacetime_config: Option<&'a SpacetimeConfig>,
+    publish_cmd: &Command,
     publish_schema: &'a CommandSchema,
     publish_args: &'a ArgMatches,
     resolved_server: &str,
@@ -612,7 +614,7 @@ fn determine_publish_configs<'a>(
     if let Some(config) = spacetime_config {
         // Get and filter publish configs
         if config.publish.is_some() {
-            publish_configs = publish::get_filtered_publish_configs(config, publish_schema, publish_args)?;
+            publish_configs = publish::get_filtered_publish_configs(config, publish_cmd, publish_schema, publish_args)?;
         }
     }
 
