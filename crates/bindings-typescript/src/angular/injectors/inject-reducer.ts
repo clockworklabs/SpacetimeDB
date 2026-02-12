@@ -1,25 +1,30 @@
+import { assertInInjectionContext, inject, effect } from '@angular/core';
+import { SPACETIMEDB_CONNECTION } from '../connection_state';
 import type { ParamsType } from '../../sdk';
 import type { UntypedReducerDef } from '../../sdk/reducers';
-import { injectSpacetimeDB } from './inject-spacetimedb';
-import { injectSpacetimeDBConnected } from './inject-spacetimedb-connected';
-import { DestroyRef, effect, inject } from '@angular/core';
 
 export function injectReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef
-) {
-  const conn = injectSpacetimeDB();
-  const isActive = injectSpacetimeDBConnected();
-  const destroyRef = inject(DestroyRef);
+): (...params: ParamsType<ReducerDef>) => void {
+  assertInInjectionContext(injectReducer);
 
+  const connState = inject(SPACETIMEDB_CONNECTION);
   const queue: ParamsType<ReducerDef>[] = [];
   const reducerName = reducerDef.accessorName;
 
-  effect(() => {
-    if (!isActive()) {
+  // flush queued calls when connection becomes active
+  effect(onCleanup => {
+    const state = connState();
+    if (!state.isActive) {
       return;
     }
 
-    const callReducer = (conn.reducers as any)[reducerName] as (
+    const connection = state.getConnection();
+    if (!connection) {
+      return;
+    }
+
+    const callReducer = (connection.reducers as any)[reducerName] as (
       ...p: ParamsType<ReducerDef>
     ) => void;
 
@@ -29,19 +34,26 @@ export function injectReducer<ReducerDef extends UntypedReducerDef>(
         callReducer(...params);
       }
     }
-  });
 
-  destroyRef.onDestroy(() => {
-    queue.splice(0);
+    onCleanup(() => {
+      queue.splice(0);
+    });
   });
 
   return (...params: ParamsType<ReducerDef>) => {
-    if (!isActive()) {
+    const state = connState();
+    if (!state.isActive) {
       queue.push(params);
       return;
     }
 
-    const callReducer = (conn.reducers as any)[reducerName] as (
+    const connection = state.getConnection();
+    if (!connection) {
+      queue.push(params);
+      return;
+    }
+
+    const callReducer = (connection.reducers as any)[reducerName] as (
       ...p: ParamsType<ReducerDef>
     ) => void;
 

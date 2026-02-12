@@ -1,9 +1,10 @@
-import { assertInInjectionContext, inject } from '@angular/core';
-import type { DbConnectionImpl } from '../../sdk';
-import { SPACETIMEDB_TOKEN } from '../token';
+import { assertInInjectionContext, inject, type Signal } from '@angular/core';
+import {
+  SPACETIMEDB_CONNECTION,
+  type ConnectionState,
+} from '../connection_state';
 
-export function injectSpacetimeDB<T extends DbConnectionImpl<any>>(): T {
+export function injectSpacetimeDB(): Signal<ConnectionState> {
   assertInInjectionContext(injectSpacetimeDB);
-  const spacetimedb = inject(SPACETIMEDB_TOKEN);
-  return spacetimedb as T;
+  return inject(SPACETIMEDB_CONNECTION).asReadonly();
 }

@@ -36,58 +36,46 @@ import OnConnectReducer from "./on_connect_reducer";
 export { OnConnectReducer };
 import OnDisconnectReducer from "./on_disconnect_reducer";
 export { OnDisconnectReducer };
-import SendMessageReducer from "./send_message_reducer";
-export { SendMessageReducer };
+import AddReducer from "./add_reducer";
+export { AddReducer };
+import SayHelloReducer from "./say_hello_reducer";
+export { SayHelloReducer };
 
 // Import and reexport all procedure arg types
 
 // Import and reexport all table handle types
-import MessagesRow from "./messages_table";
-export { MessagesRow };
-import OnlineUsersRow from "./online_users_table";
-export { OnlineUsersRow };
+import PersonRow from "./person_table";
+export { PersonRow };
 
 // Import and reexport all types
-import Messages from "./messages_type";
-export { Messages };
+import Add from "./add_type";
+export { Add };
+import Init from "./init_type";
+export { Init };
 import OnConnect from "./on_connect_type";
 export { OnConnect };
 import OnDisconnect from "./on_disconnect_type";
 export { OnDisconnect };
-import OnlineUsers from "./online_users_type";
-export { OnlineUsers };
-import SendMessage from "./send_message_type";
-export { SendMessage };
+import Person from "./person_type";
+export { Person };
+import SayHello from "./say_hello_type";
+export { SayHello };
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema(
   __table({
-    name: 'messages',
+    name: 'person',
     indexes: [
-      { name: 'id', algorithm: 'btree', columns: [
-        'id',
-      ] },
     ],
     constraints: [
-      { name: 'messages_id_key', constraint: 'unique', columns: ['id'] },
     ],
-  }, MessagesRow),
-  __table({
-    name: 'onlineUsers',
-    indexes: [
-      { name: 'identity', algorithm: 'btree', columns: [
-        'identity',
-      ] },
-    ],
-    constraints: [
-      { name: 'onlineUsers_identity_key', constraint: 'unique', columns: ['identity'] },
-    ],
-  }, OnlineUsersRow),
+  }, PersonRow),
 );
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
-  __reducerSchema("send_message", SendMessageReducer),
+  __reducerSchema("add", AddReducer),
+  __reducerSchema("say_hello", SayHelloReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

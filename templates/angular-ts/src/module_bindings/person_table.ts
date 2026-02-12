@@ -11,8 +11,5 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64().primaryKey(),
-  senderIdentity: __t.identity().name("sender_identity"),
-  content: __t.string(),
-  timestamp: __t.timestamp(),
+  name: __t.string(),
 });
