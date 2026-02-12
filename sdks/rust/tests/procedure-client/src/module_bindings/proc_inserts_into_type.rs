@@ -50,5 +50,3 @@ impl __sdk::__query_builder::HasIxCols for ProcInsertsInto {
         ProcInsertsIntoIxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for ProcInsertsInto {}

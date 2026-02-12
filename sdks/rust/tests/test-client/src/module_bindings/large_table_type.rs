@@ -111,5 +111,3 @@ impl __sdk::__query_builder::HasIxCols for LargeTable {
         LargeTableIxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for LargeTable {}

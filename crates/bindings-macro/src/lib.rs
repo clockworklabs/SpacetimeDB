@@ -61,7 +61,6 @@ mod sym {
     symbol!(unique);
     symbol!(update);
     symbol!(default);
-    symbol!(event);
 
     symbol!(u8);
     symbol!(i8);

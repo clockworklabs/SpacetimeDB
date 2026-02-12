@@ -21,10 +21,10 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields,
-        StConstraintRow, StEventTableRow, StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields,
-        StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ID,
-        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
+        StConstraintRow, StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
+        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable,
+        ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
+        ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -656,7 +656,6 @@ impl MutTxId {
         self.insert_st_column(table_schema.columns())?;
 
         let schedule = table_schema.schedule.clone();
-        let is_event = table_schema.is_event;
         let mut schema_internal = table_schema;
         // Extract all indexes, constraints, and sequences from the schema.
         // We will add them back later with correct ids.
@@ -684,12 +683,6 @@ impl MutTxId {
                 .read_col::<ScheduleId>(StScheduledFields::ScheduleId)?;
             let ((table, ..), _) = self.get_or_create_insert_table_mut(table_id)?;
             table.with_mut_schema(|s| s.schedule.as_mut().unwrap().schedule_id = id);
-        }
-
-        // Insert into st_event_table if this is an event table.
-        if is_event {
-            let row = StEventTableRow { table_id };
-            self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
         }
 
         // Create the indexes for the table.

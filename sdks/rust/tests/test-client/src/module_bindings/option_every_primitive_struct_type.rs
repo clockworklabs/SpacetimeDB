@@ -43,5 +43,3 @@ impl __sdk::__query_builder::HasIxCols for OptionEveryPrimitiveStruct {
         OptionEveryPrimitiveStructIxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for OptionEveryPrimitiveStruct {}

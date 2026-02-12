@@ -47,5 +47,3 @@ impl __sdk::__query_builder::HasIxCols for IndexedSimpleEnum {
         }
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for IndexedSimpleEnum {}

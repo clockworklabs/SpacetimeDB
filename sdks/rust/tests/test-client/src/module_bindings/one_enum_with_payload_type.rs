@@ -43,5 +43,3 @@ impl __sdk::__query_builder::HasIxCols for OneEnumWithPayload {
         OneEnumWithPayloadIxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for OneEnumWithPayload {}

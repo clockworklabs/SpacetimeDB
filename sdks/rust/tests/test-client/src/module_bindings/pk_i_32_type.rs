@@ -48,5 +48,3 @@ impl __sdk::__query_builder::HasIxCols for PkI32 {
         }
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for PkI32 {}

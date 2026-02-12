@@ -265,7 +265,6 @@ impl<'a> ModuleValidatorV10<'a> {
             table_type,
             table_access,
             default_values,
-            is_event,
         } = table;
 
         let product_type: &ProductType = self
@@ -405,7 +404,6 @@ impl<'a> ModuleValidatorV10<'a> {
             schedule: None, // V10 handles schedules separately
             table_type,
             table_access,
-            is_event,
         })
     }
 

@@ -295,44 +295,6 @@ declare_tests_with_suffix!(typescript, "-ts");
 declare_tests_with_suffix!(csharp, "-cs");
 declare_tests_with_suffix!(cpp, "-cpp");
 
-/// Tests of event table functionality, using <./event-table-client> and <../../../modules/sdk-test>.
-///
-/// These are separate from the existing client because as of writing (2026-02-07),
-/// we do not have event table support in all of the module languages we have tested.
-mod event_table_tests {
-    use spacetimedb_testing::sdk::Test;
-
-    const MODULE: &str = "sdk-test-event-table";
-    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/event-table-client");
-
-    fn make_test(subcommand: &str) -> Test {
-        Test::builder()
-            .with_name(subcommand)
-            .with_module(MODULE)
-            .with_client(CLIENT)
-            .with_language("rust")
-            .with_bindings_dir("src/module_bindings")
-            .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
-            .build()
-    }
-
-    #[test]
-    fn event_table() {
-        make_test("event-table").run();
-    }
-
-    #[test]
-    fn multiple_events() {
-        make_test("multiple-events").run();
-    }
-
-    #[test]
-    fn events_dont_persist() {
-        make_test("events-dont-persist").run();
-    }
-}
-
 macro_rules! procedure_tests {
     ($mod_name:ident, $suffix:literal) => {
         mod $mod_name {

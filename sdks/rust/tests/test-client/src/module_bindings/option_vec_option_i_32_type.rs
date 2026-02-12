@@ -41,5 +41,3 @@ impl __sdk::__query_builder::HasIxCols for OptionVecOptionI32 {
         OptionVecOptionI32IxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for OptionVecOptionI32 {}

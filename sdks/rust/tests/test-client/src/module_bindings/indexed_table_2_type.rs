@@ -44,5 +44,3 @@ impl __sdk::__query_builder::HasIxCols for IndexedTable2 {
         IndexedTable2IxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for IndexedTable2 {}

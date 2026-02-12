@@ -203,37 +203,4 @@ fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
     ctx.from.xyz().build()
 }
 
-#[table(name = events, public, event)]
-struct Events {
-    #[unique]
-    identity: Identity,
-}
-
-/// Event tables CAN be the left/outer table in a semijoin (this should compile)
-#[view(name = view_event_table_as_left_ok, public)]
-fn view_event_table_as_left_ok(ctx: &ViewContext) -> Query<Events> {
-    ctx.from
-        .events()
-        .left_semijoin(ctx.from.player(), |a, b| a.identity.eq(b.identity))
-        .build()
-}
-
-/// Event tables cannot be used as the lookup (right) table in a semijoin
-#[view(name = view_event_table_left_semijoin, public)]
-fn view_event_table_left_semijoin(ctx: &ViewContext) -> Query<PlayerInfo> {
-    ctx.from
-        .player_info()
-        .left_semijoin(ctx.from.events(), |a, b| a.identity.eq(b.identity))
-        .build()
-}
-
-/// Event tables cannot be used as the lookup (right) table in a right semijoin
-#[view(name = view_event_table_right_semijoin, public)]
-fn view_event_table_right_semijoin(ctx: &ViewContext) -> Query<Events> {
-    ctx.from
-        .player_info()
-        .right_semijoin(ctx.from.events(), |a, b| a.identity.eq(b.identity))
-        .build()
-}
-
 fn main() {}

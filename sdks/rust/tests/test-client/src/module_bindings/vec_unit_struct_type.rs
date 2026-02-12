@@ -43,5 +43,3 @@ impl __sdk::__query_builder::HasIxCols for VecUnitStruct {
         VecUnitStructIxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for VecUnitStruct {}

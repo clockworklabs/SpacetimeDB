@@ -105,19 +105,6 @@ impl<Row> Default for TableAppliedDiff<'_, Row> {
 }
 
 impl<'r, Row> TableAppliedDiff<'r, Row> {
-    /// For event tables: construct a `TableAppliedDiff` with just inserts,
-    /// without touching the client cache.
-    /// Each insert will fire `on_insert` callbacks.
-    pub(crate) fn from_event_inserts(inserts: &'r [WithBsatn<Row>]) -> Self {
-        let insert_map = inserts.iter().map(|wb| (wb.bsatn.as_ref(), &wb.row)).collect();
-        Self {
-            inserts: insert_map,
-            deletes: Default::default(),
-            update_deletes: Vec::new(),
-            update_inserts: Vec::new(),
-        }
-    }
-
     /// Returns the applied diff restructured
     /// with row updates where deletes and inserts are found according to `derive_pk`.
     pub fn with_updates_by_pk<Pk: Eq + Hash>(mut self, derive_pk: impl Fn(&Row) -> &Pk) -> Self {

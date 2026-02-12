@@ -317,7 +317,6 @@ impl ModuleValidatorV9<'_> {
             schedule,
             table_type,
             table_access,
-            is_event: false, // V9 does not support event tables
         })
     }
 

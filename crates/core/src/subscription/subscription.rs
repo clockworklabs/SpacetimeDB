@@ -624,7 +624,7 @@ where
     I: Iterator<Item = Arc<TableSchema>>,
 {
     Ok(get_all_tables(relational_db, tx)?
-        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access) && !t.is_event)
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);
@@ -662,7 +662,7 @@ pub(crate) fn legacy_get_all(
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access) && !t.is_event)
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),

@@ -41,5 +41,3 @@ impl __sdk::__query_builder::HasIxCols for OneI16 {
         OneI16IxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for OneI16 {}

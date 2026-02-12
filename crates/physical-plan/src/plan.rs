@@ -121,13 +121,6 @@ impl ProjectPlan {
             Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
         }
     }
-
-    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
-    pub fn reads_from_event_table(&self) -> bool {
-        match self {
-            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_event_table(),
-        }
-    }
 }
 
 /// Physical plans always terminate with a projection.
@@ -233,15 +226,6 @@ impl ProjectListPlan {
             Self::Limit(plan, _) => plan.reads_from_view(anonymous),
             Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
             Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
-        }
-    }
-
-    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
-    pub fn reads_from_event_table(&self) -> bool {
-        match self {
-            Self::Limit(plan, _) => plan.reads_from_event_table(),
-            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_event_table()),
-            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_event_table()),
         }
     }
 }
@@ -1166,14 +1150,6 @@ impl PhysicalPlan {
             _ => false,
         })
     }
-
-    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
-    pub fn reads_from_event_table(&self) -> bool {
-        self.any(&|plan| match plan {
-            Self::IxJoin(join, _) => join.rhs.is_event,
-            _ => false,
-        })
-    }
 }
 
 /// Scan a table row by row, returning row ids
@@ -1534,7 +1510,6 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
-            false,
         )))
     }
 

@@ -41,5 +41,3 @@ impl __sdk::__query_builder::HasIxCols for VecTimestamp {
         VecTimestampIxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for VecTimestamp {}

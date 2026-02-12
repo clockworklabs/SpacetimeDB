@@ -41,5 +41,3 @@ impl __sdk::__query_builder::HasIxCols for ResultI32String {
         ResultI32StringIxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for ResultI32String {}

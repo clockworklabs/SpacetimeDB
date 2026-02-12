@@ -41,5 +41,3 @@ impl __sdk::__query_builder::HasIxCols for OneF64 {
         OneF64IxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for OneF64 {}

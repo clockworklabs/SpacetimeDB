@@ -41,5 +41,3 @@ impl __sdk::__query_builder::HasIxCols for VecI128 {
         VecI128IxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for VecI128 {}

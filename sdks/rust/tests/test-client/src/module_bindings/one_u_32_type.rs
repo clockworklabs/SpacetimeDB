@@ -41,5 +41,3 @@ impl __sdk::__query_builder::HasIxCols for OneU32 {
         OneU32IxCols {}
     }
 }
-
-impl __sdk::__query_builder::CanBeLookupTable for OneU32 {}
