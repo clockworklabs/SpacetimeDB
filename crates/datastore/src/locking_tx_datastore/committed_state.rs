@@ -1210,7 +1210,7 @@ impl CommittedState {
                     self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
                 for row in &inserts {
                     commit_table
-                        .insert(page_pool, commit_blob_store, &row)
+                        .insert(page_pool, commit_blob_store, row)
                         .expect("Failed to insert when merging commit");
                 }
             }
