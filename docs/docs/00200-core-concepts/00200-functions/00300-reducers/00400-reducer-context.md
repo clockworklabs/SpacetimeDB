@@ -30,8 +30,9 @@ const user = table(
 );
 
 const spacetimedb = schema(user);
+export default spacetimedb;
 
-spacetimedb.reducer('create_user', { name: t.string() }, (ctx, { name }) => {
+export const create_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.user.insert({ id: 0n, name });
 });
 ```
@@ -129,8 +130,9 @@ const player = table(
 );
 
 const spacetimedb = schema(player);
+export default spacetimedb;
 
-spacetimedb.reducer('update_score', { newScore: t.u32() }, (ctx, { newScore }) => {
+export const update_score = spacetimedb.reducer({ newScore: t.u32() }, (ctx, { newScore }) => {
   // Get the caller's identity
   const caller = ctx.sender;
   
@@ -279,8 +281,9 @@ const scheduledTask = table(
 );
 
 const spacetimedb = schema(scheduledTask);
+export default spacetimedb;
 
-spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: scheduledTask.rowType }, (ctx, { arg }) => {
   // Only allow the scheduler (module identity) to call this
   if (ctx.sender != ctx.identity) {
     throw new SenderError('This reducer can only be called by the scheduler');

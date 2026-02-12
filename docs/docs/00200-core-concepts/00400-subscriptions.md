@@ -22,7 +22,7 @@ import { DbConnection, User, Message } from './module_bindings';
 // Connect to the database
 const conn = DbConnection.builder()
   .withUri('wss://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .onConnect((ctx) => {
     // Subscribe to users and messages
     ctx.subscriptionBuilder()
@@ -60,7 +60,7 @@ conn.db.user.onUpdate((ctx, oldUser, newUser) => {
 // Connect to the database
 var conn = DbConnection.Builder()
     .WithUri("wss://maincloud.spacetimedb.com")
-    .WithModuleName("my_module")
+    .WithDatabaseName("my_module")
     .OnConnect((ctx) =>
     {
         // Subscribe to users and messages
@@ -104,7 +104,7 @@ conn.Db.User.OnUpdate += (ctx, oldUser, newUser) =>
 // Connect to the database
 let conn = DbConnection::builder()
     .with_uri("wss://maincloud.spacetimedb.com")
-    .with_module_name("my_module")
+    .with_database_name("my_module")
     .on_connect(|ctx| {
         // Subscribe to users and messages
         ctx.subscription_builder()
@@ -288,7 +288,7 @@ import { DbConnection } from './module_bindings';
 
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 // Register a subscription with the database
@@ -435,7 +435,7 @@ You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
 ```typescript
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 const shopItemsSubscription = conn
@@ -576,7 +576,7 @@ This will improve throughput by reducing the amount of data transferred from the
 ```typescript
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 // Never need to unsubscribe from global subscriptions
@@ -666,7 +666,7 @@ unsubscribing from it does not result in any server processing or data serializt
 ```typescript
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 // Initial subscription: player at level 5.

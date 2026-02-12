@@ -1057,7 +1057,7 @@ mod module_bindings;
 The core type for managing a connection is `module_bindings::DbConnection`. You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection::builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_module_name("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_database_name("my_database")`).
 - **Authentication:** Provide an identity token using `.with_token(Option<String>)`. If `None` or omitted for the first connection, the server issues a new identity and token (retrieved via the `on_connect` callback).
 - **Callbacks:** Register callbacks for connection lifecycle events:
   - `.on_connect(|conn, identity, token| { ... })`: Runs on successful connection. Often used to store the `token` for future connections.
@@ -1080,7 +1080,7 @@ fn connect_to_db() -> DbConnection {
 
     DbConnection::builder()
         .with_uri(HOST)
-        .with_module_name(DB_NAME)
+        .with_database_name(DB_NAME)
         .with_token(creds_store().load().ok()) // Load token if exists
         .on_connect(|conn, identity, auth_token| {
             println!("Connected. Identity: {}", identity.to_hex());
@@ -1951,7 +1951,7 @@ Include the generated `.cs` files in your C# project or Unity Assets folder.
 The core type for managing a connection is `SpacetimeDB.Types.DbConnection` (this type name comes from the generated bindings). You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection.Builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithModuleName("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithDatabaseName("my_database")`).
 - **Authentication:** Provide an identity token using `.WithToken(string?)`. The SDK provides a helper `AuthToken.Token` which loads a token from a local file (initialized via `AuthToken.Init(".credentials_filename")`). If `null` or omitted for the first connection, the server issues a new identity and token (retrieved via the `OnConnect` callback).
 - **Callbacks:** Register callbacks (as delegates or lambda expressions) for connection lifecycle events:
   - `.OnConnect((conn, identity, token) => { ... })`: Runs on successful connection. Often used to save the `token` using `AuthToken.SaveToken(token)`.
@@ -1977,7 +1977,7 @@ public class ClientManager // Example class
 
         connection = DbConnection.Builder()
             .WithUri(HOST)
-            .WithModuleName(DB_NAME)
+            .WithDatabaseName(DB_NAME)
             .WithToken(AuthToken.Token) // Load token if exists
             .OnConnect(HandleConnect)
             .OnConnectError(HandleConnectError)
@@ -2259,6 +2259,7 @@ const Message = table(
 
 // Compose the schema - this gives us ctx.db.user and ctx.db.message
 const spacetimedb = schema(User, Message);
+export default spacetimedb;
 ```
 
 **Type Builders**
@@ -2315,6 +2316,7 @@ const Player = table(
 );
 
 const spacetimedb = schema(Player);
+export default spacetimedb;
 ```
 
 #### 3. Writing Reducers
@@ -2343,6 +2345,7 @@ const Message = table(
 );
 
 const spacetimedb = schema(User, Message);
+export default spacetimedb;
 
 // Helper function for validation
 function validateName(name: string) {
@@ -2353,7 +2356,7 @@ function validateName(name: string) {
 
 // Set user's name
 // Arguments: reducer name, argument types object, callback
-spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
+export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -2363,7 +2366,7 @@ spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
 });
 
 // Send a message
-spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
+export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   if (!text) {
     throw new SenderError('Messages must not be empty');
   }
@@ -2392,13 +2395,13 @@ SpacetimeDB provides special lifecycle methods on the `spacetimedb` object:
 
 ```typescript
 // Called once when the module is first published
-spacetimedb.init(ctx => {
+export const init = spacetimedb.init(ctx => {
   console.log('Module initialized');
   // Seed initial data, set up schedules, etc.
 });
 
 // Called when a client connects
-spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: true });
@@ -2412,7 +2415,7 @@ spacetimedb.clientConnected(ctx => {
 });
 
 // Called when a client disconnects
-spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
@@ -2427,13 +2430,13 @@ Views are read-only functions that return computed data from tables. Define view
 ```typescript
 // View that returns the caller's user (user-specific)
 // Uses spacetimedb.view() which provides ctx.sender
-spacetimedb.view('my_user', ctx => {
+export const my_user = spacetimedb.view({ name: 'my_user' }, ctx => {
   return ctx.db.user.identity.find(ctx.sender);
 });
 
 // View that returns all online users (same for all callers)
 // Uses spacetimedb.anonymousView() - no access to ctx.sender
-spacetimedb.anonymousView('online_users', ctx => {
+export const online_users = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
   return ctx.db.user.filter(u => u.online);
 });
 ```
@@ -2587,7 +2590,7 @@ class ChatClient {
 
     const connectionInstance = DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
+      .withDatabaseName(DB_NAME)
       .withToken(token)
       .onConnect(this.handleConnect)
       .onDisconnect(this.handleDisconnect)

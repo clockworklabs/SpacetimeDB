@@ -47,7 +47,7 @@ fn connect_to_db() -> DbConnection {
         // so we can re-authenticate as the same `Identity`.
         .with_token(creds_store().load().expect("Error loading credentials"))
         // Set the database name we chose when we called `spacetime publish`.
-        .with_module_name(db_name)
+        .with_database_name(db_name)
         // Set the URI of the SpacetimeDB host that's running our database.
         .with_uri(host)
         // Finalize configuration and connect!

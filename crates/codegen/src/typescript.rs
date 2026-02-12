@@ -2,7 +2,7 @@ use crate::util::{
     is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
     iter_tables, iter_types, iter_views, print_auto_generated_version_comment,
 };
-use crate::OutputFile;
+use crate::{CodegenOptions, OutputFile};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
 
@@ -203,7 +203,7 @@ impl Lang for TypeScript {
         }
     }
 
-    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -211,7 +211,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "// Import all reducer arg schemas");
-        for reducer in iter_reducers(module) {
+        for reducer in iter_reducers(module, options.visibility) {
             if !is_reducer_invokable(reducer) {
                 // Skip system-defined reducers
                 continue;
@@ -224,7 +224,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "// Import all procedure arg schemas");
-        for procedure in iter_procedures(module) {
+        for procedure in iter_procedures(module, options.visibility) {
             let procedure_name = &procedure.name;
             let procedure_module_name = procedure_module_name(procedure_name);
             let args_type = procedure_args_type_name(&procedure.name);
@@ -233,7 +233,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "// Import all table schema definitions");
-        for (table_name, _) in iter_table_names_and_types(module) {
+        for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
             let table_module_name = table_module_name(table_name);
             let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
@@ -248,7 +248,7 @@ impl Lang for TypeScript {
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
         writeln!(out, "const tablesSchema = __schema(");
         out.indent(1);
-        for table in iter_tables(module) {
+        for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
             writeln!(out, "__table({{");
@@ -280,7 +280,7 @@ impl Lang for TypeScript {
         writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
         writeln!(out, "const reducersSchema = __reducers(");
         out.indent(1);
-        for reducer in iter_reducers(module) {
+        for reducer in iter_reducers(module, options.visibility) {
             if !is_reducer_invokable(reducer) {
                 // Skip system-defined reducers
                 continue;
@@ -299,7 +299,7 @@ impl Lang for TypeScript {
         );
         writeln!(out, "const proceduresSchema = __procedures(");
         out.indent(1);
-        for procedure in iter_procedures(module) {
+        for procedure in iter_procedures(module, options.visibility) {
             let procedure_name = &procedure.name;
             let args_type = procedure_args_type_name(&procedure.name);
             writeln!(
@@ -446,15 +446,15 @@ impl Lang for TypeScript {
             code: output.into_inner(),
         };
 
-        let reducers_file = generate_reducers_file(module);
-        let procedures_file = generate_procedures_file(module);
+        let reducers_file = generate_reducers_file(module, options);
+        let procedures_file = generate_procedures_file(module, options);
         let types_file = generate_types_file(module);
 
         vec![index_file, reducers_file, procedures_file, types_file]
     }
 }
 
-fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
+fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -464,7 +464,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
 
     writeln!(out);
     writeln!(out, "// Import all reducer arg schemas");
-    for reducer in iter_reducers(module) {
+    for reducer in iter_reducers(module, options.visibility) {
         let reducer_name = &reducer.name;
         let reducer_module_name = reducer_module_name(reducer_name);
         let args_type = reducer_args_type_name(&reducer.name);
@@ -472,7 +472,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
     }
 
     writeln!(out);
-    for reducer in iter_reducers(module) {
+    for reducer in iter_reducers(module, options.visibility) {
         let reducer_name_pascalcase = reducer.name.deref().to_case(Case::Pascal);
         let args_type = reducer_args_type_name(&reducer.name);
         writeln!(
@@ -488,7 +488,7 @@ fn generate_reducers_file(module: &ModuleDef) -> OutputFile {
     }
 }
 
-fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
+fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -498,7 +498,7 @@ fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
 
     writeln!(out);
     writeln!(out, "// Import all procedure arg schemas");
-    for procedure in iter_procedures(module) {
+    for procedure in iter_procedures(module, options.visibility) {
         let procedure_name = &procedure.name;
         let procedure_module_name = procedure_module_name(procedure_name);
         let args_type = procedure_args_type_name(&procedure.name);
@@ -506,7 +506,7 @@ fn generate_procedures_file(module: &ModuleDef) -> OutputFile {
     }
 
     writeln!(out);
-    for procedure in iter_procedures(module) {
+    for procedure in iter_procedures(module, options.visibility) {
         let procedure_name_pascalcase = procedure.name.deref().to_case(Case::Pascal);
         let args_type = procedure_args_type_name(&procedure.name);
         writeln!(

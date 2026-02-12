@@ -234,6 +234,10 @@ new.json
 # C++ build data
 modules/benchmarks-cpp/build/
 modules/module-test-cpp/build/
+modules/sdk-test-cpp/build/
+modules/sdk-test-connect-disconnect-cpp/build/
+modules/sdk-test-procedure-cpp/build/
+modules/sdk-test-view-cpp/build/
 
 # Symlinked output from `nix build`
 result
