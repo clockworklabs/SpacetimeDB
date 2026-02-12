@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
-import { tables, reducers, Message } from './module_bindings';
+import { tables, reducers } from './module_bindings';
+import type * as Types from './module_bindings/types';
 import {
   useSpacetimeDB,
   useTable,
@@ -8,7 +9,7 @@ import {
   eq,
   useReducer,
 } from 'spacetimedb/react';
-import { Identity, Infer, Timestamp } from 'spacetimedb';
+import { Identity, Timestamp } from 'spacetimedb';
 
 export type PrettyMessage = {
   senderName: string;
@@ -20,9 +21,7 @@ export type PrettyMessage = {
 function App() {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessages, setSystemMessages] = useState(
-    [] as Infer<typeof Message>[]
-  );
+  const [systemMessages, setSystemMessages] = useState([] as Types.Message[]);
   const [newMessage, setNewMessage] = useState('');
 
   const { identity, isActive: connected } = useSpacetimeDB();

@@ -1,0 +1,21 @@
+{
+  "name": "@clockworklabs/nodejs-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "build": "tsc",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.6.2",
+    "undici": "^6.19.2"
+  }
+}
