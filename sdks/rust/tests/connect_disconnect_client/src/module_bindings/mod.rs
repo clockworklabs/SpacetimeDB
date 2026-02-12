@@ -10,11 +10,15 @@ pub mod connected_table;
 pub mod connected_type;
 pub mod disconnected_table;
 pub mod disconnected_type;
+pub mod identity_connected_reducer;
+pub mod identity_disconnected_reducer;
 
 pub use connected_table::*;
 pub use connected_type::Connected;
 pub use disconnected_table::*;
 pub use disconnected_type::Disconnected;
+pub use identity_connected_reducer::identity_connected;
+pub use identity_disconnected_reducer::identity_disconnected;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -23,7 +27,10 @@ pub use disconnected_type::Disconnected;
 /// Contained within a [`__sdk::ReducerEvent`] in [`EventContext`]s for reducer events
 /// to indicate which reducer caused the event.
 
-pub enum Reducer {}
+pub enum Reducer {
+    IdentityConnected,
+    IdentityDisconnected,
+}
 
 impl __sdk::InModule for Reducer {
     type Module = RemoteModule;
@@ -32,12 +39,18 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::IdentityConnected => "identity_connected",
+            Reducer::IdentityDisconnected => "identity_disconnected",
             _ => unreachable!(),
         }
     }
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
+            Reducer::IdentityConnected => __sats::bsatn::to_vec(&identity_connected_reducer::IdentityConnectedArgs {}),
+            Reducer::IdentityDisconnected => {
+                __sats::bsatn::to_vec(&identity_disconnected_reducer::IdentityDisconnectedArgs {})
+            }
             _ => unreachable!(),
         }
     }

@@ -205,6 +205,12 @@ macro_rules! declare_tests_with_suffix {
                         "/tests/connect_disconnect_client"
                     ))
                     .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
                     .with_bindings_dir("src/module_bindings")
                     .with_compile_command("cargo build")
                     .with_run_command("cargo run")
