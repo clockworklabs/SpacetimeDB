@@ -25,7 +25,7 @@ import { DbConnection } from './module_bindings';
 
 const connection = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('MODULE_NAME')
+  .withDatabaseName('MODULE_NAME')
   .onDisconnect(() => {
     console.log('disconnected');
   })
@@ -71,7 +71,7 @@ This module also include React hooks to subscribe to tables under the `spacetime
 ```tsx
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('MODULE_NAME')
+  .withDatabaseName('MODULE_NAME')
   .withLightMode(true)
   .onDisconnect(() => {
     console.log('disconnected');

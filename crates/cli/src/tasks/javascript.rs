@@ -1,3 +1,4 @@
+use anyhow::Context;
 use regex::Regex;
 use rolldown::{Bundler, BundlerOptions, Either, SourceMapType};
 use rolldown_utils::indexmap::FxIndexMap;
@@ -57,14 +58,17 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         dir: None, // The output directory to write to. We only want a single output file, so we won't set this.
         file: Some("./dist/bundle.js".into()), // The output file to write to. We want a single output file.
         format: Some(rolldown::OutputFormat::Esm), // We want to use ES Modules in SpacetimeDB
-        exports: Some(rolldown::OutputExports::None), // Let Rolldown decide based on what the module exports (we could probably also use Named here)
+        exports: Some(rolldown::OutputExports::Named), // Use named exports for ES modules.
         globals: None, // We don't have any external dependencies except for `spacetimedb` which is a dependency and declares all its globals
+        paths: None,   // Maps external module IDs to paths
         generated_code: Some(rolldown::GeneratedCodeOptions::es2015()),
         es_module: Some(rolldown::EsModuleFlag::IfDefaultProp), // See https://rollupjs.org/configuration-options/#output-esmodule
         drop_labels: None,
         hash_characters: None,       // File name hash characters, we don't care
         banner: None,                // String to prepend to the bundle
         footer: None,                // String to append to the bundle
+        post_banner: None,           // String to prepend to the bundle
+        post_footer: None,           // String to append to the bundle
         intro: None,                 // Similar to the above, but inside the wrappers
         outro: None,                 // Similar to the above, but inside the wrappers
         sourcemap_base_url: None,    // Absolute URLs for the source map
@@ -105,6 +109,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
             commonjs: Some(true), // Enable some optimizations for CommonJS modules, even though we don't use any. This is the default.
             property_read_side_effects: Some(rolldown::PropertyReadSideEffects::Always), // Assume that property reads can have side effects. This is safest for users who might use getters with side effects.
             property_write_side_effects: Some(rolldown::PropertyWriteSideEffects::Always), // Assume that property writes can have side effects. This is safest for users who might use setters with side effects.
+            invalid_import_side_effects: Some(true), // Assume that invalid improts can have side effects.
         }),
         experimental: None, // None for now, although be aware that Rollup has an experimental `perf` option.
         minify: Some(rolldown::RawMinifyOptions::Bool(false)), // Disable minification until we have proper support for source maps.
@@ -120,22 +125,29 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         keep_names: None,    // Unclear what this is, choosing the default.
         inject: None,        // Unclear on why we'd need this, choosing the default.
         external_live_bindings: Some(true), // Don't assume that external bindings are going to change over time. Generates more optimized code.
-        inline_dynamic_imports: Some(false), // Don't muck with dynamic imports, we want to keep them as-is.
-        advanced_chunks: None,              // Not relevant to us, this is for advanced code-splitting strategies.
+        code_splitting: None,               // Split a bundle into multiple chunks on dynamic `import()` boundaries.
+        dynamic_import_in_cjs: None,        // Emit `import()` in CommonJS
+        manual_code_splitting: None,        // Not relevant to us, this is for advanced code-splitting strategies.
         checks: Some(rolldown::ChecksOptions {
             circular_dependency: Some(true),           // Check circular dependencies
             eval: Some(false),                         // We don't care about eval
             missing_global_name: Some(true), // Warn if a global variable is missing a name in the output bundle
             missing_name_option_for_iife_export: None, // Don't care, we don't use IIFE
-            mixed_export: Some(false),       // Don't care about mixed exports
+            mixed_exports: Some(false),      // Don't care about mixed exports
             unresolved_entry: Some(true),    // If the entry point is unresolved, that's a problem
             unresolved_import: Some(true),   // If an import is unresolved, that's a problem
             filename_conflict: Some(true),
             common_js_variable_in_esm: Some(true),
             import_is_undefined: Some(true),
             empty_import_meta: Some(true),
+            tolerated_transform: None,
+            cannot_call_namespace: Some(true),
             configuration_field_conflict: Some(true),
             prefer_builtin_feature: Some(true),
+            could_not_clean_directory: None,
+            plugin_timings: None,
+            duplicate_shebang: None,
+            unsupported_tsconfig_option: None,
         }),
         transform: Some(rolldown::BundlerTransformOptions {
             jsx: None,                                       // Don't transform JSX
@@ -159,7 +171,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         polyfill_require: Some(false),                       // We don't need to polyfill require, only ESM here
         defer_sync_scan_data: None,                          // Unclear what this is
         make_absolute_externals_relative: None, // See https://rollupjs.org/configuration-options/#makeabsoluteexternalsrelative
-        debug: None,                            // This is undocumented
+        devtools: None,                         // This is undocumented
         invalidate_js_side_cache: None,
         log_level: Some(rolldown::LogLevel::Debug), // Default logging
         on_log: None,                               // Don't need it
@@ -170,8 +182,10 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         optimization: None,              // Defaults are fine
         top_level_var: Some(false),      // This is the safer choice since we'll keep vars scoped to modules
         minify_internal_exports: Some(true), // Sure
-        context: None,                   // We don't want a top level `this` in modules
-        tsconfig: Some(cwd.join("tsconfig.json").to_string_lossy().into_owned()),
+        clean_dir: None,
+        context: None, // We don't want a top level `this` in modules
+        tsconfig: Some(rolldown::TsConfig::Manual(cwd.join("tsconfig.json"))),
+        strict_execution_order: None,
     })?;
 
     let bundle_output = run_blocking(async move { bundler.write().await })?;
@@ -179,6 +193,41 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
     bundle_output.warnings.into_iter().for_each(|w| {
         eprintln!("Rolldown warning: {w}");
     });
+
+    let output_chunk = bundle_output
+        .assets
+        .into_iter()
+        .find_map(|chunk| match chunk {
+            rolldown_common::Output::Chunk(chunk) if chunk.is_entry && chunk.filename == "bundle.js" => Some(chunk),
+            _ => None,
+        })
+        .expect("there should be an output chunk");
+
+    let sys_imports = output_chunk.imports.iter().filter_map(|spec| {
+        let (maj, min) = spec.strip_prefix("spacetime:sys@")?.split_once('.')?;
+        Option::zip(maj.parse::<u16>().ok(), min.parse::<u16>().ok())
+    });
+
+    let mut maj_sys_ver = None;
+    for (maj, _min) in sys_imports {
+        anyhow::ensure!(
+            *maj_sys_ver.get_or_insert(maj) == maj,
+            "The module pulls in 2 different versions of the `spacetimedb/server` package"
+        );
+    }
+
+    let maj_sys_ver = maj_sys_ver.context(
+        "Your module doesn't import the `spacetimedb/server` package at all - \
+         this is likely a mistake, as your module will not be able to interface \
+         with the SpacetimeDB host.",
+    )?;
+
+    if maj_sys_ver == 2 {
+        anyhow::ensure!(
+            output_chunk.exports.contains(&"default".into()),
+            "It seems like you haven't exported your schema. You must `export default schema(...);`"
+        );
+    }
 
     Ok(project_path.join("dist").join("bundle.js"))
 }

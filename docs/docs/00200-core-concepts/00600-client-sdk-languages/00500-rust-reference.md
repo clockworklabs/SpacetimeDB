@@ -76,12 +76,12 @@ impl DbConnection {
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
+Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_database_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
 
 | Name                                                          | Description                                                                          |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+|---------------------------------------------------------------|--------------------------------------------------------------------------------------|
 | [`with_uri` method](#method-with_uri)                         | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
-| [`with_module_name` method](#method-with_module_name)         | Set the name or `Identity` of the remote database.                                   |
+| [`with_database_name` method](#method-with_database_name)     | Set the name or `Identity` of the remote database.                                   |
 | [`with_confirmed_reads` method](#method-with_confirmed_reads) | Enable or disable confirmed reads.                                                   |
 | [`on_connect` callback](#callback-on_connect)                 | Register a callback to run when the connection is successfully established.          |
 | [`on_connect_error` callback](#callback-on_connect_error)     | Register a callback to run if the connection is rejected or the host is unreachable. |
@@ -99,11 +99,11 @@ impl DbConnectionBuilder {
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote database containing the module.
 
-#### Method `with_module_name`
+#### Method `with_database_name`
 
 ```rust
 impl DbConnectionBuilder {
-    fn with_module_name(self, name_or_identity: impl ToString) -> Self;
+    fn with_database_name(self, name_or_identity: impl ToString) -> Self;
 }
 ```
 

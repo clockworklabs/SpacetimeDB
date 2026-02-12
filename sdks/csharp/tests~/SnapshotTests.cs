@@ -434,7 +434,7 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
         var client =
             DbConnection.Builder()
             .WithUri("wss://spacetimedb.com")
-            .WithModuleName("example")
+            .WithDatabaseName("example")
             .OnConnect((conn, identity, token) => events.Add("OnConnect", new { identity, token }))
             .Build();
 

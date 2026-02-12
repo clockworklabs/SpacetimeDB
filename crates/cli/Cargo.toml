@@ -78,6 +78,7 @@ clap-markdown.workspace = true
 git2.workspace = true
 dialoguer = { workspace = true, features = ["fuzzy-select"] }
 rolldown.workspace = true
+rolldown_common.workspace = true
 rolldown_utils.workspace = true
 xmltree.workspace = true
 quick-xml.workspace = true

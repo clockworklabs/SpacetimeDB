@@ -13,8 +13,9 @@ export const Primitive = table({
 });
 
 const spacetimedb = schema(Primitive);
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.primitive.insert({
       id: 1,

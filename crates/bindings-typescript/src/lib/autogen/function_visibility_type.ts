@@ -12,7 +12,7 @@ import {
 
 // The tagged union or sum type for the algebraic type `FunctionVisibility`.
 const FunctionVisibility = __t.enum('FunctionVisibility', {
-  Internal: __t.unit(),
+  Private: __t.unit(),
   ClientCallable: __t.unit(),
 });
 
