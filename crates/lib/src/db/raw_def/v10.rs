@@ -350,17 +350,14 @@ pub struct RawIndexDefV10 {
     /// Even though there is ABSOLUTELY NO REASON TO.
     pub source_name: Option<RawIdentifier>,
 
-    /// Accessor name for the index used in client codegen.
+    /// name for the index used internally and in client codegen
     ///
     /// This is set the user and should not be assumed to follow
     /// any particular format.
     ///
     /// May be set to `None` if this is an auto-generated index for which the user
-    /// has not supplied a name. In this case, no client code generation for this index
-    /// will be performed.
-    ///
-    /// This name is not visible in the system tables, it is only used for client codegen.
-    pub accessor_name: Option<RawIdentifier>,
+    /// has not supplied a name.
+    pub name: Option<RawIdentifier>,
 
     /// The algorithm parameters for the index.
     pub algorithm: RawIndexAlgorithm,
@@ -1140,8 +1137,8 @@ impl RawTableDefBuilderV10<'_> {
         let accessor_name = accessor_name.into();
 
         self.table.indexes.push(RawIndexDefV10 {
-            source_name: index_name.map(Into::into),
-            accessor_name: Some(accessor_name),
+            name: index_name.map(Into::into),
+            source_name: Some(accessor_name),
             algorithm,
         });
         self
@@ -1151,7 +1148,7 @@ impl RawTableDefBuilderV10<'_> {
     pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
             source_name: None,
-            accessor_name: None,
+            name: None,
             algorithm,
         });
         self
