@@ -101,6 +101,8 @@ pub(in super::super) struct HookFunctions<'scope> {
     pub recv: Local<'scope, v8::Value>,
     /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
     pub describe_module: Local<'scope, Function>,
+    pub get_error_constructor: Option<Local<'scope, Function>>,
+    pub sender_error_class: Option<Local<'scope, Function>>,
     pub call_reducer: Local<'scope, Function>,
     pub call_view: Option<Local<'scope, Function>>,
     pub call_view_anon: Option<Local<'scope, Function>>,
@@ -126,6 +128,8 @@ pub(in super::super) fn get_registered_hooks<'scope>(
         abi: hooks.abi,
         recv: v8::undefined(scope).into(),
         describe_module: get(ModuleHookKey::DescribeModule)?,
+        get_error_constructor: None,
+        sender_error_class: None,
         call_reducer: get(ModuleHookKey::CallReducer)?,
         call_view: get(ModuleHookKey::CallView),
         call_view_anon: get(ModuleHookKey::CallAnonymousView),

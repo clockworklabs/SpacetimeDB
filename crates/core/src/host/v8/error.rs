@@ -3,8 +3,6 @@
 use super::serialize_to_js;
 use super::string::IntoJsString;
 use crate::error::NodesError;
-use crate::host::wasm_common::err_to_errno_and_log;
-use crate::host::AbiCall;
 use crate::{
     database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record},
     host::instance_env::InstanceEnv,
@@ -14,6 +12,7 @@ use core::fmt;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::Serialize;
+use std::num::NonZero;
 use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
 
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
@@ -125,35 +124,6 @@ impl TerminationError {
     }
 }
 
-/// A catchable error code thrown in callbacks
-/// to indicate bad arguments to a syscall.
-#[derive(Serialize)]
-pub(super) struct CodeError {
-    __code_error__: u16,
-}
-
-impl CodeError {
-    /// Create a code error from a code.
-    pub(super) fn from_code<'scope>(
-        scope: &PinScope<'scope, '_>,
-        __code_error__: u16,
-    ) -> ExcResult<ExceptionValue<'scope>> {
-        let error = Self { __code_error__ };
-        serialize_to_js(scope, &error).map(ExceptionValue)
-    }
-}
-
-/// Throws `{ __code_error__: code }`.
-pub(super) fn code_error(scope: &PinScope<'_, '_>, code: u16) -> ExceptionThrown {
-    let res = CodeError::from_code(scope, code);
-    collapse_exc_thrown(scope, res)
-}
-
-/// Throws `{ __code_error__: NO_SUCH_ITER }`.
-pub(super) fn no_such_iter(scope: &PinScope<'_, '_>) -> SysCallError {
-    code_error(scope, errno::NO_SUCH_ITER.get()).into()
-}
-
 /// Collapses `res` where the `Ok(x)` where `x` is throwable.
 pub(super) fn collapse_exc_thrown<'scope>(
     scope: &PinScope<'scope, '_>,
@@ -163,52 +133,20 @@ pub(super) fn collapse_exc_thrown<'scope>(
     thrown
 }
 
-/// A catchable error code thrown in callbacks
-/// to indicate bad arguments to a syscall.
-#[derive(Serialize)]
-pub(super) struct CodeMessageError {
-    __code_error__: u16,
-    __error_message__: String,
-}
-
-impl CodeMessageError {
-    /// Create a code error from a code.
-    pub(super) fn from_code<'scope>(
-        scope: &PinScope<'scope, '_>,
-        __code_error__: u16,
-        __error_message__: String,
-    ) -> ExcResult<ExceptionValue<'scope>> {
-        let error = Self {
-            __code_error__,
-            __error_message__,
-        };
-        serialize_to_js(scope, &error).map(ExceptionValue)
-    }
-}
-
 /// Either an exception, already thrown, or [`NodesError`] arising from [`InstanceEnv`].
 #[derive(derive_more::From)]
 pub(super) enum SysCallError {
     NoEnv,
+    Errno(NonZero<u16>),
     /// Only occurs in the v2 ABI.
     OutOfBounds,
     Error(NodesError),
     Exception(ExceptionThrown),
 }
 
-/// Converts a `SysCallError` into a `ExceptionThrown`.
-pub(super) fn handle_sys_call_error<'scope>(
-    abi_call: AbiCall,
-    scope: &mut PinScope<'scope, '_>,
-    err: SysCallError,
-) -> ExceptionThrown {
-    const ENV_NOT_SET: u16 = 1;
-    match err {
-        SysCallError::NoEnv => code_error(scope, ENV_NOT_SET),
-        SysCallError::OutOfBounds => RangeError("length argument was out of bounds for `ArrayBuffer`").throw(scope),
-        SysCallError::Exception(exc) => exc,
-        SysCallError::Error(error) => throw_nodes_error(abi_call, scope, error),
-    }
+impl SysCallError {
+    pub const NO_SUCH_ITER: Self = Self::Errno(errno::NO_SUCH_ITER);
+    pub const NO_SUCH_CONSOLE_TIMER: Self = Self::Errno(errno::NO_SUCH_CONSOLE_TIMER);
 }
 
 /// An out-of-bounds syscall error.
@@ -221,6 +159,21 @@ pub type SysCallResult<T> = Result<T, SysCallError>;
 /// The flag should be checked in every module -> host ABI.
 /// If the flag is set, the call is prevented.
 struct TerminationFlag;
+
+/// Terminate execution immediately due to the given host error.
+pub(super) fn terminate_execution<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    err: &anyhow::Error,
+) -> ExcResult<ExceptionValue<'scope>> {
+    // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
+    // Unfortunately, JS execution won't be terminated once the callback returns,
+    // so we set a slot that all callbacks immediately check
+    // to ensure that the module won't be able to do anything to the host
+    // while it's being terminated (eventually).
+    scope.terminate_execution();
+    scope.set_slot(TerminationFlag);
+    TerminationError::from_error(scope, err)
+}
 
 /// Checks the termination flag and throws a `TerminationError` if set.
 ///
@@ -237,25 +190,6 @@ pub(super) fn throw_if_terminated(scope: &PinScope<'_, '_>) -> bool {
     }
 
     set
-}
-
-/// Turns a [`NodesError`] into a thrown exception.
-fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
-    let res = match err_to_errno_and_log::<u16>(abi_call, error) {
-        Ok((code, None)) => CodeError::from_code(scope, code),
-        Ok((code, Some(message))) => CodeMessageError::from_code(scope, code, message),
-        Err(err) => {
-            // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
-            // Unfortunately, JS execution won't be terminated once the callback returns,
-            // so we set a slot that all callbacks immediately check
-            // to ensure that the module won't be able to do anything to the host
-            // while it's being terminated (eventually).
-            scope.terminate_execution();
-            scope.set_slot(TerminationFlag);
-            TerminationError::from_error(scope, &err)
-        }
-    };
-    collapse_exc_thrown(scope, res)
 }
 
 /// A catchable error code thrown in callbacks
@@ -572,7 +506,7 @@ fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnc
 
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    fn from_caught(scope: &mut PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
+    fn from_caught(scope: &mut PinTryCatch<'_, '_, '_, '_>) -> Self {
         match scope.message() {
             Some(message) => Self {
                 trace: message
@@ -615,39 +549,18 @@ pub(super) fn log_traceback(replica_ctx: &ReplicaContext, func_type: &str, func:
 }
 
 /// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
-pub(super) fn catch_exception_continue<'scope, T>(
+pub(super) fn catch_exception<'scope, T>(
     scope: &mut PinScope<'scope, '_>,
-    body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
-) -> Result<T, (ErrorOrException<JsError>, CanContinue)> {
+    body: impl FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
+) -> Result<T, ErrorOrException<JsError>> {
     tc_scope!(scope, scope);
     body(scope).map_err(|e| match e {
-        ErrorOrException::Err(e) => (ErrorOrException::Err(e), CanContinue::Yes),
-        ErrorOrException::Exception(_) => {
-            let error = ErrorOrException::Exception(JsError::from_caught(scope));
-
-            let can_continue = if scope.can_continue() {
-                // We can continue.
-                CanContinue::Yes
-            } else if scope.has_terminated() {
-                // We can continue if we do `Isolate::cancel_terminate_execution`.
-                CanContinue::YesCancelTermination
-            } else {
-                // We cannot.
-                CanContinue::No
-            };
-
-            (error, can_continue)
-        }
+        ErrorOrException::Err(e) => ErrorOrException::Err(e),
+        ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
     })
 }
 
-/// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
-pub(super) fn catch_exception<'scope, T>(
-    scope: &mut PinScope<'scope, '_>,
-    body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
-) -> Result<T, ErrorOrException<JsError>> {
-    catch_exception_continue(scope, body).map_err(|(e, _)| e)
-}
+pub(super) type PinTryCatch<'scope, 'iso, 'x, 's> = PinnedRef<'x, TryCatch<'s, 'scope, HandleScope<'iso>>>;
 
 /// Encodes whether it is safe to continue using the [`Isolate`]
 /// for further execution after [`catch_exception`] has happened.
@@ -656,4 +569,20 @@ pub(super) enum CanContinue {
     Yes,
     YesCancelTermination,
     No,
+}
+
+impl CanContinue {
+    /// Check the try/catch scope for whether we `CanContinue`.
+    pub(super) fn from_catch(scope: &PinTryCatch<'_, '_, '_, '_>) -> Self {
+        if scope.can_continue() {
+            // We can continue.
+            CanContinue::Yes
+        } else if scope.has_terminated() {
+            // We can continue if we do `Isolate::cancel_terminate_execution`.
+            CanContinue::YesCancelTermination
+        } else {
+            // We cannot.
+            CanContinue::No
+        }
+    }
 }
