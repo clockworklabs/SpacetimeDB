@@ -61,7 +61,7 @@ impl List {
             let is_current = Some(ver) == current.as_ref();
 
             if is_current {
-                println!("{} {}", ver, "(current)");
+                println!("{} (current)", ver);
             } else {
                 println!("{ver}");
             }
