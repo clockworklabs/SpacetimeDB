@@ -1196,55 +1196,36 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, tx_table) in insert_tables {
-            // Event tables: record in TxData for commitlog persistence and subscription dispatch,
-            // but do NOT merge into committed state.
-            // NOTE: There is no need to call `get_table_and_blob_store_or_create` here.
-            // The logic for collecting inserts is duplicated, but it's cleaner this way.
-            if tx_table.get_schema().is_event {
-                let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
-                for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                    inserts.push(row_ref.to_product_value());
-                }
-                if !inserts.is_empty() {
-                    let table_name = &tx_table.get_schema().table_name;
-                    tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
-                }
-                let (_schema, _indexes, pages) = tx_table.consume_for_merge();
-                self.page_pool.put_many(pages);
-                continue;
-            }
-
-            let (commit_table, commit_blob_store, page_pool) =
-                self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
-
-            // For each newly-inserted row, insert it into the committed state.
+            // For each newly-inserted row, serialize to a product value.
             let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
-            for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                let pv = row_ref.to_product_value();
-                commit_table
-                    .insert(page_pool, commit_blob_store, &pv)
-                    .expect("Failed to insert when merging commit");
+            inserts.extend(tx_table.scan_rows(&tx_blob_store).map(|row| row.to_product_value()));
 
-                inserts.push(pv);
+            // For each newly-inserted row, serialize to a product value.
+            // This doesn't apply to event tables,
+            // which are only recorded in `TxData`,
+            // but never the committed state.
+            let schema = tx_table.get_schema();
+            if !schema.is_event {
+                let (commit_table, commit_blob_store, page_pool) =
+                    self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
+                for row in &inserts {
+                    commit_table
+                        .insert(page_pool, commit_blob_store, &row)
+                        .expect("Failed to insert when merging commit");
+                }
             }
 
             // Add the table to `TxData` if there were insertions.
             if !inserts.is_empty() {
-                let table_name = &commit_table.get_schema().table_name;
-                tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+                tx_data.set_inserts_for_table(table_id, &schema.table_name, inserts.into());
 
-                // if table has inserted rows, it cannot be truncated
+                // If table has inserted rows, it cannot be truncated.
                 if truncates.contains(&table_id) {
                     truncates.remove(&table_id);
                 }
             }
 
-            let (schema, _indexes, pages) = tx_table.consume_for_merge();
-
-            // The schema may have been modified in the transaction.
-            // Update this last to placate borrowck and avoid a clone.
-            // None of the above operations will inspect the schema.
-            commit_table.schema = schema;
+            let (.., pages) = tx_table.consume_for_merge();
 
             // Put all the pages in the table back into the pool.
             self.page_pool.put_many(pages);
