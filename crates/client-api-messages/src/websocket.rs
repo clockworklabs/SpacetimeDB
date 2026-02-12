@@ -28,6 +28,7 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     de::{Deserialize, Error},
     impl_deserialize, impl_serialize, impl_st,
+    raw_identifier::RawIdentifier,
     ser::Serialize,
     AlgebraicType, SpacetimeType,
 };
@@ -151,7 +152,7 @@ impl<Args> ClientMessage<Args> {
 #[sats(crate = spacetimedb_lib)]
 pub struct CallReducer<Args> {
     /// The name of the reducer to call.
-    pub reducer: Box<str>,
+    pub reducer: RawIdentifier,
     /// The arguments to the reducer.
     ///
     /// In the wire format, this will be a [`Bytes`], BSATN or JSON encoded according to the reducer's argument schema
@@ -312,7 +313,7 @@ pub struct OneOffQuery {
 /// Parametric over the argument type to enable [`ClientMessage::map_args`].
 pub struct CallProcedure<Args> {
     /// The name of the procedure to call.
-    pub procedure: Box<str>,
+    pub procedure: RawIdentifier,
     /// The arguments to the procedure.
     ///
     /// In the wire format, this will be a [`Bytes`], BSATN or JSON encoded according to the reducer's argument schema
@@ -384,7 +385,7 @@ pub struct SubscribeRows<F: WebsocketFormat> {
     /// The table ID of the query.
     pub table_id: TableId,
     /// The table name of the query.
-    pub table_name: Box<str>,
+    pub table_name: RawIdentifier,
     /// The BSATN row values.
     pub table_rows: TableUpdate<F>,
 }
@@ -588,7 +589,7 @@ pub struct ReducerCallInfo<F: WebsocketFormat> {
     /// We should consider not sending this at all and instead
     /// having a startup message where the name <-> id bindings
     /// are established between the host and the client.
-    pub reducer_name: Box<str>,
+    pub reducer_name: RawIdentifier,
     /// The numerical id of the reducer that was called.
     pub reducer_id: u32,
     /// The arguments to the reducer, encoded as BSATN or JSON according to the reducer's argument schema
@@ -653,7 +654,7 @@ pub struct TableUpdate<F: WebsocketFormat> {
     ///
     /// NOTE(centril, 1.0): we might want to remove this and instead
     /// tell clients about changes to table_name <-> table_id mappings.
-    pub table_name: Box<str>,
+    pub table_name: RawIdentifier,
     /// The sum total of rows in `self.updates`,
     pub num_rows: u64,
     /// The actual insert and delete updates for this table.
@@ -668,7 +669,7 @@ pub struct SingleQueryUpdate<F: WebsocketFormat> {
 }
 
 impl<F: WebsocketFormat> TableUpdate<F> {
-    pub fn new(table_id: TableId, table_name: Box<str>, update: SingleQueryUpdate<F>) -> Self {
+    pub fn new(table_id: TableId, table_name: RawIdentifier, update: SingleQueryUpdate<F>) -> Self {
         Self {
             table_id,
             table_name,
@@ -677,7 +678,7 @@ impl<F: WebsocketFormat> TableUpdate<F> {
         }
     }
 
-    pub fn empty(table_id: TableId, table_name: Box<str>) -> Self {
+    pub fn empty(table_id: TableId, table_name: RawIdentifier) -> Self {
         Self {
             table_id,
             table_name,
@@ -746,7 +747,7 @@ pub struct OneOffQueryResponse<F: WebsocketFormat> {
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffTable<F: WebsocketFormat> {
     /// The name of the table.
-    pub table_name: Box<str>,
+    pub table_name: RawIdentifier,
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     ///

@@ -166,7 +166,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:#})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<Box<str>>,
+    pub reducer: Option<RawIdentifier>,
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
     pub caller_connection_id: Option<ConnectionId>,
