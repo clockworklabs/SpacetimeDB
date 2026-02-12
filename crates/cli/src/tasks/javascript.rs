@@ -58,7 +58,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         dir: None, // The output directory to write to. We only want a single output file, so we won't set this.
         file: Some("./dist/bundle.js".into()), // The output file to write to. We want a single output file.
         format: Some(rolldown::OutputFormat::Esm), // We want to use ES Modules in SpacetimeDB
-        exports: Some(rolldown::OutputExports::None), // Let Rolldown decide based on what the module exports (we could probably also use Named here)
+        exports: Some(rolldown::OutputExports::Named), // Use named exports for ES modules.
         globals: None, // We don't have any external dependencies except for `spacetimedb` which is a dependency and declares all its globals
         paths: None,   // Maps external module IDs to paths
         generated_code: Some(rolldown::GeneratedCodeOptions::es2015()),
