@@ -11,7 +11,7 @@ class DockerRestartModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(accessor = person, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -57,7 +57,7 @@ class DockerRestartSql(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(accessor = person, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
