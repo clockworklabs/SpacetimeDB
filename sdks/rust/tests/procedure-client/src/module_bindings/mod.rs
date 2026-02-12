@@ -76,7 +76,6 @@ impl __sdk::Reducer for Reducer {
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
             Reducer::ScheduleProc => __sats::bsatn::to_vec(&schedule_proc_reducer::ScheduleProcArgs {}),
-            _ => unreachable!(),
         }
     }
 }

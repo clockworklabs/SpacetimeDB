@@ -188,6 +188,9 @@ pub struct TableSchema {
     /// The schedule for the table, if present.
     pub schedule: Option<ScheduleSchema>,
 
+    /// Whether this is an event table.
+    pub is_event: bool,
+
     /// Cache for `row_type_for_table` in the data store.
     pub row_type: ProductType,
 }
@@ -212,6 +215,7 @@ impl TableSchema {
         table_access: StAccess,
         schedule: Option<ScheduleSchema>,
         primary_key: Option<ColId>,
+        is_event: bool,
     ) -> Self {
         Self {
             row_type: columns_to_row_type(&columns),
@@ -226,6 +230,7 @@ impl TableSchema {
             table_access,
             schedule,
             primary_key,
+            is_event,
         }
     }
 
@@ -261,6 +266,7 @@ impl TableSchema {
             StAccess::Public,
             None,
             None,
+            false,
         )
     }
 
@@ -753,6 +759,7 @@ impl TableSchema {
             table_access,
             None,
             None,
+            false,
         )
     }
 
@@ -875,6 +882,7 @@ impl TableSchema {
             table_access,
             None,
             None,
+            false,
         )
     }
 }
@@ -904,6 +912,7 @@ impl Schema for TableSchema {
             schedule,
             table_type,
             table_access,
+            is_event,
         } = def;
 
         let columns = column_schemas_from_defs(module_def, columns, table_id);
@@ -941,6 +950,7 @@ impl Schema for TableSchema {
             (*table_access).into(),
             schedule,
             *primary_key,
+            *is_event,
         )
     }
 

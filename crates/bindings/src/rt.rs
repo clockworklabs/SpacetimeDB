@@ -716,7 +716,8 @@ pub fn register_table<T: Table>() {
             .inner
             .build_table(T::TABLE_NAME, product_type_ref)
             .with_type(TableType::User)
-            .with_access(T::TABLE_ACCESS);
+            .with_access(T::TABLE_ACCESS)
+            .with_event(T::IS_EVENT);
 
         for &col in T::UNIQUE_COLUMNS {
             table = table.with_unique_constraint(col);

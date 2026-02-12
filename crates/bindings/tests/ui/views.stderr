@@ -502,3 +502,39 @@ error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the curre
     |
 203 |     ctx.from.xyz().build()
     |              ^^^ method not found in `QueryBuilder`
+
+error[E0277]: the trait bound `Events: CanBeLookupTable` is not satisfied
+   --> tests/ui/views.rs:226:24
+    |
+226 |         .left_semijoin(ctx.from.events(), |a, b| a.identity.eq(b.identity))
+    |          ------------- ^^^^^^^^^^^^^^^^^ the trait `CanBeLookupTable` is not implemented for `Events`
+    |          |
+    |          required by a bound introduced by this call
+    |
+    = help: the following other types implement trait `CanBeLookupTable`:
+              Player
+              PlayerInfo
+              Test
+note: required by a bound in `join::<impl spacetimedb::spacetimedb_query_builder::Table<L>>::left_semijoin`
+   --> $WORKSPACE/crates/query-builder/src/join.rs
+    |
+    |     pub fn left_semijoin<R: CanBeLookupTable, V>(
+    |                             ^^^^^^^^^^^^^^^^ required by this bound in `join::<impl Table<L>>::left_semijoin`
+
+error[E0277]: the trait bound `Events: CanBeLookupTable` is not satisfied
+   --> tests/ui/views.rs:235:25
+    |
+235 |         .right_semijoin(ctx.from.events(), |a, b| a.identity.eq(b.identity))
+    |          -------------- ^^^^^^^^^^^^^^^^^ the trait `CanBeLookupTable` is not implemented for `Events`
+    |          |
+    |          required by a bound introduced by this call
+    |
+    = help: the following other types implement trait `CanBeLookupTable`:
+              Player
+              PlayerInfo
+              Test
+note: required by a bound in `join::<impl spacetimedb::spacetimedb_query_builder::Table<L>>::right_semijoin`
+   --> $WORKSPACE/crates/query-builder/src/join.rs
+    |
+    |     pub fn right_semijoin<R: CanBeLookupTable, V>(
+    |                              ^^^^^^^^^^^^^^^^ required by this bound in `join::<impl Table<L>>::right_semijoin`

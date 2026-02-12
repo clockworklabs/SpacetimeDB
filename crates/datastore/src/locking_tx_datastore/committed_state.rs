@@ -29,8 +29,9 @@ use crate::{
 use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX,
+        ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
+        ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
@@ -471,6 +472,8 @@ impl CommittedState {
         self.create_table(ST_VIEW_SUB_ID, schemas[ST_VIEW_SUB_IDX].clone());
         self.create_table(ST_VIEW_ARG_ID, schemas[ST_VIEW_ARG_IDX].clone());
 
+        self.create_table(ST_EVENT_TABLE_ID, schemas[ST_EVENT_TABLE_IDX].clone());
+
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_SEQUENCE_ID, &schemas[ST_SEQUENCE_IDX]);
@@ -617,6 +620,12 @@ impl CommittedState {
         schema: &Arc<TableSchema>,
         row: &ProductValue,
     ) -> Result<()> {
+        // Event table rows in the commitlog are preserved for future replay features
+        // but don't rebuild state — event tables have no committed state.
+        if schema.is_event {
+            return Ok(());
+        }
+
         let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
 
         let (_, row_ref) = match table.insert(pool, blob_store, row) {
@@ -1187,6 +1196,24 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, tx_table) in insert_tables {
+            // Event tables: record in TxData for commitlog persistence and subscription dispatch,
+            // but do NOT merge into committed state.
+            // NOTE: There is no need to call `get_table_and_blob_store_or_create` here.
+            // The logic for collecting inserts is duplicated, but it's cleaner this way.
+            if tx_table.get_schema().is_event {
+                let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
+                for row_ref in tx_table.scan_rows(&tx_blob_store) {
+                    inserts.push(row_ref.to_product_value());
+                }
+                if !inserts.is_empty() {
+                    let table_name = &tx_table.get_schema().table_name;
+                    tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+                }
+                let (_schema, _indexes, pages) = tx_table.consume_for_merge();
+                self.page_pool.put_many(pages);
+                continue;
+            }
+
             let (commit_table, commit_blob_store, page_pool) =
                 self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
 

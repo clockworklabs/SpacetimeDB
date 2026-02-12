@@ -1,4 +1,4 @@
-//! The [`Table`] and [`TableWithPrimaryKey`] traits,
+//! The [`EventTable`], [`Table`] and [`TableWithPrimaryKey`] traits,
 //! which allow certain simple queries of the client cache,
 //! and expose row callbacks which run when subscribed rows are inserted, deleted or updated.
 //!
@@ -7,7 +7,46 @@
 //! which mediate access to tables in the client cache.
 //! Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
 
-/// Trait implemented by table handles, which mediate access to tables in the client cache.
+/// Trait for event tables, whose rows are transient and never persisted in the client cache.
+///
+/// Event table rows are delivered as inserts but are not stored;
+/// only `on_insert` callbacks fire, and `count`/`iter` always reflect an empty table.
+///
+/// `EventTable` and [`Table`] are intentionally independent traits rather than sharing a supertrait.
+/// In Rust, supertrait methods require the supertrait to be in scope,
+/// so a shared `BaseTable` supertrait would force users of plain [`Table`]s
+/// to import an extra trait just to call `count`, `iter`, or `on_insert`.
+///
+/// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
+pub trait EventTable {
+    /// The type of rows in this table.
+    type Row: 'static;
+
+    /// The `EventContext` type generated for the module which defines this table.
+    type EventContext;
+
+    /// The number of subscribed rows in the client cache (always 0 for event tables).
+    fn count(&self) -> u64;
+
+    /// An iterator over all the subscribed rows in the client cache (always empty for event tables).
+    fn iter(&self) -> impl Iterator<Item = Self::Row> + '_;
+
+    type InsertCallbackId;
+    /// Register a callback to run whenever a row is inserted.
+    ///
+    /// The returned [`Self::InsertCallbackId`] can be passed to [`Self::remove_on_insert`]
+    /// to cancel the callback.
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Self::InsertCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_insert`], causing it not to run in the future.
+    fn remove_on_insert(&self, callback: Self::InsertCallbackId);
+}
+
+/// Trait for persistent (non-event) tables in the client cache.
+///
+/// Provides read access to the client cache, insert callbacks, and delete callbacks.
 ///
 /// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
 pub trait Table {
