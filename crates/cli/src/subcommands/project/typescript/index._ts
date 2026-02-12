@@ -10,7 +10,7 @@ const spacetimedb = schema({
 });
 export default spacetimedb;
 
-export const init = spacetimedb.reducer((_ctx) => {
+export const init = spacetimedb.init((_ctx) => {
   // Called when the module is initially published
 });
 

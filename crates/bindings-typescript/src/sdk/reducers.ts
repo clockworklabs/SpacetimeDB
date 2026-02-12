@@ -149,8 +149,8 @@ export function reducersToSchema<
  * @example
  * ```ts
  * const s = schema({
- *   'user': table(, userType),
- *   'post': table(, postType)
+ *   user: table({}, userType),
+ *   post: table({}, postType)
  * });
  * ```
  */
