@@ -100,7 +100,8 @@ function tableToSchema<T extends UntypedTableSchema>(
           ? [idx.algorithm.value]
           : idx.algorithm.value;
       return {
-        name: idx.name!,
+// use accessor name?
+        name: idx.sourceName!,
         unique: tableDef.constraints.some(c =>
           c.data.value.columns.every(col => columnIds.includes(col))
         ),
@@ -141,10 +142,7 @@ export class ModuleContext {
     views: [],
     lifeCycleReducers: [],
     caseConversionPolicy: { tag: 'SnakeCase' },
-    explicitNames: {
-      tables: [],
-      funcs: [],
-    },
+    explicitNames: { entries: [] },
   };
 
   get moduleDef(): ModuleDef {
