@@ -8,11 +8,12 @@ export const Event = table({
 });
 
 const spacetimedb = schema(Event);
+export default spacetimedb;
 
-spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected(ctx => {
   ctx.db.event.insert({ id: 0n, kind: "connected" });
 });
 
-spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   ctx.db.event.insert({ id: 0n, kind: "disconnected" });
 });

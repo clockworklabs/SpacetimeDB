@@ -19,8 +19,9 @@ export const Drawing = table({
 });
 
 const spacetimedb = schema(Drawing);
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.drawing.insert({
       id: 1,

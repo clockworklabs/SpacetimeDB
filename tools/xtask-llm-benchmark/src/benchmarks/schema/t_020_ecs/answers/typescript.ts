@@ -31,8 +31,9 @@ export const NextPosition = table({
 });
 
 const spacetimedb = schema(Entity, Position, Velocity, NextPosition);
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.entity.insert({ id: 1 });
     ctx.db.entity.insert({ id: 2 });
@@ -45,7 +46,7 @@ spacetimedb.reducer('seed', {},
   }
 );
 
-spacetimedb.reducer('step', {},
+export const step = spacetimedb.reducer(
   ctx => {
     for (const p of ctx.db.position.iter()) {
       const v = ctx.db.velocity.entityId.find(p.entityId);

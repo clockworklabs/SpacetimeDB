@@ -3,8 +3,9 @@ use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
     iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols, iter_views,
-    print_auto_generated_file_comment, print_auto_generated_version_comment,
+    print_auto_generated_file_comment, print_auto_generated_version_comment, CodegenVisibility,
 };
+use crate::CodegenOptions;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
@@ -549,7 +550,7 @@ impl {func_name} for super::RemoteProcedures {{
         }
     }
 
-    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -558,27 +559,27 @@ impl {func_name} for super::RemoteProcedures {{
         out.newline();
 
         // Declare `pub mod` for each of the files generated.
-        print_module_decls(module, out);
+        print_module_decls(module, options.visibility, out);
 
         out.newline();
 
         // Re-export all the modules for the generated files.
-        print_module_reexports(module, out);
+        print_module_reexports(module, options.visibility, out);
 
         out.newline();
 
         // Define `enum Reducer`.
-        print_reducer_enum_defn(module, out);
+        print_reducer_enum_defn(module, options.visibility, out);
 
         out.newline();
 
         // Define `DbUpdate`.
-        print_db_update_defn(module, out);
+        print_db_update_defn(module, options.visibility, out);
 
         out.newline();
 
         // Define `AppliedDiff`.
-        print_applied_diff_defn(module, out);
+        print_applied_diff_defn(module, options.visibility, out);
 
         out.newline();
 
@@ -591,7 +592,7 @@ impl {func_name} for super::RemoteProcedures {{
 
         // Implement `SpacetimeModule` for `RemoteModule`.
         // This includes a method for initializing the tables in the client cache.
-        print_impl_spacetime_module(module, out);
+        print_impl_spacetime_module(module, options.visibility, out);
 
         vec![OutputFile {
             filename: "mod.rs".to_string(),
@@ -1070,31 +1071,31 @@ fn procedure_function_with_callback_name(procedure: &ProcedureDef) -> String {
 }
 
 /// Iterate over all of the Rust `mod`s for types, reducers, views, and tables in the `module`.
-fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
+fn iter_module_names(module: &ModuleDef, visibility: CodegenVisibility) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
         iter_types(module).map(|ty| type_module_name(&ty.name)),
-        iter_reducers(module).map(|r| reducer_module_name(&r.name)),
-        iter_tables(module).map(|tbl| table_module_name(&tbl.name)),
+        iter_reducers(module, visibility).map(|r| reducer_module_name(&r.name)),
+        iter_tables(module, visibility).map(|tbl| table_module_name(&tbl.name)),
         iter_views(module).map(|view| table_module_name(&view.name)),
-        iter_procedures(module).map(|proc| procedure_module_name(&proc.name)),
+        iter_procedures(module, visibility).map(|proc| procedure_module_name(&proc.name)),
     )
 }
 
 /// Print `pub mod` declarations for all the files that will be generated for `items`.
-fn print_module_decls(module: &ModuleDef, out: &mut Indenter) {
-    for module_name in iter_module_names(module) {
+fn print_module_decls(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
+    for module_name in iter_module_names(module, visibility) {
         writeln!(out, "pub mod {module_name};");
     }
 }
 
 /// Print appropriate reexports for all the files that will be generated for `items`.
-fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
+fn print_module_reexports(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
     for ty in iter_types(module) {
         let mod_name = type_module_name(&ty.name);
         let type_name = collect_case(Case::Pascal, ty.name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};")
     }
-    for (table_name, _) in iter_table_names_and_types(module) {
+    for (table_name, _) in iter_table_names_and_types(module, visibility) {
         let mod_name = table_module_name(table_name);
         // TODO: More precise reexport: we want:
         // - The trait name.
@@ -1103,19 +1104,19 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
         // - The table handle.
         writeln!(out, "pub use {mod_name}::*;");
     }
-    for reducer in iter_reducers(module) {
+    for reducer in iter_reducers(module, visibility) {
         let mod_name = reducer_module_name(&reducer.name);
         let reducer_trait_name = reducer_function_name(reducer);
         writeln!(out, "pub use {mod_name}::{reducer_trait_name};");
     }
-    for procedure in iter_procedures(module) {
+    for procedure in iter_procedures(module, visibility) {
         let mod_name = procedure_module_name(&procedure.name);
         let trait_name = procedure_function_name(procedure);
         writeln!(out, "pub use {mod_name}::{trait_name};");
     }
 }
 
-fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
+fn print_reducer_enum_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
     // Don't derive ser/de on this enum;
     // it's not a proper SATS enum and the derive will fail.
     writeln!(out, "#[derive(Clone, PartialEq, Debug)]");
@@ -1131,7 +1132,7 @@ fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
         "pub enum Reducer {",
         |out| {
-            for reducer in iter_reducers(module) {
+            for reducer in iter_reducers(module, visibility) {
                 write!(out, "{} ", reducer_variant_name(&reducer.name));
                 if !reducer.params_for_generate.elements.is_empty() {
                     // If the reducer has any arguments, generate a "struct variant,"
@@ -1164,7 +1165,7 @@ impl __sdk::InModule for Reducer {{
                     out.delimited_block(
                         "match self {",
                         |out| {
-                            for reducer in iter_reducers(module) {
+                            for reducer in iter_reducers(module, visibility) {
                                 write!(out, "Reducer::{}", reducer_variant_name(&reducer.name));
                                 if !reducer.params_for_generate.elements.is_empty() {
                                     // Because we're emitting unit variants when the payload is empty,
@@ -1194,7 +1195,7 @@ impl __sdk::InModule for Reducer {{
                     out.delimited_block(
                         "match self {",
                         |out| {
-                            for reducer in iter_reducers(module) {
+                            for reducer in iter_reducers(module, visibility) {
                                 write!(out, "Reducer::{}", reducer_variant_name(&reducer.name));
                                 if !reducer.params_for_generate.elements.is_empty() {
                                     // Because we're emitting unit variants when the payload is empty,
@@ -1247,14 +1248,14 @@ impl __sdk::InModule for Reducer {{
     );
 }
 
-fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
+fn print_db_update_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
     writeln!(out, "#[derive(Default)]");
     writeln!(out, "#[allow(non_snake_case)]");
     writeln!(out, "#[doc(hidden)]");
     out.delimited_block(
         "pub struct DbUpdate {",
         |out| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
                 writeln!(
                     out,
                     "{}: __sdk::TableUpdate<{}>,",
@@ -1278,7 +1279,7 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
             match &table_update.table_name[..] {
 ",
         |out| {
-            for (table_name, _) in iter_table_names_and_types(module) {
+            for (table_name, _) in iter_table_names_and_types(module, visibility) {
                 writeln!(
                     out,
                     "{:?} => db_update.{}.append({}::parse_table_update(table_update)?),",
@@ -1322,7 +1323,7 @@ impl __sdk::InModule for DbUpdate {{
                     let mut diff = AppliedDiff::default();
                 ",
                 |out| {
-                    for table in iter_tables(module) {
+                    for table in iter_tables(module, visibility) {
                         let with_updates = table
                             .primary_key
                             .map(|col| {
@@ -1424,14 +1425,14 @@ impl __sdk::InModule for DbUpdate {{
     );
 }
 
-fn print_applied_diff_defn(module: &ModuleDef, out: &mut Indenter) {
+fn print_applied_diff_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
     writeln!(out, "#[derive(Default)]");
     writeln!(out, "#[allow(non_snake_case)]");
     writeln!(out, "#[doc(hidden)]");
     out.delimited_block(
         "pub struct AppliedDiff<'r> {",
         |out| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
                 writeln!(
                     out,
                     "{}: __sdk::TableAppliedDiff<'r, {}>,",
@@ -1464,7 +1465,7 @@ impl __sdk::InModule for AppliedDiff<'_> {{
             out.delimited_block(
                 "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {",
                 |out| {
-                    for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+                    for (table_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
                         writeln!(
                             out,
                             "callbacks.invoke_table_row_callbacks::<{}>({:?}, &self.{}, event);",
@@ -1481,7 +1482,7 @@ impl __sdk::InModule for AppliedDiff<'_> {{
     );
 }
 
-fn print_impl_spacetime_module(module: &ModuleDef, out: &mut Indenter) {
+fn print_impl_spacetime_module(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
     out.delimited_block(
         "impl __sdk::SpacetimeModule for RemoteModule {",
         |out| {
@@ -1507,7 +1508,7 @@ type QueryBuilder = __sdk::QueryBuilder;
             out.delimited_block(
                 "fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {",
                 |out| {
-                    for (table_name, _) in iter_table_names_and_types(module) {
+                    for (table_name, _) in iter_table_names_and_types(module, visibility) {
                         writeln!(out, "{}::register_table(client_cache);", table_module_name(table_name));
                     }
                 },

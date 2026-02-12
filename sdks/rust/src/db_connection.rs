@@ -757,7 +757,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
 pub struct DbConnectionBuilder<M: SpacetimeModule> {
     uri: Option<Uri>,
 
-    module_name: Option<String>,
+    database_name: Option<String>,
 
     token: Option<String>,
 
@@ -807,7 +807,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
     pub fn new() -> Self {
         Self {
             uri: None,
-            module_name: None,
+            database_name: None,
             token: None,
             on_connect: None,
             on_connect_error: None,
@@ -816,7 +816,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         }
     }
 
-    /// Open a WebSocket connection to the remote module,
+    /// Open a WebSocket connection to the remote database,
     /// with all configuration and callbacks registered in the builder `self`.
     ///
     /// This method panics if `self` lacks a required configuration,
@@ -826,7 +826,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
     /// the connection may still fail asynchronously,
     /// leading to the [`Self::on_connect_error`] callback being invoked.
     ///
-    /// Before calling this method, make sure to invoke at least [`Self::with_uri`] and [`Self::with_module_name`]
+    /// Before calling this method, make sure to invoke at least [`Self::with_uri`] and [`Self::with_database_name`]
     /// to configure the connection.
     #[must_use = "
 You must explicitly advance the connection by calling any one of:
@@ -858,7 +858,7 @@ but you must call one of them, or else the connection will never progress.
         let ws_connection = tokio::task::block_in_place(|| {
             handle.block_on(WsConnection::connect(
                 self.uri.unwrap(),
-                self.module_name.as_ref().unwrap(),
+                self.database_name.as_ref().unwrap(),
                 self.token.as_deref(),
                 connection_id_override,
                 self.params,
@@ -905,7 +905,7 @@ but you must call one of them, or else the connection will never progress.
         Ok(ctx_imp)
     }
 
-    /// Set the URI of the SpacetimeDB host which is running the remote module.
+    /// Set the URI of the SpacetimeDB host which is running the remote database.
     ///
     /// The URI must have either no scheme or one of the schemes `http`, `https`, `ws` or `wss`.
     pub fn with_uri<E: std::fmt::Debug>(mut self, uri: impl TryInto<Uri, Error = E>) -> Self {
@@ -914,9 +914,9 @@ but you must call one of them, or else the connection will never progress.
         self
     }
 
-    /// Set the name or identity of the remote module.
-    pub fn with_module_name(mut self, name_or_identity: impl Into<String>) -> Self {
-        self.module_name = Some(name_or_identity.into());
+    /// Set the name or identity of the remote database to connect to.
+    pub fn with_database_name(mut self, name_or_identity: impl Into<String>) -> Self {
+        self.database_name = Some(name_or_identity.into());
         self
     }
 

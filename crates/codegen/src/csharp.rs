@@ -11,7 +11,7 @@ use crate::util::{
     collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
     print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
-use crate::{indent_scope, OutputFile};
+use crate::{indent_scope, CodegenOptions, OutputFile};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
@@ -1010,7 +1010,7 @@ impl Lang for Csharp<'_> {
         }
     }
 
-    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut output = CsharpAutogen::new(
             self.namespace,
             &[
@@ -1048,7 +1048,7 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output| {
             writeln!(output, "public RemoteTables(DbConnection conn)");
             indented_block(output, |output| {
-                for (table_name, _) in iter_table_names_and_types(module) {
+                for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
                     writeln!(
                         output,
                         "AddTable({} = new(conn));",
@@ -1071,7 +1071,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed class From");
         indented_block(&mut output, |output| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
                 let method_name = table_name.deref().to_case(Case::Pascal);
                 let row_type = type_ref_name(module, product_type_ref);
                 let table_name_lit = format!("{:?}", table_name.deref());
@@ -1176,7 +1176,7 @@ impl Lang for Csharp<'_> {
                 writeln!(output, "return update.ReducerCall.ReducerName switch {{");
                 {
                     indent_scope!(output);
-                    for reducer in iter_reducers(module) {
+                    for reducer in iter_reducers(module, options.visibility) {
                         let reducer_str_name = &reducer.name;
                         let reducer_name = reducer.name.deref().to_case(Case::Pascal);
                         writeln!(
@@ -1241,7 +1241,9 @@ impl Lang for Csharp<'_> {
                 writeln!(output, "return reducer switch {{");
                 {
                     indent_scope!(output);
-                    for reducer_name in iter_reducers(module).map(|r| r.name.deref().to_case(Case::Pascal)) {
+                    for reducer_name in
+                        iter_reducers(module, options.visibility).map(|r| r.name.deref().to_case(Case::Pascal))
+                    {
                         writeln!(
                             output,
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"

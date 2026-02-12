@@ -77,7 +77,7 @@
 
       const conn = DbConnection.builder()
         .withUri(HOST)
-        .withModuleName(DB_NAME)
+        .withDatabaseName(DB_NAME)
         .withToken(localStorage.getItem('auth_token') || undefined)
         .onConnect((conn, identity, token) => {
           localStorage.setItem('auth_token', token);

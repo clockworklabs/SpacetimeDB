@@ -13,8 +13,9 @@ export const Result = table({
 });
 
 const spacetimedb = schema(Result);
+export default spacetimedb;
 
-spacetimedb.reducer('setScore', { id: t.i32(), left: t.i32(), right: t.i32() },
+export const setScore = spacetimedb.reducer({ id: t.i32(), left: t.i32(), right: t.i32() },
   (ctx, { id, left, right }) => {
     ctx.db.result.insert({ id, value: { left, right } });
   }

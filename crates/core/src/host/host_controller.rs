@@ -36,7 +36,7 @@ use spacetimedb_lib::{hash_bytes, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
-use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
@@ -1163,6 +1163,13 @@ impl Host {
 
         let module_def =
             extract_schema_with_pools(page_pool, bsatn_rlb_pool, host_runtimes, program.bytes, host_type).await?;
+        let major_version_upgrade = matches!(
+            (
+                old_module.module_def.raw_module_def_version(),
+                module_def.raw_module_def_version()
+            ),
+            (RawModuleDefVersion::V9OrEarlier, RawModuleDefVersion::V10)
+        );
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {
             Ok(plan) => MigratePlanResult::Success {
@@ -1170,8 +1177,12 @@ impl Host {
                 new_module_hash: program.hash,
                 breaks_client: plan.breaks_client(),
                 plan: plan.pretty_print(style)?.into(),
+                major_version_upgrade,
             },
-            Err(e) => MigratePlanResult::AutoMigrationError(e),
+            Err(e) => MigratePlanResult::AutoMigrationError {
+                error: e,
+                major_version_upgrade,
+            },
         };
 
         Ok(res)
@@ -1196,8 +1207,12 @@ pub enum MigratePlanResult {
         new_module_hash: Hash,
         plan: Box<str>,
         breaks_client: bool,
+        major_version_upgrade: bool,
     },
-    AutoMigrationError(ErrorStream<AutoMigrateError>),
+    AutoMigrationError {
+        error: ErrorStream<AutoMigrateError>,
+        major_version_upgrade: bool,
+    },
 }
 
 const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(15);

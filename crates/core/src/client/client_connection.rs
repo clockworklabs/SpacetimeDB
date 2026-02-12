@@ -27,7 +27,7 @@ use derive_more::From;
 use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
-use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
+use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -72,7 +72,7 @@ pub struct ClientConfig {
     /// The websocket protocol version negotiated during the handshake.
     pub version: WsVersion,
     /// The client's desired (conditional) compression algorithm, if any.
-    pub compression: ws_v1::Compression,
+    pub compression: ws_common::Compression,
     /// Whether the client prefers full [`TransactionUpdate`]s
     /// rather than  [`TransactionUpdateLight`]s on a successful update.
     // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).

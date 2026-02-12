@@ -6,12 +6,12 @@
 import { type Infer as __Infer } from 'spacetimedb';
 
 // Import all reducer arg schemas
-import SetNameReducer from '../set_name_reducer';
-import SendMessageReducer from '../send_message_reducer';
 import OnConnectReducer from '../on_connect_reducer';
 import OnDisconnectReducer from '../on_disconnect_reducer';
+import SendMessageReducer from '../send_message_reducer';
+import SetNameReducer from '../set_name_reducer';
 
-export type SetNameParams = __Infer<typeof SetNameReducer>;
-export type SendMessageParams = __Infer<typeof SendMessageReducer>;
 export type OnConnectParams = __Infer<typeof OnConnectReducer>;
 export type OnDisconnectParams = __Infer<typeof OnDisconnectReducer>;
+export type SendMessageParams = __Infer<typeof SendMessageReducer>;
+export type SetNameParams = __Infer<typeof SetNameReducer>;

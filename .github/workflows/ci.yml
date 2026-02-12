@@ -79,6 +79,25 @@ jobs:
         with:
           run_install: true
 
+      # Install emscripten for C++ module compilation tests.
+      - name: Install emscripten (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
+      - name: Install emscripten (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
+          cd $env:USERPROFILE\emsdk
+          .\emsdk install 4.0.21
+          .\emsdk activate 4.0.21
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
@@ -122,11 +141,27 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - name: Run smoketests
-        # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
-        # build artifacts.
-        # It also seemed to improve performance a fair amount (11m -> 6m)
-        run: cargo ci smoketests -- --test-threads=1
+      # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
+      # build artifacts.
+      # It also seemed to improve performance a fair amount (11m -> 6m)
+      - name: Run smoketests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -f ~/emsdk/emsdk_env.sh ]; then
+            source ~/emsdk/emsdk_env.sh
+          fi
+          cargo ci smoketests -- --test-threads=1
+
+      # Due to Emscripten PATH issues this was separated to make sure OpenSSL still builds correctly
+      - name: Run smoketests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
+            & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
+          }
+          cargo ci smoketests -- --test-threads=1          
 
   smoketests-python:
     needs: [lints]
@@ -806,6 +841,12 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
@@ -916,14 +957,15 @@ jobs:
               exit 1
           }
 
-      - name: Check client-api bindings are up to date
-        working-directory: sdks/csharp
-        run: |
-          bash tools~/gen-client-api.sh
-          "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
-              echo 'Error: Client API bindings are dirty. Please run `sdks/csharp/tools~/gen-client-api.sh`.'
-              exit 1
-          }
+      # TODO: Re-enable this once csharp is using the v2 ws api.
+      # - name: Check client-api bindings are up to date
+      #   working-directory: sdks/csharp
+      #   run: |
+      #     bash tools~/gen-client-api.sh
+      #     "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
+      #         echo 'Error: Client API bindings are dirty. Please run `sdks/csharp/tools~/gen-client-api.sh`.'
+      #         exit 1
+      #     }
 
       - name: Start SpacetimeDB
         run: |

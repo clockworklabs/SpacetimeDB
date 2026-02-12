@@ -23,7 +23,6 @@ pub mod return_primitive_procedure;
 pub mod return_struct_procedure;
 pub mod return_struct_type;
 pub mod schedule_proc_reducer;
-pub mod scheduled_proc_table_table;
 pub mod scheduled_proc_table_type;
 pub mod sorted_uuids_insert_procedure;
 pub mod will_panic_procedure;
@@ -44,8 +43,6 @@ pub use return_enum_type::ReturnEnum;
 pub use return_primitive_procedure::return_primitive;
 pub use return_struct_procedure::return_struct;
 pub use return_struct_type::ReturnStruct;
-pub use schedule_proc_reducer::schedule_proc;
-pub use scheduled_proc_table_table::*;
 pub use scheduled_proc_table_type::ScheduledProcTable;
 pub use sorted_uuids_insert_procedure::sorted_uuids_insert;
 pub use will_panic_procedure::will_panic;
@@ -88,7 +85,6 @@ pub struct DbUpdate {
     my_table: __sdk::TableUpdate<MyTable>,
     pk_uuid: __sdk::TableUpdate<PkUuid>,
     proc_inserts_into: __sdk::TableUpdate<ProcInsertsInto>,
-    scheduled_proc_table: __sdk::TableUpdate<ScheduledProcTable>,
 }
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
@@ -106,9 +102,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "proc_inserts_into" => db_update
                     .proc_inserts_into
                     .append(proc_inserts_into_table::parse_table_update(table_update)?),
-                "scheduled_proc_table" => db_update
-                    .scheduled_proc_table
-                    .append(scheduled_proc_table_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
@@ -131,9 +124,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.pk_uuid = cache.apply_diff_to_table::<PkUuid>("pk_uuid", &self.pk_uuid);
         diff.proc_inserts_into =
             cache.apply_diff_to_table::<ProcInsertsInto>("proc_inserts_into", &self.proc_inserts_into);
-        diff.scheduled_proc_table = cache
-            .apply_diff_to_table::<ScheduledProcTable>("scheduled_proc_table", &self.scheduled_proc_table)
-            .with_updates_by_pk(|row| &row.scheduled_id);
 
         diff
     }
@@ -192,7 +182,6 @@ pub struct AppliedDiff<'r> {
     my_table: __sdk::TableAppliedDiff<'r, MyTable>,
     pk_uuid: __sdk::TableAppliedDiff<'r, PkUuid>,
     proc_inserts_into: __sdk::TableAppliedDiff<'r, ProcInsertsInto>,
-    scheduled_proc_table: __sdk::TableAppliedDiff<'r, ScheduledProcTable>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -205,11 +194,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<MyTable>("my_table", &self.my_table, event);
         callbacks.invoke_table_row_callbacks::<PkUuid>("pk_uuid", &self.pk_uuid, event);
         callbacks.invoke_table_row_callbacks::<ProcInsertsInto>("proc_inserts_into", &self.proc_inserts_into, event);
-        callbacks.invoke_table_row_callbacks::<ScheduledProcTable>(
-            "scheduled_proc_table",
-            &self.scheduled_proc_table,
-            event,
-        );
     }
 }
 
@@ -857,7 +841,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         my_table_table::register_table(client_cache);
         pk_uuid_table::register_table(client_cache);
         proc_inserts_into_table::register_table(client_cache);
-        scheduled_proc_table_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] =
         &["my_table", "pk_uuid", "proc_inserts_into", "scheduled_proc_table"];

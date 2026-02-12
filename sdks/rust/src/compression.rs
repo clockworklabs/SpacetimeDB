@@ -27,12 +27,11 @@ pub(crate) fn decompress_server_message(raw: &[u8]) -> Result<Cow<'_, [u8]>, WsE
     };
     match raw {
         [] => Err(WsError::EmptyMessage),
-        // TODO(ws-v2): update these to refer to `common`
-        [ws::v1::SERVER_MSG_COMPRESSION_TAG_NONE, bytes @ ..] => Ok(Cow::Borrowed(bytes)),
-        [ws::v1::SERVER_MSG_COMPRESSION_TAG_BROTLI, bytes @ ..] => brotli_decompress(bytes)
+        [ws::common::SERVER_MSG_COMPRESSION_TAG_NONE, bytes @ ..] => Ok(Cow::Borrowed(bytes)),
+        [ws::common::SERVER_MSG_COMPRESSION_TAG_BROTLI, bytes @ ..] => brotli_decompress(bytes)
             .map(Cow::Owned)
             .map_err(err_decompress("brotli")),
-        [ws::v1::SERVER_MSG_COMPRESSION_TAG_GZIP, bytes @ ..] => {
+        [ws::common::SERVER_MSG_COMPRESSION_TAG_GZIP, bytes @ ..] => {
             gzip_decompress(bytes).map(Cow::Owned).map_err(err_decompress("gzip"))
         }
         [c, ..] => Err(WsError::UnknownCompressionScheme { scheme: *c }),
