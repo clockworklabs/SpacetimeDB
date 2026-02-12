@@ -15,6 +15,7 @@ spacetimedb-lib.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-standalone.workspace = true
 spacetimedb-client-api.workspace = true
+spacetimedb-client-api-messages.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true
 

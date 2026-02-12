@@ -435,7 +435,7 @@ pub(super) fn call_call_reducer<'scope>(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     match call_recv_fun(scope, hooks.call_reducer, hooks.recv, args) {
-        Ok(val) if val.is_undefined() => Ok(Ok(())),
+        Ok(val) if val.is_undefined() => Ok(Ok(None)),
         // TODO(reducer-return-values): replace error with deserialization
         Ok(_) => Err(TypeError("Reducer returned a value other than `undefined`").throw(scope)),
         Err(e) => {

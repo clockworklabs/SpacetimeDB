@@ -30,6 +30,7 @@ use crate::util::jobs::SingleCoreExecutor;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
+use bytes::Bytes;
 use derive_more::From;
 use futures::lock::Mutex;
 use indexmap::IndexSet;
@@ -39,9 +40,9 @@ use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
-};
+use spacetimedb_client_api_messages::websocket::common::{ByteListLen as _, RowListLen as _};
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
+use spacetimedb_client_api_messages::websocket::v2::{self as ws_v2};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
@@ -155,12 +156,12 @@ impl UpdatesRelValue<'_> {
         let (inserts, nr_ins) = F::encode_list(rlb_pool.take_row_list_builder(), self.inserts.iter());
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
-        let qu = QueryUpdate { deletes, inserts };
+        let qu = ws_v1::QueryUpdate { deletes, inserts };
         // We don't compress individual table updates.
         // Previously we were, but the benefits, if any, were unclear.
         // Note, each message is still compressed before being sent to clients,
         // but we no longer have to hold a tx lock when doing so.
-        let cqu = F::into_query_update(qu, Compression::None);
+        let cqu = F::into_query_update(qu, ws_v1::Compression::None);
         (cqu, num_rows, num_bytes)
     }
 }
@@ -168,7 +169,8 @@ impl UpdatesRelValue<'_> {
 #[derive(Debug, Clone)]
 pub enum EventStatus {
     Committed(DatabaseUpdate),
-    Failed(String),
+    FailedUser(String),
+    FailedInternal(String),
     OutOfEnergy,
 }
 
@@ -205,6 +207,7 @@ pub struct ModuleEvent {
     pub caller_connection_id: Option<ConnectionId>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
+    pub reducer_return_value: Option<Bytes>,
     pub energy_quanta_used: EnergyQuanta,
     pub host_execution_duration: Duration,
     pub request_id: Option<RequestId>,
@@ -649,19 +652,31 @@ pub enum ViewCommand {
     AddSingleSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeSingle,
-        timer: Instant,
+        request: ws_v1::SubscribeSingle,
+        _timer: Instant,
     },
     AddMultiSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeMulti,
-        timer: Instant,
+        request: ws_v1::SubscribeMulti,
+        _timer: Instant,
     },
     AddLegacySubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        subscribe: Subscribe,
+        subscribe: ws_v1::Subscribe,
+        _timer: Instant,
+    },
+    AddSubscriptionV2 {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Subscribe,
+        _timer: Instant,
+    },
+    RemoveSubscriptionV2 {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Unsubscribe,
         timer: Instant,
     },
     Sql {
@@ -896,7 +911,7 @@ impl From<EventStatus> for ViewOutcome {
     fn from(status: EventStatus) -> Self {
         match status {
             EventStatus::Committed(_) => ViewOutcome::Success,
-            EventStatus::Failed(e) => ViewOutcome::Failed(e),
+            EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => ViewOutcome::Failed(e),
             EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
         }
     }
@@ -1557,14 +1572,14 @@ impl ModuleHost {
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeSingle,
+        request: ws_v1::SubscribeSingle,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddSingleSubscription {
             sender,
             auth,
             request,
-            timer,
+            _timer: timer,
         };
 
         let res = self
@@ -1586,18 +1601,83 @@ impl ModuleHost {
         }
     }
 
+    pub async fn call_view_add_v2_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Subscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let cmd = ViewCommand::AddSubscriptionV2 {
+            sender,
+            auth,
+            request,
+            _timer: timer,
+        };
+
+        let res = self
+            .call(
+                "call_view_add_multi_subscription",
+                cmd,
+                async |cmd, inst| inst.call_view(cmd),
+                async |cmd, inst| inst.call_view(cmd).await,
+            )
+            .await
+            //TODO: handle error better
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Subscription { result } => result,
+            ViewCommandResult::Sql { .. } => {
+                unreachable!("unexpected SQL result in call_view_add_single_subscription")
+            }
+        }
+    }
+
+    pub async fn call_view_remove_v2_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::Unsubscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let cmd = ViewCommand::RemoveSubscriptionV2 {
+            sender,
+            auth,
+            request,
+            timer,
+        };
+
+        let res = self
+            .call(
+                "call_view_remove_v2_subscription",
+                cmd,
+                async |cmd, inst| inst.call_view(cmd),
+                async |cmd, inst| inst.call_view(cmd).await,
+            )
+            .await
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Subscription { result } => result,
+            ViewCommandResult::Sql { .. } => {
+                unreachable!("unexpected SQL result in call_view_remove_v2_subscription")
+            }
+        }
+    }
+
     pub async fn call_view_add_multi_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddMultiSubscription {
             sender,
             auth,
             request,
-            timer,
+            _timer: timer,
         };
 
         let res = self
@@ -1623,14 +1703,14 @@ impl ModuleHost {
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        subscribe: spacetimedb_client_api_messages::websocket::Subscribe,
+        subscribe: ws_v1::Subscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddLegacySubscription {
             sender,
             auth,
             subscribe,
-            timer,
+            _timer: timer,
         };
 
         let res = self
@@ -2030,7 +2110,7 @@ impl ModuleHost {
 
                 // We wrap the actual query in a closure so we can use ? to handle errors without making
                 // the entire transaction abort with an error.
-                let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
+                let result: Result<(ws_v1::OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
                     let tx = SchemaViewer::new(&*tx, &auth);
 
                     let (
@@ -2081,13 +2161,13 @@ impl ModuleHost {
                             .collect::<Vec<_>>();
                         // Execute the union and return the results
                         return execute_plan_for_view::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                            .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                            .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
                             .context("One-off queries are not allowed to modify the database");
                     }
 
                     // Execute the union and return the results
                     execute_plan::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                        .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                        .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
                         .context("One-off queries are not allowed to modify the database")
                 })();
 
@@ -2127,6 +2207,134 @@ impl ModuleHost {
         }
 
         Ok(())
+    }
+
+    /// Execute a one-off query for v2 clients and send the results to the given client.
+    ///
+    /// This only returns an error if there is a db-level problem.
+    /// An error with the query itself will be sent to the client.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn one_off_query_v2(
+        &self,
+        auth: AuthCtx,
+        query: String,
+        client: Arc<ClientConnectionSender>,
+        request_id: u32,
+        _timer: Instant,
+        rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
+    ) -> Result<(), anyhow::Error> {
+        let replica_ctx = self.replica_ctx();
+        let db = replica_ctx.relational_db.clone();
+        let subscriptions = replica_ctx.subscriptions.clone();
+        log::debug!("One-off query: {query}");
+        let metrics = self
+            .on_module_thread("one_off_query_v2", move || {
+                Self::one_off_query_v2_inner(db, subscriptions, auth, query, client, request_id, rlb_pool)
+            })
+            .await??;
+
+        if let Some(metrics) = metrics {
+            replica_ctx
+                .relational_db
+                .exec_counters_for(WorkloadType::Sql)
+                .record(&metrics);
+        }
+
+        Ok(())
+    }
+
+    fn one_off_query_v2_inner(
+        db: Arc<RelationalDB>,
+        subscriptions: ModuleSubscriptions,
+        auth: AuthCtx,
+        query: String,
+        client: Arc<ClientConnectionSender>,
+        request_id: u32,
+        rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
+    ) -> Result<Option<ExecutionMetrics>, anyhow::Error> {
+        let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+        let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+            let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+            let _ = tx_offset_sender.send(tx_offset);
+            db.report_read_tx_metrics(reducer, tx_metrics);
+        });
+
+        let result: Result<(ws_v2::SingleTableRows, ExecutionMetrics), anyhow::Error> = (|| {
+            let tx = SchemaViewer::new(&*tx, &auth);
+
+            let (plans, _, table_name, _) = compile_subscription(&query, &tx, &auth)?;
+
+            let optimized = plans
+                .into_iter()
+                .map(|plan| plan.optimize(&auth))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            check_row_limit(&optimized, &db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
+
+            let return_table = || optimized.first().and_then(|plan| plan.return_table());
+
+            let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
+            let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
+            let num_private_cols = return_table()
+                .map(|schema| schema.num_private_cols())
+                .unwrap_or_default();
+
+            let optimized = optimized.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
+
+            let table_name = table_name.into();
+
+            if returns_view_table && num_private_cols > 0 {
+                let optimized = optimized
+                    .into_iter()
+                    .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
+                    .collect::<Vec<_>>();
+                return execute_plan_for_view::<ws_v1::BsatnFormat>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
+                    .map(|(rows, _, metrics)| {
+                        (
+                            ws_v2::SingleTableRows {
+                                table: table_name,
+                                rows,
+                            },
+                            metrics,
+                        )
+                    })
+                    .context("One-off queries are not allowed to modify the database");
+            }
+
+            execute_plan::<ws_v1::BsatnFormat>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
+                .map(|(rows, _, metrics)| {
+                    (
+                        ws_v2::SingleTableRows {
+                            table: table_name,
+                            rows,
+                        },
+                        metrics,
+                    )
+                })
+                .context("One-off queries are not allowed to modify the database")
+        })();
+
+        let (message, metrics) = match result {
+            Ok((rows, metrics)) => (
+                ws_v2::OneOffQueryResult {
+                    request_id,
+                    result: Ok(ws_v2::QueryRows {
+                        tables: vec![rows].into_boxed_slice(),
+                    }),
+                },
+                Some(metrics),
+            ),
+            Err(err) => (
+                ws_v2::OneOffQueryResult {
+                    request_id,
+                    result: Err(err.to_string().into()),
+                },
+                None,
+            ),
+        };
+
+        subscriptions.send_one_off_query_message_v2(client, message, tx_offset_receiver)?;
+        Ok(metrics)
     }
 
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
@@ -2208,4 +2416,114 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
         "External attempt to call {function_kind} \"{function_name}\" failed, invalid arguments.\n\
          This is likely due to a mismatched client schema, have you run `spacetime generate` recently?"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModuleHost;
+    use crate::client::{
+        ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
+        WsVersion,
+    };
+    use crate::db::relational_db::tests_utils::{insert, with_auto_commit, TestDB};
+    use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+    use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
+    use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::{AlgebraicType, Identity};
+    use spacetimedb_sats::product;
+    use std::sync::Arc;
+
+    fn v2_client_config() -> ClientConfig {
+        ClientConfig {
+            protocol: Protocol::Binary,
+            version: WsVersion::V2,
+            compression: ws_v1::Compression::None,
+            tx_update_full: true,
+            confirmed_reads: false,
+        }
+    }
+
+    fn setup_client(
+        db: &Arc<crate::db::relational_db::RelationalDB>,
+    ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
+        let client_id = ClientActorId::for_test(Identity::ZERO);
+        let (sender, receiver) = ClientConnectionSender::dummy_with_channel(client_id, v2_client_config(), db.clone());
+        (Arc::new(sender), receiver)
+    }
+
+    #[test]
+    fn one_off_query_v2_returns_rows() -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let _rt = runtime.enter();
+
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let schema = [("id", AlgebraicType::U8)];
+        let table_id = db.create_table_for_test("t", &schema, &[])?;
+        with_auto_commit(&db, |tx| {
+            insert(&db, tx, table_id, &product![1_u8])?;
+            Ok::<(), crate::error::DBError>(())
+        })?;
+
+        let (sender, mut receiver) = setup_client(&db);
+        let auth = AuthCtx::new(db.owner_identity(), sender.id.identity);
+        ModuleHost::one_off_query_v2_inner(
+            db.clone(),
+            subs.clone(),
+            auth,
+            "select * from t".to_string(),
+            sender,
+            42,
+            subs.bsatn_rlb_pool.clone(),
+        )?;
+
+        runtime.block_on(async {
+            match receiver.recv().await {
+                Some(OutboundMessage::V2(ws_v2::ServerMessage::OneOffQueryResult(result))) => {
+                    assert_eq!(result.request_id, 42);
+                    let rows = result.result.expect("expected rows");
+                    assert_eq!(rows.tables.len(), 1);
+                    assert!(rows.tables[0].rows.len() > 0);
+                }
+                other => panic!("Expected v2 OneOffQueryResult, got: {other:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    #[test]
+    fn one_off_query_v2_returns_error() -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let _rt = runtime.enter();
+
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let (sender, mut receiver) = setup_client(&db);
+        let auth = AuthCtx::new(db.owner_identity(), sender.id.identity);
+        ModuleHost::one_off_query_v2_inner(
+            db.clone(),
+            subs.clone(),
+            auth,
+            "select * from missing_table".to_string(),
+            sender,
+            7,
+            subs.bsatn_rlb_pool.clone(),
+        )?;
+
+        runtime.block_on(async {
+            match receiver.recv().await {
+                Some(OutboundMessage::V2(ws_v2::ServerMessage::OneOffQueryResult(result))) => {
+                    assert_eq!(result.request_id, 7);
+                    let err = result.result.expect_err("expected error");
+                    assert!(!err.is_empty());
+                }
+                other => panic!("Expected v2 OneOffQueryResult, got: {other:?}"),
+            }
+        });
+
+        Ok(())
+    }
 }

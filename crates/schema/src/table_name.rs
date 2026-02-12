@@ -4,7 +4,7 @@ use core::ops::Deref;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, raw_identifier::RawIdentifier};
 
 /// The name of a table.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TableName(Identifier);
 
 impl_st!([] TableName, ts => Identifier::make_type(ts));
