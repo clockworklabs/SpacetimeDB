@@ -44,6 +44,15 @@ pub enum Compression {
     Gzip,
 }
 
+/// The tag recognized by the host and SDKs to mean no compression of a `ServerMessage`.
+pub const SERVER_MSG_COMPRESSION_TAG_NONE: u8 = 0;
+
+/// The tag recognized by the host and SDKs to mean brotli compression of a `ServerMessage`.
+pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
+
+/// The tag recognized by the host and SDKs to mean gzip compression of a `ServerMessage`.
+pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
+
 pub type RowSize = u16;
 pub type RowOffset = u64;
 

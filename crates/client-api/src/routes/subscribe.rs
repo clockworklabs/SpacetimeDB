@@ -1310,47 +1310,47 @@ async fn ws_encode_task(
 
                 in_use
             }
-            OutboundWsMessage::Message(message) => match message {
-                OutboundMessage::V2(server_message) => {
-                    if config.version != WsVersion::V2 {
-                        log::warn!("dropping v2 message on v1 connection");
-                        continue;
-                    }
+            OutboundWsMessage::Message(message) => {
+                let workload = message.workload();
+                let num_rows = message.num_rows();
+                match message {
+                    OutboundMessage::V2(server_message) => {
+                        if config.version != WsVersion::V2 {
+                            log::warn!("dropping v2 message on v1 connection");
+                            continue;
+                        }
 
-                    let workload = server_message.workload();
-                    let num_rows = server_message.num_rows();
-                    let (stats, in_use, mut frames) =
-                        ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
-                    metrics.report(workload, num_rows, stats);
-                    if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                        break;
-                    }
+                        let (stats, in_use, mut frames) =
+                            ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
+                        metrics.report(workload, num_rows, stats);
+                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                            break;
+                        }
 
-                    in_use
+                        in_use
+                    }
+                    OutboundMessage::V1(message) => {
+                        if config.version == WsVersion::V2 {
+                            log::warn!(
+                                "dropping v1 message for v2 connection until v2 serialization is implemented: {:?}",
+                                message
+                            );
+                            continue;
+                        }
+
+                        let is_large = num_rows.is_some_and(|n| n > 1024);
+
+                        let (stats, in_use, mut frames) =
+                            ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
+                        metrics.report(workload, num_rows, stats);
+                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                            break;
+                        }
+
+                        in_use
+                    }
                 }
-                OutboundMessage::V1(message) => {
-                    if config.version == WsVersion::V2 {
-                        log::warn!(
-                            "dropping v1 message for v2 connection until v2 serialization is implemented: {:?}",
-                            message
-                        );
-                        continue;
-                    }
-
-                    let workload = message.workload();
-                    let num_rows = message.num_rows();
-                    let is_large = num_rows.is_some_and(|n| n > 1024);
-
-                    let (stats, in_use, mut frames) =
-                        ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
-                    metrics.report(workload, num_rows, stats);
-                    if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                        break;
-                    }
-
-                    in_use
-                }
-            },
+            }
         };
 
         if in_use_bufs.len() < BUF_POOL_CAPACITY {
