@@ -1,6 +1,6 @@
-use crate::host::v8::de::scratch_buf;
-use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
-use crate::host::v8::exception_already_thrown;
+use super::de::scratch_buf;
+use super::error::{ErrorOrException, ExcResult, ExceptionThrown, PinTryCatch, Throwable, TypeError};
+use super::exception_already_thrown;
 use crate::host::wasm_common::abi::parse_abi_version;
 use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
 use spacetimedb_lib::VersionTuple;
@@ -73,7 +73,7 @@ fn resolve_sys_module_inner<'scope>(
 ///
 /// This handles any (future) ABI version differences.
 pub(super) fn call_call_reducer<'scope>(
-    scope: &mut PinScope<'scope, '_>,
+    scope: &mut PinTryCatch<'scope, '_, '_, '_>,
     hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
     reducer_args_buf: Local<'scope, ArrayBuffer>,
