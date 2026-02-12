@@ -65,6 +65,15 @@ enum IndexType {
     Direct { column: Ident },
 }
 
+impl IndexType {
+    fn columns_idents(&self) -> &[Ident] {
+        match self {
+            IndexType::BTree { columns } | IndexType::Hash { columns } => columns,
+            IndexType::Direct { column } => std::slice::from_ref(column),
+        }
+    }
+}
+
 impl TableArgs {
     pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
@@ -271,7 +280,7 @@ impl IndexArg {
         Ok(IndexArg::new(name, kind))
     }
 
-    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
+    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>], is_pk: bool) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| find_column(cols, ident);
         let (kind, kind_str) = match &self.kind {
             IndexType::BTree { columns } => {
@@ -305,6 +314,7 @@ impl IndexArg {
 
         Ok(ValidatedIndex {
             is_unique: self.is_unique,
+            is_pk,
             index_name,
             accessor_name: &self.name,
             kind,
@@ -365,6 +375,7 @@ struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
     is_unique: bool,
+    is_pk: bool,
     kind: ValidatedIndexType<'a>,
 }
 
@@ -560,6 +571,9 @@ impl ValidatedIndex<'_> {
                     }
                 }
             });
+            if self.is_pk {
+                decl.extend(quote!(impl spacetimedb::table::PrimaryKey for #index_ident {}));
+            }
         }
         decl
     }
@@ -808,7 +822,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let mut indices = args
         .indices
         .iter()
-        .map(|index| index.validate(&table_name, &columns))
+        .map(|index| {
+            // An index is for the primary key if it's unique and covers exactly the PK column.
+            let is_pk = index.is_unique
+                && primary_key_column.as_ref().is_some_and(|pk| {
+                    index.kind.columns_idents() == std::slice::from_ref(&pk.ident)
+                });
+            index.validate(&table_name, &columns, is_pk)
+        })
         .collect::<syn::Result<Vec<_>>>()?;
 
     // Order unique accessors before index accessors.
