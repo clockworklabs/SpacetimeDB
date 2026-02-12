@@ -148,7 +148,7 @@ pub struct ModuleDef {
     raw_module_def_version: RawModuleDefVersion,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum RawModuleDefVersion {
     /// Represents [`RawModuleDefV9`] and earlier.
     V9OrEarlier,
@@ -157,7 +157,7 @@ pub enum RawModuleDefVersion {
 }
 
 impl ModuleDef {
-    /// Returns the raw module definition version this module was authored under.
+    /// The raw module definition version this module was authored under.
     pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
         self.raw_module_def_version
     }
