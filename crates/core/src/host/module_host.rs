@@ -2152,7 +2152,7 @@ impl ModuleHost {
                         .map(PipelinedProject::from)
                         .collect::<Vec<_>>();
 
-                    let table_name = table_name.to_boxed_str();
+                    let table_name = table_name.into();
 
                     if returns_view_table && num_private_cols > 0 {
                         let optimized = optimized
@@ -2281,7 +2281,7 @@ impl ModuleHost {
 
             let optimized = optimized.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
 
-            let table_name = table_name.to_boxed_str();
+            let table_name = table_name.into();
 
             if returns_view_table && num_private_cols > 0 {
                 let optimized = optimized

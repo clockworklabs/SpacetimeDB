@@ -20,10 +20,6 @@ impl TableName {
     pub fn for_test(name: &str) -> Self {
         Self(Identifier::for_test(name))
     }
-
-    pub fn to_boxed_str(&self) -> Box<str> {
-        self.as_ref().into()
-    }
 }
 
 impl Deref for TableName {

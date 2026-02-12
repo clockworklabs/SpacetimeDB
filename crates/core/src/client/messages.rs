@@ -395,9 +395,9 @@ impl ToProtocol for TransactionUpdateMessage {
                     reducer_name: event
                         .function_call
                         .reducer
-                        .as_ref()
-                        .map(|r| (&**r).into())
-                        .unwrap_or_default(),
+                        .clone()
+                        .map(Into::into)
+                        .unwrap_or_else(|| "".into()),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id,
@@ -567,7 +567,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }
@@ -580,7 +580,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }
@@ -598,7 +598,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }
@@ -611,7 +611,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }

@@ -2,7 +2,9 @@ pub use super::common::{BsatnRowList, CallProcedureFlags, QuerySetId};
 use bytes::Bytes;
 use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
 pub use spacetimedb_sats::SpacetimeType;
-use spacetimedb_sats::{de::Error, impl_deserialize, impl_serialize, impl_st, AlgebraicType};
+use spacetimedb_sats::{
+    de::Error, impl_deserialize, impl_serialize, impl_st, raw_identifier::RawIdentifier, AlgebraicType,
+};
 
 pub const BIN_PROTOCOL: &str = "v2.bsatn.spacetimedb";
 
@@ -230,7 +232,7 @@ pub struct QueryRows {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct SingleTableRows {
-    pub table: Box<str>,
+    pub table: RawIdentifier,
     pub rows: BsatnRowList,
 }
 
@@ -314,7 +316,7 @@ pub struct QuerySetUpdate {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct TableUpdate {
-    pub table_name: Box<str>,
+    pub table_name: RawIdentifier,
     pub rows: Box<[TableUpdateRows]>,
 }
 
