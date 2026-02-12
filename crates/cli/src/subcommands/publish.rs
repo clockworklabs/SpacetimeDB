@@ -11,7 +11,7 @@ use std::{env, fs};
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::spacetime_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
-use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, find_module_path, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -20,11 +20,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
     CommandSchemaBuilder::new()
         .key(Key::new::<String>("database").from_clap("name|identity").required())
         .key(Key::new::<String>("server"))
-        .key(
-            Key::new::<PathBuf>("module_path")
-                .from_clap("project_path")
-                .module_specific(),
-        )
+        .key(Key::new::<PathBuf>("module_path").module_specific())
         .key(Key::new::<String>("build_options").module_specific())
         .key(Key::new::<PathBuf>("wasm_file").module_specific())
         .key(Key::new::<PathBuf>("js_file").module_specific())
@@ -116,19 +112,18 @@ pub fn cli() -> clap::Command {
                 .help("Options to pass to the build command, for example --build-options='--lint-dir='")
         )
         .arg(
-            Arg::new("project_path")
+            Arg::new("module_path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
-                .long("project-path")
+                .long("module-path")
                 .short('p')
-                .help("The system path (absolute or relative) to the module project")
+                .help("The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.")
         )
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("bin-path")
                 .short('b')
-                .conflicts_with("project_path")
+                .conflicts_with("module_path")
                 .conflicts_with("build_options")
                 .conflicts_with("js_file")
                 .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
@@ -138,7 +133,7 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("js-path")
                 .short('j')
-                .conflicts_with("project_path")
+                .conflicts_with("module_path")
                 .conflicts_with("build_options")
                 .conflicts_with("wasm_file")
                 .help("UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project."),
@@ -284,9 +279,18 @@ pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_conf
         let server = server_opt.as_deref();
         let name_or_identity_opt = command_config.get_one::<String>("database")?;
         let name_or_identity = name_or_identity_opt.as_deref();
-        let path_to_project = command_config
-            .get_one::<PathBuf>("module_path")?
-            .unwrap_or_else(|| PathBuf::from("."));
+        let path_to_project = match command_config.get_one::<PathBuf>("module_path")? {
+            Some(path) => path,
+            None if using_config => {
+                anyhow::bail!("module-path must be specified for each publish target when using spacetime.json");
+            }
+            None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
+                     Use --module-path to specify the module location."
+                )
+            })?,
+        };
 
         if using_config {
             println!(

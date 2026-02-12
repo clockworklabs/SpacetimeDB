@@ -19,7 +19,7 @@ use std::process::{Command, Stdio};
 use crate::spacetime_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::{resolve_sibling_binary, y_or_n};
+use crate::util::{find_module_path, resolve_sibling_binary, y_or_n};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -36,7 +36,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new::<Language>("language").from_clap("lang").required())
         .key(Key::new::<PathBuf>("out_dir"))
         .key(Key::new::<PathBuf>("uproject_dir"))
-        .key(Key::new::<PathBuf>("module_path").from_clap("project_path"))
+        .key(Key::new::<PathBuf>("module_path"))
         .key(Key::new::<PathBuf>("wasm_file"))
         .key(Key::new::<PathBuf>("js_file"))
         .key(Key::new::<String>("namespace"))
@@ -114,14 +114,14 @@ fn get_filtered_generate_configs<'a>(
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("bin-path")
                 .short('b')
                 .group("source")
-                .conflicts_with("project_path")
+                .conflicts_with("module_path")
                 .conflicts_with("build_options")
                 .help("The system path (absolute or relative) to the compiled wasm binary we should inspect"),
         )
@@ -131,18 +131,17 @@ pub fn cli() -> clap::Command {
                 .long("js-path")
                 .short('j')
                 .group("source")
-                .conflicts_with("project_path")
+                .conflicts_with("module_path")
                 .conflicts_with("build_options")
                 .help("The system path (absolute or relative) to the bundled javascript file we should inspect"),
         )
         .arg(
-            Arg::new("project_path")
+            Arg::new("module_path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
-                .long("project-path")
+                .long("module-path")
                 .short('p')
                 .group("source")
-                .help("The system path (absolute or relative) to the project you would like to inspect"),
+                .help("The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory."),
         )
         .arg(
             Arg::new("json_module")
@@ -220,27 +219,36 @@ pub async fn exec_ex(
 
     // Get generate configs (from spacetime.json or empty)
     let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
-    let generate_configs = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
+    let (using_config, generate_configs) = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
         if !quiet_config {
             println!("Using configuration from {}", config_path.display());
         }
         let filtered = get_filtered_generate_configs(spacetime_config, &schema, args)?;
         // If filtering resulted in no matches, use CLI args with empty config
         if filtered.is_empty() {
-            vec![CommandConfig::new(&schema, HashMap::new(), args)?]
+            (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
         } else {
-            filtered
+            (true, filtered)
         }
     } else {
-        vec![CommandConfig::new(&schema, HashMap::new(), args)?]
+        (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
     };
 
     // Execute generate for each config
     for command_config in generate_configs {
         // Get values using command_config.get_one() which merges CLI + config
-        let project_path = command_config
-            .get_one::<PathBuf>("module_path")?
-            .unwrap_or_else(|| PathBuf::from("."));
+        let project_path = match command_config.get_one::<PathBuf>("module_path")? {
+            Some(path) => path,
+            None if using_config => {
+                anyhow::bail!("module-path must be specified for each generate target when using spacetime.json");
+            }
+            None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
+                     Use --module-path to specify the module location."
+                )
+            })?,
+        };
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
         let json_module = args.get_many::<PathBuf>("json_module");

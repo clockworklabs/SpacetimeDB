@@ -4,8 +4,8 @@ use crate::generate::Language;
 use crate::spacetime_config::{detect_client_command, CommandConfig, CommandSchema, SpacetimeConfig};
 use crate::subcommands::init;
 use crate::util::{
-    add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
-    spacetime_reverse_dns, ResponseExt,
+    add_auth_header_opt, database_identity, detect_module_language, find_module_path, get_auth_header,
+    get_login_token_or_log_in, spacetime_reverse_dns, ResponseExt,
 };
 use crate::{common_args, generate};
 use crate::{publish, tasks};
@@ -68,11 +68,10 @@ pub fn cli() -> Command {
         // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         .arg(
-            Arg::new("module-project-path")
-                .long("module-project-path")
+            Arg::new("module-path")
+                .long("module-path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value("spacetimedb")
-                .help("The path to the SpacetimeDB server module project relative to the project directory, defaults to `<project-path>/spacetimedb`"),
+                .help("Path to the SpacetimeDB server module, relative to current directory. Defaults to <project-path>/spacetimedb."),
         )
         .arg(
             Arg::new("client-lang")
@@ -117,7 +116,7 @@ struct DatabaseRow {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-    let spacetimedb_project_path = args.get_one::<PathBuf>("module-project-path").unwrap();
+    let module_path_from_cli = args.get_one::<PathBuf>("module-path");
     let module_bindings_path = args.get_one::<PathBuf>("module-bindings-path").unwrap();
     let client_language = args.get_one::<Language>("client-lang");
     let clear_database = args
@@ -143,10 +142,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     let mut module_bindings_dir = project_dir.join(module_bindings_path);
 
-    if spacetimedb_project_path.is_absolute() {
-        anyhow::bail!("SpacetimeDB project path must be a relative path");
-    }
-    let mut spacetimedb_dir = project_dir.join(spacetimedb_project_path);
+    let mut spacetimedb_dir = match module_path_from_cli {
+        Some(path) => {
+            if path.is_absolute() {
+                path.clone()
+            } else {
+                std::env::current_dir()?.join(path)
+            }
+        }
+        None => project_dir.join("spacetimedb"),
+    };
 
     // Load spacetime.json config early so we can use it for determining project
     // directories
@@ -226,7 +231,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             let canonical_created_path = created_project_path
                 .canonicalize()
                 .context("Failed to canonicalize created project path")?;
-            spacetimedb_dir = canonical_created_path.join(spacetimedb_project_path);
+            spacetimedb_dir = canonical_created_path.join("spacetimedb");
             module_bindings_dir = canonical_created_path.join(module_bindings_path);
             project_dir = canonical_created_path;
 
