@@ -4,6 +4,7 @@ import type BinaryWriter from './binary_writer';
 import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
 import { Identity, type IdentityAlgebraicType } from './identity';
 import { Option, type OptionAlgebraicType } from './option';
+import { Result, type ResultAlgebraicType } from './result';
 import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at';
 import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
@@ -177,11 +178,17 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
   }
 
   serialize(writer: BinaryWriter, value: Type): void {
-    AlgebraicType.serializeValue(writer, this.algebraicType, value);
+    const serialize = (this.serialize = AlgebraicType.makeSerializer(
+      this.algebraicType
+    ));
+    serialize(writer, value);
   }
 
   deserialize(reader: BinaryReader): Type {
-    return AlgebraicType.deserializeValue(reader, this.algebraicType);
+    const deserialize = (this.deserialize = AlgebraicType.makeDeserializer(
+      this.algebraicType
+    ));
+    return deserialize(reader);
   }
 }
 
@@ -199,8 +206,7 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
  * @remarks
  * - This interface is typically implemented by type builders for primitive and complex types.
  * - The returned `ColumnBuilder` will have its metadata extended with `{ isPrimaryKey: true }`.
- * - Marking a column as a primary key is mutually exclusive with certain other metadata flags,
- *   such as `isAutoIncrement` or `isUnique`, depending on the database schema rules.
+ * - **Cannot be combined with `default()`.**
  */
 interface PrimaryKeyable<
   Type,
@@ -209,6 +215,7 @@ interface PrimaryKeyable<
 > {
   /**
    * Specify this column as primary key
+   * @remarks Cannot be combined with `default()`.
    */
   primaryKey(): ColumnBuilder<
     Type,
@@ -231,8 +238,7 @@ interface PrimaryKeyable<
  * @remarks
  * - This interface is typically implemented by type builders for primitive and complex types.
  * - The returned `ColumnBuilder` will have its metadata extended with `{ isUnique: true }`.
- * - Marking a column as unique is mutually exclusive with certain other metadata flags,
- *   such as `isAutoIncrement` or `isPrimaryKey`, depending on the database schema rules.
+ * - **Cannot be combined with `default()`.**
  */
 interface Uniqueable<
   Type,
@@ -241,6 +247,7 @@ interface Uniqueable<
 > {
   /**
    * Specify this column as unique
+   * @remarks Cannot be combined with `default()`.
    */
   unique(): ColumnBuilder<Type, SpacetimeType, SetField<M, 'isUnique', true>>;
 }
@@ -294,8 +301,7 @@ interface Indexable<
  * @remarks
  * - This interface is typically implemented by type builders for primitive and complex types.
  * - The returned `ColumnBuilder` will have its metadata extended with `{ isAutoIncrement: true }`.
- * - Marking a column as auto-incrementing is mutually exclusive with certain other metadata flags,
- *   such as `isUnique` or `isPrimaryKey`, depending on the database schema rules.
+ * - **Cannot be combined with `default()`.**
  */
 interface AutoIncrementable<
   Type,
@@ -304,6 +310,7 @@ interface AutoIncrementable<
 > {
   /**
    * Specify this column as auto-incrementing
+   * @remarks Cannot be combined with `default()`.
    */
   autoInc(): ColumnBuilder<
     Type,
@@ -343,6 +350,7 @@ interface Optional<Type, SpacetimeType extends AlgebraicType> {
  * - The returned `ColumnBuilder` will have its metadata extended with `{ default: value }`.
  * - The default value must be of the same type as the column's TypeScript type.
  * - This method can be called multiple times; the last call takes precedence.
+ * - **Cannot be combined with `primaryKey()`, `unique()`, or `autoInc()`.**
  */
 interface Defaultable<
   Type,
@@ -359,6 +367,7 @@ interface Defaultable<
    * @remarks
    * - This method can be called multiple times; the last call takes precedence.
    * - The default value must be of the same type as the column's TypeScript type.
+   * - Cannot be combined with `primaryKey()`, `unique()`, or `autoInc()`.
    */
   default(
     value: Type
@@ -1404,6 +1413,57 @@ export class ProductBuilder<Elements extends ElementsObj>
   }
 }
 
+export class ResultBuilder<
+    Ok extends TypeBuilder<any, any>,
+    Err extends TypeBuilder<any, any>,
+  >
+  extends TypeBuilder<
+    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    ResultAlgebraicType<
+      InferSpacetimeTypeOfTypeBuilder<Ok>,
+      InferSpacetimeTypeOfTypeBuilder<Err>
+    >
+  >
+  implements
+    Defaultable<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      ResultAlgebraicType<
+        InferSpacetimeTypeOfTypeBuilder<Ok>,
+        InferSpacetimeTypeOfTypeBuilder<Err>
+      >
+    >
+{
+  ok: Ok;
+  err: Err;
+
+  constructor(ok: Ok, err: Err) {
+    super(Result.getAlgebraicType(ok.algebraicType, err.algebraicType));
+    this.ok = ok;
+    this.err = err;
+  }
+  default(
+    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+  ): ResultColumnBuilder<
+    Ok,
+    Err,
+    SetField<
+      DefaultMetadata,
+      'defaultValue',
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    >
+  > {
+    return new ResultColumnBuilder<
+      Ok,
+      Err,
+      SetField<
+        DefaultMetadata,
+        'defaultValue',
+        InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+      >
+    >(this, set(defaultMetadata, { defaultValue: value }));
+  }
+}
+
 class UnitBuilder extends TypeBuilder<
   {},
   { tag: 'Product'; value: { elements: [] } }
@@ -1951,7 +2011,8 @@ export class UuidBuilder
     Indexable<Uuid, UuidAlgebraicType>,
     Uniqueable<Uuid, UuidAlgebraicType>,
     PrimaryKeyable<Uuid, UuidAlgebraicType>,
-    Defaultable<Uuid, UuidAlgebraicType>
+    Defaultable<Uuid, UuidAlgebraicType>,
+    Nameable<Uuid, UuidAlgebraicType>
 {
   constructor() {
     super(Uuid.getAlgebraicType());
@@ -1998,13 +2059,18 @@ export class UuidBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
+  name<const Name extends string>(
+    name: Name
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new UuidColumnBuilder(this, set(defaultMetadata, { name }));
+  }
 }
 
 /**
  * The type of index types that can be applied to a column.
  * `undefined` is the default
  */
-export type IndexTypes = 'btree' | 'direct' | undefined;
+export type IndexTypes = 'btree' | 'direct' | 'hash' | undefined;
 
 /**
  * Metadata describing column constraints and index type
@@ -2054,14 +2120,11 @@ export class ColumnBuilder<
   }
 
   serialize(writer: BinaryWriter, value: Type): void {
-    AlgebraicType.serializeValue(writer, this.typeBuilder.algebraicType, value);
+    this.typeBuilder.serialize(writer, value);
   }
 
   deserialize(reader: BinaryReader): Type {
-    return AlgebraicType.deserializeValue(
-      reader,
-      this.typeBuilder.algebraicType
-    );
+    return this.typeBuilder.deserialize(reader);
   }
 }
 
@@ -3085,6 +3148,54 @@ export class OptionColumnBuilder<
   }
 }
 
+export class ResultColumnBuilder<
+    Ok extends TypeBuilder<any, any>,
+    Err extends TypeBuilder<any, any>,
+    M extends ColumnMetadata<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    > = DefaultMetadata,
+  >
+  extends ColumnBuilder<
+    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    ResultAlgebraicType<
+      InferSpacetimeTypeOfTypeBuilder<Ok>,
+      InferSpacetimeTypeOfTypeBuilder<Err>
+    >,
+    M
+  >
+  implements
+    Defaultable<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      ResultAlgebraicType<
+        InferSpacetimeTypeOfTypeBuilder<Ok>,
+        InferSpacetimeTypeOfTypeBuilder<Err>
+      >
+    >
+{
+  constructor(typeBuilder: TypeBuilder<any, any>, metadata: M) {
+    super(typeBuilder, metadata);
+  }
+
+  default(
+    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+  ): ResultColumnBuilder<
+    Ok,
+    Err,
+    SetField<
+      M,
+      'defaultValue',
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    >
+  > {
+    return new ResultColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, {
+        defaultValue: value,
+      })
+    );
+  }
+}
+
 export class ProductColumnBuilder<
     Elements extends ElementsObj,
     M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
@@ -3434,7 +3545,8 @@ export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
     Indexable<Uuid, UuidAlgebraicType>,
     Uniqueable<Uuid, UuidAlgebraicType>,
     PrimaryKeyable<Uuid, UuidAlgebraicType>,
-    Defaultable<Uuid, UuidAlgebraicType>
+    Defaultable<Uuid, UuidAlgebraicType>,
+    Nameable<Uuid, UuidAlgebraicType>
 {
   index(): UuidColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
@@ -3464,6 +3576,14 @@ export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
     return new UuidColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { defaultValue: value })
+    );
+  }
+  name<const Name extends string>(
+    name: Name
+  ): UuidColumnBuilder<SetField<M, 'name', Name>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3754,7 +3874,7 @@ export const t = {
   enum: enumImpl,
 
   /**
-   * This is a special helper function for conveniently creating {@link Product} type columns with no fields.
+   * This is a special helper function for conveniently creating `Product` type columns with no fields.
    *
    * @returns A new {@link ProductBuilder} instance with no fields.
    */
@@ -3823,6 +3943,20 @@ export const t = {
   },
 
   /**
+   * This is a convenience method for creating a column with the {@link Result} type.
+   * You can create a column of the same type by constructing an enum with an `ok` and `err` variant.
+   * @param ok The type of the value contained in the `ok` variant of the `Result`.
+   * @param err The type of the value contained in the `err` variant of the `Result`.
+   * @returns A new {@link ResultBuilder} instance with the {@link Result} type.
+   */
+  result<Ok extends TypeBuilder<any, any>, Err extends TypeBuilder<any, any>>(
+    ok: Ok,
+    err: Err
+  ): ResultBuilder<Ok, Err> {
+    return new ResultBuilder(ok, err);
+  },
+
+  /**
    * This is a convenience method for creating a column with the {@link Identity} type.
    * You can create a column of the same type by constructing an `object` with a single `__identity__` element.
    * @returns A new {@link TypeBuilder} instance with the {@link Identity} type.
@@ -3868,10 +4002,10 @@ export const t = {
   },
 
   /**
-   * This is a convenience method for creating a column with the {@link ByteArray} type.
+   * This is a convenience method for creating a column with the `ByteArray` type.
    * You can create a column of the same type by constructing an `array` of `u8`.
    * The TypeScript representation is {@link Uint8Array}.
-   * @returns A new {@link ByteArrayBuilder} instance with the {@link ByteArray} type.
+   * @returns A new {@link ByteArrayBuilder} instance with the `ByteArray` type.
    */
   byteArray: (): ByteArrayBuilder => {
     return new ByteArrayBuilder();

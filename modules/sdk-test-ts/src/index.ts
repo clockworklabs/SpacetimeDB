@@ -2,7 +2,13 @@
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
 import { toCamelCase, Uuid } from 'spacetimedb';
-import { type RowObj, schema, t, table } from 'spacetimedb/server';
+import {
+  type ModuleExport,
+  type RowObj,
+  schema,
+  t,
+  table,
+} from 'spacetimedb/server';
 
 const SimpleEnum = t.enum('SimpleEnum', ['Zero', 'One', 'Two']);
 
@@ -93,8 +99,10 @@ type TableSchema = ReturnType<typeof table<any, any>>;
 
 type TableWithReducers<Table extends TableSchema> = {
   table: Table;
-  reducers(spacetimedb: ReturnType<typeof schema<[Table]>>): void;
+  reducers(spacetimedb: ReturnType<typeof schema<[Table]>>): ExportsObj;
 };
+
+type ExportsObj = Record<string, ModuleExport>;
 
 /** Somewhat mimics the `define_tables!` macro in sdk-test/src/lib.rs */
 function tbl<const Name extends string, Row extends RowObj>(
@@ -112,33 +120,38 @@ function tbl<const Name extends string, Row extends RowObj>(
   return {
     table: t,
     reducers(spacetimedb) {
+      const exports: ExportsObj = {};
       if (ops.insert) {
-        spacetimedb.reducer(ops.insert, row, (ctx, args) => {
+        exports[ops.insert] = spacetimedb.reducer(row, (ctx, args) => {
           (ctx.db[toCamelCase(name)] as any).insert({ ...args });
         });
       }
       if (ops.delete) {
-        spacetimedb.reducer(ops.delete, row, (ctx, args) => {
+        exports[ops.delete] = spacetimedb.reducer(row, (ctx, args) => {
           (ctx.db[toCamelCase(name)] as any).delete({ ...args });
         });
       }
       if (ops.insert_or_panic) {
-        spacetimedb.reducer(ops.insert_or_panic, row, (ctx, args) => {
+        exports[ops.insert_or_panic] = spacetimedb.reducer(row, (ctx, args) => {
           (ctx.db[toCamelCase(name)] as any).insert({ ...args });
         });
       }
       if (ops.update_by) {
         const [reducer, col] = ops.update_by;
-        spacetimedb.reducer(reducer, row, (ctx, args) => {
+        exports[reducer] = spacetimedb.reducer(row, (ctx, args) => {
           (ctx.db[toCamelCase(name)] as any)[col].update({ ...args });
         });
       }
       if (ops.delete_by) {
         const [reducer, col] = ops.delete_by;
-        spacetimedb.reducer(reducer, { [col]: row[col] }, (ctx, args) => {
-          (ctx.db[toCamelCase(name)] as any)[col].delete(args[col as any]);
-        });
+        exports[reducer] = spacetimedb.reducer(
+          { [col]: row[col] },
+          (ctx, args) => {
+            (ctx.db[toCamelCase(name)] as any)[col].delete(args[col as any]);
+          }
+        );
       }
+      return exports;
     },
   };
 }
@@ -173,11 +186,7 @@ const singleValTables = [
     { a: t.connectionId() }
   ),
 
-  tbl(
-    'one_uuid',
-    {insert: 'insert_one_uuid'},
-    {u: t.uuid()}
-  ),
+  tbl('one_uuid', { insert: 'insert_one_uuid' }, { u: t.uuid() }),
 
   tbl(
     'one_timestamp',
@@ -262,11 +271,7 @@ const vecTables = [
     { t: t.array(t.timestamp()) }
   ),
 
-  tbl(
-    'vec_uuid',
-    {insert: 'insert_vec_uuid'},
-    {u: t.array(t.uuid())}
-  ),
+  tbl('vec_uuid', { insert: 'insert_vec_uuid' }, { u: t.array(t.uuid()) }),
 
   tbl(
     'vec_simple_enum',
@@ -316,8 +321,8 @@ const optionTables = [
   ),
   tbl(
     'option_uuid',
-    {insert: 'insert_option_uuid'},
-    {u: t.option(t.uuid())}
+    { insert: 'insert_option_uuid' },
+    { u: t.option(t.uuid()) }
   ),
   tbl(
     'option_simple_enum',
@@ -333,6 +338,40 @@ const optionTables = [
     'option_vec_option_i32',
     { insert: 'insert_option_vec_option_i32' },
     { v: t.option(t.array(t.option(t.i32()))) }
+  ),
+] as const;
+
+// Tables for Result<Ok, Err> values.
+const resultTables = [
+  tbl(
+    'result_i32_string',
+    { insert: 'insert_result_i32_string' },
+    { r: t.result(t.i32(), t.string()) }
+  ),
+  tbl(
+    'result_string_i32',
+    { insert: 'insert_result_string_i32' },
+    { r: t.result(t.string(), t.i32()) }
+  ),
+  tbl(
+    'result_identity_string',
+    { insert: 'insert_result_identity_string' },
+    { r: t.result(t.identity(), t.string()) }
+  ),
+  tbl(
+    'result_simple_enum_i32',
+    { insert: 'insert_result_simple_enum_i32' },
+    { r: t.result(SimpleEnum, t.i32()) }
+  ),
+  tbl(
+    'result_every_primitive_struct_string',
+    { insert: 'insert_result_every_primitive_struct_string' },
+    { r: t.result(EveryPrimitiveStruct, t.string()) }
+  ),
+  tbl(
+    'result_vec_i32_string',
+    { insert: 'insert_result_vec_i32_string' },
+    { r: t.result(t.array(t.i32()), t.string()) }
   ),
 ] as const;
 
@@ -506,7 +545,7 @@ const uniqueTables = [
       update_by: ['update_unique_uuid', 'u'],
       delete_by: ['delete_unique_uuid', 'u'],
     },
-    {u: t.uuid().unique(), data: t.i32()}
+    { u: t.uuid().unique(), data: t.i32() }
   ),
 ] as const;
 
@@ -690,7 +729,7 @@ const pkTables = [
       update_by: ['update_pk_uuid', 'u'],
       delete_by: ['delete_pk_uuid', 'u'],
     },
-    {u: t.uuid().primaryKey(), data: t.i32()}
+    { u: t.uuid().primaryKey(), data: t.i32() }
   ),
 
   tbl(
@@ -757,6 +796,7 @@ const allTables = [
   ...singleValTables,
   ...vecTables,
   ...optionTables,
+  ...resultTables,
   ...uniqueTables,
   ...pkTables,
   ...weirdTables,
@@ -834,17 +874,20 @@ const spacetimedb = schema(
   Users,
   IndexedSimpleEnum
 );
+export default spacetimedb;
 
-for (const { reducers } of allTables) {
-  reducers(spacetimedb as any);
-}
+export const reducers = spacetimedb.exportGroup(
+  Object.assign(
+    {},
+    ...allTables.map(({ reducers }) => reducers(spacetimedb as any))
+  )
+);
 
-spacetimedb.clientVisibilityFilter.sql(
+export const userFilter = spacetimedb.clientVisibilityFilter.sql(
   'SELECT * FROM users WHERE identity = :sender'
 );
 
-spacetimedb.reducer(
-  'update_pk_simple_enum',
+export const update_pk_simple_enum = spacetimedb.reducer(
   { a: SimpleEnum, data: t.i32() },
   (ctx, { a, data }) => {
     const o = ctx.db.pkSimpleEnum.a.find(a);
@@ -854,8 +897,7 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'insert_into_btree_u32',
+export const insert_into_btree_u32 = spacetimedb.reducer(
   { rows: t.array(BTreeU32.rowType) },
   (ctx, { rows }) => {
     for (const row of rows) {
@@ -864,8 +906,7 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'delete_from_btree_u32',
+export const delete_from_btree_u32 = spacetimedb.reducer(
   { rows: t.array(BTreeU32.rowType) },
   (ctx, { rows }) => {
     for (const row of rows) {
@@ -874,8 +915,7 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'insert_into_pk_btree_u32',
+export const insert_into_pk_btree_u32 = spacetimedb.reducer(
   { pk_u32: t.array(PkU32), bt_u32: t.array(BTreeU32.rowType) },
   (ctx, { pk_u32, bt_u32 }) => {
     for (const row of pk_u32) {
@@ -890,8 +930,7 @@ spacetimedb.reducer(
 /// The purpose of this reducer is for a test which
 /// left-semijoins `UniqueU32` to `PkU32`
 /// for the purposes of behavior testing row-deduplication.
-spacetimedb.reducer(
-  'insert_unique_u32_update_pk_u32',
+export const insert_unique_u32_update_pk_u32 = spacetimedb.reducer(
   { n: t.u32(), d_unique: t.i32(), d_pk: t.i32() },
   (ctx, { n, d_unique, d_pk }) => {
     ctx.db.uniqueU32.insert({ n, data: d_unique });
@@ -904,8 +943,7 @@ spacetimedb.reducer(
 /// - `UniqueU32` to `PkU32Two`
 ///
 /// for the purposes of behavior testing row-deduplication.
-spacetimedb.reducer(
-  'delete_pk_u32_insert_pk_u32_two',
+export const delete_pk_u32_insert_pk_u32_two = spacetimedb.reducer(
   { n: t.u32(), data: t.i32() },
   (ctx, { n, data }) => {
     ctx.db.pkU32Two.insert({ n, data });
@@ -913,46 +951,43 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer('insert_caller_one_identity', ctx => {
+export const insert_caller_one_identity = spacetimedb.reducer(ctx => {
   ctx.db.oneIdentity.insert({ i: ctx.sender });
 });
 
-spacetimedb.reducer('insert_caller_vec_identity', ctx => {
+export const insert_caller_vec_identity = spacetimedb.reducer(ctx => {
   ctx.db.vecIdentity.insert({ i: [ctx.sender] });
 });
 
-spacetimedb.reducer(
-  'insert_caller_unique_identity',
+export const insert_caller_unique_identity = spacetimedb.reducer(
   { data: t.i32() },
   (ctx, { data }) => {
     ctx.db.uniqueIdentity.insert({ i: ctx.sender, data });
   }
 );
 
-spacetimedb.reducer(
-  'insert_caller_pk_identity',
+export const insert_caller_pk_identity = spacetimedb.reducer(
   { data: t.i32() },
   (ctx, { data }) => {
     ctx.db.pkIdentity.insert({ i: ctx.sender, data });
   }
 );
 
-spacetimedb.reducer('insert_caller_one_connection_id', ctx => {
+export const insert_caller_one_connection_id = spacetimedb.reducer(ctx => {
   if (!ctx.connectionId) throw new Error('No connection id in reducer context');
   ctx.db.oneConnectionId.insert({
     a: ctx.connectionId,
   });
 });
 
-spacetimedb.reducer('insert_caller_vec_connection_id', ctx => {
+export const insert_caller_vec_connection_id = spacetimedb.reducer(ctx => {
   if (!ctx.connectionId) throw new Error('No connection id in reducer context');
   ctx.db.vecConnectionId.insert({
     a: [ctx.connectionId],
   });
 });
 
-spacetimedb.reducer(
-  'insert_caller_unique_connection_id',
+export const insert_caller_unique_connection_id = spacetimedb.reducer(
   { data: t.i32() },
   (ctx, { data }) => {
     if (!ctx.connectionId)
@@ -964,8 +999,7 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'insert_caller_pk_connection_id',
+export const insert_caller_pk_connection_id = spacetimedb.reducer(
   { data: t.i32() },
   (ctx, { data }) => {
     if (!ctx.connectionId)
@@ -977,20 +1011,19 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer('insert_call_timestamp', ctx => {
+export const insert_call_timestamp = spacetimedb.reducer(ctx => {
   ctx.db.oneTimestamp.insert({ t: ctx.timestamp });
 });
 
-spacetimedb.reducer('insert_call_uuid_v4', ctx => {
-  ctx.db.oneUuid.insert({u: ctx.newUuidV4()});
+export const insert_call_uuid_v4 = spacetimedb.reducer(ctx => {
+  ctx.db.oneUuid.insert({ u: ctx.newUuidV4() });
 });
 
-spacetimedb.reducer('insert_call_uuid_v7', ctx => {
+export const insert_call_uuid_v7 = spacetimedb.reducer(ctx => {
   ctx.db.oneUuid.insert({ u: ctx.newUuidV7() });
 });
 
-spacetimedb.reducer(
-  'insert_primitives_as_strings',
+export const insert_primitives_as_strings = spacetimedb.reducer(
   { s: EveryPrimitiveStruct },
   (ctx, { s }) => {
     ctx.db.vecString.insert({
@@ -1023,36 +1056,34 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer('no_op_succeeds', _ctx => {});
+export const no_op_succeeds = spacetimedb.reducer(_ctx => {});
 
-spacetimedb.clientVisibilityFilter.sql('SELECT * FROM one_u8');
+export const oneu8Filter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM one_u8'
+);
 
-spacetimedb.reducer(
-  'send_scheduled_message',
+export const send_scheduled_message = spacetimedb.reducer(
   { arg: ScheduledTable.rowType },
   (_ctx, { arg }) => {
     const _ = [arg.text, arg.scheduled_at, arg.scheduled_id];
   }
 );
 
-spacetimedb.reducer(
-  'insert_user',
+export const insert_user = spacetimedb.reducer(
   { name: t.string(), identity: t.identity() },
   (ctx, { name, identity }) => {
     ctx.db.users.insert({ name, identity });
   }
 );
 
-spacetimedb.reducer(
-  'insert_into_indexed_simple_enum',
+export const insert_into_indexed_simple_enum = spacetimedb.reducer(
   { n: SimpleEnum },
   (ctx, { n }) => {
     ctx.db.indexedSimpleEnum.insert({ n });
   }
 );
 
-spacetimedb.reducer(
-  'update_indexed_simple_enum',
+export const update_indexed_simple_enum = spacetimedb.reducer(
   { a: SimpleEnum, b: SimpleEnum },
   (ctx, { a, b }) => {
     if (!ctx.db.indexedSimpleEnum.n.filter(a).next().done) {
@@ -1062,8 +1093,9 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer('sorted_uuids_insert', ctx => {
-  const PkTable = pkTables.find(t => t.table.tableName === 'pk_uuid')?.table.rowType;
+export const sorted_uuids_insert = spacetimedb.reducer(ctx => {
+  const PkTable = pkTables.find(t => t.table.tableName === 'pk_uuid')?.table
+    .rowType;
   if (!PkTable) {
     throw new Error("Table 'pk_uuid' not found");
   }
@@ -1078,7 +1110,7 @@ spacetimedb.reducer('sorted_uuids_insert', ctx => {
 
   for (const row of ctx.db.pkUuid.iter()) {
     if (lastUuid !== null && lastUuid >= row.u) {
-      throw new Error("UUIDs are not sorted correctly");
+      throw new Error('UUIDs are not sorted correctly');
     }
     lastUuid = row.u;
   }

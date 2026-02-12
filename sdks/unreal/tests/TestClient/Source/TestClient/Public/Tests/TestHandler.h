@@ -387,6 +387,26 @@ public:
 };
 
 UCLASS()
+class UResultActionsHandler : public UTestHandler
+{
+    GENERATED_BODY()
+public:
+    UFUNCTION() void OnInsertResultI32String(const FEventContext& Context, const FResultI32StringType& Value);
+    UFUNCTION() void OnInsertResultStringI32(const FEventContext& Context, const FResultStringI32Type& Value);
+    UFUNCTION() void OnInsertResultIdentityString(const FEventContext& Context, const FResultIdentityStringType& Value);
+    UFUNCTION() void OnInsertResultSimpleEnumI32(const FEventContext& Context, const FResultSimpleEnumI32Type& Value);
+    UFUNCTION() void OnInsertResultEveryPrimitiveStructString(const FEventContext& Context, const FResultEveryPrimitiveStructStringType& Value);
+    UFUNCTION() void OnInsertResultVecI32String(const FEventContext& Context, const FResultVecI32StringType& Value);
+
+    FTestClientResultInt32String ExpectedResultI32StringType;
+    FTestClientResultStringInt32 ExpectedResultStringI32Type;
+    FTestClientResultIdentityString ExpectedResultIdentityStringType;
+    FTestClientResultSimpleEnumInt32 ExpectedResultSimpleEnumI32Type;
+    FTestClientResultEveryPrimitiveStructString ExpectedResultEveryPrimitiveStructStringType;
+    FTestClientResultVecInt32String ExpectedResultVecI32StringType;
+};
+
+UCLASS()
 class UStructActionsHandler : public UTestHandler
 {
 	GENERATED_BODY()

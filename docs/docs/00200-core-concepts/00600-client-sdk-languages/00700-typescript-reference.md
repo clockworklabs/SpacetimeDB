@@ -3,7 +3,6 @@ title: TypeScript Reference
 slug: /sdks/typescript
 ---
 
-# The SpacetimeDB Typescript client SDK
 
 The SpacetimeDB client SDK for TypeScript contains all the tools you need to build clients for SpacetimeDB modules using Typescript, either in the browser or with NodeJS.
 
@@ -116,17 +115,18 @@ class DbConnection {
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withModuleName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
+Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withDatabaseName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
 
-| Name                                                  | Description                                                                          |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`withUri` method](#method-withuri)                   | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
-| [`withModuleName` method](#method-withmodulename)     | Set the name or `Identity` of the remote database.                                   |
-| [`onConnect` callback](#callback-onconnect)           | Register a callback to run when the connection is successfully established.          |
-| [`onConnectError` callback](#callback-onconnecterror) | Register a callback to run if the connection is rejected or the host is unreachable. |
-| [`onDisconnect` callback](#callback-ondisconnect)     | Register a callback to run when the connection ends.                                 |
-| [`withToken` method](#method-withtoken)               | Supply a token to authenticate with the remote database.                             |
-| [`build` method](#method-build)                       | Finalize configuration and connect.                                                  |
+| Name                                                      | Description                                                                          |
+|-----------------------------------------------------------|--------------------------------------------------------------------------------------|
+| [`withUri` method](#method-withuri)                       | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
+| [`withDatabaseName` method](#method-withdatabasename)     | Set the name or `Identity` of the remote database.                                   |
+| [`withConfirmedReads` method](#method-withconfirmedreads) | Enable or disable confirmed reads.                                                   |
+| [`onConnect` callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.          |
+| [`onConnectError` callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
+| [`onDisconnect` callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                 |
+| [`withToken` method](#method-withtoken)                   | Supply a token to authenticate with the remote database.                             |
+| [`build` method](#method-build)                           | Finalize configuration and connect.                                                  |
 
 #### Method `withUri`
 
@@ -138,15 +138,29 @@ class DbConnectionBuilder {
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote database.
 
-#### Method `withModuleName`
+#### Method `withDatabaseName`
 
 ```typescript
 class DbConnectionBuilder {
-  public withModuleName(name_or_identity: string): DbConnectionBuilder;
+  public withDatabaseName(name_or_identity: string): DbConnectionBuilder;
 }
 ```
 
 Configure the SpacetimeDB domain name or hex string encoded `Identity` of the remote database which identifies it within the SpacetimeDB instance or cluster.
+
+#### Method `withConfirmedReads`
+
+```typescript
+class DbConnectionBuilder {
+  public withConfirmedReads(confirmedReads: bool): DbConnectionBuilder;
+}
+```
+
+Configure the connection to request confirmed reads.
+
+When enabled, the server will send query results only after they are confirmed to be durable, i.e. persisted to disk on one or more replicas depending on the replication settings of the database. When set to `false`, the server will send results as soon as transactions are committed in memory.
+
+If this method is not called, the server chooses the default.
 
 #### Callback `onConnect`
 

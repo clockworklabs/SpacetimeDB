@@ -31,7 +31,7 @@ namespace SpacetimeDB
             }
             if (nameOrAddress == null)
             {
-                throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithModuleName() first.");
+                throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithDatabaseName() first.");
             }
             conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light, confirmedReads);
 #if UNITY_5_3_OR_NEWER
@@ -49,7 +49,7 @@ namespace SpacetimeDB
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection> WithModuleName(string nameOrAddress)
+        public DbConnectionBuilder<DbConnection> WithDatabaseName(string nameOrAddress)
         {
             this.nameOrAddress = nameOrAddress;
             return this;
@@ -507,6 +507,14 @@ namespace SpacetimeDB
             if (webSocket.IsConnected)
             {
                 webSocket.Close();
+            }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            else if (webSocket.IsConnecting)
+#else
+            else if (webSocket.IsConnecting || webSocket.IsNoneState)
+#endif
+            {
+                webSocket.Abort(); // forceful during connecting
             }
 
             _parseCancellationTokenSource.Cancel();

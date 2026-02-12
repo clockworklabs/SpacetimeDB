@@ -6,8 +6,6 @@ slug: /intro/key-architecture
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Key architectural concepts
-
 ## Host
 
 A SpacetimeDB **host** is a server that hosts [databases](#database). You can run your own host, or use the SpacetimeDB maincloud. Many databases can run on a single host.
@@ -18,9 +16,9 @@ A SpacetimeDB **database** is an application that runs on a [host](#host).
 
 A database exports [tables](#table), which store data, and [reducers](#reducer), which allow [clients](#client) to make requests.
 
-A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C# or Rust.
+A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C#, C++, Rust or TypeScript.
 
-(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
+(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
 
 ## Table
 
@@ -28,35 +26,6 @@ A SpacetimeDB **table** is a SQL database table. Tables are declared in a module
 
 <Tabs groupId="syntax" queryString>
 
-<TabItem value="rust" label="Rust">
-
-```rust
-#[spacetimedb::table(name = players, public)]
-pub struct Player {
-   #[primary_key]
-   id: u64,
-   name: String,
-   age: u32,
-   user: Identity,
-}
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-[SpacetimeDB.Table(Name = "players", Public = true)]
-public partial struct Player
-{
-    [SpacetimeDB.PrimaryKey]
-    uint playerId;
-    string name;
-    uint age;
-    Identity user;
-}
-```
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -74,6 +43,50 @@ const players = table(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Table(Name = "Player", Public = true)]
+public partial struct Player
+{
+    [SpacetimeDB.PrimaryKey]
+    uint playerId;
+    string name;
+    uint age;
+    Identity user;
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::table(name = players, public)]
+pub struct Player {
+   #[primary_key]
+   id: u64,
+   name: String,
+   age: u32,
+   user: Identity,
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Player {
+    uint64_t id;
+    std::string name;
+    uint32_t age;
+    Identity user;
+};
+SPACETIMEDB_STRUCT(Player, id, name, age, user)
+SPACETIMEDB_TABLE(Player, players, Public)
+FIELD_PrimaryKey(players, id)
+```
+
+</TabItem>
 
 </Tabs>
 
@@ -87,23 +100,22 @@ Connected [clients](/sdks) can call reducers to interact with the database.
 This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_procedure_call).
 
 <Tabs groupId="syntax" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-A reducer can be written in Rust like so:
+A reducer can be written in a TypeScript module like so:
 
-```rust
-#[spacetimedb::reducer]
-pub fn set_player_name(ctx: &spacetimedb::ReducerContext, id: u64, name: String) -> Result<(), String> {
+```typescript
+export const set_player_name = spacetimedb.reducer({ id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
    // ...
-}
+});
 ```
 
-And a Rust [client](#client) can call that reducer:
+And a TypeScript [client](#client) can call that reducer:
 
-```rust
-fn main() {
+```typescript
+function main() {
    // ...setup code, then...
-   ctx.reducers.set_player_name(57, "Marceline".into());
+   ctx.reducers.setPlayerName(57n, "Marceline");
 }
 ```
 
@@ -130,22 +142,45 @@ void Main() {
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-A reducer can be written in a TypeScript module like so:
+A reducer can be written in Rust like so:
 
-```typescript
-spacetimedb.reducer('set_player_name', { id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
+```rust
+#[spacetimedb::reducer]
+pub fn set_player_name(ctx: &spacetimedb::ReducerContext, id: u64, name: String) -> Result<(), String> {
    // ...
-});
+}
 ```
 
-And a TypeScript [client](#client) can call that reducer:
+And a Rust [client](#client) can call that reducer:
 
-```typescript
-function main() {
+```rust
+fn main() {
    // ...setup code, then...
-   ctx.reducers.setPlayerName(57n, "Marceline");
+   ctx.reducers.set_player_name(57, "Marceline".into());
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+A reducer can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_REDUCER(set_player_name, ReducerContext ctx, uint64_t id, std::string name) {
+   // ...
+   return Ok();
+}
+```
+
+And an Unreal C++ [client](#client) can call that reducer:
+
+```cpp
+void AMyGameManager::UpdatePlayerName()
+{
+   // ...setup code, then...
+   Conn->Reducers->SetPlayerName(57, "Marceline");
 }
 ```
 
@@ -176,25 +211,25 @@ the changes in the nested one are still persisted.
 
 <Tabs groupId="syntax" queryString>
 
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::reducer]
-pub fn hello(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
-   if world(ctx).is_err() {
-      other_changes(ctx);
+```typescript
+export const hello = spacetimedb.reducer((ctx) => {
+   try {
+      world(ctx);
+   } catch {
+      otherChanges(ctx);
    }
-}
+});
 
-#[spacetimedb::reducer]
-pub fn world(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
-    clear_all_tables(ctx);
-}
-
+export const world = spacetimedb.reducer((ctx) => {
+   clearAllTables(ctx);
+   // ...
+});
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -219,29 +254,50 @@ public static void World(ReducerContext ctx)
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.reducer('hello', (ctx) => {
-   try {
-      world(ctx);
-   } catch {
-      otherChanges(ctx);
+```rust
+#[spacetimedb::reducer]
+pub fn hello(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
+   if world(ctx).is_err() {
+      other_changes(ctx);
    }
-});
+}
 
-spacetimedb.reducer('world', (ctx) => {
-   clearAllTables(ctx);
-   // ...
-});
+#[spacetimedb::reducer]
+pub fn world(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
+    clear_all_tables(ctx);
+}
+
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
+a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
+or at a specific time.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(world, ReducerContext ctx) {
+    clear_all_tables(ctx);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(hello, ReducerContext ctx) {
+    if (world(ctx).is_err()) {
+        other_changes(ctx);
+    }
+    return Ok();
+}
+```
+
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -260,6 +316,67 @@ and must manually open and commit a transaction in order to read from or modify 
 Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.
 
 <Tabs groupId="syntax" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+A procedure can be defined in a TypeScript module:
+
+```typescript
+export const make_request = spacetimedb.procedure(t.string(), ctx => {
+   // ...
+})
+```
+
+And a TypeScript [client](#client) can call that procedure:
+
+```typescript
+ctx.procedures.makeRequest();
+```
+
+A TypeScript [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+
+```typescript
+ctx.procedures.makeRequest().then(
+    res => console.log(`Procedure make_request returned ${res}`),
+    err => console.error(`Procedure make_request failed! ${err}`),
+);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+C# modules currently cannot define procedures. Support for defining procedures in C# modules will be released shortly.
+
+A C# [client](#client) can call a procedure defined by a Rust or TypeScript module:
+
+```csharp
+void Main()
+{
+    // ...setup code, then...
+    ctx.Procedures.MakeRequest();
+}
+```
+
+A C# [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+
+```csharp
+void Main()
+{
+    // ...setup code, then...
+    ctx.Procedures.MakeRequestThen((ctx, res) =>
+    {
+        if (res.IsSuccess)
+        {
+            Log.Debug($"Procedure `make_request` returned {res.Value!}");
+        }
+        else
+        {
+            throw new Exception($"Procedure `make_request` failed: {res.Error!}");
+        }
+    });
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 Because procedures are unstable, Rust modules that define them must opt in to the `unstable` feature in their `Cargo.toml`:
@@ -302,68 +419,21 @@ fn main() {
 ```
 
 </TabItem>
-<TabItem value="csharp" label="C#">
+<TabItem value="cpp" label="C++">
 
-C# modules currently cannot define procedures. Support for defining procedures in C# modules will be released shortly.
+A procedure can be defined in a C++ module:
 
-A C# [client](#client) can call a procedure defined by a Rust or TypeScript module:
-
-```csharp
-void Main()
-{
-    // ...setup code, then...
-    ctx.Procedures.MakeRequest();
-}
-```
-
-A C# [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
-
-```csharp
-void Main()
-{
-    // ...setup code, then...
-    ctx.Procedures.MakeRequestThen((ctx, res) =>
-    {
-        if (res.IsSuccess)
-        {
-            Log.Debug($"Procedure `make_request` returned {res.Value!}");
-        }
-        else
-        {
-            throw new Exception($"Procedure `make_request` failed: {res.Error!}");
-        }
-    });
-}
-```
-
-</TabItem>
-<TabItem value="typescript" label="TypeScript">
-
-A procedure can be defined in a TypeScript module:
-
-```typescript
-spacetimedb.procedure("make_request", t.string(), ctx => {
+```cpp
+SPACETIMEDB_PROCEDURE(std::string, make_request, ProcedureContext ctx) {
    // ...
-})
+   return std::string{"result"};
+}
 ```
 
-And a TypeScript [client](#client) can call that procedure:
-
-```typescript
-ctx.procedures.makeRequest();
-```
-
-A Rust [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
-
-```typescript
-ctx.procedures.makeRequest().then(
-    res => console.log(`Procedure make_request returned ${res}`),
-    err => console.error(`Procedure make_request failed! ${err}`),
-);
-```
+Use the other tabs (TypeScript/C#/Rust/Unreal C++/Blueprint) for client call examples.
 
 </TabItem>
-<TabItem value="cpp" label="Unreal C++">
+<TabItem value="cpp-unreal" label="Unreal C++">
 
 An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
 
@@ -376,7 +446,7 @@ An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeSc
 
 ```
 
-A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+An Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
 
 ```cpp
 {
@@ -397,11 +467,11 @@ void AGameManager::OnMakeRequestComplete(const FProcedureEventContext& Context, 
 </TabItem>
 <TabItem value="blueprint" label="Unreal Blueprint">
 
-An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
+An Unreal [client](#client) can call a procedure defined by a Rust or TypeScript module:
 
 ![MakeRequest without callback](/images/unreal/intro/ue-blueprint-makerequest-nocallback.png)
 
-A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+An Unreal [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
 
 ![MakeRequest with callback](/images/unreal/intro/ue-blueprint-makerequest-with-callback.png)
 
@@ -417,15 +487,19 @@ A **view** is a read-only function exported by a [database](#database) that comp
 Views must be declared as `public` and accept only a context parameter. They can return either a single row or multiple rows. Like tables, views can be subscribed to and automatically update when their underlying data changes.
 
 <Tabs groupId="syntax" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-A view can be written in Rust like so:
+A view can be written in a TypeScript module like so:
 
-```rust
-#[spacetimedb::view(name = my_player, public)]
-fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
-}
+```typescript
+export const my_player = spacetimedb.view(
+  { name: 'my_player', public: true },
+  t.option(players.row()),
+  (ctx) => {
+    const row = ctx.db.players.identity.find(ctx.sender);
+    return row ?? null;
+  }
+);
 ```
 
 </TabItem>
@@ -442,19 +516,26 @@ public static Player? MyPlayer(ViewContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-A view can be written in a TypeScript module like so:
+A view can be written in Rust like so:
 
-```typescript
-spacetimedb.view(
-  { name: 'my_player', public: true },
-  t.option(players.row()),
-  (ctx) => {
-    const row = ctx.db.players.identity.find(ctx.sender);
-    return row ?? null;
-  }
-);
+```rust
+#[spacetimedb::view(name = my_player, public)]
+fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+A view can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
+   return ctx.db[player_identity].find(ctx.sender);
+}
 ```
 
 </TabItem>
@@ -506,7 +587,7 @@ def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
    return identity_big_endian_bytes
 ```
 
-You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](/spacetimeauth), or you can get one from any OpenID Connect compliant identity provider.
+You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md), or you can get one from any OpenID Connect compliant identity provider.
 
 ## ConnectionId
 
@@ -519,4 +600,3 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.
 
 <!-- TODO(1.0): Rewrite this section after finalizing energy SKUs. -->
-

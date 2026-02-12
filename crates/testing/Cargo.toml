@@ -5,6 +5,9 @@ edition.workspace = true
 license-file = "LICENSE"
 publish = false
 
+[features]
+allow_loopback_http_for_tests = ["spacetimedb-standalone/allow_loopback_http_for_tests"]
+
 [dependencies]
 spacetimedb-cli.workspace = true
 spacetimedb-data-structures.workspace = true
@@ -28,6 +31,7 @@ lazy_static.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 serde.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true

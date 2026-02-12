@@ -3,12 +3,15 @@ title: Automatic Migrations
 slug: /databases/automatic-migrations
 ---
 
-# Automatic Migrations
 
 When you republish a module to an existing database using `spacetime publish {database-name}`, SpacetimeDB attempts to automatically migrate your database schema to match the new module definition. This allows you to update your module code and redeploy without losing existing data, as long as the changes are compatible.
 
 :::note
 The "schema" refers to the collection of tables, reducers, procedures, views, and the types they depend on that are declared in your module code.
+:::
+
+:::warning
+If you are upgrading an existing 1.x database to 2.0, review [1.x to 2.0 Upgrade Notes](/upgrade) before publishing.
 :::
 
 ## ✅ Safe Changes (Always Allowed)
@@ -26,6 +29,7 @@ The following changes are always allowed and will not break existing clients:
 
 These changes are allowed by automatic migration, but may cause runtime errors for clients that haven't been updated:
 
+- **Adding new columns to the end of a table with a default value.** The new column must be added at the end of the table definition and must have a default value specified. Non-updated clients will not be aware of the new column.
 - **Changing or removing reducers.** Clients attempting to call the old version of a changed reducer or a removed reducer will receive runtime errors.
 - **Changing tables from public to private.** Clients subscribed to a newly-private table will receive runtime errors.
 - **Removing `Primary Key` annotations.** Non-updated clients will still use the old primary key as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
@@ -44,7 +48,9 @@ These changes are allowed by automatic migration, but may cause runtime errors f
 The following changes cannot be performed with automatic migration and will cause the publish to fail:
 
 - **Removing tables.**
-- **Changing the columns of a table.** This includes changing the order of columns.
+- **Removing or modifying existing columns.** This includes changing the type, renaming, or reordering columns.
+- **Adding columns without a default value.** New columns must have a default value so existing rows can be populated.
+- **Adding columns in the middle of a table.** New columns must be added at the end of the table definition.
 - **Changing whether a table is used for `scheduling`.**
 - **Adding `Unique` or `Primary Key` constraints.** This could result in existing tables being in an invalid state.
 

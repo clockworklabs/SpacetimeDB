@@ -57,6 +57,65 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 2. SpacetimeDB Maincloud: a hosted, managed-service, serverless cluster
 3. SpacetimeDB Enterprise: a closed-source, clusterized version of SpacetimeDB which can be licensed for on-prem hosting or dedicated hosting
 
+## Documentation Directory
+
+### Getting Started
+- [What is SpacetimeDB](/intro/what-is-spacetimedb) - Overview and core concepts
+- [Key Architecture](/intro/key-architecture) - How SpacetimeDB works
+- [Language Support](/intro/language-support) - Supported languages and SDKs
+- [FAQ](/intro/faq) - Frequently asked questions
+
+### Quickstarts
+- [React Quickstart](/quickstarts/react) - Get started with React + TypeScript
+- [TypeScript Quickstart](/quickstarts/typescript) - TypeScript server module
+- [Rust Quickstart](/quickstarts/rust) - Rust server module
+- [C# Quickstart](/quickstarts/c-sharp) - C# server module
+
+### Core Concepts
+- [Databases](/databases) - Database modules overview
+- [Tables](/tables) - Defining and working with tables
+  - [Columns](/tables/columns) - Column types and definitions
+  - [Indexes](/tables/indexes) - Creating and using indexes
+  - [Scheduled Tables](/tables/scheduled-tables) - Time-based scheduling
+  - [Access Permissions](/tables/access-permissions) - Table visibility (public/private)
+- [Functions](/functions) - Server-side logic
+  - [Reducers](/functions/reducers) - Transactional RPC functions
+  - [Reducer Context](/functions/reducers/reducer-context) - ctx.db, ctx.sender, etc.
+  - [Lifecycle Reducers](/functions/reducers/lifecycle) - init, client_connected, client_disconnected
+  - [Error Handling](/functions/reducers/error-handling) - Handling errors in reducers
+  - [Procedures](/functions/procedures) - Non-transactional functions with side effects
+  - [Views](/functions/views) - Computed data views
+- [Subscriptions](/subscriptions) - Real-time data synchronization
+  - [Subscription Semantics](/subscriptions/semantics) - How subscriptions work
+- [Client SDKs](/sdks) - Client-side integration
+  - [Code Generation](/sdks/codegen) - Generating type-safe bindings
+
+### Development
+- [spacetime dev](/databases/developing) - Interactive development mode
+- [Building & Publishing](/databases/building-publishing) - Deploying modules
+- [Cheat Sheet](/databases/cheat-sheet) - Quick reference for common operations
+- [Automatic Migrations](/databases/automatic-migrations) - Schema migration handling
+
+### Deployment
+- [Deploy to Maincloud](/how-to/deploy/maincloud) - Hosted deployment
+- [Self-Hosting](/how-to/deploy/self-hosting) - Run your own server
+
+### Reference
+- [CLI Reference](/cli-reference) - Command-line tool documentation
+- [SQL Reference](/reference/sql) - SQL query syntax
+- [HTTP API](/http/database) - REST API reference
+
+### AI Assistant Rules
+
+**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific rules files. These contain critical information about hallucinated APIs, common mistakes, and correct patterns:
+
+| Language | Rules |
+|----------|-------|
+| All Languages | [spacetimedb.mdc](https://spacetimedb.com/ai-rules/spacetimedb.mdc) |
+| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/ai-rules/spacetimedb-typescript.mdc) |
+| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/ai-rules/spacetimedb-rust.mdc) |
+| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/ai-rules/spacetimedb-csharp.mdc) |
+
 ## Basic Project Workflow
 
 Getting started with SpacetimeDB involves a few key steps:
@@ -375,7 +434,7 @@ pub struct PlayerSessionData {
 fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     // Reducers interact with the specific table handles:
     let session = PlayerSessionData {
-        player_id: ctx.sender, // Example: Use sender identity
+        player_id: ctx.sender(), // Example: Use sender identity
         session_id: 0, // Assuming auto_inc
         last_activity: ctx.timestamp,
     };
@@ -387,12 +446,12 @@ fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     }
 
     // Find a player in the 'players_in_lobby' table by primary key
-    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender) {
+    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender()) {
         spacetimedb::log::info!("Player {} found in lobby.", lobby_player.player_id);
     }
 
     // Delete from the 'logged_in_players' table using the PK index
-    ctx.db.logged_in_players().player_id().delete(&ctx.sender);
+    ctx.db.logged_in_players().player_id().delete(&ctx.sender());
 }
 ```
 
@@ -440,7 +499,7 @@ use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 // Example: Basic reducer to set a user's name
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let sender_id = ctx.sender;
+    let sender_id = ctx.sender();
     let name = validate_name(name)?; // Use helper for validation
 
     // Find the user row by primary key
@@ -460,13 +519,13 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 #[reducer]
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?; // Use helper for validation
-    log::info!("User {} sent message: {}", ctx.sender, text);
+    log::info!("User {} sent message: {}", ctx.sender(), text);
 
     // Insert a new row into the Message table
     // Note: id is auto_inc, so we provide 0. insert() panics on constraint violation.
     let new_message = Message {
         id: 0,
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     };
@@ -508,8 +567,8 @@ Reducers can indicate failure either by returning `Err` from a function with a `
 Special reducers handle specific events:
 
 - `#[reducer(init)]`: Runs once when the module is first published **and** any time the database is manually cleared (e.g., via `spacetime publish -c` or `spacetime server clear`). Failure prevents publishing or clearing. Often used for initial data setup.
-- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
-- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
 
 These reducers cannot take arguments beyond `&ReducerContext`.
 
@@ -552,14 +611,14 @@ pub fn initialize_database(ctx: &ReducerContext) {
 // Example client_connected reducer
 #[reducer(client_connected)]
 pub fn handle_connect(ctx: &ReducerContext) {
-    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... setup initial state for ctx.sender ...
 }
 
 // Example client_disconnected reducer
 #[reducer(client_disconnected)]
 pub fn handle_disconnect(ctx: &ReducerContext) {
-    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... cleanup state for ctx.sender ...
 }
 ```
@@ -741,7 +800,7 @@ struct SendMessageSchedule {
 #[reducer]
 fn send_message(ctx: &ReducerContext, args: SendMessageSchedule) -> Result<(), String> {
     // Security check is important!
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         return Err("Reducer `send_message` may not be invoked by clients, only via scheduling.".into());
     }
 
@@ -792,7 +851,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
 - **Best-Effort Scheduling:** Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution when a database is under heavy load.
 
-- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender`) to the module's own identity (`ctx.identity()`).
+- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender()`) to the module's own identity (`ctx.identity()`).
 
   ```rust
   use spacetimedb::{reducer, ReducerContext};
@@ -801,7 +860,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
   #[reducer]
   fn my_scheduled_reducer(ctx: &ReducerContext, args: MyScheduleArgs) -> Result<(), String> {
-      if ctx.sender != ctx.identity() {
+      if ctx.sender() != ctx.identity() {
           return Err("Reducer `my_scheduled_reducer` may not be invoked by clients, only via scheduling.".into());
       }
       // ... Reducer body proceeds only if called by scheduler ...
@@ -810,218 +869,154 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
   ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will be `None`.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender()` will be the module's own identity, and `ctx.connection_id()` will be `None`.
 :::
 
-#### Row-Level Security (RLS)
+#### View Functions
 
-Row Level Security (RLS) allows module authors to restrict client access to specific rows
-of tables that are marked as `public`. By default, tables _without_ the `public`
-attribute are private and completely inaccessible to clients. Tables _with_ the `public`
-attribute are, by default, fully visible to any client that subscribes to them. RLS provides
-a mechanism to selectively restrict access to certain rows of these `public` tables based
-on rules evaluated for each client.
+Views are read-only functions that compute and return results from your tables. Unlike reducers, views do not modify database state - they only query and return data. Views are useful for:
 
-Private tables (those _without_ the `public` attribute) are always completely inaccessible
-to clients, and RLS rules do not apply to them. RLS rules are defined for `public` tables
-to filter which rows are visible.
+- **Computing derived data**: Join multiple tables or aggregate data before sending to clients
+- **User-specific queries**: Return data specific to the requesting client (e.g., "my player")
+- **Performance**: Compute results server-side, reducing data sent to clients
+- **Encapsulation**: Hide complex queries behind simple interfaces
 
-These access-granting rules are expressed in SQL and evaluated automatically for queries
-and subscriptions made by clients against private tables with associated RLS rules.
+Views can be subscribed to just like tables and automatically update when underlying data changes.
 
-:::info Version-Specific Status
-Row-Level Security (RLS) was introduced as an **unstable** feature in **SpacetimeDB v1.1.0**.
-It requires explicit opt-in via feature flags or pragmas.
-:::
+**Defining Views**
 
-**Enabling RLS**
-
-RLS is currently **unstable** and must be explicitly enabled in your module.
-
-To enable RLS, activate the `unstable` feature in your project's `Cargo.toml`:
-
-```toml
-spacetimedb = { version = "1.1.0", features = ["unstable"] } # at least version 1.1.0
-```
-
-**How It Works**
-
-RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
-and are expressed in SQL using constants of type `Filter`.
+Views are defined using the `#[view]` macro and must specify a `name` and `public` attribute:
 
 ```rust
-use spacetimedb::{client_visibility_filter, Filter, table, Identity};
+use spacetimedb::{view, ViewContext, AnonymousViewContext, table, SpacetimeType};
+use spacetimedb_lib::Identity;
 
-// Define a public table for RLS
-#[table(name = account, public)] // Now a public table
-struct Account {
+#[spacetimedb::table(name = player, public)]
+pub struct Player {
     #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[unique]
     identity: Identity,
-    email: String,
-    balance: u32,
+    name: String,
 }
 
-/// RLS Rule: Allow a client to see *only* their own account record.
-#[client_visibility_filter]
-const ACCOUNT_VISIBILITY: Filter = Filter::Sql(
-    // This query is evaluated per client request.
-    // :sender is automatically bound to the requesting client's identity.
-    // Only rows matching this filter are returned to the client from the public 'account' table,
-    // overriding its default full visibility for matching clients.
-    "SELECT * FROM account WHERE identity = :sender"
-);
+#[spacetimedb::table(name = player_level, public)]
+pub struct PlayerLevel {
+    #[unique]
+    player_id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+// Custom type for joined results
+#[derive(SpacetimeType)]
+pub struct PlayerAndLevel {
+    id: u64,
+    identity: Identity,
+    name: String,
+    level: u64,
+}
+
+// View that returns the caller's player (user-specific)
+// Returns Option<T> for at-most-one row
+#[view(name = my_player, public)]
+fn my_player(ctx: &ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender())
+}
+
+// View that returns all players at a specific level (same for all callers)
+// Returns Vec<T> for multiple rows
+#[view(name = players_for_level, public)]
+fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
+    ctx.db
+        .player_level()
+        .level()
+        .filter(2u64)
+        .flat_map(|player_level| {
+            ctx.db
+                .player()
+                .id()
+                .find(player_level.player_id)
+                .map(|p| PlayerAndLevel {
+                    id: p.id,
+                    identity: p.identity,
+                    name: p.name,
+                    level: player_level.level,
+                })
+        })
+        .collect()
+}
 ```
 
-A module will fail to publish if any of its RLS rules are invalid or malformed.
+**ViewContext vs AnonymousViewContext**
 
-**`:sender`**
+Views use one of two context types:
 
-You can use the special `:sender` parameter in your rules for user-specific access control.
-This parameter is automatically bound to the requesting client's [Identity](#identity).
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender()`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
-Note that module owners have unrestricted access to all tables, including all rows of
-`public` tables (bypassing RLS rules) and `private` tables.
+Both contexts provide read-only access to tables and indexes through `ctx.db`.
 
-**Semantic Constraints**
+**Performance Note**: Because `AnonymousViewContext` is guaranteed not to access the caller's identity, SpacetimeDB can share the computed view results across multiple connected clients. This provides significant performance benefits for views that return the same data to all clients. Prefer `AnonymousViewContext` when possible.
 
-RLS rules act as filters defining which rows of a `public` table are visible to a client.
-Like subscriptions, arbitrary column projections are **not** allowed.
-Joins **are** allowed (e.g., to check permissions in another table), but each rule must
-ultimately return rows from the single public table it applies to.
+**Return Types**
 
-**Multiple Rules Per Table**
+Views can return:
+- `Option<T>` - For at-most-one row (e.g., looking up a specific player)
+- `Vec<T>` - For multiple rows (e.g., listing all players at a level)
+- `Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
 
-Multiple RLS rules may be declared for the same `public` table. They are evaluated as a
-logical `OR`, meaning clients can see any row that matches at least one rule.
+Where `T` can be a table type or any custom type derived with `SpacetimeType`.
 
-**Example (Building on previous Account table)**
+**Query<T> Return Type**
+
+When a view returns `Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `Query<T>`, you must use indexed column lookups to access tables inside view functions.
+
+The query builder provides a fluent API for constructing type-safe SQL queries:
 
 ```rust
-# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-# #[table(name = account)] struct Account { #[primary_key] identity: Identity, email: String, balance: u32 }
-// Assume an 'admin' table exists to track administrator identities
-#[table(name = admin)] struct Admin { #[primary_key] identity: Identity }
+use spacetimedb::{view, ViewContext, Query};
 
-/// RLS Rule 1: A client can see their own account.
-#[client_visibility_filter]
-const ACCOUNT_OWNER_VISIBILITY: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
-);
+// This view can scan the whole table efficiently because
+// Query<T> results are computed incrementally
+#[view(name = my_messages, public)]
+fn my_messages(ctx: &ViewContext) -> Query<Message> {
+    // Build a typed query using the query builder
+    ctx.db.message()
+        .filter(|cols| cols.sender.eq(ctx.sender()))
+        .build()
+}
 
-/// RLS Rule 2: An admin client can see *all* accounts.
-#[client_visibility_filter]
-const ACCOUNT_ADMIN_VISIBILITY: Filter = Filter::Sql(
-    // This join checks if the requesting client (:sender) exists in the admin table.
-    // If they do, the join succeeds, and all rows from 'account' are potentially visible.
-    "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
-);
-
-// Result: A non-admin client sees only their own account row.
-// An admin client sees all account rows because they match the second rule.
+// Query builder supports various operations:
+// - .filter(|cols| cols.field.eq(value))  - equality
+// - .filter(|cols| cols.field.ne(value))  - not equal
+// - .filter(|cols| cols.field.gt(value))  - greater than
+// - .filter(|cols| cols.field.lt(value))  - less than
+// - .filter(|cols| cols.field.gte(value)) - greater than or equal
+// - .filter(|cols| cols.field.lte(value)) - less than or equal
+// - .filter(|cols| expr1.or(expr2))       - logical OR
+// - .left_semijoin(other_table, |a, b| a.field.eq(b.field)) - joins
 ```
 
-**Recursive Application**
+**Querying Views**
 
-RLS rules can reference other tables that might _also_ have RLS rules. These rules are applied recursively.
-For instance, if Rule A depends on Table B, and Table B has its own RLS rules, a client only gets results
-from Rule A if they also have permission to see the relevant rows in Table B according to Table B's rules.
-This ensures that the intended row visibility on `public` tables is maintained even through indirect access patterns.
+Views can be queried and subscribed to using SQL, just like tables:
 
-**Example (Building on previous Account/Admin tables)**
-
-```rust
-# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-# #[table(name = account)] struct Account { #[primary_key] identity: Identity, email: String, balance: u32 }
-# #[table(name = admin)] struct Admin { #[primary_key] identity: Identity }
-// Define a private player table linked to account
-#[table(name = player)] // Private table
-struct Player { #[primary_key] id: Identity, level: u32 }
-
-# /// RLS Rule 1: A client can see their own account.
-# #[client_visibility_filter] const ACCOUNT_OWNER_VISIBILITY: Filter = Filter::Sql( "SELECT * FROM account WHERE identity = :sender" );
-# /// RLS Rule 2: An admin client can see *all* accounts.
-# #[client_visibility_filter] const ACCOUNT_ADMIN_VISIBILITY: Filter = Filter::Sql( "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender" );
-
-/// RLS Rule for Player table: Players are visible if the associated account is visible.
-#[client_visibility_filter]
-const PLAYER_VISIBILITY: Filter = Filter::Sql(
-    // This rule joins Player with Account.
-    // Crucially, the client running this query must *also* satisfy the RLS rules
-    // defined for the `account` table for the specific account row being joined.
-    // Therefore, non-admins see only their own player, admins see all players.
-    "SELECT p.* FROM account a JOIN player p ON a.identity = p.id"
-);
+```sql
+SELECT * FROM my_player;
+SELECT * FROM players_for_level;
 ```
 
-Self-joins are allowed within RLS rules. However, RLS rules cannot be mutually recursive
-(e.g., Rule A depends on Table B, and Rule B depends on Table A), as this would cause
-infinite recursion during evaluation.
-
-**Example: Self-Join (Valid)**
-
-```rust
-# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-# #[table(name = player)] struct Player { #[primary_key] id: Identity, level: u32 }
-# // Dummy account table for join context
-# #[table(name = account)] struct Account { #[primary_key] identity: Identity }
-
-/// RLS Rule: A client can see other players at the same level as their own player.
-#[client_visibility_filter]
-const PLAYER_SAME_LEVEL_VISIBILITY: Filter = Filter::Sql("
-    SELECT q.*
-    FROM account a -- Find the requester's account
-    JOIN player p ON a.identity = p.id -- Find the requester's player
-    JOIN player q on p.level = q.level -- Find other players (q) at the same level
-    WHERE a.identity = :sender -- Ensure we start with the requester
-");
-```
-
-**Example: Mutually Recursive Rules (Invalid)**
-
-This module would fail to publish because the `ACCOUNT_NEEDS_PLAYER` rule depends on the
-`player` table, while the `PLAYER_NEEDS_ACCOUNT` rule depends on the `account` table.
-
-```rust
-use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-
-#[table(name = account)] struct Account { #[primary_key] id: u64, identity: Identity }
-#[table(name = player)] struct Player { #[primary_key] id: u64 }
-
-/// RLS: An account is visible only if a corresponding player exists.
-#[client_visibility_filter]
-const ACCOUNT_NEEDS_PLAYER: Filter = Filter::Sql(
-    "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-);
-
-/// RLS: A player is visible only if a corresponding account exists.
-#[client_visibility_filter]
-const PLAYER_NEEDS_ACCOUNT: Filter = Filter::Sql(
-    // This rule requires access to 'account', which itself requires access to 'player' -> recursion!
-    "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-);
-```
-
-**Usage in Subscriptions**
-
-When a client subscribes to a `public` table that has RLS rules defined,
-the server automatically applies those rules. The subscription results (both initial
-and subsequent updates) will only contain rows that the specific client is allowed to
-see based on the RLS rules evaluating successfully for that client.
-
-While the SQL constraints and limitations outlined in the [SQL reference docs](/docs/sql/index.md#subscriptions)
-(like limitations on complex joins or aggregations) do not apply directly to the definition
-of RLS rules themselves, these constraints _do_ apply to client subscriptions that _use_ those rules.
-For example, an RLS rule might use a complex join not normally supported in subscriptions.
-If a client tries to subscribe directly to the table governed by that complex RLS rule,
-the subscription itself might fail, even if the RLS rule is valid for direct queries.
+When subscribed to, views automatically update when their underlying tables change.
 
 **Best Practices**
 
-1.  Define RLS rules for `public` tables where you need to restrict row visibility for different clients.
-2.  Use `:sender` for client-specific filtering within your rules.
-3.  Keep RLS rules as simple as possible while enforcing desired access.
-4.  Be mindful of potential performance implications of complex joins in RLS rules, especially when combined with subscriptions.
-5.  Follow the general [SQL best practices](/docs/sql/index.md#best-practices-for-performance-and-scalability) for optimizing your RLS rules.
+1. Use `ViewContext` when results depend on the caller's identity.
+2. Use `AnonymousViewContext` when results are the same for all callers.
+3. Keep views simple - complex joins can be expensive to recompute.
+4. Views are recomputed when underlying tables change, so minimize dependencies on frequently-changing tables.
+5. Use indexes on columns you filter or join on for better performance.
 
 ### Client SDK (Rust)
 
@@ -1062,7 +1057,7 @@ mod module_bindings;
 The core type for managing a connection is `module_bindings::DbConnection`. You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection::builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_module_name("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_database_name("my_database")`).
 - **Authentication:** Provide an identity token using `.with_token(Option<String>)`. If `None` or omitted for the first connection, the server issues a new identity and token (retrieved via the `on_connect` callback).
 - **Callbacks:** Register callbacks for connection lifecycle events:
   - `.on_connect(|conn, identity, token| { ... })`: Runs on successful connection. Often used to store the `token` for future connections.
@@ -1085,7 +1080,7 @@ fn connect_to_db() -> DbConnection {
 
     DbConnection::builder()
         .with_uri(HOST)
-        .with_module_name(DB_NAME)
+        .with_database_name(DB_NAME)
         .with_token(creds_store().load().ok()) // Load token if exists
         .on_connect(|conn, identity, auth_token| {
             println!("Connected. Identity: {}", identity.to_hex());
@@ -1774,216 +1769,154 @@ Throwing an unhandled exception within a C# reducer will cause the transaction t
 
 It's generally good practice to validate input and state early in the reducer and `throw` specific exceptions for handled error conditions.
 
-#### Row-Level Security (RLS)
+#### View Functions
 
-Row Level Security (RLS) allows module authors to restrict which rows of a public table each client can access.
-These access rules are expressed in SQL and evaluated automatically for queries and subscriptions.
+Views are read-only functions that compute and return results from your tables. Unlike reducers, views do not modify database state - they only query and return data. Views are useful for:
 
-:::info Version-Specific Status
-Row-Level Security (RLS) was introduced as an **unstable** feature in **SpacetimeDB v1.1.0**.
-It requires explicit opt-in via feature flags or pragmas.
-:::
+- **Computing derived data**: Join multiple tables or aggregate data before sending to clients
+- **User-specific queries**: Return data specific to the requesting client (e.g., "my player")
+- **Performance**: Compute results server-side, reducing data sent to clients
+- **Encapsulation**: Hide complex queries behind simple interfaces
 
-**Enabling RLS**
+Views can be subscribed to just like tables and automatically update when underlying data changes.
 
-RLS is currently **unstable** and must be explicitly enabled in your module.
+**Defining Views**
 
-To enable RLS, include the following preprocessor directive at the top of your module files:
-
-```cs
-#pragma warning disable STDB_UNSTABLE
-```
-
-**How It Works**
-
-RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
-and are expressed in SQL using public static readonly fields of type `Filter` annotated with
-`[SpacetimeDB.ClientVisibilityFilter]`.
+Views are defined using the `[SpacetimeDB.View]` attribute on static methods:
 
 ```cs
 using SpacetimeDB;
 
-#pragma warning disable STDB_UNSTABLE
-
-// Define a public table for RLS
-[Table(Name = "account", Public = true)] // Ensures correct C# syntax for public table
-public partial class Account
+public static partial class Module
 {
-    [PrimaryKey] public Identity Identity;
-    public string Email = "";
-    public uint Balance;
-}
+    [SpacetimeDB.Table]
+    public partial struct Player
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
 
-public partial class Module
-{
-    /// <summary>
-    /// RLS Rule: Allow a client to see *only* their own account record.
-    /// This rule applies to the public 'account' table.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_VISIBILITY = new Filter.Sql(
-        // This query is evaluated per client request.
-        // :sender is automatically bound to the requesting client's identity.
-        // Only rows matching this filter are returned to the client from the public 'account' table,
-        // overriding its default full visibility for matching clients.
-        "SELECT * FROM account WHERE identity = :sender"
-    );
-}
-```
+        [SpacetimeDB.Unique]
+        public Identity Identity;
 
-A module will fail to publish if any of its RLS rules are invalid or malformed.
+        public string Name;
+    }
 
-**`:sender`**
+    [SpacetimeDB.Table]
+    public partial struct PlayerLevel
+    {
+        [SpacetimeDB.Unique]
+        public ulong PlayerId;
 
-You can use the special `:sender` parameter in your rules for user specific access control.
-This parameter is automatically bound to the requesting client's [Identity](#identity).
+        [SpacetimeDB.Index.BTree]
+        public ulong Level;
+    }
 
-Note that module owners have unrestricted access to all tables, including all rows of
-`public` tables (bypassing RLS rules) and `private` tables.
+    // Custom type for joined results
+    [SpacetimeDB.Type]
+    public partial struct PlayerAndLevel
+    {
+        public ulong Id;
+        public Identity Identity;
+        public string Name;
+        public ulong Level;
+    }
 
-**Semantic Constraints**
+    // View that returns the caller's player (user-specific)
+    // Returns T? for at-most-one row
+    [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+    public static Player? MyPlayer(ViewContext ctx)
+    {
+        return ctx.Db.Player.Identity.Find(ctx.Sender);
+    }
 
-RLS rules are similar to subscriptions in that logically they act as filters on a particular table.
-Also like subscriptions, arbitrary column projections are **not** allowed.
-Joins **are** allowed, but each rule must return rows from one and only one table.
-
-**Multiple Rules Per Table**
-
-Multiple rules may be declared for the same `public` table. They are evaluated as a logical `OR`.
-This means clients will be able to see to any row that matches at least one rule.
-
-**Example**
-
-```cs
-using SpacetimeDB;
-
-#pragma warning disable STDB_UNSTABLE
-
-public partial class Module
-{
-    /// <summary>
-    /// A client can only see their account.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
-    );
-
-    /// <summary>
-    /// An admin can see all accounts.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER_FOR_ADMINS = new Filter.Sql(
-        "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
-    );
+    // View that returns all players at a specific level (same for all callers)
+    // Returns List<T> for multiple rows
+    [SpacetimeDB.View(Name = "PlayersForLevel", Public = true)]
+    public static List<PlayerAndLevel> PlayersForLevel(AnonymousViewContext ctx)
+    {
+        var rows = new List<PlayerAndLevel>();
+        foreach (var playerLevel in ctx.Db.PlayerLevel.Level.Filter(2))
+        {
+            if (ctx.Db.Player.Id.Find(playerLevel.PlayerId) is Player p)
+            {
+                rows.Add(new PlayerAndLevel
+                {
+                    Id = p.Id,
+                    Identity = p.Identity,
+                    Name = p.Name,
+                    Level = playerLevel.Level
+                });
+            }
+        }
+        return rows;
+    }
 }
 ```
 
-**Recursive Application**
+**ViewContext vs AnonymousViewContext**
 
-RLS rules can reference other tables with RLS rules, and they will be applied recursively.
-This ensures that data is never leaked through indirect access patterns.
+Views use one of two context types:
 
-**Example**
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.Sender`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
-```cs
-using SpacetimeDB;
+Both contexts provide read-only access to tables and indexes through `ctx.Db`.
 
-public partial class Module
+**Performance Note**: Because `AnonymousViewContext` is guaranteed not to access the caller's identity, SpacetimeDB can share the computed view results across multiple connected clients. This provides significant performance benefits for views that return the same data to all clients. Prefer `AnonymousViewContext` when possible.
+
+**Return Types**
+
+Views can return:
+- `T?` (nullable) - For at-most-one row (e.g., looking up a specific player)
+- `List<T>` or `T[]` - For multiple rows (e.g., listing all players at a level)
+- `Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
+
+Where `T` can be a table type or any custom type marked with `[SpacetimeDB.Type]`.
+
+**Query<T> Return Type**
+
+When a view returns `Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `Query<T>`, you must use indexed column lookups to access tables inside view functions.
+
+The query builder provides a fluent API for constructing type-safe SQL queries:
+
+```csharp
+// This view can scan the whole table efficiently because
+// Query<T> results are computed incrementally
+[SpacetimeDB.View(Name = "MyMessages", Public = true)]
+public static Query<Message> MyMessages(ViewContext ctx)
 {
-    /// <summary>
-    /// A client can only see their account.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
-    );
-
-    /// <summary>
-    /// An admin can see all accounts.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER_FOR_ADMINS = new Filter.Sql(
-        "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
-    );
-
-    /// <summary>
-    /// Explicitly filtering by client identity in this rule is not necessary,
-    /// since the above RLS rules on `account` will be applied automatically.
-    /// Hence a client can only see their player, but an admin can see all players.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter PLAYER_FILTER = new Filter.Sql(
-        "SELECT p.* FROM account a JOIN player p ON a.id = p.id"
-    );
+    return ctx.Db.Message
+        .Filter(msg => msg.Sender == ctx.Sender)
+        .Build();
 }
+
+// Query builder supports various operations:
+// - .Filter(x => x.Field == value)   - equality
+// - .Filter(x => x.Field != value)   - not equal
+// - .Filter(x => x.Field > value)    - greater than
+// - .Filter(x => x.Field < value)    - less than
+// - .Filter(x => expr1 || expr2)     - logical OR
 ```
 
-And while self-joins are allowed, in general RLS rules cannot be self-referential,
-as this would result in infinite recursion.
+**Querying Views**
 
-**Example: Self-Join**
+Views can be queried and subscribed to using SQL, just like tables:
 
-```cs
-using SpacetimeDB;
-
-public partial class Module
-{
-    /// <summary>
-    /// A client can only see players on their same level.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter PLAYER_FILTER = new Filter.Sql(@"
-        SELECT q.*
-        FROM account a
-        JOIN player p ON u.id = p.id
-        JOIN player q on p.level = q.level
-        WHERE a.identity = :sender
-    ");
-}
+```sql
+SELECT * FROM MyPlayer;
+SELECT * FROM PlayersForLevel;
 ```
 
-**Example: Recursive Rules**
-
-This module will fail to publish because each rule depends on the other one.
-
-```cs
-using SpacetimeDB;
-
-public partial class Module
-{
-    /// <summary>
-    /// An account must have a corresponding player.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-    );
-
-    /// <summary>
-    /// A player must have a corresponding account.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-    );
-}
-```
-
-**Usage in Subscriptions**
-
-RLS rules automatically apply to subscriptions so that if a client subscribes to a table with RLS filters,
-the subscription will only return rows that the client is allowed to see.
-
-While the constraints and limitations outlined in the [SQL reference docs](/docs/sql/index.md#subscriptions) do not apply to RLS rules,
-they do apply to the subscriptions that use them.
-For example, it is valid for an RLS rule to have more joins than are supported by subscriptions.
-However a client will not be able to subscribe to the table for which that rule is defined.
+When subscribed to, views automatically update when their underlying tables change.
 
 **Best Practices**
 
-1. Use `:sender` for client specific filtering.
-2. Follow the [SQL best practices](/docs/sql/index.md#best-practices-for-performance-and-scalability) for optimizing your RLS rules.
+1. Use `ViewContext` when results depend on the caller's identity.
+2. Use `AnonymousViewContext` when results are the same for all callers.
+3. Keep views simple - complex joins can be expensive to recompute.
+4. Views are recomputed when underlying tables change, so minimize dependencies on frequently-changing tables.
+5. Use indexes on columns you filter or join on for better performance.
 
 ### Client SDK (C#)
 
@@ -2018,7 +1951,7 @@ Include the generated `.cs` files in your C# project or Unity Assets folder.
 The core type for managing a connection is `SpacetimeDB.Types.DbConnection` (this type name comes from the generated bindings). You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection.Builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithModuleName("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithDatabaseName("my_database")`).
 - **Authentication:** Provide an identity token using `.WithToken(string?)`. The SDK provides a helper `AuthToken.Token` which loads a token from a local file (initialized via `AuthToken.Init(".credentials_filename")`). If `null` or omitted for the first connection, the server issues a new identity and token (retrieved via the `OnConnect` callback).
 - **Callbacks:** Register callbacks (as delegates or lambda expressions) for connection lifecycle events:
   - `.OnConnect((conn, identity, token) => { ... })`: Runs on successful connection. Often used to save the `token` using `AuthToken.SaveToken(token)`.
@@ -2044,7 +1977,7 @@ public class ClientManager // Example class
 
         connection = DbConnection.Builder()
             .WithUri(HOST)
-            .WithModuleName(DB_NAME)
+            .WithDatabaseName(DB_NAME)
             .WithToken(AuthToken.Token) // Load token if exists
             .OnConnect(HandleConnect)
             .OnConnectError(HandleConnectError)
@@ -2277,6 +2210,294 @@ public void SendChatMessage(string message)
 
 ```
 
+### Server Module (TypeScript)
+
+SpacetimeDB supports TypeScript as a first-class language for writing server modules. TypeScript modules run in a WebAssembly environment and have full access to SpacetimeDB's features including tables, reducers, views, and scheduling.
+
+#### 1. Project Setup
+
+Initialize a new SpacetimeDB TypeScript module project:
+
+```bash
+spacetime init --lang typescript my_module
+cd my_module
+npm install
+```
+
+This creates a project with the following structure:
+- `src/lib.ts` - Main module file
+- `package.json` - Node.js package configuration
+- `tsconfig.json` - TypeScript configuration
+
+#### 2. Defining Tables
+
+Tables are defined using the `table()` function. You define the schema using type builders from the `t` object. Tables are then composed into a schema using the `schema()` function, which returns the `spacetimedb` object used for defining reducers.
+
+```typescript
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+
+// Define a User table with columns
+// table() takes two objects: options first, then columns
+const User = table(
+  { name: 'user', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string().optional(),
+    online: t.bool(),
+  }
+);
+
+// Define a Message table
+const Message = table(
+  { name: 'message', public: true },
+  {
+    sender: t.identity(),
+    sent: t.timestamp(),
+    text: t.string(),
+  }
+);
+
+// Compose the schema - this gives us ctx.db.user and ctx.db.message
+const spacetimedb = schema(User, Message);
+export default spacetimedb;
+```
+
+**Type Builders**
+
+SpacetimeDB TypeScript uses type builders to define column schemas. Note that type builders are called as functions (e.g., `t.string()` not `t.string`):
+
+- **Primitives**: `t.bool()`, `t.u8()`, `t.u16()`, `t.u32()`, `t.u64()`, `t.u128()`, `t.u256()`, `t.i8()`, `t.i16()`, `t.i32()`, `t.i64()`, `t.i128()`, `t.i256()`, `t.f32()`, `t.f64()`, `t.string()`, `t.bytes()`
+- **Identity**: `t.identity()` for SpacetimeDB identity values
+- **ConnectionId**: `t.connectionId()` for connection identifiers
+- **Timestamp**: `t.timestamp()` for timestamps
+- **Product types (structs)**: Use `t.object('TypeName', { ... })` or `t.row({ ... })` for inline row definitions
+- **Sum types (enums)**: Use `t.enum('TypeName', { variant1: type1, variant2: type2 })`
+- **Optional**: Use `.optional()` method on any type
+- **Arrays**: Use `t.array(elementType)`
+
+**Column Modifiers**
+
+- `.primaryKey()` - Marks a column as the primary key
+- `.autoInc()` - Auto-increment for numeric primary keys
+- `.unique()` - Creates a unique constraint and index
+- `.index()` - Creates a non-unique B-tree index
+- `.optional()` - Makes the column nullable
+
+**Custom Types**
+
+For complex nested structures, define reusable types:
+
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+// Product type (struct) using t.object()
+const PlayerStats = t.object('PlayerStats', {
+  health: t.u32(),
+  mana: t.u32(),
+  level: t.u32(),
+});
+
+// Sum type (enum) using t.enum()
+const GameState = t.enum('GameState', {
+  Waiting: t.unit(),
+  Playing: t.object('Playing', { round: t.u32() }),
+  Finished: t.object('Finished', { winner: t.identity() }),
+});
+
+// Use in a table - note table() takes options object first, then columns
+const Player = table(
+  { name: 'player', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    identity: t.identity().unique(),
+    stats: PlayerStats,
+    gameState: GameState,
+  }
+);
+
+const spacetimedb = schema(Player);
+export default spacetimedb;
+```
+
+#### 3. Writing Reducers
+
+Reducers are functions that modify database state. They are defined using `spacetimedb.reducer()` with three arguments: the reducer name, an object defining argument types, and the callback function:
+
+```typescript
+import { schema, table, t, SenderError } from 'spacetimedb/server';
+
+const User = table(
+  { name: 'user', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string().optional(),
+    online: t.bool(),
+  }
+);
+
+const Message = table(
+  { name: 'message', public: true },
+  {
+    sender: t.identity(),
+    sent: t.timestamp(),
+    text: t.string(),
+  }
+);
+
+const spacetimedb = schema(User, Message);
+export default spacetimedb;
+
+// Helper function for validation
+function validateName(name: string) {
+  if (!name) {
+    throw new SenderError('Names must not be empty');
+  }
+}
+
+// Set user's name
+// Arguments: reducer name, argument types object, callback
+export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+  validateName(name);
+  const user = ctx.db.user.identity.find(ctx.sender);
+  if (!user) {
+    throw new SenderError('Cannot set name for unknown user');
+  }
+  ctx.db.user.identity.update({ ...user, name });
+});
+
+// Send a message
+export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
+  if (!text) {
+    throw new SenderError('Messages must not be empty');
+  }
+  ctx.db.message.insert({
+    sender: ctx.sender,
+    text,
+    sent: ctx.timestamp,
+  });
+});
+```
+
+**Reducer Context**
+
+The first parameter of every reducer callback is the context (`ctx`), which provides:
+- `ctx.sender` - The `Identity` of the client that called the reducer
+- `ctx.timestamp` - The current timestamp
+- `ctx.db` - Access to database tables (e.g., `ctx.db.user`, `ctx.db.message`)
+
+**SenderError**
+
+Use `SenderError` to throw user-visible errors that will abort the transaction and be reported to the client.
+
+#### 4. Lifecycle Reducers
+
+SpacetimeDB provides special lifecycle methods on the `spacetimedb` object:
+
+```typescript
+// Called once when the module is first published
+export const init = spacetimedb.init(ctx => {
+  console.log('Module initialized');
+  // Seed initial data, set up schedules, etc.
+});
+
+// Called when a client connects
+export const onConnect = spacetimedb.clientConnected(ctx => {
+  const user = ctx.db.user.identity.find(ctx.sender);
+  if (user) {
+    ctx.db.user.identity.update({ ...user, online: true });
+  } else {
+    ctx.db.user.insert({
+      identity: ctx.sender,
+      name: undefined,
+      online: true,
+    });
+  }
+});
+
+// Called when a client disconnects
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
+  const user = ctx.db.user.identity.find(ctx.sender);
+  if (user) {
+    ctx.db.user.identity.update({ ...user, online: false });
+  }
+});
+```
+
+#### 5. View Functions
+
+Views are read-only functions that return computed data from tables. Define views using `spacetimedb.view()` or `spacetimedb.anonymousView()`:
+
+```typescript
+// View that returns the caller's user (user-specific)
+// Uses spacetimedb.view() which provides ctx.sender
+export const my_user = spacetimedb.view({ name: 'my_user' }, ctx => {
+  return ctx.db.user.identity.find(ctx.sender);
+});
+
+// View that returns all online users (same for all callers)
+// Uses spacetimedb.anonymousView() - no access to ctx.sender
+export const online_users = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
+  return ctx.db.user.filter(u => u.online);
+});
+```
+
+**view() vs anonymousView()**
+
+- **`spacetimedb.view()`**: Provides access to the caller's `Identity` through `ctx.sender`. Use when results depend on who is querying.
+- **`spacetimedb.anonymousView()`**: Does not provide caller information. Use when results are the same for all callers.
+
+**Performance Note**: Because anonymous views are guaranteed not to access the caller's identity, SpacetimeDB can share the computed view results across multiple connected clients. This provides significant performance benefits. Prefer `anonymousView()` when possible.
+
+#### 6. Table Operations
+
+All table operations are performed via `ctx.db`:
+
+**Insert**
+```typescript
+ctx.db.user.insert({ identity: ctx.sender, name: 'Alice', online: true });
+```
+
+**Find by unique/primary key**
+```typescript
+const user = ctx.db.user.identity.find(ctx.sender);  // Returns row or undefined
+```
+
+**Filter by indexed column**
+```typescript
+const onlineUsers = ctx.db.user.filter(u => u.online === true);
+```
+
+**Update (for tables with primary key)**
+```typescript
+const user = ctx.db.user.identity.find(ctx.sender);
+if (user) {
+  ctx.db.user.identity.update({ ...user, online: false });
+}
+```
+
+**Delete**
+```typescript
+ctx.db.user.identity.delete(ctx.sender);
+```
+
+#### 7. Building and Publishing
+
+Build the module to WebAssembly:
+
+```bash
+npm run build
+```
+
+Publish to SpacetimeDB:
+
+```bash
+# Local development (from the project root, spacetimedb/ is the module directory)
+spacetime publish --server local --project-path spacetimedb my_module
+
+# Or to SpacetimeDB cloud
+spacetime publish --server maincloud --project-path spacetimedb my_module
+```
+
 ### Client SDK (TypeScript)
 
 This section details how to build TypeScript/JavaScript client applications (for web browsers or Node.js) that interact with a SpacetimeDB module, using a framework-agnostic approach.
@@ -2369,7 +2590,7 @@ class ChatClient {
 
     const connectionInstance = DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
+      .withDatabaseName(DB_NAME)
       .withToken(token)
       .onConnect(this.handleConnect)
       .onDisconnect(this.handleDisconnect)

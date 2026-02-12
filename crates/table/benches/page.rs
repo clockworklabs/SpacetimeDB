@@ -461,7 +461,7 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
                 target_page,
                 row_size_for_type::<Row>(),
                 &visitor,
-                &mut NullBlobStore,
+                None::<&mut Box<dyn FnMut(_)>>,
                 |_page, _row| rng.random_bool(*keep_ratio),
             )
         };

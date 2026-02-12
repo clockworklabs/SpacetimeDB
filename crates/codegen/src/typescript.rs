@@ -2,7 +2,7 @@ use crate::util::{
     is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
     iter_tables, iter_types, iter_views, print_auto_generated_version_comment,
 };
-use crate::OutputFile;
+use crate::{CodegenOptions, OutputFile};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
 
@@ -15,10 +15,9 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{
-    BTreeAlgorithm, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
-};
+use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
 
@@ -204,57 +203,52 @@ impl Lang for TypeScript {
         }
     }
 
-    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out, true, false);
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all reducer arg types");
-        for reducer in iter_reducers(module) {
+        writeln!(out, "// Import all reducer arg schemas");
+        for reducer in iter_reducers(module, options.visibility) {
+            if !is_reducer_invokable(reducer) {
+                // Skip system-defined reducers
+                continue;
+            }
             let reducer_name = &reducer.name;
             let reducer_module_name = reducer_module_name(reducer_name);
-            let args_type = reducer_args_type_name(&reducer.name);
+            let args_type = reducer_args_type_name(reducer_name);
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
-            writeln!(out, "export {{ {args_type} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all procedure arg types");
-        for procedure in iter_procedures(module) {
+        writeln!(out, "// Import all procedure arg schemas");
+        for procedure in iter_procedures(module, options.visibility) {
             let procedure_name = &procedure.name;
             let procedure_module_name = procedure_module_name(procedure_name);
             let args_type = procedure_args_type_name(&procedure.name);
             writeln!(out, "import * as {args_type} from \"./{procedure_module_name}\";");
-            writeln!(out, "export {{ {args_type} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all table handle types");
-        for (table_name, _) in iter_table_names_and_types(module) {
+        writeln!(out, "// Import all table schema definitions");
+        for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
             let table_module_name = table_module_name(table_name);
             let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
             // `__t.object(...)`s.
             writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
-            writeln!(out, "export {{ {table_name_pascalcase}Row }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all types");
-        for ty in iter_types(module) {
-            let type_name = collect_case(Case::Pascal, ty.name.name_segments());
-            let type_module_name = type_module_name(&ty.name);
-            writeln!(out, "import {type_name} from \"./{type_module_name}\";");
-            writeln!(out, "export {{ {type_name} }};");
-        }
+        writeln!(out, "/** Type-only namespace exports for generated type groups. */");
 
         writeln!(out);
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
         writeln!(out, "const tablesSchema = __schema(");
         out.indent(1);
-        for table in iter_tables(module) {
+        for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
             writeln!(out, "__table({{");
@@ -286,7 +280,7 @@ impl Lang for TypeScript {
         writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
         writeln!(out, "const reducersSchema = __reducers(");
         out.indent(1);
-        for reducer in iter_reducers(module) {
+        for reducer in iter_reducers(module, options.visibility) {
             if !is_reducer_invokable(reducer) {
                 // Skip system-defined reducers
                 continue;
@@ -305,7 +299,7 @@ impl Lang for TypeScript {
         );
         writeln!(out, "const proceduresSchema = __procedures(");
         out.indent(1);
-        for procedure in iter_procedures(module) {
+        for procedure in iter_procedures(module, options.visibility) {
             let procedure_name = &procedure.name;
             let args_type = procedure_args_type_name(&procedure.name);
             writeln!(
@@ -346,6 +340,12 @@ impl Lang for TypeScript {
         writeln!(
             out,
             "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
+        );
+        writeln!(out);
+        writeln!(out, "/** A typed query builder for this remote SpacetimeDB module. */");
+        writeln!(
+            out,
+            "export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
         );
         writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
@@ -441,10 +441,128 @@ impl Lang for TypeScript {
         writeln!(out, "}}");
         out.newline();
 
-        vec![OutputFile {
+        let index_file = OutputFile {
             filename: "index.ts".to_string(),
             code: output.into_inner(),
-        }]
+        };
+
+        let reducers_file = generate_reducers_file(module, options);
+        let procedures_file = generate_procedures_file(module, options);
+        let types_file = generate_types_file(module);
+
+        vec![index_file, reducers_file, procedures_file, types_file]
+    }
+}
+
+fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    writeln!(out);
+    writeln!(out, "// Import all reducer arg schemas");
+    for reducer in iter_reducers(module, options.visibility) {
+        let reducer_name = &reducer.name;
+        let reducer_module_name = reducer_module_name(reducer_name);
+        let args_type = reducer_args_type_name(&reducer.name);
+        writeln!(out, "import {args_type} from \"../{reducer_module_name}\";");
+    }
+
+    writeln!(out);
+    for reducer in iter_reducers(module, options.visibility) {
+        let reducer_name_pascalcase = reducer.name.deref().to_case(Case::Pascal);
+        let args_type = reducer_args_type_name(&reducer.name);
+        writeln!(
+            out,
+            "export type {reducer_name_pascalcase}Params = __Infer<typeof {args_type}>;"
+        );
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/reducers.ts".to_string(),
+        code: output.into_inner(),
+    }
+}
+
+fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    writeln!(out);
+    writeln!(out, "// Import all procedure arg schemas");
+    for procedure in iter_procedures(module, options.visibility) {
+        let procedure_name = &procedure.name;
+        let procedure_module_name = procedure_module_name(procedure_name);
+        let args_type = procedure_args_type_name(&procedure.name);
+        writeln!(out, "import * as {args_type} from \"../{procedure_module_name}\";");
+    }
+
+    writeln!(out);
+    for procedure in iter_procedures(module, options.visibility) {
+        let procedure_name_pascalcase = procedure.name.deref().to_case(Case::Pascal);
+        let args_type = procedure_args_type_name(&procedure.name);
+        writeln!(
+            out,
+            "export type {procedure_name_pascalcase}Args = __Infer<typeof {args_type}.params>;"
+        );
+        writeln!(
+            out,
+            "export type {procedure_name_pascalcase}Result = __Infer<typeof {args_type}.returnType>;"
+        );
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/procedures.ts".to_string(),
+        code: output.into_inner(),
+    }
+}
+
+fn generate_types_file(module: &ModuleDef) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    let reducer_type_names = module
+        .reducers()
+        .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
+        .collect::<BTreeSet<_>>();
+
+    writeln!(out);
+    writeln!(out, "// Import all non-reducer types");
+    for ty in iter_types(module) {
+        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        if reducer_type_names.contains(&type_name) {
+            continue;
+        }
+        let type_module_name = type_module_name(&ty.name);
+        writeln!(out, "import {type_name} from \"../{type_module_name}\";");
+    }
+
+    writeln!(out);
+    for ty in iter_types(module) {
+        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        if reducer_type_names.contains(&type_name) {
+            continue;
+        }
+        writeln!(out, "export type {type_name} = __Infer<typeof {type_name}>;");
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/index.ts".to_string(),
+        code: output.into_inner(),
     }
 }
 
@@ -457,6 +575,8 @@ fn print_index_imports(out: &mut Indenter) {
         "Uuid as __Uuid",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
+        "makeQueryBuilder as __makeQueryBuilder",
+        "type QueryBuilder as __QueryBuilder",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
@@ -584,38 +704,34 @@ fn write_table_opts<'a>(
             // Skip system-defined indexes
             continue;
         }
-        match &index_def.algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                let get_name_and_type = |col_pos: ColId| {
-                    let (field_name, field_type) = &product_def.elements[col_pos.idx()];
-                    let name_camel = field_name.deref().to_case(Case::Camel);
-                    (name_camel, field_type)
-                };
-                // TODO(cloutiertyler):
-                // The name users supply is actually the accessor name which will be used
-                // in TypeScript to access the index. This will be used verbatim.
-                // This is confusing because it is not the index name and there is
-                // no actual way for the user to set the actual index name.
-                // I think we should standardize: name and accessorName as the way to set
-                // the name and accessor name of an index across all SDKs.
-                if let Some(accessor_name) = &index_def.accessor_name {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
-                } else {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
-                }
-                out.indent(1);
-                for col_id in columns.iter() {
-                    writeln!(out, "'{}',", get_name_and_type(col_id).0);
-                }
-                out.dedent(1);
-                writeln!(out, "] }},");
-            }
-            IndexAlgorithm::Direct(_) => {
-                // Direct indexes are not implemented yet.
-                continue;
-            }
-            _ => todo!(),
+
+        // We're generating code for the client,
+        // and it does not care what the algorithm on the server is,
+        // as it an use a btree in all cases.
+        let columns = index_def.algorithm.columns();
+        let get_name_and_type = |col_pos: ColId| {
+            let (field_name, field_type) = &product_def.elements[col_pos.idx()];
+            let name_camel = field_name.deref().to_case(Case::Camel);
+            (name_camel, field_type)
         };
+        // TODO(cloutiertyler):
+        // The name users supply is actually the accessor name which will be used
+        // in TypeScript to access the index. This will be used verbatim.
+        // This is confusing because it is not the index name and there is
+        // no actual way for the user to set the actual index name.
+        // I think we should standardize: name and accessorName as the way to set
+        // the name and accessor name of an index across all SDKs.
+        if let Some(accessor_name) = &index_def.accessor_name {
+            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
+        } else {
+            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
+        }
+        out.indent(1);
+        for col_id in columns.iter() {
+            writeln!(out, "'{}',", get_name_and_type(col_id).0);
+        }
+        out.dedent(1);
+        writeln!(out, "] }},");
     }
     out.dedent(1);
     writeln!(out, "],");
@@ -736,6 +852,13 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
             write_type_builder(module, out, inner_ty)?;
             write!(out, ")")?;
         }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "__t.result(")?;
+            write_type_builder(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_type_builder(module, out, err_ty)?;
+            write!(out, ")")?;
+        }
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::Bool => write!(out, "__t.bool()")?,
             PrimitiveType::I8 => write!(out, "__t.i8()")?,
@@ -809,7 +932,7 @@ fn table_module_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Snake) + "_table"
 }
 
-fn reducer_args_type_name(reducer_name: &Identifier) -> String {
+fn reducer_args_type_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
 
@@ -817,7 +940,7 @@ fn procedure_args_type_name(reducer_name: &Identifier) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Procedure"
 }
 
-fn reducer_module_name(reducer_name: &Identifier) -> String {
+fn reducer_module_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Snake) + "_reducer"
 }
 
@@ -849,7 +972,7 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::String => {
             false
         }
-        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) | AlgebraicTypeUse::Result { .. } => {
             true
         }
     }
@@ -877,6 +1000,11 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
             write!(out, " | undefined")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write_type(module, out, ok_ty, ref_prefix, ref_suffix)?;
+            write!(out, " | ")?;
+            write_type(module, out, err_ty, ref_prefix, ref_suffix)?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::Bool => write!(out, "boolean")?,

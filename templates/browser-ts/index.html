@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpacetimeDB Browser App</title>
+  </head>
+  <body
+    style="
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+      padding: 2rem;
+      max-width: 600px;
+      margin: 0 auto;
+    "
+  >
+    <h1>SpacetimeDB Browser App</h1>
+
+    <div style="margin-bottom: 1rem">
+      Status: <strong id="status" style="color: red">Disconnected</strong>
+    </div>
+
+    <form id="add-form" style="margin-bottom: 2rem">
+      <input
+        type="text"
+        id="name-input"
+        placeholder="Enter name"
+        style="padding: 0.5rem; margin-right: 0.5rem"
+        disabled
+      />
+      <button type="submit" id="add-btn" style="padding: 0.5rem 1rem" disabled>
+        Add Person
+      </button>
+    </form>
+
+    <div>
+      <h2>People (<span id="count">0</span>)</h2>
+      <ul id="people-list">
+        <li style="color: #888">No people yet. Add someone above!</li>
+      </ul>
+    </div>
+
+    <!-- Load the bundled bindings (run `npm run build` first) -->
+    <script src="dist/bindings.iife.js"></script>
+
+    <script>
+      const HOST = 'ws://localhost:3000';
+      const DB_NAME = 'browser-ts';
+
+      const statusEl = document.getElementById('status');
+      const nameInput = document.getElementById('name-input');
+      const addBtn = document.getElementById('add-btn');
+      const addForm = document.getElementById('add-form');
+      const peopleList = document.getElementById('people-list');
+      const countEl = document.getElementById('count');
+
+      function renderPeople(conn) {
+        const people = Array.from(conn.db.person.iter());
+        countEl.textContent = people.length;
+        if (people.length === 0) {
+          peopleList.innerHTML =
+            '<li style="color: #888;">No people yet. Add someone above!</li>';
+          return;
+        }
+        peopleList.innerHTML = people
+          .map(p => '<li>' + escapeHtml(p.name || '') + '</li>')
+          .join('');
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      const conn = DbConnection.builder()
+        .withUri(HOST)
+        .withDatabaseName(DB_NAME)
+        .withToken(localStorage.getItem('auth_token') || undefined)
+        .onConnect((conn, identity, token) => {
+          localStorage.setItem('auth_token', token);
+          console.log('Connected with identity:', identity.toHexString());
+
+          statusEl.textContent = 'Connected';
+          statusEl.style.color = 'green';
+          nameInput.disabled = false;
+          addBtn.disabled = false;
+
+          conn.subscriptionBuilder()
+            .onApplied(() => renderPeople(conn))
+            .subscribe(['SELECT * FROM person']);
+
+          conn.db.person.onInsert(() => renderPeople(conn));
+          conn.db.person.onDelete(() => renderPeople(conn));
+        })
+        .onDisconnect(() => {
+          console.log('Disconnected from SpacetimeDB');
+          statusEl.textContent = 'Disconnected';
+          statusEl.style.color = 'red';
+          nameInput.disabled = true;
+          addBtn.disabled = true;
+        })
+        .onConnectError((_ctx, error) => {
+          console.error('Connection error:', error);
+          statusEl.textContent = 'Error: ' + error.message;
+          statusEl.style.color = 'red';
+        })
+        .build();
+
+      addForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const name = nameInput.value.trim();
+        if (name) {
+          conn.reducers.add({ name });
+          nameInput.value = '';
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -4,7 +4,6 @@ toc_max_heading_level: 6
 slug: /sdks/c-sharp
 ---
 
-# The SpacetimeDB C# client SDK
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
@@ -80,17 +79,18 @@ class DbConnection
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the database's name or identity.
+Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithDatabaseName` to specify the database's name or identity.
 
-| Name                                                | Description                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [WithUri method](#method-withuri)                   | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
-| [WithModuleName method](#method-withmodulename)     | Set the name or identity of the remote database.                                     |
-| [OnConnect callback](#callback-onconnect)           | Register a callback to run when the connection is successfully established.          |
-| [OnConnectError callback](#callback-onconnecterror) | Register a callback to run if the connection is rejected or the host is unreachable. |
-| [OnDisconnect callback](#callback-ondisconnect)     | Register a callback to run when the connection ends.                                 |
-| [WithToken method](#method-withtoken)               | Supply a token to authenticate with the remote database.                             |
-| [Build method](#method-build)                       | Finalize configuration and open the connection.                                      |
+| Name                                                    | Description                                                                          |
+|---------------------------------------------------------|--------------------------------------------------------------------------------------|
+| [WithUri method](#method-withuri)                       | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
+| [WithDatabaseName method](#method-withdatabasename)     | Set the name or identity of the remote database.                                     |
+| [WithConfirmedReads method](#method-withconfirmedreads) | Enable or disable confirmed reads.                                                   |
+| [OnConnect callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.          |
+| [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
+| [OnDisconnect callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                 |
+| [WithToken method](#method-withtoken)                   | Supply a token to authenticate with the remote database.                             |
+| [Build method](#method-build)                           | Finalize configuration and open the connection.                                      |
 
 #### Method `WithUri`
 
@@ -103,16 +103,31 @@ class DbConnectionBuilder<DbConnection>
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module and database.
 
-#### Method `WithModuleName`
+#### Method `WithDatabaseName`
 
 ```csharp
 class DbConnectionBuilder
 {
-    public DbConnectionBuilder<DbConnection> WithModuleName(string nameOrIdentity);
+    public DbConnectionBuilder<DbConnection> WithDatabaseName(string nameOrIdentity);
 }
 ```
 
 Configure the SpacetimeDB domain name or `Identity` of the remote database which identifies it within the SpacetimeDB instance or cluster.
+
+#### Method `WithConfirmedReads`
+
+```csharp
+class DbConnectionBuilder
+{
+    public DbConnectionBuilder<DbConnection> WithConfirmedReads(bool confirmedReads);
+}
+```
+
+Configure the connection to request confirmed reads.
+
+When enabled, the server will send query results only after they are confirmed to be durable, i.e. persisted to disk on one or more replicas depending on the replication settings of the database. When set to `false`, the server will send results as soon as transactions are committed in memory.
+
+If this method is not called, the server chooses the default.
 
 #### Callback `OnConnect`
 
@@ -825,7 +840,7 @@ class RemoteTableHandle
 
 The `OnInsert` callback runs whenever a new row is inserted into the client cache, either when applying a subscription or being notified of a transaction. The passed [`EventContext`](#type-eventcontext) contains an [`Event`](#record-event) which can identify the change which caused the insertion, and also allows the callback to interact with the connection, inspect the client cache and invoke reducers. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
 
 #### Callback `OnDelete`
 
@@ -839,7 +854,7 @@ class RemoteTableHandle
 
 The `OnDelete` callback runs whenever a previously-resident row is deleted from the client cache. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
 
 #### Callback `OnUpdate`
 
@@ -853,7 +868,7 @@ class RemoteTableHandle
 
 The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The table must have a primary key for callbacks to be triggered. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
 
 ### Unique constraint index access
 
@@ -931,9 +946,9 @@ See the [module docs](/intro/key-architecture#connectionid) for more details.
 ### Type `Timestamp`
 
 A point in time, measured in microseconds since the Unix epoch.
-See the [module docs](/docs/tables/columns) for more details.
+See the [module docs](/docs/tables/column-types) for more details.
 
 ### Type `TaggedEnum`
 
 A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
-See the [module docs](/docs/tables/columns) for more details.
+See the [module docs](/docs/tables/column-types) for more details.

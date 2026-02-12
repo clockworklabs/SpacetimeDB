@@ -1,5 +1,5 @@
 use crate::db::relational_db::Tx;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
+use spacetimedb_datastore::locking_tx_datastore::{state_view::StateView as _, NumDistinctValues};
 use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
@@ -69,16 +69,20 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
             },
             _,
         ) => 0,
-        // The selectivity of a single column index scan is 1 / NDV,
+        // The selectivity of a point index scan is 1 / NDV,
         // where NDV is the Number of Distinct Values of a column.
         // Note, this assumes a uniform distribution of column values.
         PhysicalPlan::IxScan(
             ix @ IxScan {
-                arg: Sarg::Eq(col_id, _),
+                arg: Sarg::Eq(last_col, _),
                 ..
             },
             _,
-        ) if ix.prefix.is_empty() => index_row_est(tx, ix.schema.table_id, &ColList::from(*col_id)),
+        ) => {
+            let mut cols: ColList = ix.prefix.iter().map(|(c, _)| *c).collect();
+            cols.push(*last_col);
+            index_row_est(tx, ix.schema.table_id, &cols)
+        }
         // For all other index scans we assume a worst-case scenario.
         PhysicalPlan::IxScan(IxScan { schema, .. }, _) => tx.table_row_count(schema.table_id).unwrap_or_default(),
         // Same for filters
@@ -153,10 +157,15 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
 }
 
 /// The estimated number of rows that an index probe will return.
-/// Note this method is not applicable to range scans.
+/// Note this method is not applicable to range scans,
+/// but it does work for multi column indices.
 fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
-    tx.num_distinct_values(table_id, cols)
-        .map_or(0, |ndv| tx.table_row_count(table_id).unwrap_or(0) / ndv)
+    let table_rc = || tx.table_row_count(table_id).unwrap_or_default();
+    match tx.num_distinct_values(table_id, cols) {
+        NumDistinctValues::NonZero(ndv) => table_rc() / ndv,
+        NumDistinctValues::Zero => 0,
+        NumDistinctValues::Error => table_rc(),
+    }
 }
 
 #[cfg(test)]

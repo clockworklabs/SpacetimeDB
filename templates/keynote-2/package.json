@@ -1,0 +1,43 @@
+{
+  "name": "spacetime-simulations",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "demo": "tsx src/demo.ts",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "prep": "tsx src/init/init-all.ts",
+    "down": "docker compose down || exit 0",
+    "test-1": "tsx src/cli.ts test-1",
+    "bench": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/bun": "^1.3.2",
+    "@types/express": "^5.0.5",
+    "@types/pg": "^8.15.6",
+    "@types/sql.js": "^1.4.9",
+    "bun-types": "^1.3.2",
+    "convex": "^1.29.0",
+    "dotenv": "^17.2.3",
+    "node-gyp": "^12.1.0",
+    "pg": "^8.16.3",
+    "prettier": "^3.3.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@convex-dev/sharded-counter": "^0.2.0",
+    "@supabase/supabase-js": "^2.80.0",
+    "better-sqlite3": "^12.4.1",
+    "bun": "^1.3.2",
+    "drizzle-orm": "^0.44.7",
+    "express": "^5.1.0",
+    "hdr-histogram-js": "^3.0.1",
+    "spacetimedb": "1.11.4",
+    "sql.js": "^1.13.0",
+    "undici": "^6.19.2"
+  }
+}

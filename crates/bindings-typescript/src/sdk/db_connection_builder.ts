@@ -57,13 +57,13 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   }
 
   /**
-   * Set the name or Identity of the database module to connect to.
+   * Set the name or Identity of the remote database to connect to.
    *
    * @param nameOrAddress
    *
    * @returns The `DbConnectionBuilder` instance.
    */
-  withModuleName(nameOrAddress: string): this {
+  withDatabaseName(nameOrAddress: string): this {
     this.#nameOrAddress = nameOrAddress;
     return this;
   }
@@ -198,7 +198,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
 
   /**
    * Registers a callback to run when a {@link DbConnection} whose connection initially succeeded
-   * is disconnected, either after a {@link DbConnection.disconnect} call or due to an error.
+   * is disconnected, either after a {@link DbConnection.disconnect()} call or due to an error.
    *
    * If the connection ended because of an error, the error is passed to the callback.
    *
@@ -243,7 +243,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    * const host = "http://localhost:3000";
    * const name_or_address = "database_name"
    * const auth_token = undefined;
-   * DbConnection.builder().withUri(host).withModuleName(name_or_address).withToken(auth_token).build();
+   * DbConnection.builder().withUri(host).withDatabaseName(name_or_address).withToken(auth_token).build();
    * ```
    */
   build(): DbConnection {

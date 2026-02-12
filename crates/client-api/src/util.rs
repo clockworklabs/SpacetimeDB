@@ -100,7 +100,7 @@ impl NameOrIdentity {
     ) -> anyhow::Result<Result<Identity, &DatabaseName>> {
         Ok(match self {
             Self::Identity(identity) => Ok(Identity::from(*identity)),
-            Self::Name(name) => ctx.lookup_identity(name.as_ref()).await?.ok_or(name),
+            Self::Name(name) => ctx.lookup_database_identity(name.as_ref()).await?.ok_or(name),
         })
     }
 
@@ -111,7 +111,31 @@ impl NameOrIdentity {
         self.try_resolve(ctx)
             .await
             .map_err(log_and_500)?
-            .map_err(|name| (StatusCode::NOT_FOUND, format!("Could not resolve database `{name}`")).into())
+            .map_err(|name| (StatusCode::NOT_FOUND, format!("`{name}` not found")).into())
+    }
+
+    /// If `self` is a [`NameOrIdentity::Name`], looks up the name in the
+    /// namespace registry (also known as "top level domain") and returns the
+    /// owner identity if found.
+    ///
+    /// If the name is not found, returns a 404 (Not Found) error response.
+    ///
+    /// If `self` is a [`NameOrIdentity::Identity`], returns the identity.
+    //
+    // NOTE: Namespace (TLD) owner identities are also used as organization
+    // identities.
+    pub async fn resolve_namespace_owner(
+        &self,
+        ctx: &(impl ControlStateReadAccess + ?Sized),
+    ) -> axum::response::Result<Identity> {
+        match self {
+            Self::Identity(identity) => Ok(Identity::from(*identity)),
+            Self::Name(name) => ctx
+                .lookup_namespace_owner(name.as_ref())
+                .await
+                .map_err(log_and_500)?
+                .ok_or_else(|| (StatusCode::NOT_FOUND, format!("`{name}` not found")).into()),
+        }
     }
 }
 

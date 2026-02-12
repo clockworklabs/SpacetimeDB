@@ -1,0 +1,37 @@
+import { schema, table, t } from 'spacetimedb/server';
+
+const spacetimedb = schema(
+  table(
+    { name: 'person' },
+    {
+      name: t.string(),
+    }
+  )
+);
+export default spacetimedb;
+
+export const init = spacetimedb.init(_ctx => {
+  // Called when the module is initially published
+});
+
+export const onConnect = spacetimedb.clientConnected(_ctx => {
+  // Called every time a new client connects
+});
+
+export const onDisconnect = spacetimedb.clientDisconnected(_ctx => {
+  // Called every time a client disconnects
+});
+
+export const add = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.person.insert({ name });
+  }
+);
+
+export const say_hello = spacetimedb.reducer(ctx => {
+  for (const person of ctx.db.person.iter()) {
+    console.info(`Hello, ${person.name}!`);
+  }
+  console.info('Hello, World!');
+});

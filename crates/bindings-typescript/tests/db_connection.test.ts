@@ -1,14 +1,15 @@
-import {
-  CreatePlayer,
-  DbConnection,
-  Player,
-  User,
-} from '../test-app/src/module_bindings';
+import { DbConnection } from '../test-app/src/module_bindings';
+import CreatePlayerReducer from '../test-app/src/module_bindings/create_player_reducer';
+import Player from '../test-app/src/module_bindings/player_table';
+import User from '../test-app/src/module_bindings/user_table';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ConnectionId, type Infer } from '../src';
 import { Timestamp } from '../src';
 import { TimeDuration } from '../src';
-import * as ws from '../src/sdk/client_api';
+import CompressableQueryUpdate from '../src/sdk/client_api/compressable_query_update_type';
+import RowSizeHint from '../src/sdk/client_api/row_size_hint_type';
+import ServerMessage from '../src/sdk/client_api/server_message_type';
+import UpdateStatus from '../src/sdk/client_api/update_status_type';
 import type { ReducerEvent } from '../src/sdk/db_connection_impl';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
@@ -72,7 +73,7 @@ describe('DbConnection', () => {
     let connectCalled = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(() => {
         return Promise.reject(new Error('Failed to connect'));
       })
@@ -98,7 +99,7 @@ describe('DbConnection', () => {
     let called = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {
         called = true;
@@ -109,7 +110,7 @@ describe('DbConnection', () => {
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
+    const tokenMessage = ServerMessage.IdentityToken({
       identity: anIdentity,
       token: 'a-token',
       connectionId: ConnectionId.random(),
@@ -125,7 +126,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -138,7 +139,7 @@ describe('DbConnection', () => {
     ]);
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
+    const tokenMessage = ServerMessage.IdentityToken({
       identity: anIdentity,
       token: 'a-token',
       connectionId: ConnectionId.random(),
@@ -149,7 +150,7 @@ describe('DbConnection', () => {
       reducerEvent:
         | ReducerEvent<{
             name: 'create_player';
-            args: Infer<typeof CreatePlayer>;
+            args: Infer<typeof CreatePlayerReducer>;
           }>
         | undefined;
       player: Infer<typeof Player>;
@@ -176,12 +177,12 @@ describe('DbConnection', () => {
     const reducerCallbackLog: {
       reducerEvent: ReducerEvent<{
         name: 'create_player';
-        args: Infer<typeof CreatePlayer>;
+        args: Infer<typeof CreatePlayerReducer>;
       }>;
       reducerArgs: any[];
     }[] = [];
     client.reducers.onCreatePlayer(
-      (ctx, { name, location }: Infer<typeof CreatePlayer>) => {
+      (ctx, { name, location }: Infer<typeof CreatePlayerReducer>) => {
         const reducerEvent = ctx.event;
         reducerCallbackLog.push({
           reducerEvent,
@@ -190,8 +191,8 @@ describe('DbConnection', () => {
       }
     );
 
-    const subscriptionMessage: Infer<typeof ws.ServerMessage> =
-      ws.ServerMessage.InitialSubscription({
+    const subscriptionMessage: Infer<typeof ServerMessage> =
+      ServerMessage.InitialSubscription({
         databaseUpdate: {
           tables: [
             {
@@ -199,13 +200,13 @@ describe('DbConnection', () => {
               tableName: 'player',
               numRows: BigInt(1),
               updates: [
-                ws.CompressableQueryUpdate.Uncompressed({
+                CompressableQueryUpdate.Uncompressed({
                   deletes: {
-                    sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                    sizeHint: RowSizeHint.FixedSize(0), // not used
                     rowsData: new Uint8Array(),
                   },
                   inserts: {
-                    sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                    sizeHint: RowSizeHint.FixedSize(0), // not used
                     rowsData: encodePlayer({
                       id: 1,
                       userId: anIdentity,
@@ -235,21 +236,21 @@ describe('DbConnection', () => {
     expect(inserts[0].player.id).toEqual(1);
     expect(inserts[0].reducerEvent).toEqual(undefined);
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
+    const transactionUpdate = ServerMessage.TransactionUpdate({
+      status: UpdateStatus.Committed({
         tables: [
           {
             tableId: 35,
             tableName: 'player',
             numRows: BigInt(2),
             updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
+              CompressableQueryUpdate.Uncompressed({
                 deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array(),
                 },
                 inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: encodePlayer({
                     id: 2,
                     userId: anIdentity,
@@ -304,7 +305,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -321,22 +322,22 @@ describe('DbConnection', () => {
       updatePromise.resolve();
     });
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
+    const transactionUpdate = ServerMessage.TransactionUpdate({
+      status: UpdateStatus.Committed({
         tables: [
           {
             tableId: 35,
             tableName: 'player',
             numRows: BigInt(1),
             updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
+              CompressableQueryUpdate.Uncompressed({
                 deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array(),
                 },
                 // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
                 inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([
                     ...encodePlayer({
                       id: 1,
@@ -372,7 +373,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -397,22 +398,22 @@ describe('DbConnection', () => {
       updatePromise.resolve();
     });
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
+    const transactionUpdate = ServerMessage.TransactionUpdate({
+      status: UpdateStatus.Committed({
         tables: [
           {
             tableId: 35,
             tableName: 'player',
             numRows: BigInt(1),
             updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
+              CompressableQueryUpdate.Uncompressed({
                 deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array(),
                 },
                 // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
                 inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([
                     ...encodePlayer({
                       id: 2,
@@ -450,7 +451,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {})
       .build();
@@ -458,7 +459,7 @@ describe('DbConnection', () => {
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
+    const tokenMessage = ServerMessage.IdentityToken({
       identity: Identity.fromString(
         '0000000000000000000000000000000000000000000000000000000000000069'
       ),
@@ -498,7 +499,7 @@ describe('DbConnection', () => {
       update1Promise.resolve();
     });
 
-    const subscriptionMessage = ws.ServerMessage.InitialSubscription({
+    const subscriptionMessage = ServerMessage.InitialSubscription({
       databaseUpdate: {
         tables: [
           {
@@ -507,13 +508,13 @@ describe('DbConnection', () => {
             numRows: BigInt(1),
             updates: [
               // pgoldman 2024-06-25: This is weird, `InitialSubscription`s aren't supposed to contain deletes or updates.
-              ws.CompressableQueryUpdate.Uncompressed({
+              CompressableQueryUpdate.Uncompressed({
                 deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([]),
                 },
                 inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([...encodeUser(initialUser)]),
                 },
               }),
@@ -531,22 +532,22 @@ describe('DbConnection', () => {
     await initialInsertPromise.promise;
     console.log('First insert is done');
 
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
+    const transactionUpdate = ServerMessage.TransactionUpdate({
+      status: UpdateStatus.Committed({
         tables: [
           {
             tableId: 35,
             tableName: 'user',
             numRows: BigInt(1),
             updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
+              CompressableQueryUpdate.Uncompressed({
                 deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([...encodeUser(initialUser)]),
                 },
                 // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
                 inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([...encodeUser(updatedUser)]),
                 },
               }),
@@ -584,7 +585,7 @@ describe('DbConnection', () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
+      .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .build();
     await client['wsPromise'];
@@ -594,22 +595,22 @@ describe('DbConnection', () => {
       username: 'sally',
     };
     const binary = [...encodeUser(user1)].concat([...encodeUser(user2)]);
-    const transactionUpdate = ws.ServerMessage.TransactionUpdate({
-      status: ws.UpdateStatus.Committed({
+    const transactionUpdate = ServerMessage.TransactionUpdate({
+      status: UpdateStatus.Committed({
         tables: [
           {
             tableId: 35,
             tableName: 'user',
             numRows: BigInt(1),
             updates: [
-              ws.CompressableQueryUpdate.Uncompressed({
+              CompressableQueryUpdate.Uncompressed({
                 deletes: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([]),
                 },
                 // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
                 inserts: {
-                  sizeHint: ws.RowSizeHint.FixedSize(0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array(binary),
                 },
               }),

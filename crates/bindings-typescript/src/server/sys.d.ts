@@ -1,4 +1,4 @@
-declare module 'spacetime:sys@1.0' {
+declare module 'spacetime:sys@2.0' {
   export type u8 = number;
   export type u16 = number;
   export type u32 = number;
@@ -6,17 +6,38 @@ declare module 'spacetime:sys@1.0' {
   export type u128 = bigint;
   export type u256 = bigint;
 
-  export type ModuleHooks = {
+  export const moduleHooks: unique symbol;
+
+  interface ModuleDefaultExport {
+    [moduleHooks](exports: object): ModuleHooks;
+  }
+
+  export interface ModuleHooks {
     __describe_module__(): Uint8Array;
+
+    __get_error_constructor__(code: number): new (msg: string) => Error;
+    __sender_error_class__: new (msg: string) => Error;
 
     __call_reducer__(
       reducerId: u32,
       sender: u256,
       connId: u128,
       timestamp: bigint,
-      argsBuf: Uint8Array
-    ): { tag: 'ok' } | { tag: 'err'; value: string };
-  };
+      argsBuf: DataView
+    ): void;
+
+    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
+
+    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array | object;
+
+    __call_procedure__(
+      id: u32,
+      sender: u256,
+      connection_id: u128,
+      timestamp: bigint,
+      args: Uint8Array
+    ): Uint8Array;
+  }
 
   export function register_hooks(hooks: ModuleHooks);
 
@@ -26,35 +47,37 @@ declare module 'spacetime:sys@1.0' {
   export function datastore_table_scan_bsatn(table_id: u32): u32;
   export function datastore_index_scan_range_bsatn(
     index_id: u32,
-    prefix: Uint8Array,
+    buf: ArrayBuffer,
+    prefix_len: u32,
     prefix_elems: u16,
-    rstart: Uint8Array,
-    rend: Uint8Array
+    rstart_len: u32,
+    rend_len: u32
   ): u32;
-  export function row_iter_bsatn_advance(
-    iter: u32,
-    buffer_max_len: u32
-  ): [boolean, Uint8Array];
+  export function row_iter_bsatn_advance(iter: u32, buffer: ArrayBuffer): u32;
   export function row_iter_bsatn_close(iter: u32): void;
   export function datastore_insert_bsatn(
     table_id: u32,
-    row: Uint8Array
-  ): Uint8Array;
+    row: ArrayBuffer,
+    row_len: u32
+  ): u32;
   export function datastore_update_bsatn(
     table_id: u32,
     index_id: u32,
-    row: Uint8Array
-  ): Uint8Array;
+    row: ArrayBuffer,
+    row_len: u32
+  ): u32;
   export function datastore_delete_by_index_scan_range_bsatn(
     index_id: u32,
-    prefix: Uint8Array,
+    buf: ArrayBuffer,
+    prefix_len: u32,
     prefix_elems: u16,
-    rstart: Uint8Array,
-    rend: Uint8Array
+    rstart_len: u32,
+    rend_len: u32
   ): u32;
   export function datastore_delete_all_by_eq_bsatn(
     table_id: u32,
-    relation: Uint8Array
+    relation: ArrayBuffer,
+    relation_len: u32
   ): u32;
   export function volatile_nonatomic_schedule_immediate(
     reducer_name: string,
@@ -63,31 +86,8 @@ declare module 'spacetime:sys@1.0' {
   export function console_log(level: u8, message: string): void;
   export function console_timer_start(name: string): u32;
   export function console_timer_end(span_id: u32): void;
-  export function identity(): { __identity__: u256 };
+  export function identity(): u256;
   export function get_jwt_payload(connection_id: u128): Uint8Array;
-}
-
-declare module 'spacetime:sys@1.1' {
-  export type ModuleHooks = {
-    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
-    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array | object;
-  };
-
-  export function register_hooks(hooks: ModuleHooks);
-}
-
-declare module 'spacetime:sys@1.2' {
-  export type ModuleHooks = {
-    __call_procedure__(
-      id: u32,
-      sender: u256,
-      connection_id: u128,
-      timestamp: bigint,
-      args: Uint8Array
-    ): Uint8Array;
-  };
-
-  export function register_hooks(hooks: ModuleHooks);
 
   export function procedure_http_request(
     request: Uint8Array,
@@ -99,4 +99,16 @@ declare module 'spacetime:sys@1.2' {
   export function procedure_commit_mut_tx();
 
   export function procedure_abort_mut_tx();
+
+  export function datastore_index_scan_point_bsatn(
+    index_id: u32,
+    point: ArrayBuffer,
+    point_len: u32
+  ): u32;
+
+  export function datastore_delete_by_index_scan_point_bsatn(
+    index_id: u32,
+    point: ArrayBuffer,
+    point_len: u32
+  ): u32;
 }

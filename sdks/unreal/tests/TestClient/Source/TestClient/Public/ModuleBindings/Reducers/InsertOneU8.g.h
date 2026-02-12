@@ -14,7 +14,7 @@ struct TESTCLIENT_API FInsertOneU8Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    uint8 N;
+    uint8 N = 0;
 
     FInsertOneU8Args() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UInsertOneU8Reducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    uint8 N;
+    uint8 N = 0;
 
 };
 

@@ -17,7 +17,11 @@ pub(crate) fn row_desc(schema: &ProductType, format: &Format) -> Arc<Vec<FieldIn
             .iter()
             .enumerate()
             .map(|(pos, ty)| {
-                let field_name = ty.name.clone().map(Into::into).unwrap_or_else(|| format!("col_{pos}"));
+                let field_name = ty
+                    .name
+                    .clone()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| format!("col_{pos}"));
                 let field_type = type_of(schema, ty);
                 FieldInfo::new(field_name, None, None, field_type, format.format_for(pos))
             })
@@ -26,7 +30,7 @@ pub(crate) fn row_desc(schema: &ProductType, format: &Format) -> Arc<Vec<FieldIn
 }
 
 pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
-    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name());
+    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name().map(|n| &**n));
     match &ty.algebraic_type {
         AlgebraicType::String => Type::VARCHAR,
         AlgebraicType::Bool => Type::BOOL,
@@ -245,6 +249,15 @@ mod tests {
         let row = run(schema, value).await;
         assert_eq!(row, "\0\0\0\u{b}{\"some\": 1}\0\0\0\u{c}{\"none\": {}}");
 
+        let result = AlgebraicType::result(AlgebraicType::I64, AlgebraicType::String);
+        let schema = ProductType::from([result.clone(), result.clone()]);
+        let value = product![
+            AlgebraicValue::sum(0, AlgebraicValue::I64(1)),                 // Ok(1)
+            AlgebraicValue::sum(1, AlgebraicValue::String("error".into())), // Err("error")
+        ];
+        let row = run(schema, value).await;
+        assert_eq!(row, "\0\0\0\t{\"ok\": 1}\0\0\0\u{10}{\"err\": \"error\"}");
+
         let color = AlgebraicType::Sum([SumTypeVariant::new_named(AlgebraicType::I64, "Gray")].into());
         let nested = AlgebraicType::option(color.clone());
         let schema = ProductType::from([color, nested]);
@@ -257,10 +270,7 @@ mod tests {
         assert_eq!(row, "\0\0\0\u{b}{\"Gray\": 1}\0\0\0\u{15}{\"some\": {\"Gray\": 2}}");
 
         // Now nested product
-        let product = AlgebraicType::product([
-            ProductTypeElement::new(AlgebraicType::Product(schema), Some("x".into())),
-            ProductTypeElement::new(AlgebraicType::String, Some("y".into())),
-        ]);
+        let product = AlgebraicType::product([("x", AlgebraicType::Product(schema)), ("y", AlgebraicType::String)]);
         let schema = ProductType::from([product.clone()]);
         let value = product![AlgebraicValue::product(vec![
             value.into(),
