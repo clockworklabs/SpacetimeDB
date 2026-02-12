@@ -27,8 +27,9 @@ export const Membership = table({
 });
 
 const spacetimedb = schema(User, Group, Membership);
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.user.insert({ userId: 1, name: "Alice" });
     ctx.db.user.insert({ userId: 2, name: "Bob" });

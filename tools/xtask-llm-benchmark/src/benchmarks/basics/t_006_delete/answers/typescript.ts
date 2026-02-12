@@ -10,8 +10,9 @@ export const User = table({
 });
 
 const spacetimedb = schema(User);
+export default spacetimedb;
 
-spacetimedb.reducer('deleteUser', { id: t.i32() },
+export const deleteUser = spacetimedb.reducer({ id: t.i32() },
   (ctx, { id }) => {
     ctx.db.user.id.delete(id);
   }

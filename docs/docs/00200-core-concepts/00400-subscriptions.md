@@ -22,7 +22,7 @@ import { DbConnection, User, Message } from './module_bindings';
 // Connect to the database
 const conn = DbConnection.builder()
   .withUri('wss://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .onConnect((ctx) => {
     // Subscribe to users and messages
     ctx.subscriptionBuilder()
@@ -60,7 +60,7 @@ conn.db.user.onUpdate((ctx, oldUser, newUser) => {
 // Connect to the database
 var conn = DbConnection.Builder()
     .WithUri("wss://maincloud.spacetimedb.com")
-    .WithModuleName("my_module")
+    .WithDatabaseName("my_module")
     .OnConnect((ctx) =>
     {
         // Subscribe to users and messages
@@ -104,7 +104,7 @@ conn.Db.User.OnUpdate += (ctx, oldUser, newUser) =>
 // Connect to the database
 let conn = DbConnection::builder()
     .with_uri("wss://maincloud.spacetimedb.com")
-    .with_module_name("my_module")
+    .with_database_name("my_module")
     .on_connect(|ctx| {
         // Subscribe to users and messages
         ctx.subscription_builder()
@@ -168,9 +168,9 @@ interface SubscriptionBuilder {
   // or later during the subscription's lifetime if the module's interface changes.
   onError(callback: (ctx: ErrorContext, error: Error) => void): SubscriptionBuilder;
 
-  // Subscribe to the following SQL queries.
+  // Subscribe to the following SQL or typed queries.
   // Returns immediately; callbacks are invoked when data arrives from the server.
-  subscribe(querySqls: string[]): SubscriptionHandle;
+  subscribe(query_sql:string | RowTypedQuery<any, any> | Array<string | RowTypedQuery<any, any>>): SubscriptionHandle;
 
   // Subscribe to all rows from all tables.
   // Intended for applications where memory and bandwidth are not concerns.
@@ -227,6 +227,31 @@ public sealed class SubscriptionBuilder
     /// in order to replicate only the subset of data which the client needs to function.
     /// </summary>
     public void SubscribeToAllTables();
+
+    /// <summary>
+    /// Add a typed query to this subscription.
+    ///
+    /// This is the entry point for building subscriptions without writing SQL by hand.
+    /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
+    /// </summary>
+    public TypedSubscriptionBuilder AddQuery<TRow>(
+        Func<QueryBuilder, IQuery<TRow>> build
+    );
+}
+
+public sealed class TypedSubscriptionBuilder
+{
+    /// <summary>
+    /// Add a typed query to this subscription.
+    /// </summary>
+    public TypedSubscriptionBuilder AddQuery<TRow>(
+        Func<QueryBuilder, IQuery<TRow>> build
+    );
+
+    /// <summary>
+    /// Subscribe to all typed queries that have been added to this subscription.
+    /// </summary>
+    public SubscriptionHandle Subscribe();
 }
 ```
 
@@ -261,6 +286,17 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// should register more precise queries via [`Self::subscribe`]
     /// in order to replicate only the subset of data which the client needs to function.
     pub fn subscribe_to_all_tables(self);
+
+    /// Build a query and invoke `subscribe` in order to subscribe to its results.
+    pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> impl Query<T>) -> TypedSubscriptionBuilder<M>;
+}
+
+impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+    /// Build a query and invoke `subscribe` in order to subscribe to its results.
+    pub fn add_query<T>(mut self, build: impl Fn(M::QueryBuilder) -> impl Query<T>) -> Self;
+
+    /// Subscribe to the queries that have been built with `add_query`.
+    pub fn subscribe(self) -> M::SubscriptionHandle;
 }
 
 /// Types which specify a list of query strings.
@@ -288,7 +324,7 @@ import { DbConnection } from './module_bindings';
 
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 // Register a subscription with the database
@@ -435,7 +471,7 @@ You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
 ```typescript
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 const shopItemsSubscription = conn
@@ -576,7 +612,7 @@ This will improve throughput by reducing the amount of data transferred from the
 ```typescript
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 // Never need to unsubscribe from global subscriptions
@@ -666,7 +702,7 @@ unsubscribing from it does not result in any server processing or data serializt
 ```typescript
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
+  .withDatabaseName('my_module')
   .build();
 
 // Initial subscription: player at level 5.

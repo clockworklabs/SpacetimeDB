@@ -79,12 +79,12 @@ class DbConnection
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the database's name or identity.
+Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithDatabaseName` to specify the database's name or identity.
 
 | Name                                                    | Description                                                                          |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+|---------------------------------------------------------|--------------------------------------------------------------------------------------|
 | [WithUri method](#method-withuri)                       | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
-| [WithModuleName method](#method-withmodulename)         | Set the name or identity of the remote database.                                     |
+| [WithDatabaseName method](#method-withdatabasename)     | Set the name or identity of the remote database.                                     |
 | [WithConfirmedReads method](#method-withconfirmedreads) | Enable or disable confirmed reads.                                                   |
 | [OnConnect callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.          |
 | [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
@@ -103,12 +103,12 @@ class DbConnectionBuilder<DbConnection>
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module and database.
 
-#### Method `WithModuleName`
+#### Method `WithDatabaseName`
 
 ```csharp
 class DbConnectionBuilder
 {
-    public DbConnectionBuilder<DbConnection> WithModuleName(string nameOrIdentity);
+    public DbConnectionBuilder<DbConnection> WithDatabaseName(string nameOrIdentity);
 }
 ```
 

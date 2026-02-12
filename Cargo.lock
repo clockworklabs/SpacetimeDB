@@ -7553,6 +7553,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.24",
  "rolldown",
+ "rolldown_common",
  "rolldown_utils",
  "rustyline",
  "serde",

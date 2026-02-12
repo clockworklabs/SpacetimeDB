@@ -4,19 +4,11 @@
 #include "ModuleBindings/SpacetimeDBClient.g.h"
 #include "DBCache/WithBsatn.h"
 #include "BSATN/UEBSATNHelpers.h"
-#include "ModuleBindings/Tables/ConsumeEntityTimerTable.g.h"
 #include "ModuleBindings/Tables/CircleTable.g.h"
-#include "ModuleBindings/Tables/FoodTable.g.h"
-#include "ModuleBindings/Tables/CircleTable.g.h"
-#include "ModuleBindings/Tables/SpawnFoodTimerTable.g.h"
 #include "ModuleBindings/Tables/ConfigTable.g.h"
-#include "ModuleBindings/Tables/PlayerTable.g.h"
 #include "ModuleBindings/Tables/EntityTable.g.h"
+#include "ModuleBindings/Tables/FoodTable.g.h"
 #include "ModuleBindings/Tables/PlayerTable.g.h"
-#include "ModuleBindings/Tables/CircleDecayTimerTable.g.h"
-#include "ModuleBindings/Tables/CircleRecombineTimerTable.g.h"
-#include "ModuleBindings/Tables/EntityTable.g.h"
-#include "ModuleBindings/Tables/MoveAllPlayersTimerTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
@@ -108,19 +100,14 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
-	RegisterTable<FConsumeEntityTimerType, UConsumeEntityTimerTable, FEventContext>(TEXT("consume_entity_timer"), Db->ConsumeEntityTimer);
+	Procedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT("RemoteProcedures"));
+	Procedures->Conn = this;
+
 	RegisterTable<FCircleType, UCircleTable, FEventContext>(TEXT("circle"), Db->Circle);
-	RegisterTable<FFoodType, UFoodTable, FEventContext>(TEXT("food"), Db->Food);
-	RegisterTable<FCircleType, UCircleTable, FEventContext>(TEXT("logged_out_circle"), Db->LoggedOutCircle);
-	RegisterTable<FSpawnFoodTimerType, USpawnFoodTimerTable, FEventContext>(TEXT("spawn_food_timer"), Db->SpawnFoodTimer);
 	RegisterTable<FConfigType, UConfigTable, FEventContext>(TEXT("config"), Db->Config);
-	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("player"), Db->Player);
-	RegisterTable<FEntityType, UEntityTable, FEventContext>(TEXT("logged_out_entity"), Db->LoggedOutEntity);
-	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("logged_out_player"), Db->LoggedOutPlayer);
-	RegisterTable<FCircleDecayTimerType, UCircleDecayTimerTable, FEventContext>(TEXT("circle_decay_timer"), Db->CircleDecayTimer);
-	RegisterTable<FCircleRecombineTimerType, UCircleRecombineTimerTable, FEventContext>(TEXT("circle_recombine_timer"), Db->CircleRecombineTimer);
 	RegisterTable<FEntityType, UEntityTable, FEventContext>(TEXT("entity"), Db->Entity);
-	RegisterTable<FMoveAllPlayersTimerType, UMoveAllPlayersTimerTable, FEventContext>(TEXT("move_all_players_timer"), Db->MoveAllPlayersTimer);
+	RegisterTable<FFoodType, UFoodTable, FEventContext>(TEXT("food"), Db->Food);
+	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("player"), Db->Player);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -128,6 +115,7 @@ FContextBase::FContextBase(UDbConnection* InConn)
 	Db = InConn->Db;
 	Reducers = InConn->Reducers;
 	SetReducerFlags = InConn->SetReducerFlags;
+	Procedures = InConn->Procedures;
 	Conn = InConn;
 }
 bool FContextBase::IsActive() const
@@ -155,35 +143,19 @@ void URemoteTables::Initialize()
 {
 
 	/** Creating tables */
-	ConsumeEntityTimer = NewObject<UConsumeEntityTimerTable>(this);
 	Circle = NewObject<UCircleTable>(this);
-	Food = NewObject<UFoodTable>(this);
-	LoggedOutCircle = NewObject<UCircleTable>(this);
-	SpawnFoodTimer = NewObject<USpawnFoodTimerTable>(this);
 	Config = NewObject<UConfigTable>(this);
-	Player = NewObject<UPlayerTable>(this);
-	LoggedOutEntity = NewObject<UEntityTable>(this);
-	LoggedOutPlayer = NewObject<UPlayerTable>(this);
-	CircleDecayTimer = NewObject<UCircleDecayTimerTable>(this);
-	CircleRecombineTimer = NewObject<UCircleRecombineTimerTable>(this);
 	Entity = NewObject<UEntityTable>(this);
-	MoveAllPlayersTimer = NewObject<UMoveAllPlayersTimerTable>(this);
+	Food = NewObject<UFoodTable>(this);
+	Player = NewObject<UPlayerTable>(this);
 	/**/
 
 	/** Initialization */
-	ConsumeEntityTimer->PostInitialize();
 	Circle->PostInitialize();
-	Food->PostInitialize();
-	LoggedOutCircle->PostInitialize();
-	SpawnFoodTimer->PostInitialize();
 	Config->PostInitialize();
-	Player->PostInitialize();
-	LoggedOutEntity->PostInitialize();
-	LoggedOutPlayer->PostInitialize();
-	CircleDecayTimer->PostInitialize();
-	CircleRecombineTimer->PostInitialize();
 	Entity->PostInitialize();
-	MoveAllPlayersTimer->PostInitialize();
+	Food->PostInitialize();
+	Player->PostInitialize();
 	/**/
 }
 
@@ -265,6 +237,21 @@ bool URemoteReducers::InvokeCircleDecay(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeCircleDecayWithArgs(const FReducerEventContext& Context, const FCircleDecayArgs& Args)
+{
+    if (!OnCircleDecay.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for CircleDecay"));
+        }
+        return false;
+    }
+
+    OnCircleDecay.Broadcast(Context, Args.Timer);
+    return true;
+}
+
 void URemoteReducers::CircleRecombine(const FCircleRecombineTimerType& Timer)
 {
     if (!Conn)
@@ -294,6 +281,21 @@ bool URemoteReducers::InvokeCircleRecombine(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeCircleRecombineWithArgs(const FReducerEventContext& Context, const FCircleRecombineArgs& Args)
+{
+    if (!OnCircleRecombine.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for CircleRecombine"));
+        }
+        return false;
+    }
+
+    OnCircleRecombine.Broadcast(Context, Args.Timer);
+    return true;
+}
+
 void URemoteReducers::Connect()
 {
     if (!Conn)
@@ -314,6 +316,21 @@ bool URemoteReducers::InvokeConnect(const FReducerEventContext& Context, const U
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Connect"));
+        }
+        return false;
+    }
+
+    OnConnect.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeConnectWithArgs(const FReducerEventContext& Context, const FConnectArgs& Args)
+{
+    if (!OnConnect.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Connect"));
         }
         return false;
@@ -352,6 +369,21 @@ bool URemoteReducers::InvokeConsumeEntity(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeConsumeEntityWithArgs(const FReducerEventContext& Context, const FConsumeEntityArgs& Args)
+{
+    if (!OnConsumeEntity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ConsumeEntity"));
+        }
+        return false;
+    }
+
+    OnConsumeEntity.Broadcast(Context, Args.Request);
+    return true;
+}
+
 void URemoteReducers::Disconnect()
 {
     if (!Conn)
@@ -372,6 +404,21 @@ bool URemoteReducers::InvokeDisconnect(const FReducerEventContext& Context, cons
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Disconnect"));
+        }
+        return false;
+    }
+
+    OnDisconnect.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeDisconnectWithArgs(const FReducerEventContext& Context, const FDisconnectArgs& Args)
+{
+    if (!OnDisconnect.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Disconnect"));
         }
         return false;
@@ -410,6 +457,21 @@ bool URemoteReducers::InvokeEnterGame(const FReducerEventContext& Context, const
     return true;
 }
 
+bool URemoteReducers::InvokeEnterGameWithArgs(const FReducerEventContext& Context, const FEnterGameArgs& Args)
+{
+    if (!OnEnterGame.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for EnterGame"));
+        }
+        return false;
+    }
+
+    OnEnterGame.Broadcast(Context, Args.Name);
+    return true;
+}
+
 void URemoteReducers::MoveAllPlayers(const FMoveAllPlayersTimerType& Timer)
 {
     if (!Conn)
@@ -439,6 +501,21 @@ bool URemoteReducers::InvokeMoveAllPlayers(const FReducerEventContext& Context, 
     return true;
 }
 
+bool URemoteReducers::InvokeMoveAllPlayersWithArgs(const FReducerEventContext& Context, const FMoveAllPlayersArgs& Args)
+{
+    if (!OnMoveAllPlayers.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for MoveAllPlayers"));
+        }
+        return false;
+    }
+
+    OnMoveAllPlayers.Broadcast(Context, Args.Timer);
+    return true;
+}
+
 void URemoteReducers::PlayerSplit()
 {
     if (!Conn)
@@ -459,6 +536,21 @@ bool URemoteReducers::InvokePlayerSplit(const FReducerEventContext& Context, con
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for PlayerSplit"));
+        }
+        return false;
+    }
+
+    OnPlayerSplit.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokePlayerSplitWithArgs(const FReducerEventContext& Context, const FPlayerSplitArgs& Args)
+{
+    if (!OnPlayerSplit.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for PlayerSplit"));
         }
         return false;
@@ -497,6 +589,21 @@ bool URemoteReducers::InvokeRespawn(const FReducerEventContext& Context, const U
     return true;
 }
 
+bool URemoteReducers::InvokeRespawnWithArgs(const FReducerEventContext& Context, const FRespawnArgs& Args)
+{
+    if (!OnRespawn.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Respawn"));
+        }
+        return false;
+    }
+
+    OnRespawn.Broadcast(Context);
+    return true;
+}
+
 void URemoteReducers::SpawnFood(const FSpawnFoodTimerType& Timer)
 {
     if (!Conn)
@@ -526,6 +633,21 @@ bool URemoteReducers::InvokeSpawnFood(const FReducerEventContext& Context, const
     return true;
 }
 
+bool URemoteReducers::InvokeSpawnFoodWithArgs(const FReducerEventContext& Context, const FSpawnFoodArgs& Args)
+{
+    if (!OnSpawnFood.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SpawnFood"));
+        }
+        return false;
+    }
+
+    OnSpawnFood.Broadcast(Context, Args.Timer);
+    return true;
+}
+
 void URemoteReducers::Suicide()
 {
     if (!Conn)
@@ -546,6 +668,21 @@ bool URemoteReducers::InvokeSuicide(const FReducerEventContext& Context, const U
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Suicide"));
+        }
+        return false;
+    }
+
+    OnSuicide.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeSuicideWithArgs(const FReducerEventContext& Context, const FSuicideArgs& Args)
+{
+    if (!OnSuicide.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Suicide"));
         }
         return false;
@@ -584,6 +721,21 @@ bool URemoteReducers::InvokeUpdatePlayerInput(const FReducerEventContext& Contex
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePlayerInputWithArgs(const FReducerEventContext& Context, const FUpdatePlayerInputArgs& Args)
+{
+    if (!OnUpdatePlayerInput.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePlayerInput"));
+        }
+        return false;
+    }
+
+    OnUpdatePlayerInput.Broadcast(Context, Args.Direction);
+    return true;
+}
+
 void UDbConnection::PostInitProperties()
 {
     Super::PostInitProperties();
@@ -593,6 +745,12 @@ void UDbConnection::PostInitProperties()
     {
         Reducers->InternalOnUnhandledReducerError.AddDynamic(this, &UDbConnection::OnUnhandledReducerErrorHandler);
     }
+
+    // Connect OnUnhandledProcedureError to Procedures.InternalOnUnhandledProcedureError
+    if (Procedures)
+    {
+        Procedures->InternalOnUnhandledProcedureError.AddDynamic(this, &UDbConnection::OnUnhandledProcedureErrorHandler);
+    }
 }
 
 UFUNCTION()
@@ -601,6 +759,15 @@ void UDbConnection::OnUnhandledReducerErrorHandler(const FReducerEventContext& C
     if (OnUnhandledReducerError.IsBound())
     {
         OnUnhandledReducerError.Broadcast(Context, Error);
+    }
+}
+
+UFUNCTION()
+void UDbConnection::OnUnhandledProcedureErrorHandler(const FProcedureEventContext& Context, const FString& Error)
+{
+    if (OnUnhandledProcedureError.IsBound())
+    {
+        OnUnhandledProcedureError.Broadcast(Context, Error);
     }
 }
 
@@ -626,92 +793,73 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     if (ReducerName == TEXT("circle_decay"))
     {
         FCircleDecayArgs Args = ReducerEvent.Reducer.GetAsCircleDecay();
-        UCircleDecayReducer* Reducer = NewObject<UCircleDecayReducer>();
-        Reducer->Timer = Args.Timer;
-        Reducers->InvokeCircleDecay(Context, Reducer);
+        Reducers->InvokeCircleDecayWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("circle_recombine"))
     {
         FCircleRecombineArgs Args = ReducerEvent.Reducer.GetAsCircleRecombine();
-        UCircleRecombineReducer* Reducer = NewObject<UCircleRecombineReducer>();
-        Reducer->Timer = Args.Timer;
-        Reducers->InvokeCircleRecombine(Context, Reducer);
+        Reducers->InvokeCircleRecombineWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("connect"))
     {
         FConnectArgs Args = ReducerEvent.Reducer.GetAsConnect();
-        UConnectReducer* Reducer = NewObject<UConnectReducer>();
-        Reducers->InvokeConnect(Context, Reducer);
+        Reducers->InvokeConnectWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("consume_entity"))
     {
         FConsumeEntityArgs Args = ReducerEvent.Reducer.GetAsConsumeEntity();
-        UConsumeEntityReducer* Reducer = NewObject<UConsumeEntityReducer>();
-        Reducer->Request = Args.Request;
-        Reducers->InvokeConsumeEntity(Context, Reducer);
+        Reducers->InvokeConsumeEntityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("disconnect"))
     {
         FDisconnectArgs Args = ReducerEvent.Reducer.GetAsDisconnect();
-        UDisconnectReducer* Reducer = NewObject<UDisconnectReducer>();
-        Reducers->InvokeDisconnect(Context, Reducer);
+        Reducers->InvokeDisconnectWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("enter_game"))
     {
         FEnterGameArgs Args = ReducerEvent.Reducer.GetAsEnterGame();
-        UEnterGameReducer* Reducer = NewObject<UEnterGameReducer>();
-        Reducer->Name = Args.Name;
-        Reducers->InvokeEnterGame(Context, Reducer);
+        Reducers->InvokeEnterGameWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("move_all_players"))
     {
         FMoveAllPlayersArgs Args = ReducerEvent.Reducer.GetAsMoveAllPlayers();
-        UMoveAllPlayersReducer* Reducer = NewObject<UMoveAllPlayersReducer>();
-        Reducer->Timer = Args.Timer;
-        Reducers->InvokeMoveAllPlayers(Context, Reducer);
+        Reducers->InvokeMoveAllPlayersWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("player_split"))
     {
         FPlayerSplitArgs Args = ReducerEvent.Reducer.GetAsPlayerSplit();
-        UPlayerSplitReducer* Reducer = NewObject<UPlayerSplitReducer>();
-        Reducers->InvokePlayerSplit(Context, Reducer);
+        Reducers->InvokePlayerSplitWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("respawn"))
     {
         FRespawnArgs Args = ReducerEvent.Reducer.GetAsRespawn();
-        URespawnReducer* Reducer = NewObject<URespawnReducer>();
-        Reducers->InvokeRespawn(Context, Reducer);
+        Reducers->InvokeRespawnWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("spawn_food"))
     {
         FSpawnFoodArgs Args = ReducerEvent.Reducer.GetAsSpawnFood();
-        USpawnFoodReducer* Reducer = NewObject<USpawnFoodReducer>();
-        Reducer->Timer = Args.Timer;
-        Reducers->InvokeSpawnFood(Context, Reducer);
+        Reducers->InvokeSpawnFoodWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("suicide"))
     {
         FSuicideArgs Args = ReducerEvent.Reducer.GetAsSuicide();
-        USuicideReducer* Reducer = NewObject<USuicideReducer>();
-        Reducers->InvokeSuicide(Context, Reducer);
+        Reducers->InvokeSuicideWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_player_input"))
     {
         FUpdatePlayerInputArgs Args = ReducerEvent.Reducer.GetAsUpdatePlayerInput();
-        UUpdatePlayerInputReducer* Reducer = NewObject<UUpdatePlayerInputReducer>();
-        Reducer->Direction = Args.Direction;
-        Reducers->InvokeUpdatePlayerInput(Context, Reducer);
+        Reducers->InvokeUpdatePlayerInputWithArgs(Context, Args);
         return;
     }
 
@@ -734,6 +882,22 @@ void UDbConnection::ReducerEventFailed(const FReducerEvent& Event, const FString
     if (Reducers->InternalOnUnhandledReducerError.IsBound())
     {
         Reducers->InternalOnUnhandledReducerError.Broadcast(Context, ErrorMessage);
+    }
+}
+
+void UDbConnection::ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage)
+{
+    if (!Procedures) { return; }
+
+    FClientUnrealProcedureEvent ProcedureEvent;
+    ProcedureEvent.Status             = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
+    ProcedureEvent.Timestamp          = Event.Timestamp;
+
+    FProcedureEventContext Context(this, ProcedureEvent);
+
+    if (Procedures->InternalOnUnhandledProcedureError.IsBound())
+    {
+        Procedures->InternalOnUnhandledProcedureError.Broadcast(Context, ErrorMessage);
     }
 }
 
@@ -817,9 +981,9 @@ UDbConnectionBuilder* UDbConnectionBuilder::WithUri(const FString& InUri)
 {
 	return Cast<UDbConnectionBuilder>(WithUriBase(InUri));
 }
-UDbConnectionBuilder* UDbConnectionBuilder::WithModuleName(const FString& InName)
+UDbConnectionBuilder* UDbConnectionBuilder::WithDatabaseName(const FString& InName)
 {
-	return Cast<UDbConnectionBuilder>(WithModuleNameBase(InName));
+	return Cast<UDbConnectionBuilder>(WithDatabaseNameBase(InName));
 }
 UDbConnectionBuilder* UDbConnectionBuilder::WithToken(const FString& InToken)
 {
