@@ -197,7 +197,7 @@ impl IndexArg {
             });
             Ok(())
         })?;
-        let accessor = accessor.ok_or_else(|| meta.error("missing index name, e.g. accessor = my_index"))?;
+        let accessor = accessor.ok_or_else(|| meta.error("missing index accessor, e.g. `accessor = my_index`"))?;
         let kind = algo.ok_or_else(|| {
             meta.error(
                 "missing index algorithm, e.g., `btree(columns = [col1, col2])`, \
@@ -296,12 +296,8 @@ impl IndexArg {
             });
             Ok(())
         })?;
-        let kind = kind.ok_or_else(|| {
-            syn::Error::new_spanned(
-                &attr.meta,
-                "must specify kind of index (`btree` , `direct`, `name` or `value`)",
-            )
-        })?;
+        let kind =
+            kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` , `direct`)"))?;
 
         // Default accessor = field name if not provided
         let accessor = accessor.unwrap_or_else(|| field.clone());
