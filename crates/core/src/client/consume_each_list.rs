@@ -1,10 +1,67 @@
 use bytes::Bytes;
-use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
 
 /// Moves each buffer in `self` into a closure.
 pub trait ConsumeEachBuffer {
     /// Consumes `self`, moving each `Bytes` buffer in `self` into the closure `each`.
     fn consume_each_list(self, each: &mut impl FnMut(Bytes));
+}
+
+impl ConsumeEachBuffer for ws_v2::QueryRows {
+    fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
+        self.tables
+            .into_vec()
+            .into_iter()
+            .for_each(|x| x.rows.consume_each_list(each));
+    }
+}
+
+impl ConsumeEachBuffer for ws_v2::TableUpdateRows {
+    fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
+        match self {
+            ws_v2::TableUpdateRows::EventTable(x) => x.events.consume_each_list(each),
+            ws_v2::TableUpdateRows::PersistentTable(x) => {
+                x.inserts.consume_each_list(each);
+                x.deletes.consume_each_list(each);
+            }
+        }
+    }
+}
+
+impl ConsumeEachBuffer for ws_v2::TransactionUpdate {
+    fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
+        self.query_sets
+            .into_vec()
+            .into_iter()
+            .flat_map(|x| x.tables.into_vec())
+            .flat_map(|x| x.rows.into_vec())
+            .for_each(|x| x.consume_each_list(each));
+    }
+}
+
+impl<T: ConsumeEachBuffer> ConsumeEachBuffer for Option<T> {
+    fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
+        if let Some(v) = self {
+            v.consume_each_list(each);
+        }
+    }
+}
+
+impl ConsumeEachBuffer for ws_v2::ServerMessage {
+    fn consume_each_list(self, each: &mut impl FnMut(Bytes)) {
+        use ws_v2::ServerMessage::*;
+        match self {
+            SubscribeApplied(x) => x.rows.consume_each_list(each),
+            OneOffQueryResult(x) => x.result.ok().consume_each_list(each),
+            UnsubscribeApplied(x) => x.rows.consume_each_list(each),
+            SubscriptionError(_) | InitialConnection(_) | ProcedureResult(_) => {}
+            TransactionUpdate(x) => x.consume_each_list(each),
+            ReducerResult(x) => match x.result {
+                ws_v2::ReducerOutcome::Ok(ro) => ro.transaction_update.consume_each_list(each),
+                _ => {}
+            },
+        }
+    }
 }
 
 impl ConsumeEachBuffer for ws_v1::ServerMessage<ws_v1::BsatnFormat> {

@@ -1440,12 +1440,17 @@ async fn ws_encode_message_v2(
     config: ClientConfig,
     buf: SerializeBuffer,
     message: ws_v2::ServerMessage,
-    _is_large_message: bool,
-    _bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    is_large_message: bool,
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
 ) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
-    let _ = (_is_large_message, _bsatn_rlb_pool);
     let start = Instant::now();
-    let (in_use, data) = serialize_v2(buf, message, config.compression);
+
+    let (in_use, data) = if is_large_message {
+        let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+        spawn_rayon(move || serialize_v2(&bsatn_rlb_pool, buf, message, config.compression)).await
+    } else {
+        serialize_v2(bsatn_rlb_pool, buf, message, config.compression)
+    };
 
     let metrics = EncodeMetrics {
         timing: start.elapsed(),

@@ -184,6 +184,7 @@ pub fn serialize(
 /// This mirrors the v1 framing by prepending the compression tag and applying
 /// conditional compression when configured.
 pub fn serialize_v2(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
     mut buffer: SerializeBuffer,
     msg: ws_v2::ServerMessage,
     compression: ws_v1::Compression,
@@ -191,6 +192,10 @@ pub fn serialize_v2(
     let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
         bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
     });
+
+    // At this point, we no longer have a use for `msg`,
+    // so try to reclaim its buffers.
+    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 
     match decide_compression(srv_msg.len(), compression) {
         ws_v1::Compression::None => buffer.uncompressed(),
