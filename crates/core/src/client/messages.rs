@@ -303,7 +303,7 @@ fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
         },
         ws_v2::ServerMessage::ReducerResult(message) => match &message.result {
             ws_v2::ReducerOutcome::Ok(ok) => Some(count_transaction_update(&ok.transaction_update)),
-            ws_v2::ReducerOutcome::Okmpty => Some(0),
+            ws_v2::ReducerOutcome::OkEmpty => Some(0),
             ws_v2::ReducerOutcome::Err(_) | ws_v2::ReducerOutcome::InternalError(_) => None,
         },
         ws_v2::ServerMessage::ProcedureResult(_) => None,
