@@ -1,6 +1,6 @@
 //! CLI publish command tests
 
-use spacetimedb_smoketests::{require_local_server, Smoketest};
+use spacetimedb_smoketests::{patch_module_cargo_to_local_bindings, require_local_server, Smoketest};
 
 #[test]
 fn cli_can_publish_spacetimedb_on_disk() {
@@ -202,17 +202,20 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
     let test = Smoketest::builder().autopublish(false).build();
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Initialize a new project (creates test-project/spacetimedb/)
+    // Initialize a new project (creates <project-path>/spacetimedb/)
     test.spacetime(&[
         "init",
         "--non-interactive",
         "--lang",
         "rust",
-        temp_dir.path().join("test-project").to_str().unwrap(),
+        "--project-path",
+        temp_dir.path().to_str().unwrap(),
+        "test-project",
     ])
     .unwrap();
 
-    let module_dir = temp_dir.path().join("test-project").join("spacetimedb");
+    let module_dir = temp_dir.path().join("spacetimedb");
+    patch_module_cargo_to_local_bindings(&module_dir).expect("failed to patch module Cargo.toml");
 
     // Build the module first
     test.spacetime(&["build", "--module-path", module_dir.to_str().unwrap()])

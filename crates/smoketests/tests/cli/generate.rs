@@ -1,5 +1,6 @@
 use predicates::prelude::*;
 use spacetimedb_guard::ensure_binaries_built;
+use spacetimedb_smoketests::patch_module_cargo_to_local_bindings;
 use std::process::Command;
 
 fn cli_cmd() -> Command {
@@ -11,9 +12,17 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
     // Test that when config exists but doesn't match CLI args, we use CLI args
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Initialize a new project (creates test-project/spacetimedb/)
+    // Initialize a new project (creates <project-path>/spacetimedb/)
     let output = cli_cmd()
-        .args(["init", "--non-interactive", "--lang", "rust", "test-project"])
+        .args([
+            "init",
+            "--non-interactive",
+            "--lang",
+            "rust",
+            "--project-path",
+            temp_dir.path().to_str().unwrap(),
+            "test-project",
+        ])
         .current_dir(temp_dir.path())
         .output()
         .expect("failed to execute");
@@ -23,8 +32,9 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let project_dir = temp_dir.path().join("test-project");
-    let module_dir = project_dir;
+    let project_dir = temp_dir.path().to_path_buf();
+    let module_dir = project_dir.join("spacetimedb");
+    patch_module_cargo_to_local_bindings(&module_dir).expect("failed to patch module Cargo.toml");
 
     // Create a config with a different module-path filter
     let config_content = r#"{
