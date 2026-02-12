@@ -67,8 +67,11 @@ export function tablesToSchema<
   const T extends Record<string, UntypedTableSchema>,
 >(ctx: ModuleContext, tables: T): TablesToSchema<T> {
   return {
-    tables: Object.entries(tables).map(([accName, schema]) =>
-      tableToSchema(accName, schema, schema.tableDef(ctx, accName))
+    tables: Object.fromEntries(
+      Object.entries(tables).map(([accName, schema]) => [
+        accName,
+        tableToSchema(accName, schema, schema.tableDef(ctx, accName)),
+      ])
     ) as TablesToSchema<T>['tables'],
   };
 }

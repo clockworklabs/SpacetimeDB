@@ -89,7 +89,7 @@ describe('ClientQuery.toSql', () => {
   it('renders semijoin queries without additional filters', () => {
     const sql = toSql(
       query.player
-        .rightSemijoin(query.unindexed_player, (player, other) =>
+        .rightSemijoin(query.unindexedPlayer, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -104,7 +104,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       query.player
         .where(row => row.id.eq(42))
-        .rightSemijoin(query.unindexed_player, (player, other) =>
+        .rightSemijoin(query.unindexedPlayer, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -119,7 +119,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       query.player
         .where(row => row.name.eq("O'Brian"))
-        .rightSemijoin(query.unindexed_player, (player, other) =>
+        .rightSemijoin(query.unindexedPlayer, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -134,7 +134,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       query.player
         .where(row => and(row.name.eq('Alice'), row.id.eq(30)))
-        .rightSemijoin(query.unindexed_player, (player, other) =>
+        .rightSemijoin(query.unindexedPlayer, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -181,7 +181,7 @@ describe('ClientQuery.toSql', () => {
   it('basic semijoin', () => {
     const sql = toSql(
       query.player
-        .rightSemijoin(query.unindexed_player, (player, other) =>
+        .rightSemijoin(query.unindexedPlayer, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -194,7 +194,7 @@ describe('ClientQuery.toSql', () => {
   it('basic left semijoin', () => {
     const sql = toSql(
       query.player
-        .leftSemijoin(query.unindexed_player, (player, other) =>
+        .leftSemijoin(query.unindexedPlayer, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -208,7 +208,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       query.player
         .where(row => row.id.eq(42))
-        .rightSemijoin(query.unindexed_player, (player, other) =>
+        .rightSemijoin(query.unindexedPlayer, (player, other) =>
           other.id.eq(player.id)
         )
         .where(row => row.name.eq('Gadget'))

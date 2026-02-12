@@ -2,10 +2,7 @@ import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
 import { describe, expect, test } from 'vitest';
 import Player from '../test-app/src/module_bindings/player_type.ts';
 import { AlgebraicType, Identity, type Infer } from '../src';
-import {
-  tables,
-  UnindexedPlayer,
-} from '../test-app/src/module_bindings/index.ts';
+import { tables } from '../test-app/src/module_bindings/index.ts';
 
 interface ApplyOperations {
   ops: Operation[];
@@ -103,13 +100,14 @@ function runTest(
 
 describe('TableCache', () => {
   describe('Unindexed player table', () => {
-    const newTable = () => new TableCacheImpl(tables.unindexedPlayer);
+    console.log(tables);
+    const newTable = () => new TableCacheImpl(tables.unindexed_player);
     const mkOperation = (
       type: 'insert' | 'delete',
-      row: Infer<typeof UnindexedPlayer>
+      row: Infer<typeof tables.unindexed_player.columns>
     ) => {
       const rowId = AlgebraicType.intoMapKey(
-        { tag: 'Product', value: tables.unindexedPlayer.rowType },
+        { tag: 'Product', value: tables.unindexed_player.rowType },
         row
       );
       return {
