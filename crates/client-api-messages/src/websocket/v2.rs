@@ -324,6 +324,11 @@ pub struct TableUpdate {
 /// Regular "persistent" tables will include a list of inserted rows and a list of deleted rows.
 /// Event tables, whose rows are not persistent, will instead include a single list of event rows.
 ///
+/// We are explicit about the row type, instead of relying on the client to know which tables
+/// are event tables, since we may want to be able to join events with persistent tables in
+/// a way that could end up with event table-ish rows being sent for a table that is normally
+/// a persistent table.
+///
 /// In the future, we may add additional variants to this enum.
 /// In particular, we may add a variant for in-place updates of rows for tables with primary keys.
 /// Note that clients will need to opt in to using this new variant,
