@@ -826,7 +826,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             // An index is for the primary key if it's unique and covers exactly the PK column.
             let is_pk = index.is_unique
                 && primary_key_column.as_ref().is_some_and(|pk| {
-                    index.kind.columns_idents() == std::slice::from_ref(&pk.ident)
+                    index.kind.columns_idents() == [pk.ident.clone()]
                 });
             index.validate(&table_name, &columns, is_pk)
         })
