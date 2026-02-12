@@ -501,7 +501,7 @@ fn test_all_templates() {
             if result.is_ok() {
                 "[PASS]".to_string()
             } else {
-                format!("[FAIL]: {}", result.as_ref().unwrap_err())
+                format!("[FAIL]: {:#}", result.as_ref().unwrap_err())
             }
         );
     }
@@ -514,7 +514,7 @@ fn test_all_templates() {
     let failures: Vec<_> = results
         .iter()
         .filter(|(_, r)| r.is_err())
-        .map(|(id, r)| format!("  {}: {}", id, r.as_ref().unwrap_err()))
+        .map(|(id, r)| format!("  {}: {:#}", id, r.as_ref().unwrap_err()))
         .collect();
 
     if !failures.is_empty() {
