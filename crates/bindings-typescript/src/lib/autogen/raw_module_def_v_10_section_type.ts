@@ -18,6 +18,8 @@ import RawProcedureDefV10 from './raw_procedure_def_v_10_type';
 import RawViewDefV10 from './raw_view_def_v_10_type';
 import RawScheduleDefV10 from './raw_schedule_def_v_10_type';
 import RawLifeCycleReducerDefV10 from './raw_life_cycle_reducer_def_v_10_type';
+import CaseConversionPolicy from './case_conversion_policy_type';
+import ExplicitNames from './explicit_names_type';
 
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
 const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
@@ -47,6 +49,12 @@ const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   },
   get RowLevelSecurity() {
     return __t.array(RawRowLevelSecurityDefV9);
+  },
+  get CaseConversionPolicy() {
+    return CaseConversionPolicy;
+  },
+  get ExplicitNames() {
+    return ExplicitNames;
   },
 });
 
