@@ -152,7 +152,7 @@ export class ModuleContext {
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
-    }
+    },
   };
 
   get moduleDef(): ModuleDef {
@@ -248,9 +248,9 @@ export class ModuleContext {
 
   #registerCompoundTypeRecursively<
     T extends
-    | SumBuilder<VariantsObj>
-    | ProductBuilder<ElementsObj>
-    | RowBuilder<RowObj>,
+      | SumBuilder<VariantsObj>
+      | ProductBuilder<ElementsObj>
+      | RowBuilder<RowObj>,
   >(typeBuilder: T): RefBuilder<Infer<T>, InferSpacetimeTypeOfTypeBuilder<T>> {
     const ty = typeBuilder.algebraicType;
     // NB! You must ensure that all TypeBuilder passed into this function
@@ -273,13 +273,13 @@ export class ModuleContext {
     const newTy =
       typeBuilder instanceof RowBuilder || typeBuilder instanceof ProductBuilder
         ? ({
-          tag: 'Product',
-          value: { elements: [] },
-        } as AlgebraicTypeVariants.Product)
+            tag: 'Product',
+            value: { elements: [] },
+          } as AlgebraicTypeVariants.Product)
         : ({
-          tag: 'Sum',
-          value: { variants: [] },
-        } as AlgebraicTypeVariants.Sum);
+            tag: 'Sum',
+            value: { variants: [] },
+          } as AlgebraicTypeVariants.Sum);
 
     r = new RefBuilder(this.#moduleDef.typespace.types.length);
     this.#moduleDef.typespace.types.push(newTy);
