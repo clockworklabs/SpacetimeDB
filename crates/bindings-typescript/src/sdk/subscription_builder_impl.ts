@@ -1,4 +1,5 @@
 import type { DbConnectionImpl } from './db_connection_impl';
+import { INTERNAL_REMOTE_MODULE } from './internal';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
@@ -85,12 +86,25 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
     query_sql: Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
+    queryFn: (
+      tables: RemoteModule['tables'][number]
+    ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
+  ): SubscriptionHandleImpl<RemoteModule>;
+  subscribe(
     query_sql:
       | string
       | RowTypedQuery<any, any>
       | Array<string | RowTypedQuery<any, any>>
+      | ((tables: any) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[])
   ): SubscriptionHandleImpl<RemoteModule> {
-    const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
+    let queries: Array<string | RowTypedQuery<any, any>>;
+    if (typeof query_sql === 'function') {
+      const tablesMap = this.db.getTablesMap?.();
+      const result = query_sql(tablesMap);
+      queries = Array.isArray(result) ? result : [result];
+    } else {
+      queries = Array.isArray(query_sql) ? query_sql : [query_sql];
+    }
     if (queries.length === 0) {
       throw new Error('Subscriptions must have at least one query');
     }
@@ -125,7 +139,11 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * including dropping subscriptions, corrupting the client cache, or throwing errors.
    */
   subscribeToAllTables(): void {
-    this.subscribe('SELECT * FROM *');
+    const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
+    const queries = remoteModule.tables.map(
+      table => `SELECT * FROM ${table.name}`
+    );
+    this.subscribe(queries);
   }
 }
 
@@ -142,7 +160,7 @@ export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
 }
 
 export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
-  #queryId: number;
+  #querySetId: number;
   #unsubscribeCalled: boolean = false;
   #endedState: boolean = false;
   #activeState: boolean = false;
@@ -174,7 +192,11 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
         }
       }
     );
-    this.#queryId = this.db.registerSubscription(this, this.#emitter, querySql);
+    this.#querySetId = this.db.registerSubscription(
+      this,
+      this.#emitter,
+      querySql
+    );
   }
 
   /**
@@ -187,7 +209,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#queryId);
+    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
       (_ctx: SubscriptionEventContextInterface<RemoteModule>) => {
@@ -217,7 +239,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#queryId);
+    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
       (ctx: SubscriptionEventContextInterface<RemoteModule>) => {

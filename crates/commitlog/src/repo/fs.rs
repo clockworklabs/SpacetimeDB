@@ -58,10 +58,12 @@ impl SizeOnDisk {
     }
 
     #[cfg(not(unix))]
-    fn add(&mut self, stat: std::fs::Metadata) {
-        let imaginary_blocks = (self.total_bytes > 0)
-            .then(|| 8 * self.total_bytes.div_ceil(4096))
-            .unwrap_or_default();
+    fn add(&mut self, _stat: std::fs::Metadata) {
+        let imaginary_blocks = if self.total_bytes > 0 {
+            8 * self.total_bytes.div_ceil(4096)
+        } else {
+            0
+        };
         self.total_blocks = imaginary_blocks;
     }
 }

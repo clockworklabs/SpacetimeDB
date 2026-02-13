@@ -27,8 +27,6 @@ impl __sdk::InModule for InsertIntoPkBtreeU32Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertIntoPkBtreeU32CallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_into_pk_btree_u32`.
 ///
@@ -38,75 +36,40 @@ pub trait insert_into_pk_btree_u_32 {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_into_pk_btree_u_32`] callbacks.
-    fn insert_into_pk_btree_u_32(&self, pk_u_32: Vec<PkU32>, bt_u_32: Vec<BTreeU32>) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_into_pk_btree_u32`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_into_pk_btree_u_32:insert_into_pk_btree_u_32_then`] to run a callback after the reducer completes.
+    fn insert_into_pk_btree_u_32(&self, pk_u_32: Vec<PkU32>, bt_u_32: Vec<BTreeU32>) -> __sdk::Result<()> {
+        self.insert_into_pk_btree_u_32_then(pk_u_32, bt_u_32, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_into_pk_btree_u32` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertIntoPkBtreeU32CallbackId`] can be passed to [`Self::remove_on_insert_into_pk_btree_u_32`]
-    /// to cancel the callback.
-    fn on_insert_into_pk_btree_u_32(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_into_pk_btree_u_32_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &Vec<PkU32>, &Vec<BTreeU32>) + Send + 'static,
-    ) -> InsertIntoPkBtreeU32CallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_into_pk_btree_u_32`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_into_pk_btree_u_32(&self, callback: InsertIntoPkBtreeU32CallbackId);
+        pk_u_32: Vec<PkU32>,
+        bt_u_32: Vec<BTreeU32>,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_into_pk_btree_u_32 for super::RemoteReducers {
-    fn insert_into_pk_btree_u_32(&self, pk_u_32: Vec<PkU32>, bt_u_32: Vec<BTreeU32>) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "insert_into_pk_btree_u32",
-            InsertIntoPkBtreeU32Args { pk_u_32, bt_u_32 },
-        )
-    }
-    fn on_insert_into_pk_btree_u_32(
+    fn insert_into_pk_btree_u_32_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<PkU32>, &Vec<BTreeU32>) + Send + 'static,
-    ) -> InsertIntoPkBtreeU32CallbackId {
-        InsertIntoPkBtreeU32CallbackId(self.imp.on_reducer(
-            "insert_into_pk_btree_u32",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertIntoPkBtreeU32 { pk_u_32, bt_u_32 },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, pk_u_32, bt_u_32)
-            }),
-        ))
-    }
-    fn remove_on_insert_into_pk_btree_u_32(&self, callback: InsertIntoPkBtreeU32CallbackId) {
-        self.imp.remove_on_reducer("insert_into_pk_btree_u32", callback.0)
-    }
-}
+        pk_u_32: Vec<PkU32>,
+        bt_u_32: Vec<BTreeU32>,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_into_pk_btree_u32`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_into_pk_btree_u_32 {
-    /// Set the call-reducer flags for the reducer `insert_into_pk_btree_u32` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_into_pk_btree_u_32(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_into_pk_btree_u_32 for super::SetReducerFlags {
-    fn insert_into_pk_btree_u_32(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_into_pk_btree_u32", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp
+            .invoke_reducer_with_callback(InsertIntoPkBtreeU32Args { pk_u_32, bt_u_32 }, callback)
     }
 }

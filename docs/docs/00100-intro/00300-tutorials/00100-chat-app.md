@@ -925,7 +925,7 @@ Replace the entire contents of `src/App.tsx` with the following:
 ```tsx
 import React, { useEffect, useState } from 'react';
 import { Message, tables, reducers } from './module_bindings';
-import { useSpacetimeDB, useTable, where, eq, useReducer } from 'spacetimedb/react';
+import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
 
@@ -1435,15 +1435,13 @@ Next replace `const onlineUsers: User[] = [];` with the following:
 
 ```tsx
 // Subscribe to all online users in the chat
-// so we can show who's online and demonstrate
-// the `where` and `eq` query expressions
+// using the query builder's `.where()` method
 const [onlineUsers] = useTable(
-  tables.user,
-  where(eq('online', true))
+  tables.user.where(r => r.online.eq(true))
 );
 ```
 
-Notice that we can filter users in the `user` table based on their online status by passing a query expression into the `useTable` hook as the second argument.
+Notice that we can filter users in the `user` table based on their online status by chaining `.where()` on the table ref with a typed predicate function.
 
 Let's now prettify our messages in our render function by sorting them by their `sent` timestamp, and joining the username of the sender to the message by looking up the user by their `Identity` in the `user` table. Replace `const prettyMessages: PrettyMessage[] = [];` with the following:
 
@@ -1543,11 +1541,9 @@ Update your `onlineUsers` React hook to add the following callbacks:
 
 ```tsx
 // Subscribe to all online users in the chat
-// so we can show who's online and demonstrate
-// the `where` and `eq` query expressions
+// using the query builder's `.where()` method
 const [ onlineUsers ] = useTable(
-  tables.user,
-  where(eq('online', true)),
+  tables.user.where(r => r.online.eq(true)),
   {
     onInsert: user => {
       // All users being inserted here are online
@@ -1577,7 +1573,7 @@ const [ onlineUsers ] = useTable(
 );
 ```
 
-These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `where` filter.
+These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `.where()` filter.
 
 Here, we post a system message indicating that a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being updated to "online".
 
@@ -1604,8 +1600,7 @@ Finally, let's also subscribe to offline users so we can show them in the sideba
 
 ```tsx
 const [offlineUsers] = useTable(
-  tables.user,
-  where(eq('online', false))
+  tables.user.where(r => r.online.eq(false))
 );
 ```
 
@@ -2406,8 +2401,6 @@ We need to handle several sorts of events:
 1. When a new user joins, we'll print a message introducing them.
 2. When a user is updated, we'll print their new name, or declare their new online status.
 3. When we receive a new message, we'll print it.
-4. If the server rejects our attempt to set our name, we'll print an error.
-5. If the server rejects a message we send, we'll print an error.
 
 To `src/main.rs`, add:
 
@@ -2422,12 +2415,6 @@ fn register_callbacks(ctx: &DbConnection) {
 
     // When a new message is received, print it.
     ctx.db.message().on_insert(on_message_inserted);
-
-    // When we fail to set our name, print a warning.
-    ctx.reducers.on_set_name(on_name_set);
-
-    // When we fail to send a message, print a warning.
-    ctx.reducers.on_send_message(on_message_sent);
 }
 ```
 
@@ -2532,39 +2519,6 @@ fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
 }
 ```
 
-#### Handle reducer failures
-
-We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `on_reducer` method of the `Reducer` trait, which is automatically implemented for each reducer by `spacetime generate`.
-
-Each reducer callback first takes a `&ReducerEventContext` which contains metadata about the reducer call, including the identity of the caller and whether or not the reducer call suceeded.
-
-These callbacks will be invoked in one of two cases:
-
-1. If the reducer was successful and altered any of our subscribed rows.
-2. If we requested an invocation which failed.
-
-Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity is our own identity.
-
-We already handle successful `set_name` invocations using our `ctx.db.user().on_update(..)` callback, but if the module rejects a user's chosen name, we'd like that user's client to let them know. We define a function `on_set_name` as a `conn.reducers.on_set_name(..)` callback which checks if the reducer failed, and if it did, prints a message including the rejected name and the error.
-
-To `src/main.rs`, add:
-
-```rust
-/// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(ctx: &ReducerEventContext, name: &String) {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to change name to {:?}: {}", name, err);
-    }
-}
-
-/// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to send message {:?}: {}", text, err);
-    }
-}
-```
-
 ### Subscribe to queries
 
 SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database.
@@ -2628,6 +2582,8 @@ Our app should allow the user to interact by typing lines into their terminal. I
 
 For each reducer defined by our module, `ctx.reducers` has a method to request an invocation. In our case, we pass `set_name` and `send_message` a `String`, which gets sent to the server to execute the corresponding reducer.
 
+When we invoke either of these reducers, we'll register a callback to run when the client hears back about the result. If the database rejects our input, we'll print a message to the user. If there's a more serious error, we'll `panic!`.
+
 To `src/main.rs`, add:
 
 ```rust
@@ -2638,9 +2594,26 @@ fn user_input_loop(ctx: &DbConnection) {
             panic!("Failed to read from stdin.");
         };
         if let Some(name) = line.strip_prefix("/name ") {
-            ctx.reducers.set_name(name.to_string()).unwrap();
+            ctx.reducers
+                .set_name_then(name.to_string(), {
+                    let name = name.to_string();
+                    move |_ctx, result| match result {
+                        Err(e) => panic!("Internal error when setting name: {e}"),
+                        Ok(Err(e)) => eprintln!("Failed to set name to {name}: {e}"),
+                        Ok(Ok(())) => (),
+                    }
+                })
+                .unwrap();
         } else {
-            ctx.reducers.send_message(line).unwrap();
+            ctx.reducers
+                .send_message_then(line.clone(), {
+                    move |_ctx, result| match result {
+                        Err(e) => panic!("Internal error when sending message: {e}"),
+                        Ok(Err(e)) => eprintln!("Failed to send message {line:?}: {e}"),
+                        Ok(Ok(())) => (),
+                    }
+                })
+                .unwrap();
         }
     }
 }
