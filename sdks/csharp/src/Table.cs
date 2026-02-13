@@ -633,5 +633,24 @@ namespace SpacetimeDB
             public void RemoveListener(UpdateEventHandler listener) => Listeners.Remove(listener);
         }
     }
+
+    /// <summary>
+    /// A table handle for event tables, which only expose OnInsert callbacks.
+    /// Event tables do not persist rows in the client cache and do not support
+    /// OnDelete, OnBeforeDelete, or OnUpdate callbacks.
+    /// </summary>
+    public abstract class RemoteEventTableHandle<EventContext, Row> : RemoteTableHandle<EventContext, Row>
+        where EventContext : class, IEventContext
+        where Row : class, IStructuralReadWrite, new()
+    {
+        protected RemoteEventTableHandle(IDbConnection conn) : base(conn, isEventTable: true) { }
+
+        // Hide delete/update events from the public API.
+        // The base class handlers still exist but will never have listeners registered,
+        // so invoking them in PostApply is a harmless no-op.
+        private new event RowEventHandler OnDelete { add { } remove { } }
+        private new event RowEventHandler OnBeforeDelete { add { } remove { } }
+        private new event UpdateEventHandler OnUpdate { add { } remove { } }
+    }
 }
 #nullable disable
