@@ -11,25 +11,25 @@ namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class TransactionUpdateLight
+    public sealed partial class OneOffQueryResult
     {
         [DataMember(Name = "request_id")]
         public uint RequestId;
-        [DataMember(Name = "update")]
-        public DatabaseUpdate Update;
+        [DataMember(Name = "result")]
+        public SpacetimeDB.Result<QueryRows, string> Result;
 
-        public TransactionUpdateLight(
+        public OneOffQueryResult(
             uint RequestId,
-            DatabaseUpdate Update
+            SpacetimeDB.Result<QueryRows, string> Result
         )
         {
             this.RequestId = RequestId;
-            this.Update = Update;
+            this.Result = Result;
         }
 
-        public TransactionUpdateLight()
+        public OneOffQueryResult()
         {
-            this.Update = new();
+            this.Result = default!;
         }
     }
 }

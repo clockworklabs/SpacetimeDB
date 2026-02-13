@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class MessageHandle : RemoteTableHandle<EventContext, Message>
         {
-            protected override string RemoteTableName => "message";
+            protected override string RemoteTableName => "Message";
 
             internal MessageHandle(DbConnection conn) : base(conn)
             {
