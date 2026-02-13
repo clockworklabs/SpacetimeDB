@@ -9,7 +9,7 @@ public static partial class synthetic
     [SpacetimeDB.Table(Name = "unique_0_u32_u64_str")]
     public partial struct unique_0_u32_u64_str_t
     {
-        [Unique]
+        [PrimaryKey]
         public uint id;
         public ulong age;
         public string name;
@@ -39,7 +39,7 @@ public static partial class synthetic
     [SpacetimeDB.Table(Name = "unique_0_u32_u64_u64")]
     public partial struct unique_0_u32_u64_u64_t
     {
-        [Unique]
+        [PrimaryKey]
         public uint id;
         public ulong x;
         public ulong y;

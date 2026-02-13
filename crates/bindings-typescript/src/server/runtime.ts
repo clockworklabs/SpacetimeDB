@@ -538,6 +538,11 @@ function makeTableView(
       .filter(x => x.data.tag === 'Unique')
       .some(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
 
+    const isPrimaryKey =
+      isUnique &&
+      column_ids.length === table.primaryKey.length &&
+      column_ids.every((id, i) => table.primaryKey[i] === id);
+
     const indexSerializers = column_ids.map(id =>
       AlgebraicType.makeSerializer(
         rowType.value.elements[id].algebraicType,
@@ -574,7 +579,7 @@ function makeTableView(
     let index: Index<any, any>;
     if (isUnique && serializeSinglePoint) {
       // numColumns == 1, unique index
-      index = {
+      const base = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           const buf = LEAF_BUF;
           const point_len = serializeSinglePoint(buf, colVal);
@@ -595,7 +600,9 @@ function makeTableView(
           );
           return num > 0;
         },
-        update: (row: RowType<any>): RowType<any> => {
+      };
+      if (isPrimaryKey) {
+        (base as any).update = (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
           BINARY_WRITER.reset(buf);
           serializeRow(BINARY_WRITER, row);
@@ -607,11 +614,12 @@ function makeTableView(
           );
           integrateGeneratedColumns?.(row, buf.view);
           return row;
-        },
-      } as UniqueIndex<any, any>;
+        };
+      }
+      index = base as UniqueIndex<any, any>;
     } else if (isUnique) {
       // numColumns != 1, unique index
-      index = {
+      const base = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           if (colVal.length !== numColumns) {
             throw new TypeError('wrong number of elements');
@@ -638,7 +646,9 @@ function makeTableView(
           );
           return num > 0;
         },
-        update: (row: RowType<any>): RowType<any> => {
+      };
+      if (isPrimaryKey) {
+        (base as any).update = (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
           BINARY_WRITER.reset(buf);
           serializeRow(BINARY_WRITER, row);
@@ -650,8 +660,9 @@ function makeTableView(
           );
           integrateGeneratedColumns?.(row, buf.view);
           return row;
-        },
-      } as UniqueIndex<any, any>;
+        };
+      }
+      index = base as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
       // numColumns == 1
       const rawIndex = {
