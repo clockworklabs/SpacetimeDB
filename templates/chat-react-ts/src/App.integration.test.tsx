@@ -9,7 +9,7 @@ describe('App Integration Test', () => {
   it('connects to the DB, allows name change and message sending', async () => {
     const connectionBuilder = DbConnection.builder()
       .withUri('ws://localhost:3000')
-      .withModuleName('quickstart-chat')
+      .withDatabaseName('quickstart-chat')
       .withToken(localStorage.getItem('auth_token') || '');
     render(
       <SpacetimeDBProvider connectionBuilder={connectionBuilder}>

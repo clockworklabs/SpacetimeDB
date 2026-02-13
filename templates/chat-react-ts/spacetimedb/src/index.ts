@@ -18,40 +18,47 @@ const Message = table(
 );
 
 const spacetimedb = schema(User, Message);
+export default spacetimedb;
 
 function validateName(name: string) {
   if (!name) throw new SenderError('Names must not be empty');
 }
 
-spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
-  validateName(name);
-  const user = ctx.db.user.identity.find(ctx.sender);
-  if (!user) throw new SenderError('Cannot set name for unknown user');
-  console.info(`User ${ctx.sender} sets name to ${name}`);
-  ctx.db.user.identity.update({ ...user, name });
-});
+export const set_name = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    validateName(name);
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Cannot set name for unknown user');
+    console.info(`User ${ctx.sender} sets name to ${name}`);
+    ctx.db.user.identity.update({ ...user, name });
+  }
+);
 
 function validateMessage(text: string) {
   if (!text) throw new SenderError('Messages must not be empty');
 }
 
-spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
-  // Things to consider:
-  // - Rate-limit messages per-user.
-  // - Reject messages from unnamed user.
-  validateMessage(text);
-  console.info(`User ${ctx.sender}: ${text}`);
-  ctx.db.message.insert({
-    sender: ctx.sender,
-    text,
-    sent: ctx.timestamp,
-  });
-});
+export const send_message = spacetimedb.reducer(
+  { text: t.string() },
+  (ctx, { text }) => {
+    // Things to consider:
+    // - Rate-limit messages per-user.
+    // - Reject messages from unnamed user.
+    validateMessage(text);
+    console.info(`User ${ctx.sender}: ${text}`);
+    ctx.db.message.insert({
+      sender: ctx.sender,
+      text,
+      sent: ctx.timestamp,
+    });
+  }
+);
 
 // Called when the module is initially published
-spacetimedb.init(_ctx => {});
+export const init = spacetimedb.init(_ctx => {});
 
-spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     // If this is a returning user, i.e. we already have a `User` with this `Identity`,
@@ -68,7 +75,7 @@ spacetimedb.clientConnected(ctx => {
   }
 });
 
-spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });

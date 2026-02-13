@@ -1,0 +1,45 @@
+/tmp
+/out-tsc
+
+# Ignore all node_modules folders
+**/node_modules/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/.pnp
+.pnp.js
+
+.vscode/*
+
+# IDE folders
+.idea/
+.vs/
+*.user
+*.suo
+
+# .NET build outputs
+**/bin/
+**/obj/
+
+# Rust build outputs
+**/target/
+Cargo.lock
+
+# SpacetimeDB tokens
+.spacetime_token
+
+# SpacetimeDB generated files
+**/module_bindings/
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# Environment files
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db

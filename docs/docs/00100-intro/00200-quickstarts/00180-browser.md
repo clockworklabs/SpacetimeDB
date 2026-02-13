@@ -65,7 +65,7 @@ npm run build
 <script>
   const conn = DbConnection.builder()
     .withUri('ws://localhost:3000')
-    .withModuleName('my-spacetime-app')
+    .withDatabaseName('my-spacetime-app')
     .withToken(localStorage.getItem('auth_token'))
     .onConnect((conn, identity, token) => {
       localStorage.setItem('auth_token', token);

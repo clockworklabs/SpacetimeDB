@@ -46,7 +46,7 @@ fn connect_to_db() -> DbConnection {
         .on_connect_error(on_connect_error)
         .on_disconnect(on_disconnected)
         .with_token(creds_store().load().expect("Error loading credentials"))
-        .with_module_name(db_name)
+        .with_database_name(db_name)
         .with_uri(host)
         .build()
         .expect("Failed to connect")
