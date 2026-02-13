@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::Operand;
 
-use super::{format_expr, BoolExpr, Query, RHS};
+use super::{format_expr, BoolExpr, Query, RawQuery, RHS};
 
 pub type TableNameStr = &'static str;
 
@@ -123,10 +123,25 @@ pub struct FromWhere<T> {
     pub(super) expr: BoolExpr<T>,
 }
 
+impl<T: HasCols> Query<T> for Table<T> {
+    fn into_sql(self) -> String {
+        format!(r#"SELECT * FROM "{}""#, self.table_name)
+    }
+}
+
+impl<T: HasCols> Query<T> for FromWhere<T> {
+    fn into_sql(self) -> String {
+        format!(
+            r#"SELECT * FROM "{}" WHERE {}"#,
+            self.table_name,
+            format_expr(&self.expr)
+        )
+    }
+}
+
 impl<T: HasCols> Table<T> {
-    pub fn build(self) -> Query<T> {
-        let sql = format!(r#"SELECT * FROM "{}""#, self.table_name);
-        Query::new(sql)
+    pub fn build(self) -> RawQuery<T> {
+        RawQuery::new(format!(r#"SELECT * FROM "{}""#, self.table_name))
     }
 
     pub fn r#where<F>(self, f: F) -> FromWhere<T>
@@ -169,12 +184,12 @@ impl<T: HasCols> FromWhere<T> {
         self.r#where(f)
     }
 
-    pub fn build(self) -> Query<T> {
+    pub fn build(self) -> RawQuery<T> {
         let sql = format!(
             r#"SELECT * FROM "{}" WHERE {}"#,
             self.table_name,
             format_expr(&self.expr)
         );
-        Query::new(sql)
+        RawQuery::new(sql)
     }
 }

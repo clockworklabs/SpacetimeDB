@@ -17,14 +17,14 @@ Here's a complete example showing how to subscribe to data and react to changes:
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { DbConnection, User, Message } from './module_bindings';
+import { DbConnection, tables } from './module_bindings';
 
 // Connect to the database
 const conn = DbConnection.builder()
   .withUri('wss://maincloud.spacetimedb.com')
   .withDatabaseName('my_module')
   .onConnect((ctx) => {
-    // Subscribe to users and messages
+    // Subscribe to users and messages using query builders
     ctx.subscriptionBuilder()
       .onApplied(() => {
         console.log('Subscription ready!');
@@ -33,7 +33,7 @@ const conn = DbConnection.builder()
           console.log(`User: ${user.name}`);
         }
       })
-      .subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
+      .subscribe([tables.user, tables.message]);
   })
   .build();
 
@@ -138,6 +138,10 @@ conn.db().user().on_update(|ctx, old_user, new_user| {
 </TabItem>
 </Tabs>
 
+:::tip TypeScript Query Builders
+The TypeScript SDK supports type-safe **query builders** as an alternative to raw SQL strings. Query builders provide auto-completion and compile-time type checking. The examples on this page use query builders for TypeScript — see the [TypeScript SDK Reference](/sdks/typescript#query-builder-api) for full details. Raw SQL strings are still supported in all SDKs.
+:::
+
 ## How Subscriptions Work
 
 1. **Subscribe**: Register SQL queries describing the data you need
@@ -168,9 +172,10 @@ interface SubscriptionBuilder {
   // or later during the subscription's lifetime if the module's interface changes.
   onError(callback: (ctx: ErrorContext, error: Error) => void): SubscriptionBuilder;
 
-  // Subscribe to the following SQL or typed queries.
+  // Subscribe using query builders (recommended) or raw SQL strings.
   // Returns immediately; callbacks are invoked when data arrives from the server.
-  subscribe(query_sql:string | RowTypedQuery<any, any> | Array<string | RowTypedQuery<any, any>>): SubscriptionHandle;
+  subscribe(queries: string | string[]): SubscriptionHandle;
+  subscribe(queries: TableRef | TableRef[]): SubscriptionHandle;
 
   // Subscribe to all rows from all tables.
   // Intended for applications where memory and bandwidth are not concerns.
@@ -320,19 +325,19 @@ A client can react to these updates by registering row callbacks for the appropr
 
 ```typescript
 // Establish a database connection
-import { DbConnection } from './module_bindings';
+import { DbConnection, tables } from './module_bindings';
 
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
   .withDatabaseName('my_module')
   .build();
 
-// Register a subscription with the database
+// Register a subscription with the database using query builders
 const userSubscription = conn
   .subscriptionBuilder()
   .onApplied((ctx) => { /* handle applied state */ })
   .onError((ctx, error) => { /* handle error */ })
-  .subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
+  .subscribe([tables.user, tables.message]);
 ```
 
 </TabItem>
@@ -469,6 +474,8 @@ Consider a game client that displays shop items and discounts based on a player'
 You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
 
 ```typescript
+import { DbConnection, tables } from './module_bindings';
+
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
   .withDatabaseName('my_module')
@@ -479,8 +486,8 @@ const shopItemsSubscription = conn
   .onApplied((ctx) => { /* handle applied state */ })
   .onError((ctx, error) => { /* handle error */ })
   .subscribe([
-    'SELECT * FROM shop_items WHERE required_level <= 5',
-    'SELECT * FROM shop_discounts WHERE required_level <= 5',
+    tables.shopItems.where(r => r.requiredLevel.lte(5)),
+    tables.shopDiscounts.where(r => r.requiredLevel.lte(5)),
   ]);
 ```
 
@@ -493,8 +500,8 @@ const newShopItemsSubscription = conn
   .onApplied((ctx) => { /* handle applied state */ })
   .onError((ctx, error) => { /* handle error */ })
   .subscribe([
-    'SELECT * FROM shop_items WHERE required_level <= 6',
-    'SELECT * FROM shop_discounts WHERE required_level <= 6',
+    tables.shopItems.where(r => r.requiredLevel.lte(6)),
+    tables.shopDiscounts.where(r => r.requiredLevel.lte(6)),
   ]);
 
 if (shopItemsSubscription.isActive()) {
@@ -610,6 +617,8 @@ This will improve throughput by reducing the amount of data transferred from the
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
+import { DbConnection, tables } from './module_bindings';
+
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
   .withDatabaseName('my_module')
@@ -620,16 +629,16 @@ const globalSubscriptions = conn
   .subscriptionBuilder()
   .subscribe([
     // Global messages the client should always display
-    'SELECT * FROM announcements',
+    tables.announcements,
     // A description of rewards for in-game achievements
-    'SELECT * FROM badges',
+    tables.badges,
   ]);
 
 // May unsubscribe to shop_items as player advances
 const shopSubscription = conn
   .subscriptionBuilder()
   .subscribe([
-    'SELECT * FROM shop_items WHERE required_level <= 5',
+    tables.shopItems.where(r => r.requiredLevel.lte(5)),
   ]);
 ```
 
@@ -700,6 +709,8 @@ unsubscribing from it does not result in any server processing or data serializt
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
+import { DbConnection, tables } from './module_bindings';
+
 const conn = DbConnection.builder()
   .withUri('https://maincloud.spacetimedb.com')
   .withDatabaseName('my_module')
@@ -710,8 +721,8 @@ const shopSubscription = conn
   .subscriptionBuilder()
   .subscribe([
     // For displaying the price of shop items in the player's currency of choice
-    'SELECT * FROM exchange_rates',
-    'SELECT * FROM shop_items WHERE required_level <= 5',
+    tables.exchangeRates,
+    tables.shopItems.where(r => r.requiredLevel.lte(5)),
   ]);
 
 // New subscription: player now at level 6, which overlaps with the previous query.
@@ -719,8 +730,8 @@ const newShopSubscription = conn
   .subscriptionBuilder()
   .subscribe([
     // For displaying the price of shop items in the player's currency of choice
-    'SELECT * FROM exchange_rates',
-    'SELECT * FROM shop_items WHERE required_level <= 6',
+    tables.exchangeRates,
+    tables.shopItems.where(r => r.requiredLevel.lte(6)),
   ]);
 
 // Unsubscribe from the old subscription once the new one is in place.

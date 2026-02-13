@@ -1,18 +1,18 @@
 import { ScheduleAt } from 'spacetimedb';
 import { table, schema, t } from 'spacetimedb/server';
 
-export const TickTimer = table({
+export const tickTimer = table({
   name: 'tickTimer',
-  scheduled: 'tick',
+  scheduled: (): any => tick,
 }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
 
-const spacetimedb = schema(TickTimer);
+const spacetimedb = schema({ tickTimer });
 export default spacetimedb;
 
-export const tick = spacetimedb.reducer({ timer: TickTimer.rowType }, (ctx, { timer }) => {
+export const tick = spacetimedb.reducer({ timer: tickTimer.rowType }, (ctx, { timer }) => {
 });
 
 export const init = spacetimedb.init(ctx => {

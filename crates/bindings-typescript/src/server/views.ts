@@ -9,7 +9,6 @@ import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
-import type { ReadonlyTable } from '../lib/table';
 import {
   RowBuilder,
   type Infer,
@@ -18,6 +17,7 @@ import {
   type TypeBuilder,
 } from '../lib/type_builders';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
+import type { ReadonlyDbView } from './db_view';
 import { type QueryBuilder, type RowTypedQuery } from './query';
 import {
   exportContext,
@@ -82,10 +82,6 @@ export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
   db: ReadonlyDbView<S>;
   from: QueryBuilder<S>;
 }>;
-
-export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: ReadonlyTable<Tbl>;
-};
 
 export type ViewOpts = {
   name?: string;

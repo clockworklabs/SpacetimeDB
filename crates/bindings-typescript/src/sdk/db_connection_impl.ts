@@ -34,6 +34,7 @@ import type {
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
+import { makeQueryBuilder } from '../lib/query';
 import {
   type TableCache,
   type Operation,
@@ -56,9 +57,10 @@ import type {
   SubscriptionEventCallback,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
-import type { UntypedTableDef } from '../lib/table.ts';
+import type { RowType, UntypedTableDef } from '../lib/table.ts';
 import { toCamelCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
+import type { Values } from '../lib/type_util.ts';
 
 export {
   DbConnectionBuilder,
@@ -162,6 +164,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     string,
     { serializeArgs: Serializer<any>; deserializeReturn: Deserializer<any> }
   >;
+  #sourceNameToTableDef: Record<string, Values<RemoteModule['tables']>>;
 
   // These fields are not part of the public API, but in a pinch you
   // could use JavaScript to access them by bypassing TypeScript's
@@ -202,10 +205,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#emitter = emitter;
 
     this.#rowDeserializers = Object.create(null);
-    for (const table of remoteModule.tables) {
-      this.#rowDeserializers[table.name] = ProductType.makeDeserializer(
+    this.#sourceNameToTableDef = Object.create(null);
+    for (const table of Object.values(remoteModule.tables)) {
+      this.#rowDeserializers[table.sourceName] = ProductType.makeDeserializer(
         table.rowType
       );
+      this.#sourceNameToTableDef[table.sourceName] = table as Values<
+        RemoteModule['tables']
+      >;
     }
 
     this.#reducerArgsSerializers = Object.create(null);
@@ -232,7 +239,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     url.searchParams.set('connection_id', connectionId);
 
     this.clientCache = new ClientCache<RemoteModule>();
-    this.db = this.#makeDbView(remoteModule);
+    this.db = this.#makeDbView();
     this.reducers = this.#makeReducers(remoteModule);
     this.procedures = this.#makeProcedures(remoteModule);
 
@@ -276,18 +283,16 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   #getNextRequestId = () => this.#requestId++;
 
-  #makeDbView(def: RemoteModule): ClientDbView<RemoteModule> {
+  #makeDbView(): ClientDbView<RemoteModule> {
     const view = Object.create(null) as ClientDbView<RemoteModule>;
 
-    for (const tbl of def.tables) {
+    for (const tbl of Object.values(this.#sourceNameToTableDef)) {
       // ClientDbView uses this name verbatim
       const key = tbl.accessorName;
       Object.defineProperty(view, key, {
         enumerable: true,
         configurable: false,
-        get: () => {
-          return this.clientCache.getOrCreateTable(tbl);
-        },
+        get: () => this.clientCache.getOrCreateTable(tbl),
       });
     }
 
@@ -370,6 +375,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return new SubscriptionBuilderImpl(this);
   };
 
+  getTablesMap(): any {
+    return makeQueryBuilder({ tables: this.#remoteModule.tables } as any);
+  }
+
   registerSubscription(
     handle: SubscriptionHandleImpl<RemoteModule>,
     handleEmitter: EventEmitter<
@@ -415,9 +424,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
+    const table = this.#sourceNameToTableDef[tableName];
     // TODO: performance
-    const table = this.#remoteModule.tables.find(t => t.name === tableName);
-    const columnsArray = Object.entries(table!.columns);
+    const columnsArray = Object.entries(table.columns);
     const primaryKeyColumnEntry = columnsArray.find(
       col => col[1].columnMetadata.isPrimaryKey
     );
@@ -552,13 +561,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     for (const tableUpdate of tableUpdates) {
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
-      // TODO: performance
-      const tableDef = this.#remoteModule.tables.find(
-        t => t.name === tableName
-      )!;
+      const tableDef = this.#sourceNameToTableDef[tableName];
       const table = this.clientCache.getOrCreateTable(tableDef);
       const newCallbacks = table.applyOperations(
-        tableUpdate.operations,
+        tableUpdate.operations as Operation<
+          RowType<Values<RemoteModule['tables']>>
+        >[],
         eventContext
       );
       for (const callback of newCallbacks) {

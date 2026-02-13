@@ -12,23 +12,13 @@ import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDef } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
-  type Value,
-  type Expr,
-  type ColumnsFromRow,
-  eq,
-  and,
-  or,
-  isEq,
-  isAnd,
-  isOr,
-  evaluate,
-  toString,
-  where,
-  classifyMembership,
-} from '../lib/filter';
-
-export { eq, and, or, isEq, isAnd, isOr, where };
-export type { Value, Expr };
+  type Query,
+  toSql,
+  type BooleanExpr,
+  evaluateBooleanExpr,
+  getQueryAccessorName,
+  getQueryWhereClause,
+} from '../lib/query';
 
 export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -36,107 +26,50 @@ export interface UseTableCallbacks<RowType> {
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
 }
 
+type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
+
+function classifyMembership(
+  whereExpr: BooleanExpr<any> | undefined,
+  oldRow: Record<string, any>,
+  newRow: Record<string, any>
+): MembershipChange {
+  if (!whereExpr) return 'stayIn';
+  const oldIn = evaluateBooleanExpr(whereExpr, oldRow);
+  const newIn = evaluateBooleanExpr(whereExpr, newRow);
+  if (oldIn && !newIn) return 'leave';
+  if (!oldIn && newIn) return 'enter';
+  if (oldIn && newIn) return 'stayIn';
+  return 'stayOut';
+}
+
 /**
- * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
+ * React hook to subscribe to a table in SpacetimeDB and receive live updates.
  *
- * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
- * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
+ * Accepts a query builder expression as the first argument:
+ * - `tables.user` — subscribe to all rows
+ * - `tables.user.where(r => r.online.eq(true))` — subscribe with a filter
  *
- * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
- *
- * Overloads:
- * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
- * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
- *
- * @template DbConnection The type of the SpacetimeDB connection.
- * @template RowType The type of the table row.
- * @template TableName The name of the table.
- *
- * @param tableName - The name of the table to subscribe to.
- * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
- * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
- *
- * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
- *
- * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
+ * @param query - A query builder expression (table reference or filtered query).
+ * @param callbacks - Optional callbacks for row insert, delete, and update events.
+ * @returns A tuple of [rows, isReady].
  *
  * @example
  * ```tsx
- * const { rows, state } = useTable('users', where(eq('isActive', true)), {
- *   onInsert: (row) => console.log('Inserted:', row),
- *   onDelete: (row) => console.log('Deleted:', row),
- *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
- * });
+ * const [rows, isReady] = useTable(tables.user);
+ * const [onlineUsers, isReady] = useTable(
+ *   tables.user.where(r => r.online.eq(true)),
+ *   { onInsert: (row) => console.log('New user:', row) }
+ * );
  * ```
  */
 export function useTable<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  where: Expr<ColumnsFromRow<RowType<TableDef>>>,
+  query: Query<TableDef>,
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [readonly Prettify<RowType<TableDef>>[], boolean];
-
-/**
- * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
- *
- * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
- * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
- *
- * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
- *
- * Overloads:
- * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
- * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
- *
- * @template DbConnection The type of the SpacetimeDB connection.
- * @template RowType The type of the table row.
- * @template TableName The name of the table.
- *
- * @param tableName - The name of the table to subscribe to.
- * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
- * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
- *
- * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
- *
- * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
- *
- * @example
- * ```tsx
- * const { rows, state } = useTable('users', where(eq('isActive', true)), {
- *   onInsert: (row) => console.log('Inserted:', row),
- *   onDelete: (row) => console.log('Deleted:', row),
- *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
- * });
- * ```
- */
-export function useTable<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [readonly Prettify<RowType<TableDef>>[], boolean];
-
-export function useTable<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  whereClauseOrCallbacks?:
-    | Expr<ColumnsFromRow<RowType<TableDef>>>
-    | UseTableCallbacks<RowType<TableDef>>,
-  callbacks?: UseTableCallbacks<RowType<TableDef>>
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
   type UseTableRowType = RowType<TableDef>;
-  const tableName = tableDef.name;
-  const accessorName = tableDef.accessorName;
-  let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
-  if (
-    whereClauseOrCallbacks &&
-    typeof whereClauseOrCallbacks === 'object' &&
-    'type' in whereClauseOrCallbacks
-  ) {
-    whereClause = whereClauseOrCallbacks as Expr<
-      ColumnsFromRow<UseTableRowType>
-    >;
-  } else {
-    callbacks = whereClauseOrCallbacks as
-      | UseTableCallbacks<UseTableRowType>
-      | undefined;
-  }
+  const accessorName = getQueryAccessorName(query);
+  const whereExpr = getQueryWhereClause(query);
+
   const [subscribeApplied, setSubscribeApplied] = useState(false);
   let connectionState: ConnectionState | undefined;
   try {
@@ -149,16 +82,12 @@ export function useTable<TableDef extends UntypedTableDef>(
     );
   }
 
-  const query =
-    `SELECT * FROM ${tableName}` +
-    (whereClause ? ` WHERE ${toString(tableDef, whereClause)}` : '');
+  const querySql = toSql(query);
 
   const latestTransactionEvent = useRef<any>(null);
   const lastSnapshotRef = useRef<
     [readonly Prettify<UseTableRowType>[], boolean] | null
   >(null);
-
-  const whereKey = whereClause ? toString(tableDef, whereClause) : '';
 
   const computeSnapshot = useCallback((): [
     readonly Prettify<UseTableRowType>[],
@@ -169,14 +98,14 @@ export function useTable<TableDef extends UntypedTableDef>(
       return [[], false];
     }
     const table = connection.db[accessorName];
-    const result: readonly Prettify<UseTableRowType>[] = whereClause
+    const result: readonly Prettify<UseTableRowType>[] = whereExpr
       ? (Array.from(table.iter()).filter(row =>
-          evaluate(whereClause, row as UseTableRowType)
+          evaluateBooleanExpr(whereExpr, row as Record<string, any>)
         ) as Prettify<UseTableRowType>[])
       : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
     return [result, subscribeApplied];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState, accessorName, whereKey, subscribeApplied]);
+  }, [connectionState, accessorName, querySql, subscribeApplied]);
 
   useEffect(() => {
     const connection = connectionState.getConnection()!;
@@ -186,12 +115,12 @@ export function useTable<TableDef extends UntypedTableDef>(
         .onApplied(() => {
           setSubscribeApplied(true);
         })
-        .subscribe(query);
+        .subscribe(querySql);
       return () => {
         cancel.unsubscribe();
       };
     }
-  }, [query, connectionState.isActive, connectionState]);
+  }, [querySql, connectionState.isActive, connectionState]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
@@ -199,7 +128,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         ctx: EventContextInterface<UntypedRemoteModule>,
         row: any
       ) => {
-        if (whereClause && !evaluate(whereClause, row)) {
+        if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
           return;
         }
         callbacks?.onInsert?.(row);
@@ -217,7 +146,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         ctx: EventContextInterface<UntypedRemoteModule>,
         row: any
       ) => {
-        if (whereClause && !evaluate(whereClause, row)) {
+        if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
           return;
         }
         callbacks?.onDelete?.(row);
@@ -236,7 +165,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         oldRow: any,
         newRow: any
       ) => {
-        const change = classifyMembership(whereClause, oldRow, newRow);
+        const change = classifyMembership(whereExpr, oldRow, newRow);
 
         switch (change) {
           case 'leave':
@@ -282,7 +211,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     [
       connectionState,
       accessorName,
-      whereKey,
+      querySql,
       callbacks?.onDelete,
       callbacks?.onInsert,
       callbacks?.onUpdate,

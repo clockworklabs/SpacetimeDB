@@ -39,7 +39,7 @@ const ScheduledProcTable = t.row({
   y: t.u8(),
 });
 const ScheduledProcTableTable = table(
-  { name: 'scheduled_proc_table', scheduled: 'scheduled_proc' },
+  { name: 'scheduled_proc_table', scheduled: (): any => scheduled_proc },
   ScheduledProcTable
 );
 
@@ -54,12 +54,12 @@ const ProcInsertsIntoTable = table(
   ProcInsertsInto
 );
 
-const spacetimedb = schema(
-  MyTable,
-  PkTable,
-  ScheduledProcTableTable,
-  ProcInsertsIntoTable
-);
+const spacetimedb = schema({
+  myTable: MyTable,
+  pkUuid: PkTable,
+  scheduledProcTable: ScheduledProcTableTable,
+  procInsertsInto: ProcInsertsIntoTable,
+});
 export default spacetimedb;
 
 export const return_primitive = spacetimedb.procedure(
