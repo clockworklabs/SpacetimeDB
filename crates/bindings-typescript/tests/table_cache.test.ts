@@ -101,14 +101,13 @@ function runTest(
 
 describe('TableCache', () => {
   describe('Unindexed player table', () => {
-    console.log(tables);
-    const newTable = () => new TableCacheImpl(tables.unindexed_player);
+    const newTable = () => new TableCacheImpl(tables.unindexedPlayer.tableDef);
     const mkOperation = (
       type: 'insert' | 'delete',
-      row: Infer<typeof tables.unindexed_player.columns>
+      row: Infer<typeof UnindexedPlayer>
     ) => {
       const rowId = AlgebraicType.intoMapKey(
-        { tag: 'Product', value: tables.unindexed_player.rowType },
+        { tag: 'Product', value: tables.unindexedPlayer.rowType },
         row
       );
       return {
