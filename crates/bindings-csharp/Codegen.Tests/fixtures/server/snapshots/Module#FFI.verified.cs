@@ -1625,11 +1625,11 @@ namespace SpacetimeDB.Internal.TableHandles
 
 sealed class public_table_queryViewDispatcher : global::SpacetimeDB.Internal.IView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "public_table_query",
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "public_table_query",
             Index: 0,
             IsPublic: true,
             IsAnonymous: false,
@@ -1672,7 +1672,7 @@ sealed class public_table_viewViewDispatcher : global::SpacetimeDB.Internal.IVie
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "public_table_view",
-            Index: 0,
+            Index: 1,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
