@@ -57,6 +57,65 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 2. SpacetimeDB Maincloud: a hosted, managed-service, serverless cluster
 3. SpacetimeDB Enterprise: a closed-source, clusterized version of SpacetimeDB which can be licensed for on-prem hosting or dedicated hosting
 
+## Documentation Directory
+
+### Getting Started
+- [What is SpacetimeDB](/intro/what-is-spacetimedb) - Overview and core concepts
+- [Key Architecture](/intro/key-architecture) - How SpacetimeDB works
+- [Language Support](/intro/language-support) - Supported languages and SDKs
+- [FAQ](/intro/faq) - Frequently asked questions
+
+### Quickstarts
+- [React Quickstart](/quickstarts/react) - Get started with React + TypeScript
+- [TypeScript Quickstart](/quickstarts/typescript) - TypeScript server module
+- [Rust Quickstart](/quickstarts/rust) - Rust server module
+- [C# Quickstart](/quickstarts/c-sharp) - C# server module
+
+### Core Concepts
+- [Databases](/databases) - Database modules overview
+- [Tables](/tables) - Defining and working with tables
+  - [Columns](/tables/columns) - Column types and definitions
+  - [Indexes](/tables/indexes) - Creating and using indexes
+  - [Scheduled Tables](/tables/scheduled-tables) - Time-based scheduling
+  - [Access Permissions](/tables/access-permissions) - Table visibility (public/private)
+- [Functions](/functions) - Server-side logic
+  - [Reducers](/functions/reducers) - Transactional RPC functions
+  - [Reducer Context](/functions/reducers/reducer-context) - ctx.db, ctx.sender, etc.
+  - [Lifecycle Reducers](/functions/reducers/lifecycle) - init, client_connected, client_disconnected
+  - [Error Handling](/functions/reducers/error-handling) - Handling errors in reducers
+  - [Procedures](/functions/procedures) - Non-transactional functions with side effects
+  - [Views](/functions/views) - Computed data views
+- [Subscriptions](/subscriptions) - Real-time data synchronization
+  - [Subscription Semantics](/subscriptions/semantics) - How subscriptions work
+- [Client SDKs](/sdks) - Client-side integration
+  - [Code Generation](/sdks/codegen) - Generating type-safe bindings
+
+### Development
+- [spacetime dev](/databases/developing) - Interactive development mode
+- [Building & Publishing](/databases/building-publishing) - Deploying modules
+- [Cheat Sheet](/databases/cheat-sheet) - Quick reference for common operations
+- [Automatic Migrations](/databases/automatic-migrations) - Schema migration handling
+
+### Deployment
+- [Deploy to Maincloud](/how-to/deploy/maincloud) - Hosted deployment
+- [Self-Hosting](/how-to/deploy/self-hosting) - Run your own server
+
+### Reference
+- [CLI Reference](/cli-reference) - Command-line tool documentation
+- [SQL Reference](/reference/sql) - SQL query syntax
+- [HTTP API](/http/database) - REST API reference
+
+### AI Assistant Rules
+
+**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific rules files. These contain critical information about hallucinated APIs, common mistakes, and correct patterns:
+
+| Language | Rules |
+|----------|-------|
+| All Languages | [spacetimedb.mdc](https://spacetimedb.com/ai-rules/spacetimedb.mdc) |
+| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/ai-rules/spacetimedb-typescript.mdc) |
+| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/ai-rules/spacetimedb-rust.mdc) |
+| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/ai-rules/spacetimedb-csharp.mdc) |
+
 ## Basic Project Workflow
 
 Getting started with SpacetimeDB involves a few key steps:
@@ -375,7 +434,7 @@ pub struct PlayerSessionData {
 fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     // Reducers interact with the specific table handles:
     let session = PlayerSessionData {
-        player_id: ctx.sender, // Example: Use sender identity
+        player_id: ctx.sender(), // Example: Use sender identity
         session_id: 0, // Assuming auto_inc
         last_activity: ctx.timestamp,
     };
@@ -387,12 +446,12 @@ fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     }
 
     // Find a player in the 'players_in_lobby' table by primary key
-    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender) {
+    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender()) {
         spacetimedb::log::info!("Player {} found in lobby.", lobby_player.player_id);
     }
 
     // Delete from the 'logged_in_players' table using the PK index
-    ctx.db.logged_in_players().player_id().delete(&ctx.sender);
+    ctx.db.logged_in_players().player_id().delete(&ctx.sender());
 }
 ```
 
@@ -440,7 +499,7 @@ use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 // Example: Basic reducer to set a user's name
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let sender_id = ctx.sender;
+    let sender_id = ctx.sender();
     let name = validate_name(name)?; // Use helper for validation
 
     // Find the user row by primary key
@@ -460,13 +519,13 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 #[reducer]
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?; // Use helper for validation
-    log::info!("User {} sent message: {}", ctx.sender, text);
+    log::info!("User {} sent message: {}", ctx.sender(), text);
 
     // Insert a new row into the Message table
     // Note: id is auto_inc, so we provide 0. insert() panics on constraint violation.
     let new_message = Message {
         id: 0,
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     };
@@ -508,8 +567,8 @@ Reducers can indicate failure either by returning `Err` from a function with a `
 Special reducers handle specific events:
 
 - `#[reducer(init)]`: Runs once when the module is first published **and** any time the database is manually cleared (e.g., via `spacetime publish -c` or `spacetime server clear`). Failure prevents publishing or clearing. Often used for initial data setup.
-- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
-- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
 
 These reducers cannot take arguments beyond `&ReducerContext`.
 
@@ -552,14 +611,14 @@ pub fn initialize_database(ctx: &ReducerContext) {
 // Example client_connected reducer
 #[reducer(client_connected)]
 pub fn handle_connect(ctx: &ReducerContext) {
-    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... setup initial state for ctx.sender ...
 }
 
 // Example client_disconnected reducer
 #[reducer(client_disconnected)]
 pub fn handle_disconnect(ctx: &ReducerContext) {
-    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... cleanup state for ctx.sender ...
 }
 ```
@@ -741,7 +800,7 @@ struct SendMessageSchedule {
 #[reducer]
 fn send_message(ctx: &ReducerContext, args: SendMessageSchedule) -> Result<(), String> {
     // Security check is important!
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         return Err("Reducer `send_message` may not be invoked by clients, only via scheduling.".into());
     }
 
@@ -792,7 +851,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
 - **Best-Effort Scheduling:** Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution when a database is under heavy load.
 
-- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender`) to the module's own identity (`ctx.identity()`).
+- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender()`) to the module's own identity (`ctx.identity()`).
 
   ```rust
   use spacetimedb::{reducer, ReducerContext};
@@ -801,7 +860,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
   #[reducer]
   fn my_scheduled_reducer(ctx: &ReducerContext, args: MyScheduleArgs) -> Result<(), String> {
-      if ctx.sender != ctx.identity() {
+      if ctx.sender() != ctx.identity() {
           return Err("Reducer `my_scheduled_reducer` may not be invoked by clients, only via scheduling.".into());
       }
       // ... Reducer body proceeds only if called by scheduler ...
@@ -810,7 +869,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
   ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will be `None`.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender()` will be the module's own identity, and `ctx.connection_id()` will be `None`.
 :::
 
 #### View Functions
@@ -863,7 +922,7 @@ pub struct PlayerAndLevel {
 // Returns Option<T> for at-most-one row
 #[view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // View that returns all players at a specific level (same for all callers)
@@ -894,7 +953,7 @@ fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
 
 Views use one of two context types:
 
-- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender()`. Use this when the view depends on who is querying it (e.g., "get my player").
 - **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
 Both contexts provide read-only access to tables and indexes through `ctx.db`.
@@ -925,7 +984,7 @@ use spacetimedb::{view, ViewContext, Query};
 fn my_messages(ctx: &ViewContext) -> Query<Message> {
     // Build a typed query using the query builder
     ctx.db.message()
-        .filter(|cols| cols.sender.eq(ctx.sender))
+        .filter(|cols| cols.sender.eq(ctx.sender()))
         .build()
 }
 
@@ -998,7 +1057,7 @@ mod module_bindings;
 The core type for managing a connection is `module_bindings::DbConnection`. You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection::builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_module_name("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_database_name("my_database")`).
 - **Authentication:** Provide an identity token using `.with_token(Option<String>)`. If `None` or omitted for the first connection, the server issues a new identity and token (retrieved via the `on_connect` callback).
 - **Callbacks:** Register callbacks for connection lifecycle events:
   - `.on_connect(|conn, identity, token| { ... })`: Runs on successful connection. Often used to store the `token` for future connections.
@@ -1021,7 +1080,7 @@ fn connect_to_db() -> DbConnection {
 
     DbConnection::builder()
         .with_uri(HOST)
-        .with_module_name(DB_NAME)
+        .with_database_name(DB_NAME)
         .with_token(creds_store().load().ok()) // Load token if exists
         .on_connect(|conn, identity, auth_token| {
             println!("Connected. Identity: {}", identity.to_hex());
@@ -1892,7 +1951,7 @@ Include the generated `.cs` files in your C# project or Unity Assets folder.
 The core type for managing a connection is `SpacetimeDB.Types.DbConnection` (this type name comes from the generated bindings). You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection.Builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithModuleName("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithDatabaseName("my_database")`).
 - **Authentication:** Provide an identity token using `.WithToken(string?)`. The SDK provides a helper `AuthToken.Token` which loads a token from a local file (initialized via `AuthToken.Init(".credentials_filename")`). If `null` or omitted for the first connection, the server issues a new identity and token (retrieved via the `OnConnect` callback).
 - **Callbacks:** Register callbacks (as delegates or lambda expressions) for connection lifecycle events:
   - `.OnConnect((conn, identity, token) => { ... })`: Runs on successful connection. Often used to save the `token` using `AuthToken.SaveToken(token)`.
@@ -1918,7 +1977,7 @@ public class ClientManager // Example class
 
         connection = DbConnection.Builder()
             .WithUri(HOST)
-            .WithModuleName(DB_NAME)
+            .WithDatabaseName(DB_NAME)
             .WithToken(AuthToken.Token) // Load token if exists
             .OnConnect(HandleConnect)
             .OnConnectError(HandleConnectError)
@@ -2179,7 +2238,7 @@ import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 // Define a User table with columns
 // table() takes two objects: options first, then columns
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -2189,7 +2248,7 @@ const User = table(
 );
 
 // Define a Message table
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -2199,7 +2258,8 @@ const Message = table(
 );
 
 // Compose the schema - this gives us ctx.db.user and ctx.db.message
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ user, message });
+export default spacetimedb;
 ```
 
 **Type Builders**
@@ -2245,7 +2305,7 @@ const GameState = t.enum('GameState', {
 });
 
 // Use in a table - note table() takes options object first, then columns
-const Player = table(
+const player = table(
   { name: 'player', public: true },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -2255,7 +2315,8 @@ const Player = table(
   }
 );
 
-const spacetimedb = schema(Player);
+const spacetimedb = schema({ player });
+export default spacetimedb;
 ```
 
 #### 3. Writing Reducers
@@ -2265,7 +2326,7 @@ Reducers are functions that modify database state. They are defined using `space
 ```typescript
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -2274,7 +2335,7 @@ const User = table(
   }
 );
 
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -2283,7 +2344,8 @@ const Message = table(
   }
 );
 
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ user, message });
+export default spacetimedb;
 
 // Helper function for validation
 function validateName(name: string) {
@@ -2294,7 +2356,7 @@ function validateName(name: string) {
 
 // Set user's name
 // Arguments: reducer name, argument types object, callback
-spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
+export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -2304,7 +2366,7 @@ spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
 });
 
 // Send a message
-spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
+export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   if (!text) {
     throw new SenderError('Messages must not be empty');
   }
@@ -2333,13 +2395,13 @@ SpacetimeDB provides special lifecycle methods on the `spacetimedb` object:
 
 ```typescript
 // Called once when the module is first published
-spacetimedb.init(ctx => {
+export const init = spacetimedb.init(ctx => {
   console.log('Module initialized');
   // Seed initial data, set up schedules, etc.
 });
 
 // Called when a client connects
-spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: true });
@@ -2353,7 +2415,7 @@ spacetimedb.clientConnected(ctx => {
 });
 
 // Called when a client disconnects
-spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
@@ -2368,13 +2430,13 @@ Views are read-only functions that return computed data from tables. Define view
 ```typescript
 // View that returns the caller's user (user-specific)
 // Uses spacetimedb.view() which provides ctx.sender
-spacetimedb.view('my_user', ctx => {
+export const my_user = spacetimedb.view({ name: 'my_user' }, ctx => {
   return ctx.db.user.identity.find(ctx.sender);
 });
 
 // View that returns all online users (same for all callers)
 // Uses spacetimedb.anonymousView() - no access to ctx.sender
-spacetimedb.anonymousView('online_users', ctx => {
+export const online_users = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
   return ctx.db.user.filter(u => u.online);
 });
 ```
@@ -2528,7 +2590,7 @@ class ChatClient {
 
     const connectionInstance = DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
+      .withDatabaseName(DB_NAME)
       .withToken(token)
       .onConnect(this.handleConnect)
       .onDisconnect(this.handleDisconnect)

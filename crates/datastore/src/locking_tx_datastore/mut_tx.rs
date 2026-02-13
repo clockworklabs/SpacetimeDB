@@ -21,10 +21,10 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields,
-        StConstraintRow, StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable,
-        ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ID,
+        StConstraintRow, StEventTableRow, StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields,
+        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields,
+        StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ID,
+        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -36,6 +36,7 @@ use crate::{
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
+use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
@@ -52,12 +53,15 @@ use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
     memory_usage::MemoryUsage,
+    raw_identifier::RawIdentifier,
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
+    reducer_name::ReducerName,
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
+    table_name::TableName,
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -98,6 +102,11 @@ impl MemoryUsage for ViewReadSets {
 }
 
 impl ViewReadSets {
+    /// Returns whether there are no read sets recorded.
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
+    }
+
     /// Returns the views that perform a full scan of this table
     pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.tables
@@ -335,6 +344,12 @@ impl MutTxId {
 
     /// Returns the views whose read sets overlaps with this transaction's write set
     pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+        // Return early if there are no views.
+        // This is profitable as the method is also called for reducers.
+        if self.committed_state_write_lock.has_no_views_for_table_scans() {
+            return Either::Left(iter::empty());
+        }
+
         let mut res = self
             .tx_state
             .insert_tables
@@ -382,7 +397,7 @@ impl MutTxId {
                 process_views(table_id, row_ref);
             }
         }
-        res.into_iter()
+        Either::Right(res.into_iter())
     }
     /// Removes keys for `view_id` from the committed read set.
     /// Used for dropping views in an auto-migration.
@@ -556,7 +571,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name: Box<str> = name.clone().into();
+        let view_name: RawIdentifier = name.clone().into();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -641,6 +656,7 @@ impl MutTxId {
         self.insert_st_column(table_schema.columns())?;
 
         let schedule = table_schema.schedule.clone();
+        let is_event = table_schema.is_event;
         let mut schema_internal = table_schema;
         // Extract all indexes, constraints, and sequences from the schema.
         // We will add them back later with correct ids.
@@ -668,6 +684,12 @@ impl MutTxId {
                 .read_col::<ScheduleId>(StScheduledFields::ScheduleId)?;
             let ((table, ..), _) = self.get_or_create_insert_table_mut(table_id)?;
             table.with_mut_schema(|s| s.schedule.as_mut().unwrap().schedule_id = id);
+        }
+
+        // Insert into st_event_table if this is an event table.
+        if is_event {
+            let row = StEventTableRow { table_id };
+            self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
         }
 
         // Create the indexes for the table.
@@ -729,7 +751,7 @@ impl MutTxId {
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
     fn insert_into_st_view(
         &mut self,
-        view_name: Box<str>,
+        view_name: TableName,
         table_id: TableId,
         is_public: bool,
         is_anonymous: bool,
@@ -775,7 +797,7 @@ impl MutTxId {
                 &StViewColumnRow {
                     view_id,
                     col_pos: def.col_id,
-                    col_name: def.name.clone().into(),
+                    col_name: def.name.clone(),
                     col_type: def.ty.clone().into(),
                 },
             )?;
@@ -898,9 +920,9 @@ impl MutTxId {
     }
 
     // TODO(centril): remove this. It doesn't seem to be used by anything.
-    pub fn rename_table(&mut self, table_id: TableId, new_name: &str) -> Result<()> {
+    pub fn rename_table(&mut self, table_id: TableId, new_name: TableName) -> Result<()> {
         // Update the table's name in st_tables.
-        self.update_st_table_row(table_id, |st| st.table_name = new_name.into())
+        self.update_st_table_row(table_id, |st| st.table_name = new_name)
     }
 
     fn update_st_table_row<R>(&mut self, table_id: TableId, updater: impl FnOnce(&mut StTableRow) -> R) -> Result<R> {
@@ -1090,7 +1112,7 @@ impl MutTxId {
         // Store sequence values to restore them later with new table.
         // Using a map from name to value as the new sequence ids will be different.
         // and I am not sure if we should rely on the order of sequences in the table schema.
-        let seq_values: HashMap<Box<str>, i128> = original_table_schema
+        let seq_values: HashMap<_, i128> = original_table_schema
             .sequences
             .iter()
             .map(|s| {
@@ -1135,7 +1157,7 @@ impl MutTxId {
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<Box<str>, i128>,
+        seq_values: HashMap<RawIdentifier, i128>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
@@ -1921,7 +1943,7 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -2006,8 +2028,8 @@ impl MutTxId {
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn rollback(mut self) -> (TxOffset, TxMetrics, String) {
+    /// - `ReducerName`, the name of the reducer which ran during this transaction.
+    pub fn rollback(mut self) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         let offset = self
             .committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);

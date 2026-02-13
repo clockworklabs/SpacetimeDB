@@ -101,9 +101,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI128TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkI128>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkI128>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkI128>", "TableUpdate")
             .with_cause(e)
@@ -138,5 +136,21 @@ impl<'ctx> PkI128NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i128) -> Option<PkI128> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkI128`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_i128QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkI128`.
+    fn pk_i128(&self) -> __sdk::__query_builder::Table<PkI128>;
+}
+
+impl pk_i128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_i128(&self) -> __sdk::__query_builder::Table<PkI128> {
+        __sdk::__query_builder::Table::new("pk_i128")
     }
 }

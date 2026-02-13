@@ -84,12 +84,26 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<OneString>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OneString>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneString>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneString`.
+    fn one_string(&self) -> __sdk::__query_builder::Table<OneString>;
+}
+
+impl one_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_string(&self) -> __sdk::__query_builder::Table<OneString> {
+        __sdk::__query_builder::Table::new("one_string")
+    }
 }

@@ -7,7 +7,7 @@ slug: /databases
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-A **module** is a collection of functions and schema definitions, which can be written in TypeScript, C# or Rust. Modules define the structure of your database and the server-side logic that processes and handles client requests.
+A **module** is a collection of functions and schema definitions, which can be written in TypeScript, C#, Rust, or C++. Modules define the structure of your database and the server-side logic that processes and handles client requests.
 
 A **database** is a running instance of a module. While a module is the code you write (schema and reducers), a database is the actual deployed entity running on a SpacetimeDB **host** with stored data and active connections.
 
@@ -15,7 +15,7 @@ A **database** is a running instance of a module. While a module is the code you
 
 Understanding this distinction is important:
 
-- A **module** is the code you write; it defines your schema (tables) and business logic (reducers, procedures, and views). Modules are compiled and deployed to SpacetimeDB. Rust and C# modules compile to WebAssembly, while TypeScript modules run on V8.
+- A **module** is the code you write; it defines your schema (tables) and business logic (reducers, procedures, and views). Modules are compiled and deployed to SpacetimeDB. Rust, C#, and C++ modules compile to WebAssembly, while TypeScript modules run on V8.
 - A **database** is a *running instance* of a module; it has the module's schema and logic, plus actual stored data.
 
 You can deploy the same module to multiple databases (e.g. separate environments for testing, staging, production), each with its own independent data. When you update your module code and re-publish, SpacetimeDB will update the database's schema/logic — the existing data remains (though for complicated schema changes you may need to handle migrations carefully).
@@ -58,6 +58,13 @@ Rust is fully supported for server modules. Rust is a great choice for performan
 - [Rust Quickstart Guide](/quickstarts/rust)
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+C++ is fully supported for server modules. C++ is an excellent choice for developers working with Unreal Engine or those who prefer to stay in the C++ ecosystem.
+
+- [C++ Quickstart Guide](/quickstarts/c-plus-plus)
+
+</TabItem>
 </Tabs>
 
 ## Database Names
@@ -88,6 +95,7 @@ See [`spacetime publish`](/databases/building-publishing) for details on the pub
 
 When you republish to an existing database, SpacetimeDB attempts to automatically migrate the schema. For details on what changes are supported and migration strategies:
 
+- [1.x to 2.0 Upgrade Notes](/upgrade) - Required reading before major-version upgrades.
 - [Automatic Migrations](/databases/automatic-migrations) - Learn which schema changes are safe, breaking, or forbidden.
 - [Incremental Migrations](/databases/incremental-migrations) - Advanced pattern for complex schema changes.
 
@@ -216,7 +224,7 @@ Ready to level up? Dive into these advanced capabilities:
 
 - **[Procedures](/functions/procedures)** - Make HTTP requests and interact with external services
 - **[Views](/functions/views)** - Create computed, subscribable queries
-- **[Scheduled Tables](/tables/scheduled-tables)** - Schedule reducers to run at specific times
+- **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers to run at specific times
 - **[Incremental Migrations](/databases/incremental-migrations)** - Handle complex schema changes
 - **[SQL Queries](/reference/sql)** - Query your database with SQL
 

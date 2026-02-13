@@ -915,8 +915,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_u8(ReducerContext ctx, byte n, int data)
     {
-        var key = n;
-        ctx.Db.unique_u8.n.Update(new UniqueU8 { n = n, data = data });
+        ctx.Db.unique_u8.n.Delete(n);
+        ctx.Db.unique_u8.Insert(new UniqueU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -942,8 +942,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_u16(ReducerContext ctx, ushort n, int data)
     {
-        var key = n;
-        ctx.Db.unique_u16.n.Update(new UniqueU16 { n = n, data = data });
+        ctx.Db.unique_u16.n.Delete(n);
+        ctx.Db.unique_u16.Insert(new UniqueU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -981,8 +981,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_u32(ReducerContext ctx, uint n, int data)
     {
-        var key = n;
-        ctx.Db.unique_u32.n.Update(new UniqueU32 { n = n, data = data });
+        ctx.Db.unique_u32.n.Delete(n);
+        ctx.Db.unique_u32.Insert(new UniqueU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1008,8 +1008,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_u64(ReducerContext ctx, ulong n, int data)
     {
-        var key = n;
-        ctx.Db.unique_u64.n.Update(new UniqueU64 { n = n, data = data });
+        ctx.Db.unique_u64.n.Delete(n);
+        ctx.Db.unique_u64.Insert(new UniqueU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1035,8 +1035,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_u128(ReducerContext ctx, U128 n, int data)
     {
-        var key = n;
-        ctx.Db.unique_u128.n.Update(new UniqueU128 { n = n, data = data });
+        ctx.Db.unique_u128.n.Delete(n);
+        ctx.Db.unique_u128.Insert(new UniqueU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1062,8 +1062,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_u256(ReducerContext ctx, U256 n, int data)
     {
-        var key = n;
-        ctx.Db.unique_u256.n.Update(new UniqueU256 { n = n, data = data });
+        ctx.Db.unique_u256.n.Delete(n);
+        ctx.Db.unique_u256.Insert(new UniqueU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1089,8 +1089,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_i8(ReducerContext ctx, sbyte n, int data)
     {
-        var key = n;
-        ctx.Db.unique_i8.n.Update(new UniqueI8 { n = n, data = data });
+        ctx.Db.unique_i8.n.Delete(n);
+        ctx.Db.unique_i8.Insert(new UniqueI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1116,8 +1116,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_i16(ReducerContext ctx, short n, int data)
     {
-        var key = n;
-        ctx.Db.unique_i16.n.Update(new UniqueI16 { n = n, data = data });
+        ctx.Db.unique_i16.n.Delete(n);
+        ctx.Db.unique_i16.Insert(new UniqueI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1143,8 +1143,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_i32(ReducerContext ctx, int n, int data)
     {
-        var key = n;
-        ctx.Db.unique_i32.n.Update(new UniqueI32 { n = n, data = data });
+        ctx.Db.unique_i32.n.Delete(n);
+        ctx.Db.unique_i32.Insert(new UniqueI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1170,8 +1170,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_i64(ReducerContext ctx, long n, int data)
     {
-        var key = n;
-        ctx.Db.unique_i64.n.Update(new UniqueI64 { n = n, data = data });
+        ctx.Db.unique_i64.n.Delete(n);
+        ctx.Db.unique_i64.Insert(new UniqueI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1197,8 +1197,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_i128(ReducerContext ctx, I128 n, int data)
     {
-        var key = n;
-        ctx.Db.unique_i128.n.Update(new UniqueI128 { n = n, data = data });
+        ctx.Db.unique_i128.n.Delete(n);
+        ctx.Db.unique_i128.Insert(new UniqueI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1224,8 +1224,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_i256(ReducerContext ctx, I256 n, int data)
     {
-        var key = n;
-        ctx.Db.unique_i256.n.Update(new UniqueI256 { n = n, data = data });
+        ctx.Db.unique_i256.n.Delete(n);
+        ctx.Db.unique_i256.Insert(new UniqueI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1251,8 +1251,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_bool(ReducerContext ctx, bool b, int data)
     {
-        var key = b;
-        ctx.Db.unique_bool.b.Update(new UniqueBool { b = b, data = data });
+        ctx.Db.unique_bool.b.Delete(b);
+        ctx.Db.unique_bool.Insert(new UniqueBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1278,8 +1278,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_string(ReducerContext ctx, string s, int data)
     {
-        var key = s;
-        ctx.Db.unique_string.s.Update(new UniqueString { s = s, data = data });
+        ctx.Db.unique_string.s.Delete(s);
+        ctx.Db.unique_string.Insert(new UniqueString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1305,8 +1305,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_identity(ReducerContext ctx, Identity i, int data)
     {
-        var key = i;
-        ctx.Db.unique_identity.i.Update(new UniqueIdentity { i = i, data = data });
+        ctx.Db.unique_identity.i.Delete(i);
+        ctx.Db.unique_identity.Insert(new UniqueIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1332,8 +1332,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_connection_id(ReducerContext ctx, ConnectionId a, int data)
     {
-        var key = a;
-        ctx.Db.unique_connection_id.a.Update(new UniqueConnectionId { a = a, data = data });
+        ctx.Db.unique_connection_id.a.Delete(a);
+        ctx.Db.unique_connection_id.Insert(new UniqueConnectionId { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1359,8 +1359,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void update_unique_uuid(ReducerContext ctx, Uuid u, int data)
     {
-        var key = u;
-        ctx.Db.unique_uuid.u.Update(new UniqueUuid { u = u, data = data });
+        ctx.Db.unique_uuid.u.Delete(u);
+        ctx.Db.unique_uuid.Insert(new UniqueUuid { u = u, data = data });
     }
 
     [SpacetimeDB.Reducer]

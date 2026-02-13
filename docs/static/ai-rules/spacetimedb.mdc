@@ -5,15 +5,13 @@ alwaysApply: true
 ---
 # SpacetimeDB Rules (All Languages)
 
-> **Last updated:** 2026-01-06
-
 ## Language-Specific Rules
 
 | Language | Rule File |
 |----------|-----------|
 | **TypeScript/React** | `spacetimedb-typescript.mdc` (MANDATORY) |
-| **Rust** | Check existing Rust modules in repo |
-| **C#** | Check existing C# modules in repo |
+| **Rust** | `spacetimedb-rust.mdc` (MANDATORY) |
+| **C#** | `spacetimedb-csharp.mdc` (MANDATORY) |
 
 ---
 
@@ -41,9 +39,29 @@ When implementing a feature that spans backend and client:
 
 ---
 
+## Index System
+
+SpacetimeDB automatically creates indexes for:
+- Primary key columns
+- Columns marked as unique
+
+You can add explicit indexes on non-unique columns for query performance.
+
+**Index names must be unique across your entire module (all tables).** If two tables have indexes with the same declared name → conflict error.
+
+**Schema ↔ Code coupling:**
+- Your query code references indexes by name
+- If you add/remove/rename an index in the schema, update all code that uses it
+- Removing an index without updating queries causes runtime errors
+
+---
+
 ## Commands
 
 ```bash
+# Login to allow remote database deployment e.g. to maincloud
+spacetime login
+
 # Start local SpacetimeDB
 spacetime start
 
@@ -62,6 +80,17 @@ spacetime logs <db-name>
 
 ---
 
+## Deployment
+
+- Maincloud is the spacetimedb hosted cloud and the default location for module publishing
+- The default server marked by *** in `spacetime server list` should be used when publishing
+- If the default server is maincloud you should publish to maincloud
+- Publishing to maincloud is free of charge
+- When publishing to maincloud the database dashboard will be at the url: https://spacetimedb.com/@<username>/<database-name>
+- The database owner can view utilization and performance metrics on the dashboard
+
+---
+
 ## Debugging Checklist
 
 1. Is SpacetimeDB server running? (`spacetime start`)
@@ -77,3 +106,4 @@ spacetime logs <db-name>
 - Make the smallest change necessary
 - Do NOT touch unrelated files, configs, or dependencies
 - Do NOT invent new SpacetimeDB APIs — use only what exists in docs or this repo
+- Do NOT add restrictions the prompt didn't ask for — if "users can do X", implement X for all users

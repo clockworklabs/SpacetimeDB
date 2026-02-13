@@ -29,8 +29,9 @@ use crate::{
 use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX,
+        ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
+        ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
@@ -141,6 +142,11 @@ pub struct CommittedState {
 }
 
 impl CommittedState {
+    /// Returns whether there are no views.
+    pub(super) fn has_no_views_for_table_scans(&self) -> bool {
+        self.read_sets.is_empty()
+    }
+
     /// Returns the views that perform a full scan of this table
     pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.read_sets.views_for_table_scan(table_id)
@@ -466,6 +472,8 @@ impl CommittedState {
         self.create_table(ST_VIEW_SUB_ID, schemas[ST_VIEW_SUB_IDX].clone());
         self.create_table(ST_VIEW_ARG_ID, schemas[ST_VIEW_ARG_IDX].clone());
 
+        self.create_table(ST_EVENT_TABLE_ID, schemas[ST_EVENT_TABLE_IDX].clone());
+
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_SEQUENCE_ID, &schemas[ST_SEQUENCE_IDX]);
@@ -612,6 +620,12 @@ impl CommittedState {
         schema: &Arc<TableSchema>,
         row: &ProductValue,
     ) -> Result<()> {
+        // Event table rows in the commitlog are preserved for future replay features
+        // but don't rebuild state — event tables have no committed state.
+        if schema.is_event {
+            return Ok(());
+        }
+
         let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
 
         let (_, row_ref) = match table.insert(pool, blob_store, row) {
@@ -1032,7 +1046,7 @@ impl CommittedState {
         // Note that this may change in the future: some analytics and/or
         // timetravel queries may benefit from seeing all inputs, even if
         // the database state did not change.
-        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &*rcx.name))
+        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &rcx.name))
     }
 
     pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
@@ -1061,7 +1075,7 @@ impl CommittedState {
         );
 
         // Record any truncated tables in the `TxData`.
-        tx_data.add_truncates(truncates);
+        tx_data.set_truncates(truncates);
 
         // Merge read sets from the `MutTxId` into the `CommittedState`.
         // It's important that this happens after applying the changes to `tx_data`,
@@ -1121,7 +1135,7 @@ impl CommittedState {
             }
 
             if !deletes.is_empty() {
-                let table_name = &*table.get_schema().table_name;
+                let table_name = &table.get_schema().table_name;
                 tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 let truncated = table.row_count == 0;
                 if truncated {
@@ -1182,37 +1196,36 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, tx_table) in insert_tables {
-            let (commit_table, commit_blob_store, page_pool) =
-                self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
-
-            // For each newly-inserted row, insert it into the committed state.
+            // For each newly-inserted row, serialize to a product value.
             let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
-            for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                let pv = row_ref.to_product_value();
-                commit_table
-                    .insert(page_pool, commit_blob_store, &pv)
-                    .expect("Failed to insert when merging commit");
+            inserts.extend(tx_table.scan_rows(&tx_blob_store).map(|row| row.to_product_value()));
 
-                inserts.push(pv);
+            // For each newly-inserted row, serialize to a product value.
+            // This doesn't apply to event tables,
+            // which are only recorded in `TxData`,
+            // but never the committed state.
+            let schema = tx_table.get_schema();
+            if !schema.is_event {
+                let (commit_table, commit_blob_store, page_pool) =
+                    self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
+                for row in &inserts {
+                    commit_table
+                        .insert(page_pool, commit_blob_store, row)
+                        .expect("Failed to insert when merging commit");
+                }
             }
 
             // Add the table to `TxData` if there were insertions.
             if !inserts.is_empty() {
-                let table_name = &*commit_table.get_schema().table_name;
-                tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+                tx_data.set_inserts_for_table(table_id, &schema.table_name, inserts.into());
 
-                // if table has inserted rows, it cannot be truncated
+                // If table has inserted rows, it cannot be truncated.
                 if truncates.contains(&table_id) {
                     truncates.remove(&table_id);
                 }
             }
 
-            let (schema, _indexes, pages) = tx_table.consume_for_merge();
-
-            // The schema may have been modified in the transaction.
-            // Update this last to placate borrowck and avoid a clone.
-            // None of the above operations will inspect the schema.
-            commit_table.schema = schema;
+            let (.., pages) = tx_table.consume_for_merge();
 
             // Put all the pages in the table back into the pool.
             self.page_pool.put_many(pages);

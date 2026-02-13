@@ -20,7 +20,7 @@ pub mod rt;
 pub mod table;
 
 #[doc(hidden)]
-pub mod query_builder;
+pub use spacetimedb_query_builder as query_builder;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
@@ -51,8 +51,8 @@ pub use spacetimedb_lib::Uuid;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
-    AutoIncOverflow, RangedIndex, RangedIndexReadOnly, Table, TryInsertError, UniqueColumn, UniqueColumnReadOnly,
-    UniqueConstraintViolation,
+    AutoIncOverflow, PointIndex, PointIndexReadOnly, RangedIndex, RangedIndexReadOnly, Table, TryInsertError,
+    UniqueColumn, UniqueColumnReadOnly, UniqueConstraintViolation,
 };
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
@@ -662,7 +662,7 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// #[reducer]
 /// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
-///     if ctx.sender != ctx.identity() {
+///     if ctx.sender() != ctx.identity() {
 ///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.".into());
 ///     }
 ///     // Reducer body...
@@ -707,7 +707,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// #[procedure]
 /// fn return_value(ctx: &mut ProcedureContext, arg: MyArgument) -> MyReturnValue {
 ///     MyReturnValue {
-///         a: format!("Hello, {}", ctx.sender),
+///         a: format!("Hello, {}", ctx.sender()),
 ///         b: ctx.timestamp,
 ///     }
 /// }
@@ -816,13 +816,13 @@ pub use spacetimedb_bindings_macro::procedure;
 /// // A view that selects at most one row from a table
 /// #[view(name = my_player, public)]
 /// fn my_player(ctx: &ViewContext) -> Option<Player> {
-///     ctx.db.player().identity().find(ctx.sender)
+///     ctx.db.player().identity().find(ctx.sender())
 /// }
 ///
 /// // An example of column projection
 /// #[view(name = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
-///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
+///     ctx.db.player().identity().find(ctx.sender()).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql
@@ -872,7 +872,7 @@ pub use spacetimedb_bindings_macro::procedure;
 pub use spacetimedb_bindings_macro::view;
 
 pub struct QueryBuilder {}
-pub use query_builder::Query;
+pub use query_builder::{Query, RawQuery};
 
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
@@ -894,7 +894,7 @@ impl Default for AnonymousViewContext {
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
-    pub sender: Identity,
+    sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
 }
@@ -906,6 +906,11 @@ impl ViewContext {
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
+    }
+
+    /// The `Identity` of the client that invoked the view.
+    pub fn sender(&self) -> Identity {
+        self.sender
     }
 }
 
@@ -924,7 +929,7 @@ impl ViewContext {
 #[non_exhaustive]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
-    pub sender: Identity,
+    sender: Identity,
 
     /// The time at which the reducer was started.
     pub timestamp: Timestamp,
@@ -933,7 +938,7 @@ pub struct ReducerContext {
     ///
     /// Will be `None` for certain reducers invoked automatically by the host,
     /// including `init` and scheduled reducers.
-    pub connection_id: Option<ConnectionId>,
+    connection_id: Option<ConnectionId>,
 
     sender_auth: AuthCtx,
 
@@ -1012,6 +1017,19 @@ impl ReducerContext {
             #[cfg(feature = "rand")]
             counter_uuid: Cell::new(0),
         }
+    }
+
+    /// The `Identity` of the client that invoked the reducer.
+    pub fn sender(&self) -> Identity {
+        self.sender
+    }
+
+    /// The `ConnectionId` of the client that invoked the reducer.
+    ///
+    /// Will be `None` for certain reducers invoked automatically by the host,
+    /// including `init` and scheduled reducers.
+    pub fn connection_id(&self) -> Option<ConnectionId> {
+        self.connection_id
     }
 
     /// Returns the authorization information for the caller of this reducer.
@@ -1124,7 +1142,7 @@ impl Deref for TxContext {
 #[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
-    pub sender: Identity,
+    sender: Identity,
 
     /// The time at which the procedure was started.
     pub timestamp: Timestamp,
@@ -1132,7 +1150,7 @@ pub struct ProcedureContext {
     /// The `ConnectionId` of the client that invoked the procedure.
     ///
     /// Will be `None` for certain scheduled procedures.
-    pub connection_id: Option<ConnectionId>,
+    connection_id: Option<ConnectionId>,
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
@@ -1162,6 +1180,19 @@ impl ProcedureContext {
             counter_uuid: Cell::new(0),
         }
     }
+
+    /// The `Identity` of the client that invoked the procedure.
+    pub fn sender(&self) -> Identity {
+        self.sender
+    }
+
+    /// The `ConnectionId` of the client that invoked the procedure.
+    ///
+    /// Will be `None` for certain scheduled procedures.
+    pub fn connection_id(&self) -> Option<ConnectionId> {
+        self.connection_id
+    }
+
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.

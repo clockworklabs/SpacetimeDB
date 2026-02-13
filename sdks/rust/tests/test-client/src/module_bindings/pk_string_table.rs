@@ -101,9 +101,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkString>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkString>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkString>", "TableUpdate")
             .with_cause(e)
@@ -138,5 +136,21 @@ impl<'ctx> PkStringSUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<PkString> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkString`.
+    fn pk_string(&self) -> __sdk::__query_builder::Table<PkString>;
+}
+
+impl pk_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_string(&self) -> __sdk::__query_builder::Table<PkString> {
+        __sdk::__query_builder::Table::new("pk_string")
     }
 }

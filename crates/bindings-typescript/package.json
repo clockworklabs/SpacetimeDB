@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.11.2",
+  "version": "2.0.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -20,8 +20,7 @@
   "author": "Clockwork Labs",
   "type": "module",
   "sideEffects": [
-    "./src/server/polyfills.ts",
-    "./src/server/register_hooks.ts"
+    "./src/server/polyfills.ts"
   ],
   "scripts": {
     "build:js": "tsup",
@@ -30,16 +29,17 @@
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "test": "vitest run",
+    "test:typecheck": "vitest typecheck --run",
     "coverage": "vitest run --coverage",
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
     "generate:client-api": "cargo run -p generate-client-api && prettier --write src/sdk/client_api",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
-    "generate:examples:quickstart-chat": "pnpm --filter @clockworklabs/quickstart-chat generate",
-    "generate:examples:basic-react": "pnpm --filter @clockworklabs/basic-react generate",
+    "generate:examples:chat-react-ts": "pnpm --filter @clockworklabs/chat-react-ts generate",
+    "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
-    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:quickstart-chat && pnpm generate:examples:basic-react && pnpm generate:examples:empty",
+    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
     "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
   },
   "main": "dist/index.cjs",
@@ -71,6 +71,24 @@
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
       "default": "./dist/server/index.mjs"
+    },
+    "./vue": {
+      "types": "./dist/vue/index.d.ts",
+      "import": "./dist/vue/index.mjs",
+      "require": "./dist/vue/index.cjs",
+      "default": "./dist/vue/index.mjs"
+    },
+    "./tanstack": {
+      "types": "./dist/tanstack/index.d.ts",
+      "import": "./dist/tanstack/index.mjs",
+      "require": "./dist/tanstack/index.cjs",
+      "default": "./dist/tanstack/index.mjs"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "import": "./dist/svelte/index.mjs",
+      "require": "./dist/svelte/index.cjs",
+      "default": "./dist/svelte/index.mjs"
     }
   },
   "size-limit": [
@@ -90,7 +108,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "31 kB"
+      "limit": "40 kB"
     },
     {
       "name": "esm (uncompressed)",
@@ -153,28 +171,43 @@
   ],
   "dependencies": {
     "base64-js": "^1.5.1",
-    "fast-text-encoding": "^1.0.0",
     "headers-polyfill": "^4.0.3",
+    "object-inspect": "^1.13.4",
     "prettier": "^3.3.3",
+    "pure-rand": "^7.0.1",
     "statuses": "^2.0.2",
     "url-polyfill": "^1.1.14"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
-    "undici": "^6.19.2"
+    "svelte": "^4.0.0 || ^5.0.0",
+    "undici": "^6.19.2",
+    "vue": "^3.3.0"
   },
   "peerDependenciesMeta": {
+    "@tanstack/react-query": {
+      "optional": true
+    },
     "react": {
       "optional": true
     },
+    "svelte": {
+      "optional": true
+    },
     "undici": {
+      "optional": true
+    },
+    "vue": {
       "optional": true
     }
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@size-limit/file": "^11.2.0",
+    "@tanstack/react-query": "^5.90.19",
     "@types/fast-text-encoding": "^1.0.3",
+    "@types/object-inspect": "^1.13.0",
     "@types/react": "^19.1.13",
     "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
@@ -182,8 +215,10 @@
     "@vitest/coverage-v8": "^3.2.4",
     "brotli-size-cli": "^1.0.0",
     "eslint": "^9.33.0",
+    "eslint-plugin-jsdoc": "^61.5.0",
     "globals": "^15.14.0",
     "size-limit": "^11.2.0",
+    "svelte": "^5.0.0",
     "ts-node": "^10.9.2",
     "tsup": "^8.1.0",
     "typescript": "^5.9.3",

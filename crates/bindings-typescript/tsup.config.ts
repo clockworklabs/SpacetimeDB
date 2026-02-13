@@ -1,8 +1,8 @@
 // tsup.config.ts
 import { defineConfig, type Options } from 'tsup';
 
-function commonEsbuildTweaks() {
-  return (options: any) => {
+function commonEsbuildTweaks(): NonNullable<Options['esbuildOptions']> {
+  return options => {
     // Prefer "exports"."development" when deps provide it; harmless otherwise.
     options.conditions = ['development', 'import', 'default'];
     options.mainFields = ['browser', 'module', 'main'];
@@ -76,6 +76,70 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
+  // Vue subpath (SSR-friendly): dist/vue/index.{mjs,cjs}
+  {
+    entry: { index: 'src/vue/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/vue',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['vue'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Vue subpath (browser ESM): dist/browser/vue/index.mjs
+  {
+    entry: { index: 'src/vue/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/browser/vue',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'browser',
+    treeshake: 'smallest',
+    external: ['vue'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Svelte subpath (SSR-friendly): dist/svelte/index.{mjs,cjs}
+  {
+    entry: { index: 'src/svelte/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/svelte',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['svelte', 'svelte/store'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Svelte subpath (browser ESM): dist/browser/svelte/index.mjs
+  {
+    entry: { index: 'src/svelte/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/browser/svelte',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'browser',
+    treeshake: 'smallest',
+    external: ['svelte', 'svelte/store'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
   // SDK subpath (SSR-friendly): dist/sdk/index.{mjs,cjs}
   {
     entry: { index: 'src/sdk/index.ts' },
@@ -108,11 +172,11 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
-  // Server subpath (SSR / node-friendly): dist/server/index.{mjs,cjs}
+  // Server subpath (SSR / node-friendly): dist/server/index.mjs
   {
     entry: { index: 'src/server/index.ts' },
-    format: ['esm', 'cjs'],
-    target: 'es2022',
+    format: 'esm',
+    target: 'esnext',
     outDir: 'dist/server',
     dts: false,
     sourcemap: true,
@@ -125,13 +189,31 @@ export default defineConfig([
         '(globalThis.window=globalThis.window||globalThis));',
     },
     treeshake: {
-      moduleSideEffects: [
-        'src/server/polyfills.ts',
-        'src/server/register_hooks.ts',
-      ],
+      moduleSideEffects: ['src/server/polyfills.ts'],
     },
     external: ['undici', /^spacetime:sys.*$/],
-    noExternal: ['base64-js', 'fast-text-encoding', 'statuses'],
+    noExternal: ['object-inspect', 'base64-js', 'statuses', 'pure-rand'],
+    outExtension,
+    esbuildOptions: (options, ctx) => {
+      // object-inspect tries to import the node `util` module,
+      // which we want to disable.
+      options.alias = { util: './src/util-stub.ts' };
+      commonEsbuildTweaks()(options, ctx);
+    },
+  },
+
+  // TanStack subpath (SSR-friendly): dist/tanstack/index.{mjs,cjs}
+  {
+    entry: { index: 'src/tanstack/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/tanstack',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['react', '@tanstack/react-query'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },

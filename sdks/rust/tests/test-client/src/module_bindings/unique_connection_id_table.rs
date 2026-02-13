@@ -86,7 +86,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<UniqueConnectionId>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<UniqueConnectionId>", "TableUpdate")
@@ -122,5 +122,21 @@ impl<'ctx> UniqueConnectionIdAUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::ConnectionId) -> Option<UniqueConnectionId> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueConnectionId`.
+    fn unique_connection_id(&self) -> __sdk::__query_builder::Table<UniqueConnectionId>;
+}
+
+impl unique_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_connection_id(&self) -> __sdk::__query_builder::Table<UniqueConnectionId> {
+        __sdk::__query_builder::Table::new("unique_connection_id")
     }
 }

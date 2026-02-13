@@ -85,9 +85,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PlayerLevel>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PlayerLevel>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PlayerLevel>", "TableUpdate")
             .with_cause(e)
@@ -122,5 +120,21 @@ impl<'ctx> PlayerLevelEntityIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<PlayerLevel> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PlayerLevel`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait player_levelQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PlayerLevel`.
+    fn player_level(&self) -> __sdk::__query_builder::Table<PlayerLevel>;
+}
+
+impl player_levelQueryTableAccess for __sdk::QueryTableAccessor {
+    fn player_level(&self) -> __sdk::__query_builder::Table<PlayerLevel> {
+        __sdk::__query_builder::Table::new("player_level")
     }
 }

@@ -102,9 +102,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Player>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<Player>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<Player>", "TableUpdate")
             .with_cause(e)
@@ -169,5 +167,21 @@ impl<'ctx> PlayerIdentityUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<Player> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Player`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait playerQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Player`.
+    fn player(&self) -> __sdk::__query_builder::Table<Player>;
+}
+
+impl playerQueryTableAccess for __sdk::QueryTableAccessor {
+    fn player(&self) -> __sdk::__query_builder::Table<Player> {
+        __sdk::__query_builder::Table::new("player")
     }
 }

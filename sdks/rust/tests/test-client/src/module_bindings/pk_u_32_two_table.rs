@@ -101,9 +101,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU32TwoTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkU32Two>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkU32Two>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkU32Two>", "TableUpdate")
             .with_cause(e)
@@ -138,5 +136,21 @@ impl<'ctx> PkU32TwoNUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u32) -> Option<PkU32Two> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkU32Two`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_u32_twoQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkU32Two`.
+    fn pk_u32_two(&self) -> __sdk::__query_builder::Table<PkU32Two>;
+}
+
+impl pk_u32_twoQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u32_two(&self) -> __sdk::__query_builder::Table<PkU32Two> {
+        __sdk::__query_builder::Table::new("pk_u32_two")
     }
 }

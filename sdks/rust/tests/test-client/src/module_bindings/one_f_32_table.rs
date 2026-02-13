@@ -84,12 +84,26 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<OneF32>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OneF32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneF32>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneF32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_f32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneF32`.
+    fn one_f32(&self) -> __sdk::__query_builder::Table<OneF32>;
+}
+
+impl one_f32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_f32(&self) -> __sdk::__query_builder::Table<OneF32> {
+        __sdk::__query_builder::Table::new("one_f32")
+    }
 }

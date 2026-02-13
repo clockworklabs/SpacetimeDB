@@ -103,7 +103,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<PkSimpleEnum>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkSimpleEnum>", "TableUpdate")
@@ -139,5 +139,21 @@ impl<'ctx> PkSimpleEnumAUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &SimpleEnum) -> Option<PkSimpleEnum> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkSimpleEnum`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_simple_enumQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkSimpleEnum`.
+    fn pk_simple_enum(&self) -> __sdk::__query_builder::Table<PkSimpleEnum>;
+}
+
+impl pk_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_simple_enum(&self) -> __sdk::__query_builder::Table<PkSimpleEnum> {
+        __sdk::__query_builder::Table::new("pk_simple_enum")
     }
 }

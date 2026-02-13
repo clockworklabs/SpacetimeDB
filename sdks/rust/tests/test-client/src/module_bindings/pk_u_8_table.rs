@@ -101,9 +101,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU8TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkU8>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkU8>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkU8>", "TableUpdate")
             .with_cause(e)
@@ -138,5 +136,21 @@ impl<'ctx> PkU8NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u8) -> Option<PkU8> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkU8`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_u8QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkU8`.
+    fn pk_u8(&self) -> __sdk::__query_builder::Table<PkU8>;
+}
+
+impl pk_u8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u8(&self) -> __sdk::__query_builder::Table<PkU8> {
+        __sdk::__query_builder::Table::new("pk_u8")
     }
 }

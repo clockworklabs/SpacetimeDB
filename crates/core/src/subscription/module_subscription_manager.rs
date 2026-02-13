@@ -4,20 +4,21 @@ use crate::client::messages::{
     SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
     TransactionUpdateMessage,
 };
-use crate::client::{ClientConnectionSender, Protocol};
+use crate::client::{ClientConnectionSender, OutboundMessage, Protocol, WsVersion};
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
-use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::worker_metrics::WORKER_METRICS;
+type V2EvalUpdatesResult = (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics);
 use core::mem;
+use itertools::Itertools;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
-use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
-};
+use spacetimedb_client_api_messages::websocket::common::ByteListLen as _;
+use spacetimedb_client_api_messages::websocket::v2::TableUpdateRows;
+use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_data_structures::map::HashCollectionExt as _;
 use spacetimedb_data_structures::map::{
     hash_map::{Entry, OccupiedError},
@@ -29,7 +30,9 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
-use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
+use spacetimedb_schema::def::RawModuleDefVersion;
+use spacetimedb_schema::table_name::TableName;
+use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,13 +45,18 @@ use tokio::sync::{mpsc, oneshot};
 type ClientId = (Identity, ConnectionId);
 type Query = Arc<Plan>;
 type Client = Arc<ClientConnectionSender>;
-type SwitchedTableUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
-type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
+type SwitchedTableUpdate =
+    ws_v1::FormatSwitch<ws_v1::TableUpdate<ws_v1::BsatnFormat>, ws_v1::TableUpdate<ws_v1::JsonFormat>>;
+type SwitchedDbUpdate =
+    ws_v1::FormatSwitch<ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>, ws_v1::DatabaseUpdate<ws_v1::JsonFormat>>;
 
 /// ClientQueryId is an identifier for a query set by the client.
-type ClientQueryId = QueryId;
+type ClientQuerySetId = ws_v2::QuerySetId;
+/// ClientQueryId is an identifier for a query set by the client.
+type ClientQueryId = ws_v1::QueryId;
 /// SubscriptionId is a globally unique identifier for a subscription.
 type SubscriptionId = (ClientId, ClientQueryId);
+type SubscriptionIdV2 = (ClientId, ClientQuerySetId);
 
 #[derive(Debug)]
 pub struct Plan {
@@ -58,7 +66,7 @@ pub struct Plan {
 }
 
 impl CollectViews for Plan {
-    fn collect_views(&self, views: &mut std::collections::HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         for plan in &self.plans {
             plan.collect_views(views);
         }
@@ -84,7 +92,7 @@ impl Plan {
 
     /// A subscription query return rows from a single table.
     /// This method returns the name of that table.
-    pub fn subscribed_table_name(&self) -> &str {
+    pub fn subscribed_table_name(&self) -> &TableName {
         self.plans[0].subscribed_table_name()
     }
 
@@ -140,7 +148,9 @@ impl Plan {
 #[derive(Debug)]
 struct ClientInfo {
     outbound_ref: Client,
-    subscriptions: HashMap<SubscriptionId, HashSet<QueryHash>>,
+    v1_subscriptions: HashMap<SubscriptionId, HashSet<QueryHash>>,
+    v2_subscriptions: HashMap<SubscriptionIdV2, HashSet<QueryHash>>,
+    // This is used to ref count for both v1 subscriptions and v2 subscriptions.
     subscription_ref_count: HashMap<QueryHash, usize>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
@@ -156,7 +166,8 @@ impl ClientInfo {
     fn new(outbound_ref: Client) -> Self {
         Self {
             outbound_ref,
-            subscriptions: HashMap::default(),
+            v1_subscriptions: HashMap::default(),
+            v2_subscriptions: HashMap::default(),
             subscription_ref_count: HashMap::default(),
             legacy_subscriptions: HashSet::default(),
             dropped: Arc::new(AtomicBool::new(false)),
@@ -167,7 +178,19 @@ impl ClientInfo {
     #[cfg(test)]
     fn assert_ref_count_consistency(&self) {
         let mut expected_ref_count = HashMap::new();
-        for query_hashes in self.subscriptions.values() {
+        for query_hashes in self.v1_subscriptions.values() {
+            for query_hash in query_hashes {
+                assert!(
+                    self.subscription_ref_count.contains_key(query_hash),
+                    "Query hash not found: {query_hash:?}"
+                );
+                expected_ref_count
+                    .entry(*query_hash)
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+            }
+        }
+        for query_hashes in self.v2_subscriptions.values() {
             for query_hash in query_hashes {
                 assert!(
                     self.subscription_ref_count.contains_key(query_hash),
@@ -192,8 +215,10 @@ struct QueryState {
     query: Query,
     // For legacy clients that subscribe to a set of queries, we track them here.
     legacy_subscribers: HashSet<ClientId>,
-    // For clients that subscribe to a single query, we track them here.
+    // For v1 clients that subscribe to a single query, we track them here.
     subscriptions: HashSet<ClientId>,
+    // The set of (client, query_set_id) pairs that are subscribed to this query.
+    v2_subscriptions: HashSet<SubscriptionIdV2>,
 }
 
 impl QueryState {
@@ -202,14 +227,15 @@ impl QueryState {
             query,
             legacy_subscribers: HashSet::default(),
             subscriptions: HashSet::default(),
+            v2_subscriptions: HashSet::default(),
         }
     }
     fn has_subscribers(&self) -> bool {
-        !self.subscriptions.is_empty() || !self.legacy_subscribers.is_empty()
+        !self.subscriptions.is_empty() || !self.legacy_subscribers.is_empty() || !self.v2_subscriptions.is_empty()
     }
 
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
-    fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
+    fn all_v1_clients(&self) -> impl Iterator<Item = &ClientId> {
         itertools::chain(&self.legacy_subscribers, &self.subscriptions)
     }
 
@@ -515,7 +541,17 @@ struct ClientUpdate {
     id: ClientId,
     table_id: TableId,
     table_name: TableName,
-    update: FormatSwitch<SingleQueryUpdate<BsatnFormat>, SingleQueryUpdate<JsonFormat>>,
+    update:
+        ws_v1::FormatSwitch<ws_v1::SingleQueryUpdate<ws_v1::BsatnFormat>, ws_v1::SingleQueryUpdate<ws_v1::JsonFormat>>,
+}
+
+/// A single update for one client and one query.
+#[derive(Debug)]
+struct V2ClientUpdate {
+    id: ClientId,
+    query_set_id: ClientQuerySetId,
+    table_name: TableName,
+    rows: TableUpdateRows,
 }
 
 /// The computed incremental update queries with sufficient information
@@ -526,9 +562,12 @@ struct ClientUpdate {
 #[derive(Debug)]
 struct ComputedQueries {
     updates: Vec<ClientUpdate>,
+    v2_updates: Vec<V2ClientUpdate>,
     errs: Vec<(ClientId, Box<str>)>,
+    v2_errs: Vec<(SubscriptionIdV2, Box<str>)>,
     event: Arc<ModuleEvent>,
     caller: Option<Arc<ClientConnectionSender>>,
+    module_def_version: RawModuleDefVersion,
 }
 
 // Wraps a sender so that it will increment a gauge.
@@ -612,7 +651,8 @@ enum SendWorkerMessage {
     SendMessage {
         recipient: Arc<ClientConnectionSender>,
         tx_offset: Option<TransactionOffset>,
-        message: SerializableMessage,
+        // message: SerializableMessage,
+        message: OutboundMessage,
     },
 
     /// A client previously added by a [`Self::AddClient`] message has been removed from the [`SubscriptionManager`],
@@ -663,7 +703,7 @@ impl SubscriptionManager {
         let num_queries = self.queries.len();
         let num_connections = self.clients.len();
         let num_query_subscriptions = self.queries.values().map(|state| state.subscriptions.len()).sum();
-        let num_subscription_sets = self.clients.values().map(|ci| ci.subscriptions.len()).sum();
+        let num_subscription_sets = self.clients.values().map(|ci| ci.v1_subscriptions.len()).sum();
         let num_legacy_subscriptions = self
             .clients
             .values()
@@ -806,7 +846,7 @@ impl SubscriptionManager {
         #[cfg(test)]
         ci.assert_ref_count_consistency();
 
-        let Some(query_hashes) = ci.subscriptions.remove(&subscription_id) else {
+        let Some(query_hashes) = ci.v1_subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {subscription_id:?}").into());
         };
         let mut queries_to_return = Vec::new();
@@ -847,9 +887,132 @@ impl SubscriptionManager {
         Ok(queries_to_return)
     }
 
+    pub fn remove_subscription_v2(
+        &mut self,
+        client_id: ClientId,
+        query_set_id: ClientQuerySetId,
+    ) -> Result<Vec<Query>, DBError> {
+        let subscription_id = (client_id, query_set_id);
+        let Some(ci) = self
+            .clients
+            .get_mut(&client_id)
+            .filter(|ci| !ci.dropped.load(Ordering::Acquire))
+        else {
+            return Err(anyhow::anyhow!("Client not found: {client_id:?}").into());
+        };
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+
+        let Some(query_hashes) = ci.v2_subscriptions.remove(&subscription_id) else {
+            return Err(anyhow::anyhow!("Subscription not found: {subscription_id:?}").into());
+        };
+
+        let mut queries_to_return = Vec::new();
+        for hash in query_hashes {
+            let Some(query_state) = self.queries.get_mut(&hash) else {
+                return Err(anyhow::anyhow!("Query state not found for query hash: {hash:?}").into());
+            };
+            queries_to_return.push(query_state.query.clone());
+            query_state.v2_subscriptions.remove(&subscription_id);
+
+            let remaining_refs = {
+                let Some(count) = ci.subscription_ref_count.get_mut(&hash) else {
+                    return Err(anyhow::anyhow!("Query count not found for query hash: {hash:?}").into());
+                };
+                *count -= 1;
+                *count
+            };
+            if remaining_refs > 0 {
+                continue;
+            }
+
+            ci.subscription_ref_count.remove(&hash);
+            if !query_state.has_subscribers() {
+                SubscriptionManager::remove_query_from_tables(
+                    &mut self.tables,
+                    &mut self.join_edges,
+                    &mut self.indexes,
+                    &mut self.search_args,
+                    &query_state.query,
+                );
+                self.queries.remove(&hash);
+            }
+        }
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+
+        Ok(queries_to_return)
+    }
+
     /// Adds a single subscription for a client.
     pub fn add_subscription(&mut self, client: Client, query: Query, query_id: ClientQueryId) -> Result<(), DBError> {
         self.add_subscription_multi(client, vec![query], query_id).map(|_| ())
+    }
+
+    pub fn add_subscription_v2(
+        &mut self,
+        client: Client,
+        queries: Vec<Query>,
+        query_set_id: ClientQuerySetId,
+    ) -> Result<Vec<Query>, DBError> {
+        let client_id = (client.id.identity, client.id.connection_id);
+        // Clean up any dropped subscriptions
+        if self
+            .clients
+            .get(&client_id)
+            .is_some_and(|ci| ci.dropped.load(Ordering::Acquire))
+        {
+            self.remove_all_subscriptions(&client_id);
+        }
+        let ci = Self::get_or_make_client_info_and_inform_send_worker(
+            &mut self.clients,
+            &self.send_worker_queue,
+            client_id,
+            client,
+        );
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+        let subscription_id = (client_id, query_set_id);
+        let hash_set = match ci.v2_subscriptions.try_insert(subscription_id, HashSet::new()) {
+            Err(OccupiedError { .. }) => {
+                return Err(anyhow::anyhow!(
+                    "Subscription with id {query_set_id:?} already exists for client: {client_id:?}"
+                )
+                .into());
+            }
+            Ok(hash_set) => hash_set,
+        };
+
+        // We track the queries that are being added for this client.
+        let mut new_queries: Vec<Arc<Plan>> = Vec::new();
+
+        for query in &queries {
+            let hash = query.hash();
+            // Deduping queries within this single call.
+            if !hash_set.insert(hash) {
+                continue;
+            }
+            let query_state = self
+                .queries
+                .entry(hash)
+                .or_insert_with(|| QueryState::new(query.clone()));
+
+            Self::insert_query(
+                &mut self.tables,
+                &mut self.join_edges,
+                &mut self.indexes,
+                &mut self.search_args,
+                query_state,
+            );
+            let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
+            *entry += 1;
+            query_state.v2_subscriptions.insert(subscription_id);
+            new_queries.push(query.clone());
+        }
+        Ok(new_queries)
     }
 
     pub fn add_subscription_multi(
@@ -879,7 +1042,7 @@ impl SubscriptionManager {
         #[cfg(test)]
         ci.assert_ref_count_consistency();
         let subscription_id = (client_id, query_id);
-        let hash_set = match ci.subscriptions.try_insert(subscription_id, HashSet::new()) {
+        let hash_set = match ci.v1_subscriptions.try_insert(subscription_id, HashSet::new()) {
             Err(OccupiedError { .. }) => {
                 return Err(anyhow::anyhow!(
                     "Subscription with id {query_id:?} already exists for client: {client_id:?}"
@@ -1043,10 +1206,30 @@ impl SubscriptionManager {
 
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
+        for (subscription_id, queries) in client_info.v2_subscriptions {
+            for query_hash in queries {
+                let Some(query_state) = self.queries.get_mut(&query_hash) else {
+                    tracing::warn!("Query state not found for query hash: {:?}", query_hash);
+                    continue;
+                };
+                query_state.v2_subscriptions.remove(&subscription_id);
+                if !query_state.has_subscribers() {
+                    queries_to_remove.push(query_hash);
+                    SubscriptionManager::remove_query_from_tables(
+                        &mut self.tables,
+                        &mut self.join_edges,
+                        &mut self.indexes,
+                        &mut self.search_args,
+                        &query_state.query,
+                    );
+                }
+            }
+        }
+        // This loop can be removed once v1 subscriptions are removed.
         for query_hash in client_info.subscription_ref_count.keys() {
             let Some(query_state) = self.queries.get_mut(query_hash) else {
-                tracing::warn!("Query state not found for query hash: {:?}", query_hash);
-                return;
+                // This can happen if they are cliented up in the v2 loop above.
+                continue;
             };
             query_state.subscriptions.remove(client);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
@@ -1138,17 +1321,18 @@ impl SubscriptionManager {
     /// However, in order to optimize for the common case of small updates,
     /// we removed rayon and switched to a single-threaded execution,
     /// which removed significant overhead associated with thread switching.
-    #[tracing::instrument(level = "trace", skip_all)]
+    //#[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_updates_sequential(
         &self,
         (tx, tx_offset): (&DeltaTx, TransactionOffset),
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        module_def_version: RawModuleDefVersion,
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
-    ) -> ExecutionMetrics {
-        let span = tracing::info_span!("eval_incr").entered();
+    ) -> (ExecutionMetrics, Vec<SubscriptionIdV2>) {
+        //let span = tracing::info_span!("eval_incr").entered();
 
-        let (updates, errs, metrics) = if self.queries.is_empty() {
+        let (updates, errs, mut metrics) = if self.queries.is_empty() {
             // We have no queries, so do nothing.
             <_>::default()
         } else {
@@ -1156,11 +1340,24 @@ impl SubscriptionManager {
             self.eval_updates_sequential_inner(tx, bsatn_rlb_pool, tables)
         };
 
+        let (v2_updates, v2_errs, metrics_v2) = if self.queries.is_empty() {
+            // We have no queries, so do nothing.
+            <_>::default()
+        } else {
+            let tables = &event.status.database_update().unwrap().tables;
+            self.eval_updates_sequential_inner_v2(tx, bsatn_rlb_pool, tables)
+        };
+        metrics.merge(metrics_v2);
+
+        let failed_v2_subscriptions: HashSet<SubscriptionIdV2> = v2_errs.iter().map(|(id, _)| *id).collect();
         let queries = ComputedQueries {
             updates,
+            v2_updates,
             errs,
+            v2_errs,
             event,
             caller,
+            module_def_version,
         };
 
         // We've now finished all of the work which needs to read from the datastore,
@@ -1171,9 +1368,123 @@ impl SubscriptionManager {
             .send(SendWorkerMessage::Broadcast { tx_offset, queries })
             .expect("send worker has panicked, or otherwise dropped its recv queue!");
 
-        drop(span);
+        //drop(span);
 
-        metrics
+        (metrics, failed_v2_subscriptions.into_iter().collect())
+    }
+
+    fn eval_updates_sequential_inner_v2(
+        &self,
+        tx: &DeltaTx,
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        tables: &[DatabaseTableUpdate],
+    ) -> V2EvalUpdatesResult {
+        #[derive(Default)]
+        struct FoldState {
+            updates: Vec<V2ClientUpdate>,
+            errs: Vec<(SubscriptionIdV2, Box<str>)>,
+            metrics: ExecutionMetrics,
+        }
+
+        /// Returns the value pointed to by this join edge
+        fn find_rhs_val(edge: &JoinEdge, row: &ProductValue, tx: &DeltaTx) -> Option<AlgebraicValue> {
+            tx.iter_by_col_eq(
+                edge.rhs_table,
+                edge.rhs_join_col,
+                &row.elements[edge.lhs_join_col.idx()],
+            )
+            .expect("This read should always succeed, and it's a bug if it doesn't")
+            .next()
+            .map(|row| {
+                row.read_col(edge.rhs_col)
+                    .expect("This read should always succeed, and it's a bug if it doesn't")
+            })
+        }
+
+        fn encode_v2_rows(
+            updates: &UpdatesRelValue<'_>,
+            metrics: &mut ExecutionMetrics,
+            rlb_pool: &impl RowListBuilderSource<ws_v1::BsatnFormat>,
+        ) -> TableUpdateRows {
+            let (deletes, nr_del) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
+                rlb_pool.take_row_list_builder(),
+                updates.deletes.iter(),
+            );
+            let (inserts, nr_ins) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
+                rlb_pool.take_row_list_builder(),
+                updates.inserts.iter(),
+            );
+            // TODO: Fix metrics. We only encode once, then we clone for other clients, so this isn't the place
+            // to report the metrics.
+            let _num_rows = nr_del + nr_ins;
+            let num_bytes = deletes.num_bytes() + inserts.num_bytes();
+            metrics.bytes_scanned += num_bytes;
+            metrics.bytes_sent_to_clients += num_bytes;
+            TableUpdateRows::PersistentTable(ws_v2::PersistentTableRows { inserts, deletes })
+        }
+
+        let FoldState { updates, errs, metrics } = tables
+            .iter()
+            .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
+            .flat_map(|table_update| {
+                self.queries_for_table_update(table_update, &|edge, row| find_rhs_val(edge, row, tx))
+            })
+            // deduplicate queries by their hash
+            .filter({
+                let mut seen = HashSet::new();
+                move |&hash| seen.insert(hash)
+            })
+            .copied()
+            // Ignore queries that only have v1 subscriptions.
+            .filter(|&hash| !self.queries[&hash].v2_subscriptions.is_empty())
+            .flat_map(|hash| {
+                let qstate = &self.queries[&hash];
+                qstate
+                    .query
+                    .plans_fragments()
+                    .map(move |plan_fragment| (qstate, plan_fragment, hash))
+            })
+            .fold(FoldState::default(), |mut acc, (qstate, plan, _hash)| {
+                let table_name = plan.subscribed_table_name().clone();
+                // let subscriptions_for_query = qstate.v2_subscriptions
+
+                match eval_delta(tx, &mut acc.metrics, plan) {
+                    Err(err) => {
+                        tracing::error!(
+                            message = "Query errored during tx update",
+                            sql = qstate.query.sql,
+                            reason = ?err,
+                        );
+                        let err = DBError::WithSql {
+                            sql: qstate.query.sql.as_str().into(),
+                            error: Box::new(err.into()),
+                        }
+                        .to_string()
+                        .into_boxed_str();
+
+                        // TODO: Remove these subscriptions from the subscription manager.
+                        acc.errs
+                            .extend(qstate.v2_subscriptions.iter().map(|id| (*id, err.clone())));
+                    }
+                    Ok(None) => {}
+                    Ok(Some(delta_updates)) => {
+                        let rows = encode_v2_rows(&delta_updates, &mut acc.metrics, bsatn_rlb_pool);
+                        for &(client_id, query_set_id) in qstate.v2_subscriptions.iter() {
+                            acc.updates.push(V2ClientUpdate {
+                                id: client_id,
+                                query_set_id,
+                                table_name: table_name.clone(),
+                                // This clone is cheap, since it is just cloning a reference to the row data.
+                                rows: rows.clone(),
+                            });
+                        }
+                    }
+                }
+
+                acc
+            });
+
+        (updates, errs, metrics)
     }
 
     #[allow(clippy::type_complexity)]
@@ -1183,7 +1494,7 @@ impl SubscriptionManager {
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
         tables: &[DatabaseTableUpdate],
     ) -> (Vec<ClientUpdate>, Vec<(ClientId, Box<str>)>, ExecutionMetrics) {
-        use FormatSwitch::{Bsatn, Json};
+        use ws_v1::FormatSwitch::{Bsatn, Json};
 
         #[derive(Default)]
         struct FoldState {
@@ -1258,15 +1569,15 @@ impl SubscriptionManager {
                 // the risks of holding the tx lock for longer than necessary,
                 // as well as additional the message processing overhead on the client,
                 // outweighed the benefit of reduced cpu with the former approach.
-                let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
-                let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
+                let mut ops_bin_uncompressed: Option<(ws_v1::CompressableQueryUpdate<ws_v1::BsatnFormat>, _, _)> = None;
+                let mut ops_json: Option<(ws_v1::QueryUpdate<ws_v1::JsonFormat>, _, _)> = None;
 
                 fn memo_encode<F: BuildableWebsocketFormat>(
                     updates: &UpdatesRelValue<'_>,
                     memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                     metrics: &mut ExecutionMetrics,
                     rlb_pool: &impl RowListBuilderSource<F>,
-                ) -> SingleQueryUpdate<F> {
+                ) -> ws_v1::SingleQueryUpdate<F> {
                     let (update, num_rows, num_bytes) = memory
                         .get_or_insert_with(|| {
                             // TODO(centril): consider pushing the encoding of each row into
@@ -1284,10 +1595,10 @@ impl SubscriptionManager {
                     // Therefore every time we call this function,
                     // we update the `bytes_sent_to_clients` metric.
                     metrics.bytes_sent_to_clients += num_bytes;
-                    SingleQueryUpdate { update, num_rows }
+                    ws_v1::SingleQueryUpdate { update, num_rows }
                 }
 
-                let clients_for_query = qstate.all_clients();
+                let clients_for_query = qstate.all_v1_clients();
 
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
@@ -1312,13 +1623,13 @@ impl SubscriptionManager {
                         let row_iter = clients_for_query.map(|id| {
                             let client = &self.clients[id].outbound_ref;
                             let update = match client.config.protocol {
-                                Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                Protocol::Binary => Bsatn(memo_encode::<ws_v1::BsatnFormat>(
                                     &delta_updates,
                                     &mut ops_bin_uncompressed,
                                     &mut acc.metrics,
                                     bsatn_rlb_pool,
                                 )),
-                                Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                Protocol::Text => Json(memo_encode::<ws_v1::JsonFormat>(
                                     &delta_updates,
                                     &mut ops_json,
                                     &mut acc.metrics,
@@ -1430,7 +1741,21 @@ impl BroadcastQueue {
         Ok(())
     }
 
-    pub fn send_client_message(
+    pub fn send_client_message_v2(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        tx_offset: Option<TransactionOffset>,
+        message: impl Into<ws_v2::ServerMessage>,
+    ) -> Result<(), BroadcastError> {
+        self.0.send(SendWorkerMessage::SendMessage {
+            recipient,
+            tx_offset,
+            message: OutboundMessage::V2(message.into()),
+        })?;
+        Ok(())
+    }
+
+    pub fn send_client_message_v1(
         &self,
         recipient: Arc<ClientConnectionSender>,
         tx_offset: Option<TransactionOffset>,
@@ -1439,7 +1764,7 @@ impl BroadcastQueue {
         self.0.send(SendWorkerMessage::SendMessage {
             recipient,
             tx_offset,
-            message: message.into(),
+            message: OutboundMessage::V1(message.into()),
         })?;
         Ok(())
     }
@@ -1520,17 +1845,16 @@ impl SendWorker {
         }
     }
 
-    fn send_one_computed_queries(
+    fn send_v1_computed_queries(
         &mut self,
         tx_offset: TxOffset,
-        ComputedQueries {
-            updates,
-            errs,
-            event,
-            caller,
-        }: ComputedQueries,
+        updates: Vec<ClientUpdate>,
+        errs: Vec<(ClientId, Box<str>)>,
+        event: Arc<ModuleEvent>,
+        caller: Option<Arc<ClientConnectionSender>>,
+        module_def_version: RawModuleDefVersion,
     ) {
-        use FormatSwitch::{Bsatn, Json};
+        use ws_v1::FormatSwitch::{Bsatn, Json};
 
         let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
@@ -1553,14 +1877,15 @@ impl SendWorker {
             .filter(|upd| !clients_with_errors.contains(&upd.id))
             // Do the aggregation.
             .fold(client_table_id_updates, |mut tables, upd| {
+                let table_name = upd.table_name.into();
                 match tables.entry((upd.id, upd.table_id)) {
                     Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
                         Bsatn((tbl_upd, update)) => tbl_upd.push(update),
                         Json((tbl_upd, update)) => tbl_upd.push(update),
                     },
                     Entry::Vacant(entry) => drop(entry.insert(match upd.update {
-                        Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
-                        Json(update) => Json(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                        Bsatn(update) => Bsatn(ws_v1::TableUpdate::new(upd.table_id, table_name, update)),
+                        Json(update) => Json(ws_v1::TableUpdate::new(upd.table_id, table_name, update)),
                     })),
                 }
                 tables
@@ -1608,17 +1933,23 @@ impl SendWorker {
                 event: Some(event.clone()),
                 database_update,
             };
-            send_to_client(&caller, Some(tx_offset), message);
+            send_to_client_v1(&caller, Some(tx_offset), message);
         }
 
         // Send all the other updates.
+        let hide_reducer_info_for_non_callers = matches!(module_def_version, RawModuleDefVersion::V10);
+
         for (id, update) in client_id_updates.drain() {
             let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
             let client = self.clients[&id].outbound_ref.clone();
             // Conditionally send out a full update or a light one otherwise.
-            let event = client.config.tx_update_full.then(|| event.clone());
+            let event = if hide_reducer_info_for_non_callers {
+                None
+            } else {
+                client.config.tx_update_full.then(|| event.clone())
+            };
             let message = TransactionUpdateMessage { event, database_update };
-            send_to_client(&client, Some(tx_offset), message);
+            send_to_client_v1(&client, Some(tx_offset), message);
         }
 
         // Put back the aggregation maps into the worker.
@@ -1629,7 +1960,7 @@ impl SendWorker {
         for (id, message) in errs {
             if let Some(client) = self.clients.get(&id) {
                 client.dropped.store(true, Ordering::Release);
-                send_to_client(
+                send_to_client_v1(
                     &client.outbound_ref,
                     None,
                     SubscriptionMessage {
@@ -1645,12 +1976,168 @@ impl SendWorker {
             }
         }
     }
+
+    fn send_v2_computed_queries(
+        &mut self,
+        tx_offset: TxOffset,
+        v2_updates: Vec<V2ClientUpdate>,
+        v2_errs: Vec<(SubscriptionIdV2, Box<str>)>,
+        event: Arc<ModuleEvent>,
+        caller: Option<Arc<ClientConnectionSender>>,
+    ) {
+        // Send subscription errors first so clients can discard state before updates arrive.
+        for ((client_id, query_set_id), error) in &v2_errs {
+            if self.is_client_dropped_or_cancelled(client_id) {
+                continue;
+            }
+            if let Some(client) = self.clients.get(client_id) {
+                send_to_client(
+                    &client.outbound_ref,
+                    Some(tx_offset),
+                    OutboundMessage::V2(ws_v2::ServerMessage::SubscriptionError(ws_v2::SubscriptionError {
+                        request_id: None,
+                        query_set_id: *query_set_id,
+                        error: error.clone(),
+                    })),
+                );
+            }
+        }
+
+        // Track these just in case we also get some updates for these subscriptions.
+        let subscriptions_with_errors: HashSet<&SubscriptionIdV2> =
+            v2_errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+
+        type UpdateMapKey = (ClientId, ClientQuerySetId, TableName);
+        let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::TableUpdateRows>> = BTreeMap::new();
+
+        let mut sent_to_caller = false;
+
+        for V2ClientUpdate {
+            id: client_id,
+            query_set_id,
+            // table_update,
+            table_name,
+            rows,
+        } in v2_updates
+        {
+            if subscriptions_with_errors.contains(&(client_id, query_set_id)) {
+                continue;
+            }
+            grouped_updates
+                .entry((client_id, query_set_id, table_name))
+                .or_default()
+                // .push(table_update);
+                .push(rows);
+        }
+
+        let grouped_by_client = grouped_updates.into_iter().group_by(|((client_id, ..), _)| *client_id);
+
+        for (client, updates) in &grouped_by_client {
+            if self.is_client_dropped_or_cancelled(&client) {
+                continue;
+            }
+
+            let mut query_set_updates: Vec<ws_v2::QuerySetUpdate> = vec![];
+
+            let grouped_by_query_set = updates.group_by(|((_, query_set_id, _), _)| *query_set_id);
+
+            for (query_set_id, qs_updates) in &grouped_by_query_set {
+                let table_updates: Vec<ws_v2::TableUpdate> = qs_updates
+                    .into_iter()
+                    .map(|((_, _, table_name), rows)| ws_v2::TableUpdate {
+                        table_name: table_name.into(),
+                        rows: rows.into_boxed_slice(),
+                    })
+                    .collect();
+                query_set_updates.push(ws_v2::QuerySetUpdate {
+                    query_set_id,
+                    tables: table_updates.into_boxed_slice(),
+                });
+            }
+
+            let transaction_update: ws_v2::TransactionUpdate = ws_v2::TransactionUpdate {
+                query_sets: query_set_updates.into_boxed_slice(),
+            };
+            match caller {
+                Some(ref caller) if (caller.id.identity, caller.id.connection_id) == client => {
+                    // Don't send the update to the caller, since they already have the most up-to-date information.
+                    let rok = ws_v2::ReducerOk {
+                        ret_value: event.reducer_return_value.clone().unwrap_or_default(),
+                        transaction_update,
+                    };
+                    let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                        request_id: event.request_id.unwrap(), // TODO: Handle error here.
+                        timestamp: event.timestamp,
+                        result: ws_v2::ReducerOutcome::Ok(rok),
+                    });
+                    send_to_client(caller, Some(tx_offset), OutboundMessage::V2(server_message));
+                    sent_to_caller = true;
+                    continue;
+                }
+                _ => {
+                    // Send the update to the client.
+                    send_to_client(
+                        &self.clients[&client].outbound_ref.clone(),
+                        Some(tx_offset),
+                        OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(transaction_update)),
+                    );
+                }
+            }
+        }
+        if !sent_to_caller {
+            if let Some(caller) = caller {
+                let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                    request_id: event.request_id.unwrap(), // TODO: Handle error here.
+                    timestamp: event.timestamp,
+                    result: ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
+                        ret_value: event.reducer_return_value.clone().unwrap_or_default(),
+                        transaction_update: ws_v2::TransactionUpdate {
+                            query_sets: vec![].into_boxed_slice(),
+                        },
+                    }),
+                });
+                send_to_client(&caller, Some(tx_offset), OutboundMessage::V2(server_message));
+            }
+        }
+    }
+
+    fn send_one_computed_queries(
+        &mut self,
+        tx_offset: TxOffset,
+        ComputedQueries {
+            updates,
+            v2_updates,
+            errs,
+            v2_errs,
+            event,
+            caller,
+            module_def_version,
+        }: ComputedQueries,
+    ) {
+        let (v1_caller, v2_caller) = match caller {
+            Some(caller) if caller.config.version == WsVersion::V1 => (Some(caller), None),
+            Some(caller) => (None, Some(caller)),
+            None => (None, None),
+        };
+        self.send_v1_computed_queries(tx_offset, updates, errs, event.clone(), v1_caller, module_def_version);
+        self.send_v2_computed_queries(tx_offset, v2_updates, v2_errs, event, v2_caller);
+    }
 }
 
-fn send_to_client(
+fn send_to_client_v1(
     client: &ClientConnectionSender,
     tx_offset: Option<TxOffset>,
     message: impl Into<SerializableMessage>,
+) {
+    if let Err(e) = client.send_message(tx_offset, OutboundMessage::V1(message.into())) {
+        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
+}
+fn send_to_client(
+    client: &ClientConnectionSender,
+    tx_offset: Option<TxOffset>,
+    message: OutboundMessage,
+    //message: impl Into<SerializableMessage>,
 ) {
     tracing::trace!(client = %client.id, tx_offset, "send_to_client");
     if let Err(e) = client.send_message(tx_offset, message) {
@@ -1662,11 +2149,14 @@ fn send_to_client(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use spacetimedb_client_api_messages::websocket::QueryId;
+    use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_lib::AlgebraicValue;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::def::RawModuleDefVersion;
+    use spacetimedb_schema::reducer_name::ReducerName;
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
     use tokio::sync::oneshot;
 
@@ -1756,7 +2246,7 @@ mod tests {
 
         let client = Arc::new(client(0, &db));
 
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1764,6 +2254,110 @@ mod tests {
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_v2_adds_table_mapping() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0, &db));
+
+        let query_set_id: ws_v2::QuerySetId = ws_v2::QuerySetId::new(1);
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
+        let added = subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], query_set_id)?;
+        assert_eq!(added.len(), 1);
+        assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let subscription_id = (client_id, query_set_id);
+        let ci = subscriptions.clients.get(&client_id).expect("client not found");
+        let query_hashes = ci
+            .v2_subscriptions
+            .get(&subscription_id)
+            .expect("subscription not found");
+        assert!(query_hashes.contains(&hash));
+        assert!(subscriptions.queries[&hash].v2_subscriptions.contains(&subscription_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_v2_allows_same_query_multiple_query_sets() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0, &db));
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
+        let added = subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(1))?;
+        assert_eq!(added.len(), 1);
+        let added = subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(2))?;
+        assert_eq!(added.len(), 1);
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let query_state = &subscriptions.queries[&hash];
+        assert!(query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(1))));
+        assert!(query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(2))));
+
+        let ci = subscriptions.clients.get(&client_id).expect("client not found");
+        assert_eq!(ci.subscription_ref_count[&hash], 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_remove_subscription_v2_returns_queries_and_keeps_shared_query() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0, &db));
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
+        subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(1))?;
+        subscriptions.add_subscription_v2(client.clone(), vec![plan.clone()], ws_v2::QuerySetId::new(2))?;
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let removed = subscriptions.remove_subscription_v2(client_id, ws_v2::QuerySetId::new(1))?;
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].hash, hash);
+
+        let query_state = &subscriptions.queries[&hash];
+        assert!(!query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(1))));
+        assert!(query_state
+            .v2_subscriptions
+            .contains(&(client_id, ws_v2::QuerySetId::new(2))));
+        assert_eq!(subscriptions.clients[&client_id].subscription_ref_count[&hash], 1);
 
         Ok(())
     }
@@ -1779,7 +2373,7 @@ mod tests {
 
         let client = Arc::new(client(0, &db));
 
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1805,7 +2399,7 @@ mod tests {
 
         let client = Arc::new(client(0, &db));
 
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1814,7 +2408,9 @@ mod tests {
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
         let client_id = (client.id.identity, client.id.connection_id);
-        assert!(subscriptions.remove_subscription(client_id, QueryId::new(2)).is_err());
+        assert!(subscriptions
+            .remove_subscription(client_id, ws_v1::QueryId::new(2))
+            .is_err());
 
         Ok(())
     }
@@ -1830,14 +2426,14 @@ mod tests {
 
         let client = Arc::new(client(0, &db));
 
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
-        subscriptions.add_subscription(client.clone(), plan.clone(), QueryId::new(2))?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), ws_v1::QueryId::new(2))?;
 
         let client_id = (client.id.identity, client.id.connection_id);
         subscriptions.remove_subscription(client_id, query_id)?;
@@ -1859,7 +2455,7 @@ mod tests {
 
         let client = Arc::new(client(0, &db));
 
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1868,7 +2464,8 @@ mod tests {
         let added_query = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], query_id)?;
         assert!(added_query.len() == 1);
         assert_eq!(added_query[0].hash, hash);
-        let second_one = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], QueryId::new(2))?;
+        let second_one =
+            subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], ws_v1::QueryId::new(2))?;
         assert!(second_one.is_empty());
 
         let client_id = (client.id.identity, client.id.connection_id);
@@ -1876,7 +2473,7 @@ mod tests {
         assert!(removed_queries.is_empty());
 
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
-        let removed_queries = subscriptions.remove_subscription(client_id, QueryId::new(2))?;
+        let removed_queries = subscriptions.remove_subscription(client_id, ws_v1::QueryId::new(2))?;
         assert!(removed_queries.len() == 1);
         assert_eq!(removed_queries[0].hash, hash);
 
@@ -1897,7 +2494,7 @@ mod tests {
         let clients = (0..3).map(|i| Arc::new(client(i, &db))).collect::<Vec<_>>();
 
         // All of the clients are using the same query id.
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1938,7 +2535,7 @@ mod tests {
         let clients = (0..3).map(|i| Arc::new(client(i, &db))).collect::<Vec<_>>();
 
         // All of the clients are using the same query id.
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1992,15 +2589,15 @@ mod tests {
         let _rt = runtime.enter();
 
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
-        subscriptions.add_subscription(client.clone(), queries[0].clone(), QueryId::new(1))?;
-        subscriptions.add_subscription(client.clone(), queries[1].clone(), QueryId::new(2))?;
-        subscriptions.add_subscription(client.clone(), queries[2].clone(), QueryId::new(3))?;
+        subscriptions.add_subscription(client.clone(), queries[0].clone(), ws_v1::QueryId::new(1))?;
+        subscriptions.add_subscription(client.clone(), queries[1].clone(), ws_v1::QueryId::new(2))?;
+        subscriptions.add_subscription(client.clone(), queries[2].clone(), ws_v1::QueryId::new(3))?;
         for i in 0..3 {
             assert!(subscriptions.query_reads_from_table(&queries[i].hash(), &table_ids[i]));
         }
 
         let client_id = (client.id.identity, client.id.connection_id);
-        subscriptions.remove_subscription(client_id, QueryId::new(1))?;
+        subscriptions.remove_subscription(client_id, ws_v1::QueryId::new(1))?;
         assert!(!subscriptions.query_reads_from_table(&queries[0].hash(), &table_ids[0]));
         // Assert that the rest are there.
         for i in 1..3 {
@@ -2037,13 +2634,16 @@ mod tests {
         let _rt = runtime.enter();
 
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
-        let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[0].clone()], QueryId::new(1))?;
+        let added =
+            subscriptions.add_subscription_multi(client.clone(), vec![queries[0].clone()], ws_v1::QueryId::new(1))?;
         assert_eq!(added.len(), 1);
         assert_eq!(added[0].hash, queries[0].hash());
-        let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[1].clone()], QueryId::new(2))?;
+        let added =
+            subscriptions.add_subscription_multi(client.clone(), vec![queries[1].clone()], ws_v1::QueryId::new(2))?;
         assert_eq!(added.len(), 1);
         assert_eq!(added[0].hash, queries[1].hash());
-        let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[2].clone()], QueryId::new(3))?;
+        let added =
+            subscriptions.add_subscription_multi(client.clone(), vec![queries[2].clone()], ws_v1::QueryId::new(3))?;
         assert_eq!(added.len(), 1);
         assert_eq!(added[0].hash, queries[2].hash());
         for i in 0..3 {
@@ -2051,7 +2651,7 @@ mod tests {
         }
 
         let client_id = (client.id.identity, client.id.connection_id);
-        let removed = subscriptions.remove_subscription(client_id, QueryId::new(1))?;
+        let removed = subscriptions.remove_subscription(client_id, ws_v1::QueryId::new(1))?;
         assert_eq!(removed.len(), 1);
         assert_eq!(removed[0].hash, queries[0].hash());
         assert!(!subscriptions.query_reads_from_table(&queries[0].hash(), &table_ids[0]));
@@ -2089,8 +2689,11 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
 
         for (i, query) in queries.iter().enumerate().take(5) {
-            let added =
-                subscriptions.add_subscription_multi(client.clone(), vec![query.clone()], QueryId::new(i as u32))?;
+            let added = subscriptions.add_subscription_multi(
+                client.clone(),
+                vec![query.clone()],
+                ws_v1::QueryId::new(i as u32),
+            )?;
             assert_eq!(added.len(), 1);
             assert_eq!(added[0].hash, queries[i].hash);
         }
@@ -2106,7 +2709,7 @@ mod tests {
         }
 
         // Remove one of the subscriptions
-        let query_id = QueryId::new(2);
+        let query_id = ws_v1::QueryId::new(2);
         let client_id = (client.id.identity, client.id.connection_id);
         let removed = subscriptions.remove_subscription(client_id, query_id)?;
         assert_eq!(removed.len(), 1);
@@ -2162,7 +2765,7 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
 
         for (i, query) in queries.iter().enumerate() {
-            subscriptions.add_subscription_multi(client.clone(), vec![query.clone()], QueryId::new(i as u32))?;
+            subscriptions.add_subscription_multi(client.clone(), vec![query.clone()], ws_v1::QueryId::new(i as u32))?;
         }
 
         let hash_for_2 = queries[2].hash;
@@ -2176,7 +2779,7 @@ mod tests {
         // select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: "t".into(),
+            table_name: TableName::for_test("t"),
             inserts: [product![2u8]].into(),
             deletes: [product![3u8]].into(),
         };
@@ -2194,7 +2797,7 @@ mod tests {
         // Only: select * from t
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: "t".into(),
+            table_name: TableName::for_test("t"),
             inserts: [product![8u8]].into(),
             deletes: [product![9u8]].into(),
         };
@@ -2228,14 +2831,14 @@ mod tests {
         let plan = compile_plan(&db, "select t.* from t join s on t.id = s.id where s.a = 1")?;
         let hash = plan.hash;
 
-        subscriptions.add_subscription_multi(client.clone(), vec![plan], QueryId::new(0))?;
+        subscriptions.add_subscription_multi(client.clone(), vec![plan], ws_v1::QueryId::new(0))?;
 
         // Do we need to evaluate the above join query for this table update?
         // Yes, because the above query does not filter on `t`.
         // Therefore we must evaluate it for any update on `t`.
         let table_update = DatabaseTableUpdate {
             table_id: t_id,
-            table_name: "t".into(),
+            table_name: TableName::for_test("t"),
             inserts: [product![0u8, 0u8]].into(),
             deletes: [].into(),
         };
@@ -2251,7 +2854,7 @@ mod tests {
         // Yes, because `s.a = 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: "s".into(),
+            table_name: TableName::for_test("s"),
             inserts: [product![0u8, 1u8]].into(),
             deletes: [].into(),
         };
@@ -2267,7 +2870,7 @@ mod tests {
         // No, because `s.a != 1`.
         let table_update = DatabaseTableUpdate {
             table_id: s_id,
-            table_name: "s".into(),
+            table_name: TableName::for_test("s"),
             inserts: [product![0u8, 2u8]].into(),
             deletes: [].into(),
         };
@@ -2292,7 +2895,7 @@ mod tests {
 
         let client = Arc::new(client(0, &db));
 
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2317,7 +2920,7 @@ mod tests {
 
         let client = Arc::new(client(0, &db));
 
-        let query_id: ClientQueryId = QueryId::new(1);
+        let query_id: ClientQueryId = ws_v1::QueryId::new(1);
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2522,11 +3125,12 @@ mod tests {
             caller_identity: id0,
             caller_connection_id: Some(client0.id.connection_id),
             function_call: ModuleFunctionCall {
-                reducer: "DummyReducer".into(),
+                reducer: Some(ReducerName::for_test("DummyReducer")),
                 reducer_id: u32::MAX.into(),
                 args: ArgsTuple::nullary(),
             },
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::default(),
             request_id: None,
@@ -2546,9 +3150,10 @@ mod tests {
             });
             let delta_tx = DeltaTx::from(&*tx);
             let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
-            subscriptions.eval_updates_sequential(
+            let _ = subscriptions.eval_updates_sequential(
                 (&delta_tx, offset_rx),
                 &bsatn_rlb_pool,
+                RawModuleDefVersion::V9OrEarlier,
                 event,
                 Some(Arc::new(client0)),
             );

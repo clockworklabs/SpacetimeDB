@@ -7,18 +7,183 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-The subscription API allows a client to replicate a subset of a database.
-It does so by registering SQL queries, which we call subscriptions, through a database connection.
-A client will only receive updates for rows that match the subscriptions it has registered.
+Subscriptions replicate database rows to your client in real-time. When you subscribe to a query, SpacetimeDB sends you the matching rows immediately and then pushes updates whenever those rows change.
 
-For more information on syntax and requirements see the [SQL docs](/reference/sql#subscriptions).
+## Quick Start
 
-This guide describes the two main interfaces that comprise the API - `SubscriptionBuilder` and `SubscriptionHandle`.
-By using these interfaces, you can create efficient and responsive client applications that only receive the data they need.
+Here's a complete example showing how to subscribe to data and react to changes:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { DbConnection, tables } from './module_bindings';
+
+// Connect to the database
+const conn = DbConnection.builder()
+  .withUri('wss://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .onConnect((ctx) => {
+    // Subscribe to users and messages using query builders
+    ctx.subscriptionBuilder()
+      .onApplied(() => {
+        console.log('Subscription ready!');
+        // Initial data is now in the client cache
+        for (const user of ctx.db.user.iter()) {
+          console.log(`User: ${user.name}`);
+        }
+      })
+      .subscribe([tables.user, tables.message]);
+  })
+  .build();
+
+// React to new rows being inserted
+conn.db.user.onInsert((ctx, user) => {
+  console.log(`New user joined: ${user.name}`);
+});
+
+// React to rows being deleted
+conn.db.user.onDelete((ctx, user) => {
+  console.log(`User left: ${user.name}`);
+});
+
+// React to rows being updated
+conn.db.user.onUpdate((ctx, oldUser, newUser) => {
+  console.log(`${oldUser.name} changed name to ${newUser.name}`);
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// Connect to the database
+var conn = DbConnection.Builder()
+    .WithUri("wss://maincloud.spacetimedb.com")
+    .WithDatabaseName("my_module")
+    .OnConnect((ctx) =>
+    {
+        // Subscribe to users and messages
+        ctx.SubscriptionBuilder()
+            .OnApplied(() =>
+            {
+                Console.WriteLine("Subscription ready!");
+                // Initial data is now in the client cache
+                foreach (var user in ctx.Db.User.Iter())
+                {
+                    Console.WriteLine($"User: {user.Name}");
+                }
+            })
+            .Subscribe(new[] { "SELECT * FROM user", "SELECT * FROM message" });
+    })
+    .Build();
+
+// React to new rows being inserted
+conn.Db.User.OnInsert += (ctx, user) =>
+{
+    Console.WriteLine($"New user joined: {user.Name}");
+};
+
+// React to rows being deleted
+conn.Db.User.OnDelete += (ctx, user) =>
+{
+    Console.WriteLine($"User left: {user.Name}");
+};
+
+// React to rows being updated
+conn.Db.User.OnUpdate += (ctx, oldUser, newUser) =>
+{
+    Console.WriteLine($"{oldUser.Name} changed name to {newUser.Name}");
+};
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// Connect to the database
+let conn = DbConnection::builder()
+    .with_uri("wss://maincloud.spacetimedb.com")
+    .with_database_name("my_module")
+    .on_connect(|ctx| {
+        // Subscribe to users and messages
+        ctx.subscription_builder()
+            .on_applied(|ctx| {
+                println!("Subscription ready!");
+                // Initial data is now in the client cache
+                for user in ctx.db.user().iter() {
+                    println!("User: {}", user.name);
+                }
+            })
+            .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+    })
+    .build();
+
+// React to new rows being inserted
+conn.db().user().on_insert(|ctx, user| {
+    println!("New user joined: {}", user.name);
+});
+
+// React to rows being deleted
+conn.db().user().on_delete(|ctx, user| {
+    println!("User left: {}", user.name);
+});
+
+// React to rows being updated
+conn.db().user().on_update(|ctx, old_user, new_user| {
+    println!("{} changed name to {}", old_user.name, new_user.name);
+});
+```
+
+</TabItem>
+</Tabs>
+
+:::tip TypeScript Query Builders
+The TypeScript SDK supports type-safe **query builders** as an alternative to raw SQL strings. Query builders provide auto-completion and compile-time type checking. The examples on this page use query builders for TypeScript — see the [TypeScript SDK Reference](/sdks/typescript#query-builder-api) for full details. Raw SQL strings are still supported in all SDKs.
+:::
+
+## How Subscriptions Work
+
+1. **Subscribe**: Register SQL queries describing the data you need
+2. **Receive initial data**: SpacetimeDB sends all matching rows immediately
+3. **Receive updates**: When subscribed rows change, you get real-time updates
+4. **React to changes**: Use row callbacks (`onInsert`, `onDelete`, `onUpdate`) to handle changes
+
+The client maintains a local cache of subscribed data. Reading from the cache is instant since it's local memory.
+
+For more information on subscription SQL syntax see the [SQL docs](/reference/sql#subscriptions).
+
+## API Reference
+
+This section describes the two main interfaces: `SubscriptionBuilder` and `SubscriptionHandle`.
 
 ## SubscriptionBuilder
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+interface SubscriptionBuilder {
+  // Register a callback to run when the subscription is applied.
+  onApplied(callback: (ctx: SubscriptionEventContext) => void): SubscriptionBuilder;
+
+  // Register a callback to run when the subscription fails.
+  // This callback may run when attempting to apply the subscription,
+  // or later during the subscription's lifetime if the module's interface changes.
+  onError(callback: (ctx: ErrorContext, error: Error) => void): SubscriptionBuilder;
+
+  // Subscribe using query builders (recommended) or raw SQL strings.
+  // Returns immediately; callbacks are invoked when data arrives from the server.
+  subscribe(queries: string | string[]): SubscriptionHandle;
+  subscribe(queries: TableRef | TableRef[]): SubscriptionHandle;
+
+  // Subscribe to all rows from all tables.
+  // Intended for applications where memory and bandwidth are not concerns.
+  subscribeToAllTables(): void;
+}
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -67,6 +232,31 @@ public sealed class SubscriptionBuilder
     /// in order to replicate only the subset of data which the client needs to function.
     /// </summary>
     public void SubscribeToAllTables();
+
+    /// <summary>
+    /// Add a typed query to this subscription.
+    ///
+    /// This is the entry point for building subscriptions without writing SQL by hand.
+    /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
+    /// </summary>
+    public TypedSubscriptionBuilder AddQuery<TRow>(
+        Func<QueryBuilder, IQuery<TRow>> build
+    );
+}
+
+public sealed class TypedSubscriptionBuilder
+{
+    /// <summary>
+    /// Add a typed query to this subscription.
+    /// </summary>
+    public TypedSubscriptionBuilder AddQuery<TRow>(
+        Func<QueryBuilder, IQuery<TRow>> build
+    );
+
+    /// <summary>
+    /// Subscribe to all typed queries that have been added to this subscription.
+    /// </summary>
+    public SubscriptionHandle Subscribe();
 }
 ```
 
@@ -101,6 +291,17 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// should register more precise queries via [`Self::subscribe`]
     /// in order to replicate only the subset of data which the client needs to function.
     pub fn subscribe_to_all_tables(self);
+
+    /// Build a query and invoke `subscribe` in order to subscribe to its results.
+    pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> impl Query<T>) -> TypedSubscriptionBuilder<M>;
+}
+
+impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+    /// Build a query and invoke `subscribe` in order to subscribe to its results.
+    pub fn add_query<T>(mut self, build: impl Fn(M::QueryBuilder) -> impl Query<T>) -> Self;
+
+    /// Subscribe to the queries that have been built with `add_query`.
+    pub fn subscribe(self) -> M::SubscriptionHandle;
 }
 
 /// Types which specify a list of query strings.
@@ -119,7 +320,27 @@ A client can react to these updates by registering row callbacks for the appropr
 
 ### Example Usage
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// Establish a database connection
+import { DbConnection, tables } from './module_bindings';
+
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .build();
+
+// Register a subscription with the database using query builders
+const userSubscription = conn
+  .subscriptionBuilder()
+  .onApplied((ctx) => { /* handle applied state */ })
+  .onError((ctx, error) => { /* handle error */ })
+  .subscribe([tables.user, tables.message]);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -154,7 +375,27 @@ let subscription_handle = conn
 
 ## SubscriptionHandle
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+interface SubscriptionHandle {
+  // Whether the subscription has ended (unsubscribed or terminated due to error).
+  isEnded(): boolean;
+
+  // Whether the subscription is currently active.
+  isActive(): boolean;
+
+  // Unsubscribe from the query controlled by this handle.
+  // Throws if called more than once.
+  unsubscribe(): void;
+
+  // Unsubscribe and call onEnded when rows are removed from the client cache.
+  unsubscribeThen(onEnded?: (ctx: SubscriptionEventContext) => void): void;
+}
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -226,7 +467,51 @@ clients can dynamically subscribe to different subsets of the database as their 
 
 ### Example Usage
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+Consider a game client that displays shop items and discounts based on a player's level.
+You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
+
+```typescript
+import { DbConnection, tables } from './module_bindings';
+
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .build();
+
+const shopItemsSubscription = conn
+  .subscriptionBuilder()
+  .onApplied((ctx) => { /* handle applied state */ })
+  .onError((ctx, error) => { /* handle error */ })
+  .subscribe([
+    tables.shopItems.where(r => r.requiredLevel.lte(5)),
+    tables.shopDiscounts.where(r => r.requiredLevel.lte(5)),
+  ]);
+```
+
+Later, when the player reaches level 6 and new items become available,
+you can subscribe to the new queries and unsubscribe from the old ones:
+
+```typescript
+const newShopItemsSubscription = conn
+  .subscriptionBuilder()
+  .onApplied((ctx) => { /* handle applied state */ })
+  .onError((ctx, error) => { /* handle error */ })
+  .subscribe([
+    tables.shopItems.where(r => r.requiredLevel.lte(6)),
+    tables.shopDiscounts.where(r => r.requiredLevel.lte(6)),
+  ]);
+
+if (shopItemsSubscription.isActive()) {
+  shopItemsSubscription.unsubscribe();
+}
+```
+
+All other subscriptions continue to remain in effect.
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 Consider a game client that displays shop items and discounts based on a player's level.
@@ -328,7 +613,36 @@ This will improve throughput by reducing the amount of data transferred from the
 
 #### Example
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { DbConnection, tables } from './module_bindings';
+
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .build();
+
+// Never need to unsubscribe from global subscriptions
+const globalSubscriptions = conn
+  .subscriptionBuilder()
+  .subscribe([
+    // Global messages the client should always display
+    tables.announcements,
+    // A description of rewards for in-game achievements
+    tables.badges,
+  ]);
+
+// May unsubscribe to shop_items as player advances
+const shopSubscription = conn
+  .subscriptionBuilder()
+  .subscribe([
+    tables.shopItems.where(r => r.requiredLevel.lte(5)),
+  ]);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -391,7 +705,42 @@ unsubscribing from it does not result in any server processing or data serializt
 
 #### Example
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { DbConnection, tables } from './module_bindings';
+
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .build();
+
+// Initial subscription: player at level 5.
+const shopSubscription = conn
+  .subscriptionBuilder()
+  .subscribe([
+    // For displaying the price of shop items in the player's currency of choice
+    tables.exchangeRates,
+    tables.shopItems.where(r => r.requiredLevel.lte(5)),
+  ]);
+
+// New subscription: player now at level 6, which overlaps with the previous query.
+const newShopSubscription = conn
+  .subscriptionBuilder()
+  .subscribe([
+    // For displaying the price of shop items in the player's currency of choice
+    tables.exchangeRates,
+    tables.shopItems.where(r => r.requiredLevel.lte(6)),
+  ]);
+
+// Unsubscribe from the old subscription once the new one is in place.
+if (shopSubscription.isActive()) {
+  shopSubscription.unsubscribe();
+}
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs

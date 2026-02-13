@@ -84,12 +84,26 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<VecI128>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<VecI128>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<VecI128>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecI128`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_i128QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecI128`.
+    fn vec_i128(&self) -> __sdk::__query_builder::Table<VecI128>;
+}
+
+impl vec_i128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_i128(&self) -> __sdk::__query_builder::Table<VecI128> {
+        __sdk::__query_builder::Table::new("vec_i128")
+    }
 }

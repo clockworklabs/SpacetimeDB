@@ -61,7 +61,7 @@ pub fn cli() -> Command {
                 .help("The path to the module bindings directory relative to the project directory, defaults to `<project-path>/src/module_bindings`"),
         )
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
-        // This is not a requirement in general, but is a requirement for all templates 
+        // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         .arg(
             Arg::new("module-project-path")
@@ -277,6 +277,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         client_language,
         resolved_server,
         clear_database,
+        force,
     )
     .await?;
 
@@ -326,6 +327,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 client_language,
                 resolved_server,
                 clear_database,
+                force,
             )
             .await
             {
@@ -394,12 +396,14 @@ async fn generate_build_and_publish(
     client_language: Option<&Language>,
     server: &str,
     clear_database: ClearMode,
+    yes: bool,
 ) -> Result<(), anyhow::Error> {
     let module_language = detect_module_language(spacetimedb_dir)?;
     let client_language = client_language.unwrap_or(match module_language {
         crate::util::ModuleLanguage::Rust => &Language::Rust,
         crate::util::ModuleLanguage::Csharp => &Language::Csharp,
         crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
+        crate::util::ModuleLanguage::Cpp => &Language::Rust,
     });
     let client_language_str = match client_language {
         Language::Rust => "rust",
@@ -426,7 +430,7 @@ async fn generate_build_and_publish(
     println!("{}", "Build complete!".green());
 
     println!("{}", "Generating module bindings...".cyan());
-    let generate_args = generate::cli().get_matches_from(vec![
+    let mut generate_argv = vec![
         "generate",
         "--lang",
         client_language_str,
@@ -434,7 +438,11 @@ async fn generate_build_and_publish(
         spacetimedb_dir.to_str().unwrap(),
         "--out-dir",
         module_bindings_dir.to_str().unwrap(),
-    ]);
+    ];
+    if yes {
+        generate_argv.push("--yes");
+    }
+    let generate_args = generate::cli().get_matches_from(generate_argv);
     generate::exec(config.clone(), &generate_args).await?;
 
     println!("{}", "Publishing...".cyan());
@@ -612,7 +620,13 @@ async fn stream_logs(
 
     let status = res.status();
     if status.is_client_error() || status.is_server_error() {
-        let err = res.text().await?;
+        let mut err = res.text().await?;
+        // The server doesn't always send an error description in the response
+        // body (maybe it should), so default to status code + canonical reason
+        // phrase (e.g. "502 Bad Gateway").
+        if err.is_empty() {
+            err = format!("{status}");
+        }
         anyhow::bail!(err)
     }
 

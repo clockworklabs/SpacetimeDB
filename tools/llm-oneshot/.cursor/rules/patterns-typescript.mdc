@@ -1,0 +1,253 @@
+---
+description: Project-specific patterns and conventions for this SpacetimeDB benchmark repo. Read after spacetimedb-typescript.mdc.
+globs: **/*.ts,**/*.tsx,**/*.js,**/*.jsx
+---
+
+# SpacetimeDB TypeScript - Project Patterns
+
+> **Prerequisites:** Read `spacetimedb-typescript.mdc` first for SDK reference.  
+> **Last updated:** 2026-01-07
+
+This file contains conventions specific to THIS repository, not general SpacetimeDB SDK patterns.
+
+---
+
+## 1) Project Folder Structure
+
+### Benchmark App Layout
+```
+apps/chat-app/
+├── prompts/                    # Feature prompts (01_basic.md, 02_typing.md, etc.)
+├── test-harness/               # Playwright tests and benchmark scripts
+├── spacetime/                  # SpacetimeDB implementations
+│   └── chat-app-YYYYMMDD-HHMMSS/   # Timestamped attempt folder
+│       ├── backend/
+│       │   └── spacetimedb/
+│       │       ├── src/
+│       │       │   ├── schema.ts   # Tables, indexes, export spacetimedb
+│       │       │   └── index.ts    # Reducers, lifecycle hooks
+│       │       ├── package.json
+│       │       └── tsconfig.json
+│       └── client/
+│           ├── src/
+│           │   ├── module_bindings/  # Generated (don't edit)
+│           │   ├── main.tsx
+│           │   ├── App.tsx
+│           │   ├── config.ts
+│           │   └── styles.css
+│           ├── index.html
+│           ├── package.json
+│           ├── tsconfig.json
+│           └── vite.config.ts
+└── postgres/                   # PostgreSQL implementations (same structure)
+```
+
+### Module Naming Convention
+Use the timestamped folder name as the module name:
+```bash
+# Folder: chat-app-20260106-183045
+spacetime publish chat-app-20260106-183045 --project-path backend/spacetimedb
+```
+
+---
+
+## 2) Required Backend Files
+
+### package.json
+```json
+{
+  "name": "chat-app-backend",
+  "type": "module",
+  "version": "1.0.0",
+  "dependencies": {
+    "spacetimedb": "^1.11.0"
+  }
+}
+```
+
+### tsconfig.json
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"]
+}
+```
+
+### File Organization
+```
+src/schema.ts   → All tables, indexes, export spacetimedb
+src/index.ts    → Import schema, define all reducers and lifecycle hooks
+```
+
+**Why this structure?** Avoids circular dependency issues. See spacetimedb-typescript.mdc Section 8.
+
+---
+
+## 3) Required Client Files
+
+### package.json
+```json
+{
+  "name": "chat-app-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "kill-port": "npx kill-port 5173 2>nul || true",
+    "dev": "npm run kill-port && vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "spacetimedb": "^1.11.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}
+```
+
+### vite.config.ts
+```typescript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,  // NEVER use 3000 — conflicts with SpacetimeDB
+  },
+});
+```
+
+### tsconfig.json
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}
+```
+
+### index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+### config.ts
+```typescript
+// Derive from folder name or use explicit module name
+export const MODULE_NAME = 'chat-app-20260106-183045';
+export const SPACETIMEDB_URI = 'ws://localhost:3000';
+```
+
+---
+
+## 4) Kill-Port Convention
+
+The dev server sometimes leaves zombie processes. Always use:
+
+```json
+"scripts": {
+  "kill-port": "npx kill-port 5173 2>nul || true",
+  "dev": "npm run kill-port && vite"
+}
+```
+
+**Windows note:** Use `2>nul` not `2>/dev/null`.
+
+---
+
+## 5) Generating Module Bindings
+
+After publishing backend, generate bindings:
+
+```bash
+spacetime generate --lang typescript \
+  --out-dir client/src/module_bindings \
+  --project-path backend/spacetimedb
+```
+
+**CRITICAL:** Generate bindings BEFORE writing client code. See `deployment.mdc` for full workflow.
+
+---
+
+## 6) Port Configuration
+
+| Service | Port | Notes |
+|---------|------|-------|
+| SpacetimeDB server | 3000 | WebSocket connections |
+| Vite dev server | 5173 | React client |
+| PostgreSQL (alternate) | 5432 | Database |
+| Express API (alternate) | 3001 | REST API |
+
+**Never run Vite on port 3000** — it conflicts with SpacetimeDB.
+
+---
+
+## 7) Benchmark Test Harness
+
+After deploying an app, run the benchmark:
+
+```bash
+cd apps/chat-app/test-harness
+npm install
+npx playwright install chromium
+
+# Match --level to prompt number (e.g., 08_threading.md → --level=8)
+CLIENT_URL=http://localhost:5173 npm run benchmark -- \
+  ../spacetime/chat-app-YYYYMMDD-HHMMSS/ \
+  --level=8
+```
+
+### Prompt Level Mapping
+| Prompt File | Level Flag |
+|-------------|------------|
+| `01_basic.md` | `--level=1` |
+| `05_scheduled_messages.md` | `--level=5` |
+| `08_edit_history.md` | `--level=8` |
+| `11_threading.md` | `--level=11` |
+
+---
+
+> **Next:** See `deployment.mdc` for deployment workflow and commands.

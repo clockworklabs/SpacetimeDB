@@ -32,7 +32,7 @@ pub use event::{Event, ReducerEvent, Status};
 pub use table::{Table, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
-pub use spacetimedb_client_api_messages::websocket::Compression;
+pub use spacetimedb_client_api_messages::websocket::v1::Compression;
 pub use spacetimedb_lib::{ConnectionId, Identity, ScheduleAt, TimeDuration, Timestamp, Uuid};
 pub use spacetimedb_sats::{i256, u256};
 
@@ -46,6 +46,7 @@ pub mod __codegen {
     pub use log;
     pub use spacetimedb_client_api_messages::websocket as __ws;
     pub use spacetimedb_lib as __lib;
+    pub use spacetimedb_query_builder as __query_builder;
     pub use spacetimedb_sats as __sats;
 
     pub use crate::callbacks::{CallbackId, DbCallbacks};
@@ -53,9 +54,10 @@ pub mod __codegen {
     pub use crate::db_connection::DbContextImpl;
     pub use crate::error::{Error, InternalError, Result};
     pub use crate::spacetime_module::{
-        parse_reducer_args, AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, ErrorContext, EventContext,
-        InModule, ProcedureEventContext, Reducer, ReducerEventContext, SpacetimeModule, SubscriptionEventContext,
-        SubscriptionHandle, TableUpdate,
+        parse_row_list_as_deletes, parse_row_list_as_inserts, transaction_update_iter_table_updates,
+        AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, ErrorContext, EventContext, InModule,
+        ProcedureEventContext, QueryBuilder, QueryTableAccessor, Reducer, ReducerEventContext, SpacetimeModule,
+        SubscriptionEventContext, SubscriptionHandle, TableUpdate,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{
@@ -71,5 +73,4 @@ pub mod unstable {
     //! These may change incompatibly without a major version bump.
     pub use crate::db_connection::set_connection_id;
     pub use crate::metrics::{ClientMetrics, CLIENT_METRICS};
-    pub use spacetimedb_client_api_messages::websocket::CallReducerFlags;
 }

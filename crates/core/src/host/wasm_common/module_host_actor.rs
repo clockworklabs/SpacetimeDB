@@ -19,7 +19,7 @@ use crate::host::{
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
-use crate::module_host_context::ModuleCreationContextLimited;
+use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
@@ -49,7 +49,10 @@ use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
@@ -157,7 +160,7 @@ impl ExecutionTimings {
 }
 
 /// The result that `__call_reducer__` produces during normal non-trap execution.
-pub type ReducerResult = Result<(), Box<str>>;
+pub type ReducerResult = Result<Option<Bytes>, Box<str>>;
 
 pub struct ExecutionStats {
     pub energy: EnergyStats,
@@ -192,7 +195,7 @@ pub struct ExecutionResult<T, E> {
     pub call_result: Result<T, E>,
 }
 
-pub type ReducerExecuteResult = ExecutionResult<(), ExecutionError>;
+pub type ReducerExecuteResult = ExecutionResult<Option<Bytes>, ExecutionError>;
 
 impl<T, E> ExecutionResult<T, E> {
     pub fn map_result<X, Y>(self, f: impl FnOnce(Result<T, E>) -> Result<X, Y>) -> ExecutionResult<X, Y> {
@@ -292,7 +295,7 @@ pub enum DescribeError {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(
-        mcc: ModuleCreationContextLimited,
+        mcc: ModuleCreationContext,
         module: T,
     ) -> Result<(Self, WasmModuleInstance<T::Instance>), InitializationError> {
         log::trace!(
@@ -492,12 +495,17 @@ pub struct InstanceCommon {
     energy_monitor: Arc<dyn EnergyMonitor>,
     allocated_memory: usize,
     metric_wasm_memory_bytes: IntGauge,
+    vm_metrics: AllVmMetrics,
 }
 
 impl InstanceCommon {
     pub(crate) fn new(module: &ModuleCommon) -> Self {
+        let info = module.info();
+        let vm_metrics = AllVmMetrics::new(&info);
+
         Self {
             info: module.info(),
+            vm_metrics,
             energy_monitor: module.energy_monitor(),
             // Will be updated on the first reducer call.
             allocated_memory: 0,
@@ -594,6 +602,7 @@ impl InstanceCommon {
                         caller_connection_id: None,
                         function_call: ModuleFunctionCall::update(),
                         status: EventStatus::Committed(DatabaseUpdate::default()),
+                        reducer_return_value: None,
                         energy_quanta_used: energy_quanta_used.into(),
                         host_execution_duration,
                         request_id: None,
@@ -641,7 +650,7 @@ impl InstanceCommon {
 
             for sub in tx.lookup_st_view_subs(view_id)? {
                 view_calls.push(CallViewParams {
-                    view_name: view_name.to_owned().into(),
+                    view_name: view_name.clone(),
                     view_id,
                     table_id,
                     fn_ptr: *fn_ptr,
@@ -674,7 +683,7 @@ impl InstanceCommon {
         // We've already validated by this point that the procedure exists,
         // so it's fine to use the panicking `procedure_by_id`.
         let procedure_def = self.info.module_def.procedure_by_id(procedure_id);
-        let procedure_name: &str = &procedure_def.name;
+        let procedure_name = &procedure_def.name;
 
         // TODO(observability): Add tracing spans, energy, metrics?
         // These will require further thinking once we implement procedure suspend/resume,
@@ -682,7 +691,7 @@ impl InstanceCommon {
 
         let op = ProcedureOp {
             id: procedure_id,
-            name: procedure_name.into(),
+            name: procedure_name.clone(),
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -790,10 +799,9 @@ impl InstanceCommon {
 
         let replica_ctx = inst.replica_ctx();
         let stdb = &*replica_ctx.relational_db.clone();
-        let database_identity = replica_ctx.database_identity;
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
-        let reducer_name = &*reducer_def.name;
+        let reducer_name = &reducer_def.name;
 
         // Do some `with_label_values`.
         // TODO(perf, centril): consider caching this.
@@ -812,17 +820,15 @@ impl InstanceCommon {
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let mut tx_slot = inst.tx_slot();
 
-        let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
+        let vm_metrics = self.vm_metrics.get_for_reducer_id(reducer_id);
         let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
 
         let (mut tx, result) = tx_slot.set(tx, || {
             self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
 
-        // Report the reducer execution metrics
-        vm_metrics.report_energy_used(result.stats.energy_used());
-        vm_metrics.report_total_duration(result.stats.total_duration());
-        vm_metrics.report_abi_duration(result.stats.abi_duration());
+        // Report execution metrics on each reducer call.
+        vm_metrics.report(&result.stats);
 
         // An outer error occurred.
         // This signifies a logic error in the module rather than a properly
@@ -832,11 +838,11 @@ impl InstanceCommon {
         // However, that does not necessarily apply to e.g., V8.
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let status = match result.call_result {
+        let (status, mut reducer_return_value) = match result.call_result {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                self.handle_outer_error(&result.stats.energy, reducer_name)
+                (self.handle_outer_error(&result.stats.energy, reducer_name), None)
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(
@@ -846,21 +852,21 @@ impl InstanceCommon {
                     &err,
                     &self.info.module_hash,
                 );
-                EventStatus::Failed(err.into())
+                (EventStatus::FailedUser(err.into()), None)
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            Ok(()) => {
+            Ok(return_value) => {
                 // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
                 // We handle OnConnect events before running the reducer.
                 let res = match reducer_def.lifecycle {
                     Some(Lifecycle::OnDisconnect) => {
-                        tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
+                        tx.delete_st_client(caller_identity, caller_connection_id, info.database_identity)
                     }
                     _ => Ok(()),
                 };
                 match res {
-                    Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
+                    Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
                         let err = err.to_string();
                         log_reducer_error(
@@ -870,7 +876,7 @@ impl InstanceCommon {
                             &err,
                             &self.info.module_hash,
                         );
-                        EventStatus::Failed(err)
+                        (EventStatus::FailedInternal(err), None)
                     }
                 }
             }
@@ -890,9 +896,12 @@ impl InstanceCommon {
 
         let status = match out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
-            ViewOutcome::Failed(err) => EventStatus::Failed(err),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
             ViewOutcome::Success => status,
         };
+        if !matches!(status, EventStatus::Committed(_)) {
+            reducer_return_value = None;
+        }
 
         let energy_quanta_used = result.stats.energy_used().into();
         let total_duration = result.stats.total_duration();
@@ -902,11 +911,12 @@ impl InstanceCommon {
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_string(),
+                reducer: Some(reducer_name.clone()),
                 reducer_id,
                 args,
             },
             status,
+            reducer_return_value,
             energy_quanta_used,
             host_execution_duration: total_duration,
             request_id,
@@ -932,7 +942,7 @@ impl InstanceCommon {
         if energy.remaining.get() == 0 {
             EventStatus::OutOfEnergy
         } else {
-            EventStatus::Failed("The instance encountered a fatal error.".into())
+            EventStatus::FailedInternal("The instance encountered a fatal error.".into())
         }
     }
 
@@ -991,7 +1001,7 @@ impl InstanceCommon {
                 sender,
                 auth,
                 request,
-                timer,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1006,7 +1016,7 @@ impl InstanceCommon {
                 sender,
                 auth,
                 subscribe,
-                timer,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1022,11 +1032,41 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-            ViewCommand::AddMultiSubscription {
+            ViewCommand::AddSubscriptionV2 {
+                sender,
+                auth,
+                request,
+                _timer: timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::RemoveSubscriptionV2 {
                 sender,
                 auth,
                 request,
                 timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::AddMultiSubscription {
+                sender,
+                auth,
+                request,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1037,7 +1077,6 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-
             ViewCommand::Sql {
                 db,
                 sql_text,
@@ -1117,13 +1156,10 @@ impl InstanceCommon {
             })
         });
 
-        let replica_ctx = inst.replica_ctx();
-        let stdb = &*replica_ctx.relational_db.clone();
-        let database_identity = replica_ctx.database_identity;
-        let vm_metrics = VmMetrics::new(&database_identity, &view_name);
-
-        // Report execution metrics on each view call
-        vm_metrics.report(&result.stats);
+        // Report execution metrics on each view call.
+        self.vm_metrics
+            .get_for_view_id(view_id, &self.info.database_identity, &view_name)
+            .report(&result.stats);
 
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
@@ -1166,6 +1202,8 @@ impl InstanceCommon {
                             .context("Error executing raw SQL returned by view".to_string())?,
                     };
 
+                    let replica_ctx = inst.replica_ctx();
+                    let stdb = &*replica_ctx.relational_db.clone();
                     let res = match sender {
                         Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
                         None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
@@ -1271,14 +1309,13 @@ impl InstanceCommon {
     ) -> (ViewCallResult, bool) {
         let view_calls = tx
             .view_for_update()
-            .cloned()
             .map(|info| {
                 let view_def = module_def
                     .get_view_by_id(info.fn_ptr, info.sender.is_none())
                     .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
 
                 CallViewParams {
-                    view_name: view_def.name.clone().into(),
+                    view_name: view_def.name.clone(),
                     view_id: info.view_id,
                     table_id: info.table_id,
                     fn_ptr: view_def.fn_ptr,
@@ -1338,7 +1375,71 @@ impl InstanceCommon {
         crate::host::scheduler::call_scheduled_function(&self.info.clone(), params, self, inst).await
     }
 }
+
+/// Pre-fetched VM metrics counters for all reducers and views in a module.
+/// Anonymous views have lazily fetched metrics counters.
+struct AllVmMetrics {
+    // We use a `Vec` here as the number of reducers + views
+    // will likely be lower than e.g., 128, which would take up a page (4096 / 32).
+    // TODO(perf, centril): Define a `VecMapWithFallback<N>`
+    // that falls back to `HashMap` when exceeding `N` entries.
+    // This could be useful elsewhere for e.g., TableId => X maps and similar.
+    counters: Vec<VmMetrics>,
+    num_reducers: u32,
+}
+
+impl AllVmMetrics {
+    /// Pre-fetch all vm metrics counters for the module in `info`.
+    fn new(info: &ModuleInfo) -> Self {
+        // These are the reducers:
+        let def = &info.module_def;
+        let reducers = def.reducer_ids_and_defs();
+        let num_reducers = reducers.len() as u32;
+        let reducers = reducers.map(|(_, def)| def.name());
+
+        // These are the views:
+        let views = def.views().map(|def| def.name());
+
+        // Pre-fetch the metrics for both:
+        let counters = reducers
+            .chain(views)
+            .map(|name| VmMetrics::new(&info.database_identity, name))
+            .collect();
+
+        Self { counters, num_reducers }
+    }
+
+    #[inline]
+    fn get_for_index(&self, index: u32) -> Option<VmMetrics> {
+        self.counters.get(index as usize).cloned()
+    }
+
+    /// Returns the vm metrics counters for `id`,
+    /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
+    #[inline]
+    fn get_for_reducer_id(&self, id: ReducerId) -> VmMetrics {
+        self.get_for_index(id.0)
+            .expect("all counters for reducers should've been pre-fetched")
+    }
+
+    /// Returns the vm metrics counters for `id`,
+    /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
+    #[inline]
+    fn get_for_view_id(&self, id: ViewId, identity: &Identity, name: &str) -> VmMetrics {
+        // Cosunters for the first view starts after counters for the last reducer.
+        self.get_for_index(self.num_reducers + id.0)
+            // For anonymous views, the `id` doesn't have pre-fetched counters available.
+            // Reducers shouldn't have to pay for adding an `Option` layer in the map,
+            // which would be necessary due to `id`s being random here,
+            // so just create `VmMetrics` on the fly instead.
+            // TODO(perf, centril): We could ostensibly add another map for anonymous views,
+            // but this doesn't seem to be a pressing performance concern at the moment.
+            .unwrap_or_else(|| VmMetrics::new(identity, name))
+    }
+}
+
 /// VM-related metrics for reducer execution.
+#[derive(Clone)]
 struct VmMetrics {
     /// The time spent executing a reducer + plus evaluating its subscription queries.
     reducer_plus_query_duration: Histogram,
@@ -1484,7 +1585,7 @@ fn lifecyle_modifications_to_tx(
 */
 
 pub trait InstanceOp {
-    fn name(&self) -> &str;
+    fn name(&self) -> &Identifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1492,7 +1593,7 @@ pub trait InstanceOp {
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
-    pub name: &'a str,
+    pub name: &'a Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1502,7 +1603,7 @@ pub struct ViewOp<'a> {
 }
 
 impl InstanceOp for ViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         self.name
     }
 
@@ -1523,7 +1624,7 @@ impl InstanceOp for ViewOp<'_> {
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
-    pub name: &'a str,
+    pub name: &'a Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1532,7 +1633,7 @@ pub struct AnonymousViewOp<'a> {
 }
 
 impl InstanceOp for AnonymousViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         self.name
     }
 
@@ -1554,7 +1655,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
 #[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
-    pub name: &'a str,
+    pub name: &'a ReducerName,
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
@@ -1563,8 +1664,8 @@ pub struct ReducerOp<'a> {
 }
 
 impl InstanceOp for ReducerOp<'_> {
-    fn name(&self) -> &str {
-        self.name
+    fn name(&self) -> &Identifier {
+        self.name.as_identifier()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1586,7 +1687,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
         }: ReducerOp<'_>,
     ) -> Self {
         Self {
-            name: name.to_owned(),
+            name: name.clone(),
             caller_identity: *caller_identity,
             caller_connection_id: *caller_connection_id,
             timestamp,
@@ -1599,7 +1700,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
 #[derive(Clone, Debug)]
 pub struct ProcedureOp {
     pub id: ProcedureId,
-    pub name: Box<str>,
+    pub name: Identifier,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,
@@ -1607,7 +1708,7 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         &self.name
     }
     fn timestamp(&self) -> Timestamp {

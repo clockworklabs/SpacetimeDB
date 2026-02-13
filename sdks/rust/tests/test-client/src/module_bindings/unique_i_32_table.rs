@@ -85,9 +85,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueI32>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueI32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<UniqueI32>", "TableUpdate")
             .with_cause(e)
@@ -122,5 +120,21 @@ impl<'ctx> UniqueI32NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i32) -> Option<UniqueI32> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueI32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_i32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueI32`.
+    fn unique_i32(&self) -> __sdk::__query_builder::Table<UniqueI32>;
+}
+
+impl unique_i32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_i32(&self) -> __sdk::__query_builder::Table<UniqueI32> {
+        __sdk::__query_builder::Table::new("unique_i32")
     }
 }

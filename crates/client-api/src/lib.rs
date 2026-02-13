@@ -204,7 +204,11 @@ pub struct DatabaseDef {
     pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
+    /// The optional identity of an existing database the database shall be a
+    /// child of.
     pub parent: Option<Identity>,
+    /// The optional identity of an organization the database shall belong to.
+    pub organization: Option<Identity>,
 }
 
 /// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
@@ -259,8 +263,9 @@ pub trait ControlStateReadAccess {
     async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -351,22 +356,26 @@ impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAc
         (**self).get_replicas().await
     }
 
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id).await
+    }
+
     // Energy
     async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         (**self).get_energy_balance(identity).await
     }
 
     // DNS
-    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
-        (**self).lookup_identity(domain).await
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_database_identity(domain).await
     }
 
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         (**self).reverse_lookup(database_identity).await
     }
 
-    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        (**self).get_leader_replica_by_database(database_id).await
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_namespace_owner(name).await
     }
 }
 
@@ -508,9 +517,12 @@ impl axum::response::IntoResponse for Unauthorized {
 }
 
 /// Action to be authorized via [Authorization::authorize_action].
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Action {
-    CreateDatabase { parent: Option<Identity> },
+    CreateDatabase {
+        parent: Option<Identity>,
+        organization: Option<Identity>,
+    },
     UpdateDatabase,
     ResetDatabase,
     DeleteDatabase,
@@ -521,9 +533,13 @@ pub enum Action {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CreateDatabase { parent } => match parent {
-                Some(parent) => write!(f, "create database with parent {}", parent),
-                None => f.write_str("create database"),
+            Self::CreateDatabase { parent, organization } => match (parent, organization) {
+                (Some(parent), Some(org)) => {
+                    write!(f, "create database with parent {} and organization {}", parent, org)
+                }
+                (Some(parent), None) => write!(f, "create database with parent {}", parent),
+                (None, Some(org)) => write!(f, "create database with organization {}", org),
+                (None, None) => f.write_str("create database"),
             },
             Self::UpdateDatabase => f.write_str("update database"),
             Self::ResetDatabase => f.write_str("reset database"),

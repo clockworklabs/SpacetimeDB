@@ -4,7 +4,7 @@ using SpacetimeDB.BSATN;
 
 public interface IView
 {
-    RawViewDefV9 MakeViewDef(ITypeRegistrar registrar);
+    RawViewDefV10 MakeViewDef(ITypeRegistrar registrar);
 
     // This one is not static because we need to be able to store IView in a list.
     byte[] Invoke(BinaryReader reader, IViewContext args);
@@ -12,7 +12,7 @@ public interface IView
 
 public interface IAnonymousView
 {
-    RawViewDefV9 MakeAnonymousViewDef(ITypeRegistrar registrar);
+    RawViewDefV10 MakeAnonymousViewDef(ITypeRegistrar registrar);
 
     // This one is not static because we need to be able to store IAnonymousView in a list.
     byte[] Invoke(BinaryReader reader, IAnonymousViewContext args);

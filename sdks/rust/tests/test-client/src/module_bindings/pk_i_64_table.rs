@@ -101,9 +101,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI64TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkI64>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkI64>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkI64>", "TableUpdate")
             .with_cause(e)
@@ -138,5 +136,21 @@ impl<'ctx> PkI64NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i64) -> Option<PkI64> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkI64`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_i64QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkI64`.
+    fn pk_i64(&self) -> __sdk::__query_builder::Table<PkI64>;
+}
+
+impl pk_i64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_i64(&self) -> __sdk::__query_builder::Table<PkI64> {
+        __sdk::__query_builder::Table::new("pk_i64")
     }
 }

@@ -102,7 +102,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ScheduledProcTableTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<ScheduledProcTable>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<ScheduledProcTable>", "TableUpdate")
@@ -138,5 +138,21 @@ impl<'ctx> ScheduledProcTableScheduledIdUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<ScheduledProcTable> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ScheduledProcTable`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait scheduled_proc_tableQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ScheduledProcTable`.
+    fn scheduled_proc_table(&self) -> __sdk::__query_builder::Table<ScheduledProcTable>;
+}
+
+impl scheduled_proc_tableQueryTableAccess for __sdk::QueryTableAccessor {
+    fn scheduled_proc_table(&self) -> __sdk::__query_builder::Table<ScheduledProcTable> {
+        __sdk::__query_builder::Table::new("scheduled_proc_table")
     }
 }

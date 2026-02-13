@@ -101,9 +101,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkU256>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkU256>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkU256>", "TableUpdate")
             .with_cause(e)
@@ -138,5 +136,21 @@ impl<'ctx> PkU256NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sats::u256) -> Option<PkU256> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkU256`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_u256QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkU256`.
+    fn pk_u256(&self) -> __sdk::__query_builder::Table<PkU256>;
+}
+
+impl pk_u256QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u256(&self) -> __sdk::__query_builder::Table<PkU256> {
+        __sdk::__query_builder::Table::new("pk_u256")
     }
 }

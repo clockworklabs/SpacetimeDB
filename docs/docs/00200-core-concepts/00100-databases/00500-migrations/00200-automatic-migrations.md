@@ -10,6 +10,10 @@ When you republish a module to an existing database using `spacetime publish {da
 The "schema" refers to the collection of tables, reducers, procedures, views, and the types they depend on that are declared in your module code.
 :::
 
+:::warning
+If you are upgrading an existing 1.x database to 2.0, review [1.x to 2.0 Upgrade Notes](/upgrade) before publishing.
+:::
+
 ## ✅ Safe Changes (Always Allowed)
 
 The following changes are always allowed and will not break existing clients:

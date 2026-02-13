@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using SpacetimeDB;
 
 #pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
@@ -94,7 +94,7 @@ public partial record CustomTaggedEnum
         string? NullableStringVariant
     )>;
 
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Event = true)]
 public partial class PrivateTable { }
 
 [SpacetimeDB.Table(Public = true)]
@@ -278,6 +278,12 @@ public class Module
     public static PublicTable? PublicTableByIdentity(ViewContext ctx)
     {
         return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
+    }
+
+    [SpacetimeDB.View(Name = "public_table_query", Public = true)]
+    public static Query<PublicTable> PublicTableQuery(ViewContext ctx)
+    {
+        return ctx.From.PublicTable().Where(cols => cols.Id.Eq(0)).Build();
     }
 
     [SpacetimeDB.View(Name = "find_public_table__by_identity", Public = true)]
