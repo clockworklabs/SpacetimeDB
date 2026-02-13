@@ -118,8 +118,11 @@ export type ClientTable<
     >
 >;
 
-type IsEventTable<TableDef extends UntypedTableDef> =
-  TableDef extends { isEvent: true } ? true : false;
+type IsEventTable<TableDef extends UntypedTableDef> = TableDef extends {
+  isEvent: true;
+}
+  ? true
+  : false;
 
 type HasPrimaryKey<TableDef extends UntypedTableDef> = ColumnsHavePrimaryKey<
   TableDef['columns']

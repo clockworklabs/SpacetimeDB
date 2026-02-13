@@ -3933,7 +3933,10 @@ mod tests {
         let mut tx2 = begin_mut_tx(&datastore);
         let row = u32_str_u32(1, "Bob", 25);
         let result = insert(&datastore, &mut tx2, table_id, &row);
-        assert!(result.is_ok(), "same PK in a new TX should succeed for event tables (no committed state)");
+        assert!(
+            result.is_ok(),
+            "same PK in a new TX should succeed for event tables (no committed state)"
+        );
         Ok(())
     }
 }

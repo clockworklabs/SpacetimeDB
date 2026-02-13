@@ -206,7 +206,10 @@ impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 ",
                 |out| {
-                    writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
+                    writeln!(
+                        out,
+                        "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});"
+                    );
                 },
                 "}",
             );
