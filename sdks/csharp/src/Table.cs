@@ -90,7 +90,7 @@ namespace SpacetimeDB
     /// </summary>
     /// <typeparam name="EventContext"></typeparam>
     /// <typeparam name="Row"></typeparam>
-    public abstract class RemoteTableHandle<EventContext, Row> : RemoteBase, IRemoteTableHandle
+    public abstract class RemoteTableHandleBase<EventContext, Row> : RemoteBase, IRemoteTableHandle
         where EventContext : class, IEventContext
         where Row : class, IStructuralReadWrite, new()
     {
@@ -110,7 +110,7 @@ namespace SpacetimeDB
         {
             private readonly Dictionary<Column, Row> cache = new();
 
-            public UniqueIndexBase(RemoteTableHandle<EventContext, Row> table)
+            public UniqueIndexBase(RemoteTableHandleBase<EventContext, Row> table)
             {
                 table.OnInternalInsert += row => cache.Add(GetKey(row), row);
                 table.OnInternalDelete += row => cache.Remove(GetKey(row));
@@ -125,7 +125,7 @@ namespace SpacetimeDB
             // TODO: change to SortedDictionary when adding support for range queries.
             private readonly Dictionary<Column, HashSet<Row>> cache = new();
 
-            public BTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
+            public BTreeIndexBase(RemoteTableHandleBase<EventContext, Row> table)
             {
                 table.OnInternalInsert += row =>
                 {
@@ -180,7 +180,7 @@ namespace SpacetimeDB
         /// </summary>
         internal bool IsEventTable { get; }
 
-        public RemoteTableHandle(IDbConnection conn, bool isEventTable = false) : base(conn)
+        public RemoteTableHandleBase(IDbConnection conn, bool isEventTable = false) : base(conn)
         {
             IsEventTable = isEventTable;
         }
@@ -209,7 +209,7 @@ namespace SpacetimeDB
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
 
-        // These are provided by RemoteTableHandle.
+        // These are provided by RemoteTableHandleBase.
         Type IRemoteTableHandle.ClientTableType => typeof(Row);
 
         // THE DATA IN THE TABLE.
@@ -420,26 +420,7 @@ namespace SpacetimeDB
             add => OnInsertHandler.AddListener(value);
             remove => OnInsertHandler.RemoveListener(value);
         }
-        private CustomRowEventHandler OnDeleteHandler { get; } = new();
-        public event RowEventHandler OnDelete
-        {
-            add => OnDeleteHandler.AddListener(value);
-            remove => OnDeleteHandler.RemoveListener(value);
-        }
-        private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
-        public event RowEventHandler OnBeforeDelete
-        {
-            add => OnBeforeDeleteHandler.AddListener(value);
-            remove => OnBeforeDeleteHandler.RemoveListener(value);
-        }
-
         public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
-        private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
-        public event UpdateEventHandler OnUpdate
-        {
-            add => OnUpdateHandler.AddListener(value);
-            remove => OnUpdateHandler.RemoveListener(value);
-        }
 
         public int Count => (int)Entries.CountDistinct;
 
@@ -460,41 +441,11 @@ namespace SpacetimeDB
             }
         }
 
-        void InvokeDelete(IEventContext context, IStructuralReadWrite row)
-        {
-            try
-            {
-                OnDeleteHandler.Invoke((EventContext)context, (Row)row);
-            }
-            catch (Exception e)
-            {
-                Log.Exception(e);
-            }
-        }
+        protected virtual void InvokeDelete(IEventContext context, IStructuralReadWrite row) { }
 
-        void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row)
-        {
-            try
-            {
-                OnBeforeDeleteHandler.Invoke((EventContext)context, (Row)row);
-            }
-            catch (Exception e)
-            {
-                Log.Exception(e);
-            }
-        }
+        protected virtual void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row) { }
 
-        void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow)
-        {
-            try
-            {
-                OnUpdateHandler.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
-            }
-            catch (Exception e)
-            {
-                Log.Exception(e);
-            }
-        }
+        protected virtual void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow) { }
 
         List<KeyValuePair<object, Row>> wasInserted = new();
         List<(object key, Row oldValue, Row newValue)> wasUpdated = new();
@@ -630,7 +581,7 @@ namespace SpacetimeDB
 
         }
 
-        private class CustomRowEventHandler
+        protected class CustomRowEventHandler
         {
             private EventListeners<RowEventHandler> Listeners { get; } = new();
 
@@ -645,7 +596,7 @@ namespace SpacetimeDB
             public void AddListener(RowEventHandler listener) => Listeners.Add(listener);
             public void RemoveListener(RowEventHandler listener) => Listeners.Remove(listener);
         }
-        private class CustomUpdateEventHandler
+        protected class CustomUpdateEventHandler
         {
             private EventListeners<UpdateEventHandler> Listeners { get; } = new();
 
@@ -663,22 +614,80 @@ namespace SpacetimeDB
     }
 
     /// <summary>
+    /// A table handle for persistent tables, exposing insert/delete/update callbacks.
+    /// </summary>
+    public abstract class RemoteTableHandle<EventContext, Row> : RemoteTableHandleBase<EventContext, Row>
+        where EventContext : class, IEventContext
+        where Row : class, IStructuralReadWrite, new()
+    {
+        protected RemoteTableHandle(IDbConnection conn) : base(conn) { }
+
+        private CustomRowEventHandler OnDeleteHandler { get; } = new();
+        public event RowEventHandler OnDelete
+        {
+            add => OnDeleteHandler.AddListener(value);
+            remove => OnDeleteHandler.RemoveListener(value);
+        }
+        private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
+        public event RowEventHandler OnBeforeDelete
+        {
+            add => OnBeforeDeleteHandler.AddListener(value);
+            remove => OnBeforeDeleteHandler.RemoveListener(value);
+        }
+        private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
+        public event UpdateEventHandler OnUpdate
+        {
+            add => OnUpdateHandler.AddListener(value);
+            remove => OnUpdateHandler.RemoveListener(value);
+        }
+
+        protected override void InvokeDelete(IEventContext context, IStructuralReadWrite row)
+        {
+            try
+            {
+                OnDeleteHandler.Invoke((EventContext)context, (Row)row);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
+
+        protected override void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row)
+        {
+            try
+            {
+                OnBeforeDeleteHandler.Invoke((EventContext)context, (Row)row);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
+
+        protected override void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow)
+        {
+            try
+            {
+                OnUpdateHandler.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
+    }
+
+    /// <summary>
     /// A table handle for event tables, which only expose OnInsert callbacks.
     /// Event tables do not persist rows in the client cache and do not support
     /// OnDelete, OnBeforeDelete, or OnUpdate callbacks.
     /// </summary>
-    public abstract class RemoteEventTableHandle<EventContext, Row> : RemoteTableHandle<EventContext, Row>
+    public abstract class RemoteEventTableHandle<EventContext, Row> : RemoteTableHandleBase<EventContext, Row>
         where EventContext : class, IEventContext
         where Row : class, IStructuralReadWrite, new()
     {
         protected RemoteEventTableHandle(IDbConnection conn) : base(conn, isEventTable: true) { }
-
-        // Hide delete/update events from the public API.
-        // The base class handlers still exist but will never have listeners registered,
-        // so invoking them in PostApply is a harmless no-op.
-        private new event RowEventHandler OnDelete { add { } remove { } }
-        private new event RowEventHandler OnBeforeDelete { add { } remove { } }
-        private new event UpdateEventHandler OnUpdate { add { } remove { } }
     }
 }
 #nullable disable
