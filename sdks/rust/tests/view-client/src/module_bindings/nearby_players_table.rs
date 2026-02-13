@@ -38,6 +38,7 @@ impl NearbyPlayersTableAccess for super::RemoteTables {
 }
 
 pub struct NearbyPlayersInsertCallbackId(__sdk::CallbackId);
+
 pub struct NearbyPlayersDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {

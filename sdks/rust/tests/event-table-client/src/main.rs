@@ -65,7 +65,7 @@ fn connect_then(
     let connected_result = test_counter.add_test("on_connect");
     let name = db_name_or_panic();
     let conn = DbConnection::builder()
-        .with_module_name(name)
+        .with_database_name(name)
         .with_uri(LOCALHOST)
         .on_connect(|ctx, _, _| {
             callback(ctx);

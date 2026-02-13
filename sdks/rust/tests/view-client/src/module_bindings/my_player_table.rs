@@ -38,6 +38,7 @@ impl MyPlayerTableAccess for super::RemoteTables {
 }
 
 pub struct MyPlayerInsertCallbackId(__sdk::CallbackId);
+
 pub struct MyPlayerDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for MyPlayerTableHandle<'ctx> {
