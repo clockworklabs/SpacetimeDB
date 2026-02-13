@@ -104,7 +104,8 @@ partial class RawModuleDefV10
                     TableAccess: table.TableAccess,
                     DefaultValues: defaults is null
                         ? []
-                        : new List<RawColumnDefaultValueV10>(defaults)
+                        : new List<RawColumnDefaultValueV10>(defaults),
+                    IsEvent: table.IsEvent
                 )
             );
         }

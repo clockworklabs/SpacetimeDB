@@ -214,6 +214,7 @@ record TableAccessor
 {
     public readonly string Name;
     public readonly bool IsPublic;
+    public readonly bool IsEvent;
     public readonly Scheduled? Scheduled;
 
     public TableAccessor(TableDeclaration table, AttributeData data, DiagReporter diag)
@@ -222,6 +223,7 @@ record TableAccessor
 
         Name = attr.Name ?? table.ShortName;
         IsPublic = attr.Public;
+        IsEvent = attr.Event;
         if (
             attr.Scheduled is { } reducer
             && table.GetColumnIndex(data, attr.ScheduledAt, diag) is { } scheduledAtIndex
@@ -749,7 +751,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     Sequences: {{{GenConstraintList(v, ColumnAttrs.AutoInc, $"{iTable}.MakeSequence")}}},
                     TableType: SpacetimeDB.Internal.TableType.User,
                     TableAccess: SpacetimeDB.Internal.TableAccess.{{{(v.IsPublic ? "Public" : "Private")}}},
-                    DefaultValues: []
+                    DefaultValues: [],
+                    IsEvent: {{{(v.IsEvent ? "true" : "false")}}}
                 );
 
                 public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => {{{(
