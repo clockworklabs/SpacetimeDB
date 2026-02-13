@@ -2356,7 +2356,7 @@ function validateName(name: string) {
 
 // Set user's name
 // Arguments: reducer name, argument types object, callback
-export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+export const setName = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -2366,7 +2366,7 @@ export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }
 });
 
 // Send a message
-export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
+export const sendMessage = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   if (!text) {
     throw new SenderError('Messages must not be empty');
   }
@@ -2430,13 +2430,13 @@ Views are read-only functions that return computed data from tables. Define view
 ```typescript
 // View that returns the caller's user (user-specific)
 // Uses spacetimedb.view() which provides ctx.sender
-export const my_user = spacetimedb.view({ name: 'my_user' }, ctx => {
+export const myUser = spacetimedb.view({ name: 'my_user' }, ctx => {
   return ctx.db.user.identity.find(ctx.sender);
 });
 
 // View that returns all online users (same for all callers)
 // Uses spacetimedb.anonymousView() - no access to ctx.sender
-export const online_users = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
+export const onlineUsers = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
   return ctx.db.user.filter(u => u.online);
 });
 ```

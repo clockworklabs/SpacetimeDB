@@ -213,12 +213,12 @@ const spacetimedb = schema({ player });
 export default spacetimedb;
 
 // Basic reducer
-export const create_player = spacetimedb.reducer({ username: t.string() }, (ctx, { username }) => {
+export const createPlayer = spacetimedb.reducer({ username: t.string() }, (ctx, { username }) => {
   ctx.db.player.insert({ id: 0n, username, score: 0 });
 });
 
 // With error handling
-export const update_score = spacetimedb.reducer({ id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
+export const updateScore = spacetimedb.reducer({ id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
   const player = ctx.db.player.id.find(id);
   if (!player) throw new Error('Player not found');
   player.score += points;
@@ -390,7 +390,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) { /* ... */ }
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: (): any => send_reminder },
+  { name: 'reminder', scheduled: (): any => sendReminder },
   {
     id: t.u64().primaryKey().autoInc(),
     message: t.string(),
@@ -398,7 +398,7 @@ const reminder = table(
   }
 );
 
-export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (ctx, { arg }) => {
+export const sendReminder = spacetimedb.reducer({ arg: reminder.rowType }, (ctx, { arg }) => {
   console.log(`Reminder: ${arg.message}`);
 });
 ```
@@ -473,7 +473,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder reminder) {
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const fetch_data = spacetimedb.procedure(
+export const fetchData = spacetimedb.procedure(
   { url: t.string() },
   t.string(),
   (ctx, { url }) => {
@@ -582,18 +582,18 @@ SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string
 
 ```typescript
 // Return single row
-export const my_player = spacetimedb.view({ name: 'my_player' }, {}, t.option(player.rowType), ctx => {
+export const myPlayer = spacetimedb.view({ name: 'my_player' }, {}, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
 // Return potentially multiple rows
-export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array(player.rowType), ctx => {
+export const topPlayers = spacetimedb.view({ name: 'top_players' }, {}, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
+export const bottomPlayers = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
 ```

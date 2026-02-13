@@ -187,8 +187,8 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
    *
    * @example
    * ```typescript
-   * // Define a reducer named 'create_user' that takes 'username' (string) and 'email' (string)
-   * export const create_user = spacetime.reducer(
+   * // Define a reducer named 'createUser' that takes 'username' (string) and 'email' (string)
+   * export const createUser = spacetime.reducer(
    *   {
    *     username: t.string(),
    *     email: t.string(),

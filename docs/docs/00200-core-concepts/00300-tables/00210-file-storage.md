@@ -32,7 +32,7 @@ const userAvatar = table(
 const spacetimedb = schema({ userAvatar });
 export default spacetimedb;
 
-export const upload_avatar = spacetimedb.reducer({
+export const uploadAvatar = spacetimedb.reducer({
   userId: t.u64(),
   mimeType: t.string(),
   data: t.array(t.u8()),
@@ -201,7 +201,7 @@ const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Called after uploading file to external storage
-export const register_document = spacetimedb.reducer({
+export const registerDocument = spacetimedb.reducer({
   filename: t.string(),
   mimeType: t.string(),
   sizeBytes: t.u64(),
@@ -391,7 +391,7 @@ const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Upload file to S3 and register in database
-export const upload_to_s3 = spacetimedb.procedure(
+export const uploadToS3 = spacetimedb.procedure(
   {
     filename: t.string(),
     contentType: t.string(),
@@ -603,7 +603,7 @@ For larger files, generate a pre-signed URL and let the client upload directly:
 
 ```typescript
 // Procedure returns a pre-signed URL for client-side upload
-export const get_upload_url = spacetimedb.procedure(
+export const getUploadUrl = spacetimedb.procedure(
   { filename: t.string(), contentType: t.string() },
   t.object('UploadInfo', { uploadUrl: t.string(), s3Key: t.string() }),
   (ctx, { filename, contentType }) => {
@@ -617,7 +617,7 @@ export const get_upload_url = spacetimedb.procedure(
 );
 
 // Client uploads directly to S3 using the pre-signed URL, then calls:
-export const confirm_upload = spacetimedb.reducer({ filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
+export const confirmUpload = spacetimedb.reducer({ filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
   ctx.db.document.insert({
     id: 0n,
     ownerId: ctx.sender,
