@@ -8,9 +8,9 @@ import TabItem from '@theme/TabItem';
 
 In many applications, particularly games and real-time systems, modules need to notify clients about things that happened without storing that information permanently. A combat system might need to tell clients "entity X took 50 damage" so they can display a floating damage number, but there is no reason to keep that record in the database after the moment has passed.
 
-Event tables provide exactly this capability. An event table is a table whose rows are ephemeral: they exist only for the duration of the transaction that created them. When the transaction commits, the rows are broadcast to subscribed clients and then discarded. Between transactions, the table is always empty.
+Event tables provide exactly this capability. An event table is a table whose rows are inserted and then immediately deleted by the database: they exist only for the duration of the transaction that created them. When the transaction commits, the rows are broadcast to subscribed clients and then deleted from the table. Between transactions, the table is always empty.
 
-From the module's perspective, event tables behave like regular tables during a reducer's execution. You insert rows, query them, and apply constraints just as you would with any other table. The difference is purely in what happens after the transaction completes: rather than merging the rows into the committed database state, SpacetimeDB publishes them to subscribers and throws them away.
+From the module's perspective, event tables behave like regular tables during a reducer's execution. You insert rows, query them, and apply constraints just as you would with any other table. The difference is purely in what happens after the transaction completes: rather than merging the rows into the committed database state, SpacetimeDB publishes them to subscribers and deletes them from the table. The inserts are still recorded in the commitlog, so a full history of events is preserved.
 
 ## Defining an Event Table
 
@@ -59,7 +59,7 @@ pub struct DamageEvent {
 </Tabs>
 
 :::note Changing the event flag
-Once a table has been published as an event table (or a regular table), the `event` flag cannot be changed in a subsequent module update. Attempting to convert a regular table to an event table or vice versa will produce a migration error. This restriction exists because the two table types have fundamentally different storage semantics.
+Once a table has been published as an event table (or a regular table), the `event` flag cannot be changed in a subsequent module update. Attempting to convert a regular table to an event table or vice versa will produce a migration error.
 :::
 
 ## Publishing Events
@@ -174,12 +174,6 @@ conn.db.damage_event().on_insert(|ctx, event| {
 ## How It Works
 
 Conceptually, every insert into an event table is a **noop**: an insert paired with an automatic delete. The result is that the table state never changes; it is always the empty set. This model has several consequences for how SpacetimeDB handles event tables internally.
-
-**Committed state.** Event table rows are never merged into the committed database state. When a transaction commits, SpacetimeDB records the inserts in the transaction's data but skips the step that would normally add them to the table's persistent storage.
-
-**Commitlog.** Event table inserts are still written to the commitlog. This ensures that the full history of events is preserved for future replay features. When replaying a commitlog on startup, inserts into event tables are treated as noops; they are acknowledged but do not produce any committed state.
-
-**Subscriptions.** Event tables are excluded from `SELECT * FROM *` wildcard subscriptions. To receive events from an event table, clients must explicitly subscribe to it by name. This prevents clients from being flooded with events they did not ask for.
 
 **Wire format.** Event tables require the v2 WebSocket protocol. Clients connected via the v1 protocol that attempt to subscribe to an event table will receive an error message directing them to upgrade.
 
