@@ -4,7 +4,7 @@ import type RawScheduleDefV10 from './autogen/raw_schedule_def_v_10_type';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
 import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
-import type { ReducerExport } from '../server';
+import type { ProcedureExport, ReducerExport } from '../server';
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
@@ -57,7 +57,7 @@ export type TableSchema<
    */
   readonly schedule?: {
     scheduleAtCol: number;
-    reducer: () => ReducerExport<any, any>;
+    reducer: () => ReducerExport<any, any> | ProcedureExport<any, any, any>;
   };
 };
 

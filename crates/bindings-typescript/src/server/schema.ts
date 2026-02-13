@@ -55,7 +55,11 @@ export class SchemaInner<
    * Maps ReducerExport objects to the name of the reducer.
    * Used for resolving the reducers of scheduled tables.
    */
-  reducerExports: Map<ReducerExport<UntypedSchemaDef, any>, string> = new Map();
+  functionExports: Map<
+    | ReducerExport<UntypedSchemaDef, any>
+    | ProcedureExport<UntypedSchemaDef, any, any>,
+    string
+  > = new Map();
   pendingSchedules: PendingSchedule[] = [];
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
@@ -74,9 +78,9 @@ export class SchemaInner<
 
   resolveSchedules() {
     for (const { reducer, scheduleAtCol, tableName } of this.pendingSchedules) {
-      const functionName = this.reducerExports.get(reducer());
+      const functionName = this.functionExports.get(reducer());
       if (functionName === undefined) {
-        const msg = `Table ${tableName} defines a schedule, but it seems like the associated reducer was not exported.`;
+        const msg = `Table ${tableName} defines a schedule, but it seems like the associated function was not exported.`;
         throw new TypeError(msg);
       }
       this.moduleDef.schedules.push({

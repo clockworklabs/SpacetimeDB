@@ -54,6 +54,10 @@ export function makeProcedureExport<
   procedureExport[exportContext] = ctx;
   procedureExport[registerExport] = (ctx, exportName) => {
     registerProcedure(ctx, name ?? exportName, params, ret, fn);
+    ctx.functionExports.set(
+      procedureExport as ProcedureExport<any, any, any>,
+      name ?? exportName
+    );
   };
 
   return procedureExport;

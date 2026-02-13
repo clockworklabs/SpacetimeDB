@@ -30,7 +30,7 @@ import type {
 } from './type_util';
 import { toPascalCase } from './util';
 import BinaryWriter from './binary_writer';
-import type { ReducerExport } from '../server';
+import type { ProcedureExport, ReducerExport, t } from '../server';
 import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
 
 export type AlgebraicTypeRef = number;
@@ -172,7 +172,13 @@ export type TableOpts<Row extends RowObj> = {
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
-  scheduled?: () => ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>;
+  scheduled?: () =>
+    | ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>
+    | ProcedureExport<
+        any,
+        { [k: string]: RowBuilder<RowObj> },
+        ReturnType<typeof t.unit>
+      >;
 };
 
 /**
