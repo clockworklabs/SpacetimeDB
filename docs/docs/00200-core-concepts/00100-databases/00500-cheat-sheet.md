@@ -647,7 +647,7 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-#view(accessor = bottom_players, public)]
+#[view(accessor = bottom_players, public)]
 fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|p| p.score.lt(1000))
 }
