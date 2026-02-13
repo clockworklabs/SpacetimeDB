@@ -160,10 +160,19 @@ pub trait StateView {
             .transpose()?;
 
         // Check if this table is an event table by looking up `st_event_table`.
-        let is_event = self
-            .iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, value_eq)?
-            .next()
-            .is_some();
+        //
+        // When restoring a pre-event-tables snapshot, `st_event_table` won't exist yet:
+        //   1. `restore_from_snapshot` restores pages and calls `schema_for_table_raw` (here)
+        //   2. `apply_history` replays the commit log
+        //   3. `migrate_system_tables` creates any missing system tables, including `st_event_table`
+        //
+        // We're in step 1, so `st_event_table` may not exist. Default to `false` in that case.
+        // After step 3 it will be a proper (empty) system table.
+        let is_event = match self.iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, value_eq) {
+            Ok(mut iter) => iter.next().is_some(),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => false,
+            Err(e) => return Err(e),
+        };
         Ok(TableSchema::new(
             table_id,
             table_name,
