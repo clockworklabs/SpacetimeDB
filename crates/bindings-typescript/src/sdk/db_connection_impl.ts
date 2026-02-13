@@ -61,6 +61,7 @@ import type { RowType, UntypedTableDef } from '../lib/table.ts';
 import { toCamelCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
+import type { TransactionUpdate } from './client_api/types.ts';
 
 export {
   DbConnectionBuilder,
@@ -460,6 +461,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return rows;
   }
 
+  // Take a bunch of table updates and ensure that there is at most one update per table.
   #mergeTableUpdates(
     updates: CacheTableUpdate<UntypedTableDef>[]
   ): CacheTableUpdate<UntypedTableDef>[] {
@@ -467,9 +469,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     for (const update of updates) {
       const ops = merged.get(update.tableName);
       if (ops) {
-        ops.push(...update.operations);
+        for (const op of update.operations) ops.push(op);
       } else {
-        merged.set(update.tableName, [...update.operations]);
+        merged.set(update.tableName, update.operations.slice());
       }
     }
     return Array.from(merged, ([tableName, operations]) => ({
@@ -576,6 +578,31 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return pendingCallbacks;
   }
 
+  #applyTransactionUpdates(
+    eventContext: EventContextInterface<RemoteModule>,
+    tu: TransactionUpdate
+  ): PendingCallback[] {
+    const all_updates: CacheTableUpdate<UntypedTableDef>[] = [];
+    for (const querySetUpdate of tu.querySets) {
+      const tableUpdates = this.#querySetUpdateToTableUpdates(querySetUpdate);
+      for (const update of tableUpdates) {
+        all_updates.push(update);
+      }
+      // TODO: When we have per-query storage, we will want to apply the per-query events here.
+    }
+    return this.#applyTableUpdates(
+      this.#mergeTableUpdates(all_updates),
+      eventContext
+    );
+    const callbacks = this.#applyTableUpdates(
+      this.#mergeTableUpdates(all_updates),
+      eventContext
+    );
+    for (const callback of callbacks) {
+      callback.cb();
+    }
+  }
+
   async #processMessage(data: Uint8Array): Promise<void> {
     const serverMessage = ServerMessage.deserialize(new BinaryReader(data));
     switch (serverMessage.tag) {
@@ -663,13 +690,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       case 'TransactionUpdate': {
         const event: Event<never> = { tag: 'UnknownTransaction' };
         const eventContext = this.#makeEventContext(event);
-        for (const querySetUpdate of serverMessage.value.querySets) {
-          const tableUpdates =
-            this.#querySetUpdateToTableUpdates(querySetUpdate);
-          const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
-          for (const callback of callbacks) {
-            callback.cb();
-          }
+        const callbacks = this.#applyTransactionUpdates(
+          eventContext,
+          serverMessage.value
+        );
+        for (const callback of callbacks) {
+          callback.cb();
         }
         break;
       }
@@ -677,13 +703,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const { requestId, result } = serverMessage.value;
 
         if (result.tag === 'Ok') {
-          const tableUpdates = result.value.transactionUpdate.querySets.flatMap(
-            qs => this.#querySetUpdateToTableUpdates(qs)
-          );
           // TODO: Fix this context.
           const event: Event<never> = { tag: 'UnknownTransaction' };
           const eventContext = this.#makeEventContext(event);
-          const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
+
+          const callbacks = this.#applyTransactionUpdates(
+            eventContext,
+            result.value.transactionUpdate
+          );
           for (const callback of callbacks) {
             callback.cb();
           }
