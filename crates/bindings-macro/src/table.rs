@@ -48,13 +48,14 @@ struct ScheduledArg {
 
 struct IndexArg {
     accessor: Ident,
-    name: Option<LitStr>,
+    //TODO: add canonical name
+    // name: Option<LitStr>,
     is_unique: bool,
     kind: IndexType,
 }
 
 impl IndexArg {
-    fn new(accessor: Ident, kind: IndexType, name: Option<LitStr>) -> Self {
+    fn new(accessor: Ident, kind: IndexType) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
@@ -62,7 +63,7 @@ impl IndexArg {
             accessor,
             is_unique,
             kind,
-            name,
+            //  name,
         }
     }
 }
@@ -168,7 +169,7 @@ impl ScheduledArg {
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let mut accessor = None;
-        let mut name = None;
+        let mut _name = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
@@ -178,9 +179,9 @@ impl IndexArg {
                     accessor = Some(meta.value()?.parse()?);
                 }
                 sym::name => {
-                    check_duplicate(&name, &meta)?;
+                    check_duplicate(&_name, &meta)?;
                     let litstr: LitStr = meta.value()?.parse()?;
-                    name = Some(litstr);
+                    _name = Some(litstr);
                 }
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
@@ -205,7 +206,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(accessor, kind, name))
+        Ok(IndexArg::new(accessor, kind))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -266,7 +267,7 @@ impl IndexArg {
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
         let mut accessor: Option<Ident> = None;
-        let mut name: Option<LitStr> = None;
+        let mut _name: Option<LitStr> = None;
         attr.parse_nested_meta(|meta| {
             match_meta!(match meta {
                 sym::btree => {
@@ -290,8 +291,8 @@ impl IndexArg {
                     accessor = Some(meta.value()?.parse()?);
                 }
                 sym::name => {
-                    check_duplicate(&name, &meta)?;
-                    name = Some(meta.value()?.parse()?);
+                    check_duplicate(&_name, &meta)?;
+                    _name = Some(meta.value()?.parse()?);
                 }
             });
             Ok(())
@@ -301,7 +302,7 @@ impl IndexArg {
 
         // Default accessor = field name if not provided
         let accessor = accessor.unwrap_or_else(|| field.clone());
-        Ok(IndexArg::new(accessor, kind, name))
+        Ok(IndexArg::new(accessor, kind))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -342,7 +343,7 @@ impl IndexArg {
             is_unique: self.is_unique,
             // This must be the canonical name (name used internally in database),
             // as it is used in `index_id_from_name` abi.
-            index_name: self.name.as_ref().map(|s| s.value()).unwrap_or_else(gen_index_name),
+            index_name: gen_index_name(),
             accessor_name: &self.accessor,
             kind,
         })
@@ -849,7 +850,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let columns = vec![accessor.clone()];
         args.indices.push(IndexArg {
             accessor,
-            name: None,
+            //name: None,
             is_unique: true,
             kind: IndexType::BTree { columns },
         })
