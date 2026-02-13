@@ -2382,9 +2382,9 @@ static class ModuleRegistration
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.
 #if EXPERIMENTAL_WASM_AOT
-    [UnmanagedCallersOnly(EntryPoint = "__describe_module_v10__")]
-    public static void __describe_module_v10__(SpacetimeDB.Internal.BytesSink d) =>
-        SpacetimeDB.Internal.Module.__describe_module_v10__(d);
+    [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
+    public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) =>
+        SpacetimeDB.Internal.Module.__describe_module__(d);
 
     [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
     public static SpacetimeDB.Internal.Errno __call_reducer__(

@@ -169,7 +169,7 @@ PREINIT(10, startup) {
 #define EXPORT_VOID(name, params, args...)                                    \
   EXPORT_WITH_MONO_RES(void, return;, name, params, args)                      \
 
-EXPORT_VOID(__describe_module_v10__, (BytesSink description), &description);
+EXPORT_VOID(__describe_module__, (BytesSink description), &description);
 
 EXPORT(int16_t, __call_reducer__,
        (uint32_t id,

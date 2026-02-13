@@ -375,7 +375,7 @@ public static class Module
 
 #pragma warning disable IDE1006 // Naming Styles - methods below are meant for FFI.
 
-    public static void __describe_module_v10__(BytesSink description)
+    public static void __describe_module__(BytesSink description)
     {
         try
         {
