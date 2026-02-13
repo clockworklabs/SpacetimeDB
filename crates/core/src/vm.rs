@@ -699,6 +699,7 @@ pub(crate) mod tests {
                 access,
                 None,
                 None,
+                false,
             ),
         )?;
         let schema = db.schema_for_table_mut(tx, table_id)?;
