@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "account";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class AccountIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Account row) => row.Id;
 
-                public IdUniqueIndex(AccountHandle table) : base(table) { }
+                public AccountIdIdxBtreeUniqueIndex(AccountHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly AccountIdIdxBtreeUniqueIndex AccountIdIdxBtree;
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class AccountIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Account row) => row.Identity;
 
-                public IdentityUniqueIndex(AccountHandle table) : base(table) { }
+                public AccountIdentityIdxBtreeUniqueIndex(AccountHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly AccountIdentityIdxBtreeUniqueIndex AccountIdentityIdxBtree;
 
             internal AccountHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
-                Identity = new(this);
+                AccountIdIdxBtree = new(this);
+                AccountIdentityIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Account row) => row.Id;

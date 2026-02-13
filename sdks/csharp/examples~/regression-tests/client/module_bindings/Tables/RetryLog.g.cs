@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "retry_log";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class RetryLogIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(RetryLog row) => row.Id;
 
-                public IdUniqueIndex(RetryLogHandle table) : base(table) { }
+                public RetryLogIdIdxBtreeUniqueIndex(RetryLogHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly RetryLogIdIdxBtreeUniqueIndex RetryLogIdIdxBtree;
 
             internal RetryLogHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
+                RetryLogIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(RetryLog row) => row.Id;
