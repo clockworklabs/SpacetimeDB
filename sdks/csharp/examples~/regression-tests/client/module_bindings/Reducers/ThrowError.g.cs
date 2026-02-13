@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void ThrowError(string error)
         {
-            conn.InternalCallReducer(new Reducer.ThrowError(error), this.SetCallReducerFlags.ThrowErrorFlags);
+            conn.InternalCallReducer(new Reducer.ThrowError(error));
         }
 
         public bool InvokeThrowError(ReducerEventContext ctx, Reducer.ThrowError args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "ThrowError";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags ThrowErrorFlags;
-        public void ThrowError(CallReducerFlags flags) => ThrowErrorFlags = flags;
     }
 }

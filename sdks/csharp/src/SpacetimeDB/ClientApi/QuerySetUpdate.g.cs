@@ -11,18 +11,25 @@ namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class DatabaseUpdate
+    public sealed partial class QuerySetUpdate
     {
+        [DataMember(Name = "query_set_id")]
+        public QuerySetId QuerySetId;
         [DataMember(Name = "tables")]
         public System.Collections.Generic.List<TableUpdate> Tables;
 
-        public DatabaseUpdate(System.Collections.Generic.List<TableUpdate> Tables)
+        public QuerySetUpdate(
+            QuerySetId QuerySetId,
+            System.Collections.Generic.List<TableUpdate> Tables
+        )
         {
+            this.QuerySetId = QuerySetId;
             this.Tables = Tables;
         }
 
-        public DatabaseUpdate()
+        public QuerySetUpdate()
         {
+            this.QuerySetId = new();
             this.Tables = new();
         }
     }

@@ -11,26 +11,26 @@ namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class QueryUpdate
+    public sealed partial class PersistentTableRows
     {
-        [DataMember(Name = "deletes")]
-        public BsatnRowList Deletes;
         [DataMember(Name = "inserts")]
         public BsatnRowList Inserts;
+        [DataMember(Name = "deletes")]
+        public BsatnRowList Deletes;
 
-        public QueryUpdate(
-            BsatnRowList Deletes,
-            BsatnRowList Inserts
+        public PersistentTableRows(
+            BsatnRowList Inserts,
+            BsatnRowList Deletes
         )
         {
-            this.Deletes = Deletes;
             this.Inserts = Inserts;
+            this.Deletes = Deletes;
         }
 
-        public QueryUpdate()
+        public PersistentTableRows()
         {
-            this.Deletes = new();
             this.Inserts = new();
+            this.Deletes = new();
         }
     }
 }

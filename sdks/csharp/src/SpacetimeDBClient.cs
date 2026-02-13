@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -112,14 +113,13 @@ namespace SpacetimeDB
         internal void AddOnConnectError(WebSocket.ConnectErrorEventHandler cb);
         internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
 
-        internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
-        internal QueryId? Subscribe(ISubscriptionHandle handle, string[] querySqls);
-        internal void Unsubscribe(QueryId queryId);
+        internal QuerySetId? Subscribe(ISubscriptionHandle handle, string[] querySqls);
+        internal void Unsubscribe(QuerySetId queryId);
         void FrameTick();
         void Disconnect();
 
         internal Task<T[]> RemoteQuery<T>(string query) where T : IStructuralReadWrite, new();
-        void InternalCallReducer<T>(T args, CallReducerFlags flags)
+        void InternalCallReducer<T>(T args)
             where T : IReducerArgs, new();
 
         void InternalCallProcedure<TArgs, TReturn>(
@@ -144,12 +144,6 @@ namespace SpacetimeDB
         public event Action<Exception>? onSendError;
 
         /// <summary>
-        /// Dictionary of legacy subscriptions, keyed by request ID rather than query ID.
-        /// Only used for `SubscribeToAllTables()`.
-        /// </summary>
-        private readonly Dictionary<uint, ISubscriptionHandle> legacySubscriptions = new();
-
-        /// <summary>
         /// Dictionary of subscriptions, keyed by query ID.
         /// </summary>
         private readonly Dictionary<uint, ISubscriptionHandle> subscriptions = new();
@@ -157,25 +151,65 @@ namespace SpacetimeDB
         /// <summary>
         /// Allocates query IDs.
         /// </summary>
-        private UintAllocator queryIdAllocator;
+        private UintAllocator querySetIdAllocator;
 
         public readonly ConnectionId ConnectionId = ConnectionId.Random();
         public Identity? Identity { get; private set; }
+        private ConnectionId? initialConnectionId;
+        private bool onConnectInvoked;
 
         internal WebSocket webSocket;
         private bool connectionClosed;
         public abstract Tables Db { get; }
 
-        protected abstract Reducer ToReducer(TransactionUpdate update);
         protected abstract IEventContext ToEventContext(Event<Reducer> Event);
         protected abstract IReducerEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent);
         protected abstract ISubscriptionEventContext MakeSubscriptionEventContext();
         protected abstract IErrorContext ToErrorContext(Exception errorContext);
         protected abstract IProcedureEventContext ToProcedureEventContext(ProcedureEvent procedureEvent);
 
-        private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
+        private readonly ConcurrentDictionary<uint, TaskCompletionSource<OneOffQueryResult>> waitingOneOffQueries = new();
+
+        private readonly ConcurrentDictionary<uint, PendingReducerCall> pendingReducerCalls = new();
+
+        private sealed class PendingReducerCall
+        {
+            public Reducer Reducer = default!;
+        }
 
         private readonly ProcedureCallbacks procedureCallbacks = new();
+
+        private void FailPendingOperations(Exception error)
+        {
+            foreach (var (requestId, _) in waitingOneOffQueries.ToArray())
+            {
+                if (waitingOneOffQueries.TryRemove(requestId, out var resultSource))
+                {
+                    resultSource.TrySetException(error);
+                }
+            }
+
+            pendingReducerCalls.Clear();
+
+            try
+            {
+                var procedureEvent = new ProcedureEvent(
+                    default,
+                    new ProcedureStatus.InternalError(error.Message),
+                    Identity ?? default,
+                    ConnectionId,
+                    default,
+                    0
+                );
+                var ctx = ToProcedureEventContext(procedureEvent);
+                procedureCallbacks.FailAll(ctx, error);
+            }
+            catch
+            {
+                // If we cannot construct a procedure context, still avoid retaining stale callbacks.
+                procedureCallbacks.Clear();
+            }
+        }
 
         private bool isClosing;
         private readonly Thread networkMessageParseThread;
@@ -185,9 +219,7 @@ namespace SpacetimeDB
         {
             var options = new WebSocket.ConnectOptions
             {
-                //v1.bin.spacetimedb
-                //v1.text.spacetimedb
-                Protocol = "v1.bsatn.spacetimedb"
+                Protocol = "v2.bsatn.spacetimedb"
             };
             webSocket = new WebSocket(options);
             webSocket.OnMessage += OnMessageReceived;
@@ -210,6 +242,7 @@ namespace SpacetimeDB
 #if !(UNITY_WEBGL && !UNITY_EDITOR)
             // For targets other than webgl we start a thread to parse messages
             networkMessageParseThread = new Thread(ParseMessages);
+            networkMessageParseThread.Name = "SpacetimeDB Network Thread";
             networkMessageParseThread.Start();
 #endif
         }
@@ -255,7 +288,6 @@ namespace SpacetimeDB
         private CancellationToken _parseCancellationToken => _parseCancellationTokenSource.Token;
 
         private static readonly Status Committed = new Status.Committed(default);
-        private static readonly Status OutOfEnergy = new Status.OutOfEnergy(default);
 
         /// <summary>
         /// Get a description of a message suitable for storing in the tracker metadata.
@@ -264,7 +296,8 @@ namespace SpacetimeDB
         /// <returns></returns>
         internal string TrackerMetadataForMessage(ServerMessage message) => message switch
         {
-            ServerMessage.TransactionUpdate(var transactionUpdate) => $"type={nameof(ServerMessage.TransactionUpdate)},reducer={transactionUpdate.ReducerCall.ReducerName}",
+            ServerMessage.TransactionUpdate(var transactionUpdate) => $"type={nameof(ServerMessage.TransactionUpdate)},query_sets={transactionUpdate.QuerySets.Count}",
+            ServerMessage.ReducerResult(var reducerResult) => $"type={nameof(ServerMessage.ReducerResult)},request_id={reducerResult.RequestId}",
             _ => $"type={message.GetType().Name}"
         };
 
@@ -274,6 +307,117 @@ namespace SpacetimeDB
         internal void ParseMessages()
 #endif
         {
+            static BsatnRowList EmptyRowList() => new(new RowSizeHint.RowOffsets(new()), new());
+
+            IEnumerable<(IRemoteTableHandle, TableUpdate)> GetTables(IEnumerable<TableUpdate> updates)
+            {
+                foreach (var update in updates)
+                {
+                    var tableName = update.TableName;
+                    var table = Db.GetTable(tableName);
+                    if (table == null)
+                    {
+                        Log.Error($"Unknown table name: {tableName}");
+                        continue;
+                    }
+                    yield return (table, update);
+                }
+            }
+
+            ParsedDatabaseUpdate ParseSubscribeRows(QueryRows queryRows)
+            {
+                var dbOps = ParsedDatabaseUpdate.New();
+                var empty = EmptyRowList();
+                foreach (var tableRows in queryRows.Tables)
+                {
+                    var table = Db.GetTable(tableRows.Table);
+                    if (table == null)
+                    {
+                        Log.Error($"Unknown table name: {tableRows.Table}");
+                        continue;
+                    }
+
+                    var update = new TableUpdate
+                    {
+                        TableName = tableRows.Table,
+                        Rows = new List<TableUpdateRows>
+                        {
+                            new TableUpdateRows.PersistentTable(
+                                new PersistentTableRows(tableRows.Rows, empty)
+                            )
+                        }
+                    };
+                    table.ParseInsertOnly(update, dbOps);
+                }
+                return dbOps;
+            }
+
+            ParsedDatabaseUpdate ParseUnsubscribeRows(QueryRows queryRows)
+            {
+                var dbOps = ParsedDatabaseUpdate.New();
+                var empty = EmptyRowList();
+                foreach (var tableRows in queryRows.Tables)
+                {
+                    var table = Db.GetTable(tableRows.Table);
+                    if (table == null)
+                    {
+                        Log.Error($"Unknown table name: {tableRows.Table}");
+                        continue;
+                    }
+
+                    var update = new TableUpdate
+                    {
+                        TableName = tableRows.Table,
+                        Rows = new List<TableUpdateRows>
+                        {
+                            new TableUpdateRows.PersistentTable(
+                                new PersistentTableRows(empty, tableRows.Rows)
+                            )
+                        }
+                    };
+                    table.ParseDeleteOnly(update, dbOps);
+                }
+                return dbOps;
+            }
+
+            ParsedDatabaseUpdate ParseTransactionUpdate(TransactionUpdate update)
+            {
+                var dbOps = ParsedDatabaseUpdate.New();
+                foreach (var set in update.QuerySets)
+                {
+                    foreach (var (table, tableUpdate) in GetTables(set.Tables))
+                    {
+                        table.Parse(tableUpdate, dbOps);
+                    }
+                }
+                return dbOps;
+            }
+
+            string DecodeReducerError(IReadOnlyList<byte> bytes)
+            {
+                try
+                {
+                    using var stream = new MemoryStream(bytes.ToArray());
+                    using var reader = new BinaryReader(stream);
+                    return new SpacetimeDB.BSATN.String().Read(reader);
+                }
+                catch
+                {
+                    return $"Reducer returned undecodable BSATN string bytes (len={bytes.Count})";
+                }
+            }
+
+            void ParseOneOffQuery(OneOffQueryResult resp)
+            {
+                if (!waitingOneOffQueries.TryRemove(resp.RequestId, out var resultSource))
+                {
+                    Log.Error($"Response to unknown one-off-query request_id: {resp.RequestId}");
+                    return;
+                }
+
+                resultSource.TrySetResult(resp);
+            }
+
             while (!isClosing)
             {
 
@@ -295,86 +439,17 @@ namespace SpacetimeDB
                     return; // Normal shutdown
 #endif
                 }
-            }
-
-            IEnumerable<(IRemoteTableHandle, TableUpdate)> GetTables(DatabaseUpdate updates)
-            {
-                foreach (var update in updates.Tables)
+                catch (Exception e)
                 {
-                    var tableName = update.TableName;
-                    var table = Db.GetTable(tableName);
-                    if (table == null)
-                    {
-                        Log.Error($"Unknown table name: {tableName}");
-                        continue;
-                    }
-                    yield return (table, update);
-                }
-            }
-
-            ParsedDatabaseUpdate ParseLegacySubscription(InitialSubscription initSub)
-            {
-                var dbOps = ParsedDatabaseUpdate.New();
-                // This is all of the inserts
-                int cap = initSub.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
-
-                // First apply all of the state
-                foreach (var (table, update) in GetTables(initSub.DatabaseUpdate))
-                {
-                    table.ParseInsertOnly(update, dbOps);
-                }
-                return dbOps;
-            }
-
-            /// <summary>
-            /// TODO: the dictionary is here for backwards compatibility and can be removed
-            /// once we get rid of legacy subscriptions.
-            /// </summary>
-            ParsedDatabaseUpdate ParseSubscribeMultiApplied(SubscribeMultiApplied subscribeMultiApplied)
-            {
-                var dbOps = ParsedDatabaseUpdate.New();
-                foreach (var (table, update) in GetTables(subscribeMultiApplied.Update))
-                {
-                    table.ParseInsertOnly(update, dbOps);
-                }
-                return dbOps;
-            }
-
-            ParsedDatabaseUpdate ParseUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied)
-            {
-                var dbOps = ParsedDatabaseUpdate.New();
-
-                foreach (var (table, update) in GetTables(unsubMultiApplied.Update))
-                {
-                    table.ParseDeleteOnly(update, dbOps);
-                }
-
-                return dbOps;
-            }
-
-            ParsedDatabaseUpdate ParseDatabaseUpdate(DatabaseUpdate updates)
-            {
-                var dbOps = ParsedDatabaseUpdate.New();
-
-                foreach (var (table, update) in GetTables(updates))
-                {
-                    table.Parse(update, dbOps);
-                }
-                return dbOps;
-            }
-
-            void ParseOneOffQuery(OneOffQueryResponse resp)
-            {
-                /// This case does NOT produce a list of DBOps, because it should not modify the client cache state!
-                var messageId = new Guid(resp.MessageId.ToArray());
-
-                if (!waitingOneOffQueries.Remove(messageId, out var resultSource))
-                {
-                    Log.Error($"Response to unknown one-off-query: {messageId}");
+                    Log.Exception(e);
+                    FailPendingOperations(new OperationCanceledException("Message parsing failed; connection closed.", e));
+                    Disconnect();
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    break;
+#else
                     return;
+#endif
                 }
-
-                resultSource.SetResult(resp);
             }
 
             ParsedMessage ParseMessage(UnparsedMessage unparsed)
@@ -391,85 +466,74 @@ namespace SpacetimeDB
 
                 switch (message)
                 {
-                    case ServerMessage.InitialSubscription(var initSub):
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(initSub.RequestId, unparsed.timestamp);
-                        dbOps = ParseLegacySubscription(initSub);
+                    case ServerMessage.InitialConnection:
                         break;
                     case ServerMessage.SubscribeApplied(var subscribeApplied):
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeApplied.RequestId, unparsed.timestamp);
+                        dbOps = ParseSubscribeRows(subscribeApplied.Rows);
                         break;
-                    case ServerMessage.SubscribeMultiApplied(var subscribeMultiApplied):
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeMultiApplied.RequestId, unparsed.timestamp);
-                        dbOps = ParseSubscribeMultiApplied(subscribeMultiApplied);
+                    case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeApplied.RequestId, unparsed.timestamp);
+                        if (unsubscribeApplied.Rows != null)
+                        {
+                            dbOps = ParseUnsubscribeRows(unsubscribeApplied.Rows);
+                        }
                         break;
                     case ServerMessage.SubscriptionError(var subscriptionError):
-                        // do nothing; main thread will warn.
                         if (subscriptionError.RequestId.HasValue)
                         {
                             stats.SubscriptionRequestTracker.FinishTrackingRequest(subscriptionError.RequestId.Value, unparsed.timestamp);
                         }
                         break;
-                    case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
-                        // do nothing; main thread will warn.
-                        break;
-                    case ServerMessage.UnsubscribeMultiApplied(var unsubscribeMultiApplied):
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeMultiApplied.RequestId, unparsed.timestamp);
-                        dbOps = ParseUnsubscribeMultiApplied(unsubscribeMultiApplied);
-                        break;
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
-                        // Convert the generic event arguments in to a domain specific event object
-                        var hostDuration = (TimeSpan)transactionUpdate.TotalHostExecutionDuration;
-                        stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={transactionUpdate.ReducerCall.ReducerName}");
-
-                        try
+                        dbOps = ParseTransactionUpdate(transactionUpdate);
+                        break;
+                    case ServerMessage.OneOffQueryResult(var resp):
+                        ParseOneOffQuery(resp);
+                        break;
+                    case ServerMessage.ReducerResult(var reducerResult):
+                        if (!stats.ReducerRequestTracker.FinishTrackingRequest(reducerResult.RequestId, unparsed.timestamp))
                         {
-                            reducerEvent = new(
-                                (DateTimeOffset)transactionUpdate.Timestamp,
-                                transactionUpdate.Status switch
-                                {
-                                    UpdateStatus.Committed => Committed,
-                                    UpdateStatus.OutOfEnergy => OutOfEnergy,
-                                    UpdateStatus.Failed(var reason) => new Status.Failed(reason),
-                                    _ => throw new InvalidOperationException()
-                                },
-                                transactionUpdate.CallerIdentity,
-                                transactionUpdate.CallerConnectionId,
-                                transactionUpdate.EnergyQuantaUsed.Quanta,
-                                ToReducer(transactionUpdate));
-                        }
-                        catch (Exception)
-                        {
-                            // Failing to parse the ReducerEvent is fine, it just means we should
-                            // call downstream stuff with an UnknownTransaction.
-                            // See ApplyMessage
+                            Log.Warn($"Failed to finish tracking reducer request: {reducerResult.RequestId}");
                         }
 
-                        var callerIdentity = transactionUpdate.CallerIdentity;
-                        if (callerIdentity == Identity && transactionUpdate.CallerConnectionId == ConnectionId)
+                        var reducerStatus = reducerResult.Result switch
                         {
-                            // This was a request that we initiated
-                            var requestId = transactionUpdate.ReducerCall.RequestId;
-                            // Make sure we mark the request as having finished when it came off the wire.
-                            // That's why we use unparsed.timestamp, rather than DateTime.UtcNow.
-                            // See ReducerRequestTracker's comment.
-                            if (!stats.ReducerRequestTracker.FinishTrackingRequest(requestId, unparsed.timestamp))
+                            ReducerOutcome.Ok => Committed,
+                            ReducerOutcome.Okmpty => Committed,
+                            ReducerOutcome.Err(var err) => new Status.Failed(DecodeReducerError(err)),
+                            ReducerOutcome.InternalError(var err) => new Status.Failed(err),
+                            _ => new Status.Failed("Unknown reducer result"),
+                        };
+
+                        if (reducerResult.Result is ReducerOutcome.Ok(var ok))
+                        {
+                            dbOps = ParseTransactionUpdate(ok.TransactionUpdate);
+                        }
+
+                        if (pendingReducerCalls.TryRemove(reducerResult.RequestId, out var pendingReducer))
+                        {
+                            try
                             {
-                                Log.Warn($"Failed to finish tracking reducer request: {requestId}");
+                                reducerEvent = new(
+                                    (DateTimeOffset)reducerResult.Timestamp,
+                                    reducerStatus,
+                                    Identity ?? throw new InvalidOperationException("Identity not set"),
+                                    ConnectionId,
+                                    null,
+                                    pendingReducer.Reducer);
+                            }
+                            catch (Exception)
+                            {
+                                // The local reducer request still completed; failure here should not block update apply.
                             }
                         }
-
-                        if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
+                        else
                         {
-                            dbOps = ParseDatabaseUpdate(committed);
+                            throw new InvalidOperationException(
+                                $"Reducer result for unknown request_id {reducerResult.RequestId}"
+                            );
                         }
-
-                        break;
-                    case ServerMessage.TransactionUpdateLight(var update):
-                        dbOps = ParseDatabaseUpdate(update.Update);
-                        break;
-                    case ServerMessage.IdentityToken(var identityToken):
-                        break;
-                    case ServerMessage.OneOffQueryResponse(var resp):
-                        ParseOneOffQuery(resp);
                         break;
                     case ServerMessage.ProcedureResult(var procedureResult):
                         procedureEvent = new ProcedureEvent(
@@ -502,6 +566,7 @@ namespace SpacetimeDB
         {
             isClosing = true;
             connectionClosed = true;
+            FailPendingOperations(new OperationCanceledException("Connection closed."));
 
             // Only try to close if the connection is active
             if (webSocket.IsConnected)
@@ -543,6 +608,12 @@ namespace SpacetimeDB
         void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads)
         {
             isClosing = false;
+            connectionClosed = false;
+            Identity = null;
+            initialConnectionId = null;
+            onConnectInvoked = false;
+            while (_parseQueue.TryTake(out _)) { }
+            while (_applyQueue.TryTake(out _)) { }
 
             uri = uri.Replace("http://", "ws://");
             uri = uri.Replace("https://", "wss://");
@@ -619,45 +690,25 @@ namespace SpacetimeDB
 
             switch (message)
             {
-                case ServerMessage.InitialSubscription(var initialSubscription):
+                case ServerMessage.SubscribeApplied(var subscribeApplied):
                     {
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
                         ApplyUpdate(legacyEventContext, dbOps);
-
-                        if (legacySubscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
+                        if (subscriptions.TryGetValue(subscribeApplied.QuerySetId.Id, out var subscription))
                         {
                             try
                             {
-                                subscription.OnApplied(eventContext, new SubscriptionAppliedType.LegacyActive(new()));
+                                subscription.OnApplied(eventContext);
                             }
                             catch (Exception e)
                             {
                                 Log.Exception(e);
                             }
                         }
-                        break;
-                    }
-
-                case ServerMessage.SubscribeApplied(var subscribeApplied):
-                    Log.Warn($"Unexpected SubscribeApplied (we only expect to get SubscribeMultiApplied): {subscribeApplied}");
-                    break;
-
-                case ServerMessage.SubscribeMultiApplied(var subscribeMultiApplied):
-                    {
-                        var eventContext = MakeSubscriptionEventContext();
-                        var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
-                        ApplyUpdate(legacyEventContext, dbOps);
-                        if (subscriptions.TryGetValue(subscribeMultiApplied.QueryId.Id, out var subscription))
+                        else
                         {
-                            try
-                            {
-                                subscription.OnApplied(eventContext, new SubscriptionAppliedType.Active(subscribeMultiApplied.QueryId));
-                            }
-                            catch (Exception e)
-                            {
-                                Log.Exception(e);
-                            }
+                            Log.Warn($"Received SubscribeApplied for unknown query_set_id={subscribeApplied.QuerySetId.Id}");
                         }
 
                         break;
@@ -672,39 +723,31 @@ namespace SpacetimeDB
                         var eventContext = ToErrorContext(exception);
                         var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeError(exception));
                         ApplyUpdate(legacyEventContext, dbOps);
-                        if (subscriptionError.QueryId.HasValue)
+                        if (subscriptions.TryGetValue(subscriptionError.QuerySetId.Id, out var subscription))
                         {
-                            if (subscriptions.TryGetValue(subscriptionError.QueryId.Value, out var subscription))
+                            try
                             {
-                                try
-                                {
-                                    subscription.OnError(eventContext);
-                                }
-                                catch (Exception e)
-                                {
-                                    Log.Exception(e);
-                                }
+                                subscription.OnError(eventContext);
+                            }
+                            catch (Exception e)
+                            {
+                                Log.Exception(e);
                             }
                         }
                         else
                         {
-                            Log.Warn("Received general subscription failure, disconnecting.");
-                            Disconnect();
+                            Log.Warn($"Received SubscriptionError for unknown query_set_id={subscriptionError.QuerySetId.Id}");
                         }
 
                         break;
                     }
 
                 case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
-                    Log.Warn($"Unexpected UnsubscribeApplied (we only expect to get UnsubscribeMultiApplied): {unsubscribeApplied}");
-                    break;
-
-                case ServerMessage.UnsubscribeMultiApplied(var unsubscribeMultiApplied):
                     {
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.UnsubscribeApplied());
                         ApplyUpdate(legacyEventContext, dbOps);
-                        if (subscriptions.TryGetValue(unsubscribeMultiApplied.QueryId.Id, out var subscription))
+                        if (subscriptions.TryGetValue(unsubscribeApplied.QuerySetId.Id, out var subscription))
                         {
                             try
                             {
@@ -715,18 +758,18 @@ namespace SpacetimeDB
                                 Log.Exception(e);
                             }
                         }
+
+                        subscriptions.Remove(unsubscribeApplied.QuerySetId.Id);
                     }
                     break;
 
-                case ServerMessage.TransactionUpdateLight(var update):
+                case ServerMessage.TransactionUpdate(var transactionUpdate):
                     {
-                        var eventContext = ToEventContext(new Event<Reducer>.UnknownTransaction());
-                        ApplyUpdate(eventContext, dbOps);
-
+                        var legacyEventContext = ToEventContext(new Event<Reducer>.Transaction());
+                        ApplyUpdate(legacyEventContext, dbOps);
                         break;
                     }
-
-                case ServerMessage.TransactionUpdate(var transactionUpdate):
+                case ServerMessage.ReducerResult(var reducerResult):
                     {
                         if (parsed.reducerEvent is { } reducerEvent)
                         {
@@ -734,7 +777,6 @@ namespace SpacetimeDB
                             ApplyUpdate(legacyEventContext, dbOps);
                             var eventContext = ToReducerEventContext(reducerEvent);
                             Dispatch(eventContext, reducerEvent.Reducer);
-                            // don't invoke OnUnhandledReducerError, that's [Obsolete].
                         }
                         else
                         {
@@ -743,11 +785,32 @@ namespace SpacetimeDB
                         }
                         break;
                     }
-                case ServerMessage.IdentityToken(var identityToken):
+                case ServerMessage.InitialConnection(var initialConnection):
                     try
                     {
-                        Identity = identityToken.Identity;
-                        onConnect?.Invoke(identityToken.Identity, identityToken.Token);
+                        if (Identity is Identity identity && identity != initialConnection.Identity)
+                        {
+                            throw new InvalidOperationException(
+                                $"Received InitialConnection with unexpected identity. Previous={identity}, New={initialConnection.Identity}"
+                            );
+                        }
+
+                        if (initialConnectionId is ConnectionId connectionId
+                            && connectionId != initialConnection.ConnectionId)
+                        {
+                            throw new InvalidOperationException(
+                                $"Received InitialConnection with unexpected connection_id. Previous={connectionId}, New={initialConnection.ConnectionId}"
+                            );
+                        }
+
+                        Identity = initialConnection.Identity;
+                        initialConnectionId = initialConnection.ConnectionId;
+                        if (!onConnectInvoked)
+                        {
+                            onConnectInvoked = true;
+                            onConnect?.Invoke(initialConnection.Identity, initialConnection.Token);
+                            onConnect = null;
+                        }
                     }
                     catch (Exception e)
                     {
@@ -755,7 +818,7 @@ namespace SpacetimeDB
                     }
                     break;
 
-                case ServerMessage.OneOffQueryResponse:
+                case ServerMessage.OneOffQueryResult:
                     /* OneOffQuery is async and handles its own responses */
                     break;
                 case ServerMessage.ProcedureResult(var procedureResult):
@@ -778,8 +841,7 @@ namespace SpacetimeDB
             _parseQueue.Add(new UnparsedMessage { bytes = bytes, timestamp = timestamp, parseQueueTrackerId = stats.ParseMessageQueueTracker.StartTrackingRequest() });
         }
 
-        // TODO: this should become [Obsolete] but for now is used by autogenerated code.
-        void IDbConnection.InternalCallReducer<T>(T args, CallReducerFlags flags)
+        void IDbConnection.InternalCallReducer<T>(T args)
         {
             if (!webSocket.IsConnected)
             {
@@ -787,11 +849,25 @@ namespace SpacetimeDB
                 return;
             }
 
+            var requestId = stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName);
+            if (args is not Reducer typedReducer)
+            {
+                throw new InvalidOperationException(
+                    $"Reducer arguments type {typeof(T).FullName} is not assignable to {typeof(Reducer).FullName}."
+                );
+            }
+
+            var encodedArgs = IStructuralReadWrite.ToBytes(args).ToList();
+            var pendingReducer = new PendingReducerCall
+            {
+                Reducer = typedReducer,
+            };
+            pendingReducerCalls[requestId] = pendingReducer;
             webSocket.Send(new ClientMessage.CallReducer(new CallReducer(
+                requestId,
+                0, // v2 parity with Rust SDK: always CallReducerFlags::Default.
                 args.ReducerName,
-                IStructuralReadWrite.ToBytes(args).ToList(),
-                stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
-                (byte)flags
+                encodedArgs
             )));
         }
 
@@ -810,33 +886,14 @@ namespace SpacetimeDB
             procedureCallbacks.RegisterCallback(requestId, callback);
 
             webSocket.Send(new ClientMessage.CallProcedure(new CallProcedure(
-                args.ProcedureName,
-                IStructuralReadWrite.ToBytes(args).ToList(),
                 requestId,
-                0 // flags - assuming default for now
+                0,
+                args.ProcedureName,
+                IStructuralReadWrite.ToBytes(args).ToList()
             )));
         }
 
-        void IDbConnection.LegacySubscribe(ISubscriptionHandle handle, string[] querySqls)
-        {
-            if (!webSocket.IsConnected)
-            {
-                Log.Error("Cannot subscribe, not connected to server!");
-                return;
-            }
-
-            var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
-            legacySubscriptions[id] = handle;
-            webSocket.Send(new ClientMessage.Subscribe(
-                new Subscribe
-                {
-                    RequestId = id,
-                    QueryStrings = querySqls.ToList()
-                }
-            ));
-        }
-
-        QueryId? IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
+        QuerySetId? IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
             {
@@ -847,17 +904,17 @@ namespace SpacetimeDB
             var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
             // We use a distinct ID from the request ID as a sanity check that we're not
             // casting request IDs to query IDs anywhere in the new code path.
-            var queryId = queryIdAllocator.Next();
-            subscriptions[queryId] = handle;
-            webSocket.Send(new ClientMessage.SubscribeMulti(
-                new SubscribeMulti
+            var querySetId = querySetIdAllocator.Next();
+            subscriptions[querySetId] = handle;
+            webSocket.Send(new ClientMessage.Subscribe(
+                new Subscribe
                 {
                     RequestId = id,
+                    QuerySetId = new QuerySetId(querySetId),
                     QueryStrings = querySqls.ToList(),
-                    QueryId = new QueryId(queryId),
                 }
             ));
-            return new QueryId(queryId);
+            return new QuerySetId(querySetId);
         }
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
@@ -867,21 +924,16 @@ namespace SpacetimeDB
 
         async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
         {
-            var messageId = Guid.NewGuid();
-            var resultSource = new TaskCompletionSource<OneOffQueryResponse>();
-            waitingOneOffQueries[messageId] = resultSource;
-
-            // unsanitized here, but writes will be prevented serverside.
-            // the best they can do is send multiple selects, which will just result in them getting no data back.
-
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
+            var resultSource = new TaskCompletionSource<OneOffQueryResult>();
+            waitingOneOffQueries[requestId] = resultSource;
+
             webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
             {
-                MessageId = messageId.ToByteArray().ToList(),
+                RequestId = requestId,
                 QueryString = query,
             }));
 
-            // Suspend for an arbitrary amount of time
             var result = await resultSource.Task;
 
             if (!stats.OneOffRequestTracker.FinishTrackingRequest(requestId))
@@ -891,28 +943,33 @@ namespace SpacetimeDB
 
             T[] LogAndThrow(string error)
             {
-                error = $"While processing one-off-query `{query}`, ID {messageId}: {error}";
+                error = $"While processing one-off-query `{query}`, request_id {requestId}: {error}";
                 Log.Error(error);
                 throw new Exception(error);
             }
 
-            // The server got back to us
-            if (result.Error != null && result.Error != "")
+            if (result.Result is Result<QueryRows, string>.ErrR(var err))
             {
-                return LogAndThrow($"Server error: {result.Error}");
+                return LogAndThrow($"Server error: {err}");
             }
 
-            if (result.Tables.Count != 1)
+            if (result.Result is not Result<QueryRows, string>.OkR(var rows))
             {
-                return LogAndThrow($"Expected a single table, but got {result.Tables.Count}");
+                return LogAndThrow("Unexpected one-off query result variant");
             }
 
-            var resultTable = result.Tables[0];
-            var cacheTable = Db.GetTable(resultTable.TableName);
+            var tables = rows.Tables;
+            if (tables.Count != 1)
+            {
+                return LogAndThrow($"Expected a single table, but got {tables.Count}");
+            }
+
+            var resultTable = tables[0];
+            var cacheTable = Db.GetTable(resultTable.Table);
 
             if (cacheTable?.ClientTableType != typeof(T))
             {
-                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
+                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.Table}");
             }
 
             var (resultReader, resultCount) = CompressionHelpers.ParseRowList(resultTable.Rows);
@@ -935,19 +992,20 @@ namespace SpacetimeDB
             }
         }
 
-        void IDbConnection.Unsubscribe(QueryId queryId)
+        void IDbConnection.Unsubscribe(QuerySetId queryId)
         {
             if (!subscriptions.ContainsKey(queryId.Id))
             {
-                Log.Warn($"Unsubscribing from a subscription that the DbConnection does not know about, with QueryId {queryId.Id}");
+                Log.Warn($"Unsubscribing from a subscription that the DbConnection does not know about, with QuerySetId {queryId.Id}");
             }
 
             var requestId = stats.SubscriptionRequestTracker.StartTrackingRequest();
 
-            webSocket.Send(new ClientMessage.UnsubscribeMulti(new()
+            webSocket.Send(new ClientMessage.Unsubscribe(new()
             {
                 RequestId = requestId,
-                QueryId = queryId
+                QuerySetId = queryId,
+                Flags = UnsubscribeFlags.SendDroppedRows,
             }));
 
         }

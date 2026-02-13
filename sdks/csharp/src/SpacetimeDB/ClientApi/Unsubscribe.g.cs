@@ -15,21 +15,25 @@ namespace SpacetimeDB.ClientApi
     {
         [DataMember(Name = "request_id")]
         public uint RequestId;
-        [DataMember(Name = "query_id")]
-        public QueryId QueryId;
+        [DataMember(Name = "query_set_id")]
+        public QuerySetId QuerySetId;
+        [DataMember(Name = "flags")]
+        public UnsubscribeFlags Flags;
 
         public Unsubscribe(
             uint RequestId,
-            QueryId QueryId
+            QuerySetId QuerySetId,
+            UnsubscribeFlags Flags
         )
         {
             this.RequestId = RequestId;
-            this.QueryId = QueryId;
+            this.QuerySetId = QuerySetId;
+            this.Flags = Flags;
         }
 
         public Unsubscribe()
         {
-            this.QueryId = new();
+            this.QuerySetId = new();
         }
     }
 }

@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void CircleDecay(SpacetimeDB.Types.CircleDecayTimer timer)
         {
-            conn.InternalCallReducer(new Reducer.CircleDecay(timer), this.SetCallReducerFlags.CircleDecayFlags);
+            conn.InternalCallReducer(new Reducer.CircleDecay(timer));
         }
 
         public bool InvokeCircleDecay(ReducerEventContext ctx, Reducer.CircleDecay args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "circle_decay";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags CircleDecayFlags;
-        public void CircleDecay(CallReducerFlags flags) => CircleDecayFlags = flags;
     }
 }
