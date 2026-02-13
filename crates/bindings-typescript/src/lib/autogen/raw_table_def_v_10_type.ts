@@ -38,4 +38,5 @@ export default __t.object('RawTableDefV10', {
   get defaultValues() {
     return __t.array(RawColumnDefaultValueV10);
   },
+  isEvent: __t.bool(),
 });
