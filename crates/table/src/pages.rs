@@ -1,13 +1,14 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use super::blob_store::BlobStore;
-use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
+use super::blob_store::{BlobHash, BlobStore};
+use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer};
 use super::page::Page;
 use super::page_pool::PagePool;
 use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
-use crate::MemoryUsage;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use spacetimedb_sats::layout::Size;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::ops::DerefMut;
 use thiserror::Error;
 
@@ -175,8 +176,8 @@ impl Pages {
     /// - `var_len_visitor` must be suitable for visiting var-len refs in `fixed_row`.
     /// - `fixed_row.len()` matches the row type size exactly.
     /// - `fixed_row.len()` is consistent
-    ///    with what has been passed to the manager in all other ops
-    ///    and must be consistent with the `var_len_visitor` the manager was made with.
+    ///   with what has been passed to the manager in all other ops
+    ///   and must be consistent with the `var_len_visitor` the manager was made with.
     // TODO(bikeshedding): rename to make purpose as bench interface clear?
     pub unsafe fn insert_row(
         &mut self,
@@ -263,7 +264,7 @@ impl Pages {
         &self,
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
-        blob_store: &mut dyn BlobStore,
+        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
         mut filter: impl FnMut(&Page, PageOffset) -> bool,
     ) -> Self {
         // Build a new container to hold the materialized view.
@@ -310,7 +311,7 @@ impl Pages {
                         &mut to_page,
                         fixed_row_size,
                         var_len_visitor,
-                        blob_store,
+                        blob_policy.as_mut(),
                         &mut filter,
                     )
                 };

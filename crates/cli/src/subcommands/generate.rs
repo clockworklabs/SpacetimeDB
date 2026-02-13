@@ -3,9 +3,12 @@
 use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
-use clap::ArgAction::Set;
+use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
-use spacetimedb_codegen::{generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::{
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
+    UnrealCpp, AUTO_GENERATED_PREFIX,
+};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
@@ -25,7 +28,7 @@ use std::io::Read;
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -35,6 +38,16 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("project_path")
                 .conflicts_with("build_options")
                 .help("The system path (absolute or relative) to the compiled wasm binary we should inspect"),
+        )
+        .arg(
+            Arg::new("js_file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("js-path")
+                .short('j')
+                .group("source")
+                .conflicts_with("project_path")
+                .conflicts_with("build_options")
+                .help("The system path (absolute or relative) to the bundled javascript file we should inspect"),
         )
         .arg(
             Arg::new("project_path")
@@ -57,16 +70,31 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("out_dir")
                 .value_parser(clap::value_parser!(PathBuf))
-                .required(true)
                 .long("out-dir")
                 .short('o')
-                .help("The system path (absolute or relative) to the generate output directory"),
+                .help("The system path (absolute or relative) to the generate output directory")
+                .required_if_eq("lang", "rust")
+                .required_if_eq("lang", "csharp")
+                .required_if_eq("lang", "typescript"),
+        )
+        .arg(
+            Arg::new("uproject_dir")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("uproject-dir")
+                .help("Path to the Unreal project directory, replaces --out-dir for Unreal generation (only used with --lang unrealcpp)")
+                .required_if_eq("lang", "unrealcpp")
         )
         .arg(
             Arg::new("namespace")
                 .default_value("SpacetimeDB.Types")
                 .long("namespace")
                 .help("The namespace that should be used"),
+        )
+        .arg(
+            Arg::new("module_name")
+                .long("module-name")
+                .help("The module name that should be used for DLL export macros (required for lang unrealcpp)")
+                .required_if_eq("lang", "unrealcpp")
         )
         .arg(
             Arg::new("lang")
@@ -84,8 +112,20 @@ pub fn cli() -> clap::Command {
                 .default_value("")
                 .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
         )
+        .arg(
+            Arg::new("include_private")
+                .long("include-private")
+                .action(SetTrue)
+                .default_value("false")
+                .help("Include private tables and functions in generated code (types are always included)."),
+        )
         .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")
+        .group(
+            clap::ArgGroup::new("output_dir")
+                .args(["out_dir", "uproject_dir"])
+                .required(true)
+        )
 }
 
 pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -100,16 +140,23 @@ pub async fn exec_ex(
 ) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
+    let js_file = args.get_one::<PathBuf>("js_file").cloned();
     let json_module = args.get_many::<PathBuf>("json_module");
-    let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
+    let module_name = args.get_one::<String>("module_name");
     let force = args.get_flag("force");
     let build_options = args.get_one::<String>("build_options").unwrap();
+    let include_private = args.get_flag("include_private");
 
     if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
         return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
     }
+
+    let out_dir = args
+        .get_one::<PathBuf>("out_dir")
+        .or_else(|| args.get_one::<PathBuf>("uproject_dir"))
+        .unwrap();
 
     let module: ModuleDef = if let Some(mut json_module) = json_module {
         let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = json_module.next() {
@@ -119,46 +166,78 @@ pub async fn exec_ex(
         };
         module.try_into()?
     } else {
-        let wasm_path = if let Some(path) = wasm_file {
+        let path = if let Some(path) = wasm_file {
+            println!("Skipping build. Instead we are inspecting {}", path.display());
+            path.clone()
+        } else if let Some(path) = js_file {
             println!("Skipping build. Instead we are inspecting {}", path.display());
             path.clone()
         } else {
-            build::exec_with_argstring(config.clone(), project_path, build_options).await?
+            let (path, _) = build::exec_with_argstring(config.clone(), project_path, build_options).await?;
+            path
         };
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.enable_steady_tick(std::time::Duration::from_millis(60));
-        spinner.set_message("Extracting schema from wasm...");
-        extract_descriptions(&wasm_path).context("could not extract schema")?
+        spinner.set_message(format!("Extracting schema from {}...", path.display()));
+        extract_descriptions(&path).context("could not extract schema")?
     };
+
+    let private_tables = private_table_names(&module);
+    if !private_tables.is_empty() && !include_private {
+        println!("Skipping private tables during codegen: {}.", private_tables.join(", "));
+    }
+
+    let mut options = CodegenOptions::default();
+    if include_private {
+        options.visibility = CodegenVisibility::IncludePrivate;
+    }
 
     fs::create_dir_all(out_dir)?;
 
     let mut paths = BTreeSet::new();
 
     let csharp_lang;
+    let unreal_cpp_lang;
     let gen_lang = match lang {
         Language::Csharp => {
             csharp_lang = Csharp { namespace };
             &csharp_lang as &dyn Lang
         }
+        Language::UnrealCpp => {
+            unreal_cpp_lang = UnrealCpp {
+                module_name: module_name.as_ref().unwrap(),
+                uproject_dir: out_dir,
+            };
+            &unreal_cpp_lang as &dyn Lang
+        }
         Language::Rust => &Rust,
         Language::TypeScript => &TypeScript,
     };
 
-    for (fname, code) in generate(&module, gen_lang) {
-        let fname = Path::new(&fname);
+    for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
+        let fname = Path::new(&filename);
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
         if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
+            println!("Creating directory {}", out_dir.join(parent).display());
             fs::create_dir_all(out_dir.join(parent))?;
         }
         let path = out_dir.join(fname);
-        fs::write(&path, code)?;
+        if !path.exists() || fs::read_to_string(&path)? != code {
+            println!("Writing file {}", path.display());
+            fs::write(&path, code)?;
+        }
         paths.insert(path);
     }
 
+    // For Unreal, we want to clean up just the module directory, not the entire uproject directory tree.
+    let cleanup_root = match lang {
+        Language::UnrealCpp => out_dir.join("Source").join(module_name.as_ref().unwrap()),
+        _ => out_dir.clone(),
+    };
+
     // TODO: We should probably just delete all generated files before we generate any, rather than selectively deleting some afterward.
     let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
-    let files_to_delete = walkdir::WalkDir::new(out_dir)
+    let files_to_delete = walkdir::WalkDir::new(&cleanup_root)
         .into_iter()
         .map(|entry_result| {
             let entry = entry_result?;
@@ -198,7 +277,7 @@ pub async fn exec_ex(
         }
     }
 
-    if let Err(err) = lang.format_files(paths) {
+    if let Err(err) = lang.format_files(out_dir, paths) {
         // If we couldn't format the files, print a warning but don't fail the entire
         // task as the output should still be usable, just less pretty.
         eprintln!("Could not format generated files: {err}");
@@ -208,32 +287,37 @@ pub async fn exec_ex(
     Ok(())
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Language {
     Csharp,
     TypeScript,
     Rust,
+    UnrealCpp,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust]
+        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
+            Self::UnrealCpp => PossibleValue::new("unrealcpp").aliases(["uecpp", "ue5cpp", "unreal"]),
         })
     }
 }
 
 impl Language {
-    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+    fn format_files(&self, project_dir: &Path, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
         match self {
             Language::Rust => rustfmt(generated_files)?,
-            Language::Csharp => dotnet_format(generated_files)?,
+            Language::Csharp => dotnet_format(project_dir, generated_files)?,
             Language::TypeScript => {
+                // TODO: implement formatting.
+            }
+            Language::UnrealCpp => {
                 // TODO: implement formatting.
             }
         }

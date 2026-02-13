@@ -1,0 +1,57 @@
+import { BinaryWriter, type Infer } from '../';
+import ServerMessage from './client_api/server_message_type';
+
+class WebsocketTestAdapter {
+  onclose: any;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  onopen!: Function;
+  onmessage: any;
+  onerror: any;
+
+  messageQueue: any[];
+  closed: boolean;
+
+  constructor() {
+    this.messageQueue = [];
+    this.closed = false;
+  }
+
+  send(message: any): void {
+    this.messageQueue.push(message);
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+
+  acceptConnection(): void {
+    this.onopen();
+  }
+
+  sendToClient(message: Infer<typeof ServerMessage>): void {
+    const writer = new BinaryWriter(1024);
+    ServerMessage.serialize(writer, message);
+    const rawBytes = writer.getBuffer();
+    // The brotli library's `compress` is somehow broken: it returns `null` for some inputs.
+    // See https://github.com/foliojs/brotli.js/issues/36, which is closed but not actually fixed.
+    // So we send the uncompressed data here, and in `spacetimedb.ts`,
+    // if compression fails, we treat the raw message as having been uncompressed all along.
+    // const data = compress(rawBytes);
+    this.onmessage({ data: rawBytes });
+  }
+
+  async createWebSocketFn(_args: {
+    url: URL;
+    wsProtocol: string;
+    nameOrAddress: string;
+    authToken?: string;
+    compression: 'gzip' | 'none';
+    lightMode: boolean;
+    confirmedReads?: boolean;
+  }): Promise<WebsocketTestAdapter> {
+    return this;
+  }
+}
+
+export type { WebsocketTestAdapter };
+export default WebsocketTestAdapter;

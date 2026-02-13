@@ -23,7 +23,7 @@ pub async fn database_identity(
     }
     spacetime_dns(config, name_or_identity, server)
         .await?
-        .with_context(|| format!("the dns resolution of `{name_or_identity}` failed."))
+        .with_context(|| format!("failed to find database `{name_or_identity}`."))
 }
 
 pub(crate) trait ResponseExt: Sized {
@@ -124,7 +124,7 @@ pub async fn spacetime_dns(
 }
 
 pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
-    let builder = reqwest::Client::new().get(format!("{}/v1/identity/public-key", url).as_str());
+    let builder = reqwest::Client::new().get(format!("{url}/v1/identity/public-key").as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
@@ -195,15 +195,28 @@ pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
 pub enum ModuleLanguage {
     Csharp,
     Rust,
+    Javascript,
+    Cpp,
 }
 impl clap::ValueEnum for ModuleLanguage {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::Rust]
+        &[Self::Csharp, Self::Rust, Self::Javascript, Self::Cpp]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs", "C#", "CSharp"])),
             Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "Rust"])),
+            Self::Javascript => Some(clap::builder::PossibleValue::new("typescript").aliases([
+                "JavaScript",
+                "javascript",
+                "js",
+                "TypeScript",
+                "ts",
+                "ECMAScript",
+                "ecmascript",
+                "es",
+            ])),
+            Self::Cpp => Some(clap::builder::PossibleValue::new("cpp").aliases(["c++", "cxx", "C++", "Cpp"])),
         }
     }
 }
@@ -219,6 +232,10 @@ pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLa
         .any(|entry| entry.unwrap().path().extension() == Some("csproj".as_ref()))
     {
         Ok(ModuleLanguage::Csharp)
+    } else if path_to_project.join("package.json").exists() {
+        Ok(ModuleLanguage::Javascript)
+    } else if path_to_project.join("CMakeLists.txt").exists() {
+        Ok(ModuleLanguage::Cpp)
     } else {
         anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
     }
@@ -230,12 +247,12 @@ pub fn url_to_host_and_protocol(url: &str) -> anyhow::Result<(&str, &str)> {
         let host = url.split("://").last().unwrap();
 
         if !VALID_PROTOCOLS.contains(&protocol) {
-            Err(anyhow::anyhow!("Invalid protocol: {}", protocol))
+            Err(anyhow::anyhow!("Invalid protocol: {protocol}"))
         } else {
             Ok((host, protocol))
         }
     } else {
-        Err(anyhow::anyhow!("Invalid url: {}", url))
+        Err(anyhow::anyhow!("Invalid url: {url}"))
     }
 }
 
@@ -261,20 +278,11 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
         return Ok(true);
     }
     let mut input = String::new();
-    print!("{} [y/N]", prompt);
+    print!("{prompt} [y/N]");
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
     Ok(input == "y" || input == "yes")
-}
-
-pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &str) -> anyhow::Result<T> {
-    res.with_context(|| {
-        format!(
-            "Identity {identity} is not valid for server {server}.
-Please log back in with `spacetime logout` and then `spacetime login`."
-        )
-    })
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
@@ -283,7 +291,7 @@ pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
     let token_parts: Vec<_> = token.split('.').collect();
     if token_parts.len() != 3 {
-        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {}", token));
+        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {token}"));
     }
     let decoded_bytes = BASE_64_STD_NO_PAD.decode(token_parts[1])?;
     let decoded_string = String::from_utf8(decoded_bytes)?;
@@ -314,10 +322,10 @@ pub async fn get_login_token_or_log_in(
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false).await
+        spacetimedb_login_force(config, &host, false, true).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;
-        spacetimedb_login_force(config, &host, true).await
+        spacetimedb_login_force(config, &host, true, true).await
     }
 }
 

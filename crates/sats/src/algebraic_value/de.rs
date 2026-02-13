@@ -173,12 +173,12 @@ impl SumAccess {
     }
 }
 
-impl de::SumAccess<'_> for SumAccess {
+impl<'de> de::SumAccess<'de> for SumAccess {
     type Error = ValueDeserializeError;
 
     type Variant = ValueDeserializer;
 
-    fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let tag = visitor.visit_tag(self.sum.tag)?;
         let val = *self.sum.value;
         Ok((tag, ValueDeserializer { val }))
@@ -313,7 +313,7 @@ impl<'de> de::SumAccess<'de> for &'de SumAccess {
 
     type Variant = &'de ValueDeserializer;
 
-    fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let tag = visitor.visit_tag(self.sum.tag)?;
         Ok((tag, ValueDeserializer::from_ref(&self.sum.value)))
     }

@@ -6,17 +6,15 @@ use pretty_assertions::assert_matches;
 use rand::seq::IndexedRandom as _;
 use spacetimedb::{
     db::{
-        datastore::locking_tx_datastore::datastore::Locking,
-        relational_db::{
-            tests_utils::{TempReplicaDir, TestDB},
-            SNAPSHOT_FREQUENCY,
-        },
+        relational_db::{tests_utils::TestDB, Persistence, SNAPSHOT_FREQUENCY},
+        snapshot::{self, SnapshotWorker},
     },
     error::DBError,
-    execution_context::Workload,
     Identity,
 };
-use spacetimedb_durability::{EmptyHistory, TxOffset};
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
+use spacetimedb_durability::{EmptyHistory, NoDurability, TxOffset};
 use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_lib::{
     bsatn,
@@ -25,7 +23,7 @@ use spacetimedb_lib::{
 };
 use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::product;
+use spacetimedb_sats::{product, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::ModuleDef,
     schema::{Schema as _, TableSchema},
@@ -60,7 +58,7 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     assert_eq!(stats.objects_written, total_objects);
 
     // Assert that the copied snapshot is valid.
-    let pool = PagePool::default();
+    let pool = PagePool::new_for_test();
     let dst_snapshot_full = dst_repo.read_snapshot(src.offset, &pool)?;
     Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
 
@@ -229,9 +227,17 @@ impl SourceSnapshot {
 
 async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffset> {
     let start = Instant::now();
-    let mut watch = spawn_blocking(|| {
-        let tmp = TempReplicaDir::new()?;
-        let db = TestDB::open_db(&tmp, EmptyHistory::new(), None, Some(repo), 0)?;
+    let rt = tokio::runtime::Handle::current();
+    // NOTE: `_db` needs to stay alive until the snapshot is taken,
+    // because the snapshot worker holds only a weak reference.
+    let (mut watch, _db) = spawn_blocking(|| {
+        let persistence = Persistence {
+            durability: Arc::new(NoDurability::default()),
+            disk_size: Arc::new(|| Ok(<_>::default())),
+            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
+            runtime: rt,
+        };
+        let db = TestDB::open_db(EmptyHistory::new(), Some(persistence), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
 
         let table_id = db.with_auto_commit(Workload::Internal, |tx| {
@@ -247,13 +253,13 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
             })?;
         }
 
-        Ok::<_, DBError>(watch)
+        Ok::<_, DBError>((watch, db))
     })
     .await
     .unwrap()?;
 
-    let mut snapshot_offset = 0;
-    while watch.changed().await.is_ok() {
+    let mut snapshot_offset = *watch.borrow();
+    while snapshot_offset < SNAPSHOT_FREQUENCY && watch.changed().await.is_ok() {
         snapshot_offset = *watch.borrow_and_update();
     }
     assert!(snapshot_offset >= SNAPSHOT_FREQUENCY);
@@ -265,9 +271,13 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     Ok(snapshot_offset)
 }
 
-fn table(name: &str, columns: ProductType, f: impl FnOnce(RawTableDefBuilder) -> RawTableDefBuilder) -> TableSchema {
+fn table(
+    name: &str,
+    columns: ProductType,
+    f: impl FnOnce(RawTableDefBuilder<'_>) -> RawTableDefBuilder,
+) -> TableSchema {
     let mut builder = RawModuleDefV9Builder::new();
-    f(builder.build_table_with_new_type(name, columns, true));
+    f(builder.build_table_with_new_type(RawIdentifier::new(name), columns, true));
     let raw = builder.finish();
     let def: ModuleDef = raw.try_into().expect("table validation failed");
     let table = def.table(name).expect("table not found");

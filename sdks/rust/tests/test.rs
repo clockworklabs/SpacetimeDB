@@ -1,0 +1,452 @@
+macro_rules! declare_tests_with_suffix {
+    ($lang:ident, $suffix:literal) => {
+        mod $lang {
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = concat!("sdk-test", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
+                    .build()
+            }
+
+            #[test]
+            fn insert_primitive() {
+                make_test("insert-primitive").run();
+            }
+
+            #[test]
+            fn subscribe_and_cancel() {
+                make_test("subscribe-and-cancel").run();
+            }
+
+            #[test]
+            fn subscribe_and_unsubscribe() {
+                make_test("subscribe-and-unsubscribe").run();
+            }
+
+            #[test]
+            fn subscription_error_smoke_test() {
+                make_test("subscription-error-smoke-test").run();
+            }
+            #[test]
+            fn delete_primitive() {
+                make_test("delete-primitive").run();
+            }
+
+            #[test]
+            fn update_primitive() {
+                make_test("update-primitive").run();
+            }
+
+            #[test]
+            fn insert_identity() {
+                make_test("insert-identity").run();
+            }
+
+            #[test]
+            fn insert_caller_identity() {
+                make_test("insert-caller-identity").run();
+            }
+
+            #[test]
+            fn delete_identity() {
+                make_test("delete-identity").run();
+            }
+
+            #[test]
+            fn update_identity() {
+                make_test("delete-identity").run();
+            }
+
+            #[test]
+            fn insert_connection_id() {
+                make_test("insert-connection-id").run();
+            }
+
+            #[test]
+            fn insert_caller_connection_id() {
+                make_test("insert-caller-connection-id").run();
+            }
+
+            #[test]
+            fn delete_connection_id() {
+                make_test("delete-connection-id").run();
+            }
+
+            #[test]
+            fn update_connection_id() {
+                make_test("delete-connection-id").run();
+            }
+
+            #[test]
+            fn insert_timestamp() {
+                make_test("insert-timestamp").run();
+            }
+
+            #[test]
+            fn insert_call_uuid_v4() {
+                make_test("insert-call-uuid-v4").run();
+            }
+
+            #[test]
+            fn insert_call_uuid_v7() {
+                make_test("insert-call-uuid-v7").run();
+            }
+
+            #[test]
+            fn insert_uuid() {
+                make_test("insert-uuid").run();
+            }
+
+            #[test]
+            fn delete_uuid() {
+                make_test("delete-uuid").run();
+            }
+
+            #[test]
+            fn update_uuid() {
+                make_test("delete-uuid").run();
+            }
+
+            #[test]
+            fn on_reducer() {
+                make_test("on-reducer").run();
+            }
+
+            #[test]
+            fn fail_reducer() {
+                make_test("fail-reducer").run();
+            }
+
+            #[test]
+            fn insert_vec() {
+                make_test("insert-vec").run();
+            }
+
+            #[test]
+            fn insert_option_some() {
+                make_test("insert-option-some").run();
+            }
+
+            #[test]
+            fn insert_option_none() {
+                make_test("insert-option-none").run();
+            }
+
+            #[test]
+            fn insert_struct() {
+                make_test("insert-struct").run();
+            }
+
+            #[test]
+            fn insert_simple_enum() {
+                make_test("insert-simple-enum").run();
+            }
+
+            #[test]
+            fn insert_enum_with_payload() {
+                make_test("insert-enum-with-payload").run();
+            }
+
+            #[test]
+            fn insert_delete_large_table() {
+                make_test("insert-delete-large-table").run();
+            }
+
+            #[test]
+            fn insert_primitives_as_strings() {
+                make_test("insert-primitives-as-strings").run();
+            }
+
+            // #[test]
+            // fn resubscribe() {
+            //     make_test("resubscribe").run();
+            // }
+
+            #[test]
+            #[should_panic]
+            fn should_fail() {
+                make_test("should-fail").run();
+            }
+
+            #[test]
+            fn reauth() {
+                make_test("reauth-part-1").run();
+                make_test("reauth-part-2").run();
+            }
+
+            #[test]
+            fn reconnect_different_connection_id() {
+                make_test("reconnect-different-connection-id").run();
+            }
+
+            #[test]
+            fn connect_disconnect_callbacks() {
+                Test::builder()
+                    .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
+                    .with_module(concat!("sdk-test-connect-disconnect", $suffix))
+                    .with_client(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/tests/connect_disconnect_client"
+                    ))
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command("cargo run")
+                    .build()
+                    .run();
+            }
+
+            #[test]
+            fn caller_always_notified() {
+                make_test("caller-always-notified").run();
+            }
+
+            #[test]
+            // This test is currently broken due to our use of `with_generate_private_items(true)`.
+            // Codegen will include private tables in the list of all tables,
+            // meaning `subscribe_to_all_tables` will attempt to subscribe to private tables,
+            // which will fail due to the client not being privileged.
+            // TODO: once all modules are updated for `RawModuleDefV10`, disable generating private items in `make_test`,
+            // and re-enable this test.
+            // Alternatively, either split this test out into a separate module/client pair which runs only against V10 modules,
+            // or mark every table in the `sdk-test` family of modules `public`.
+            #[should_panic]
+            fn subscribe_all_select_star() {
+                make_test("subscribe-all-select-star").run();
+            }
+
+            #[test]
+            fn caller_alice_receives_reducer_callback_but_not_bob() {
+                make_test("caller-alice-receives-reducer-callback-but-not-bob").run();
+            }
+
+            #[test]
+            fn row_deduplication() {
+                make_test("row-deduplication").run();
+            }
+
+            #[test]
+            fn row_deduplication_join_r_and_s() {
+                make_test("row-deduplication-join-r-and-s").run();
+            }
+
+            #[test]
+            fn row_deduplication_r_join_s_and_r_join_t8() {
+                make_test("row-deduplication-r-join-s-and-r-joint").run();
+            }
+
+            #[test]
+            fn test_lhs_join_update() {
+                make_test("test-lhs-join-update").run()
+            }
+
+            #[test]
+            fn test_lhs_join_update_disjoint_queries() {
+                make_test("test-lhs-join-update-disjoint-queries").run()
+            }
+
+            #[test]
+            fn test_intra_query_bag_semantics_for_join() {
+                make_test("test-intra-query-bag-semantics-for-join").run()
+            }
+
+            #[test]
+            fn two_different_compression_algos() {
+                make_test("two-different-compression-algos").run();
+            }
+
+            #[test]
+            fn test_parameterized_subscription() {
+                make_test("test-parameterized-subscription").run();
+            }
+
+            #[test]
+            fn test_rls_subscription() {
+                make_test("test-rls-subscription").run()
+            }
+
+            #[test]
+            fn pk_simple_enum() {
+                make_test("pk-simple-enum").run();
+            }
+
+            #[test]
+            fn indexed_simple_enum() {
+                make_test("indexed-simple-enum").run();
+            }
+
+            #[test]
+            fn overlapping_subscriptions() {
+                make_test("overlapping-subscriptions").run();
+            }
+
+            #[test]
+            fn sorted_uuids_insert() {
+                make_test("sorted-uuids-insert").run();
+            }
+        }
+    };
+}
+
+declare_tests_with_suffix!(rust, "");
+declare_tests_with_suffix!(typescript, "-ts");
+// TODO: migrate csharp to snake_case table names
+declare_tests_with_suffix!(csharp, "-cs");
+declare_tests_with_suffix!(cpp, "-cpp");
+
+macro_rules! procedure_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            //! Tests of procedure functionality, using <./procedure_client> and <../../../modules/sdk-test-procedure>.
+            //!
+            //! These are separate from the existing client and module because as of writing (pgoldman 2025-10-30),
+            //! we do not have procedure support in all of the module languages we have tested.
+
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = concat!("sdk-test-procedure", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
+                    .build()
+            }
+
+            #[test]
+            fn return_values() {
+                make_test("procedure-return-values").run()
+            }
+
+            #[test]
+            fn observe_panic() {
+                make_test("procedure-observe-panic").run()
+            }
+
+            #[test]
+            fn with_tx_commit() {
+                make_test("insert-with-tx-commit").run()
+            }
+
+            #[test]
+            fn with_tx_rollback() {
+                make_test("insert-with-tx-rollback").run()
+            }
+
+            #[test]
+            fn http_ok() {
+                make_test("procedure-http-ok").run()
+            }
+
+            #[test]
+            fn http_err() {
+                make_test("procedure-http-err").run()
+            }
+
+            #[test]
+            fn schedule_procedure() {
+                make_test("schedule-procedure").run()
+            }
+        }
+    };
+}
+
+procedure_tests!(rust_procedures, "");
+procedure_tests!(typescript_procedures, "-ts");
+procedure_tests!(cpp_procedures, "-cpp");
+
+macro_rules! view_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = concat!("sdk-test-view", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
+                    .build()
+            }
+
+            #[test]
+            fn subscribe_anonymous_view() {
+                make_test("view-anonymous-subscribe").run()
+            }
+
+            #[test]
+            fn subscribe_anonymous_view_query_builder() {
+                make_test("view-anonymous-subscribe-with-query-builder").run()
+            }
+
+            #[test]
+            fn subscribe_non_anonymous_view() {
+                make_test("view-non-anonymous-subscribe").run()
+            }
+
+            #[test]
+            fn subscribe_view_non_table_return() {
+                make_test("view-non-table-return").run()
+            }
+
+            #[test]
+            fn subscribe_view_non_table_query_builder_return() {
+                make_test("view-non-table-query-builder-return").run()
+            }
+
+            #[test]
+            fn subscription_updates_for_view() {
+                make_test("view-subscription-update").run()
+            }
+        }
+    };
+}
+
+view_tests!(rust_view, "");
+view_tests!(cpp_view, "-cpp");

@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "SpacetimeDbSdk",
+	"Description": "",
+	"Category": "Other",
+	"CreatedBy": "Clockwork Labs",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "SpacetimeDbSdk",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

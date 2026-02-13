@@ -17,14 +17,28 @@ macro_rules! errnos {
             NO_SUCH_CONSOLE_TIMER(7, "The provided console timer does not exist"),
             NO_SUCH_BYTES(8, "The provided bytes source or sink is not valid"),
             NO_SPACE(9, "The provided sink has no more space left"),
+            WRONG_INDEX_ALGO(10, "The Index does not support range scans"),
             BUFFER_TOO_SMALL(11, "The provided buffer is not large enough to store the data"),
             UNIQUE_ALREADY_EXISTS(12, "Value with given unique identifier already exists"),
             SCHEDULE_AT_DELAY_TOO_LONG(13, "Specified delay in scheduling row was too long"),
             INDEX_NOT_UNIQUE(14, "The index was not unique"),
             NO_SUCH_ROW(15, "The row was not found, e.g., in an update call"),
+            AUTO_INC_OVERFLOW(16, "The auto-increment sequence overflowed"),
+            WOULD_BLOCK_TRANSACTION(
+                17,
+                "Attempted async or blocking op while holding open a transaction"
+            ),
+            TRANSACTION_NOT_ANONYMOUS(18, "Not in an anonymous transaction. Called by a reducer?"),
+            TRANSACTION_IS_READ_ONLY(19, "ABI call can only be made while within a mutable transaction"),
+            TRANSACTION_IS_MUT(
+                20,
+                "ABI call can only be made while within a read-only transaction"
+            ),
+            HTTP_ERROR(21, "The HTTP request failed"),
         );
     };
 }
+pub use errnos;
 
 const fn nz(n: u16) -> NonZeroU16 {
     match NonZeroU16::new(n) {

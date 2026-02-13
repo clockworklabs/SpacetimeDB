@@ -23,19 +23,23 @@
 
 use super::{
     indexes::{Byte, Bytes},
-    layout::{
-        AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayout, RowTypeLayout,
-        SumTypeLayout, SumTypeVariantLayout,
-    },
     util::range_move,
-    MemoryUsage,
 };
 use core::mem::MaybeUninit;
 use core::ptr;
+use smallvec::SmallVec;
+use spacetimedb_data_structures::slim_slice::SlimSmallSliceBox;
+use spacetimedb_sats::bsatn::BufReservedFill;
+use spacetimedb_sats::layout::{
+    AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayoutView, RowTypeLayout,
+    SumTypeLayout, SumTypeVariantLayout,
+};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A precomputed layout for a type whose encoded BSATN and BFLATN lengths are both known constants,
 /// enabling fast BFLATN <-> BSATN conversions.
 #[derive(PartialEq, Eq, Debug, Clone)]
+#[repr(align(8))]
 pub struct StaticLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
@@ -46,7 +50,7 @@ pub struct StaticLayout {
 
     /// A series of `memcpy` invocations from a BFLATN src/dst <-> a BSATN src/dst
     /// which are sufficient to convert BSATN to BFLATN and vice versa.
-    fields: Box<[MemcpyField]>,
+    fields: SlimSmallSliceBox<MemcpyField, 3>,
 }
 
 impl MemoryUsage for StaticLayout {
@@ -83,22 +87,11 @@ impl StaticLayout {
     ///   As a consequence of this, for every `field` in `self.fields`,
     ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
     pub(crate) unsafe fn serialize_row_into_vec(&self, row: &Bytes) -> Vec<u8> {
-        // Create an uninitialized buffer `buf` of the correct length.
-        let bsatn_len = self.bsatn_length as usize;
-        let mut buf = Vec::with_capacity(bsatn_len);
-        let sink = buf.spare_capacity_mut();
+        let mut buf = Vec::new();
 
-        // (1) Write the row into the slice using a series of `memcpy`s.
-        // SAFETY:
-        // - Caller promised that `row` is valid for `self`.
-        // - `sink` was constructed with exactly the correct length above.
-        unsafe {
-            self.serialize_row_into(sink, row);
-        }
+        // SAFETY: Forward caller requirements.
+        unsafe { self.serialize_row_extend(&mut buf, row) };
 
-        // SAFETY: In (1), we initialized `0..len`
-        // as `row` was valid for `self` per caller requirements.
-        unsafe { buf.set_len(bsatn_len) }
         buf
     }
 
@@ -110,26 +103,18 @@ impl StaticLayout {
     ///   for which `self` was computed.
     ///   As a consequence of this, for every `field` in `self.fields`,
     ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
-    pub(crate) unsafe fn serialize_row_extend(&self, buf: &mut Vec<u8>, row: &Bytes) {
-        // Get an uninitialized slice within `buf` of the correct length.
-        let start = buf.len();
+    pub(crate) unsafe fn serialize_row_extend(&self, buf: &mut impl BufReservedFill, row: &Bytes) {
         let len = self.bsatn_length as usize;
-        buf.reserve(len);
-        let sink = &mut buf.spare_capacity_mut()[..len];
-
-        // (1) Write the row into the slice using a series of `memcpy`s.
+        // Writes the row into the slice using a series of `memcpy`s.
         // SAFETY:
         // - Caller promised that `row` is valid for `self`.
         // - `sink` was constructed with exactly the correct length above.
-        unsafe {
+        let filler = |sink: &mut _| unsafe {
             self.serialize_row_into(sink, row);
-        }
-
-        // SAFETY: In (1), we initialized `start .. start + len`
-        // as `row` was valid for `self` per caller requirements
-        // and we had initialized up to `start` before,
-        // so now we have initialized up to `start + len`.
-        unsafe { buf.set_len(start + len) }
+        };
+        // SAFETY:
+        // The closure `filler` will write exactly `len` bytes.
+        unsafe { buf.reserve_and_fill(len, filler) };
     }
 
     #[allow(unused)]
@@ -307,9 +292,10 @@ impl LayoutBuilder {
 
     fn build(self) -> StaticLayout {
         let LayoutBuilder { fields } = self;
-        let fields: Vec<_> = fields.into_iter().filter(|field| !field.is_empty()).collect();
+        let fields: SmallVec<[_; 3]> = fields.into_iter().filter(|field| !field.is_empty()).collect();
+        let fields: SlimSmallSliceBox<MemcpyField, 3> = fields.into();
         let bsatn_length = fields.last().map(|last| last.bsatn_offset + last.length).unwrap_or(0);
-        let fields = fields.into_boxed_slice();
+
         StaticLayout { bsatn_length, fields }
     }
 
@@ -331,7 +317,7 @@ impl LayoutBuilder {
         last.bsatn_offset + last.length
     }
 
-    fn visit_product(&mut self, product: &ProductTypeLayout) -> Option<()> {
+    fn visit_product(&mut self, product: ProductTypeLayoutView) -> Option<()> {
         let base_bflatn_offset = self.next_bflatn_offset();
         for elt in product.elements.iter() {
             self.visit_product_element(elt, base_bflatn_offset)?;
@@ -363,7 +349,7 @@ impl LayoutBuilder {
     fn visit_value(&mut self, val: &AlgebraicTypeLayout) -> Option<()> {
         match val {
             AlgebraicTypeLayout::Sum(sum) => self.visit_sum(sum),
-            AlgebraicTypeLayout::Product(prod) => self.visit_product(prod),
+            AlgebraicTypeLayout::Product(prod) => self.visit_product(prod.view()),
             AlgebraicTypeLayout::Primitive(prim) => {
                 self.visit_primitive(prim);
                 Some(())
@@ -453,7 +439,8 @@ mod test {
                     bsatn_offset,
                     length,
                 })
-                .collect(),
+                .collect::<SmallVec<_>>()
+                .into(),
         };
         let row_type = RowTypeLayout::from(ty.clone());
         let Some(computed_layout) = StaticLayout::for_row_type(&row_type) else {
@@ -654,7 +641,7 @@ mod test {
 
         #[test]
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
@@ -683,7 +670,7 @@ mod test {
 
         #[test]
         fn known_bflatn_same_as_pv_from((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {

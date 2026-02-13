@@ -1,4 +1,4 @@
-use std::io;
+use std::{fmt, io};
 
 use log::{debug, warn};
 
@@ -14,7 +14,7 @@ pub(crate) mod fs;
 #[cfg(any(test, feature = "test"))]
 pub mod mem;
 
-pub use fs::Fs;
+pub use fs::{Fs, OnNewSegmentFn, SizeOnDisk};
 #[cfg(any(test, feature = "test"))]
 pub use mem::Memory;
 
@@ -31,6 +31,10 @@ pub trait SegmentLen: io::Seek {
     /// If the method returns successfully, the seek position before the call is
     /// restored. However, if it returns an error, the seek position is
     /// unspecified.
+    ///
+    /// The returned length will be the bytes actually written to the segment,
+    /// not the allocated size of the segment (if the `fallocate` feature is
+    /// enabled).
     //
     // TODO: Remove trait and replace with `Seek::stream_len` if / when stabilized:
     // https://github.com/rust-lang/rust/issues/59359
@@ -58,7 +62,10 @@ impl<T: FileLike + io::Read + io::Write + SegmentLen + Send + Sync> SegmentWrite
 ///
 /// This is mainly an internal trait to allow testing against an in-memory
 /// representation.
-pub trait Repo: Clone {
+///
+/// The [fmt::Display] should provide context about the location of the repo,
+/// e.g. the root directory for a filesystem-based implementation.
+pub trait Repo: Clone + fmt::Display {
     /// The type of log segments managed by this repo, which must behave like a file.
     type SegmentWriter: SegmentWriter + 'static;
     type SegmentReader: SegmentReader + 'static;
@@ -106,17 +113,17 @@ pub trait Repo: Clone {
     /// Create [`TxOffsetIndexMut`] for the given `offset` or open it if already exist.
     /// The `cap` parameter is the maximum number of entries in the index.
     fn create_offset_index(&self, _offset: TxOffset, _cap: u64) -> io::Result<TxOffsetIndexMut> {
-        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+        Err(io::Error::other("not implemented"))
     }
 
     /// Remove [`TxOffsetIndexMut`] named with `offset`.
     fn remove_offset_index(&self, _offset: TxOffset) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+        Err(io::Error::other("not implemented"))
     }
 
     /// Get [`TxOffsetIndex`] for the given `offset`.
     fn get_offset_index(&self, _offset: TxOffset) -> io::Result<TxOffsetIndex> {
-        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+        Err(io::Error::other("not implemented"))
     }
 }
 
@@ -191,6 +198,8 @@ pub fn create_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Writer<R::SegmentWriter>> {
     let mut storage = repo.create_segment(offset)?;
+    // Ensure we have enough space for this segment.
+    fallocate(&mut storage, &opts)?;
     Header {
         log_format_version: opts.log_format_version,
         checksum_algorithm: Commit::CHECKSUM_ALGORITHM,
@@ -205,12 +214,10 @@ pub fn create_segment_writer<R: Repo>(
             records: Vec::new(),
             epoch,
         },
-        inner: io::BufWriter::new(storage),
+        inner: io::BufWriter::with_capacity(opts.write_buffer_size, storage),
 
         min_tx_offset: offset,
         bytes_written: Header::LEN as u64,
-
-        max_records_in_commit: opts.max_records_in_commit,
 
         offset_index_head: create_offset_index_writer(repo, offset, opts),
     })
@@ -237,12 +244,18 @@ pub fn resume_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
     let mut storage = repo.open_segment_writer(offset)?;
+    // Ensure we have enough space for this segment.
+    // The segment could have been created without the `fallocate` feature
+    // enabled, so we call this here again to ensure writes can't fail due to
+    // ENOSPC.
+    fallocate(&mut storage, &opts)?;
     let offset_index = repo.get_offset_index(offset).ok();
     let Metadata {
         header,
         tx_range,
         size_in_bytes,
         max_epoch,
+        max_commit_offset: _,
     } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
@@ -278,8 +291,6 @@ pub fn resume_segment_writer<R: Repo>(
         min_tx_offset: tx_range.start,
         bytes_written: size_in_bytes,
 
-        max_records_in_commit: opts.max_records_in_commit,
-
         offset_index_head: create_offset_index_writer(repo, offset, opts),
     }))
 }
@@ -297,4 +308,19 @@ pub fn open_segment_reader<R: Repo>(
     debug!("open segment reader at {offset}");
     let storage = repo.open_segment_reader(offset)?;
     Reader::new(max_log_format_version, offset, storage)
+}
+
+/// Allocate [Options::max_segment_size] of space for [FileLike]
+/// if the `fallocate` feature is enabled,
+/// and [Options::preallocate_segments] is `true`.
+///
+/// No-op otherwise.
+#[inline]
+pub(crate) fn fallocate(_f: &mut impl FileLike, _opts: &Options) -> io::Result<()> {
+    #[cfg(feature = "fallocate")]
+    if _opts.preallocate_segments {
+        _f.fallocate(_opts.max_segment_size)?;
+    }
+
+    Ok(())
 }

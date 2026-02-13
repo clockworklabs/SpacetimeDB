@@ -1,5 +1,3 @@
-use std::{collections::HashSet, ops::Deref, str::FromStr};
-
 use crate::statement::Statement;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -12,13 +10,18 @@ use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
+use spacetimedb_data_structures::map::HashCollectionExt as _;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
+use spacetimedb_sql_parser::parser::recursion;
+use std::{ops::Deref, str::FromStr};
 
 pub mod check;
 pub mod errors;
@@ -65,7 +68,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
 
             for ProjectElem(expr, SqlIdent(alias)) in elems {
                 if !names.insert(alias.clone()) {
-                    return Err(DuplicateName(alias.into_string()).into());
+                    return Err(DuplicateName(alias.clone()).into());
                 }
 
                 if let Expr::Field(p) = type_expr(vars, expr.into(), None)? {
@@ -78,8 +81,14 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
     }
 }
 
-/// Type check and lower a [SqlExpr] into a logical [Expr].
-pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>) -> TypingResult<Expr> {
+// These types determine the size of each stack frame during type checking.
+// Changing their sizes will require updating the recursion limit to avoid stack overflows.
+const _: () = assert!(size_of::<TypingResult<Expr>>() == 64);
+const _: () = assert!(size_of::<SqlExpr>() == 32);
+
+fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, depth: usize) -> TypingResult<Expr> {
+    recursion::guard(depth, recursion::MAX_RECURSION_TYP_EXPR, "expr::type_expr")?;
+
     match (expr, expected) {
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
@@ -90,26 +99,19 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
-            let ColumnSchema { col_pos, col_type, .. } = table_type
-                .get_column_by_name(&field)
-                .ok_or_else(|| Unresolved::var(&field))?;
-            Ok(Expr::Field(FieldProject {
-                table,
-                field: col_pos.idx(),
-                ty: col_type.clone(),
-            }))
-        }
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(ty)) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
+        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), expected) => {
+            let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .as_ref()
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
-            if col_type != ty {
-                return Err(UnexpectedType::new(col_type, ty).into());
+
+            if let Some(ty) = expected {
+                if col_type != ty {
+                    return Err(UnexpectedType::new(col_type, ty).into());
+                }
             }
+
             Ok(Expr::Field(FieldProject {
                 table,
                 field: col_pos.idx(),
@@ -117,21 +119,21 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             }))
         }
         (SqlExpr::Log(a, b, op), None | Some(AlgebraicType::Bool)) => {
-            let a = type_expr(vars, *a, Some(&AlgebraicType::Bool))?;
-            let b = type_expr(vars, *b, Some(&AlgebraicType::Bool))?;
+            let a = _type_expr(vars, *a, Some(&AlgebraicType::Bool), depth + 1)?;
+            let b = _type_expr(vars, *b, Some(&AlgebraicType::Bool), depth + 1)?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
-            let b = type_expr(vars, *b, None)?;
-            let a = type_expr(vars, *a, Some(b.ty()))?;
+            let b = _type_expr(vars, *b, None, depth + 1)?;
+            let a = _type_expr(vars, *a, Some(b.ty()), depth + 1)?;
             if !op_supports_type(op, a.ty()) {
                 return Err(InvalidOp::new(op, a.ty()).into());
             }
             Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => {
-            let a = type_expr(vars, *a, None)?;
-            let b = type_expr(vars, *b, Some(a.ty()))?;
+            let a = _type_expr(vars, *a, None, depth + 1)?;
+            let b = _type_expr(vars, *b, Some(a.ty()), depth + 1)?;
             if !op_supports_type(op, a.ty()) {
                 return Err(InvalidOp::new(op, a.ty()).into());
             }
@@ -144,6 +146,11 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
     }
 }
 
+/// Type check and lower a [SqlExpr] into a logical [Expr].
+pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>) -> TypingResult<Expr> {
+    _type_expr(vars, expr, expected, 0)
+}
+
 /// Is this type compatible with this binary operator?
 fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
     t.is_bool()
@@ -154,6 +161,7 @@ fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
         || t.is_identity()
         || t.is_connection_id()
         || t.is_timestamp()
+        || t.is_uuid()
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -221,6 +229,11 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         ConnectionId::from_hex(value)
             .map(AlgebraicValue::from)
             .with_context(|| "Could not parse connection id")
+    };
+    let to_uuid = || {
+        Uuid::parse_str(value)
+            .map(AlgebraicValue::from)
+            .map_err(|err| anyhow!(err))
     };
     let to_i256 = |decimal: &BigDecimal| {
         i256::from_str_radix(
@@ -342,6 +355,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         t if t.is_bytes() => to_bytes(),
         t if t.is_identity() => to_identity(),
         t if t.is_connection_id() => to_connection_id(),
+        t if t.is_uuid() => to_uuid(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
 }

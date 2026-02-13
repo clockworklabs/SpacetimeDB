@@ -3,8 +3,11 @@ use core::borrow::Borrow;
 use core::convert::Infallible;
 use core::fmt;
 use core::marker::PhantomData;
-use spacetimedb_lib::buffer::{BufReader, Cursor, DecodeError};
 pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_lib::{
+    buffer::{BufReader, Cursor, DecodeError},
+    AlgebraicValue,
+};
 use spacetimedb_lib::{FilterableValue, IndexScanRangeBoundsTerminator};
 pub use spacetimedb_primitives::{ColId, IndexId};
 
@@ -128,6 +131,8 @@ pub trait TableInternal: Sized {
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
+
+    fn get_default_col_values() -> Vec<ColumnDefault>;
 }
 
 /// Describe a named index with an index type over a set of columns identified by their IDs.
@@ -140,12 +145,19 @@ pub struct IndexDesc<'a> {
 #[derive(Clone, Copy)]
 pub enum IndexAlgo<'a> {
     BTree { columns: &'a [u16] },
+    Hash { columns: &'a [u16] },
     Direct { column: u16 },
 }
 
 pub struct ScheduleDesc<'a> {
-    pub reducer_name: &'a str,
+    pub reducer_or_procedure_name: &'a str,
     pub scheduled_at_column: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct ColumnDefault {
+    pub col_id: u16,
+    pub value: AlgebraicValue,
 }
 
 /// A row operation was attempted that would violate a unique constraint.
@@ -262,6 +274,11 @@ pub trait Column {
     fn get_field(row: &<Self::Table as Table>::Row) -> &Self::ColType;
 }
 
+/// A marker trait for columns that are the primary key of their table.
+///
+/// This is used to restrict [`UniqueColumn::update`] to only work on primary key columns.
+pub trait PrimaryKey {}
+
 /// A handle to a unique index on a column.
 /// Available for `#[unique]` and `#[primary_key]` columns.
 ///
@@ -307,16 +324,6 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
-    #[inline]
-    fn get_args(&self, col_val: &Col::ColType) -> IndexScanRangeArgs {
-        IndexScanRangeArgs {
-            data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
-            prefix_elems: 0,
-            rstart_idx: 0,
-            rend_idx: None,
-        }
-    }
-
     /// Finds and returns the row where the value in the unique column matches the supplied `col_val`,
     /// or `None` if no such row is present in the database state.
     //
@@ -330,26 +337,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     where
         for<'a> &'a Col::ColType: FilterableValue,
     {
-        self._find(col_val.borrow())
-    }
-
-    fn _find(&self, col_val: &Col::ColType) -> Option<Tbl::Row> {
-        // Find the row with a match.
-        let index_id = Col::index_id();
-        let args = self.get_args(col_val);
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-
-        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
-        let mut iter = TableIter::new_with_buf(iter, args.data);
-
-        // We will always find either 0 or 1 rows here due to the unique constraint.
-        let row = iter.next();
-        assert!(
-            iter.is_exhausted(),
-            "`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows"
-        );
-        row
+        find::<Tbl, Col>(col_val.borrow())
     }
 
     /// Deletes the row where the value in the unique column matches the supplied `col_val`,
@@ -364,27 +352,32 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 
     fn _delete(&self, col_val: &Col::ColType) -> (bool, IterBuf) {
         let index_id = Col::index_id();
-        let args = self.get_args(col_val);
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+        let point = IterBuf::serialize(col_val).unwrap();
+        let n_del = sys::datastore_delete_by_index_scan_point_bsatn(index_id, &point).unwrap_or_else(|e| {
+            panic!("unique: unexpected error from datastore_delete_by_index_scan_point_bsatn: {e}")
+        });
 
-        let n_del = sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| {
-                panic!("unique: unexpected error from datastore_delete_by_index_scan_range_bsatn: {e}")
-            });
-
-        (n_del > 0, args.data)
+        (n_del > 0, point)
     }
 
     /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`, and
     /// then inserts the `new_row`.
     ///
-    /// Returns the new row as actually inserted, with  computed values substituted for any auto-inc placeholders.
+    /// Returns the new row as actually inserted, with computed values substituted for any auto-inc placeholders.
+    ///
+    /// This method can only be called on primary key columns, not any unique column.
+    /// This prevents confusion regarding what constitutes a row update vs. a delete+insert.
+    /// To perform this operation for a non-primary unique column, call
+    /// `.delete(key)` followed by `.insert(row)`.
     ///
     /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
-    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
+    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row
+    where
+        Col: PrimaryKey,
+    {
         let buf = IterBuf::take();
         update::<Tbl>(Col::index_id(), new_row, buf)
     }
@@ -422,11 +415,315 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     }
 }
 
+#[inline]
+fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) -> Option<Tbl::Row> {
+    // Find the row with a match.
+    let index_id = Col::index_id();
+    let point = IterBuf::serialize(col_val).unwrap();
+
+    let iter = sys::datastore_index_scan_point_bsatn(index_id, &point)
+        .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_point_bsatn`: {e}"));
+    let mut iter = TableIter::new_with_buf(iter, point);
+
+    // We will always find either 0 or 1 rows here due to the unique constraint.
+    let row = iter.next();
+    assert!(
+        iter.is_exhausted(),
+        "`datastore_index_scan_point_bsatn` on unique field cannot return >1 rows"
+    );
+    row
+}
+
+/// A read-only handle to a unique (single-column) index.
+///
+/// This is the read-only version of [`UniqueColumn`].
+/// It mirrors [`UniqueColumn`] but only exposes read APIs.
+/// It cannot insert or delete rows.
+/// It is used by `{table}__ViewHandle` to keep view code read-only at compile time.
+///
+/// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
+/// This is because read-only indexes still need [`Table`] metadata.
+/// The view handle itself deliberately does not implement `Table`.
+pub struct UniqueColumnReadOnly<Tbl, ColType, Col> {
+    _marker: PhantomData<(Tbl, ColType, Col)>,
+}
+
+impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumnReadOnly<Tbl, Col::ColType, Col> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    #[inline]
+    pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row>
+    where
+        for<'a> &'a Col::ColType: FilterableValue,
+    {
+        find::<Tbl, Col>(col_val.borrow())
+    }
+}
+
+/// Information about the `index_id` of an index
+/// and the number of columns the index indexes.
 pub trait Index {
+    /// The number of columns the index indexes.
+    ///
+    /// Used to determine whether a scan for e.g., `(a, b)`,
+    /// is actually a point scan or whether there's a suffix, e.g., `(c, d)`.
+    const NUM_COLS_INDEXED: usize;
+
+    /// Determine the `IndexId` of this index.
+    ///
+    /// For generated implementations,
+    /// this results in a *memoized* syscall to determine the index,
+    /// based on the hard coded name of the index.
     fn index_id() -> IndexId;
 }
 
-/// A handle to a B-Tree index on a table.
+/// Marks an index as only having point query capabilities.
+///
+/// This applies to Hash indices but not BTree and Direct indices.
+pub trait IndexIsPointed: Index {}
+
+/// A handle to a Hash index on a table.
+///
+/// To get one of these from a `ReducerContext`, use:
+/// ```text
+/// ctx.db.{table}().{index}()
+/// ```
+/// for a table *table* and an index *index*.
+///
+/// Example:
+///
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
+///
+/// #[table(name = user,
+///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+/// struct User {
+///     id: u32,
+///     name: String,
+///     /// Number of dogs owned by the user.
+///     dogs: u64
+/// }
+///
+/// fn demo(ctx: &ReducerContext) {
+///     let by_dogs_and_name: PointIndex<_, (u64, String), _> = ctx.db.user().dogs_and_name();
+/// }
+/// # }
+/// ```
+///
+/// For single-column indexes, use the name of the column:
+///
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
+///
+/// #[table(name = user)]
+/// struct User {
+///     id: u32,
+///     username: String,
+///     #[index(btree)]
+///     dogs: u64
+/// }
+///
+/// fn demo(ctx: &ReducerContext) {
+///     let by_dogs: PointIndex<_, (u64,), _> = ctx.db().user().dogs();
+/// }
+/// # }
+/// ```
+///
+pub struct PointIndex<Tbl: Table, IndexType, Idx: Index> {
+    _marker: PhantomData<(Tbl, IndexType, Idx)>,
+}
+
+impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    /// Returns an iterator over all rows in the database state
+    /// where the indexed column(s) equal `point`.
+    ///
+    /// Unlike for ranged indices,
+    /// this method only accepts a `point` and not any prefix or range.
+    ///
+    /// For example:
+    ///
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{table, ReducerContext, PointIndex};
+    ///
+    /// #[table(name = user,
+    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// struct User {
+    ///     id: u32,
+    ///     name: String,
+    ///     dogs: u64
+    /// }
+    ///
+    /// fn demo(ctx: &ReducerContext) {
+    ///     let by_dogs_and_name: PointIndex<_, (u64, String), _> = ctx.db.user().dogs_and_name();
+    ///
+    ///     // Find user with exactly 25 dogs and exactly the name "Joseph".
+    ///     for user in by_dogs_and_name.filter((25u64, "Joseph")) {
+    ///         /* ... */
+    ///     }
+    ///
+    ///     // You can also pass arguments by reference if desired.
+    ///     for user in by_dogs_and_name.filter((&25u64, &"Joseph".to_string())) {
+    ///         /* ... */
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    where
+        P: WithPointArg<K>,
+    {
+        filter_point::<Tbl, Idx, K>(point)
+    }
+
+    /// Deletes all rows in the database state
+    /// where the indexed column(s) equal `point`.
+    ///
+    /// Unlike for ranged indices,
+    /// this method only accepts a `point` and not any prefix or range.
+    ///
+    /// For example:
+    ///
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{table, ReducerContext, PointIndex};
+    ///
+    /// #[table(name = user,
+    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// struct User {
+    ///     id: u32,
+    ///     name: String,
+    ///     dogs: u64
+    /// }
+    ///
+    /// fn demo(ctx: &ReducerContext) {
+    ///     let by_dogs_and_name: PointIndex<_, (u64, String), _> = ctx.db.user().dogs_and_name();
+    ///
+    ///     // Delete users with exactly 25 dogs, and exactly the name "Joseph".
+    ///     by_dogs_and_name.delete((25u64, "Joseph"));
+    ///
+    ///     // You can also pass arguments by reference if desired.
+    ///     by_dogs_and_name.delete((&25u64, &"Joseph".to_string()));
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// May panic if deleting any one of the rows would violate a constraint,
+    /// though at present no such constraints exist.
+    pub fn delete<P, K>(&self, point: P) -> u64
+    where
+        P: WithPointArg<K>,
+    {
+        let index_id = Idx::index_id();
+        point.with_point_arg(|point| {
+            sys::datastore_delete_by_index_scan_point_bsatn(index_id, point)
+                .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_point_bsatn`: {e}"))
+                .into()
+        })
+    }
+}
+
+/// Scans `Tbl` for `point` using the index `Idx`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
+fn filter_point<Tbl, Idx, K>(point: impl WithPointArg<K>) -> impl Iterator<Item = Tbl::Row>
+where
+    Tbl: Table,
+    Idx: IndexIsPointed,
+{
+    let index_id = Idx::index_id();
+    let iter = point.with_point_arg(|point| {
+        sys::datastore_index_scan_point_bsatn(index_id, point)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
+    });
+    TableIter::new(iter)
+}
+
+/// A read-only handle to a Hash index.
+///
+/// This is the read-only version of [`PointIndex`].
+/// It mirrors [`PointIndex`] but exposes only `.filter(..)`, not `.delete(..)`.
+/// It is used by `{table}__ViewHandle` to keep view code read-only at compile time.
+///
+/// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
+/// This is because read-only indexes still need [`Table`] metadata.
+/// The view handle itself deliberately does not implement `Table`.
+pub struct PointIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+    _marker: PhantomData<(Tbl, IndexType, Idx)>,
+}
+
+impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndexReadOnly<Tbl, IndexType, Idx> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    where
+        P: WithPointArg<K>,
+    {
+        filter_point::<Tbl, Idx, K>(point)
+    }
+}
+
+/// Trait used for running point index scans.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
+pub trait WithPointArg<K = ()> {
+    /// Runs `run` with the BSATN-serialized point to pass to the index scan.
+    // TODO(perf, centril): once we have stable specialization,
+    // just use `to_le_bytes` internally instead.
+    #[doc(hidden)]
+    fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R;
+}
+
+impl<Arg: FilterableValue> WithPointArg<SingleBound> for Arg {
+    fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+        run(&IterBuf::serialize(self).unwrap())
+    }
+}
+
+macro_rules! impl_with_point_arg {
+    ($($arg:ident),+) => {
+        impl<$($arg: FilterableValue),+> WithPointArg for ($($arg,)+) {
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                // We can assume here that we have a point bound.
+                let mut data = IterBuf::take();
+
+                // Destructure the argument tuple into variables with the same names as their types.
+                #[allow(non_snake_case)]
+                let ($($arg,)+) = self;
+
+                // For each part in the tuple queried, serialize it into the `data` buffer.
+                Ok(())
+                    $(.and_then(|()| data.serialize_into($arg)))+
+                    .unwrap();
+
+                run(&*data)
+            }
+        }
+    };
+}
+
+impl_with_point_arg!(A);
+impl_with_point_arg!(A, B);
+impl_with_point_arg!(A, B, C);
+impl_with_point_arg!(A, B, C, D);
+impl_with_point_arg!(A, B, C, D, E);
+impl_with_point_arg!(A, B, C, D, E, F);
+
+/// Marks an index as having range query capabilities.
+///
+/// This applies to BTree and Direct indices but not Hash indices.
+pub trait IndexIsRanged: Index {}
+
+/// A handle to a B-Tree or Direct index on a table.
 ///
 /// To get one of these from a `ReducerContext`, use:
 /// ```text
@@ -475,11 +772,11 @@ pub trait Index {
 /// # }
 /// ```
 ///
-pub struct RangedIndex<Tbl: Table, IndexType, Idx: Index> {
+pub struct RangedIndex<Tbl: Table, IndexType, Idx: IndexIsRanged> {
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
-impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
+impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
@@ -562,12 +859,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
-        let index_id = Idx::index_id();
-        let args = b.get_args();
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
-        TableIter::new(iter)
+        filter::<Tbl, Idx, IndexType, B, K>(b)
     }
 
     /// Deletes all rows in the database state where the indexed column(s) match the bounds `b`.
@@ -642,19 +934,106 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
         B: IndexScanRangeBounds<IndexType, K>,
     {
         let index_id = Idx::index_id();
-        let args = b.get_args();
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
-            .into()
+        if const { is_point_scan::<Idx, B, _, _>() } {
+            b.with_point_arg(|point| {
+                sys::datastore_delete_by_index_scan_point_bsatn(index_id, point)
+                    .unwrap_or_else(|e| {
+                        panic!("unexpected error from `datastore_delete_by_index_scan_point_bsatn`: {e}")
+                    })
+                    .into()
+            })
+        } else {
+            let args = b.get_range_args();
+            let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+            sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
+                .into()
+        }
     }
+}
+
+/// Performs a ranged scan using the range arguments `B` in `Tbl` using `Idx`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
+fn filter<Tbl, Idx, IndexType, B, K>(b: B) -> impl Iterator<Item = Tbl::Row>
+where
+    Tbl: Table,
+    Idx: Index,
+    B: IndexScanRangeBounds<IndexType, K>,
+{
+    let index_id = Idx::index_id();
+
+    let iter = if const { is_point_scan::<Idx, B, _, _>() } {
+        b.with_point_arg(|point| {
+            sys::datastore_index_scan_point_bsatn(index_id, point)
+                .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
+        })
+    } else {
+        let args = b.get_range_args();
+        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+        sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"))
+    };
+
+    TableIter::new(iter)
+}
+
+/// A read-only handle to a B-tree or Direct index.
+///
+/// This is the read-only version of [`RangedIndex`].
+/// It mirrors [`RangedIndex`] but exposes only `.filter(..)`, not `.delete(..)`.
+/// It is used by `{table}__ViewHandle` to keep view code read-only at compile time.
+///
+/// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
+/// This is because read-only indexes still need [`Table`] metadata.
+/// The view handle itself deliberately does not implement `Table`.
+pub struct RangedIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+    _marker: PhantomData<(Tbl, IndexType, Idx)>,
+}
+
+impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    where
+        B: IndexScanRangeBounds<IndexType, K>,
+    {
+        filter::<Tbl, Idx, IndexType, B, K>(b)
+    }
+}
+
+/// Returns whether `B` is a point scan on `I`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
+const fn is_point_scan<I: Index, B: IndexScanRangeBounds<T, K>, T, K>() -> bool {
+    B::POINT && B::COLS_PROVIDED == I::NUM_COLS_INDEXED
 }
 
 /// Trait used for overloading methods on [`RangedIndex`].
 /// See [`RangedIndex`] for more information.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 pub trait IndexScanRangeBounds<T, K = ()> {
+    /// True if no range occurs in this range bounds.
     #[doc(hidden)]
-    fn get_args(&self) -> IndexScanRangeArgs;
+    const POINT: bool;
+
+    /// The number of columns mentioned in this range bounds.
+    /// For `(42, 12..24)` it's `2`.
+    #[doc(hidden)]
+    const COLS_PROVIDED: usize;
+
+    // TODO(perf, centril): once we have stable specialization,
+    // just use `to_le_bytes` internally instead.
+    #[doc(hidden)]
+    fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R;
+
+    #[doc(hidden)]
+    fn get_range_args(&self) -> IndexScanRangeArgs;
 }
 
 #[doc(hidden)]
@@ -739,8 +1118,15 @@ macro_rules! impl_index_scan_range_bounds {
             Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
         > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*)> for (Term,) {
-            fn get_args(&self) -> IndexScanRangeArgs {
-                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_args(&self.0)
+            const POINT: bool = Term::POINT;
+            const COLS_PROVIDED: usize = 1;
+
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::with_point_arg(&self.0, run)
+            }
+
+            fn get_range_args(&self) -> IndexScanRangeArgs {
+                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_range_args(&self.0)
             }
         }
         // Implementation for bare values: serialize the value as the terminating bounds.
@@ -750,7 +1136,15 @@ macro_rules! impl_index_scan_range_bounds {
             Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
         > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*), SingleBound> for Term {
-            fn get_args(&self) -> IndexScanRangeArgs {
+            const POINT: bool = Term::POINT;
+            const COLS_PROVIDED: usize = 1;
+
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                // We can assume here that we have a point bound.
+                run(&IterBuf::serialize(self.point()).unwrap())
+            }
+
+            fn get_range_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
                 let rend_idx = self.bounds().serialize_into(&mut data);
                 IndexScanRangeArgs { data, prefix_elems: 0, rstart_idx: 0, rend_idx }
@@ -781,7 +1175,27 @@ macro_rules! impl_index_scan_range_bounds {
              $ColTerminator,
              $($ColUnused,)*)
           > for ($($ArgPrefix,)+ Term,) {
-            fn get_args(&self) -> IndexScanRangeArgs {
+            const POINT: bool = Term::POINT;
+            const COLS_PROVIDED: usize = 1 + impl_index_scan_range_bounds!(@count $($ColPrefix)+);
+
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                // We can assume here that we have a point bound.
+                let mut data = IterBuf::take();
+
+                // Destructure the argument tuple into variables with the same names as their types.
+                #[allow(non_snake_case)]
+                let ($($ArgPrefix,)+ term,) = self;
+
+                // For each part in the tuple queried, serialize it into the `data` buffer.
+                Ok(())
+                    $(.and_then(|()| data.serialize_into($ArgPrefix)))+
+                    .and_then(|()| data.serialize_into(term.point()))
+                    .unwrap();
+
+                run(&*data)
+            }
+
+            fn get_range_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
 
                 // Get the number of prefix elements.
@@ -791,7 +1205,7 @@ macro_rules! impl_index_scan_range_bounds {
                 #[allow(non_snake_case)]
                 let ($($ArgPrefix,)+ term,) = self;
 
-                // For each prefix queried, zerialize it into the `data` buffer.
+                // For each prefix queried, serialize it into the `data` buffer.
                 Ok(())
                     $(.and_then(|()| data.serialize_into($ArgPrefix)))+
                     .unwrap();
@@ -936,7 +1350,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
             sys::Errno::UNIQUE_ALREADY_EXISTS => {
                 T::UniqueConstraintViolation::get().map(TryInsertError::UniqueConstraintViolation)
             }
-            // sys::Errno::AUTO_INC_OVERFLOW => Tbl::AutoIncOverflow::get().map(TryInsertError::AutoIncOverflow),
+            sys::Errno::AUTO_INC_OVERFLOW => T::AutoIncOverflow::get().map(TryInsertError::AutoIncOverflow),
             _ => None,
         };
         err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))

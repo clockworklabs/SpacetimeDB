@@ -9,7 +9,7 @@ Called as part of our tests to ensure the system is working as expected.
 
 ## How to Run
 
-Execute the tests on `spacetimedb-sdk` at [test.rs](../../crates/sdk/tests/test.rs):
+Execute the tests on `spacetimedb-sdk` at [test.rs](../../sdks/rust/tests/test.rs):
 
 ```bash
 # Will run both Rust/C# modules

@@ -17,8 +17,7 @@ pub fn cli() -> Command {
         .subcommand_required(true)
         .subcommands(get_subcommands())
         .about(format!(
-            "Manage the connection to the SpacetimeDB server. {}",
-            UNSTABLE_WARNING
+            "Manage the connection to the SpacetimeDB server. {UNSTABLE_WARNING}"
         ))
 }
 
@@ -116,7 +115,7 @@ fn get_subcommands() -> Vec<Command> {
 
 pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
     exec_subcommand(config, paths, cmd, subcommand_args).await
 }
 
@@ -135,7 +134,7 @@ async fn exec_subcommand(
         "ping" => exec_ping(config, args).await,
         "edit" => exec_edit(config, args).await,
         "clear" => exec_clear(config, paths, args).await,
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
 }
 
@@ -168,7 +167,7 @@ pub async fn exec_list(config: Config, _args: &ArgMatches) -> Result<(), anyhow:
     table
         .with(Style::empty())
         .with(Modify::new(Columns::first()).with(Alignment::right()));
-    println!("{}", table);
+    println!("{table}");
 
     Ok(())
 }
@@ -182,7 +181,7 @@ pub async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(
 
 fn valid_protocol_or_error(protocol: &str) -> anyhow::Result<()> {
     if !VALID_PROTOCOLS.contains(&protocol) {
-        Err(anyhow::anyhow!("Invalid protocol: {}", protocol))
+        Err(anyhow::anyhow!("Invalid protocol: {protocol}"))
     } else {
         Ok(())
     }
@@ -197,7 +196,7 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let no_fingerprint = *args.get_one::<bool>("no-fingerprint").unwrap();
 
     let (host, protocol) = host_or_url_to_host_and_protocol(url);
-    let protocol = protocol.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", url))?;
+    let protocol = protocol.ok_or_else(|| anyhow::anyhow!("Invalid url: {url}"))?;
 
     valid_protocol_or_error(protocol)?;
 
@@ -212,7 +211,7 @@ Add a server without retrieving its fingerprint with:
 \tspacetime server add --url {url} --no-fingerprint",
             )
         })?;
-        println!("For server {}, got fingerprint:\n{}", url, fingerprint);
+        println!("For server {url}, got fingerprint:\n{fingerprint}");
         Some(fingerprint)
     };
 
@@ -222,8 +221,8 @@ Add a server without retrieving its fingerprint with:
         config.set_default_server(host)?;
     }
 
-    println!("Host: {}", host);
-    println!("Protocol: {}", protocol);
+    println!("Host: {host}");
+    println!("Protocol: {protocol}");
 
     config.save();
 
@@ -248,24 +247,18 @@ async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) ->
         .context("Error fetching server fingerprint")?;
     if let Some(saved_fing) = config.server_fingerprint(server)? {
         if saved_fing == new_fing {
-            println!("Fingerprint is unchanged for server {}:\n{}", nick_or_host, saved_fing);
+            println!("Fingerprint is unchanged for server {nick_or_host}:\n{saved_fing}");
 
             Ok(false)
         } else {
-            println!(
-                "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
-                nick_or_host, saved_fing, new_fing
-            );
+            println!("Fingerprint has changed for server {nick_or_host}.\nWas:\n{saved_fing}\nNew:\n{new_fing}");
 
             config.set_server_fingerprint(server, new_fing)?;
 
             Ok(true)
         }
     } else {
-        println!(
-            "No saved fingerprint for server {}. New fingerprint:\n{}",
-            nick_or_host, new_fing
-        );
+        println!("No saved fingerprint for server {nick_or_host}. New fingerprint:\n{new_fing}");
 
         config.set_server_fingerprint(server, new_fing)?;
 
@@ -292,18 +285,18 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     let server = args.get_one::<String>("server").unwrap().as_str();
     let url = config.get_host_url(Some(server))?;
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/ping", url).as_str());
+    let builder = reqwest::Client::new().get(format!("{url}/v1/ping").as_str());
     let response = builder.send().await?;
 
     match response.status() {
         reqwest::StatusCode::OK => {
-            println!("Server is online: {}", url);
+            println!("Server is online: {url}");
         }
         reqwest::StatusCode::NOT_FOUND => {
-            println!("Server returned 404 (Not Found): {}", url);
+            println!("Server returned 404 (Not Found): {url}");
         }
         err => {
-            println!("Server could not be reached ({}): {}", err, url);
+            println!("Server could not be reached ({err}): {url}");
         }
     }
     Ok(())
@@ -320,7 +313,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         None => (None, None),
         Some(new_url) => {
             let (new_host, new_proto) = host_or_url_to_host_and_protocol(new_url);
-            let new_proto = new_proto.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", new_url))?;
+            let new_proto = new_proto.ok_or_else(|| anyhow::anyhow!("Invalid url: {new_url}"))?;
             (Some(new_host), Some(new_proto))
         }
     };
@@ -336,13 +329,13 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     let server = new_nick.unwrap_or(server);
 
     if let (Some(new_nick), Some(old_nick)) = (new_nick, old_nick) {
-        println!("Changing nickname from {} to {}", old_nick, new_nick);
+        println!("Changing nickname from {old_nick} to {new_nick}");
     }
     if let (Some(new_host), Some(old_host)) = (new_host, old_host) {
-        println!("Changing host from {} to {}", old_host, new_host);
+        println!("Changing host from {old_host} to {new_host}");
     }
     if let (Some(new_proto), Some(old_proto)) = (new_proto, old_proto) {
-        println!("Changing protocol from {} to {}", old_proto, new_proto);
+        println!("Changing protocol from {old_proto} to {new_proto}");
     }
 
     let new_url = config.get_host_url(Some(server))?;

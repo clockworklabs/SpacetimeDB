@@ -2,7 +2,8 @@ use crate::db::raw_def::v9::RawModuleDefV9Builder;
 use crate::db::raw_def::RawTableDefV8;
 use anyhow::Context;
 use sats::typespace::TypespaceBuilder;
-use spacetimedb_sats::{impl_serialize, WithTypespace};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::WithTypespace;
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
@@ -11,11 +12,11 @@ pub mod db;
 mod direct_index_key;
 pub mod error;
 mod filterable_value;
+pub mod http;
 pub mod identity;
 pub mod metrics;
 pub mod operator;
 pub mod query;
-pub mod relation;
 pub mod scheduler;
 pub mod st_var;
 pub mod version;
@@ -37,6 +38,7 @@ pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::time_duration::TimeDuration;
 pub use spacetimedb_sats::timestamp::Timestamp;
+pub use spacetimedb_sats::uuid::Uuid;
 pub use spacetimedb_sats::SpacetimeType;
 pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
@@ -120,76 +122,16 @@ impl TableDesc {
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct ReducerDef {
-    pub name: Box<str>,
+    pub name: RawIdentifier,
     pub args: Vec<ProductTypeElement>,
 }
 
-impl ReducerDef {
-    pub fn encode(&self, writer: &mut impl buffer::BufWriter) {
-        bsatn::to_writer(writer, self).unwrap()
-    }
-
-    pub fn serialize_args<'a>(ty: sats::WithTypespace<'a, Self>, value: &'a ProductValue) -> impl ser::Serialize + 'a {
-        ReducerArgsWithSchema { value, ty }
-    }
-
-    pub fn deserialize(
-        ty: sats::WithTypespace<'_, Self>,
-    ) -> impl for<'de> de::DeserializeSeed<'de, Output = ProductValue> + '_ {
-        ReducerDeserialize(ty)
-    }
-}
-
-struct ReducerDeserialize<'a>(sats::WithTypespace<'a, ReducerDef>);
-
-impl<'de> de::DeserializeSeed<'de> for ReducerDeserialize<'_> {
-    type Output = ProductValue;
-
-    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
-        deserializer.deserialize_product(self)
-    }
-}
-
-impl<'de> de::ProductVisitor<'de> for ReducerDeserialize<'_> {
-    type Output = ProductValue;
-
-    fn product_name(&self) -> Option<&str> {
-        Some(&self.0.ty().name)
-    }
-    fn product_len(&self) -> usize {
-        self.0.ty().args.len()
-    }
-    fn product_kind(&self) -> de::ProductKind {
-        de::ProductKind::ReducerArgs
-    }
-
-    fn visit_seq_product<A: de::SeqProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        de::visit_seq_product(self.0.map(|r| &*r.args), &self, tup)
-    }
-
-    fn visit_named_product<A: de::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        de::visit_named_product(self.0.map(|r| &*r.args), &self, tup)
-    }
-}
-
-struct ReducerArgsWithSchema<'a> {
-    value: &'a ProductValue,
-    ty: sats::WithTypespace<'a, ReducerDef>,
-}
-impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
-    use itertools::Itertools;
-    use ser::SerializeSeqProduct;
-    let mut seq = ser.serialize_seq_product(self.value.elements.len())?;
-    for (value, elem) in self.value.elements.iter().zip_eq(&self.ty.ty().args) {
-        seq.serialize_element(&self.ty.with(&elem.algebraic_type).with_value(value))?;
-    }
-    seq.end()
-});
-
 //WARNING: Change this structure (or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct RawModuleDefV8 {
     pub typespace: sats::Typespace,
@@ -214,11 +156,13 @@ impl RawModuleDefV8 {
 ///
 /// This is what is actually returned by the module when `__describe_module__` is called, serialized to BSATN.
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 #[non_exhaustive]
 pub enum RawModuleDef {
     V8BackCompat(RawModuleDefV8),
     V9(db::raw_def::v9::RawModuleDefV9),
+    V10(db::raw_def::v10::RawModuleDefV10),
     // TODO(jgilles): It would be nice to have a custom error message if this fails with an unknown variant,
     // but I'm not sure if that can be done via the Deserialize trait.
 }
@@ -244,7 +188,7 @@ impl ModuleDefBuilder {
     pub fn add_type_for_tests(&mut self, name: &str, ty: AlgebraicType) -> spacetimedb_sats::AlgebraicTypeRef {
         let slot_ref = self.module.typespace.add(ty);
         self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-            name: name.to_owned(),
+            name: RawIdentifier::new(name),
             ty: slot_ref,
         }));
         slot_ref
@@ -266,7 +210,7 @@ impl ModuleDefBuilder {
             .collect();
         let data = self.module.typespace.add(ty.into());
         self.add_type_alias(TypeAlias {
-            name: schema.table_name.clone().into(),
+            name: schema.table_name.clone(),
             ty: data,
         });
         self.add_table(TableDesc { schema, data });
@@ -282,9 +226,9 @@ impl ModuleDefBuilder {
     }
 
     #[cfg(feature = "test")]
-    pub fn add_reducer_for_tests(&mut self, name: impl Into<Box<str>>, args: ProductType) {
+    pub fn add_reducer_for_tests(&mut self, name: impl AsRef<str>, args: ProductType) {
         self.add_reducer(ReducerDef {
-            name: name.into(),
+            name: RawIdentifier::new(name.as_ref()),
             args: args.elements.to_vec(),
         });
     }
@@ -324,7 +268,7 @@ impl TypespaceBuilder for ModuleDefBuilder {
                 // Alias provided? Relate `name -> slot_ref`.
                 if let Some(name) = name {
                     self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: name.to_owned(),
+                        name: name.into(),
                         ty: slot_ref,
                     }));
                 }
@@ -341,15 +285,17 @@ impl TypespaceBuilder for ModuleDefBuilder {
 
 // an enum to keep it extensible without breaking abi
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub enum MiscModuleExport {
     TypeAlias(TypeAlias),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct TypeAlias {
-    pub name: String,
+    pub name: RawIdentifier,
     pub ty: sats::AlgebraicTypeRef,
 }
 

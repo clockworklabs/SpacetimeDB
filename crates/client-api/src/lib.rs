@@ -1,12 +1,17 @@
+use std::fmt;
+use std::future::Future;
+use std::num::NonZeroU8;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use axum::response::ErrorResponse;
+use bytes::Bytes;
 use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
@@ -14,6 +19,8 @@ use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
+use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use thiserror::Error;
 use tokio::sync::watch;
 
 pub mod auth;
@@ -27,6 +34,17 @@ pub mod util;
 /// surfaced to the API.
 #[async_trait]
 pub trait NodeDelegate: Send + Sync {
+    /// Error returned by [Self::leader].
+    ///
+    /// Must satisfy [MaybeMisdirected] to indicate whether the method would
+    /// never succeed on this node due to the database not being scheduled on it.
+    ///
+    /// The [Into<axum::response::ErrorResponse] shall convert the error into an
+    /// HTTP response, providing an error message suitable for API clients.
+    /// The [fmt::Display] impl is used for logging the error, and may provide
+    /// additional context useful for debugging purposes.
+    type GetLeaderHostError: MaybeMisdirected + Into<axum::response::ErrorResponse> + fmt::Display + Send + Sync;
+
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
     fn client_actor_index(&self) -> &ClientActorIndex;
 
@@ -34,10 +52,36 @@ pub trait NodeDelegate: Send + Sync {
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
     /// Return the leader [`Host`] of `database_id`.
     ///
-    /// Returns `None` if the current leader is not hosted by this node.
     /// The [`Host`] is spawned implicitly if not already running.
-    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
+    async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError>;
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
+}
+
+/// Predicate on the [NodeDelegate::GetLeaderHostError].
+///
+/// Normally, the routing layer determines the cluster node hosting the current
+/// leader. In between the routing decision and actually executing the API
+/// handler on the node, the database's state can, however, change, so that the
+/// [NodeDelegate::leader] method is unable to provide the current leader [Host].
+///
+/// This trait allows to detect this case.
+//
+// Used in the logs endpoint to allow serving module logs even if
+// the database is not currently running.
+pub trait MaybeMisdirected {
+    /// Return `true` if the current node is not responsible for the leader
+    /// replica of the requested database.
+    ///
+    /// This could be the case if:
+    ///
+    /// - the current or most-recently-known leader is not assigned to the node
+    /// - no leader is currently known
+    /// - the database does not exist
+    ///
+    /// Note that a database may not be running (e.g. due to being in a
+    /// suspended state). If its last leader is known and assigned to the
+    /// current node, this method shall return `true`.
+    fn is_misdirected(&self) -> bool;
 }
 
 /// Client view of a running module.
@@ -66,6 +110,7 @@ impl Host {
         &self,
         auth: AuthCtx,
         database: Database,
+        confirmed_read: bool,
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
         let module_host = self
@@ -73,57 +118,62 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        let json = self
+        let (tx_offset, durable_offset, json) = self
             .host_controller
-            .using_database(
-                database,
-                self.replica_id,
-                move |db| -> axum::response::Result<_, (StatusCode, String)> {
-                    tracing::info!(sql = body);
+            .using_database(database, self.replica_id, move |db| async move {
+                tracing::info!(sql = body);
+                let mut header = vec![];
+                let sql_start = std::time::Instant::now();
+                let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
+                let _guard = sql_span.enter();
 
-                    // We need a header for query results
-                    let mut header = vec![];
+                let result = sql::execute::run(
+                    db.clone(),
+                    body,
+                    auth,
+                    Some(module_host.info.subscriptions.clone()),
+                    Some(module_host),
+                    &mut header,
+                )
+                .await
+                .map_err(|e| {
+                    log::warn!("{e}");
+                    if let Some(auth_err) = e.get_auth_error() {
+                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                    } else {
+                        (StatusCode::BAD_REQUEST, e.to_string())
+                    }
+                })?;
 
-                    let sql_start = std::time::Instant::now();
-                    let sql_span =
-                        tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,).entered();
+                let total_duration = sql_start.elapsed();
+                drop(_guard);
+                sql_span.record("total_duration", tracing::field::debug(total_duration));
 
-                    let result = sql::execute::run(
-                        // Returns an empty result set for mutations
-                        db,
-                        &body,
-                        auth,
-                        Some(&module_host.info().subscriptions),
-                        &mut header,
-                    )
-                    .map_err(|e| {
-                        log::warn!("{}", e);
-                        if let Some(auth_err) = e.get_auth_error() {
-                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                        } else {
-                            (StatusCode::BAD_REQUEST, e.to_string())
-                        }
-                    })?;
+                let schema = header
+                    .into_iter()
+                    .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
+                    .collect();
 
-                    let total_duration = sql_start.elapsed();
-                    sql_span.record("total_duration", tracing::field::debug(total_duration));
-
-                    // Turn the header into a `ProductType`
-                    let schema = header
-                        .into_iter()
-                        .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
-                        .collect();
-
-                    Ok(vec![SqlStmtResult {
+                Ok::<_, (StatusCode, String)>((
+                    result.tx_offset,
+                    db.durable_tx_offset(),
+                    vec![SqlStmtResult {
                         schema,
                         rows: result.rows,
                         total_duration_micros: total_duration.as_micros() as u64,
                         stats: SqlStmtStats::from_metrics(&result.metrics),
-                    }])
-                },
-            )
+                    }],
+                ))
+            })
             .await
             .map_err(log_and_500)??;
+
+        if confirmed_read {
+            if let Some(mut durable_offset) = durable_offset {
+                let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+                durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+            }
+        }
 
         Ok(json)
     }
@@ -133,13 +183,13 @@ impl Host {
         database: Database,
         host_type: HostType,
         program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host(database, host_type, self.replica_id, program_bytes)
+            .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
             .await
     }
 }
-
 /// Parameters for publishing a database.
 ///
 /// See [`ControlStateDelegate::publish_database`].
@@ -147,11 +197,26 @@ pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
     pub database_identity: Identity,
     /// The compiled program of the database module.
-    pub program_bytes: Vec<u8>,
+    pub program_bytes: Bytes,
     /// The desired number of replicas the database shall have.
-    pub num_replicas: u32,
+    ///
+    /// If `None`, the edition default is used.
+    pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
+    /// The optional identity of an existing database the database shall be a
+    /// child of.
+    pub parent: Option<Identity>,
+    /// The optional identity of an organization the database shall belong to.
+    pub organization: Option<Identity>,
+}
+
+/// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
+pub struct DatabaseResetDef {
+    pub database_identity: Identity,
+    pub program_bytes: Option<Bytes>,
+    pub num_replicas: Option<NonZeroU8>,
+    pub host_type: Option<HostType>,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -177,28 +242,30 @@ pub trait ControlStateDelegate: ControlStateReadAccess + ControlStateWriteAccess
 impl<T: ControlStateReadAccess + ControlStateWriteAccess + Send + Sync> ControlStateDelegate for T {}
 
 /// Query API of the SpacetimeDB control plane.
+#[async_trait]
 pub trait ControlStateReadAccess {
     // Nodes
-    fn get_node_id(&self) -> Option<u64>;
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
+    async fn get_node_id(&self) -> Option<u64>;
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
-    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
+    async fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -216,9 +283,16 @@ pub trait ControlStateWriteAccess: Send + Sync {
         &self,
         publisher: &Identity,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
+
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
+
+    /// Remove all data from a database, and reset it according to the
+    /// given [DatabaseResetDef].
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -250,53 +324,58 @@ pub trait ControlStateWriteAccess: Send + Sync {
     ) -> anyhow::Result<SetDomainsResult>;
 }
 
-impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
+#[async_trait]
+impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAccess for Arc<T> {
     // Nodes
-    fn get_node_id(&self) -> Option<u64> {
-        (**self).get_node_id()
+    async fn get_node_id(&self) -> Option<u64> {
+        (**self).get_node_id().await
     }
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
-        (**self).get_node_by_id(node_id)
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
+        (**self).get_node_by_id(node_id).await
     }
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
-        (**self).get_nodes()
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
+        (**self).get_nodes().await
     }
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_id(id)
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_id(id).await
     }
-    fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_identity(identity)
+    async fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity).await
     }
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
-        (**self).get_databases()
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+        (**self).get_databases().await
     }
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
-        (**self).get_replica_by_id(id)
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+        (**self).get_replica_by_id(id).await
     }
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
-        (**self).get_replicas()
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+        (**self).get_replicas().await
+    }
+
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id).await
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
-        (**self).get_energy_balance(identity)
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+        (**self).get_energy_balance(identity).await
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
-        (**self).lookup_identity(domain)
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_database_identity(domain).await
     }
 
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(database_identity)
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity).await
     }
 
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        (**self).get_leader_replica_by_database(database_id)
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_namespace_owner(name).await
     }
 }
 
@@ -306,12 +385,21 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, spec).await
+        (**self).publish_database(identity, spec, policy).await
+    }
+
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult> {
+        (**self).migrate_plan(spec, style).await
     }
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         (**self).delete_database(caller_identity, database_identity).await
+    }
+
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+        (**self).reset_database(caller_identity, spec).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -349,6 +437,8 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 #[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     type JwtAuthProviderT = T::JwtAuthProviderT;
+    type GetLeaderHostError = T::GetLeaderHostError;
+
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
     }
@@ -361,12 +451,149 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
         (**self).jwt_auth_provider()
     }
 
-    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+    async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
         (**self).leader(database_id).await
     }
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         (**self).module_logs_dir(replica_id)
+    }
+}
+
+/// Result of an authorization check performed by an implementation of the
+/// [Authorization] trait.
+///
+/// [Unauthorized::Unauthorized] means that the subject was denied the
+/// permission to perform the requested action.
+///
+/// [Unauthorized::InternalError] indicates an error to perform the check in
+/// the first place. It may succeed when retried.
+///
+/// The [axum::response::IntoResponse] impl maps the variants to HTTP responses
+/// as follows:
+///
+/// * [Unauthorized::InternalError] is mapped to a 503 Internal Server Error
+///   response with the inner error sent as a string in the response body.
+///
+/// * [Unauthorized::Unauthorized] is mapped to a 403 Forbidden response with
+///   the [fmt::Display] form of the variant sent as the response body.
+///
+///   NOTE: [401 Unauthorized] means something different in HTTP, namely that
+///   the provided credentials are missing or invalid.
+///
+/// [401 Unauthorized]: https://datatracker.ietf.org/doc/html/rfc7235#section-3.1
+#[derive(Debug, Error)]
+pub enum Unauthorized {
+    #[error(
+        "{} is not authorized to perform action{}: {}",
+        subject,
+        database.map(|ident| format!(" on database {ident}")).unwrap_or_default(),
+        action
+    )]
+    Unauthorized {
+        subject: Identity,
+        action: Action,
+        // `Option` for future, non-database-bound actions.
+        database: Option<Identity>,
+        #[source]
+        source: Option<anyhow::Error>,
+    },
+    #[error("authorization failed due to internal error")]
+    InternalError(#[from] anyhow::Error),
+}
+
+impl axum::response::IntoResponse for Unauthorized {
+    fn into_response(self) -> axum::response::Response {
+        let (status, e) = match self {
+            unauthorized @ Self::Unauthorized { .. } => (StatusCode::FORBIDDEN, anyhow!(unauthorized)),
+            Self::InternalError(e) => {
+                log::error!("internal error: {e:#}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
+            }
+        };
+
+        (status, format!("{e:#}")).into_response()
+    }
+}
+
+/// Action to be authorized via [Authorization::authorize_action].
+#[derive(Clone, Copy, Debug)]
+pub enum Action {
+    CreateDatabase {
+        parent: Option<Identity>,
+        organization: Option<Identity>,
+    },
+    UpdateDatabase,
+    ResetDatabase,
+    DeleteDatabase,
+    RenameDatabase,
+    ViewModuleLogs,
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CreateDatabase { parent, organization } => match (parent, organization) {
+                (Some(parent), Some(org)) => {
+                    write!(f, "create database with parent {} and organization {}", parent, org)
+                }
+                (Some(parent), None) => write!(f, "create database with parent {}", parent),
+                (None, Some(org)) => write!(f, "create database with organization {}", org),
+                (None, None) => f.write_str("create database"),
+            },
+            Self::UpdateDatabase => f.write_str("update database"),
+            Self::ResetDatabase => f.write_str("reset database"),
+            Self::DeleteDatabase => f.write_str("delete database"),
+            Self::RenameDatabase => f.write_str("rename database"),
+            Self::ViewModuleLogs => f.write_str("view module logs"),
+        }
+    }
+}
+
+/// Trait to delegate authorization of "actions" performed through the
+/// client API to an external, edition-specific implementation.
+pub trait Authorization {
+    /// Authorize `subject` to perform [Action] `action` on `database`.
+    ///
+    /// Return `Ok(())` if permission is granted, `Err(Unauthorized)` if denied.
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send;
+
+    /// Obtain an attenuated [AuthCtx] for `subject` to evaluate SQL against
+    /// `database`.
+    ///
+    /// "SQL" includes the sql endpoint, pg wire connections, as well as
+    /// subscription queries.
+    ///
+    /// If any SQL should be rejected outright, or the authorization database
+    /// is not available, return `Err(Unauthorized)`.
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send;
+}
+
+impl<T: Authorization> Authorization for Arc<T> {
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send {
+        (**self).authorize_action(subject, database, action)
+    }
+
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send {
+        (**self).authorize_sql(subject, database)
     }
 }
 

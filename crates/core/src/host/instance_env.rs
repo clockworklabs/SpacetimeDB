@@ -1,35 +1,96 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
-use crate::error::{DBError, IndexError, NodesError};
+use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
+use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
+use crate::util::prometheus_handle::IntGaugeExt;
+use chrono::{DateTime, Utc};
 use core::mem;
+use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::{CountWriter, TeeWriter},
     AlgebraicValue, ProductValue,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
+use std::fmt::Display;
+use std::future::Future;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use std::vec::IntoIter;
 
-#[derive(Clone)]
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
-    /// The timestamp the current reducer began running.
+    /// The timestamp the current function began running.
     pub start_time: Timestamp,
+    /// The instant the current function began running.
+    pub start_instant: Instant,
+    /// The type of the last, including current, function to be executed by this environment.
+    pub func_type: FuncCallType,
+    /// The name of the last, including current, function to be executed by this environment.
+    pub func_name: Option<Identifier>,
+    /// Are we in an anonymous tx context?
+    in_anon_tx: bool,
+    /// A procedure's last known transaction offset.
+    procedure_last_tx_offset: Option<TransactionOffset>,
 }
+
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+///
+/// # Safety
+///
+/// `InstanceEnv` doesn't auto-derive `Send` because it may hold a `MutTxId`,
+/// which we've manually made `!Send` to preserve logical invariants.
+/// As described above, sending an `InstanceEnv` while it holds a `MutTxId` will violate logical invariants,
+/// but this is not a safety concern.
+/// Transferring a `MutTxId` between threads will never cause Undefined Behavior,
+/// though it is likely to lead to deadlocks.
+unsafe impl Send for InstanceEnv {}
 
 #[derive(Clone, Default)]
 pub struct TxSlot {
+    // Wrapped in Mutex for interior mutability.
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
@@ -84,11 +145,6 @@ impl ChunkPool {
     ///
     /// These limits place an upper bound on the memory usage of a single [`ChunkPool`].
     pub fn put(&mut self, mut chunk: Vec<u8>) {
-        log::trace!(
-            "put: chunk of capacity {} into pool of {} chunks",
-            chunk.capacity(),
-            self.free_chunks.len()
-        );
         if chunk.capacity() > MAX_CHUNK_SIZE_IN_BYTES {
             return;
         }
@@ -140,9 +196,11 @@ impl ChunkedWriter {
     pub fn collect_iter(
         pool: &mut ChunkPool,
         iter: impl Iterator<Item = impl ToBsatn>,
-        rows_scanned: &mut usize,
-        bytes_scanned: &mut usize,
-    ) -> Vec<Vec<u8>> {
+    ) -> (Vec<Vec<u8>>, usize, usize) {
+        // Track the number of rows and the number of bytes scanned by the iterator.
+        let mut rows_scanned = 0;
+        let mut bytes_scanned = 0;
+
         let mut chunked_writer = Self::new(pool);
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
@@ -151,16 +209,16 @@ impl ChunkedWriter {
             item.to_bsatn_extend(&mut chunked_writer.curr).unwrap();
             // Flush at item boundaries.
             chunked_writer.flush(pool);
-            // Update rows scanned
-            *rows_scanned += 1;
+            // Update rows scanned.
+            rows_scanned += 1;
         }
 
         let chunks = chunked_writer.into_chunks();
 
         // Update (BSATN) bytes scanned
-        *bytes_scanned += chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
+        bytes_scanned += chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
 
-        chunks
+        (chunks, rows_scanned, bytes_scanned)
     }
 }
 
@@ -172,26 +230,105 @@ impl InstanceEnv {
             scheduler,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
+            start_instant: Instant::now(),
+            // arbitrary - change if we need to recognize that an `InstanceEnv` has never
+            // run a function
+            func_type: FuncCallType::Reducer,
+            func_name: None,
+            in_anon_tx: false,
+            procedure_last_tx_offset: None,
         }
     }
 
-    /// Signal to this `InstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self, ts: Timestamp) {
+    /// Returns the database's identity.
+    pub fn database_identity(&self) -> &Identity {
+        &self.replica_ctx.database.database_identity
+    }
+
+    /// Signal to this `InstanceEnv` that a function call is beginning.
+    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
+        self.start_instant = Instant::now();
+        self.func_type = func_type;
+        self.func_name = Some(name);
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.func_name.as_deref()
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
     }
 
+    /// True if `self` is holding an open transaction, or false if it is not.
+    pub fn in_tx(&self) -> bool {
+        self.get_tx().is_ok()
+    }
+
+    pub(crate) fn take_tx(&self) -> Result<MutTxId, GetTxError> {
+        self.tx.take()
+    }
+
+    pub(crate) fn relational_db(&self) -> &Arc<RelationalDB> {
+        &self.replica_ctx.relational_db
+    }
+
+    pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
+        let tx = &mut *self.get_tx()?;
+        Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
+    }
+
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
+    pub(crate) fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
             "MOD({}): {}",
             self.replica_ctx.database_identity.to_abbreviated_hex(),
             record.message
         );
+    }
+
+    /// Logs a simple `message` at `level`.
+    pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
+        /// A backtrace provider that provides nothing.
+        struct Noop;
+        impl BacktraceProvider for Noop {
+            fn capture(&self) -> Box<dyn ModuleBacktrace> {
+                Box::new(Noop)
+            }
+        }
+        impl ModuleBacktrace for Noop {
+            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+                Vec::new()
+            }
+        }
+
+        let record = Record {
+            ts: Self::now_for_logging(),
+            target: None,
+            filename: None,
+            line_number: None,
+            function,
+            message,
+        };
+        self.console_log(level, &record, &Noop);
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        self.console_log_simple_message(LogLevel::Info, function, &message);
+    }
+
+    /// Returns the current time suitable for logging.
+    pub fn now_for_logging() -> DateTime<Utc> {
+        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start).
+        chrono::Utc::now()
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
@@ -214,7 +351,7 @@ impl InstanceEnv {
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, insert_flags) = stdb
@@ -227,7 +364,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -263,7 +400,7 @@ impl InstanceEnv {
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
 
-        let row_ref = tx.get(table_id, row_ptr)?.unwrap();
+        let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
         let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
             // NOTE(centril): Should never happen,
             // as we successfully inserted and thus `ret` is verified against the table schema.
@@ -283,7 +420,7 @@ impl InstanceEnv {
     }
 
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, update_flags) = stdb
@@ -296,7 +433,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -318,6 +455,23 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_delete_by_index_scan_point_bsatn(
+        &self,
+        index_id: IndexId,
+        point: &[u8],
+    ) -> Result<u32, NodesError> {
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
+
+        // Find all rows in the table to delete.
+        let (table_id, _, iter) = stdb.index_scan_point(tx, index_id, point)?;
+        // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
+        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+
+        Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_delete_by_index_scan_range_bsatn(
         &self,
         index_id: IndexId,
@@ -326,15 +480,26 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
-        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
-        // Note, we're deleting rows based on the result of a btree scan.
+        Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
+    }
+
+    /// Deletes `rows_to_delete` in `tx`
+    /// and assumes `rows_to_delete` came from an index scan.
+    fn datastore_delete_by_index_scan(
+        stdb: &RelationalDB,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        rows_to_delete: SmallVec<[RowPointer; 1]>,
+    ) -> u32 {
+        // Note, we're deleting rows based on the result of an index scan.
         // Hence we must update our `index_seeks` and `rows_scanned` metrics.
         //
         // Note that we're not updating `bytes_scanned` at all,
@@ -343,7 +508,7 @@ impl InstanceEnv {
         tx.metrics.rows_scanned += rows_to_delete.len();
 
         // Delete them and count how many we deleted.
-        Ok(stdb.delete(tx, table_id, rows_to_delete))
+        stdb.delete(tx, table_id, rows_to_delete)
     }
 
     /// Deletes all rows in the table identified by `table_id`
@@ -356,7 +521,7 @@ impl InstanceEnv {
     /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(level = "trace", skip(self, relation))]
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Track the number of bytes coming from the caller
@@ -383,7 +548,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
@@ -397,7 +562,7 @@ impl InstanceEnv {
     /// and `IndexNotFound` if the index does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the index id from the name.
@@ -411,11 +576,15 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the row count for id.
-        stdb.table_row_count_mut(tx, table_id).ok_or(NodesError::TableNotFound)
+        stdb.table_row_count_mut(tx, table_id)
+            .ok_or(NodesError::TableNotFound)
+            .inspect(|_| {
+                tx.record_table_scan(&self.func_type, table_id);
+            })
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -424,23 +593,44 @@ impl InstanceEnv {
         pool: &mut ChunkPool,
         table_id: TableId,
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let tx = &mut *self.get_tx()?;
 
-        // Track the number of rows and the number of bytes scanned by the iterator
-        let mut rows_scanned = 0;
-        let mut bytes_scanned = 0;
+        // Open the iterator.
+        let iter = self.relational_db().iter_mut(tx, table_id)?;
 
-        // Scan table and serialize rows to bsatn
-        let chunks = ChunkedWriter::collect_iter(
-            pool,
-            stdb.iter_mut(tx, table_id)?,
-            &mut rows_scanned,
-            &mut bytes_scanned,
-        );
+        // Scan the index and serialize rows to BSATN.
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
 
-        tx.metrics.rows_scanned += rows_scanned;
+        // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.bytes_scanned += bytes_scanned;
+        tx.metrics.rows_scanned += rows_scanned;
+
+        tx.record_table_scan(&self.func_type, table_id);
+
+        Ok(chunks)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_index_scan_point_bsatn_chunks(
+        &self,
+        pool: &mut ChunkPool,
+        index_id: IndexId,
+        point: &[u8],
+    ) -> Result<Vec<Vec<u8>>, NodesError> {
+        let tx = &mut *self.get_tx()?;
+
+        // Open index iterator
+        let (table_id, point, iter) = self.relational_db().index_scan_point(tx, index_id, point)?;
+
+        // Scan the index and serialize rows to BSATN.
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+
+        // Record the number of rows and the number of bytes scanned by the iterator.
+        tx.metrics.index_seeks += 1;
+        tx.metrics.bytes_scanned += bytes_scanned;
+        tx.metrics.rows_scanned += rows_scanned;
+
+        tx.record_index_scan_point(&self.func_type, table_id, index_id, point);
 
         Ok(chunks)
     }
@@ -455,44 +645,612 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
-
-        // Track rows and bytes scanned by the iterator
-        let mut rows_scanned = 0;
-        let mut bytes_scanned = 0;
+        let tx = &mut *self.get_tx()?;
 
         // Open index iterator
-        let (_, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, lower, upper, iter) =
+            self.relational_db()
+                .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
-        // Scan the index and serialize rows to bsatn
-        let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
+        // Scan the index and serialize rows to BSATN.
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
 
+        // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.index_seeks += 1;
-        tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
+        tx.metrics.rows_scanned += rows_scanned;
+
+        tx.record_index_scan_range(&self.func_type, table_id, index_id, lower, upper);
 
         Ok(chunks)
+    }
+
+    pub fn fill_buffer_from_iter(
+        iter: &mut IntoIter<Vec<u8>>,
+        mut buffer: &mut [u8],
+        chunk_pool: &mut ChunkPool,
+    ) -> usize {
+        let mut written = 0;
+        // Fill the buffer as much as possible.
+        while let Some(chunk) = iter.as_slice().first() {
+            let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
+                // Cannot fit chunk into the buffer,
+                // either because we already filled it too much,
+                // or because it is too small.
+                break;
+            };
+            buf_chunk.copy_from_slice(chunk);
+            written += chunk.len();
+            buffer = rest;
+
+            // Advance the iterator, as we used a chunk.
+            // SAFETY: We peeked one `chunk`, so there must be one at least.
+            let chunk = unsafe { iter.next().unwrap_unchecked() };
+            chunk_pool.put(chunk);
+        }
+
+        written
+    }
+
+    // Async procedure syscalls return a `Result<impl Future>`, so that we can check `get_tx()`
+    // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
+    // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
+
+    pub fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
+        if self.get_tx().is_ok() {
+            return Err(NodesError::WouldBlockTransaction(
+                super::AbiCall::ProcedureStartMutTransaction,
+            ));
+        }
+
+        let stdb = self.replica_ctx.relational_db.clone();
+        // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        self.tx.set_raw(tx);
+        self.in_anon_tx = true;
+
+        Ok(())
+    }
+
+    /// Finishes an anonymous transaction,
+    /// returning `Some(_)` if there was no ongoing one,
+    /// in which case the caller should return early.
+    fn finish_anon_tx(&mut self) -> Result<(), NodesError> {
+        if self.in_anon_tx {
+            self.in_anon_tx = false;
+            Ok(())
+        } else {
+            // Not in an anon tx context.
+            // This can happen if a reducer calls this ABI
+            // and tries to commit its own transaction early.
+            // We refuse to do this, as it would cause a later panic in the host.
+            Err(NodesError::NotInAnonTransaction)
+        }
+    }
+
+    // Async procedure syscalls return a `Result<impl Future>`, so that we can check `get_tx()`
+    // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
+    // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
+
+    pub fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
+        self.finish_anon_tx()?;
+
+        let stdb = self.relational_db().clone();
+        let tx = self.take_tx()?;
+        let subs = self.replica_ctx.subscriptions.clone();
+
+        let event = ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: stdb.database_identity(),
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            request_id: None,
+            timer: None,
+            // The procedure will pick up the tab for the energy.
+            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            host_execution_duration: Duration::from_millis(0),
+        };
+        // Commit the tx and broadcast it.
+        let event = commit_and_broadcast_event(&subs, None, event, tx);
+        self.procedure_last_tx_offset = Some(event.tx_offset);
+
+        Ok(())
+    }
+
+    pub fn abort_mutable_tx(&mut self) -> Result<(), NodesError> {
+        self.finish_anon_tx()?;
+        let stdb = self.relational_db().clone();
+        let tx = self.take_tx()?;
+
+        // Roll back the tx.
+        let offset = ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
+        self.procedure_last_tx_offset = Some(from_tx_offset(offset));
+        Ok(())
+    }
+
+    /// In-case there is a anonymous tx at the end of a procedure,
+    /// it must be terminated.
+    ///
+    /// This represents a misuse by the module author of the module ABI.
+    pub fn terminate_dangling_anon_tx(&mut self) {
+        // Try to abort the anon tx.
+        match self.abort_mutable_tx() {
+            // There was no dangling anon tx. Yay!
+            Err(NodesError::NotInAnonTransaction) => {}
+            // There was one, which has been aborted.
+            // The module is using the ABI wrong! 😭
+            Ok(()) => {
+                let message = format!(
+                    "aborting dangling anonymous transaction in procedure {}",
+                    self.func_name.as_deref().unwrap_or("<unknown>")
+                );
+                self.console_log_simple_message(LogLevel::Error, None, &message);
+            }
+            res => unreachable!("should've had a tx to close; {res:?}"),
+        }
+    }
+
+    /// After a procedure has finished, take its known last tx offset, if any.
+    pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
+        self.procedure_last_tx_offset.take()
+    }
+
+    /// Perform an HTTP request.
+    /// Exposed to modules via the `ProcedureContext`.
+    ///
+    /// It's very important that the error returned from this function
+    /// not contain any potentially sensitive data from `request`,
+    /// such as the query parameters or header values.
+    /// This way, it's safe to log the errors (either for us to do so, or for module code to do so),
+    /// and less dangerous to send them to the calling client of a procedure.
+    pub fn http_request(
+        &mut self,
+        request: st_http::Request,
+        body: bytes::Bytes,
+    ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>>, NodesError> {
+        if self.in_tx() {
+            // If we're holding a transaction open, refuse to perform this blocking operation.
+            return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
+        }
+
+        // Record in metrics that we're starting an HTTP request.
+        DB_METRICS
+            .procedure_num_http_requests
+            .with_label_values(self.database_identity())
+            .inc();
+        DB_METRICS
+            .procedure_http_request_size_bytes
+            .with_label_values(self.database_identity())
+            .inc_by((request.size_in_bytes() + body.len()) as _);
+        // Make a guard for the `in_progress` metric that will be decremented on exit.
+        let _in_progress_metric = DB_METRICS
+            .procedure_num_in_progress_http_requests
+            .with_label_values(self.database_identity())
+            .inc_scope();
+
+        /// Strip the query part out of the URL in `err`, as query parameters may be sensitive
+        /// and we'd like it to be safe to directly log errors from this method.
+        fn strip_query_params_from_reqwest_error(mut err: reqwest::Error) -> reqwest::Error {
+            if let Some(url) = err.url_mut() {
+                // `set_query` of `None` clears the query part.
+                url.set_query(None);
+            }
+            err
+        }
+
+        fn http_error<E: ToString>(err: E) -> NodesError {
+            NodesError::HttpError(err.to_string())
+        }
+
+        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
+        // and map its body into a type `reqwest` will like.
+        //
+        // See comments on and in `convert_http_request` for justification that there's no sensitive info in this error.
+        let (request, timeout) = convert_http_request(request).map_err(http_error)?;
+
+        let request = http::Request::from_parts(request, body);
+
+        let mut reqwest: reqwest::Request = request
+            .try_into()
+            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
+            // Strip those out before returning the error.
+            .map_err(strip_query_params_from_reqwest_error)
+            .map_err(http_error)?;
+
+        // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
+        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_DEFAULT_TIMEOUT);
+
+        // reqwest's timeout covers from the start of the request to the end of reading the body,
+        // so there's no need to do our own timeout operation.
+        *reqwest.timeout_mut() = Some(timeout);
+
+        let reqwest = reqwest;
+
+        // Check if we have a blocked IP address, since IP literals bypass DNS resolution.
+        if is_blocked_ip_literal(reqwest.url()) {
+            return Err(http_error(BLOCKED_HTTP_ADDRESS_ERROR));
+        }
+
+        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+            if is_blocked_ip_literal(attempt.url()) {
+                attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
+            } else {
+                reqwest::redirect::Policy::default().redirect(attempt)
+            }
+        });
+
+        // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
+
+        // Actually execute the HTTP request!
+        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+        let execute_fut = reqwest::Client::builder()
+            .dns_resolver(Arc::new(FilteredDnsResolver))
+            .redirect(redirect_policy)
+            .build()
+            .map_err(http_error)?
+            .execute(reqwest);
+
+        // Run the future that does IO work on a tokio worker thread, where it's more efficent.
+        let response_fut = tokio::spawn(async {
+            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
+            // We'll strip those with `strip_query_params_from_eqwest_error`
+            // after `await`ing `response_fut` below.
+            let response = execute_fut.await?;
+
+            // Download the response body, which in all likelihood will be a stream,
+            // as reqwest seems to prefer that.
+            let (response, body) = http::Response::from(response).into_parts();
+
+            // This error may also contain the full URL with query params.
+            // Again, we'll strip them after `await`ing `response_fut` below.
+            let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
+
+            Ok((response, body))
+        })
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
+
+        let database_identity = *self.database_identity();
+
+        Ok(async move {
+            let (response, body) = response_fut
+                .await
+                .inspect_err(|err: &reqwest::Error| {
+                    // Report the request's failure in our metrics as either a timeout or a misc. failure, as appropriate.
+                    if err.is_timeout() {
+                        DB_METRICS
+                            .procedure_num_timeout_http_requests
+                            .with_label_values(&database_identity)
+                            .inc();
+                    } else {
+                        DB_METRICS
+                            .procedure_num_failed_http_requests
+                            .with_label_values(&database_identity)
+                            .inc();
+                    }
+                })
+                // `response_fut` returns a `reqwest::Error`, which may contain the full URL including query params.
+                // Strip them out to clean the error of potentially sensitive info.
+                .map_err(strip_query_params_from_reqwest_error)
+                .map_err(http_error)?;
+
+            // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
+            // which has a stable BSATN encoding to pass across the WASM boundary.
+            let response = convert_http_response(response);
+
+            // Record the response size in bytes.
+            DB_METRICS
+                .procedure_http_response_size_bytes
+                .with_label_values(&database_identity)
+                .inc_by((response.size_in_bytes() + body.len()) as _);
+
+            Ok((response, body))
+        })
+    }
+}
+
+/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+///
+/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
+
+struct FilteredDnsResolver;
+
+impl reqwest::dns::Resolve for FilteredDnsResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            let addrs = tokio::net::lookup_host((host.as_str(), 0)).await?;
+            let filtered_addrs: Vec<SocketAddr> = addrs.filter(|addr| !is_blocked_ip(addr.ip())).collect();
+
+            if filtered_addrs.is_empty() {
+                return Err(
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, BLOCKED_HTTP_ADDRESS_ERROR).into(),
+                );
+            }
+
+            Ok(Box::new(filtered_addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+fn is_blocked_ip_literal(url: &reqwest::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Ipv4(ip)) => is_blocked_ip(IpAddr::V4(ip)),
+        Some(url::Host::Ipv6(ip)) => is_blocked_ip(IpAddr::V6(ip)),
+        Some(url::Host::Domain(_)) | None => false,
+    }
+}
+
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_blocked_ipv4(ip),
+        IpAddr::V6(ip) => is_blocked_ipv6(ip),
+    }
+}
+
+fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, d] = ip.octets();
+    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    // RFC 6890 Section 2.2.2, Table 1: "This host on this network" (0.0.0.0/8).
+    let is_this_host_on_this_network = a == 0;
+    // RFC 6890 Section 2.2.2, Table 2: "Private-Use" (10.0.0.0/8).
+    let is_private_use_10 = a == 10;
+    // RFC 6890 Section 2.2.2, Table 3: "Shared Address Space" (100.64.0.0/10).
+    let is_shared_address_space = a == 100 && (b & 0b1100_0000) == 0b0100_0000;
+    // RFC 6890 Section 2.2.2, Table 4: "Loopback" (127.0.0.0/8).
+    let is_loopback = block_loopback && a == 127;
+    // RFC 6890 Section 2.2.2, Table 5: "Link Local" (169.254.0.0/16).
+    let is_link_local = a == 169 && b == 254;
+    // RFC 6890 Section 2.2.2, Table 6: "Private-Use" (172.16.0.0/12).
+    let is_private_use_172 = a == 172 && (b & 0b1111_0000) == 16;
+    // RFC 6890 Section 2.2.2, Table 7: "IETF Protocol Assignments" (192.0.0.0/24).
+    let is_ietf_protocol_assignments = a == 192 && b == 0 && c == 0;
+    // RFC 6890 Section 2.2.2, Table 8: "Documentation (TEST-NET-1)" (192.0.2.0/24).
+    let is_test_net_1 = a == 192 && b == 0 && c == 2;
+    // RFC 6890 Section 2.2.2, Table 9: "AS112-v4" (192.31.196.0/24).
+    let is_as112_v4 = a == 192 && b == 31 && c == 196;
+    // RFC 6890 Section 2.2.2, Table 10: "AMT" (192.52.193.0/24).
+    let is_amt = a == 192 && b == 52 && c == 193;
+    // RFC 6890 Section 2.2.2, Table 11: "6to4 Relay Anycast" (192.88.99.0/24).
+    let is_6to4_relay_anycast = a == 192 && b == 88 && c == 99;
+    // RFC 6890 Section 2.2.2, Table 12: "Private-Use" (192.168.0.0/16).
+    let is_private_use_192 = a == 192 && b == 168;
+    // RFC 6890 Section 2.2.2, Table 13: "Direct Delegation AS112 Service" (192.175.48.0/24).
+    let is_direct_delegation_as112_service = a == 192 && b == 175 && c == 48;
+    // RFC 6890 Section 2.2.2, Table 14: "Benchmarking" (198.18.0.0/15).
+    let is_benchmarking = a == 198 && (b & 0b1111_1110) == 18;
+    // RFC 6890 Section 2.2.2, Table 15: "Documentation (TEST-NET-2)" (198.51.100.0/24).
+    let is_test_net_2 = a == 198 && b == 51 && c == 100;
+    // RFC 6890 Section 2.2.2, Table 16: "Documentation (TEST-NET-3)" (203.0.113.0/24).
+    let is_test_net_3 = a == 203 && b == 0 && c == 113;
+    // RFC 6890 Section 2.2.2, Table 17: "Reserved" (240.0.0.0/4).
+    let is_reserved = (a & 0b1111_0000) == 0b1111_0000;
+    // RFC 6890 Section 2.2.2, Table 18: "Limited Broadcast" (255.255.255.255/32).
+    let is_limited_broadcast = a == 255 && b == 255 && c == 255 && d == 255;
+
+    is_this_host_on_this_network
+        || is_private_use_10
+        || is_shared_address_space
+        || is_loopback
+        || is_link_local
+        || is_private_use_172
+        || is_ietf_protocol_assignments
+        || is_test_net_1
+        || is_as112_v4
+        || is_amt
+        || is_6to4_relay_anycast
+        || is_private_use_192
+        || is_direct_delegation_as112_service
+        || is_benchmarking
+        || is_test_net_2
+        || is_test_net_3
+        || is_reserved
+        || is_limited_broadcast
+}
+
+fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
+    let segments = ip.segments();
+    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    // RFC 6890 Section 2.2.3, Table 17: "Loopback Address" (::1/128).
+    let is_loopback_address = block_loopback && ip == Ipv6Addr::LOCALHOST;
+    // RFC 6890 Section 2.2.3, Table 18: "Unspecified Address" (::/128).
+    let is_unspecified_address = ip.is_unspecified();
+    // RFC 6890 Section 2.2.3, Table 19: "IPv4-IPv6 Translat." (64:ff9b::/96).
+    let is_ipv4_ipv6_translation = segments[0] == 0x0064
+        && segments[1] == 0xff9b
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0;
+    // IANA IPv6 Special-Purpose Address Space: "IPv4-IPv6 Translat." (64:ff9b:1::/48), RFC 8215.
+    let is_ipv4_ipv6_translation_local_use = segments[0] == 0x0064 && segments[1] == 0xff9b && segments[2] == 0x0001;
+    // RFC 6890 Section 2.2.3, Table 20: "IPv4-mapped Address" (::ffff:0:0/96).
+    let is_ipv4_mapped = segments[0] == 0
+        && segments[1] == 0
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0xffff;
+    // RFC 6890 Section 2.2.3, Table 21: "Discard-Only Address Block" (100::/64).
+    let is_discard_only_prefix = segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 0;
+    // IANA IPv6 Special-Purpose Address Space: "Dummy IPv6 Prefix" (100:0:0:1::/64), RFC 9780.
+    let is_dummy_ipv6_prefix = segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 1;
+    // RFC 6890 Section 2.2.3, Table 22: "IETF Protocol Assignments" (2001::/23).
+    // This broader prefix also covers newer IANA entries including:
+    // `2001:1::1/128`, `2001:1::2/128`, `2001:1::3/128`, `2001:3::/32`,
+    // `2001:4:112::/48`, `2001:20::/28`, and `2001:30::/28`.
+    let is_ietf_protocol_assignments = segments[0] == 0x2001 && (segments[1] & 0xfe00) == 0;
+    // RFC 6890 Section 2.2.3, Table 23: "TEREDO" (2001::/32).
+    let is_teredo = segments[0] == 0x2001 && segments[1] == 0;
+    // RFC 6890 Section 2.2.3, Table 24: "Benchmarking" (2001:2::/48).
+    let is_benchmarking = segments[0] == 0x2001 && segments[1] == 0x0002 && segments[2] == 0;
+    // RFC 6890 Section 2.2.3, Table 25: "Documentation" (2001:db8::/32).
+    let is_documentation = segments[0] == 0x2001 && segments[1] == 0x0db8;
+    // RFC 6890 Section 2.2.3, Table 26: "ORCHID" (2001:10::/28).
+    let is_orchid = segments[0] == 0x2001 && (segments[1] & 0xfff0) == 0x0010;
+    // RFC 6890 Section 2.2.3, Table 27: "6to4" (2002::/16).
+    let is_6to4 = segments[0] == 0x2002;
+    // IANA IPv6 Special-Purpose Address Space: "Direct Delegation AS112 Service" (2620:4f:8000::/48), RFC 7534.
+    let is_direct_delegation_as112_service = segments[0] == 0x2620 && segments[1] == 0x004f && segments[2] == 0x8000;
+    // IANA IPv6 Special-Purpose Address Space: "Documentation" (3fff::/20), RFC 9637.
+    let is_documentation_3fff = segments[0] == 0x3fff && (segments[1] & 0xf000) == 0;
+    // IANA IPv6 Special-Purpose Address Space: "Segment Routing (SRv6) SIDs" (5f00::/16), RFC 9602.
+    let is_segment_routing_srv6_sids = segments[0] == 0x5f00;
+    // RFC 6890 Section 2.2.3, Table 28: "Unique-Local" (fc00::/7).
+    let is_unique_local = (segments[0] & 0xfe00) == 0xfc00;
+    // RFC 6890 Section 2.2.3, Table 29: "Linked-Scoped Unicast" (fe80::/10).
+    let is_link_scoped_unicast = (segments[0] & 0xffc0) == 0xfe80;
+
+    is_loopback_address
+        || is_unspecified_address
+        || is_ipv4_ipv6_translation
+        || is_ipv4_ipv6_translation_local_use
+        || is_ipv4_mapped
+        || is_discard_only_prefix
+        || is_dummy_ipv6_prefix
+        || is_ietf_protocol_assignments
+        || is_teredo
+        || is_benchmarking
+        || is_documentation
+        || is_orchid
+        || is_6to4
+        || is_direct_delegation_as112_service
+        || is_documentation_3fff
+        || is_segment_routing_srv6_sids
+        || is_unique_local
+        || is_link_scoped_unicast
+}
+
+/// Unpack `request` and convert it into an [`http::request::Parts`],
+/// and a [`Duration`] from its `timeout` if supplied.
+///
+/// It's very important that the error return from this function
+/// not contain any potentially sensitive data from `request`,
+/// such as the query parameters or header values.
+/// See comment on [`InstanceEnv::http_request`].
+fn convert_http_request(request: st_http::Request) -> http::Result<(http::request::Parts, Option<Duration>)> {
+    let st_http::Request {
+        method,
+        headers,
+        timeout,
+        uri,
+        version,
+    } = request;
+
+    let (mut request, ()) = http::Request::new(()).into_parts();
+    request.method = match method {
+        st_http::Method::Get => http::Method::GET,
+        st_http::Method::Head => http::Method::HEAD,
+        st_http::Method::Post => http::Method::POST,
+        st_http::Method::Put => http::Method::PUT,
+        st_http::Method::Delete => http::Method::DELETE,
+        st_http::Method::Connect => http::Method::CONNECT,
+        st_http::Method::Options => http::Method::OPTIONS,
+        st_http::Method::Trace => http::Method::TRACE,
+        st_http::Method::Patch => http::Method::PATCH,
+        st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
+    };
+    // The error type here, `http::uri::InvalidUri`, doesn't contain the URI itself,
+    // so it's safe to return and to log.
+    // See https://docs.rs/http/1.3.1/src/http/uri/mod.rs.html#120-141 .
+    request.uri = uri.try_into()?;
+    request.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    request.headers = headers
+        .into_iter()
+        .map(|(k, v)| {
+            Ok((
+                // The error type here, `http::header::InvalidHeaderName`, doesn't contain the header name itself,
+                // so it's safe to return and to log.
+                // See https://docs.rs/http/1.3.1/src/http/header/name.rs.html#60-63 .
+                k.into_string().try_into()?,
+                // The error type here, `http::header::InvalidHeaderValue`, doesn't contain the header value itself,
+                // so it's safe to return and to log.
+                // See https://docs.rs/http/1.3.1/src/http/header/value.rs.html#27-31 .
+                v.into_vec().try_into()?,
+            ))
+        })
+        // Collecting into a `HeaderMap` doesn't add any new possible errors,
+        // the `?` here is just to propogate the errors from converting the individual header names and values.
+        // We know those are free from sensitive info, so this result is clean.
+        .collect::<http::Result<_>>()?;
+
+    let timeout = timeout.map(|d| d.to_duration_saturating());
+
+    Ok((request, timeout))
+}
+
+fn convert_http_response(response: http::response::Parts) -> st_http::Response {
+    let http::response::Parts {
+        extensions,
+        headers,
+        status,
+        version,
+        ..
+    } = response;
+
+    // there's a good chance that reqwest inserted some extensions into this request,
+    // but we can't control that and don't care much about it.
+    let _ = extensions;
+
+    st_http::Response {
+        headers: headers
+            .into_iter()
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+            .collect(),
+        version: match version {
+            http::Version::HTTP_09 => st_http::Version::Http09,
+            http::Version::HTTP_10 => st_http::Version::Http10,
+            http::Version::HTTP_11 => st_http::Version::Http11,
+            http::Version::HTTP_2 => st_http::Version::Http2,
+            http::Version::HTTP_3 => st_http::Version::Http3,
+            _ => unreachable!("Unknown HTTP version: {version:?}"),
+        },
+        code: status.as_u16(),
     }
 }
 
 impl TxSlot {
-    pub fn set<T>(&mut self, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
+    /// Sets the slot to `tx`, ensuring that there was no tx before.
+    pub fn set_raw(&mut self, tx: MutTxId) {
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
-        let remove_tx = || self.inner.lock().take();
+    }
+
+    /// Sets the slot to `tx` runs `work`, and returns back `tx`.
+    pub fn set<T>(&mut self, tx: MutTxId, work: impl FnOnce() -> T) -> (MutTxId, T) {
+        self.set_raw(tx);
+
+        let remove_tx = || self.take().expect("tx was removed during transaction");
 
         let res = {
             scopeguard::defer_on_unwind! { remove_tx(); }
-            f()
+            work()
         };
 
-        let tx = remove_tx().expect("tx was removed during transaction");
+        let tx = remove_tx();
         (tx, res)
     }
 
+    /// Returns the tx in the slot.
     pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
+    }
+
+    /// Steals the tx from the slot.
+    pub fn take(&self) -> Result<MutTxId, GetTxError> {
+        self.inner.lock().take().ok_or(GetTxError)
     }
 }
 
@@ -504,6 +1262,13 @@ impl From<GetTxError> for NodesError {
     }
 }
 
+impl Display for GetTxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not in a transaction")
+    }
+}
+impl std::error::Error for GetTxError {}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -512,78 +1277,64 @@ mod test {
 
     use crate::{
         database_logger::DatabaseLogger,
-        db::{
-            datastore::traits::IsolationLevel,
-            relational_db::{tests_utils::TestDB, RelationalDB},
+        db::relational_db::{
+            tests_utils::{begin_mut_tx, with_auto_commit, with_read_only, TestDB},
+            RelationalDB,
         },
-        execution_context::Workload,
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
-        subscription::{
-            module_subscription_actor::ModuleSubscriptions, module_subscription_manager::SubscriptionManager,
-        },
+        subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
-    use parking_lot::RwLock;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
-    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
-    use tempfile::TempDir;
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
-    fn temp_logger() -> Result<DatabaseLogger> {
-        let temp = TempDir::new()?;
-        let path = ModuleLogsDir::from_path_unchecked(temp.into_path());
-        let path = path.today();
-        Ok(DatabaseLogger::open(path))
-    }
-
-    /// An `InstanceEnv` requires `ModuleSubscriptions`
-    fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(
-            relational_db,
-            Arc::new(RwLock::new(SubscriptionManager::default())),
-            Identity::ZERO,
-        )
+    fn temp_logger() -> DatabaseLogger {
+        DatabaseLogger::in_memory(64 * 1024)
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
-    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<ReplicaContext> {
-        Ok(ReplicaContext {
-            database: Database {
-                id: 0,
-                database_identity: Identity::ZERO,
-                owner_identity: Identity::ZERO,
-                host_type: HostType::Wasm,
-                initial_program: Hash::ZERO,
+    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        let logger = {
+            let _rt = runtime.enter();
+            Arc::new(temp_logger())
+        };
+        Ok((
+            ReplicaContext {
+                database: Database {
+                    id: 0,
+                    database_identity: Identity::ZERO,
+                    owner_identity: Identity::ZERO,
+                    host_type: HostType::Wasm,
+                    initial_program: Hash::ZERO,
+                },
+                replica_id: 0,
+                logger,
+                subscriptions: subs,
+                relational_db,
             },
-            replica_id: 0,
-            logger: Arc::new(temp_logger()?),
-            subscriptions: subscription_actor(relational_db.clone()),
-            relational_db,
-        })
+            runtime,
+        ))
     }
 
     /// An `InstanceEnv` used for testing the database syscalls.
-    fn instance_env(db: Arc<RelationalDB>) -> Result<InstanceEnv> {
+    fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
-        Ok(InstanceEnv {
-            replica_ctx: Arc::new(replica_ctx(db)?),
-            scheduler,
-            tx: TxSlot::default(),
-            start_time: Timestamp::now(),
-        })
+        let (replica_context, runtime) = replica_ctx(db)?;
+        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
     }
 
     /// An in-memory `RelationalDB` for testing.
     /// It does not persist data to disk.
     fn relational_db() -> Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
-        Ok(Arc::new(db))
+        Ok(db)
     }
 
     /// Generate a `ProductValue` for use in [create_table_with_index]
@@ -618,7 +1369,7 @@ mod test {
             &[("id", AlgebraicType::U64), ("str", AlgebraicType::String)],
             &[0.into()],
         )?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(db, |tx| {
             db.schema_for_table(tx, table_id)?
                 .indexes
                 .iter()
@@ -632,7 +1383,7 @@ mod test {
                 .map(|schema| schema.index_id)
                 .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
         })?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+        with_auto_commit(db, |tx| -> Result<_> {
             for i in 1..=5 {
                 db.insert(tx, table_id, &bsatn_row(i)?)?;
             }
@@ -649,7 +1400,7 @@ mod test {
             &[0.into()],
             StAccess::Public,
         )?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(db, |tx| {
             db.schema_for_table(tx, table_id)?
                 .indexes
                 .iter()
@@ -663,7 +1414,7 @@ mod test {
                 .map(|schema| schema.index_id)
                 .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
         })?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+        with_auto_commit(db, |tx| -> Result<_> {
             for i in 1..=5 {
                 db.insert(tx, table_id, &bsatn_row(i)?)?;
             }
@@ -673,16 +1424,534 @@ mod test {
     }
 
     #[test]
+    fn blocks_each_rfc6890_ipv4_range() {
+        // RFC 6890 §2.2.2 tables 1-18.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let cases = [
+            // Table 1: This host on this network (0.0.0.0/8).
+            (Ipv4Addr::new(0, 0, 0, 1), true),
+            // Table 2: Private-Use (10.0.0.0/8).
+            (Ipv4Addr::new(10, 255, 255, 255), true),
+            // Table 3: Shared Address Space (100.64.0.0/10).
+            (Ipv4Addr::new(100, 127, 255, 255), true),
+            // Table 4: Loopback (127.0.0.0/8).
+            (Ipv4Addr::new(127, 0, 0, 1), block_loopback),
+            // Table 5: Link Local (169.254.0.0/16).
+            (Ipv4Addr::new(169, 254, 255, 255), true),
+            // Table 6: Private-Use (172.16.0.0/12).
+            (Ipv4Addr::new(172, 31, 255, 255), true),
+            // Table 7: IETF Protocol Assignments (192.0.0.0/24).
+            (Ipv4Addr::new(192, 0, 0, 255), true),
+            // Table 8: Documentation (TEST-NET-1) (192.0.2.0/24).
+            (Ipv4Addr::new(192, 0, 2, 1), true),
+            // Table 9: AS112-v4 (192.31.196.0/24).
+            (Ipv4Addr::new(192, 31, 196, 1), true),
+            // Table 10: AMT (192.52.193.0/24).
+            (Ipv4Addr::new(192, 52, 193, 1), true),
+            // Table 11: 6to4 Relay Anycast (192.88.99.0/24).
+            (Ipv4Addr::new(192, 88, 99, 1), true),
+            // Table 12: Private-Use (192.168.0.0/16).
+            (Ipv4Addr::new(192, 168, 255, 255), true),
+            // Table 13: Direct Delegation AS112 Service (192.175.48.0/24).
+            (Ipv4Addr::new(192, 175, 48, 1), true),
+            // Table 14: Benchmarking (198.18.0.0/15).
+            (Ipv4Addr::new(198, 19, 255, 255), true),
+            // Table 15: Documentation (TEST-NET-2) (198.51.100.0/24).
+            (Ipv4Addr::new(198, 51, 100, 1), true),
+            // Table 16: Documentation (TEST-NET-3) (203.0.113.0/24).
+            (Ipv4Addr::new(203, 0, 113, 1), true),
+            // Table 17: Reserved (240.0.0.0/4).
+            (Ipv4Addr::new(240, 0, 0, 1), true),
+            // Table 18: Limited Broadcast (255.255.255.255/32).
+            (Ipv4Addr::new(255, 255, 255, 255), true),
+        ];
+
+        for (addr, expected_blocked) in cases {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(addr)),
+                expected_blocked,
+                "unexpected block decision for {addr}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_ip_literal_hosts_in_urls() {
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        assert_eq!(
+            is_blocked_ip_literal(&reqwest::Url::parse("http://127.0.0.1:80/").unwrap()),
+            block_loopback
+        );
+        assert_eq!(
+            is_blocked_ip_literal(&reqwest::Url::parse("http://[::1]:80/").unwrap()),
+            block_loopback
+        );
+        assert!(is_blocked_ip_literal(
+            &reqwest::Url::parse("http://10.0.0.1:80/").unwrap()
+        ));
+        assert!(is_blocked_ip_literal(
+            &reqwest::Url::parse("http://[fc00::1]:80/").unwrap()
+        ));
+        assert!(!is_blocked_ip_literal(
+            &reqwest::Url::parse("http://8.8.8.8:80/").unwrap()
+        ));
+        assert!(!is_blocked_ip_literal(
+            &reqwest::Url::parse("http://example.com:80/").unwrap()
+        ));
+    }
+
+    #[test]
+    fn blocks_rfc6890_ipv4_range_endpoints() {
+        // RFC 6890 §2.2.2 tables 1-18, checked at each range's low/high endpoints.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let ranges = [
+            // Table 1: This host on this network (0.0.0.0/8).
+            (
+                "this-host-on-this-network",
+                Ipv4Addr::new(0, 0, 0, 0),
+                Ipv4Addr::new(0, 255, 255, 255),
+                true,
+            ),
+            // Table 2: Private-Use (10.0.0.0/8).
+            (
+                "private-use-10",
+                Ipv4Addr::new(10, 0, 0, 0),
+                Ipv4Addr::new(10, 255, 255, 255),
+                true,
+            ),
+            // Table 3: Shared Address Space (100.64.0.0/10).
+            (
+                "shared-address-space",
+                Ipv4Addr::new(100, 64, 0, 0),
+                Ipv4Addr::new(100, 127, 255, 255),
+                true,
+            ),
+            // Table 4: Loopback (127.0.0.0/8).
+            (
+                "loopback",
+                Ipv4Addr::new(127, 0, 0, 0),
+                Ipv4Addr::new(127, 255, 255, 255),
+                block_loopback,
+            ),
+            // Table 5: Link Local (169.254.0.0/16).
+            (
+                "link-local",
+                Ipv4Addr::new(169, 254, 0, 0),
+                Ipv4Addr::new(169, 254, 255, 255),
+                true,
+            ),
+            // Table 6: Private-Use (172.16.0.0/12).
+            (
+                "private-use-172",
+                Ipv4Addr::new(172, 16, 0, 0),
+                Ipv4Addr::new(172, 31, 255, 255),
+                true,
+            ),
+            // Table 7: IETF Protocol Assignments (192.0.0.0/24).
+            (
+                "ietf-protocol-assignments",
+                Ipv4Addr::new(192, 0, 0, 0),
+                Ipv4Addr::new(192, 0, 0, 255),
+                true,
+            ),
+            // Table 8: Documentation (TEST-NET-1) (192.0.2.0/24).
+            (
+                "test-net-1",
+                Ipv4Addr::new(192, 0, 2, 0),
+                Ipv4Addr::new(192, 0, 2, 255),
+                true,
+            ),
+            // Table 9: AS112-v4 (192.31.196.0/24).
+            (
+                "as112-v4",
+                Ipv4Addr::new(192, 31, 196, 0),
+                Ipv4Addr::new(192, 31, 196, 255),
+                true,
+            ),
+            // Table 10: AMT (192.52.193.0/24).
+            (
+                "amt",
+                Ipv4Addr::new(192, 52, 193, 0),
+                Ipv4Addr::new(192, 52, 193, 255),
+                true,
+            ),
+            // Table 11: 6to4 Relay Anycast (192.88.99.0/24).
+            (
+                "6to4-relay-anycast",
+                Ipv4Addr::new(192, 88, 99, 0),
+                Ipv4Addr::new(192, 88, 99, 255),
+                true,
+            ),
+            // Table 12: Private-Use (192.168.0.0/16).
+            (
+                "private-use-192",
+                Ipv4Addr::new(192, 168, 0, 0),
+                Ipv4Addr::new(192, 168, 255, 255),
+                true,
+            ),
+            // Table 13: Direct Delegation AS112 Service (192.175.48.0/24).
+            (
+                "direct-delegation-as112-service",
+                Ipv4Addr::new(192, 175, 48, 0),
+                Ipv4Addr::new(192, 175, 48, 255),
+                true,
+            ),
+            // Table 14: Benchmarking (198.18.0.0/15).
+            (
+                "benchmarking",
+                Ipv4Addr::new(198, 18, 0, 0),
+                Ipv4Addr::new(198, 19, 255, 255),
+                true,
+            ),
+            // Table 15: Documentation (TEST-NET-2) (198.51.100.0/24).
+            (
+                "test-net-2",
+                Ipv4Addr::new(198, 51, 100, 0),
+                Ipv4Addr::new(198, 51, 100, 255),
+                true,
+            ),
+            // Table 16: Documentation (TEST-NET-3) (203.0.113.0/24).
+            (
+                "test-net-3",
+                Ipv4Addr::new(203, 0, 113, 0),
+                Ipv4Addr::new(203, 0, 113, 255),
+                true,
+            ),
+            // Table 17: Reserved (240.0.0.0/4).
+            (
+                "reserved",
+                Ipv4Addr::new(240, 0, 0, 0),
+                Ipv4Addr::new(255, 255, 255, 255),
+                true,
+            ),
+            // Table 18: Limited Broadcast (255.255.255.255/32).
+            (
+                "limited-broadcast",
+                Ipv4Addr::new(255, 255, 255, 255),
+                Ipv4Addr::new(255, 255, 255, 255),
+                true,
+            ),
+        ];
+
+        for (name, low, high, expected_blocked) in ranges {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(low)),
+                expected_blocked,
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(high)),
+                expected_blocked,
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_each_rfc6890_ipv6_range() {
+        // RFC 6890 §2.2.3 tables 17-29.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let cases = [
+            // Table 17: Loopback Address (::1/128).
+            (Ipv6Addr::LOCALHOST, block_loopback),
+            // Table 18: Unspecified Address (::/128).
+            (Ipv6Addr::UNSPECIFIED, true),
+            // Table 19: IPv4-IPv6 Translat. (64:ff9b::/96).
+            (Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0xc000, 0x0201), true),
+            // Table 20: IPv4-mapped Address (::ffff:0:0/96).
+            (Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0808, 0x0808), true),
+            // Table 21: Discard-Only Address Block (100::/64).
+            (Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 22: IETF Protocol Assignments (2001::/23).
+            (Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1), true),
+            // Table 23: TEREDO (2001::/32).
+            (Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 1), true),
+            // Table 24: Benchmarking (2001:2::/48).
+            (Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0, 0, 0, 0, 1), true),
+            // Table 25: Documentation (2001:db8::/32).
+            (Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1), true),
+            // Table 26: ORCHID (2001:10::/28).
+            (Ipv6Addr::new(0x2001, 0x0010, 0, 0, 0, 0, 0, 1), true),
+            // Table 27: 6to4 (2002::/16).
+            (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 28: Unique-Local (fc00::/7).
+            (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 29: Linked-Scoped Unicast (fe80::/10).
+            (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), true),
+        ];
+
+        for (addr, expected_blocked) in cases {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(addr)),
+                expected_blocked,
+                "unexpected block decision for {addr}"
+            );
+        }
+        // A normal global IPv6 address should remain allowed.
+        assert!(!is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111
+        ))));
+    }
+
+    #[test]
+    fn blocks_rfc6890_ipv6_range_endpoints() {
+        // RFC 6890 §2.2.3 tables 17-29, checked at each range's low/high endpoints.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let ranges = [
+            // Table 17: Loopback Address (::1/128).
+            (
+                "loopback-address",
+                Ipv6Addr::LOCALHOST,
+                Ipv6Addr::LOCALHOST,
+                block_loopback,
+            ),
+            // Table 18: Unspecified Address (::/128).
+            (
+                "unspecified-address",
+                Ipv6Addr::UNSPECIFIED,
+                Ipv6Addr::UNSPECIFIED,
+                true,
+            ),
+            // Table 19: IPv4-IPv6 Translat. (64:ff9b::/96).
+            (
+                "ipv4-ipv6-translation",
+                Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 20: IPv4-mapped Address (::ffff:0:0/96).
+            (
+                "ipv4-mapped-address",
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0),
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 21: Discard-Only Address Block (100::/64).
+            (
+                "discard-only-address-block",
+                Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0100, 0, 0, 0, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 22: IETF Protocol Assignments (2001::/23).
+            (
+                "ietf-protocol-assignments",
+                Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x01ff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 23: TEREDO (2001::/32).
+            (
+                "teredo",
+                Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 24: Benchmarking (2001:2::/48).
+            (
+                "benchmarking",
+                Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 25: Documentation (2001:db8::/32).
+            (
+                "documentation",
+                Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0db8, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 26: ORCHID (2001:10::/28).
+            (
+                "orchid",
+                Ipv6Addr::new(0x2001, 0x0010, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x001f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 27: 6to4 (2002::/16).
+            (
+                "6to4",
+                Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2002, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 28: Unique-Local (fc00::/7).
+            (
+                "unique-local",
+                Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0xfdff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 29: Linked-Scoped Unicast (fe80::/10).
+            (
+                "linked-scoped-unicast",
+                Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0xfebf, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+        ];
+
+        for (name, low, high, expected_blocked) in ranges {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(low)),
+                expected_blocked,
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(high)),
+                expected_blocked,
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_additional_iana_ipv6_range() {
+        // Additional ranges listed in the IANA IPv6 Special-Purpose Address Space registry.
+        // Some are transitively covered by the broader `2001::/23` block, and are kept
+        // here intentionally as explicit regression checks.
+        let cases = [
+            // IPv4-IPv6 Translat. local-use prefix (`64:ff9b:1::/48`).
+            Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0, 0, 0, 0, 1),
+            // Dummy IPv6 Prefix (`100:0:0:1::/64`).
+            Ipv6Addr::new(0x0100, 0, 0, 1, 0, 0, 0, 1),
+            // Port Control Protocol Anycast (`2001:1::1/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+            // Traversal Using Relays around NAT Anycast (`2001:1::2/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+            // DNS-SD Service Registration Protocol Anycast (`2001:1::3/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+            // AMT (`2001:3::/32`).
+            Ipv6Addr::new(0x2001, 0x0003, 0, 0, 0, 0, 0, 1),
+            // AS112-v6 (`2001:4:112::/48`).
+            Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0, 0, 0, 0, 1),
+            // ORCHIDv2 (`2001:20::/28`).
+            Ipv6Addr::new(0x2001, 0x0020, 0, 0, 0, 0, 0, 1),
+            // Drone Remote ID Protocol Entity Tags (DETs) Prefix (`2001:30::/28`).
+            Ipv6Addr::new(0x2001, 0x0030, 0, 0, 0, 0, 0, 1),
+            // Direct Delegation AS112 Service (`2620:4f:8000::/48`).
+            Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0, 0, 0, 0, 1),
+            // Documentation (`3fff::/20`).
+            Ipv6Addr::new(0x3fff, 0x0001, 0, 0, 0, 0, 0, 1),
+            // Segment Routing (SRv6) SIDs (`5f00::/16`).
+            Ipv6Addr::new(0x5f00, 0, 0, 0, 0, 0, 0, 1),
+        ];
+
+        for addr in cases {
+            assert!(
+                is_blocked_ip(IpAddr::V6(addr)),
+                "expected additional IANA IPv6 range to be blocked: {addr}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_additional_iana_ipv6_range_endpoints() {
+        // Additional ranges listed in the IANA IPv6 Special-Purpose Address Space registry.
+        // Some are transitively covered by the broader `2001::/23` block, and are kept
+        // here intentionally as explicit regression checks.
+        let ranges = [
+            (
+                "ipv4-ipv6-translation-local-use",
+                Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "dummy-ipv6-prefix",
+                Ipv6Addr::new(0x0100, 0, 0, 1, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0100, 0, 0, 1, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "pcp-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+            ),
+            (
+                "turn-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+            ),
+            (
+                "dns-sd-srp-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+            ),
+            (
+                "amt",
+                Ipv6Addr::new(0x2001, 0x0003, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0003, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "as112-v6",
+                Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "orchidv2",
+                Ipv6Addr::new(0x2001, 0x0020, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x002f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "drone-remote-id-dets-prefix",
+                Ipv6Addr::new(0x2001, 0x0030, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x003f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "direct-delegation-as112-service",
+                Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "documentation-3fff",
+                Ipv6Addr::new(0x3fff, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x3fff, 0x0fff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "segment-routing-srv6-sids",
+                Ipv6Addr::new(0x5f00, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x5f00, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+        ];
+
+        for (name, low, high) in ranges {
+            assert!(
+                is_blocked_ip(IpAddr::V6(low)),
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert!(
+                is_blocked_ip(IpAddr::V6(high)),
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_ipv6_encodings_of_private_ipv4() {
+        // IPv4-mapped form of `10.0.0.1`: `::ffff:10.0.0.1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0001
+        ))));
+        // 6to4 form carrying `10.0.0.1`: `2002:0a00:0001::1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2002, 0x0a00, 0x0001, 0, 0, 0, 0, 1
+        ))));
+        // IPv4/IPv6 translation prefix carrying `10.0.0.1`: `64:ff9b::a00:1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x0064, 0xff9b, 0, 0, 0, 0, 0x0a00, 0x0001
+        ))));
+    }
+
+    #[test]
     fn table_scan_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
         let mut tx_slot = env.tx.clone();
 
         let f = || env.datastore_table_scan_bsatn_chunks(&mut ChunkPool::default(), table_id);
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, scan_result) = tx_slot.set(tx, f);
 
         scan_result?;
@@ -707,7 +1976,7 @@ mod test {
     #[test]
     fn index_scan_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (_, index_id) = create_table_with_index(&db)?;
 
@@ -735,7 +2004,7 @@ mod test {
             )?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, scan_result) = tx_slot.set(tx, f);
 
         scan_result?;
@@ -759,7 +2028,7 @@ mod test {
     #[test]
     fn insert_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
@@ -773,7 +2042,7 @@ mod test {
             }
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, insert_result) = tx_slot.set(tx, f);
 
         insert_result?;
@@ -796,7 +2065,7 @@ mod test {
     #[test]
     fn update_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, index_id) = create_table_with_unique_index(&db)?;
 
@@ -811,7 +2080,7 @@ mod test {
             env.update(table_id, index_id, new_row_bytes.as_mut_slice())?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, res) = tx_slot.set(tx, f);
 
         res?;
@@ -823,7 +2092,7 @@ mod test {
     #[test]
     fn delete_by_index_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (_, index_id) = create_table_with_index(&db)?;
 
@@ -835,7 +2104,7 @@ mod test {
             env.datastore_delete_by_index_scan_range_bsatn(index_id, &[], 0.into(), &index_key, &index_key)?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, delete_result) = tx_slot.set(tx, f);
 
         delete_result?;
@@ -851,7 +2120,7 @@ mod test {
     #[test]
     fn delete_by_value_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
@@ -864,7 +2133,7 @@ mod test {
             env.datastore_delete_all_by_eq_bsatn(table_id, &bsatn_rows)?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, delete_result) = tx_slot.set(tx, f);
 
         delete_result?;

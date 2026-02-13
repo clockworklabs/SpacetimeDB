@@ -1,0 +1,14 @@
+[package]
+name = "sdk-unreal-test-harness"
+#version = "0.1.0"
+#edition = "2021"
+#publish = false
+
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "An Unreal SDK for clients to interface with SpacetimeDB"
+
+[dev-dependencies]
+spacetimedb-testing = { path = "../../crates/testing" }
+serial_test.workspace = true

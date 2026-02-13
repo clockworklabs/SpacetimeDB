@@ -146,7 +146,7 @@ impl<'de, R: BufReader<'de>> SumAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
     type Variant = Self;
 
-    fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let tag = self.reader.get_u8()?;
         visitor.visit_tag(tag).map(|variant| (variant, self))
     }

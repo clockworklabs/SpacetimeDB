@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b4eaf1389ae0810b57684a9ca8315fb70e1bd59227a979fb90ac2885d9887684 # shrinks to (ty, val) = (Product(ProductType {"field_0": Bool}), Product(ProductValue { elements: [Bool(false)] }))
+cc 191c44593d03c0c9d47fed4ccc34d87b824f3964cf11ba87cc324cf67fea475c # shrinks to (ty, val) = (Sum(SumType {"variant_0": Bool}), Sum(SumValue { tag: 0, value: Bool(false) }))

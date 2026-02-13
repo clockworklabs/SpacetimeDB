@@ -1,0 +1,13 @@
+[package]
+name = "check-license-symlinks"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "license-check"
+path = "main.rs"
+
+[dependencies]
+anyhow = "1.0"
+log.workspace = true
+walkdir = "2.5"

@@ -1,6 +1,6 @@
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::sql::ast::SchemaViewer;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_expr::check::parse_and_type_sub;
 use spacetimedb_expr::expr::ProjectName;
 use spacetimedb_lib::db::auth::StAccess;

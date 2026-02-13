@@ -8,14 +8,14 @@ use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::{AuthError, RelationError};
-use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};
-use spacetimedb_lib::{AlgebraicType, Identity};
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_schema::def::error::{AuthError, RelationError};
+use spacetimedb_schema::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
@@ -26,7 +26,7 @@ use std::{fmt, iter, mem};
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError>;
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
@@ -132,10 +132,10 @@ impl fmt::Display for FieldOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Field(x) => {
-                write!(f, "{}", x)
+                write!(f, "{x}")
             }
             Self::Cmp { op, lhs, rhs } => {
-                write!(f, "{} {} {}", lhs, op, rhs)
+                write!(f, "{lhs} {op} {rhs}")
             }
         }
     }
@@ -567,7 +567,7 @@ impl SourceExpr {
         }
     }
 
-    pub fn table_name(&self) -> &str {
+    pub fn table_name(&self) -> &TableName {
         &self.head().table_name
     }
 
@@ -1959,12 +1959,8 @@ impl QueryExpr {
 }
 
 impl AuthAccess for Query {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller {
-            return Ok(());
-        }
-
-        self.walk_sources(&mut |s| s.check_auth(owner, caller))
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.walk_sources(&mut |s| s.check_auth(auth))
     }
 }
 
@@ -1988,10 +1984,10 @@ impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Query::IndexScan(op) => {
-                write!(f, "index_scan {:?}", op)
+                write!(f, "index_scan {op:?}")
             }
             Query::IndexJoin(op) => {
-                write!(f, "index_join {:?}", op)
+                write!(f, "index_join {op:?}")
             }
             Query::Select(q) => {
                 write!(f, "select {q}")
@@ -2018,8 +2014,8 @@ impl fmt::Display for Query {
 }
 
 impl AuthAccess for SourceExpr {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller || self.table_access() == StAccess::Public {
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        if auth.has_read_access(self.table_access()) {
             return Ok(());
         }
 
@@ -2030,33 +2026,31 @@ impl AuthAccess for SourceExpr {
 }
 
 impl AuthAccess for QueryExpr {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller {
-            return Ok(());
-        }
-        self.walk_sources(&mut |s| s.check_auth(owner, caller))
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.walk_sources(&mut |s| s.check_auth(auth))
     }
 }
 
 impl AuthAccess for CrudExpr {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller {
-            return Ok(());
-        }
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
         // Anyone may query, so as long as the tables involved are public.
         if let CrudExpr::Query(q) = self {
-            return q.check_auth(owner, caller);
+            return q.check_auth(auth);
         }
 
         // Mutating operations require `owner == caller`.
-        Err(AuthError::OwnerRequired)
+        if !auth.has_write_access() {
+            return Err(AuthError::InsuffientPrivileges);
+        }
+
+        Ok(())
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Update {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub inserts: Vec<ProductValue>,
     pub deletes: Vec<ProductValue>,
 }
@@ -2118,9 +2112,9 @@ impl From<Code> for CodeResult {
 mod tests {
     use super::*;
 
-    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, relation::Column};
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, Identity};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
-    use spacetimedb_schema::{def::ModuleDef, schema::Schema};
+    use spacetimedb_schema::{def::ModuleDef, relation::Column, schema::Schema};
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -2135,7 +2129,7 @@ mod tests {
                 source_id: SourceId(0),
                 header: Arc::new(Header {
                     table_id: 42.into(),
-                    table_name: "foo".into(),
+                    table_name: TableName::for_test("foo"),
                     fields: vec![],
                     constraints: Default::default(),
                 }),
@@ -2145,7 +2139,7 @@ mod tests {
             SourceExpr::DbTable(DbTable {
                 head: Arc::new(Header {
                     table_id: 42.into(),
-                    table_name: "foo".into(),
+                    table_name: TableName::for_test("foo"),
                     fields: vec![],
                     constraints: [(ColId(42).into(), Constraints::indexed())].into_iter().collect(),
                 }),
@@ -2172,7 +2166,7 @@ mod tests {
                 index_side: SourceExpr::DbTable(DbTable {
                     head: Arc::new(Header {
                         table_id: db_table.head().table_id,
-                        table_name: db_table.table_name().into(),
+                        table_name: db_table.table_name().clone(),
                         fields: vec![],
                         constraints: Default::default(),
                     }),
@@ -2202,23 +2196,26 @@ mod tests {
     }
 
     fn assert_owner_private<T: AuthAccess>(auth: &T) {
-        assert!(auth.check_auth(ALICE, ALICE).is_ok());
+        assert!(auth.check_auth(&AuthCtx::new(ALICE, ALICE)).is_ok());
         assert!(matches!(
-            auth.check_auth(ALICE, BOB),
+            auth.check_auth(&AuthCtx::new(ALICE, BOB)),
             Err(AuthError::TablePrivate { .. })
         ));
     }
 
     fn assert_owner_required<T: AuthAccess>(auth: T) {
-        assert!(auth.check_auth(ALICE, ALICE).is_ok());
-        assert!(matches!(auth.check_auth(ALICE, BOB), Err(AuthError::OwnerRequired)));
+        assert!(auth.check_auth(&AuthCtx::new(ALICE, ALICE)).is_ok());
+        assert!(matches!(
+            auth.check_auth(&AuthCtx::new(ALICE, BOB)),
+            Err(AuthError::InsuffientPrivileges)
+        ));
     }
 
     fn mem_table(id: TableId, name: &str, fields: &[(u16, AlgebraicType, bool)]) -> SourceExpr {
         let table_access = StAccess::Public;
         let head = Header::new(
             id,
-            name.into(),
+            TableName::for_test(name),
             fields
                 .iter()
                 .map(|(col, ty, _)| Column::new(FieldName::new(id, (*col).into()), ty.clone()))
@@ -2293,7 +2290,7 @@ mod tests {
 
         let head1 = Header::new(
             table_id,
-            "t1".into(),
+            TableName::for_test("t1"),
             columns.to_vec(),
             vec![
                 // Index a

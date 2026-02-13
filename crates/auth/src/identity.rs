@@ -3,30 +3,51 @@ pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::Identity;
 use std::time::SystemTime;
 
+#[derive(Debug, Clone)]
+pub struct ConnectionAuthCtx {
+    pub claims: SpacetimeIdentityClaims,
+    pub jwt_payload: Box<str>,
+}
+
+impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
+    type Error = anyhow::Error;
+    fn try_from(claims: SpacetimeIdentityClaims) -> Result<Self, Self::Error> {
+        let payload = serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {e}"))?;
+        Ok(ConnectionAuthCtx {
+            claims,
+            jwt_payload: payload.into(),
+        })
+    }
+}
+
 // These are the claims that can be attached to a request/connection.
 #[serde_with::serde_as]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SpacetimeIdentityClaims {
     #[serde(rename = "hex_identity")]
     pub identity: Identity,
     #[serde(rename = "sub")]
-    pub subject: String,
+    pub subject: Box<str>,
     #[serde(rename = "iss")]
-    pub issuer: String,
+    pub issuer: Box<str>,
     #[serde(rename = "aud")]
-    pub audience: Vec<String>,
+    pub audience: Box<[Box<str>]>,
 
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
     pub exp: Option<SystemTime>,
+
+    #[serde(flatten)]
+    pub extra: Option<HashMap<Box<str>, serde_json::Value>>,
 }
 
-fn deserialize_audience<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+fn deserialize_audience<'de, D>(deserializer: D) -> Result<Box<[Box<str>]>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -34,16 +55,16 @@ where
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Audience {
-        Single(String),
-        Multiple(Vec<String>),
+        Single(Box<str>),
+        Multiple(Box<[Box<str>]>),
     }
 
     // Deserialize into the enum
     let audience = Audience::deserialize(deserializer)?;
 
-    // Convert the enum into a Vec<String>
+    // Convert the enum into a list.
     Ok(match audience {
-        Audience::Single(s) => vec![s],
+        Audience::Single(s) => [s].into(),
         Audience::Multiple(v) => v,
     })
 }
@@ -56,17 +77,21 @@ pub struct IncomingClaims {
     #[serde(rename = "hex_identity")]
     pub identity: Option<Identity>,
     #[serde(rename = "sub")]
-    pub subject: String,
+    pub subject: Box<str>,
     #[serde(rename = "iss")]
-    pub issuer: String,
+    pub issuer: Box<str>,
     #[serde(rename = "aud", default, deserialize_with = "deserialize_audience")]
-    pub audience: Vec<String>,
+    pub audience: Box<[Box<str>]>,
 
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
     pub exp: Option<SystemTime>,
+
+    /// All remaining claims from the JWT payload
+    #[serde(flatten)]
+    pub extra: Option<HashMap<Box<str>, serde_json::Value>>,
 }
 
 impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
@@ -93,9 +118,7 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
         if let Some(token_identity) = self.identity {
             if token_identity != computed_identity {
                 return Err(anyhow::anyhow!(
-                    "Identity mismatch: token identity {:?} does not match computed identity {:?}",
-                    token_identity,
-                    computed_identity,
+                    "Identity mismatch: token identity {token_identity:?} does not match computed identity {computed_identity:?}",
                 ));
             }
         }
@@ -107,6 +130,7 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
             audience: self.audience,
             iat: self.iat,
             exp: self.exp,
+            extra: self.extra,
         })
     }
 }
@@ -129,9 +153,9 @@ mod tests {
 
         let claims: IncomingClaims = serde_json::from_value(json_data).unwrap();
 
-        assert_eq!(claims.audience, vec!["audience1"]);
-        assert_eq!(claims.subject, "123");
-        assert_eq!(claims.issuer, "example.com");
+        assert_eq!(claims.audience, ["audience1".into()].into());
+        assert_eq!(&*claims.subject, "123");
+        assert_eq!(&*claims.issuer, "example.com");
         assert_eq!(claims.iat, UNIX_EPOCH + std::time::Duration::from_secs(1693425600));
         assert_eq!(
             claims.exp,
@@ -151,9 +175,9 @@ mod tests {
 
         let claims: IncomingClaims = serde_json::from_value(json_data).unwrap();
 
-        assert_eq!(claims.audience, vec!["audience1", "audience2"]);
-        assert_eq!(claims.subject, "123");
-        assert_eq!(claims.issuer, "example.com");
+        assert_eq!(claims.audience, ["audience1".into(), "audience2".into()].into());
+        assert_eq!(&*claims.subject, "123");
+        assert_eq!(&*claims.issuer, "example.com");
         assert_eq!(claims.iat, UNIX_EPOCH + std::time::Duration::from_secs(1693425600));
         assert_eq!(
             claims.exp,
@@ -173,8 +197,8 @@ mod tests {
         let claims: IncomingClaims = serde_json::from_value(json_data).unwrap();
 
         assert!(claims.audience.is_empty()); // Since `default` is used, it should be an empty vector
-        assert_eq!(claims.subject, "123");
-        assert_eq!(claims.issuer, "example.com");
+        assert_eq!(&*claims.subject, "123");
+        assert_eq!(&*claims.issuer, "example.com");
         assert_eq!(claims.iat, UNIX_EPOCH + std::time::Duration::from_secs(1693425600));
         assert_eq!(
             claims.exp,

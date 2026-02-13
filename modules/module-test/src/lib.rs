@@ -1,10 +1,12 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::log;
+use std::time::Duration;
+
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp, ViewContext,
 };
+use spacetimedb::{log, ProcedureContext};
 
 pub type TestAlias = TestA;
 
@@ -12,6 +14,7 @@ pub type TestAlias = TestA;
 // TABLE DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[cfg(feature = "test-add-column")]
 #[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
@@ -19,6 +22,24 @@ pub struct Person {
     id: u32,
     name: String,
     age: u8,
+    #[default(false)]
+    edited: bool,
+}
+
+#[cfg(not(feature = "test-add-column"))]
+#[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u32,
+    name: String,
+    age: u8,
+}
+
+#[cfg(not(feature = "test-remove-table"))]
+#[spacetimedb::table(name = table_to_remove)]
+pub struct RemoveTable {
+    pub id: u32,
 }
 
 #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
@@ -40,8 +61,10 @@ pub enum TestC {
     Bar,
 }
 
+const DEFAULT_TEST_C: TestC = TestC::Foo;
 #[table(name = test_d, public)]
 pub struct TestD {
+    #[default(Some(DEFAULT_TEST_C))]
     test_c: Option<TestC>,
 }
 
@@ -176,6 +199,16 @@ impl Foo<'_> {
         bsatn::from_slice(data).unwrap()
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::view(name = my_player, public)]
+fn my_player(ctx: &ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // REDUCERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,6 +233,14 @@ pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
 
 #[spacetimedb::reducer]
 pub fn add(ctx: &ReducerContext, name: String, age: u8) {
+    #[cfg(feature = "test-add-column")]
+    ctx.db.person().insert(Person {
+        id: 0,
+        name,
+        age,
+        edited: false,
+    });
+    #[cfg(not(feature = "test-add-column"))]
     ctx.db.person().insert(Person { id: 0, name, age });
 }
 
@@ -226,7 +267,7 @@ fn log_module_identity(ctx: &ReducerContext) {
 #[spacetimedb::reducer]
 pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
-    log::info!("sender: {:?}", ctx.sender);
+    log::info!("sender: {:?}", ctx.sender());
     log::info!("timestamp: {:?}", ctx.timestamp);
     log::info!("bar: {:?}", arg2.foo);
 
@@ -237,7 +278,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
     match arg4 {
         TestF::Foo => log::info!("Foo"),
         TestF::Bar => log::info!("Bar"),
-        TestF::Baz(string) => log::info!("{}", string),
+        TestF::Baz(string) => log::info!("{string}"),
     }
     for i in 0..1000 {
         ctx.db.test_a().insert(TestA {
@@ -249,7 +290,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
     let row_count_before_delete = ctx.db.test_a().count();
 
-    log::info!("Row count before delete: {:?}", row_count_before_delete);
+    log::info!("Row count before delete: {row_count_before_delete:?}");
 
     let mut num_deleted = 0;
     for row in 5..10u32 {
@@ -260,10 +301,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
     if row_count_before_delete != row_count_after_delete + num_deleted {
         log::error!(
-            "Started with {} rows, deleted {}, and wound up with {} rows... huh?",
-            row_count_before_delete,
-            num_deleted,
-            row_count_after_delete,
+            "Started with {row_count_before_delete} rows, deleted {num_deleted}, and wound up with {row_count_after_delete} rows... huh?",
         );
     }
 
@@ -271,11 +309,11 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
         id: 0,
         name: "Tyler".to_owned(),
     }) {
-        Ok(x) => log::info!("Inserted: {:?}", x),
-        Err(err) => log::info!("Error: {:?}", err),
+        Ok(x) => log::info!("Inserted: {x:?}"),
+        Err(err) => log::info!("Error: {err:?}"),
     }
 
-    log::info!("Row count after delete: {:?}", row_count_after_delete);
+    log::info!("Row count after delete: {row_count_after_delete:?}");
 
     let other_row_count = ctx
         .db
@@ -284,7 +322,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
         // .filter(|row| row.x >= 0 && row.x <= u32::MAX)
         .count();
 
-    log::info!("Row count filtered by condition: {:?}", other_row_count);
+    log::info!("Row count filtered by condition: {other_row_count:?}");
 
     log::info!("MultiColumn");
 
@@ -297,7 +335,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
     let multi_row_count = ctx.db.points().iter().filter(|row| row.x >= 0 && row.y <= 200).count();
 
-    log::info!("Row count filtered by multi-column condition: {:?}", multi_row_count);
+    log::info!("Row count filtered by multi-column condition: {multi_row_count:?}");
 
     log::info!("END");
     Ok(())
@@ -320,16 +358,16 @@ pub fn delete_player(ctx: &ReducerContext, id: u64) -> Result<(), String> {
     if ctx.db.test_e().id().delete(id) {
         Ok(())
     } else {
-        Err(format!("No TestE row with id {}", id))
+        Err(format!("No TestE row with id {id}"))
     }
 }
 
 #[spacetimedb::reducer]
 pub fn delete_players_by_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     match ctx.db.test_e().name().delete(&name) {
-        0 => Err(format!("No TestE row with name {:?}", name)),
+        0 => Err(format!("No TestE row with name {name:?}")),
         num_deleted => {
-            log::info!("Deleted {} player(s) with name {:?}", num_deleted, name);
+            log::info!("Deleted {num_deleted} player(s) with name {name:?}");
             Ok(())
         }
     }
@@ -430,11 +468,47 @@ fn test_btree_index_args(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
-    let caller = ctx.sender;
+    let caller = ctx.sender();
     let owner = ctx.identity();
     if caller != owner {
         panic!("Caller {caller} is not the owner {owner}");
     } else {
         log::info!("Called by the owner {owner}");
+    }
+}
+
+#[spacetimedb::procedure]
+fn sleep_one_second(ctx: &mut ProcedureContext) {
+    let prev_time = ctx.timestamp;
+    let target = prev_time + Duration::from_secs(1);
+    ctx.sleep_until(target);
+    let new_time = ctx.timestamp;
+    let actual_delta = new_time.duration_since(prev_time).unwrap();
+    log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
+}
+
+#[spacetimedb::procedure]
+fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
+    Baz {
+        field: format!("{foo}"),
+    }
+}
+
+#[spacetimedb::procedure]
+fn with_tx(ctx: &mut ProcedureContext) {
+    ctx.with_tx(|tx| say_hello(tx));
+}
+
+/// Hit SpacetimeDB's schema HTTP route and return its result as a string.
+///
+/// This is a silly thing to do, but an effective test of the procedure HTTP API.
+#[spacetimedb::procedure]
+fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
+    let module_identity = ctx.identity();
+    match ctx.http.get(format!(
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
+    )) {
+        Ok(result) => result.into_body().into_string_lossy(),
+        Err(e) => format!("{e}"),
     }
 }

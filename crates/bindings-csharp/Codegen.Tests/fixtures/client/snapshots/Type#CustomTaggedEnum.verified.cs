@@ -4,14 +4,6 @@
 
 partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 {
-    private CustomTaggedEnum() { }
-
-    internal enum @enum : byte
-    {
-        IntVariant,
-        StringVariant
-    }
-
     public sealed record IntVariant(int IntVariant_) : CustomTaggedEnum
     {
         public override string ToString() =>
@@ -26,32 +18,33 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
-        internal static readonly SpacetimeDB.BSATN.I32 IntVariant = new();
-        internal static readonly SpacetimeDB.BSATN.String StringVariant = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IntVariantRW = new();
+        internal static readonly SpacetimeDB.BSATN.String StringVariantRW = new();
 
-        public CustomTaggedEnum Read(System.IO.BinaryReader reader) =>
-            __enumTag.Read(reader) switch
+        public CustomTaggedEnum Read(System.IO.BinaryReader reader)
+        {
+            return reader.ReadByte() switch
             {
-                @enum.IntVariant => new IntVariant(IntVariant.Read(reader)),
-                @enum.StringVariant => new StringVariant(StringVariant.Read(reader)),
+                0 => new IntVariant(IntVariantRW.Read(reader)),
+                1 => new StringVariant(StringVariantRW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
                     )
             };
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomTaggedEnum value)
         {
             switch (value)
             {
                 case IntVariant(var inner):
-                    __enumTag.Write(writer, @enum.IntVariant);
-                    IntVariant.Write(writer, inner);
+                    writer.Write((byte)0);
+                    IntVariantRW.Write(writer, inner);
                     break;
                 case StringVariant(var inner):
-                    __enumTag.Write(writer, @enum.StringVariant);
-                    StringVariant.Write(writer, inner);
+                    writer.Write((byte)1);
+                    StringVariantRW.Write(writer, inner);
                     break;
             }
         }
@@ -62,8 +55,8 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             registrar.RegisterType<CustomTaggedEnum>(_ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(IntVariant), IntVariant.GetAlgebraicType(registrar)),
-                    new(nameof(StringVariant), StringVariant.GetAlgebraicType(registrar))
+                    new("IntVariant", IntVariantRW.GetAlgebraicType(registrar)),
+                    new("StringVariant", StringVariantRW.GetAlgebraicType(registrar))
                 }
             ));
 
@@ -77,9 +70,11 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
         switch (this)
         {
             case IntVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashIntVariant = inner.GetHashCode();
+                return ___hashIntVariant;
             case StringVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashStringVariant = inner == null ? 0 : inner.GetHashCode();
+                return ___hashStringVariant;
             default:
                 return 0;
         }

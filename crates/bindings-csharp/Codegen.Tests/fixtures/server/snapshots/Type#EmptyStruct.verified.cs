@@ -8,12 +8,21 @@ partial struct EmptyStruct : System.IEquatable<EmptyStruct>, SpacetimeDB.BSATN.I
 
     public void WriteFields(System.IO.BinaryWriter writer) { }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() => $"EmptyStruct {{  }}";
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<EmptyStruct>
     {
-        public EmptyStruct Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<EmptyStruct>(reader);
+        public EmptyStruct Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new EmptyStruct();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, EmptyStruct value)
         {

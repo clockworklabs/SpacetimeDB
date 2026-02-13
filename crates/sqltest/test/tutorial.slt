@@ -4,7 +4,7 @@
 # not the ability to handle extreme values, check performance, etc.
 # Use a small range of values: small integers, short strings, and floating point numbers that use only the most significant bits of an a 32-bit IEEE float.
 
-# Tipically you start creating the schemas.
+# Typically you start creating the schemas.
 
 # A statetment that must execute end in `ok`.
 statement ok

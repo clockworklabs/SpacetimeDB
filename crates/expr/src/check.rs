@@ -1,18 +1,18 @@
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-
 use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
 };
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use super::{
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
@@ -26,19 +26,19 @@ pub type TypingResult<T> = core::result::Result<T, TypingError>;
 /// A view of the database schema
 pub trait SchemaView {
     fn table_id(&self, name: &str) -> Option<TableId>;
-    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>>;
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>>;
     fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>>;
 
-    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+    fn schema(&self, name: &str) -> Option<Arc<TableOrViewSchema>> {
         self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
     }
 }
 
 #[derive(Default)]
-pub struct Relvars(HashMap<Box<str>, Arc<TableSchema>>);
+pub struct Relvars(HashMap<RawIdentifier, Arc<TableOrViewSchema>>);
 
 impl Deref for Relvars {
-    type Target = HashMap<Box<str>, Arc<TableSchema>>;
+    type Target = HashMap<RawIdentifier, Arc<TableOrViewSchema>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -86,7 +86,7 @@ pub trait TypeChecker {
                 {
                     // Check for duplicate aliases
                     if vars.contains_key(&alias) {
-                        return Err(DuplicateName(alias.into_string()).into());
+                        return Err(DuplicateName(alias.clone()).into());
                     }
 
                     let lhs = Box::new(join);
@@ -116,7 +116,7 @@ pub trait TypeChecker {
         }
     }
 
-    fn type_relvar(tx: &impl SchemaView, name: &str) -> TypingResult<Arc<TableSchema>> {
+    fn type_relvar(tx: &impl SchemaView, name: &str) -> TypingResult<Arc<TableOrViewSchema>> {
         tx.schema(name)
             .ok_or_else(|| Unresolved::table(name))
             .map_err(TypingError::from)
@@ -160,7 +160,7 @@ impl TypeChecker for SubChecker {
 pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
     let ast = parse_subscription(sql)?;
     let has_param = ast.has_parameter();
-    let ast = ast.resolve_sender(auth.caller);
+    let ast = ast.resolve_sender(auth.caller());
     expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
 }
 
@@ -178,9 +178,10 @@ fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
 pub mod test_utils {
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::{
         def::ModuleDef,
-        schema::{Schema, TableSchema},
+        schema::{Schema, TableOrViewSchema, TableSchema},
     };
     use std::sync::Arc;
 
@@ -189,7 +190,7 @@ pub mod test_utils {
     pub fn build_module_def(types: Vec<(&str, ProductType)>) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         for (name, ty) in types {
-            builder.build_table_with_new_type(name, ty, true);
+            builder.build_table_with_new_type(RawIdentifier::new(name), ty, true);
         }
         builder.finish().try_into().expect("failed to generate module def")
     }
@@ -205,7 +206,7 @@ pub mod test_utils {
             }
         }
 
-        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             match table_id.idx() {
                 0 => Some((TableId(0), "t")),
                 1 => Some((TableId(1), "s")),
@@ -215,6 +216,8 @@ pub mod test_utils {
                 self.0
                     .table(name)
                     .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
+                    .map(TableOrViewSchema::from)
+                    .map(Arc::new)
             })
         }
 
@@ -362,7 +365,7 @@ mod tests {
         ] {
             let sql = format!("select * from t where {ty} = 127");
             let result = parse_and_type_sub(&sql, &tx);
-            assert!(result.is_ok(), "Faild to parse {ty}: {}", result.unwrap_err());
+            assert!(result.is_ok(), "Failed to parse {ty}: {}", result.unwrap_err());
         }
     }
 

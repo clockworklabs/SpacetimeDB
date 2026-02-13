@@ -113,7 +113,7 @@ impl ArrayValue {
     }
 
     /// Returns a cloning iterator on the elements of `self` as `AlgebraicValue`s.
-    pub fn iter_cloned(&self) -> ArrayValueIterCloned {
+    pub fn iter_cloned(&self) -> ArrayValueIterCloned<'_> {
         match self {
             ArrayValue::Sum(v) => ArrayValueIterCloned::Sum(v.iter()),
             ArrayValue::Product(v) => ArrayValueIterCloned::Product(v.iter()),

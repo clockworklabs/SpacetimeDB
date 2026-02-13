@@ -95,7 +95,7 @@ pub(crate) fn exec_replace(cmd: &mut Command) -> io::Result<ExitCode> {
         }
         unsafe {
             if SetConsoleCtrlHandler(Some(ctrlc_handler), TRUE) == FALSE {
-                return Err(io::Error::new(io::ErrorKind::Other, "Unable to set console handler"));
+                return Err(io::Error::other("Unable to set console handler"));
             }
         }
 

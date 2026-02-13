@@ -14,9 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: 'debian:bookworm' }
+          # WARNING - do not upgrade this runner to 24.04 or the self hosted runners because it will break downloads for
+          #   anyone who uses a linux distro that doesn't have glibc >= GLIBC_2.38
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
-          - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
+          # Disabled because musl builds weren't working and we didn't want to investigate. See https://github.com/clockworklabs/SpacetimeDB/pull/2964.
+          # - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
           # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
           # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
@@ -25,7 +28,6 @@ jobs:
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container || '' }}
 
     steps:
       - name: Checkout
@@ -34,12 +36,6 @@ jobs:
       - name: Show arch
         run: uname -a
 
-      - name: Install ubuntu dependencies
-        if: matrix.container == 'debian:bookworm'
-        run: |
-          apt-get update -y
-          apt-get install -y gcc g++ bash curl perl git make
-
       - name: Install musl dependencies
         # TODO: Should we use `matrix.container == 'alpine'` instead of the `endsWith` check?
         if: endsWith(matrix.target, '-musl')
@@ -47,6 +43,8 @@ jobs:
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
@@ -66,6 +64,7 @@ jobs:
 
       - name: Package (windows)
         if: ${{ runner.os == 'Windows' }}
+        shell: bash
         run: |
           mkdir build
           cd target/${{matrix.target}}/release

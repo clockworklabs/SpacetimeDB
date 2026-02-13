@@ -1,6 +1,7 @@
 #include <assert.h>
 // #include <mono/metadata/appdomain.h>
 // #include <mono/metadata/object.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -27,7 +28,7 @@ OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
 #define STDB_EXTERN(name) \
-  __attribute__((import_module("spacetime_10.0"), import_name(#name))) extern
+  __attribute__((import_module(SPACETIME_MODULE_VERSION), import_name(#name))) extern
 
 #ifndef EXPERIMENTAL_WASM_AOT
 #define IMPORT(ret, name, params, args)    \
@@ -37,6 +38,7 @@ OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 #define IMPORT(ret, name, params, args) STDB_EXTERN(name) ret name params;
 #endif
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.0"
 IMPORT(Status, table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),
        (name, name_len, id));
@@ -61,9 +63,9 @@ IMPORT(int16_t, row_iter_bsatn_advance,
        (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (iter, buffer_ptr, buffer_len_ptr));
 IMPORT(uint16_t, row_iter_bsatn_close, (RowIter iter), (iter));
-IMPORT(Status, datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+IMPORT(Status, datastore_insert_bsatn, (TableId table_id, uint8_t* row_ptr, size_t* row_len_ptr),
        (table_id, row_ptr, row_len_ptr));
-IMPORT(Status, datastore_update_bsatn, (TableId table_id, IndexId index_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+IMPORT(Status, datastore_update_bsatn, (TableId table_id, IndexId index_id, uint8_t* row_ptr, size_t* row_len_ptr),
        (table_id, index_id, row_ptr, row_len_ptr));
 IMPORT(Status, datastore_delete_by_index_scan_range_bsatn,
        (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
@@ -97,6 +99,35 @@ IMPORT(void, volatile_nonatomic_schedule_immediate,
        (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));
 IMPORT(void, identity, (void* id_ptr), (id_ptr));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.4"
+IMPORT(Status, datastore_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, RowIter* iter),
+       (index_id, point, point_len, iter));
+IMPORT(Status, datastore_delete_by_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, uint32_t* num_deleted),
+       (index_id, point, point_len, num_deleted));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.1"
+IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* out), (source, out));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.2"
+IMPORT(int16_t, get_jwt, (const uint8_t* connection_id_ptr, BytesSource* bytes_ptr), (connection_id_ptr, bytes_ptr));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.3"
+IMPORT(uint16_t, procedure_start_mut_tx, (int64_t* micros), (micros));
+IMPORT(uint16_t, procedure_commit_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_abort_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_http_request,
+       (const uint8_t* request_ptr, uint32_t request_len,
+        const uint8_t* body_ptr, uint32_t body_len,
+        BytesSource* out),
+       (request_ptr, request_len, body_ptr, body_len, out));
+#undef SPACETIME_MODULE_VERSION
 
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
@@ -149,6 +180,28 @@ EXPORT(int16_t, __call_reducer__,
        &sender_0, &sender_1, &sender_2, &sender_3,
        &conn_id_0, &conn_id_1,
        &timestamp, &args, &error);
+
+EXPORT(int16_t, __call_procedure__,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        uint64_t conn_id_0, uint64_t conn_id_1,
+        uint64_t timestamp, BytesSource args, BytesSink result_sink),
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &conn_id_0, &conn_id_1,
+       &timestamp, &args, &result_sink);
+
+EXPORT(int16_t, __call_view__,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        BytesSource args, BytesSink rows),
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &args, &rows);
+
+EXPORT(int16_t, __call_view_anon__,
+       (uint32_t id, BytesSource args, BytesSink rows),
+       &id, &args, &rows);
 #endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.
@@ -165,7 +218,7 @@ EXPORT(int16_t, __call_reducer__,
 
 #define WASI_NAME(name) __imported_wasi_snapshot_preview1_##name
 
-// Shim for WASI calls that always unconditionaly succeeds.
+// Shim for WASI calls that always unconditionally succeeds.
 // This is suitable for most (but not all) WASI functions used by .NET.
 #define WASI_SHIM(name, params) \
   int32_t WASI_NAME(name) params { return 0; }

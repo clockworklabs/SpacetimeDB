@@ -1,4 +1,5 @@
-use crate::db::{datastore::locking_tx_datastore::state_view::StateView as _, relational_db::Tx};
+use crate::db::relational_db::Tx;
+use spacetimedb_datastore::locking_tx_datastore::{state_view::StateView as _, NumDistinctValues};
 use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
@@ -68,16 +69,20 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
             },
             _,
         ) => 0,
-        // The selectivity of a single column index scan is 1 / NDV,
+        // The selectivity of a point index scan is 1 / NDV,
         // where NDV is the Number of Distinct Values of a column.
         // Note, this assumes a uniform distribution of column values.
         PhysicalPlan::IxScan(
             ix @ IxScan {
-                arg: Sarg::Eq(col_id, _),
+                arg: Sarg::Eq(last_col, _),
                 ..
             },
             _,
-        ) if ix.prefix.is_empty() => index_row_est(tx, ix.schema.table_id, &ColList::from(*col_id)),
+        ) => {
+            let mut cols: ColList = ix.prefix.iter().map(|(c, _)| *c).collect();
+            cols.push(*last_col);
+            index_row_est(tx, ix.schema.table_id, &cols)
+        }
         // For all other index scans we assume a worst-case scenario.
         PhysicalPlan::IxScan(IxScan { schema, .. }, _) => tx.table_row_count(schema.table_id).unwrap_or_default(),
         // Same for filters
@@ -152,16 +157,20 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
 }
 
 /// The estimated number of rows that an index probe will return.
-/// Note this method is not applicable to range scans.
+/// Note this method is not applicable to range scans,
+/// but it does work for multi column indices.
 fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
-    tx.num_distinct_values(table_id, cols)
-        .map_or(0, |ndv| tx.table_row_count(table_id).unwrap_or(0) / ndv)
+    let table_rc = || tx.table_row_count(table_id).unwrap_or_default();
+    match tx.num_distinct_values(table_id, cols) {
+        NumDistinctValues::NonZero(ndv) => table_rc() / ndv,
+        NumDistinctValues::Zero => 0,
+        NumDistinctValues::Error => table_rc(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::db::relational_db::tests_utils::insert;
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
     use crate::sql::ast::SchemaViewer;
     use crate::{
         db::relational_db::{tests_utils::TestDB, RelationalDB},
@@ -181,24 +190,24 @@ mod tests {
     }
 
     fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
-            exprs => panic!("unexpected result from compilation: {:#?}", exprs),
+            exprs => panic!("unexpected result from compilation: {exprs:#?}"),
         }
     }
 
     /// Using the new query plan
     fn new_row_estimate(db: &RelationalDB, sql: &str) -> u64 {
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         let tx = SchemaViewer::new(&tx, &auth);
 
         compile_subscription(sql, &tx, &auth)
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()
-            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
+            .map(|plan| plan.optimize(&auth).expect("failed to optimize sql query"))
             .map(|plan| row_estimate(&tx, &plan))
             .sum()
     }
@@ -215,7 +224,7 @@ mod tests {
             .create_table_for_test("T", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
+        with_auto_commit(db, |tx| -> Result<(), DBError> {
             for i in 0..NUM_T_ROWS {
                 insert(db, tx, table_id, &product![i % NDV_T, i]).expect("failed to insert into table");
             }
@@ -231,7 +240,7 @@ mod tests {
             .create_table_for_test("S", &["a", "c"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
+        with_auto_commit(db, |tx| -> Result<(), DBError> {
             for i in 0..NUM_S_ROWS {
                 insert(db, tx, rhs, &product![i, i]).expect("failed to insert into table");
             }

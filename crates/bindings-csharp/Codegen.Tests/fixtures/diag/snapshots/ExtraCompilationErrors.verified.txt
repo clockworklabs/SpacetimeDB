@@ -1,170 +1,11 @@
 ﻿[
   {/*
-    public Exception UnsupportedSystemType;
-    public UnresolvedType UnresolvedType;
-           ^^^^^^^^^^^^^^
-    public LocalEnum UnsupportedEnum;
-*/
-    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
-    Severity: Error,
-    Descriptor: {
-      Id: CS0246,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
-      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-    // Valid Filter, but [ClientVisibilityFilter] is disabled
-    [SpacetimeDB.ClientVisibilityFilter]
-     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public static readonly Filter MY_FOURTH_FILTER = new Filter.Sql(
-*/
-    Message: 'SpacetimeDB.ClientVisibilityFilterAttribute' is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
-    Severity: Error,
-    Descriptor: {
-      Id: STDB_UNSTABLE,
-      Title: Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS9204),
-      MessageFormat: '{0}' is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
-      Category: Compiler,
-      DefaultSeverity: Warning,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        CustomObsolete
-      ]
-    }
-  },
-  {/*
     {
-        return Field.GetHashCode();
-               ^^^^^
-    }
+        ctx.GetIdentity();
+            ^^^^^^^^^^^
+        return null;
 */
-    Message: Dereference of a possibly null reference.,
-    Severity: Warning,
-    Descriptor: {
-      Id: CS8602,
-      Title: Dereference of a possibly null reference.,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
-      MessageFormat: Dereference of a possibly null reference.,
-      Category: Compiler,
-      DefaultSeverity: Warning,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry
-      ]
-    }
-  },
-  {/*
-    {
-        return Field.Equals(that.Field);
-               ^^^^^
-    }
-*/
-    Message: Dereference of a possibly null reference.,
-    Severity: Warning,
-    Descriptor: {
-      Id: CS8602,
-      Title: Dereference of a possibly null reference.,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
-      MessageFormat: Dereference of a possibly null reference.,
-      Category: Compiler,
-      DefaultSeverity: Warning,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry
-      ]
-    }
-  },
-  {/*
-    {
-        internal static readonly TRW Field = new();
-                                 ^^^
-
-*/
-    Message: The type or namespace name 'TRW' could not be found (are you missing a using directive or an assembly reference?),
-    Severity: Error,
-    Descriptor: {
-      Id: CS0246,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
-      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-
-partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
-                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-*/
-    Message: 'TestTypeParams<T>' does not implement interface member 'IEquatable<TestTypeParams>.Equals(TestTypeParams?)',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0535,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0535),
-      MessageFormat: '{0}' does not implement interface member '{1}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-
-partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
-                                                      ^^^^^^^^^^^^^^
-
-*/
-    Message: Using the generic type 'TestTypeParams<T>' requires 1 type arguments,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0305,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0305),
-      MessageFormat: Using the generic {1} '{0}' requires {2} type arguments,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-            UnsupportedSystemType.GetHashCode() ^
-            UnresolvedType.GetHashCode() ^
-                           ^^^^^^^^^^^
-            UnsupportedEnum.GetHashCode();
-*/
-    Message: 'UnresolvedType' does not contain a definition for 'GetHashCode' and no accessible extension method 'GetHashCode' accepting a first argument of type 'UnresolvedType' could be found (are you missing a using directive or an assembly reference?),
+    Message: 'AnonymousViewContext' does not contain a definition for 'GetIdentity' and no accessible extension method 'GetIdentity' accepting a first argument of type 'AnonymousViewContext' could be found (are you missing a using directive or an assembly reference?),
     Severity: Error,
     Descriptor: {
       Id: CS1061,
@@ -205,10 +46,217 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
     }
   },
   {/*
+    {
+        ctx.Db.Player.Identity.Delete(0);
+                               ^^^^^^
+        return null;
+*/
+    Message: 'PlayerReadOnly.IdentityIndex' does not contain a definition for 'Delete' and no accessible extension method 'Delete' accepting a first argument of type 'PlayerReadOnly.IdentityIndex' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        ctx.Db.Player.Delete(new Player { Identity = new() });
+                      ^^^^^^
+        return null;
+*/
+    Message: 'PlayerReadOnly' does not contain a definition for 'Delete' and no accessible extension method 'Delete' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        ctx.Db.Player.Insert(new Player { Identity = new() });
+                      ^^^^^^
+        return new Player { Identity = new() };
+*/
+    Message: 'PlayerReadOnly' does not contain a definition for 'Insert' and no accessible extension method 'Insert' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        ctx.Db.Player.Iter();
+                      ^^^^
+        return null;
+*/
+    Message: 'PlayerReadOnly' does not contain a definition for 'Iter' and no accessible extension method 'Iter' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    // Valid Filter, but [ClientVisibilityFilter] is disabled
+    [SpacetimeDB.ClientVisibilityFilter]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static readonly Filter MY_FOURTH_FILTER = new Filter.Sql(
+*/
+    Message: 'SpacetimeDB.ClientVisibilityFilterAttribute' is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDB_UNSTABLE,
+      Title: Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS9204),
+      MessageFormat: '{0}' is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
+      Category: Compiler,
+      DefaultSeverity: Warning,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        CustomObsolete
+      ]
+    }
+  },
+  {/*
+
+partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+    Message: 'TestTypeParams<T>' does not implement interface member 'IEquatable<TestTypeParams>.Equals(TestTypeParams?)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0535,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0535),
+      MessageFormat: '{0}' does not implement interface member '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+var ___hashUnsupportedSystemType = UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode();
+var ___hashUnresolvedType = UnresolvedType == null ? 0 : UnresolvedType.GetHashCode();
+                                                                        ^^^^^^^^^^^
+var ___hashUnsupportedEnum = UnsupportedEnum.GetHashCode();
+*/
+    Message: 'UnresolvedType' does not contain a definition for 'GetHashCode' and no accessible extension method 'GetHashCode' accepting a first argument of type 'UnresolvedType' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+[SpacetimeDB.Table]
+public partial struct TestDefaultFieldValues
+                      ^^^^^^^^^^^^^^^^^^^^^^
+{
+*/
+    Message: A 'struct' with field initializers must include an explicitly declared constructor.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS8983,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8983),
+      MessageFormat: A 'struct' with field initializers must include an explicitly declared constructor.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+            
+            var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+*/
+    Message: Argument 1: cannot convert from 'SpacetimeDB.ViewContext' to 'SpacetimeDB.ReducerContext',
+    Severity: Error,
+    Descriptor: {
+      Id: CS1503,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1503),
+      MessageFormat: Argument {0}: cannot convert from '{1}' to '{2}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    }
+        {
 */
     Message: Argument 1: cannot convert from 'string' to 'SpacetimeDB.Filter',
     Severity: Error,
@@ -217,6 +265,351 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1503),
       MessageFormat: Argument {0}: cannot convert from '{1}' to '{2}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+            
+            var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
+                                     ^^^^^^^^^^^^^^^^
+                SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+*/
+    Message: No overload for method 'ViewDefNoContext' takes 1 arguments,
+    Severity: Error,
+    Descriptor: {
+      Id: CS1501,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1501),
+      MessageFormat: No overload for method '{0}' takes {1} arguments,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)' and 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)' and 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)' and 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)' and 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+}
+public readonly struct TestDuplicateTableNameCols
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+{
+*/
+    Message: The namespace 'SpacetimeDB' already contains a definition for 'TestDuplicateTableNameCols',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0101,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0101),
+      MessageFormat: The namespace '{1}' already contains a definition for '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+public readonly struct TestDuplicateTableNameIxCols
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{
+*/
+    Message: The namespace 'SpacetimeDB' already contains a definition for 'TestDuplicateTableNameIxCols',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0101,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0101),
+      MessageFormat: The namespace '{1}' already contains a definition for '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    Params: [],
+    ReturnType: new SpacetimeDB.BSATN.ValueOption<NotSpacetimeType, NotSpacetimeType.BSATN>().GetAlgebraicType(registrar)
+                                                                                     ^^^^^
+);
+*/
+    Message: The type name 'BSATN' does not exist in the type 'NotSpacetimeType',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0426,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0426),
+      MessageFormat: The type name '{0}' does not exist in the type '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+            var returnValue = Module.ViewDefReturnsNotASpacetimeType((SpacetimeDB.AnonymousViewContext)ctx);
+                var listSerializer = SpacetimeDB.BSATN.ValueOption<NotSpacetimeType, NotSpacetimeType.BSATN>.GetListSerializer();
+                                                                                                      ^^^^^
+    var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+*/
+    Message: The type name 'BSATN' does not exist in the type 'NotSpacetimeType',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0426,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0426),
+      MessageFormat: The type name '{0}' does not exist in the type '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        internal static readonly TRW FieldRW = new();
+                                 ^^^
+
+*/
+    Message: The type or namespace name 'TRW' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public Exception UnsupportedSystemType;
+    public UnresolvedType UnresolvedType;
+           ^^^^^^^^^^^^^^
+    public LocalEnum UnsupportedEnum;
+*/
+    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+                                                                                                                               ^^^^^^^^^^^^^^^^^^^^^^
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+*/
+    Message: Type 'QueryBuilder' already defines a member called 'TestDuplicateTableName' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    internal TestDuplicateTableNameCols(string tableName)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+    Message: Type 'TestDuplicateTableNameCols' already defines a member called 'TestDuplicateTableNameCols' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    internal TestDuplicateTableNameIxCols(string tableName)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+    Message: Type 'TestDuplicateTableNameIxCols' already defines a member called 'TestDuplicateTableNameIxCols' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
+                                                      ^^^^^^^^^^^^^^
+
+*/
+    Message: Using the generic type 'TestTypeParams<T>' requires 1 type arguments,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0305,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0305),
+      MessageFormat: Using the generic {1} '{0}' requires {2} type arguments,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,

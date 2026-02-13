@@ -4,7 +4,7 @@ use crate::{
     ResultBench,
 };
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
-use spacetimedb::execution_context::Workload;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::{bsatn, AlgebraicValue};
 use spacetimedb_schema::{
@@ -42,9 +42,9 @@ impl BenchDatabase for SpacetimeRaw {
         let name = table_name::<T>(index_strategy);
         self.db.with_auto_commit(Workload::Internal, |tx| {
             let mut table_schema = TableSchema::from_product_type(T::product_type());
-            table_schema.table_name = name.clone().into();
+            table_schema.table_name = name.clone();
             let table_id = self.db.create_table(tx, table_schema)?;
-            self.db.rename_table(tx, table_id, &name)?;
+            self.db.rename_table(tx, table_id, name)?;
             match index_strategy {
                 IndexStrategy::Unique0 => {
                     self.db.create_index(

@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB
+namespace SpacetimeDB
 {
     namespace Internal
     {
@@ -12,6 +12,7 @@
             Identity = Unique | AutoInc,
             PrimaryKey = Unique | 0b1000,
             PrimaryKeyAuto = PrimaryKey | AutoInc,
+            Default = 0b0001_0000,
         }
 
         [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
@@ -66,6 +67,8 @@
         /// </summary>
         public bool Public { get; init; } = false;
 
+        public bool Event { get; init; } = false;
+
         /// <summary>
         /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
         /// </summary>
@@ -77,6 +80,24 @@
         /// <para>Defaults to <c>ScheduledAt</c>.</para>
         /// </summary>
         public string ScheduledAt { get; init; } = "ScheduledAt";
+    }
+
+    /// <summary>
+    /// Registers a method as a SpacetimeDB view, enabling codegen for it.
+    /// Views are pure, read-only queries that run with a view context instead of a reducer context.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ViewAttribute : Attribute
+    {
+        /// <summary>
+        /// Views must have an explicit name.
+        /// </summary>
+        public string? Name { get; init; }
+
+        /// <summary>
+        /// Marks the view as callable by any client. Leave false to restrict to the module owner.
+        /// </summary>
+        public bool Public { get; init; } = false;
     }
 
     [AttributeUsage(
@@ -110,6 +131,45 @@
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Unique;
     }
 
+    /// <summary>
+    /// Specifies a default value for a table column.
+    /// If a column is added to an existing table while republishing of a module,
+    /// the specified default value will be used to populate existing rows.
+    /// </summary>
+    /// <remarks>
+    /// Updates existing instances of the <see cref="DefaultAttribute"/> class with the specified default value during republishing of a module.
+    /// </remarks>
+    /// <param name="value">The default value for the column.</param>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class DefaultAttribute(object value) : Internal.ColumnAttribute
+    {
+        /// <summary>
+        /// The default value for the column.
+        /// </summary>
+        public string Value
+        {
+            get
+            {
+                if (value is null)
+                {
+                    return "null";
+                }
+                if (value is bool)
+                {
+                    return value.ToString()?.ToLower()!;
+                }
+                var str = value.ToString();
+                if (value is string)
+                {
+                    str = $"\"{str}\"";
+                }
+                return str!;
+            }
+        }
+
+        internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Default;
+    }
+
     public enum ReducerKind
     {
         /// <summary>
@@ -126,4 +186,7 @@
     {
         public ReducerKind Kind => kind;
     }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ProcedureAttribute() : Attribute { }
 }

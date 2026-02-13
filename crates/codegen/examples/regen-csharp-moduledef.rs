@@ -3,7 +3,7 @@
 
 use fs_err as fs;
 use regex::Regex;
-use spacetimedb_codegen::{csharp, generate};
+use spacetimedb_codegen::{csharp, generate, CodegenOptions, OutputFile};
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 use spacetimedb_schema::def::ModuleDef;
 use std::path::Path;
@@ -37,9 +37,10 @@ fn main() -> anyhow::Result<()> {
         &csharp::Csharp {
             namespace: "SpacetimeDB.Internal",
         },
+        &CodegenOptions::default(),
     )
     .into_iter()
-    .try_for_each(|(filename, code)| {
+    .try_for_each(|OutputFile { filename, code }| {
         // Skip anything but raw types (in particular, this will skip top-level SpacetimeDBClient.g.cs which we don't need).
         let Some(filename) = filename.strip_prefix("Types/") else {
             return Ok(());

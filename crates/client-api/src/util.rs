@@ -1,4 +1,5 @@
 mod flat_csv;
+pub(crate) mod serde;
 pub mod websocket;
 
 use core::fmt;
@@ -88,7 +89,7 @@ impl NameOrIdentity {
     /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Identity`] is
     /// looked up by that name in the SpacetimeDB DNS and returned.
     ///
-    /// Errors are returned if [`NameOrIdentity::Name`] the DNS lookup fails.
+    /// Errors are returned if the DNS lookup fails.
     ///
     /// An `Ok` result is itself a [`Result`], which is `Err(DatabaseName)` if the
     /// given [`NameOrIdentity::Name`] is not registered in the SpacetimeDB DNS,
@@ -96,10 +97,10 @@ impl NameOrIdentity {
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<Result<Identity, &DatabaseName>> {
+    ) -> anyhow::Result<Result<Identity, &DatabaseName>> {
         Ok(match self {
             Self::Identity(identity) => Ok(Identity::from(*identity)),
-            Self::Name(name) => ctx.lookup_identity(name.as_ref()).map_err(log_and_500)?.ok_or(name),
+            Self::Name(name) => ctx.lookup_database_identity(name.as_ref()).await?.ok_or(name),
         })
     }
 
@@ -107,20 +108,47 @@ impl NameOrIdentity {
     /// response if `self` is a [`NameOrIdentity::Name`] for which no
     /// corresponding [`Identity`] is found in the SpacetimeDB DNS.
     pub async fn resolve(&self, ctx: &(impl ControlStateReadAccess + ?Sized)) -> axum::response::Result<Identity> {
-        self.try_resolve(ctx).await?.map_err(|_| StatusCode::NOT_FOUND.into())
+        self.try_resolve(ctx)
+            .await
+            .map_err(log_and_500)?
+            .map_err(|name| (StatusCode::NOT_FOUND, format!("`{name}` not found")).into())
+    }
+
+    /// If `self` is a [`NameOrIdentity::Name`], looks up the name in the
+    /// namespace registry (also known as "top level domain") and returns the
+    /// owner identity if found.
+    ///
+    /// If the name is not found, returns a 404 (Not Found) error response.
+    ///
+    /// If `self` is a [`NameOrIdentity::Identity`], returns the identity.
+    //
+    // NOTE: Namespace (TLD) owner identities are also used as organization
+    // identities.
+    pub async fn resolve_namespace_owner(
+        &self,
+        ctx: &(impl ControlStateReadAccess + ?Sized),
+    ) -> axum::response::Result<Identity> {
+        match self {
+            Self::Identity(identity) => Ok(Identity::from(*identity)),
+            Self::Name(name) => ctx
+                .lookup_namespace_owner(name.as_ref())
+                .await
+                .map_err(log_and_500)?
+                .ok_or_else(|| (StatusCode::NOT_FOUND, format!("`{name}` not found")).into()),
+        }
     }
 }
 
-impl<'de> serde::Deserialize<'de> for NameOrIdentity {
+impl<'de> ::serde::Deserialize<'de> for NameOrIdentity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: ::serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
         if let Ok(addr) = Identity::from_hex(&s) {
             Ok(NameOrIdentity::Identity(IdentityForUrl::from(addr)))
         } else {
-            let name: DatabaseName = s.try_into().map_err(serde::de::Error::custom)?;
+            let name: DatabaseName = s.try_into().map_err(::serde::de::Error::custom)?;
             Ok(NameOrIdentity::Name(name))
         }
     }

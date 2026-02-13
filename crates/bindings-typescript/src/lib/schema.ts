@@ -1,0 +1,329 @@
+import {
+  AlgebraicType,
+  ProductType,
+  SumType,
+  type AlgebraicTypeType,
+  type AlgebraicTypeVariants,
+} from './algebraic_type';
+import type RawModuleDefV10Section from './autogen/raw_module_def_v_10_section_type';
+import type RawModuleDefV10 from './autogen/raw_module_def_v_10_type';
+import type RawScopedTypeNameV10 from './autogen/raw_scoped_type_name_v_10_type';
+import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
+import type { UntypedIndex } from './indexes';
+import type { UntypedTableDef } from './table';
+import type { UntypedTableSchema } from './table_schema';
+import {
+  ArrayBuilder,
+  OptionBuilder,
+  ProductBuilder,
+  RefBuilder,
+  ResultBuilder,
+  RowBuilder,
+  SumBuilder,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  TypeBuilder,
+  type ElementsObj,
+  type Infer,
+  type InferSpacetimeTypeOfTypeBuilder,
+  type RowObj,
+  type VariantsObj,
+} from './type_builders';
+import type { CamelCase, Values } from './type_util';
+import { toCamelCase } from './util';
+
+export type TableNamesOf<S extends UntypedSchemaDef> = Values<
+  S['tables']
+>['accessorName'];
+
+/**
+ * An untyped representation of the database schema.
+ */
+export type UntypedSchemaDef = {
+  tables: Record<string, UntypedTableDef>;
+};
+
+/**
+ * Helper type to convert an array of TableSchema into a schema definition
+ */
+export interface TablesToSchema<T extends Record<string, UntypedTableSchema>>
+  extends UntypedSchemaDef {
+  tables: {
+    readonly [AccName in keyof T & string]: TableToSchema<AccName, T[AccName]>;
+  };
+}
+
+export interface TableToSchema<
+  AccName extends string,
+  T extends UntypedTableSchema,
+> extends UntypedTableDef {
+  accessorName: CamelCase<AccName>;
+  columns: T['rowType']['row'];
+  rowType: T['rowSpacetimeType'];
+  indexes: T['idxs'];
+  constraints: T['constraints'];
+}
+
+export function tablesToSchema<
+  const T extends Record<string, UntypedTableSchema>,
+>(ctx: ModuleContext, tables: T): TablesToSchema<T> {
+  return {
+    tables: Object.fromEntries(
+      Object.entries(tables).map(([accName, schema]) => [
+        accName,
+        tableToSchema(accName, schema, schema.tableDef(ctx, accName)),
+      ])
+    ) as TablesToSchema<T>['tables'],
+  };
+}
+
+export function tableToSchema<
+  AccName extends string,
+  const T extends UntypedTableSchema,
+>(
+  accName: AccName,
+  schema: T,
+  tableDef: Infer<typeof RawTableDefV10>
+): TableToSchema<AccName, T> {
+  const getColName = (i: number) =>
+    schema.rowType.algebraicType.value.elements[i].name;
+
+  type AllowedCol = keyof T['rowType']['row'] & string;
+  return {
+    sourceName: schema.tableName ?? accName,
+    accessorName: toCamelCase(accName),
+    columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
+    rowType: schema.rowSpacetimeType,
+    constraints: tableDef.constraints.map(c => ({
+      name: c.sourceName,
+      constraint: 'unique',
+      columns: c.data.value.columns.map(getColName) as [string],
+    })),
+    // TODO: horrible horrible horrible. we smuggle this `Array<UntypedIndex>`
+    // by casting it to an `Array<IndexOpts>` as `TableToSchema` expects.
+    // This is then used in `TableCacheImpl.constructor` and who knows where else.
+    // We should stop lying about our types.
+    indexes: tableDef.indexes.map((idx): UntypedIndex<AllowedCol> => {
+      const columnIds =
+        idx.algorithm.tag === 'Direct'
+          ? [idx.algorithm.value]
+          : idx.algorithm.value;
+      return {
+        name: idx.accessorName!,
+        unique: tableDef.constraints.some(c =>
+          c.data.value.columns.every(col => columnIds.includes(col))
+        ),
+        algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
+        columns: columnIds.map(getColName),
+      };
+    }) as T['idxs'],
+    tableDef,
+  };
+}
+
+type CompoundTypeCache = Map<
+  AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
+  RefBuilder<any, any>
+>;
+
+export type ModuleDef = {
+  [S in Infer<typeof RawModuleDefV10Section> as Uncapitalize<
+    S['tag']
+  >]: S['value'];
+};
+
+type Section = Infer<typeof RawModuleDefV10Section>;
+
+export class ModuleContext {
+  #compoundTypes: CompoundTypeCache = new Map();
+
+  /**
+   * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
+   */
+  #moduleDef: ModuleDef = {
+    typespace: { types: [] },
+    tables: [],
+    reducers: [],
+    types: [],
+    rowLevelSecurity: [],
+    schedules: [],
+    procedures: [],
+    views: [],
+    lifeCycleReducers: [],
+  };
+
+  get moduleDef(): ModuleDef {
+    return this.#moduleDef;
+  }
+
+  rawModuleDefV10(): Infer<typeof RawModuleDefV10> {
+    const sections: Section[] = [];
+
+    const push = <T extends Section>(s: T | undefined) => {
+      if (s) sections.push(s);
+    };
+
+    const module = this.#moduleDef;
+
+    push(module.typespace && { tag: 'Typespace', value: module.typespace });
+    push(module.types && { tag: 'Types', value: module.types });
+    push(module.tables && { tag: 'Tables', value: module.tables });
+    push(module.reducers && { tag: 'Reducers', value: module.reducers });
+    push(module.procedures && { tag: 'Procedures', value: module.procedures });
+    push(module.views && { tag: 'Views', value: module.views });
+    push(module.schedules && { tag: 'Schedules', value: module.schedules });
+    push(
+      module.lifeCycleReducers && {
+        tag: 'LifeCycleReducers',
+        value: module.lifeCycleReducers,
+      }
+    );
+    push(
+      module.rowLevelSecurity && {
+        tag: 'RowLevelSecurity',
+        value: module.rowLevelSecurity,
+      }
+    );
+    return { sections };
+  }
+
+  get typespace() {
+    return this.#moduleDef.typespace;
+  }
+
+  /**
+   * Resolves the actual type of a TypeBuilder by following its references until it reaches a non-ref type.
+   * @param typespace The typespace to resolve types against.
+   * @param typeBuilder The TypeBuilder to resolve.
+   * @returns The resolved algebraic type.
+   */
+  public resolveType<AT extends AlgebraicTypeType>(
+    typeBuilder: RefBuilder<any, AT>
+  ): AT {
+    let ty: AlgebraicType = typeBuilder.algebraicType;
+    while (ty.tag === 'Ref') {
+      ty = this.typespace.types[ty.value];
+    }
+    return ty as AT;
+  }
+
+  /**
+   * Adds a type to the module definition's typespace as a `Ref` if it is a named compound type (Product or Sum).
+   * Otherwise, returns the type as is.
+   * @param name
+   * @param ty
+   * @returns
+   */
+  public registerTypesRecursively<T extends TypeBuilder<any, AlgebraicType>>(
+    typeBuilder: T
+  ): T extends SumBuilder<any> | ProductBuilder<any> | RowBuilder<any>
+    ? RefBuilder<Infer<T>, InferSpacetimeTypeOfTypeBuilder<T>>
+    : T {
+    if (
+      (typeBuilder instanceof ProductBuilder && !isUnit(typeBuilder)) ||
+      typeBuilder instanceof SumBuilder ||
+      typeBuilder instanceof RowBuilder
+    ) {
+      return this.#registerCompoundTypeRecursively(typeBuilder) as any;
+    } else if (typeBuilder instanceof OptionBuilder) {
+      return new OptionBuilder(
+        this.registerTypesRecursively(typeBuilder.value)
+      ) as any;
+    } else if (typeBuilder instanceof ResultBuilder) {
+      return new ResultBuilder(
+        this.registerTypesRecursively(typeBuilder.ok),
+        this.registerTypesRecursively(typeBuilder.err)
+      ) as any;
+    } else if (typeBuilder instanceof ArrayBuilder) {
+      return new ArrayBuilder(
+        this.registerTypesRecursively(typeBuilder.element)
+      ) as any;
+    } else {
+      return typeBuilder as any;
+    }
+  }
+
+  #registerCompoundTypeRecursively<
+    T extends
+      | SumBuilder<VariantsObj>
+      | ProductBuilder<ElementsObj>
+      | RowBuilder<RowObj>,
+  >(typeBuilder: T): RefBuilder<Infer<T>, InferSpacetimeTypeOfTypeBuilder<T>> {
+    const ty = typeBuilder.algebraicType;
+    // NB! You must ensure that all TypeBuilder passed into this function
+    // have a name. This function ensures that nested types always have a
+    // name by assigning them one if they are missing it.
+    const name = typeBuilder.typeName;
+    if (name === undefined) {
+      throw new Error(
+        `Missing type name for ${typeBuilder.constructor.name ?? 'TypeBuilder'} ${JSON.stringify(typeBuilder)}`
+      );
+    }
+
+    let r = this.#compoundTypes.get(ty);
+    if (r != null) {
+      // Already added to typespace
+      return r;
+    }
+
+    // Recursively register nested compound types
+    const newTy =
+      typeBuilder instanceof RowBuilder || typeBuilder instanceof ProductBuilder
+        ? ({
+            tag: 'Product',
+            value: { elements: [] },
+          } as AlgebraicTypeVariants.Product)
+        : ({
+            tag: 'Sum',
+            value: { variants: [] },
+          } as AlgebraicTypeVariants.Sum);
+
+    r = new RefBuilder(this.#moduleDef.typespace.types.length);
+    this.#moduleDef.typespace.types.push(newTy);
+
+    this.#compoundTypes.set(ty, r);
+
+    if (typeBuilder instanceof RowBuilder) {
+      for (const [name, elem] of Object.entries(typeBuilder.row)) {
+        (newTy.value as ProductType).elements.push({
+          name,
+          algebraicType: this.registerTypesRecursively(elem.typeBuilder)
+            .algebraicType,
+        });
+      }
+    } else if (typeBuilder instanceof ProductBuilder) {
+      for (const [name, elem] of Object.entries(typeBuilder.elements)) {
+        (newTy.value as ProductType).elements.push({
+          name,
+          algebraicType: this.registerTypesRecursively(elem).algebraicType,
+        });
+      }
+    } else if (typeBuilder instanceof SumBuilder) {
+      for (const [name, variant] of Object.entries(typeBuilder.variants)) {
+        (newTy.value as SumType).variants.push({
+          name,
+          algebraicType: this.registerTypesRecursively(variant).algebraicType,
+        });
+      }
+    }
+
+    this.#moduleDef.types.push({
+      sourceName: splitName(name),
+      ty: r.ref,
+      customOrdering: true,
+    });
+
+    return r;
+  }
+}
+
+function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
+  return (
+    typeBuilder.typeName == null &&
+    typeBuilder.algebraicType.value.elements.length === 0
+  );
+}
+
+export function splitName(name: string): Infer<typeof RawScopedTypeNameV10> {
+  const scope = name.split('.');
+  return { sourceName: scope.pop()!, scope };
+}

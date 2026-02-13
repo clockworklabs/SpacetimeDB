@@ -32,6 +32,9 @@ pub struct ConnectionId {
 
 impl_st!([] ConnectionId, AlgebraicType::connection_id());
 
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for ConnectionId {}
+
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for ConnectionId {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {

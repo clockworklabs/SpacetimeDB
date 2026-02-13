@@ -2,7 +2,7 @@
 // See `serde` version `v1.0.169` for the parts where MIT / Apache-2.0 applies.
 
 mod impls;
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde;
 
 #[doc(hidden)]
@@ -159,6 +159,11 @@ pub trait Error: Sized {
     /// Raised when there is general error when deserializing a type.
     fn custom(msg: impl fmt::Display) -> Self;
 
+    /// Deserializing named products are not supported for this visitor.
+    fn named_products_not_supported() -> Self {
+        Self::custom("named products not supported")
+    }
+
     /// The product length was not as promised.
     fn invalid_product_length<'de, T: ProductVisitor<'de>>(len: usize, expected: &T) -> Self {
         Self::custom(format_args!(
@@ -184,7 +189,7 @@ pub trait Error: Sized {
             ProductKind::Normal => "field",
             ProductKind::ReducerArgs => "reducer argument",
         };
-        if let Some(one_of) = one_of_names(|n| expected.field_names(n)) {
+        if let Some(one_of) = one_of_names(|| expected.field_names()) {
             Self::custom(format_args!("unknown {el_ty} `{field_name}`, expected {one_of}"))
         } else {
             Self::custom(format_args!("unknown {el_ty} `{field_name}`, there are no {el_ty}s"))
@@ -200,8 +205,8 @@ pub trait Error: Sized {
     }
 
     /// The `name` is not that of a variant of the sum type.
-    fn unknown_variant_name<T: VariantVisitor>(name: &str, expected: &T) -> Self {
-        if let Some(one_of) = one_of_names(|n| expected.variant_names(n)) {
+    fn unknown_variant_name<'de, T: VariantVisitor<'de>>(name: &str, expected: &T) -> Self {
+        if let Some(one_of) = one_of_names(|| expected.variant_names().map(Some)) {
             Self::custom(format_args!("unknown variant `{name}`, expected {one_of}",))
         } else {
             Self::custom(format_args!("unknown variant `{name}`, there are no variants"))
@@ -239,9 +244,9 @@ fn error_on_field<'a, 'de>(
         f.write_str(problem)?;
         f.write_str(field_kind)?;
         if let Some(name) = name {
-            write!(f, " `{}`", name)
+            write!(f, " `{name}`")
         } else {
-            write!(f, " (index {})", index)
+            write!(f, " (index {index})")
         }
     })
 }
@@ -329,8 +334,8 @@ pub trait NamedProductAccess<'de> {
     /// The error type that can be returned if some error occurs during deserialization.
     type Error: Error;
 
-    /// Deserializes field name of type `V::Output` from the input using a visitor
-    /// provided by the deserializer.
+    /// Deserializes field name of type `V::Output`
+    /// from the input using a visitor provided by the deserializer.
     fn get_field_ident<V: FieldNameVisitor<'de>>(&mut self, visitor: V) -> Result<Option<V::Output>, Self::Error>;
 
     /// Deserializes field value of type `T` from the input.
@@ -358,39 +363,19 @@ pub trait FieldNameVisitor<'de> {
         ProductKind::Normal
     }
 
-    /// Provides the visitor the chance to add valid names into `names`.
-    fn field_names(&self, names: &mut dyn ValidNames);
+    /// Provides a list of valid field names.
+    ///
+    /// Where `None` is yielded, this indicates a nameless field.
+    fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>>;
 
+    /// Deserializes the name of a field using `name`.
     fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E>;
-}
 
-/// A trait for types storing a set of valid names.
-pub trait ValidNames {
-    /// Adds the name `s` to the set.
-    fn push(&mut self, s: &str);
-
-    /// Runs the function `names` provided with `self` as the store
-    /// and then returns back `self`.
-    /// This method exists for convenience.
-    fn run(mut self, names: &impl Fn(&mut dyn ValidNames)) -> Self
-    where
-        Self: Sized,
-    {
-        names(&mut self);
-        self
-    }
-}
-
-impl dyn ValidNames + '_ {
-    /// Adds the names in `iter` to the set.
-    pub fn extend<I: IntoIterator>(&mut self, iter: I)
-    where
-        I::Item: AsRef<str>,
-    {
-        for name in iter {
-            self.push(name.as_ref())
-        }
-    }
+    /// Deserializes the name of a field using `index`.
+    ///
+    /// Should only be called when `index` is already known to exist
+    /// and is expected to panic otherwise.
+    fn visit_seq(self, index: usize) -> Self::Output;
 }
 
 /// A visitor walking through a [`Deserializer`] for sums.
@@ -442,17 +427,17 @@ pub trait SumAccess<'de> {
     /// The `visitor` is provided by the [`Deserializer`].
     /// This method is typically called from [`SumVisitor::visit_sum`]
     /// which will provide the [`V: VariantVisitor`](VariantVisitor).
-    fn variant<V: VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error>;
+    fn variant<V: VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error>;
 }
 
 /// A visitor passed from [`SumVisitor`] to [`SumAccess::variant`]
 /// which the latter uses to decide what variant to deserialize.
-pub trait VariantVisitor {
+pub trait VariantVisitor<'de> {
     /// The result of identifying a variant, e.g., some index type.
     type Output;
 
-    /// Provides the visitor the chance to add valid names into `names`.
-    fn variant_names(&self, names: &mut dyn ValidNames);
+    /// Provides a list of variant names.
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str>;
 
     /// Identify the variant based on `tag`.
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E>;
@@ -669,69 +654,222 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicArrayVisitor<N> {
     }
 }
 
-/// Provided a function `names` that is allowed to store a name into a valid set,
+/// Provided a list of names,
 /// returns a human readable list of all the names,
 /// or `None` in the case of an empty list of names.
-fn one_of_names(names: impl Fn(&mut dyn ValidNames)) -> Option<impl fmt::Display> {
-    /// An implementation of `ValidNames` that just counts how many valid names are pushed into it.
-    struct CountNames(usize);
+fn one_of_names<'a, I: Iterator<Item = Option<&'a str>>>(names: impl Fn() -> I) -> Option<impl fmt::Display> {
+    // Count how many names there are.
+    let count = names().count();
 
-    impl ValidNames for CountNames {
-        fn push(&mut self, _: &str) {
-            self.0 += 1
-        }
-    }
-
-    /// An implementation of `ValidNames` that provides a human friendly enumeration of names.
-    struct OneOfNames<'a, 'b> {
-        /// A `.push(_)` counter.
-        index: usize,
-        /// How many names there were.
-        count: usize,
-        /// Result of formatting thus far.
-        f: Result<&'a mut fmt::Formatter<'b>, fmt::Error>,
-    }
-
-    impl<'a, 'b> OneOfNames<'a, 'b> {
-        fn new(count: usize, f: &'a mut fmt::Formatter<'b>) -> Self {
-            Self {
-                index: 0,
-                count,
-                f: Ok(f),
-            }
-        }
-    }
-
-    impl ValidNames for OneOfNames<'_, '_> {
-        fn push(&mut self, name: &str) {
-            // This will give us, after all `.push()`es have been made, the following:
+    // There was at least one name; render those names.
+    (count != 0).then(move || {
+        fmt_fn(move |f| {
+            let mut anon_name = 0;
+            // An example of what happens for names "foo", "bar", and "baz":
             //
             // count = 1 -> "`foo`"
             //       = 2 -> "`foo` or `bar`"
             //       > 2 -> "one of `foo`, `bar`, or `baz`"
-
-            let Ok(f) = &mut self.f else {
-                return;
-            };
-
-            self.index += 1;
-
-            if let Err(e) = match (self.count, self.index) {
-                (1, _) => write!(f, "`{name}`"),
-                (2, 1) => write!(f, "`{name}`"),
-                (2, 2) => write!(f, "`or `{name}`"),
-                (_, 1) => write!(f, "one of `{name}`"),
-                (c, i) if i < c => write!(f, ", `{name}`"),
-                (_, _) => write!(f, ", `, or {name}`"),
-            } {
-                self.f = Err(e);
+            for (index, mut name) in names().enumerate() {
+                let mut name_buf: String = String::new();
+                let name = name.get_or_insert_with(|| {
+                    name_buf = format!("{anon_name}");
+                    anon_name += 1;
+                    &name_buf
+                });
+                match (count, index) {
+                    (1, _) => write!(f, "`{name}`"),
+                    (2, 1) => write!(f, "`{name}`"),
+                    (2, 2) => write!(f, "`or `{name}`"),
+                    (_, 1) => write!(f, "one of `{name}`"),
+                    (c, i) if i < c => write!(f, ", `{name}`"),
+                    (_, _) => write!(f, ", `, or {name}`"),
+                }?;
             }
-        }
+
+            Ok(())
+        })
+    })
+}
+
+/// Deserializes `none` variant of an optional value.
+pub struct NoneAccess<E>(PhantomData<E>);
+
+impl<E: Error> NoneAccess<E> {
+    /// Returns a new [`NoneAccess`].
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E: Error> Default for NoneAccess<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'de, E: Error> SumAccess<'de> for NoneAccess<E> {
+    type Error = E;
+    type Variant = Self;
+
+    fn variant<V: VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+        visitor.visit_name("none").map(|var| (var, self))
+    }
+}
+impl<'de, E: Error> VariantAccess<'de> for NoneAccess<E> {
+    type Error = E;
+    fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
+        seed.deserialize(UnitAccess::new())
+    }
+}
+
+/// Deserializes `some` variant of an optional value.
+pub struct SomeAccess<D>(D);
+
+impl<D> SomeAccess<D> {
+    /// Returns a new [`SomeAccess`] with a given deserializer for the `some` variant.
+    pub fn new(de: D) -> Self {
+        Self(de)
+    }
+}
+
+impl<'de, D: Deserializer<'de>> SumAccess<'de> for SomeAccess<D> {
+    type Error = D::Error;
+    type Variant = Self;
+
+    fn variant<V: VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+        visitor.visit_name("some").map(|var| (var, self))
+    }
+}
+
+impl<'de, D: Deserializer<'de>> VariantAccess<'de> for SomeAccess<D> {
+    type Error = D::Error;
+    fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
+        seed.deserialize(self.0)
+    }
+}
+
+/// A `Deserializer` that represents a unit value.
+// used in the implementation of `VariantAccess for NoneAccess`
+pub struct UnitAccess<E>(PhantomData<E>);
+
+impl<E: Error> UnitAccess<E> {
+    /// Returns a new [`UnitAccess`].
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E: Error> Default for UnitAccess<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'de, E: Error> SeqProductAccess<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, _seed: T) -> Result<Option<T::Output>, Self::Error> {
+        Ok(None)
+    }
+}
+
+impl<'de, E: Error> NamedProductAccess<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn get_field_ident<V: FieldNameVisitor<'de>>(&mut self, _visitor: V) -> Result<Option<V::Output>, Self::Error> {
+        Ok(None)
     }
 
-    // Count how many names have been pushed.
-    let count = CountNames(0).run(&names).0;
+    fn get_field_value_seed<T: DeserializeSeed<'de>>(&mut self, _seed: T) -> Result<T::Output, Self::Error> {
+        unreachable!()
+    }
+}
 
-    // There was at least one name; render those names.
-    (count != 0).then(|| fmt_fn(move |fmt| OneOfNames::new(count, fmt).run(&names).f.map(drop)))
+impl<'de, E: Error> Deserializer<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
+        visitor.visit_seq_product(self)
+    }
+
+    fn deserialize_sum<V: SumVisitor<'de>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_bool(self) -> Result<bool, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u8(self) -> Result<u8, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u16(self) -> Result<u16, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u32(self) -> Result<u32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u64(self) -> Result<u64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u128(self) -> Result<u128, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i8(self) -> Result<i8, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i16(self) -> Result<i16, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i32(self) -> Result<i32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i64(self) -> Result<i64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i128(self) -> Result<i128, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_f32(self) -> Result<f32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_f64(self) -> Result<f64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_str<V: SliceVisitor<'de, str>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_bytes<V: SliceVisitor<'de, [u8]>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_array_seed<V: ArrayVisitor<'de, T::Output>, T: DeserializeSeed<'de> + Clone>(
+        self,
+        _visitor: V,
+        _seed: T,
+    ) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
 }

@@ -1,6 +1,6 @@
 use std::{
     io,
-    num::{NonZeroU16, NonZeroU64},
+    num::NonZeroU64,
     ops::RangeBounds,
     path::{Path, PathBuf},
 };
@@ -183,7 +183,6 @@ async fn assert_equal_dirs(src: &Path, dst: &Path) {
 fn default_options() -> Options {
     Options {
         max_segment_size: 8 * 1024,
-        max_records_in_commit: NonZeroU16::MIN,
         // Write an index entry for every commit.
         offset_index_interval_bytes: NonZeroU64::new(256).unwrap(),
         offset_index_require_segment_fsync: false,
@@ -193,10 +192,10 @@ fn default_options() -> Options {
 
 async fn fill_log(path: PathBuf) {
     spawn_blocking(move || {
-        let clog = Commitlog::open(CommitLogDir::from_path_unchecked(path), default_options()).unwrap();
+        let clog = Commitlog::open(CommitLogDir::from_path_unchecked(path), default_options(), None).unwrap();
         let payload = random_payload::gen_payload();
-        for _ in 0..100 {
-            clog.append_maybe_flush(payload).unwrap();
+        for i in 0..100 {
+            clog.commit([(i, payload)]).unwrap();
         }
         clog.flush_and_sync().unwrap();
     })
@@ -211,12 +210,12 @@ async fn create_writer(path: PathBuf) -> io::Result<StreamWriter<repo::Fs>> {
 }
 
 fn repo(at: &Path) -> repo::Fs {
-    repo::Fs::new(CommitLogDir::from_path_unchecked(at)).unwrap()
+    repo::Fs::new(CommitLogDir::from_path_unchecked(at), None).unwrap()
 }
 
 fn create_reader(path: &Path, range: impl RangeBounds<u64>) -> impl AsyncBufRead {
     BufReader::new(StreamReader::new(stream::commits(
-        repo::Fs::new(CommitLogDir::from_path_unchecked(path)).unwrap(),
+        repo::Fs::new(CommitLogDir::from_path_unchecked(path), None).unwrap(),
         range,
     )))
 }

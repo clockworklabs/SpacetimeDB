@@ -102,7 +102,7 @@ impl<'de, const N: usize> serde::Deserialize<'de> for Varchar<N> {
         let s = String::deserialize(deserializer)?;
         let len = s.len();
         Self::from_string(s)
-            .ok_or_else(|| serde::de::Error::custom(format!("input string too long: {} max-len={}", len, N)))
+            .ok_or_else(|| serde::de::Error::custom(format!("input string too long: {len} max-len={N}")))
     }
 }
 

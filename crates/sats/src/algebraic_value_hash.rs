@@ -122,7 +122,7 @@ impl Hash for ArrayValue {
 
 type HR = Result<(), DecodeError>;
 
-pub fn hash_bsatn<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deserializer<'_, impl BufReader<'a>>) -> HR {
+fn hash_bsatn<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deserializer<'_, impl BufReader<'a>>) -> HR {
     match ty {
         AlgebraicType::Ref(_) => unreachable!("hash_bsatn does not have a typespace"),
         AlgebraicType::Sum(ty) => hash_bsatn_sum(state, ty, de),
@@ -166,7 +166,11 @@ fn hash_bsatn_prod<'a>(state: &mut impl Hasher, ty: &ProductType, mut de: Deseri
 }
 
 /// Hashes every elem in the BSATN-encoded array value.
-fn hash_bsatn_array<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deserializer<'_, impl BufReader<'a>>) -> HR {
+pub fn hash_bsatn_array<'a>(
+    state: &mut impl Hasher,
+    ty: &AlgebraicType,
+    de: Deserializer<'_, impl BufReader<'a>>,
+) -> HR {
     // The BSATN is length-prefixed.
     // `Hash for &[T]` also does length-prefixing.
     match ty {
@@ -236,9 +240,9 @@ fn hash_bsatn_de<'a, T: Hash + Deserialize<'a>>(
 
 #[cfg(test)]
 mod tests {
+    use super::hash_bsatn;
     use crate::{
         bsatn::{to_vec, Deserializer},
-        hash_bsatn,
         proptest::generate_typed_value,
         AlgebraicType, AlgebraicValue,
     };

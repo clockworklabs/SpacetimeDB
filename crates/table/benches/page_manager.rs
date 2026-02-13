@@ -10,14 +10,15 @@ use rand::{Rng, SeedableRng};
 use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::layout::{row_size_for_bytes, row_size_for_type, Size};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::blob_store::NullBlobStore;
-use spacetimedb_table::indexes::Byte;
-use spacetimedb_table::indexes::{Bytes, PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
-use spacetimedb_table::layout::{row_size_for_bytes, row_size_for_type};
+use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
@@ -68,7 +69,7 @@ unsafe trait Row {
         // so that its accepted when used in a `ModuleDef` as a row type.
         for (idx, elem) in ty.elements.iter_mut().enumerate() {
             if elem.name.is_none() {
-                elem.name = Some(format!("col_{idx}").into());
+                elem.name = Some(RawIdentifier::new(format!("col_{idx}")));
             }
         }
         ty
@@ -181,7 +182,7 @@ fn reserve_empty_page(c: &mut Criterion) {
     let mut group = c.benchmark_group("reserve_empty_page");
     group.throughput(Throughput::Bytes(PAGE_DATA_SIZE as _));
     group.bench_function("leave_uninit", |b| {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut pages = Pages::default();
         b.iter(|| {
             let _ = black_box(pages.reserve_empty_page(&pool, RESERVE_SIZE));
@@ -189,7 +190,7 @@ fn reserve_empty_page(c: &mut Criterion) {
     });
 
     let fill_with_zeros = |_, _, pages: &mut Pages| {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let page = pages.reserve_empty_page(&pool, RESERVE_SIZE).unwrap();
         let page = pages.get_page_mut(page);
         unsafe { page.zero_data() };
@@ -222,7 +223,7 @@ fn insert_one_page_fixed_len(c: &mut Criterion) {
             rows_per_page::<R>() as u64 * mem::size_of::<R>() as u64,
         ));
         group.bench_function(name, |b| {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut pages = Pages::default();
             // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             insert_one_page_worth_fixed_len(&pool, &mut pages, visitor, &R::from_u64(0xa5a5a5a5_a5a5a5a5));
@@ -283,7 +284,7 @@ fn delete_one_page_fixed_len(c: &mut Criterion) {
             };
             iter_time_with(
                 b,
-                &mut (Pages::default(), PagePool::default()),
+                &mut (Pages::default(), PagePool::new_for_test()),
                 pre,
                 |ptrs, _, (pages, _)| {
                     for ptr in ptrs {
@@ -315,7 +316,7 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(rows_per_page as u64 * mem::size_of::<R>() as u64));
 
         group.bench_function(name, |b| {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut pages = Pages::default();
 
             let ptrs = fill_page_with_fixed_len_collect_row_pointers(
@@ -353,7 +354,7 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
 // then time to insert into those holes
 fn insert_with_holes_fixed_len(c: &mut Criterion) {
     fn bench_insert_with_holes<R: FixedLenRow>(c: &mut Criterion, var_len_visitor: &impl VarLenMembers, name: &str) {
-        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{name}"));
         let val = R::from_u64(0xdeadbeef_0badbeef);
         for delete_ratio in [0.1f64, 0.25, 0.5, 0.75, 0.9, 1.0] {
             let num_pages = 16;
@@ -367,7 +368,7 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
             group.throughput(Throughput::Bytes(num_to_delete_in_bytes as u64));
 
             group.bench_function(delete_ratio.to_string(), |b| {
-                let pool = PagePool::default();
+                let pool = PagePool::new_for_test();
                 let mut pages = Pages::default();
 
                 let mut rng = StdRng::seed_from_u64(0xa5a5a5a5_a5a5a5a5);
@@ -431,13 +432,13 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
 
 fn copy_filter_fixed_len(c: &mut Criterion) {
     fn bench_copy_filter<R: FixedLenRow>(c: &mut Criterion, name: &str) {
-        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{name}"));
         let row_size = black_box(row_size_for_type::<R>());
 
         let val = R::from_u64(0xdeadbeef_0badbeef);
         for keep_ratio in [0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
             let visitor = &NullVarLenVisitor;
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut pages = Pages::default();
 
             let num_pages = 16;
@@ -461,7 +462,7 @@ fn copy_filter_fixed_len(c: &mut Criterion) {
             group.bench_function(keep_ratio.to_string(), |b| {
                 b.iter_with_large_drop(|| unsafe {
                     let mut keep_iter = keep_seq.iter().copied();
-                    black_box(&pages).copy_filter(visitor, row_size, &mut NullBlobStore, |_, _| {
+                    black_box(&pages).copy_filter(visitor, row_size, None::<&mut Box<dyn FnMut(_)>>, |_, _| {
                         black_box(keep_iter.next().unwrap_or_default())
                     })
                 });
@@ -491,7 +492,7 @@ criterion_group!(
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
     let mut result = TableSchema::from_product_type(ty);
-    result.table_name = name.into();
+    result.table_name = TableName::for_test(name);
     result
 }
 
@@ -537,7 +538,7 @@ fn table_insert_one_row(c: &mut Criterion) {
         let val = black_box(val.to_product());
 
         // Insert before benching to alloc and fault in a page.
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut ctx = (table, NullBlobStore);
         let ptr = ctx.0.insert(&pool, &mut ctx.1, &val).unwrap().1.pointer();
         let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
@@ -588,7 +589,7 @@ fn table_delete_one_row(c: &mut Criterion) {
         let val = val.to_product();
 
         // Insert before benching to alloc and fault in a page.
-        let mut ctx = (table, NullBlobStore, PagePool::default());
+        let mut ctx = (table, NullBlobStore, PagePool::new_for_test());
         let insert = |_: u64, (table, bs, pool): &mut (Table, NullBlobStore, PagePool)| {
             table.insert(pool, bs, &val).unwrap().1.pointer()
         };
@@ -637,7 +638,7 @@ fn table_extract_one_row(c: &mut Criterion) {
         let mut table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = NullBlobStore;
         let row = black_box(table.insert(&pool, &mut blob_store, &val).unwrap().1);
         group.bench_function(name, |b| {
@@ -705,7 +706,7 @@ trait IndexedRow: Row + Sized {
     }
     /// Don't call this in a loop, it runs validation code.
     fn make_schema() -> TableSchema {
-        let name = Self::table_name();
+        let name = RawIdentifier::new(Self::table_name());
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(name.clone(), Self::row_type_for_schema(), true)
@@ -716,7 +717,7 @@ trait IndexedRow: Row + Sized {
                 "accessor_name_doesnt_matter",
             );
         let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
-        def.table_schema(&name[..], TableId::SENTINEL).unwrap()
+        def.table_schema(&*name, TableId::SENTINEL).unwrap()
     }
     fn throughput() -> Throughput {
         Throughput::Bytes(mem::size_of::<Self>() as u64)
@@ -782,8 +783,7 @@ fn insert_num_same<R: IndexedRow>(
     mut make_row: impl FnMut() -> R,
     num_same: usize,
 ) -> Option<RowPointer> {
-    iter::repeat(make_row().to_product())
-        .take(num_same)
+    iter::repeat_n(make_row().to_product(), num_same)
         .zip(0u32..)
         .map(|(mut row, n)| {
             if let Some(slot) = row.elements.get_mut(1) {
@@ -848,7 +848,7 @@ fn index_insert(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let (tbl, index_id, num_same, _) =
             make_table_with_same_ratio::<R>(&pool, make_row_move, num_rows, same_ratio, false);
         let mut ctx = (tbl, NullBlobStore, pool);
@@ -905,7 +905,7 @@ fn index_seek(c: &mut Criterion) {
     ) {
         let make_row_move = &mut make_row;
         let (tbl, index_id, num_same, num_diff) =
-            make_table_with_same_ratio::<R>(&PagePool::default(), make_row_move, num_rows, same_ratio, unique);
+            make_table_with_same_ratio::<R>(&PagePool::new_for_test(), make_row_move, num_rows, same_ratio, unique);
 
         group.bench_with_input(
             bench_id_for_index(name, num_rows, same_ratio, num_same, unique),
@@ -919,7 +919,7 @@ fn index_seek(c: &mut Criterion) {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
                         let (row, none) = time(&mut elapsed, || {
-                            let mut iter = index.seek_range(&col_to_seek);
+                            let mut iter = index.seek_range(&col_to_seek).unwrap();
                             (iter.next(), iter.next())
                         });
                         assert!(
@@ -972,7 +972,7 @@ fn index_delete(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let (mut tbl, index_id, num_same, _) =
             make_table_with_same_ratio::<R>(&pool, make_row_move, num_rows, same_ratio, false);
 

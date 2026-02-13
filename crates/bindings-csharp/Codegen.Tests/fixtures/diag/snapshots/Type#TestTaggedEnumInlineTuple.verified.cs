@@ -4,13 +4,6 @@
 
 partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlineTuple>
 {
-    private TestTaggedEnumInlineTuple() { }
-
-    internal enum @enum : byte
-    {
-        Item1
-    }
-
     public sealed record Item1(int Item1_) : TestTaggedEnumInlineTuple
     {
         public override string ToString() =>
@@ -19,26 +12,27 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestTaggedEnumInlineTuple>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
-        internal static readonly SpacetimeDB.BSATN.I32 Item1 = new();
+        internal static readonly SpacetimeDB.BSATN.I32 Item1RW = new();
 
-        public TestTaggedEnumInlineTuple Read(System.IO.BinaryReader reader) =>
-            __enumTag.Read(reader) switch
+        public TestTaggedEnumInlineTuple Read(System.IO.BinaryReader reader)
+        {
+            return reader.ReadByte() switch
             {
-                @enum.Item1 => new Item1(Item1.Read(reader)),
+                0 => new Item1(Item1RW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
                     )
             };
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestTaggedEnumInlineTuple value)
         {
             switch (value)
             {
                 case Item1(var inner):
-                    __enumTag.Write(writer, @enum.Item1);
-                    Item1.Write(writer, inner);
+                    writer.Write((byte)0);
+                    Item1RW.Write(writer, inner);
                     break;
             }
         }
@@ -50,7 +44,7 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(Item1), Item1.GetAlgebraicType(registrar))
+                        new("Item1", Item1RW.GetAlgebraicType(registrar))
                     }
                 )
             );
@@ -65,7 +59,8 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
         switch (this)
         {
             case Item1(var inner):
-                return inner.GetHashCode();
+                var ___hashItem1 = inner.GetHashCode();
+                return ___hashItem1;
             default:
                 return 0;
         }

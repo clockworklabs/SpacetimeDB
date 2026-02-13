@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Modules.ModuleTestCs;
 
+using System.Reflection.Metadata.Ecma335;
 using SpacetimeDB;
 
 // A C# type alias for TestA.
@@ -67,7 +68,7 @@ public partial struct TestE
 [Type]
 public partial record Baz
 {
-    public string field;
+    public string field = "";
 }
 
 [Type]
@@ -96,7 +97,7 @@ public partial record TestFBar { }
 [Type]
 public partial record TestFBaz
 {
-    public string value;
+    public string value = "";
 }
 
 [Type]
@@ -162,6 +163,12 @@ public partial struct HasSpecialStuff
 [Table(Name = "logged_out_player", Public = true)]
 public partial struct Player
 {
+    public Player()
+    {
+        this.identity = new Identity();
+        this.player_id = 0;
+        this.name = "";
+    }
     [PrimaryKey]
     public Identity identity;
     [AutoInc]
@@ -171,6 +178,12 @@ public partial struct Player
     public string name;
 }
 
+[Table(Name = "table_to_remove")]
+public partial struct TableToRemove
+{
+    public uint id;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPPORT TYPES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,6 +191,10 @@ public partial struct Player
 // We can derive `Deserialize` for lifetime generic types:
 public partial class Foo
 {
+    public Foo()
+    {
+        this.field = "";
+    }
     public string field { get; set; }
 
     // TODO: Bsatn seems not to be available in C# yet
@@ -195,6 +212,16 @@ public partial class Foo
 
 static partial class Module
 {
+    // ─────────────────────────────────────────────────────────────────────────────
+    // VIEWS
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    [View(Name = "my_player", Public = true)]
+    public static Player? my_player(ViewContext ctx)
+    {
+        return (Player?)ctx.Db.player.identity.Find(ctx.Sender);
+    }
+
     // This reducer is run at module initialization.
     [Reducer(ReducerKind.Init)]
     public static void init(ReducerContext ctx)
@@ -294,12 +321,11 @@ static partial class Module
         var rowCountBeforeDelete = ctx.Db.test_a.Count;
         Log.Info($"Row count before delete: {rowCountBeforeDelete}");
 
-        uint numDeleted = 0;
+        ulong numDeleted = 0;
         // Delete rows using the "foo" index (from 5 up to, but not including, 10).
         for (uint row = 5; row < 10; row++)
         {
-            // FIXME: Apprently in Rust you can delete by index, but in C# you can't.
-            // numDeleted += ctx.Db.test_a.foo.Delete(row);
+            numDeleted += ctx.Db.test_a.foo.Delete(row);
         }
 
         var rowCountAfterDelete = ctx.Db.test_a.Count;

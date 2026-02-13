@@ -22,12 +22,14 @@ struct Args {
 #[derive(clap::ValueEnum, Copy, Clone)]
 enum HostType {
     Wasm,
+    Js,
 }
 
 impl From<HostType> for control_db::HostType {
     fn from(x: HostType) -> Self {
         match x {
             HostType::Wasm => control_db::HostType::Wasm,
+            HostType::Js => control_db::HostType::Js,
         }
     }
 }
@@ -36,6 +38,7 @@ impl HostType {
     fn from_extension(ext: &str) -> Option<Self> {
         match ext {
             "wasm" => Some(Self::Wasm),
+            "js" => Some(Self::Js),
             _ => None,
         }
     }

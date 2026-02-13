@@ -206,6 +206,11 @@ path_type! {
     SnapshotDirPath: dir
 }
 
+path_type! {
+    /// An archived snapshot directory. `{data-dir}/replica/$replica_id/snapshots/$tx_offset.archived_snapshot`
+    ArchivedSnapshotDirPath: dir
+}
+
 impl SnapshotDirPath {
     pub fn snapshot_file(&self, tx_offset: u64) -> SnapshotFilePath {
         let file_name = format!("{tx_offset:0>20}.snapshot_bsatn");
@@ -219,6 +224,18 @@ impl SnapshotDirPath {
     pub fn rename_invalid(&self) -> io::Result<()> {
         let invalid_path = self.0.with_extension("invalid_snapshot");
         fs::rename(self, invalid_path)
+    }
+
+    pub fn rename_as_archived(&self) -> io::Result<ArchivedSnapshotDirPath> {
+        let path = self.0.with_extension("archived_snapshot");
+        fs::rename(self, &path)?;
+        Ok(ArchivedSnapshotDirPath(path))
+    }
+
+    pub fn tx_offset(&self) -> Option<u64> {
+        self.0
+            .file_stem()
+            .and_then(|s| s.to_str()?.split('.').next()?.parse::<u64>().ok())
     }
 }
 
@@ -295,6 +312,16 @@ mod tests {
         drop(lock);
         // Make sure it can be acquired now.
         sdd.pid_file()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_parsing() -> Result<()> {
+        let tempdir = TempDir::new()?;
+        let sdd = ServerDataDir(tempdir.path().to_path_buf());
+        const SNAPSHOT_OFFSET: u64 = 123456;
+        let snapshot_dir = sdd.replica(1).snapshots().snapshot_dir(SNAPSHOT_OFFSET);
+        assert_eq!(Some(SNAPSHOT_OFFSET), snapshot_dir.tx_offset());
         Ok(())
     }
 }

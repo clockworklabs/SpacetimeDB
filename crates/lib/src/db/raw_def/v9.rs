@@ -9,11 +9,12 @@ use std::collections::btree_map;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use itertools::Itertools;
 use spacetimedb_primitives::*;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_sats::ProductType;
 use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::SpacetimeType;
@@ -21,9 +22,11 @@ use spacetimedb_sats::Typespace;
 
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
-
-/// A not-yet-validated identifier.
-pub type RawIdentifier = Box<str>;
+use crate::db::raw_def::v10::RawConstraintDefV10;
+use crate::db::raw_def::v10::RawIndexDefV10;
+use crate::db::raw_def::v10::RawScopedTypeNameV10;
+use crate::db::raw_def::v10::RawSequenceDefV10;
+use crate::db::raw_def::v10::RawTypeDefV10;
 
 /// A not-yet-validated `sql`.
 pub type RawSql = Box<str>;
@@ -81,12 +84,63 @@ pub struct RawModuleDefV9 {
     pub types: Vec<RawTypeDefV9>,
 
     /// Miscellaneous additional module exports.
+    ///
+    /// The enum [`RawMiscModuleExportV9`] can have new variants added
+    /// without breaking existing compiled modules.
+    /// As such, this acts as a sort of dumping ground for any exports added after we defined `RawModuleDefV9`.
+    ///
+    /// If/when we define `RawModuleDefV10`, these should be moved out of `misc_exports` and into their own fields,
+    /// and the new `misc_exports` should once again be initially empty.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
 
-    /// Low level security definitions.
+    /// Row level security definitions.
     ///
     /// Each definition must have a unique name.
     pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
+}
+
+impl RawModuleDefV9 {
+    /// Find a [`RawTableDefV9`] by name in this raw module def
+    fn find_table_def(&self, table_name: &str) -> Option<&RawTableDefV9> {
+        self.tables
+            .iter()
+            .find(|table_def| table_def.name.as_ref() == table_name)
+    }
+
+    /// Find a [`RawViewDefV9`] by name in this raw module def
+    fn find_view_def(&self, view_name: &str) -> Option<&RawViewDefV9> {
+        self.misc_exports.iter().find_map(|misc_export| match misc_export {
+            RawMiscModuleExportV9::View(view_def) if view_def.name.as_ref() == view_name => Some(view_def),
+            _ => None,
+        })
+    }
+
+    /// Find and return the product type ref for a table in this module def
+    fn type_ref_for_table(&self, table_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_table_def(table_name)
+            .map(|table_def| table_def.product_type_ref)
+    }
+
+    /// Find and return the product type ref for a view in this module def
+    fn type_ref_for_view(&self, view_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_view_def(view_name)
+            .map(|view_def| &view_def.return_type)
+            .and_then(|return_type| {
+                return_type
+                    .as_option()
+                    .and_then(|inner| inner.clone().into_ref().ok())
+                    .or_else(|| {
+                        return_type
+                            .as_array()
+                            .and_then(|inner| inner.elem_ty.clone().into_ref().ok())
+                    })
+            })
+    }
+
+    /// Find and return the product type ref for a table or view in this module def
+    pub fn type_ref_for_table_like(&self, name: &str) -> Option<AlgebraicTypeRef> {
+        self.type_ref_for_table(name).or_else(|| self.type_ref_for_view(name))
+    }
 }
 
 /// The definition of a database table.
@@ -205,7 +259,7 @@ pub struct RawSequenceDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -237,7 +291,7 @@ pub struct RawSequenceDefV9 {
 pub struct RawIndexDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -269,7 +323,7 @@ pub enum RawIndexAlgorithm {
         /// The columns to index on. These are ordered.
         columns: ColList,
     },
-    /// Currently forbidden.
+    /// Implemented using a hashmap.
     Hash {
         /// The columns to index on. These are ordered.
         columns: ColList,
@@ -288,12 +342,17 @@ pub fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::BTree { columns: cols.into() }
 }
 
+/// Returns a hash index algorithm for the columns `cols`.
+pub fn hash(cols: impl Into<ColList>) -> RawIndexAlgorithm {
+    RawIndexAlgorithm::Hash { columns: cols.into() }
+}
+
 /// Returns a direct index algorithm for the column `col`.
 pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::Direct { column: col.into() }
 }
 
-/// Marks a table as a timer table for a scheduled reducer.
+/// Marks a table as a timer table for a scheduled reducer or procedure.
 ///
 /// The table must have columns:
 /// - `scheduled_id` of type `u64`.
@@ -304,9 +363,11 @@ pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
 pub struct RawScheduleDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
-    /// The name of the reducer to call.
+    /// The name of the reducer or procedure to call.
+    ///
+    /// Despite the field name here, this may be either a reducer or a procedure.
     pub reducer_name: RawIdentifier,
 
     /// The column of the `scheduled_at` field of this scheduled table.
@@ -320,7 +381,7 @@ pub struct RawScheduleDefV9 {
 pub struct RawConstraintDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The data for the constraint.
     pub data: RawConstraintDataV9,
@@ -357,11 +418,36 @@ pub struct RawRowLevelSecurityDefV9 {
 }
 
 /// A miscellaneous module export.
+///
+/// All of the variants here were added after the format of [`RawModuleDefV9`] was already stabilized.
+/// If/when we define `RawModuleDefV10`, these should allbe moved out of `misc_exports` and into their own fields.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord, derive_more::From))]
+#[non_exhaustive]
+pub enum RawMiscModuleExportV9 {
+    /// A default value for a column added during a supervised automigration.
+    ColumnDefaultValue(RawColumnDefaultValueV9),
+    /// A procedure definition.
+    Procedure(RawProcedureDefV9),
+    /// A view definition.
+    View(RawViewDefV9),
+}
+
+/// Marks a particular table's column as having a particular default.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-#[non_exhaustive]
-pub enum RawMiscModuleExportV9 {}
+pub struct RawColumnDefaultValueV9 {
+    /// Identifies which table that has the default value.
+    /// This corresponds to `name` in `RawTableDefV9`.
+    pub table: RawIdentifier,
+    /// Identifies which column of `table` that has the default value.
+    pub col_id: ColId,
+    /// A BSATN-encoded [`AlgebraicValue`] valid at the table column's type.
+    /// (We cannot use `AlgebraicValue` directly as it isn't `Spacetimetype`.)
+    pub value: Box<[u8]>,
+}
 
 /// A type declaration.
 ///
@@ -411,6 +497,57 @@ impl fmt::Debug for RawScopedTypeNameV9 {
     }
 }
 
+/// A view definition.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawViewDefV9 {
+    /// The name of the view function as defined in the module
+    pub name: RawIdentifier,
+
+    /// The index of the view in the module's list of views.
+    pub index: u32,
+
+    /// Is this a public or a private view?
+    /// Currently only public views are supported.
+    /// Private views may be supported in the future.
+    pub is_public: bool,
+
+    /// Is this view anonymous?
+    /// An anonymous view does not know who called it.
+    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
+    /// This type does not have access to the `Identity` of the caller.
+    pub is_anonymous: bool,
+
+    /// The types and optional names of the parameters, in order.
+    /// This `ProductType` need not be registered in the typespace.
+    pub params: ProductType,
+
+    /// The return type of the view.
+    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a `SpacetimeType`.
+    ///
+    /// More strictly `T` must be a SATS `ProductType`,
+    /// however this will be validated by the server on publish.
+    ///
+    /// This is the single source of truth for the views's columns.
+    /// All elements of the inner `ProductType` must have names.
+    /// This again will be validated by the server on publish.
+    pub return_type: AlgebraicType,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+pub enum ViewResultHeader {
+    // This means the row data will follow, as a bsatn-encoded Vec<RowType>.
+    // We could make RowData contain an Vec<u8> of the bytes, but that forces us to make an extra copy when we serialize and
+    // when we deserialize.
+    RowData,
+    // This means we the view wants to return the results of the sql query.
+    RawSql(String),
+    // We can add an option for parameterized queries later,
+    // which would make it easier to cache query plans on the host side.
+}
+
 /// A reducer definition.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -439,6 +576,27 @@ pub enum Lifecycle {
     OnConnect,
     /// The reducer will be invoked when a client disconnects.
     OnDisconnect,
+}
+
+/// A procedure definition.
+///
+/// Will be wrapped in [`RawMiscModuleExportV9`] and included in the [`RawModuleDefV9`]'s `misc_exports` vec.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawProcedureDefV9 {
+    /// The name of the procedure.
+    pub name: RawIdentifier,
+
+    /// The types and optional names of the parameters, in order.
+    /// This `ProductType` need not be registered in the typespace.
+    pub params: ProductType,
+
+    /// The type of the return value.
+    ///
+    /// If this is a user-defined product or sum type,
+    /// it should be registered in the typespace and indirected through an [`AlgebraicType::Ref`].
+    pub return_type: AlgebraicType,
 }
 
 /// A builder for a [`RawModuleDefV9`].
@@ -470,7 +628,7 @@ impl RawModuleDefV9Builder {
         &mut self,
         name: impl Into<RawIdentifier>,
         product_type_ref: AlgebraicTypeRef,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         let name = name.into();
         RawTableDefBuilder {
             module_def: &mut self.module,
@@ -493,12 +651,17 @@ impl RawModuleDefV9Builder {
     pub fn build_table_with_new_type(
         &mut self,
         table_name: impl Into<RawIdentifier>,
-        product_type: spacetimedb_sats::ProductType,
+        product_type: impl Into<spacetimedb_sats::ProductType>,
         custom_ordering: bool,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         let table_name = table_name.into();
 
-        let product_type_ref = self.add_algebraic_type([], table_name.clone(), product_type.into(), custom_ordering);
+        let product_type_ref = self.add_algebraic_type(
+            [],
+            table_name.clone(),
+            AlgebraicType::from(product_type.into()),
+            custom_ordering,
+        );
 
         self.build_table(table_name, product_type_ref)
     }
@@ -510,7 +673,7 @@ impl RawModuleDefV9Builder {
         table_name: impl Into<RawIdentifier>,
         mut product_type: spacetimedb_sats::ProductType,
         custom_ordering: bool,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         self.add_expand_product_type_for_tests(&mut 0, &mut product_type);
 
         self.build_table_with_new_type(table_name, product_type, custom_ordering)
@@ -542,7 +705,7 @@ impl RawModuleDefV9Builder {
         // Make the type into a ref.
         let name = *name_gen;
         let add_ty = core::mem::replace(ty, AlgebraicType::U8);
-        *ty = AlgebraicType::Ref(self.add_algebraic_type([], format!("gen_{name}"), add_ty, true));
+        *ty = AlgebraicType::Ref(self.add_algebraic_type([], RawIdentifier::new(format!("gen_{name}")), add_ty, true));
         *name_gen += 1;
     }
 
@@ -608,6 +771,50 @@ impl RawModuleDefV9Builder {
         });
     }
 
+    /// Add a procedure to the in-progress module.
+    ///
+    /// Accepts a `ProductType` of arguments.
+    /// The arguments `ProductType` need not be registered in the typespace.
+    ///
+    /// Also accepts an `AlgebraicType` return type.
+    /// If this is a user-defined product or sum type,
+    /// it should be registered in the typespace and indirected through an `AlgebraicType::Ref`.
+    ///
+    /// The `&mut ProcedureContext` first argument to the procedure should not be included in the `params`.
+    pub fn add_procedure(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        params: spacetimedb_sats::ProductType,
+        return_type: spacetimedb_sats::AlgebraicType,
+    ) {
+        self.module
+            .misc_exports
+            .push(RawMiscModuleExportV9::Procedure(RawProcedureDefV9 {
+                name: name.into(),
+                params,
+                return_type,
+            }))
+    }
+
+    pub fn add_view(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        index: usize,
+        is_public: bool,
+        is_anonymous: bool,
+        params: ProductType,
+        return_type: AlgebraicType,
+    ) {
+        self.module.misc_exports.push(RawMiscModuleExportV9::View(RawViewDefV9 {
+            name: name.into(),
+            index: index as u32,
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+        }));
+    }
+
     /// Add a row-level security policy to the module.
     ///
     /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
@@ -637,7 +844,11 @@ impl RawModuleDefV9Builder {
 /// TODO(1.0): build namespacing directly into the bindings macros so that we don't need to do this.
 pub fn sats_name_to_scoped_name(sats_name: &str) -> RawScopedTypeNameV9 {
     // We can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
-    let mut scope: Vec<RawIdentifier> = sats_name.split("::").flat_map(|s| s.split('.')).map_into().collect();
+    let mut scope: Vec<RawIdentifier> = sats_name
+        .split("::")
+        .flat_map(|s| s.split('.'))
+        .map(RawIdentifier::new)
+        .collect();
     // Unwrapping to "" will result in a validation error down the line, which is exactly what we want.
     let name = scope.pop().unwrap_or_default();
     RawScopedTypeNameV9 {
@@ -773,19 +984,35 @@ impl RawTableDefBuilder<'_> {
 
     /// Adds a schedule definition to the table.
     ///
+    /// The `function_name` should name a reducer or procedure
+    /// which accepts one argument, a row of this table.
+    ///
     /// The table must have the appropriate columns for a scheduled table.
     pub fn with_schedule(
         mut self,
-        reducer_name: impl Into<RawIdentifier>,
+        function_name: impl Into<RawIdentifier>,
         scheduled_at_column: impl Into<ColId>,
     ) -> Self {
-        let reducer_name = reducer_name.into();
+        let reducer_name = function_name.into();
         let scheduled_at_column = scheduled_at_column.into();
         self.table.schedule = Some(RawScheduleDefV9 {
             name: None,
             reducer_name,
             scheduled_at_column,
         });
+        self
+    }
+
+    /// Adds a default value for the `column`.
+    pub fn with_default_column_value(self, column: impl Into<ColId>, value: AlgebraicValue) -> Self {
+        // Added to `misc_exports` for backwards-compatibility reasons.
+        self.module_def
+            .misc_exports
+            .push(RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {
+                table: self.table.name.clone(),
+                col_id: column.into(),
+                value: spacetimedb_sats::bsatn::to_vec(&value).unwrap().into(),
+            }));
         self
     }
 
@@ -803,7 +1030,7 @@ impl RawTableDefBuilder<'_> {
         let column = column.as_ref();
         self.columns()?
             .iter()
-            .position(|x| x.name().is_some_and(|s| s == column))
+            .position(|x| x.has_name(column.as_ref()))
             .map(|x| x.into())
     }
 
@@ -822,5 +1049,56 @@ impl RawTableDefBuilder<'_> {
 impl Drop for RawTableDefBuilder<'_> {
     fn drop(&mut self) {
         self.module_def.tables.push(self.table.clone());
+    }
+}
+
+impl From<RawTypeDefV10> for RawTypeDefV9 {
+    fn from(raw: RawTypeDefV10) -> Self {
+        RawTypeDefV9 {
+            name: raw.source_name.into(),
+            ty: raw.ty,
+            custom_ordering: raw.custom_ordering,
+        }
+    }
+}
+
+impl From<RawScopedTypeNameV10> for RawScopedTypeNameV9 {
+    fn from(raw: RawScopedTypeNameV10) -> Self {
+        RawScopedTypeNameV9 {
+            scope: raw.scope,
+            name: raw.source_name,
+        }
+    }
+}
+
+impl From<RawIndexDefV10> for RawIndexDefV9 {
+    fn from(raw: RawIndexDefV10) -> Self {
+        RawIndexDefV9 {
+            name: raw.source_name,
+            accessor_name: raw.accessor_name,
+            algorithm: raw.algorithm,
+        }
+    }
+}
+
+impl From<RawConstraintDefV10> for RawConstraintDefV9 {
+    fn from(raw: RawConstraintDefV10) -> Self {
+        RawConstraintDefV9 {
+            name: raw.source_name,
+            data: raw.data,
+        }
+    }
+}
+
+impl From<RawSequenceDefV10> for RawSequenceDefV9 {
+    fn from(raw: RawSequenceDefV10) -> Self {
+        RawSequenceDefV9 {
+            name: raw.source_name,
+            column: raw.column,
+            start: raw.start,
+            min_value: raw.min_value,
+            max_value: raw.max_value,
+            increment: raw.increment,
+        }
     }
 }

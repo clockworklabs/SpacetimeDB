@@ -6,14 +6,19 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        IntField = BSATN.IntField.Read(reader);
-        StringField = BSATN.StringField.Read(reader);
+        IntField = BSATN.IntFieldRW.Read(reader);
+        StringField = BSATN.StringFieldRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.IntField.Write(writer, IntField);
-        BSATN.StringField.Write(writer, StringField);
+        BSATN.IntFieldRW.Write(writer, IntField);
+        BSATN.StringFieldRW.Write(writer, StringField);
+    }
+
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
     }
 
     public override string ToString() =>
@@ -21,11 +26,15 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomClass>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
-        internal static readonly SpacetimeDB.BSATN.String StringField = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IntFieldRW = new();
+        internal static readonly SpacetimeDB.BSATN.String StringFieldRW = new();
 
-        public CustomClass Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomClass>(reader);
+        public CustomClass Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomClass();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomClass value)
         {
@@ -38,8 +47,8 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
             registrar.RegisterType<CustomClass>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
-                    new(nameof(StringField), StringField.GetAlgebraicType(registrar))
+                    new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
+                    new("StringField", StringFieldRW.GetAlgebraicType(registrar))
                 }
             ));
 
@@ -50,13 +59,20 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
 
     public override int GetHashCode()
     {
-        return IntField.GetHashCode() ^ StringField.GetHashCode();
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        return ___hashIntField ^ ___hashStringField;
     }
 
 #nullable enable
     public bool Equals(CustomClass that)
     {
-        return IntField.Equals(that.IntField) && StringField.Equals(that.StringField);
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqStringField =
+            this.StringField == null
+                ? that.StringField == null
+                : this.StringField.Equals(that.StringField);
+        return ___eqIntField && ___eqStringField;
     }
 
     public override bool Equals(object? that)

@@ -1,13 +1,12 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNameV9};
+use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
-use std::borrow::Cow;
+use spacetimedb_sats::{bsatn::DecodeError, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicTypeRef};
 use std::fmt;
 
-use crate::def::ScopedTypeName;
+use crate::def::{FunctionKind, ScopedTypeName};
 use crate::identifier::Identifier;
 use crate::type_for_generate::ClientCodegenError;
 
@@ -22,7 +21,7 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[non_exhaustive]
 pub enum ValidationError {
     #[error("name `{name}` is used for multiple entities")]
-    DuplicateName { name: Box<str> },
+    DuplicateName { name: RawIdentifier },
     #[error("name `{name}` is used for multiple types")]
     DuplicateTypeName { name: ScopedTypeName },
     #[error("Multiple reducers defined for lifecycle event {lifecycle:?}")]
@@ -57,10 +56,8 @@ pub enum ValidationError {
     RepeatedPrimaryKey { table: RawIdentifier },
     #[error("Attempt to define {column} with more than 1 auto_inc sequence")]
     OneAutoInc { column: RawColumnName },
-    #[error("Hash indexes are not supported: `{index}` is a hash index")]
-    HashIndexUnsupported { index: RawIdentifier },
     #[error("No index found to support unique constraint `{constraint}` for columns `{columns:?}`")]
-    UniqueConstraintWithoutIndex { constraint: Box<str>, columns: ColSet },
+    UniqueConstraintWithoutIndex { constraint: RawIdentifier, columns: ColSet },
     #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]
     DirectIndexOnBadType {
         index: RawIdentifier,
@@ -82,6 +79,11 @@ pub enum ValidationError {
         start: Option<i128>,
         max_value: Option<i128>,
     },
+    #[error("View {view} has invalid return type {ty}")]
+    InvalidViewReturnType {
+        view: RawIdentifier,
+        ty: PrettyAlgebraicType,
+    },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,
@@ -96,7 +98,7 @@ pub enum ValidationError {
     ScheduledIncorrectColumns { table: RawIdentifier, columns: ProductType },
     #[error("error at {location}: {error}")]
     ClientCodegenError {
-        location: TypeLocation<'static>,
+        location: TypeLocation,
         error: ClientCodegenError,
     },
     #[error("Missing type definition for ref: {ref_}, holds type: {ty}")]
@@ -108,11 +110,12 @@ pub enum ValidationError {
     MissingPrimaryKeyUniqueConstraint { column: RawColumnName },
     #[error("Table {table} should have a type definition for its product_type_element, but does not")]
     TableTypeNameMismatch { table: Identifier },
-    #[error("Schedule {schedule} refers to a scheduled reducer {reducer} that does not exist")]
-    MissingScheduledReducer { schedule: Box<str>, reducer: Identifier },
-    #[error("Scheduled reducer {reducer} expected to have type {expected}, but has type {actual}")]
-    IncorrectScheduledReducerParams {
-        reducer: RawIdentifier,
+    #[error("Schedule {schedule} refers to a scheduled reducer or procedure {function} that does not exist")]
+    MissingScheduledFunction { schedule: Identifier, function: Identifier },
+    #[error("Scheduled {function_kind} {function_name} expected to have type {expected}, but has type {actual}")]
+    IncorrectScheduledFunctionParams {
+        function_name: RawIdentifier,
+        function_kind: FunctionKind,
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
@@ -120,6 +123,35 @@ pub enum ValidationError {
     TableNameReserved { table: Identifier },
     #[error("Row-level security invalid: `{error}`, query: `{sql}")]
     InvalidRowLevelQuery { sql: String, error: String },
+    #[error("Failed to deserialize default value for table {table} column {col_id}: {err}")]
+    ColumnDefaultValueMalformed {
+        table: RawIdentifier,
+        col_id: ColId,
+        err: DecodeError,
+    },
+    #[error("Multiple default values for table {table} column {col_id}")]
+    MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
+    #[error("Table {table} not found")]
+    TableNotFound { table: RawIdentifier },
+    #[error("Name {name} is used for multiple reducers, procedures and/or views")]
+    DuplicateFunctionName { name: Identifier },
+    #[error("lifecycle event {lifecycle:?} without reducer")]
+    LifecycleWithoutReducer { lifecycle: Lifecycle },
+    #[error("lifecycle event {lifecycle:?} assigned multiple reducers")]
+    DuplicateLifeCycle { lifecycle: Lifecycle },
+    #[error("table {table} is assigned in multiple schedules")]
+    DuplicateSchedule { table: Identifier },
+    #[error("table {} corresponding to schedule {} not found", table_name, schedule_name)]
+    MissingScheduleTable {
+        table_name: RawIdentifier,
+        schedule_name: Identifier,
+    },
+    #[error("reducer {reducer_name} has invalid return type: found Result<{ok_type}, {err_type}>")]
+    InvalidReducerReturnType {
+        reducer_name: RawIdentifier,
+        ok_type: PrettyAlgebraicType,
+        err_type: PrettyAlgebraicType,
+    },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
@@ -156,40 +188,37 @@ impl From<SumType> for PrettyAlgebraicType {
 
 /// A place a type can be located in a module.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum TypeLocation<'a> {
+pub enum TypeLocation {
     /// A reducer argument.
     ReducerArg {
-        reducer_name: Cow<'a, str>,
+        reducer_name: RawIdentifier,
         position: usize,
-        arg_name: Option<Cow<'a, str>>,
+        arg_name: Option<RawIdentifier>,
     },
+    /// A procedure argument.
+    ProcedureArg {
+        procedure_name: RawIdentifier,
+        position: usize,
+        arg_name: Option<RawIdentifier>,
+    },
+    /// A view argument.
+    ViewArg {
+        view_name: RawIdentifier,
+        position: usize,
+        arg_name: Option<RawIdentifier>,
+    },
+    /// A procedure return type.
+    ProcedureReturn { procedure_name: RawIdentifier },
+    /// A view return type.
+    ViewReturn { view_name: RawIdentifier },
     /// A type in the typespace.
     InTypespace {
         /// The reference to the type within the typespace.
         ref_: AlgebraicTypeRef,
     },
 }
-impl TypeLocation<'_> {
-    /// Make the lifetime of the location `'static`.
-    /// This allocates.
-    pub fn make_static(self) -> TypeLocation<'static> {
-        match self {
-            TypeLocation::ReducerArg {
-                reducer_name,
-                position,
-                arg_name,
-            } => TypeLocation::ReducerArg {
-                reducer_name: reducer_name.to_string().into(),
-                position,
-                arg_name: arg_name.map(|s| s.to_string().into()),
-            },
-            // needed to convince rustc this is allowed.
-            TypeLocation::InTypespace { ref_ } => TypeLocation::InTypespace { ref_ },
-        }
-    }
-}
 
-impl fmt::Display for TypeLocation<'_> {
+impl fmt::Display for TypeLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TypeLocation::ReducerArg {
@@ -197,14 +226,42 @@ impl fmt::Display for TypeLocation<'_> {
                 position,
                 arg_name,
             } => {
-                write!(f, "reducer `{}` argument {}", reducer_name, position)?;
+                write!(f, "reducer `{reducer_name}` argument {position}")?;
                 if let Some(arg_name) = arg_name {
-                    write!(f, " (`{}`)", arg_name)?;
+                    write!(f, " (`{arg_name}`)")?;
                 }
                 Ok(())
             }
+            TypeLocation::ProcedureArg {
+                procedure_name,
+                position,
+                arg_name,
+            } => {
+                write!(f, "procedure `{procedure_name}` argument {position}")?;
+                if let Some(arg_name) = arg_name {
+                    write!(f, " (`{arg_name}`)")?;
+                }
+                Ok(())
+            }
+            TypeLocation::ViewArg {
+                view_name,
+                position,
+                arg_name,
+            } => {
+                write!(f, "view `{view_name}` argument {position}")?;
+                if let Some(arg_name) = arg_name {
+                    write!(f, " (`{arg_name}`)")?;
+                }
+                Ok(())
+            }
+            TypeLocation::ProcedureReturn { procedure_name } => {
+                write!(f, "procedure `{procedure_name}` return value")
+            }
+            TypeLocation::ViewReturn { view_name } => {
+                write!(f, "view `{view_name}` return value")
+            }
             TypeLocation::InTypespace { ref_ } => {
-                write!(f, "typespace ref `{}`", ref_)
+                write!(f, "typespace ref `{ref_}`")
             }
         }
     }

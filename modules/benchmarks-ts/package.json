@@ -1,0 +1,17 @@
+{
+  "name": "benchmarks-ts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli -- build",
+    "generate-ts": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli -- generate --lang typescript --out-dir ts-codegen",
+    "publish": "cargo run -p spacetimedb-cli -- publish"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "spacetimedb": "workspace:^"
+  }
+}

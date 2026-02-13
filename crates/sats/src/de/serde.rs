@@ -2,7 +2,6 @@ use super::Deserializer;
 use crate::serde::{SerdeError, SerdeWrapper};
 use crate::{i256, u256};
 use core::fmt;
-use core::marker::PhantomData;
 use serde::de as serde;
 
 /// Converts any [`serde::Deserializer`] to a SATS [`Deserializer`]
@@ -207,7 +206,7 @@ impl<'de, V: super::FieldNameVisitor<'de>> serde::Visitor<'de> for FieldNameVisi
     type Value = V::Output;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(one_of) = super::one_of_names(|n| self.visitor.field_names(n)) {
+        if let Some(one_of) = super::one_of_names(|| self.visitor.field_names()) {
             write!(f, "a tuple field ({one_of})")
         } else {
             f.write_str("a tuple field, but there are no fields")
@@ -232,28 +231,6 @@ impl<'de, A: serde::SeqAccess<'de>> super::SeqProductAccess<'de> for SeqTupleAcc
     fn next_element_seed<T: super::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, Self::Error> {
         let res = self.seq.next_element_seed(SeedWrapper(seed)).map_err(SerdeError)?;
         Ok(res)
-    }
-}
-
-/// Deserializes `none` variant of an optional value.
-struct NoneAccess<E>(PhantomData<E>);
-impl<E: super::Error> super::SumAccess<'_> for NoneAccess<E> {
-    type Error = E;
-    type Variant = Self;
-
-    fn variant<V: super::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
-        visitor.visit_name("none").map(|var| (var, self))
-    }
-}
-impl<'de, E: super::Error> super::VariantAccess<'de> for NoneAccess<E> {
-    type Error = E;
-    fn deserialize_seed<T: super::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
-        use crate::algebraic_value::de::*;
-        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::unit()))
-            .map_err(|err| match err {
-                ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
-                ValueDeserializeError::Custom(err) => E::custom(err),
-            })
     }
 }
 
@@ -289,7 +266,7 @@ impl<'de, V: super::SumVisitor<'de>> serde::Visitor<'de> for EnumVisitor<V> {
 
     fn visit_unit<E: serde::Error>(self) -> Result<Self::Value, E> {
         if self.visitor.is_option() {
-            self.visitor.visit_sum(NoneAccess(PhantomData)).map_err(unwrap_error)
+            self.visitor.visit_sum(super::NoneAccess::new()).map_err(unwrap_error)
         } else {
             Err(E::invalid_type(serde::Unexpected::Unit, &self))
         }
@@ -302,7 +279,7 @@ struct VariantVisitor<V> {
     visitor: V,
 }
 
-impl<'de, V: super::VariantVisitor> serde::DeserializeSeed<'de> for VariantVisitor<V> {
+impl<'de, V: super::VariantVisitor<'de>> serde::DeserializeSeed<'de> for VariantVisitor<V> {
     type Value = V::Output;
 
     fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
@@ -310,7 +287,7 @@ impl<'de, V: super::VariantVisitor> serde::DeserializeSeed<'de> for VariantVisit
     }
 }
 
-impl<V: super::VariantVisitor> serde::Visitor<'_> for VariantVisitor<V> {
+impl<'de, V: super::VariantVisitor<'de>> serde::Visitor<'de> for VariantVisitor<V> {
     type Value = V::Output;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -346,7 +323,7 @@ impl<'de, A: serde::MapAccess<'de>> super::SumAccess<'de> for EnumAccess<A> {
     type Error = SerdeError<A::Error>;
     type Variant = Self;
 
-    fn variant<V: super::VariantVisitor>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: super::VariantVisitor<'de>>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let errmsg = "expected map representing sum type to have exactly one field";
         let key = self
             .access
@@ -374,7 +351,7 @@ impl<'de, A: serde::SeqAccess<'de>> super::SumAccess<'de> for SeqEnumAccess<A> {
     type Error = SerdeError<A::Error>;
     type Variant = Self;
 
-    fn variant<V: super::VariantVisitor>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: super::VariantVisitor<'de>>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let key = self
             .access
             .next_element_seed(VariantVisitor { visitor })
@@ -529,10 +506,10 @@ impl<'de, T: super::DeserializeSeed<'de> + Clone, V: super::ArrayVisitor<'de, T:
     }
 }
 
-/// Translates `serde::SeqAcess<'de>` (the trait) to `ArrayAccess<'de>`
+/// Translates `serde::SeqAccess<'de>` (the trait) to `ArrayAccess<'de>`
 /// for implementing deserialization of array elements.
 struct ArrayAccess<A, T> {
-    /// The `serde::SeqAcess<'de>` implementation.
+    /// The `serde::SeqAccess<'de>` implementation.
     seq: A,
     /// The seed to pass onto `DeserializeSeed`.
     seed: T,

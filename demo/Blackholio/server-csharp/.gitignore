@@ -1,0 +1,5 @@
+bin
+obj
+bin~
+obj~
+nuget.config

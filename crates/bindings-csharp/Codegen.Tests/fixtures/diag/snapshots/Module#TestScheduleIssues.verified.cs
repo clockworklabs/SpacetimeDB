@@ -8,18 +8,23 @@ partial struct TestScheduleIssues
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        IdWrongType = BSATN.IdWrongType.Read(reader);
-        IdCorrectType = BSATN.IdCorrectType.Read(reader);
-        ScheduleAtWrongType = BSATN.ScheduleAtWrongType.Read(reader);
-        ScheduleAtCorrectType = BSATN.ScheduleAtCorrectType.Read(reader);
+        IdWrongType = BSATN.IdWrongTypeRW.Read(reader);
+        IdCorrectType = BSATN.IdCorrectTypeRW.Read(reader);
+        ScheduleAtWrongType = BSATN.ScheduleAtWrongTypeRW.Read(reader);
+        ScheduleAtCorrectType = BSATN.ScheduleAtCorrectTypeRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.IdWrongType.Write(writer, IdWrongType);
-        BSATN.IdCorrectType.Write(writer, IdCorrectType);
-        BSATN.ScheduleAtWrongType.Write(writer, ScheduleAtWrongType);
-        BSATN.ScheduleAtCorrectType.Write(writer, ScheduleAtCorrectType);
+        BSATN.IdWrongTypeRW.Write(writer, IdWrongType);
+        BSATN.IdCorrectTypeRW.Write(writer, IdCorrectType);
+        BSATN.ScheduleAtWrongTypeRW.Write(writer, ScheduleAtWrongType);
+        BSATN.ScheduleAtCorrectTypeRW.Write(writer, ScheduleAtCorrectType);
+    }
+
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
     }
 
     public override string ToString() =>
@@ -27,13 +32,17 @@ partial struct TestScheduleIssues
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestScheduleIssues>
     {
-        internal static readonly SpacetimeDB.BSATN.String IdWrongType = new();
-        internal static readonly SpacetimeDB.BSATN.I32 IdCorrectType = new();
-        internal static readonly SpacetimeDB.BSATN.I32 ScheduleAtWrongType = new();
-        internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduleAtCorrectType = new();
+        internal static readonly SpacetimeDB.BSATN.String IdWrongTypeRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IdCorrectTypeRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 ScheduleAtWrongTypeRW = new();
+        internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduleAtCorrectTypeRW = new();
 
-        public TestScheduleIssues Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestScheduleIssues>(reader);
+        public TestScheduleIssues Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestScheduleIssues();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestScheduleIssues value)
         {
@@ -47,15 +56,15 @@ partial struct TestScheduleIssues
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(IdWrongType), IdWrongType.GetAlgebraicType(registrar)),
-                        new(nameof(IdCorrectType), IdCorrectType.GetAlgebraicType(registrar)),
+                        new("IdWrongType", IdWrongTypeRW.GetAlgebraicType(registrar)),
+                        new("IdCorrectType", IdCorrectTypeRW.GetAlgebraicType(registrar)),
                         new(
-                            nameof(ScheduleAtWrongType),
-                            ScheduleAtWrongType.GetAlgebraicType(registrar)
+                            "ScheduleAtWrongType",
+                            ScheduleAtWrongTypeRW.GetAlgebraicType(registrar)
                         ),
                         new(
-                            nameof(ScheduleAtCorrectType),
-                            ScheduleAtCorrectType.GetAlgebraicType(registrar)
+                            "ScheduleAtCorrectType",
+                            ScheduleAtCorrectTypeRW.GetAlgebraicType(registrar)
                         )
                     }
                 )
@@ -68,19 +77,34 @@ partial struct TestScheduleIssues
 
     public override int GetHashCode()
     {
-        return IdWrongType.GetHashCode()
-            ^ IdCorrectType.GetHashCode()
-            ^ ScheduleAtWrongType.GetHashCode()
-            ^ ScheduleAtCorrectType.GetHashCode();
+        var ___hashIdWrongType = IdWrongType == null ? 0 : IdWrongType.GetHashCode();
+        var ___hashIdCorrectType = IdCorrectType.GetHashCode();
+        var ___hashScheduleAtWrongType = ScheduleAtWrongType.GetHashCode();
+        var ___hashScheduleAtCorrectType =
+            ScheduleAtCorrectType == null ? 0 : ScheduleAtCorrectType.GetHashCode();
+        return ___hashIdWrongType
+            ^ ___hashIdCorrectType
+            ^ ___hashScheduleAtWrongType
+            ^ ___hashScheduleAtCorrectType;
     }
 
 #nullable enable
     public bool Equals(TestScheduleIssues that)
     {
-        return IdWrongType.Equals(that.IdWrongType)
-            && IdCorrectType.Equals(that.IdCorrectType)
-            && ScheduleAtWrongType.Equals(that.ScheduleAtWrongType)
-            && ScheduleAtCorrectType.Equals(that.ScheduleAtCorrectType);
+        var ___eqIdWrongType =
+            this.IdWrongType == null
+                ? that.IdWrongType == null
+                : this.IdWrongType.Equals(that.IdWrongType);
+        var ___eqIdCorrectType = this.IdCorrectType.Equals(that.IdCorrectType);
+        var ___eqScheduleAtWrongType = this.ScheduleAtWrongType.Equals(that.ScheduleAtWrongType);
+        var ___eqScheduleAtCorrectType =
+            this.ScheduleAtCorrectType == null
+                ? that.ScheduleAtCorrectType == null
+                : this.ScheduleAtCorrectType.Equals(that.ScheduleAtCorrectType);
+        return ___eqIdWrongType
+            && ___eqIdCorrectType
+            && ___eqScheduleAtWrongType
+            && ___eqScheduleAtCorrectType;
     }
 
     public override bool Equals(object? that)

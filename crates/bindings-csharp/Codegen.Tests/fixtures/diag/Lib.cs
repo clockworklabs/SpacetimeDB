@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using SpacetimeDB;
 
 public enum LocalEnum { }
@@ -362,6 +363,80 @@ public static partial class InAnotherNamespace
 }
 
 [SpacetimeDB.Table]
+public partial struct TestDefaultFieldValues
+{
+    [Unique]
+    public int? UniqueField;
+
+    [Default("A default string set by attribute")]
+    public string DefaultString = "";
+
+    [Default(true)]
+    public bool DefaultBool = false;
+
+    [Default((sbyte)2)]
+    public sbyte DefaultI8 = 1;
+
+    [Default((byte)2)]
+    public byte DefaultU8 = 1;
+
+    [Default((short)2)]
+    public short DefaultI16 = 1;
+
+    [Default((ushort)2)]
+    public ushort DefaultU16 = 1;
+
+    [Default(2)]
+    public int DefaultI32 = 1;
+
+    [Default(2U)]
+    public uint DefaultU32 = 1U;
+
+    [Default(2L)]
+    public long DefaultI64 = 1L;
+
+    [Default(2UL)]
+    public ulong DefaultU64 = 1UL;
+
+    [Default(0x02)]
+    public int DefaultHex = 1;
+
+    [Default(0b00000010)]
+    public int DefaultBin = 1;
+
+    [Default(2.0f)]
+    public float DefaultF32 = 1.0f;
+
+    [Default(2.0)]
+    public double DefaultF64 = 1.0;
+
+    [Default(MyEnum.SetByAttribute)]
+    public MyEnum DefaultEnum = MyEnum.SetByInitalization;
+
+    [Default(null!)]
+    public MyStruct? DefaultNull = new MyStruct(1);
+}
+
+[SpacetimeDB.Type]
+public enum MyEnum
+{
+    Default,
+    SetByInitalization,
+    SetByAttribute,
+}
+
+[SpacetimeDB.Type]
+public partial struct MyStruct
+{
+    public int x;
+
+    public MyStruct(int x)
+    {
+        this.x = x;
+    }
+}
+
+[SpacetimeDB.Table]
 [SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
 [SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
 [SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
@@ -408,6 +483,15 @@ public partial struct TestScheduleIssues
     public static void DummyScheduledReducer(ReducerContext ctx, TestScheduleIssues table) { }
 }
 
+[SpacetimeDB.Table]
+public partial struct Player
+{
+    [Unique]
+    public Identity Identity;
+}
+
+public struct NotSpacetimeType { }
+
 public partial class Module
 {
 #pragma warning disable STDB_UNSTABLE // Enable ClientVisibilityFilter
@@ -431,4 +515,84 @@ public partial class Module
     public static readonly Filter MY_FOURTH_FILTER = new Filter.Sql(
         "SELECT * FROM TestAutoIncNotInteger"
     );
+
+    // Invalid: View definition missing Public=true
+    [SpacetimeDB.View(Name = "view_def_no_public")]
+    public static List<Player> ViewDefNoPublic(ViewContext ctx)
+    {
+        return new List<Player>();
+    }
+
+    // Invalid: View definition with missing context type
+    [SpacetimeDB.View(Name = "view_def_no_context", Public = true)]
+    public static List<Player> ViewDefNoContext()
+    {
+        return new List<Player>();
+    }
+
+    // Invalid: View definition with wrong context type
+    [SpacetimeDB.View(Name = "view_def_wrong_context", Public = true)]
+    public static List<Player> ViewDefWrongContext(ReducerContext ctx)
+    {
+        return new List<Player>();
+    }
+
+    // Invalid: View that performs Insert
+    [SpacetimeDB.View(Name = "view_no_insert", Public = true)]
+    public static Player? ViewNoInsert(ViewContext ctx)
+    {
+        ctx.Db.Player.Insert(new Player { Identity = new() });
+        return new Player { Identity = new() };
+    }
+
+    // Invalid: View that performs Delete
+    [SpacetimeDB.View(Name = "view_no_delete", Public = true)]
+    public static Player? ViewNoDelete(ViewContext ctx)
+    {
+        ctx.Db.Player.Delete(new Player { Identity = new() });
+        return null;
+    }
+
+    // TODO: Investigate why void return breaks the FFI generation
+    // // Invalid: Void return type is not Vec<T> or Option<T>
+    // [SpacetimeDB.View(Name = "view_def_no_return", Public = true)]
+    // public static void ViewDefNoReturn(ViewContext ctx)
+    // {
+    //     return;
+    // }
+
+    // Invalid: Wrong return type is not Vec<T> or Option<T>
+    [SpacetimeDB.View(Name = "view_def_wrong_return", Public = true)]
+    public static Player ViewDefWrongReturn(ViewContext ctx)
+    {
+        return new Player { Identity = new() };
+    }
+
+    // Invalid: Returns type that is not a SpacetimeType
+    [SpacetimeDB.View(Name = "view_def_returns_not_a_spacetime_type", Public = true)]
+    public static NotSpacetimeType? ViewDefReturnsNotASpacetimeType(AnonymousViewContext ctx)
+    {
+        return new NotSpacetimeType();
+    }
+
+    [SpacetimeDB.View(Name = "view_def_no_anon_identity", Public = true)]
+    public static Player? ViewDefNoAnonIdentity(AnonymousViewContext ctx)
+    {
+        ctx.GetIdentity();
+        return null;
+    }
+
+    [SpacetimeDB.View(Name = "view_def_no_iter", Public = true)]
+    public static Player? ViewDefNoIter(AnonymousViewContext ctx)
+    {
+        ctx.Db.Player.Iter();
+        return null;
+    }
+
+    [SpacetimeDB.View(Name = "view_def_index_no_mutation", Public = true)]
+    public static Player? ViewDefIndexNoMutation(AnonymousViewContext ctx)
+    {
+        ctx.Db.Player.Identity.Delete(0);
+        return null;
+    }
 }

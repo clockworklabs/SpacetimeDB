@@ -14,7 +14,7 @@
         <img width="250" src="./images/light/logo-text.svg" alt="SpacetimeDB">
     </a>
     <h3 align="center">
-        Multiplayer at the speed of light.
+        Development at the speed of light.
     </h3>
 </p>
 <p align="center">
@@ -50,7 +50,7 @@
     &nbsp;
     <a href="https://twitter.com/spacetime_db"><img height="25" src="./images/social/twitter.svg" alt="Twitter"></a>
     &nbsp;
-    <a href="https://github.com/clockworklabs/spacetimedb"><img height="25" src="./images/social/github.svg" alt="Github"></a>
+    <a href="https://github.com/clockworklabs/spacetimedb"><img height="25" src="./images/social/github.svg" alt="GitHub"></a>
     &nbsp;
     <a href="https://twitch.tv/SpacetimeDB"><img height="25" src="./images/social/twitch.svg" alt="Twitch"></a>
     &nbsp;
@@ -112,7 +112,7 @@ curl -sSf https://install.spacetimedb.com | sh
 
 #### Install on Windows
 
-Installing on Windows is as simple as pasting the above snippet into PowerShell. If you would like to use WSL instead, please follow the Linux install instructions.
+Installing on Windows is as simple as pasting the snippet below into PowerShell. If you would like to use WSL instead, please follow the Linux install instructions.
 
 ```ps1
 iwr https://windows.spacetimedb.com -useb | iex

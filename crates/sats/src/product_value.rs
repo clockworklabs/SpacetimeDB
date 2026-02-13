@@ -85,9 +85,10 @@ impl ProductValue {
     ///
     /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
     /// (including zero) fields, otherwise it will consist of a single [AlgebraicValue].
+    /// If you want to wrap single elements in a [ProductValue] as well, see [Self::project_product].
     ///
     /// **Parameters:**
-    /// - `cols`: A [ColList] containing the indexes of fields to be projected.s
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
     pub fn project(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         if let Some(head) = cols.as_singleton() {
             self.get_field(head.idx(), None).cloned()
@@ -98,6 +99,23 @@ impl ProductValue {
             }
             Ok(AlgebraicValue::product(fields))
         }
+    }
+
+    /// This utility function is designed to project fields based on the supplied `indexes`.
+    ///
+    /// **Important:**
+    ///
+    /// Returns a [ProductValue] even when projecting a single element.
+    /// If you don't want to wrap a single element in a [ProductValue], see [Self::project].
+    ///
+    /// **Parameters:**
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
+    pub fn project_product(&self, cols: &ColList) -> Result<ProductValue, InvalidFieldError> {
+        let mut fields = Vec::with_capacity(cols.len() as usize);
+        for col in cols.iter() {
+            fields.push(self.get_field(col.idx(), None)?.clone());
+        }
+        Ok(ProductValue::from(fields))
     }
 
     /// Extracts the `value` at field of `self` identified by `index`

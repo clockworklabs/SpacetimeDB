@@ -11,24 +11,28 @@ test = []
 
 [dependencies]
 spacetimedb-lib = { workspace = true, features = ["enum-map"] }
-spacetimedb-primitives.workspace = true
-spacetimedb-sats.workspace = true
+spacetimedb-primitives = { workspace = true, features = ["memory-usage"] }
+spacetimedb-sats = { workspace = true, features = ["memory-usage"] }
 spacetimedb-data-structures.workspace = true
+spacetimedb-memory-usage.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 anyhow.workspace = true
+derive_more.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
+lean_string.workspace = true
 thiserror.workspace = true
 unicode-ident.workspace = true
 unicode-normalization.workspace = true
 petgraph.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
-hashbrown.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true
+insta.workspace = true
+termcolor.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["test"] }
@@ -37,3 +41,6 @@ spacetimedb-testing = { path = "../testing" }
 
 proptest.workspace = true
 serial_test.workspace = true
+
+[lints]
+workspace = true

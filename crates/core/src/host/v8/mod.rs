@@ -1,0 +1,1092 @@
+use self::budget::energy_from_elapsed;
+use self::error::{
+    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, PinTryCatch, Throwable,
+};
+use self::ser::serialize_to_js;
+use self::string::{str_from_ident, IntoJsString};
+use self::syscall::{
+    call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
+    resolve_sys_module, FnRet, HookFunctions,
+};
+use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
+use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
+use super::UpdateDatabaseResult;
+use crate::client::ClientActorId;
+use crate::host::host_controller::CallProcedureReturn;
+use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
+use crate::host::module_host::{
+    call_identity_connected, init_database, ClientConnectedError, ViewCommand, ViewCommandResult,
+};
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::wasm_common::instrumentation::CallTimes;
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
+    InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
+    WasmInstance,
+};
+use crate::host::wasm_common::{RowIters, TimingSpanSet};
+use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::module_host_context::ModuleCreationContext;
+use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_manager::TransactionOffset;
+use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
+use core::any::type_name;
+use core::str;
+use enum_as_inner::EnumAsInner;
+use futures::future::LocalBoxFuture;
+use futures::FutureExt;
+use itertools::Either;
+use spacetimedb_auth::identity::ConnectionAuthCtx;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+use spacetimedb_datastore::traits::Program;
+use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_table::static_assert_size;
+use std::panic::AssertUnwindSafe;
+use std::sync::{Arc, LazyLock};
+use std::time::Instant;
+use tokio::sync::oneshot;
+use tracing::Instrument;
+use v8::script_compiler::{compile_module, Source};
+use v8::{
+    scope_with_context, ArrayBuffer, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
+    ResolveModuleCallback, ScriptOrigin, Value,
+};
+
+mod budget;
+mod builtins;
+mod de;
+mod error;
+mod from_value;
+mod ser;
+mod string;
+mod syscall;
+mod to_value;
+mod util;
+
+/// The V8 runtime, for modules written in e.g., JS or TypeScript.
+#[derive(Default)]
+pub struct V8Runtime {
+    _priv: (),
+}
+
+impl V8Runtime {
+    pub async fn make_actor(
+        &self,
+        mcc: ModuleCreationContext,
+        program_bytes: &[u8],
+        core: AllocatedJobCore,
+    ) -> anyhow::Result<ModuleWithInstance> {
+        V8_RUNTIME_GLOBAL.make_actor(mcc, program_bytes, core).await
+    }
+}
+
+#[cfg(test)]
+impl V8Runtime {
+    fn init_for_test() {
+        LazyLock::force(&V8_RUNTIME_GLOBAL);
+    }
+}
+
+static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
+
+/// The actual V8 runtime, with initialization of V8.
+struct V8RuntimeInner {
+    _priv: (),
+}
+
+impl V8RuntimeInner {
+    /// Initializes the V8 platform and engine.
+    ///
+    /// Should only be called once but it isn't unsound to call it more times.
+    fn init() -> Self {
+        // If the number in the name of this function is changed, update the version
+        // of the `deno_core_icudata` dep to match the number in the function name.
+        v8::icu::set_common_data_77(deno_core_icudata::ICU_DATA).ok();
+        // Set a default locale for functions like `toLocaleString()`.
+        // en-001 is "International English". <https://www.ctrl.blog/entry/en-001.html>
+        v8::icu::set_default_locale("en-001");
+
+        // We don't want idle tasks nor background worker tasks,
+        // as we intend to run on a single core.
+        // Per the docs, `new_single_threaded_default_platform` requires
+        // that we pass `--single-threaded`.
+        let mut flags = "--single-threaded".to_owned();
+        if let Ok(env_flags) = std::env::var("STDB_V8_FLAGS") {
+            flags.extend([" ", &env_flags]);
+        }
+        v8::V8::set_flags_from_string(&flags);
+        let platform = v8::new_single_threaded_default_platform(false).make_shared();
+        // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
+        v8::V8::initialize_platform(platform);
+        v8::V8::initialize();
+
+        Self { _priv: () }
+    }
+
+    async fn make_actor(
+        &self,
+        mcc: ModuleCreationContext,
+        program_bytes: &[u8],
+        core: AllocatedJobCore,
+    ) -> anyhow::Result<ModuleWithInstance> {
+        #![allow(unreachable_code, unused_variables)]
+
+        log::trace!(
+            "Making new V8 module host actor for database {} with module {}",
+            mcc.replica_ctx.database_identity,
+            mcc.program_hash,
+        );
+
+        // Convert program to a string.
+        let program: Arc<str> = str::from_utf8(program_bytes)?.into();
+
+        // Validate/create the module and spawn the first instance.
+        let mcc = Either::Right(mcc);
+        let load_balance_guard = Arc::new(core.guard);
+        let core_pinner = core.pinner;
+        let (common, init_inst) =
+            spawn_instance_worker(program.clone(), mcc, load_balance_guard.clone(), core_pinner.clone()).await?;
+        let module = JsModule {
+            common,
+            program,
+            load_balance_guard,
+            core_pinner,
+        };
+
+        Ok(ModuleWithInstance::Js { module, init_inst })
+    }
+}
+
+#[derive(Clone)]
+pub struct JsModule {
+    common: ModuleCommon,
+    program: Arc<str>,
+    load_balance_guard: Arc<LoadBalanceOnDropGuard>,
+    core_pinner: CorePinner,
+}
+
+impl JsModule {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        self.common.replica_ctx()
+    }
+
+    pub fn scheduler(&self) -> &Scheduler {
+        self.common.scheduler()
+    }
+
+    pub fn info(&self) -> Arc<ModuleInfo> {
+        self.common.info().clone()
+    }
+
+    pub async fn create_instance(&self) -> JsInstance {
+        let program = self.program.clone();
+        let common = self.common.clone();
+        let load_balance_guard = self.load_balance_guard.clone();
+        let core_pinner = self.core_pinner.clone();
+
+        // This has to be done in a blocking context because of `blocking_recv`.
+        let (_, instance) = spawn_instance_worker(program, Either::Left(common), load_balance_guard, core_pinner)
+            .await
+            .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
+        instance
+    }
+}
+
+/// Returns the `JsInstanceEnv` bound to an [`Isolate`], fallibly.
+fn env_on_isolate(isolate: &mut Isolate) -> Option<&mut JsInstanceEnv> {
+    isolate.get_slot_mut()
+}
+
+/// Returns the `JsInstanceEnv` bound to an [`Isolate`], or panic if not set.
+fn env_on_isolate_unwrap(isolate: &mut Isolate) -> &mut JsInstanceEnv {
+    env_on_isolate(isolate).expect("there should be a `JsInstanceEnv`")
+}
+
+/// The environment of a [`JsInstance`].
+struct JsInstanceEnv {
+    instance_env: InstanceEnv,
+
+    /// The slab of `BufferIters` created for this instance.
+    iters: RowIters,
+
+    /// Track time spent in module-defined spans.
+    timing_spans: TimingSpanSet,
+
+    /// Track time spent in all wasm instance env calls (aka syscall time).
+    ///
+    /// Each function, like `insert`, will add the `Duration` spent in it
+    /// to this tracker.
+    call_times: CallTimes,
+
+    /// A pool of unused allocated chunks that can be reused.
+    // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
+    chunk_pool: ChunkPool,
+}
+
+impl JsInstanceEnv {
+    /// Returns a new [`JsInstanceEnv`] wrapping `instance_env` with some defaults.
+    fn new(instance_env: InstanceEnv) -> Self {
+        Self {
+            instance_env,
+            call_times: CallTimes::new(),
+            iters: <_>::default(),
+            chunk_pool: <_>::default(),
+            timing_spans: <_>::default(),
+        }
+    }
+
+    /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
+    ///
+    /// Returns the handle used by reducers to read from `args`
+    /// as well as the handle used to write the error message, if any.
+    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+        self.instance_env.start_funcall(name, ts, func_type);
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    fn log_record_function(&self) -> Option<&str> {
+        self.instance_env.log_record_function()
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment.
+    fn reducer_start(&self) -> Instant {
+        self.instance_env.start_instant
+    }
+
+    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
+    /// This resets all of the state associated to a single reducer call,
+    /// and returns instrumentation records.
+    fn finish_reducer(&mut self) -> ExecutionTimings {
+        let total_duration = self.reducer_start().elapsed();
+
+        // Taking the call times record also resets timings to 0s for the next call.
+        let wasm_instance_env_call_times = self.call_times.take();
+
+        ExecutionTimings {
+            total_duration,
+            wasm_instance_env_call_times,
+        }
+    }
+}
+
+/// An instance for a [`JsModule`].
+///
+/// The actual work happens in a worker thread,
+/// which the instance communicates with through channels.
+///
+/// When the instance is dropped, the channels will hang up,
+/// which will cause the worker's loop to terminate
+/// and cleanup the isolate and friends.
+pub struct JsInstance {
+    request_tx: flume::Sender<JsWorkerRequest>,
+    reply_rx: flume::Receiver<(JsWorkerReply, bool)>,
+    trapped: bool,
+}
+
+impl JsInstance {
+    pub fn trapped(&self) -> bool {
+        self.trapped
+    }
+
+    /// Send a request to the worker and wait for a reply.
+    async fn send_recv<T>(
+        &mut self,
+        extract: impl FnOnce(JsWorkerReply) -> Result<T, JsWorkerReply>,
+        request: JsWorkerRequest,
+    ) -> T {
+        // Send the request.
+        self.request_tx
+            .send_async(request)
+            .await
+            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+
+        // Wait for the response.
+        let (reply, trapped) = self
+            .reply_rx
+            .recv_async()
+            .await
+            .expect("worker's `reply_tx` should be live as `JsInstance::drop` hasn't happened");
+
+        self.trapped = trapped;
+
+        match extract(reply) {
+            Err(err) => unreachable!("should have received {} but got {err:?}", type_name::<T>()),
+            Ok(reply) => reply,
+        }
+    }
+
+    /// Run the given function on the worker thread.
+    ///
+    /// This method, unlike the others, does not expect a response on the
+    /// `reply_rx` channel, since the return value `R` could be of any type.
+    pub async fn run_on_thread<F, R>(&mut self, f: F) -> R
+    where
+        F: AsyncFnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let span = tracing::Span::current();
+        let (tx, rx) = oneshot::channel();
+
+        let request = JsWorkerRequest::RunFunction(Box::new(move || {
+            async move {
+                let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
+                if let Err(Err(_panic)) = tx.send(result) {
+                    tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+                }
+            }
+            .boxed_local()
+        }));
+
+        self.request_tx
+            .send_async(request)
+            .await
+            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+
+        match rx.await.unwrap() {
+            Ok(r) => r,
+            Err(e) => std::panic::resume_unwind(e),
+        }
+    }
+
+    pub async fn update_database(
+        &mut self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.send_recv(
+            JsWorkerReply::into_update_database,
+            JsWorkerRequest::UpdateDatabase {
+                program,
+                old_module_info,
+                policy,
+            },
+        )
+        .await
+    }
+
+    pub async fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
+        self.send_recv(
+            JsWorkerReply::into_call_reducer,
+            JsWorkerRequest::CallReducer { params },
+        )
+        .await
+    }
+
+    pub async fn clear_all_clients(&mut self) -> anyhow::Result<()> {
+        self.send_recv(JsWorkerReply::into_clear_all_clients, JsWorkerRequest::ClearAllClients)
+            .await
+    }
+
+    pub async fn call_identity_connected(
+        &mut self,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ClientConnectedError> {
+        self.send_recv(
+            JsWorkerReply::into_call_identity_connected,
+            JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id),
+        )
+        .await
+    }
+
+    pub async fn call_identity_disconnected(
+        &mut self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
+    ) -> Result<(), ReducerCallError> {
+        self.send_recv(
+            JsWorkerReply::into_call_identity_disconnected,
+            JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id, drop_view_subscribers),
+        )
+        .await
+    }
+
+    pub async fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        self.send_recv(
+            JsWorkerReply::into_disconnect_client,
+            JsWorkerRequest::DisconnectClient(client_id),
+        )
+        .await
+    }
+
+    pub async fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        *self
+            .send_recv(
+                JsWorkerReply::into_init_database,
+                JsWorkerRequest::InitDatabase(program),
+            )
+            .await
+    }
+
+    pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
+        *self
+            .send_recv(
+                JsWorkerReply::into_call_procedure,
+                JsWorkerRequest::CallProcedure { params },
+            )
+            .await
+    }
+
+    pub async fn call_view(&mut self, cmd: ViewCommand) -> ViewCommandResult {
+        *self
+            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { cmd })
+            .await
+    }
+
+    pub(in crate::host) async fn call_scheduled_function(
+        &mut self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        self.send_recv(
+            JsWorkerReply::into_call_scheduled_function,
+            JsWorkerRequest::CallScheduledFunction(params),
+        )
+        .await
+    }
+}
+
+/// A reply from the worker in [`spawn_instance_worker`].
+#[derive(EnumAsInner, Debug)]
+enum JsWorkerReply {
+    UpdateDatabase(anyhow::Result<UpdateDatabaseResult>),
+    CallReducer(ReducerCallResult),
+    CallView(Box<ViewCommandResult>),
+    CallProcedure(Box<CallProcedureReturn>),
+    ClearAllClients(anyhow::Result<()>),
+    CallIdentityConnected(Result<(), ClientConnectedError>),
+    CallIdentityDisconnected(Result<(), ReducerCallError>),
+    DisconnectClient(Result<(), ReducerCallError>),
+    InitDatabase(Box<anyhow::Result<Option<ReducerCallResult>>>),
+    CallScheduledFunction(CallScheduledFunctionResult),
+}
+
+static_assert_size!(JsWorkerReply, 48);
+
+/// A request for the worker in [`spawn_instance_worker`].
+// We care about optimizing for `CallReducer` as it happens frequently,
+// so we don't want to box anything in it.
+enum JsWorkerRequest {
+    /// See [`JsInstance::run_on_thread`].
+    ///
+    /// This variant does not expect a [`JsWorkerReply`].
+    RunFunction(Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>),
+    /// See [`JsInstance::update_database`].
+    UpdateDatabase {
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+    },
+    /// See [`JsInstance::call_reducer`].
+    CallReducer { params: CallReducerParams },
+    /// See [`JsInstance::call_view`].
+    CallView { cmd: ViewCommand },
+    /// See [`JsInstance::call_procedure`].
+    CallProcedure { params: CallProcedureParams },
+    /// See [`JsInstance::clear_all_clients`].
+    ClearAllClients,
+    /// See [`JsInstance::call_identity_connected`].
+    CallIdentityConnected(ConnectionAuthCtx, ConnectionId),
+    /// See [`JsInstance::call_identity_disconnected`].
+    CallIdentityDisconnected(Identity, ConnectionId, bool),
+    /// See [`JsInstance::disconnect_client`].
+    DisconnectClient(ClientActorId),
+    /// See [`JsInstance::init_database`].
+    InitDatabase(Program),
+    /// See [`JsInstance::call_scheduled_function`].
+    CallScheduledFunction(ScheduledFunctionParams),
+}
+
+// These two should be the same size (once core pinning PR lands).
+static_assert_size!(JsWorkerRequest, 192);
+static_assert_size!(CallReducerParams, 192);
+
+/// Performs some of the startup work of [`spawn_instance_worker`].
+///
+/// NOTE(centril): in its own function due to lack of `try` blocks.
+fn startup_instance_worker<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    program: Arc<str>,
+    module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
+) -> anyhow::Result<(HookFunctions<'scope>, ModuleCommon)> {
+    let hook_functions = catch_exception(scope, |scope| {
+        // Start-up the user's module.
+        let exports_obj = eval_user_module(scope, &program)?;
+
+        // Find the hook functions.
+        let hooks =
+            get_hooks(scope, exports_obj)?.ok_or_else(|| anyhow::anyhow!("must export schema as default export"))?;
+        Ok(hooks)
+    })?;
+
+    // If we don't have a module, make one.
+    let module_common = match module_or_mcc {
+        Either::Left(module_common) => module_common,
+        Either::Right(mcc) => {
+            let def = extract_description(scope, &hook_functions, &mcc.replica_ctx)?;
+
+            // Validate and create a common module from the raw definition.
+            build_common_module_from_raw(mcc, def)?
+        }
+    };
+
+    Ok((hook_functions, module_common))
+}
+
+/// Returns a new isolate.
+fn new_isolate() -> OwnedIsolate {
+    let mut isolate = Isolate::new(<_>::default());
+    isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
+    isolate
+}
+
+/// Spawns an instance worker for `program`
+/// and returns on success the corresponding [`JsInstance`]
+/// that talks to the worker.
+///
+/// When [`ModuleCommon`] is passed, it's assumed that `spawn_instance_worker`
+/// has already happened once for this `program` and that it has been
+/// validated. In that case, `Ok(_)` should be returned.
+///
+/// Otherwise, when [`ModuleCreationContext`] is passed,
+/// this is the first time both the module and instance are created.
+///
+/// `load_balance_guard` and `core_pinner` should both be from the same
+/// [`AllocatedJobCore`], and are used to manage the core pinning of this thread.
+async fn spawn_instance_worker(
+    program: Arc<str>,
+    module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
+    load_balance_guard: Arc<LoadBalanceOnDropGuard>,
+    mut core_pinner: CorePinner,
+) -> anyhow::Result<(ModuleCommon, JsInstance)> {
+    // Spawn channels for bidirectional communication between worker and instance.
+    // The use-case is SPSC and all channels are rendezvous channels
+    // where each `.send` blocks until it's received.
+    // The Instance --Request-> Worker channel:
+    let (request_tx, request_rx) = flume::bounded(0);
+    // The Worker --Reply-> Instance channel:
+    let (reply_tx, reply_rx) = flume::bounded(0);
+
+    // This one-shot channel is used for initial startup error handling within the thread.
+    let (result_tx, result_rx) = oneshot::channel();
+
+    let rt = tokio::runtime::Handle::current();
+
+    std::thread::spawn(move || {
+        let _guard = load_balance_guard;
+        core_pinner.pin_now();
+
+        let _entered = rt.enter();
+
+        // Create the isolate and scope.
+        let mut isolate = new_isolate();
+        scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
+
+        // Setup the instance environment.
+        let (replica_ctx, scheduler) = match &module_or_mcc {
+            Either::Left(module) => (module.replica_ctx(), module.scheduler()),
+            Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
+        };
+        let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+        scope.set_slot(JsInstanceEnv::new(instance_env));
+
+        catch_exception(scope, |scope| Ok(builtins::evaluate_builtins(scope)?))
+            .expect("our builtin code shouldn't error");
+
+        // Setup the JS module, find call_reducer, and maybe build the module.
+        let send_result = |res| {
+            result_tx.send(res).inspect_err(|_| {
+                // This should never happen as we immediately `.recv` on the
+                // other end of the channel, but sometimes it gets cancelled.
+                log::error!("startup result receiver disconnected");
+            })
+        };
+        let (hooks, module_common) = match startup_instance_worker(scope, program, module_or_mcc) {
+            Err(err) => {
+                // There was some error in module setup.
+                // Return the error and terminate the worker.
+                let _ = send_result(Err(err));
+                return;
+            }
+            Ok((crf, module_common)) => {
+                // Success! Send `module_common` to the spawner.
+                if send_result(Ok(module_common.clone())).is_err() {
+                    return;
+                }
+                (crf, module_common)
+            }
+        };
+
+        if let Some(get_error_constructor) = hooks.get_error_constructor {
+            scope
+                .get_current_context()
+                .set_embedder_data(GET_ERROR_CONSTRUCTOR_SLOT, get_error_constructor.into());
+        }
+
+        // Setup the instance common.
+        let info = &module_common.info();
+        let mut instance_common = InstanceCommon::new(&module_common);
+        let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
+
+        // Create a zero-initialized buffer for holding reducer args.
+        // Arguments needing more space will not use this.
+        const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096; // 1 page.
+        let reducer_args_buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+
+        let mut inst = V8Instance {
+            scope,
+            replica_ctx,
+            hooks: &hooks,
+            reducer_args_buf,
+        };
+
+        // Process requests to the worker.
+        //
+        // The loop is terminated when a `JsInstance` is dropped.
+        // This will cause channels, scopes, and the isolate to be cleaned up.
+        let reply = |ctx: &str, reply: JsWorkerReply, trapped| {
+            if let Err(e) = reply_tx.send((reply, trapped)) {
+                // This should never happen as `JsInstance::$function` immediately
+                // does `.recv` on the other end of the channel, though sometimes
+                // it gets cancelled.
+                log::error!("should have receiver for `{ctx}` response, {e}");
+            }
+        };
+        for request in request_rx.iter() {
+            let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
+
+            core_pinner.pin_if_changed();
+
+            use JsWorkerReply::*;
+            match request {
+                JsWorkerRequest::RunFunction(f) => rt.block_on(f()),
+                JsWorkerRequest::UpdateDatabase {
+                    program,
+                    old_module_info,
+                    policy,
+                } => {
+                    // Update the database and reply to `JsInstance::update_database`.
+                    let res = instance_common.update_database(program, old_module_info, policy, &mut inst);
+                    reply("update_database", UpdateDatabase(res), false);
+                }
+                JsWorkerRequest::CallReducer { params } => {
+                    // Call the reducer.
+                    // If execution trapped, we don't end the loop here,
+                    // but rather let this happen by `return_instance` using `JsInstance::trapped`
+                    // which will cause `JsInstance` to be dropped,
+                    // which in turn results in the loop being terminated.
+                    let (res, trapped) = call_reducer(None, params);
+                    reply("call_reducer", CallReducer(res), trapped);
+                }
+                JsWorkerRequest::CallView { cmd } => {
+                    let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
+                    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
+                }
+                JsWorkerRequest::CallProcedure { params } => {
+                    let (res, trapped) = instance_common
+                        .call_procedure(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+
+                    reply("call_procedure", JsWorkerReply::CallProcedure(res.into()), trapped);
+                }
+                JsWorkerRequest::ClearAllClients => {
+                    let res = instance_common.clear_all_clients();
+                    reply("clear_all_clients", ClearAllClients(res), false);
+                }
+                JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id) => {
+                    let mut trapped = false;
+                    let res =
+                        call_identity_connected(caller_auth, caller_connection_id, info, call_reducer, &mut trapped);
+                    reply("call_identity_connected", CallIdentityConnected(res), trapped);
+                }
+                JsWorkerRequest::CallIdentityDisconnected(
+                    caller_identity,
+                    caller_connection_id,
+                    drop_view_subcribers,
+                ) => {
+                    let mut trapped = false;
+                    let res = ModuleHost::call_identity_disconnected_inner(
+                        caller_identity,
+                        caller_connection_id,
+                        info,
+                        drop_view_subcribers,
+                        call_reducer,
+                        &mut trapped,
+                    );
+                    reply("call_identity_disconnected", CallIdentityDisconnected(res), trapped);
+                }
+                JsWorkerRequest::DisconnectClient(client_id) => {
+                    let mut trapped = false;
+                    let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
+                    reply("disconnect_client", DisconnectClient(res), trapped);
+                }
+                JsWorkerRequest::InitDatabase(program) => {
+                    let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
+                        init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
+                    reply("init_database", InitDatabase(Box::new(res)), trapped);
+                }
+                JsWorkerRequest::CallScheduledFunction(params) => {
+                    let (res, trapped) = instance_common
+                        .call_scheduled_function(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+                    reply("call_scheduled_function", CallScheduledFunction(res), trapped);
+                }
+            }
+        }
+    });
+
+    // Get the module, if any, and get any setup errors from the worker.
+    let res: Result<ModuleCommon, anyhow::Error> = result_rx.await.expect("should have a sender");
+    res.map(|opt_mc| {
+        let inst = JsInstance {
+            request_tx,
+            reply_rx,
+            trapped: false,
+        };
+        (opt_mc, inst)
+    })
+}
+
+/// The embedder data slot for the `__get_error_constructor__` function.
+/// One greater than the greatest value of [`syscall::ModuleHookKey`].
+const GET_ERROR_CONSTRUCTOR_SLOT: i32 = 5;
+
+/// Compiles, instantiate, and evaluate `code` as a module.
+fn eval_module<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    resource_name: Local<'scope, Value>,
+    code: Local<'_, v8::String>,
+    resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
+) -> ExcResult<Local<'scope, v8::Module>> {
+    // Assemble the source. v8 figures out things like the `script_id` and
+    // `source_map_url` itself, so we don't actually have to provide them.
+    let origin = ScriptOrigin::new(scope, resource_name, 0, 0, false, 0, None, false, false, true, None);
+    let source = &mut Source::new(code, Some(&origin));
+
+    // Compile the module.
+    let module = compile_module(scope, source).ok_or_else(exception_already_thrown)?;
+
+    // Instantiate the module.
+    module
+        .instantiate_module(scope, resolve_deps)
+        .filter(|x| *x)
+        .ok_or_else(exception_already_thrown)?;
+
+    // Evaluate the module.
+    let value = module.evaluate(scope).ok_or_else(exception_already_thrown)?;
+
+    if module.get_status() == v8::ModuleStatus::Errored {
+        // If there's an exception while evaluating the code of the module, `evaluate()` won't
+        // throw, but instead the status will be `Errored` and the exception can be obtained from
+        // `get_exception()`.
+        return Err(error::ExceptionValue(module.get_exception()).throw(scope));
+    }
+
+    let value = value.cast::<v8::Promise>();
+    match value.state() {
+        v8::PromiseState::Pending => {
+            // If the user were to put top-level `await new Promise((resolve) => { /* do nothing */ })`
+            // the module value would never actually resolve. For now, reject this entirely.
+            Err(error::TypeError("module has top-level await and is pending").throw(scope))
+        }
+        v8::PromiseState::Rejected => Err(error::ExceptionValue(value.result(scope)).throw(scope)),
+        v8::PromiseState::Fulfilled => Ok(module),
+    }
+}
+
+/// Compiles, instantiate, and evaluate the user module with `code`.
+/// Returns the exports of the module.
+fn eval_user_module<'scope>(scope: &mut PinScope<'scope, '_>, code: &str) -> ExcResult<Local<'scope, v8::Object>> {
+    // Convert the code to a string.
+    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
+
+    let name = str_from_ident!(spacetimedb_module).string(scope).into();
+    let module = eval_module(scope, name, code, resolve_sys_module)?;
+    Ok(module.get_module_namespace().cast())
+}
+
+/// Calls free function `fun` with `args`.
+fn call_free_fun<'scope>(
+    scope: &PinScope<'scope, '_>,
+    fun: Local<'scope, Function>,
+    args: &[Local<'scope, Value>],
+) -> FnRet<'scope> {
+    let receiver = v8::undefined(scope).into();
+    call_recv_fun(scope, fun, receiver, args)
+}
+
+/// Calls function `fun` with `recv` and `args`.
+fn call_recv_fun<'scope>(
+    scope: &PinScope<'scope, '_>,
+    fun: Local<'_, Function>,
+    recv: Local<'_, Value>,
+    args: &[Local<'_, Value>],
+) -> FnRet<'scope> {
+    fun.call(scope, recv, args).ok_or_else(exception_already_thrown)
+}
+
+struct V8Instance<'a, 'scope, 'isolate> {
+    scope: &'a mut PinScope<'scope, 'isolate>,
+    replica_ctx: &'a Arc<ReplicaContext>,
+    hooks: &'a HookFunctions<'scope>,
+    reducer_args_buf: Local<'scope, ArrayBuffer>,
+}
+
+impl WasmInstance for V8Instance<'_, '_, '_> {
+    fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
+        extract_description(self.scope, self.hooks, self.replica_ctx)
+    }
+
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        self.replica_ctx
+    }
+
+    fn tx_slot(&self) -> TxSlot {
+        self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
+    }
+
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
+        })
+        .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
+    }
+
+    fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            call_call_view(scope, self.hooks, op)
+        })
+    }
+
+    fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            call_call_view_anon(scope, self.hooks, op)
+        })
+    }
+
+    fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error) {
+        log_traceback(self.replica_ctx, func_type, func, trap)
+    }
+
+    async fn call_procedure(
+        &mut self,
+        op: ProcedureOp,
+        budget: FunctionBudget,
+    ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
+        let result = common_call(self.scope, budget, op, |scope, op| {
+            call_call_procedure(scope, self.hooks, op)
+        })
+        .map_result(|call_result| {
+            call_result.map_err(|e| match e {
+                ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
+            })
+        });
+        let tx_offset = env_on_isolate_unwrap(self.scope)
+            .instance_env
+            .take_procedure_tx_offset();
+        (result, tx_offset)
+    }
+}
+
+fn common_call<'scope, R, O, F>(
+    scope: &mut PinScope<'scope, '_>,
+    budget: FunctionBudget,
+    op: O,
+    call: F,
+) -> ExecutionResult<R, ExecutionError>
+where
+    O: InstanceOp,
+    F: FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
+{
+    // TODO(v8): Start the budget timeout and long-running logger.
+    let env = env_on_isolate_unwrap(scope);
+
+    // Start the timer.
+    // We'd like this tightly around `call`.
+    env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+
+    // By default, we can continue execution, but an exception might mean that we can't.
+    let mut can_continue = CanContinue::Yes;
+    let call_result = catch_exception(scope, |scope| {
+        let res = call(scope, op);
+        if let Err(ErrorOrException::Exception(_)) = res {
+            can_continue = CanContinue::from_catch(scope);
+        }
+        res
+    })
+    .map_err(|e| {
+        // Convert `can_continue` to whether the isolate has "trapped".
+        // Also cancel execution termination if needed,
+        // that can occur due to terminating long running reducers.
+        match can_continue {
+            CanContinue::No => ExecutionError::Trap(e.into()),
+            CanContinue::Yes => ExecutionError::Recoverable(e.into()),
+            CanContinue::YesCancelTermination => {
+                scope.cancel_terminate_execution();
+                ExecutionError::Recoverable(e.into())
+            }
+        }
+    });
+
+    // Finish timings.
+    let timings = env_on_isolate_unwrap(scope).finish_reducer();
+
+    // Derive energy stats.
+    let energy = energy_from_elapsed(budget, timings.total_duration);
+
+    // Fetch the currently used heap size in V8.
+    // The used size is ostensibly fairer than the total size.
+    let memory_allocation = scope.get_heap_statistics().used_heap_size();
+
+    let stats = ExecutionStats {
+        energy,
+        timings,
+        memory_allocation,
+    };
+    ExecutionResult { stats, call_result }
+}
+
+/// Extracts the raw module def by running the registered `__describe_module__` hook.
+fn extract_description<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    hooks: &HookFunctions<'_>,
+    replica_ctx: &ReplicaContext,
+) -> Result<RawModuleDef, DescribeError> {
+    run_describer(
+        |a, b, c| log_traceback(replica_ctx, a, b, c),
+        || {
+            Ok(catch_exception(scope, |scope| {
+                let def = call_describe_module(scope, hooks)?;
+                Ok(def)
+            })?)
+        },
+    )
+}
+
+#[cfg(test)]
+mod test {
+    use super::to_value::test::with_scope;
+    use super::*;
+    use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
+    use crate::host::wasm_common::module_host_actor::ReducerOp;
+    use crate::host::ArgsTuple;
+    use spacetimedb_lib::{ConnectionId, Identity};
+    use spacetimedb_primitives::ReducerId;
+    use spacetimedb_schema::reducer_name::ReducerName;
+
+    fn with_module_catch<T>(
+        code: &str,
+        logic: impl for<'scope> FnOnce(
+            &mut PinTryCatch<'scope, '_, '_, '_>,
+            Local<v8::Object>,
+        ) -> Result<T, ErrorOrException<ExceptionThrown>>,
+    ) -> anyhow::Result<T> {
+        with_scope(|scope| {
+            Ok(catch_exception(scope, |scope| {
+                let exports = eval_user_module(scope, code)?;
+                let ret = logic(scope, exports)?;
+                Ok(ret)
+            })?)
+        })
+    }
+
+    #[test]
+    fn call_call_reducer_works() {
+        let call = |code| {
+            with_module_catch(code, |scope, exports| {
+                let hooks = get_hooks(scope, exports)?.unwrap();
+                let op = ReducerOp {
+                    id: ReducerId(42),
+                    name: &ReducerName::for_test("foobar"),
+                    caller_identity: &Identity::ONE,
+                    caller_connection_id: &ConnectionId::ZERO,
+                    timestamp: Timestamp::from_micros_since_unix_epoch(24),
+                    args: &ArgsTuple::nullary(),
+                };
+                let buffer = v8::ArrayBuffer::new(scope, 4096);
+                Ok(call_call_reducer(scope, &hooks, op, buffer)?)
+            })
+        };
+
+        // Test the trap case.
+        let ret = call(
+            r#"
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({
+                __describe_module__: function() {},
+                __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
+                    throw new Error("foobar");
+                },
+            })
+        "#,
+        );
+        let actual = format!("{}", ret.expect_err("should trap")).replace("\t", "    ");
+        let expected = r#"
+js error Uncaught Error: foobar
+    at __call_reducer__ (spacetimedb_module:6:27)
+        "#;
+        assert_eq!(actual.trim(), expected.trim());
+
+        // Test the error case.
+        let ret = call(
+            r#"
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({
+                __describe_module__: function() {},
+                __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
+                    return {
+                        "tag": "err",
+                        "value": "foobar",
+                    };
+                },
+            })
+        "#,
+        );
+        assert_eq!(&*ret.expect("should not trap").expect_err("should error"), "foobar");
+
+        // Test the error case.
+        let ret = call(
+            r#"
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({
+                __describe_module__: function() {},
+                __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
+                    return {
+                        "tag": "ok",
+                        "value": {},
+                    };
+                },
+            })
+        "#,
+        );
+        ret.expect("should not trap").expect("should not error");
+    }
+
+    #[test]
+    fn call_describe_module_works() {
+        let code = r#"
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({
+                __call_reducer__: function() {},
+                __describe_module__: function() {
+                    return new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                },
+            })
+        "#;
+        let raw_mod = with_module_catch(code, |scope, exports| {
+            let hooks = get_hooks(scope, exports)?.unwrap();
+            call_describe_module(scope, &hooks)
+        })
+        .map_err(|e| e.to_string());
+        assert_eq!(raw_mod, Ok(RawModuleDef::V9(<_>::default())));
+    }
+}

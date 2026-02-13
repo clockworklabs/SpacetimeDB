@@ -92,13 +92,17 @@ pub fn run_ast<const N: usize, P: ProgramVm>(
 
 /// Used internally for testing SQL JOINS.
 #[doc(hidden)]
+#[cfg(any(test, feature = "test"))]
 pub mod test_helpers {
     use crate::relation::MemTable;
     use core::hash::BuildHasher as _;
     use spacetimedb_data_structures::map::DefaultHashBuilder;
-    use spacetimedb_lib::relation::{Column, FieldName, Header};
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+    use spacetimedb_schema::{
+        relation::{Column, FieldName, Header},
+        table_name::TableName,
+    };
     use std::sync::Arc;
 
     pub fn mem_table_without_table_name(mem: &MemTable) -> (&[Column], &[ProductValue]) {
@@ -107,7 +111,7 @@ pub mod test_helpers {
 
     pub fn header_for_mem_table(table_id: TableId, fields: ProductType) -> Header {
         let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = format!("mem#{:x}", hash).into();
+        let table_name = TableName::for_test(&format!("mem_{hash:x}"));
 
         let cols = Vec::from(fields.elements)
             .into_iter()
@@ -185,11 +189,11 @@ pub mod tests {
     use crate::expr::{CrudExpr, Query, QueryExpr, SourceExpr, SourceSet};
     use crate::iterators::RelIter;
     use crate::relation::MemTable;
-    use spacetimedb_lib::db::error::RelationError;
     use spacetimedb_lib::operator::{OpCmp, OpLogic};
-    use spacetimedb_lib::relation::{FieldName, Header};
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
+    use spacetimedb_schema::def::error::RelationError;
+    use spacetimedb_schema::relation::{FieldName, Header};
 
     /// From an original source of `result`s, applies `queries` and returns a final set of results.
     fn build_query<'a, const N: usize>(
@@ -304,6 +308,7 @@ pub mod tests {
     fn test_join_inner() {
         let table_id = 0.into();
         let table = mem_table_one_u64(table_id);
+        let table_name = table.head.table_name.clone();
         let col: ColId = 0.into();
         let field = table.head.fields[col.idx()].clone();
 
@@ -315,7 +320,7 @@ pub mod tests {
         let result = run_query(q.into(), sources);
 
         // The expected result.
-        let head = Header::new(table_id, "".into(), [field.clone(), field].into(), Vec::new());
+        let head = Header::new(table_id, table_name, [field.clone(), field].into(), Vec::new());
         let input = MemTable::from_iter(head.into(), [product!(1u64, 1u64)]);
 
         println!("{}", &result.head);

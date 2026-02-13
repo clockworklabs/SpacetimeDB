@@ -5,6 +5,8 @@ use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_execution::Datastore;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
@@ -87,13 +89,13 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 
     let tx = SchemaViewer::new(tx, auth);
     let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
-    let hash = QueryHash::from_string(input, auth.caller, has_param);
+    let hash = QueryHash::from_string(input, auth.caller(), has_param);
     Ok(Plan::new(plans, hash, input.to_owned()))
 }
 
 /// Compile a string into a single read-only query.
 /// This returns an error if the string has multiple queries or mutations.
-pub fn compile_query_with_hashes(
+pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
     auth: &AuthCtx,
     tx: &Tx,
     input: &str,
@@ -107,7 +109,11 @@ pub fn compile_query_with_hashes(
     let tx = SchemaViewer::new(tx, auth);
     let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
 
-    if has_param {
+    if auth.bypass_rls() || has_param {
+        // Note that when generating hashes for queries from owners,
+        // we always treat them as if they were parameterized by :sender.
+        // This is because RLS is not applicable to owners.
+        // Hence owner hashes must never overlap with client hashes.
         return Ok(Plan::new(plans, hash_with_param, input.to_owned()));
     }
     Ok(Plan::new(plans, hash, input.to_owned()))
@@ -142,35 +148,40 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{
+        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
+    };
     use crate::db::relational_db::MutTx;
-    use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
+    use crate::subscription::module_subscription_manager::QueriedTableIndexIds;
+    use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::subscription::{legacy_get_all, ExecutionSet};
     use crate::subscription::tx::DeltaTx;
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
-    use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression};
+    use smallvec::SmallVec;
+    use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+    use spacetimedb_datastore::execution_context::Workload;
     use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::metrics::ExecutionMetrics;
-    use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
+    use spacetimedb_schema::relation::FieldName;
     use spacetimedb_schema::schema::*;
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};
     use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
     use spacetimedb_vm::relation::{MemTable, RelValue};
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
@@ -186,7 +197,7 @@ mod tests {
         let q = Expr::Crud(Box::new(CrudExpr::Query(query.clone())));
 
         let mut result = Vec::with_capacity(1);
-        let mut updates = Vec::new();
+        let mut updates = SmallVec::new();
         collect_result(&mut result, &mut updates, run_ast(p, q, sources).into())?;
         Ok(result)
     }
@@ -194,7 +205,7 @@ mod tests {
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
+            table_name: TableName::for_test(table_name),
             deletes: [].into(),
             inserts: [row].into(),
         }
@@ -203,7 +214,7 @@ mod tests {
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.into(),
+            table_name: TableName::for_test(table_name),
             deletes: [row].into(),
             inserts: [].into(),
         }
@@ -226,12 +237,12 @@ mod tests {
         row: &ProductValue,
         access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()], access)?;
+        let schema = create_table_with_rows(db, tx, table_name, head.clone(), std::slice::from_ref(row), access)?;
         let table = mem_table(schema.table_id, schema.get_row_type().clone(), [row.clone()]);
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: table_name.into(),
+            table_name: TableName::for_test(table_name),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -347,7 +358,9 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval::<BsatnFormat>(db, tx, None, Compression::Brotli).tables;
+        let result = s
+            .eval::<ws_v1::BsatnFormat>(db, tx, &BsatnRowListBuilderPool::new(), None, ws_v1::Compression::None)
+            .tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -357,7 +370,10 @@ mod tests {
         let result = result
             .into_iter()
             .flat_map(|x| x.updates)
-            .map(|x| x.maybe_decompress())
+            .map(|x| match x {
+                ws_v1::CompressableQueryUpdate::Uncompressed(x) => x,
+                _ => unreachable!(),
+            })
             .flat_map(|x| {
                 (&x.deletes)
                     .into_iter()
@@ -407,7 +423,7 @@ mod tests {
         db.create_table_for_test("a", schema, indexes)?;
         db.create_table_for_test("b", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let sql = "SELECT b.* FROM b JOIN a ON b.n = a.n WHERE b.data > 200";
         let result = compile_read_only_query(&AuthCtx::for_testing(), &tx, sql);
         assert!(result.is_ok());
@@ -423,7 +439,7 @@ mod tests {
         let indexes = &[1.into()];
         let table_id = db.create_table_for_test("test", schema, indexes)?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         let mut deletes = Vec::new();
         for i in 0u64..9u64 {
             insert(&db, &mut tx, table_id, &product!(i, i))?;
@@ -431,16 +447,17 @@ mod tests {
         }
 
         let update = DatabaseUpdate {
-            tables: vec![DatabaseTableUpdate {
+            tables: [DatabaseTableUpdate {
                 table_id,
-                table_name: "test".into(),
+                table_name: TableName::for_test("test"),
                 deletes: deletes.into(),
                 inserts: [].into(),
-            }],
+            }]
+            .into(),
         };
 
         db.commit_tx(tx)?;
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         let sql = "select * from test where b = 3";
         let mut exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
@@ -472,14 +489,14 @@ mod tests {
     fn test_subscribe() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
         db.commit_tx(tx)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
@@ -495,7 +512,7 @@ mod tests {
     fn test_subscribe_private() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
         db.commit_tx(tx)?;
@@ -503,7 +520,7 @@ mod tests {
         assert_eq!(schema.table_access, StAccess::Private);
 
         let row = product!(1u64, "health");
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         check_query(&db, &table, &tx, &q, &data)?;
 
         // SELECT * FROM inventory WHERE inventory_id = 1
@@ -515,13 +532,13 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "inventory".into(),
+            table_name: TableName::for_test("inventory"),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
 
         let update = DatabaseUpdate {
-            tables: vec![data.clone()],
+            tables: [data.clone()].into(),
         };
 
         check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
@@ -595,7 +612,7 @@ mod tests {
         AND MobileEntityState.location_z > 96000 \
         AND MobileEntityState.location_z < 192000";
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let qset = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
 
         for q in qset {
@@ -616,7 +633,7 @@ mod tests {
     fn test_subscribe_all() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
         let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
@@ -629,20 +646,20 @@ mod tests {
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
-            table_name: "inventory".into(),
+            table_name: TableName::for_test("inventory"),
             deletes: [row_1].into(),
             inserts: [].into(),
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
-            table_name: "player".into(),
+            table_name: TableName::for_test("player"),
             deletes: [].into(),
             inserts: [row_2].into(),
         };
 
         let update = DatabaseUpdate {
-            tables: vec![data1, data2],
+            tables: smallvec::smallvec![data1, data2],
         };
 
         let row_1 = product!(1u64, "health");
@@ -670,7 +687,7 @@ mod tests {
         let indexes = &[ColId(0), ColId(1)];
         db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         // All single table queries are supported
         let scans = [
@@ -717,7 +734,7 @@ mod tests {
     fn create_lhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[0.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for i in 0..5 {
                 let row = product!(i, i + 5);
                 insert(db, tx, lhs_id, &row)?;
@@ -730,7 +747,7 @@ mod tests {
     fn create_rhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[1.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for i in 10..20 {
                 let row = product!(i, i - 10, i - 8);
                 insert(db, tx, rhs_id, &row)?;
@@ -740,7 +757,7 @@ mod tests {
     }
 
     fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
-        db.with_read_only(Workload::ForTests, |tx| {
+        with_read_only(db, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
@@ -760,12 +777,12 @@ mod tests {
     }
 
     #[test]
-    /// TODO: This test is a slight modifaction of [test_eval_incr_for_index_join].
+    /// TODO: This test is a slight modification of [test_eval_incr_for_index_join].
     /// Essentially the WHERE condition is on different tables.
     /// Should refactor to reduce duplicate logic between the two tests.
     fn test_eval_incr_for_left_semijoin() -> ResultTest<()> {
         fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
-            db.with_read_only(Workload::ForTests, |tx| {
+            with_read_only(db, |tx| {
                 let auth = AuthCtx::for_testing();
                 let tx = SchemaViewer::new(tx, &auth);
                 // Should be answered using an index semijion
@@ -999,7 +1016,7 @@ mod tests {
                 result.tables[0],
                 DatabaseTableUpdate {
                     table_id: lhs_id,
-                    table_name: "lhs".into(),
+                    table_name: TableName::for_test("lhs"),
                     deletes: [lhs_old].into(),
                     inserts: [lhs_new].into(),
                 },
@@ -1066,7 +1083,7 @@ mod tests {
         plan: &SubscriptionPlan,
         ops: Vec<(TableId, ProductValue, bool)>,
     ) -> ResultTest<DatabaseUpdate> {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(db);
 
         for (table_id, row, insert) in ops {
             if insert {
@@ -1076,10 +1093,10 @@ mod tests {
             }
         }
 
-        let (data, tx) = tx.commit_downgrade(Workload::ForTests);
+        let (data, _, tx) = db.commit_tx_downgrade(tx, Workload::ForTests);
         let table_id = plan.subscribed_table_id();
-        let table_name = plan.subscribed_table_name().into();
-        let tx = DeltaTx::new(&tx, &data);
+        let table_name = plan.subscribed_table_name().clone();
+        let tx = DeltaTx::new(&tx, &data, &QueriedTableIndexIds::from_iter(plan.index_ids()));
 
         // IMPORTANT: FOR TESTING ONLY!
         //
@@ -1146,9 +1163,9 @@ mod tests {
             .collect::<Arc<_>>();
 
         let tables = if inserts.is_empty() && deletes.is_empty() {
-            vec![]
+            smallvec::smallvec![]
         } else {
-            vec![DatabaseTableUpdate {
+            smallvec::smallvec![DatabaseTableUpdate {
                 table_id,
                 table_name,
                 inserts,
@@ -1282,10 +1299,9 @@ mod tests {
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row passes the rhs filter,
-        // resulting in a probe of the rhs index.
-        assert_eq!(metrics.index_seeks, 2);
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 3);
         Ok(())
     }
 
@@ -1312,10 +1328,13 @@ mod tests {
         // No updates to report
         assert_eq!(result.tables.len(), 0);
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row doesn't pass the rhs filter,
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index at most once.
+        //
+        // The lhs row always probes the rhs index,
+        // but the rhs row doesn't pass the rhs filter,
         // hence it doesn't survive to probe the lhs index.
-        assert_eq!(metrics.index_seeks, 1);
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -1343,10 +1362,9 @@ mod tests {
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row passes the rhs filter,
-        // resulting in a probe of the rhs index.
-        assert_eq!(metrics.index_seeks, 2);
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 3);
         Ok(())
     }
 
@@ -1373,10 +1391,13 @@ mod tests {
         // No updates to report
         assert_eq!(result.tables.len(), 0);
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row doesn't pass the rhs filter,
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index at most once.
+        //
+        // The lhs row always probes the rhs index,
+        // but the rhs row doesn't pass the rhs filter,
         // hence it doesn't survive to probe the lhs index.
-        assert_eq!(metrics.index_seeks, 1);
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -1416,16 +1437,16 @@ mod tests {
             result.tables[0],
             DatabaseTableUpdate {
                 table_id: lhs_id,
-                table_name: "lhs".into(),
+                table_name: TableName::for_test("lhs"),
                 deletes: [lhs_old].into(),
                 inserts: [lhs_new].into(),
             },
         );
 
-        // The lhs rows must always probe the rhs index.
-        // The rhs rows pass the rhs filter,
-        // resulting in probes of the rhs index.
-        assert_eq!(metrics.index_seeks, 4);
+        // Because we have deletes and inserts for both tables,
+        // all 8 delta queries are evaluated,
+        // each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 8);
         Ok(())
     }
 }

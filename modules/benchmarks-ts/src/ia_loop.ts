@@ -1,0 +1,336 @@
+// STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
+
+import { newLoad } from './load';
+import {
+  type GameEnemyAiAgentState,
+  type GameTargetableState,
+  type S,
+  type SmallHexTile,
+  spacetimedb,
+  type Position,
+  type Velocity,
+} from './schema';
+import { t, type ReducerCtx } from 'spacetimedb/server';
+
+function newPosition(
+  entity_id: number,
+  x: number,
+  y: number,
+  z: number
+): Position {
+  return {
+    entity_id,
+    x,
+    y,
+    z,
+    vx: x + 10.0,
+    vy: y + 20.0,
+    vz: z + 30.0,
+  };
+}
+
+function newVelocity(
+  entity_id: number,
+  x: number,
+  y: number,
+  z: number
+): Velocity {
+  return {
+    entity_id,
+    x,
+    y,
+    z,
+  };
+}
+
+function momentMilliseconds(): bigint {
+  return 1n;
+}
+
+function calculateHash(t: bigint): bigint {
+  // Whatever, here's a hash function I guess.
+  return (t >> 16n) ^ t;
+}
+
+export const insertBulkPosition = spacetimedb.reducer(
+  { name: 'insert_bulk_position' },
+  { count: t.u32() },
+  (ctx, { count }) => {
+    for (let id = 0; id < count; id++) {
+      ctx.db.position.insert(newPosition(id, id, id + 5, id * 5));
+    }
+    console.log(`INSERT POSITION: ${count}`);
+  }
+);
+
+export const insertBulkVelocity = spacetimedb.reducer(
+  { name: 'insert_bulk_velocity' },
+  { count: t.u32() },
+  (ctx, { count }) => {
+    for (let id = 0; id < count; id++) {
+      ctx.db.velocity.insert(newVelocity(id, id, id + 5, id * 5));
+    }
+    console.log(`INSERT VELOCITY: ${count}`);
+  }
+);
+
+export const updatePositionAll = spacetimedb.reducer(
+  { name: 'update_position_all' },
+  { expected: t.u32() },
+  (ctx, { expected }) => {
+    let count = 0;
+    for (const position of ctx.db.position.iter()) {
+      position.x += position.vx;
+      position.y += position.vy;
+      position.z += position.vz;
+
+      ctx.db.position.entity_id.update(position);
+      count += 1;
+    }
+    console.log(`UPDATE POSITION ALL: ${expected}, processed: ${count}`);
+  }
+);
+
+export const updatePositionWithVelocity = spacetimedb.reducer(
+  { name: 'update_position_with_velocity' },
+  { expected: t.u32() },
+  (ctx, { expected }) => {
+    let count = 0;
+    for (const velocity of ctx.db.velocity.iter()) {
+      const position = ctx.db.position.entity_id.find(velocity.entity_id);
+      if (position == null) {
+        continue;
+      }
+
+      position.x += velocity.x;
+      position.y += velocity.y;
+      position.z += velocity.z;
+
+      ctx.db.position.entity_id.update(position);
+      count += 1;
+    }
+    console.log(
+      `UPDATE POSITION BY VELOCITY: ${expected}, processed: ${count}`
+    );
+  }
+);
+
+export const insertWorld = spacetimedb.reducer(
+  { name: 'insert_world' },
+  { players: t.u64() },
+  (ctx, { players }) => {
+    for (let i = 0; i < players; i++) {
+      const id = i;
+      const id_n = BigInt(id);
+      const nextActionTimestamp =
+        (i & 2) == 2 ? momentMilliseconds() + 2000n : momentMilliseconds();
+
+      ctx.db.gameEnemyAiAgentState.insert({
+        entity_id: id_n,
+        next_action_timestamp: nextActionTimestamp,
+        last_move_timestamps: [id_n, 0n, id_n * 2n],
+        action: { tag: 'Idle' },
+      });
+
+      ctx.db.gameLiveTargetableState.insert({
+        entity_id: id_n,
+        quad: id_n,
+      });
+
+      ctx.db.gameTargetableState.insert({
+        entity_id: id_n,
+        quad: id_n,
+      });
+
+      ctx.db.gameMobileEntityState.insert({
+        entity_id: id_n,
+        location_x: id,
+        location_y: id,
+        timestamp: nextActionTimestamp,
+      });
+
+      ctx.db.gameEnemyState.insert({
+        entity_id: id_n,
+        herd_id: id,
+      });
+
+      ctx.db.gameHerdCache.insert({
+        id,
+        dimension_id: id,
+        max_population: id * 4,
+        spawn_eagerness: id,
+        roaming_distance: id,
+        location: {
+          x: id,
+          z: id,
+          dimension: id * 2,
+        },
+        current_population: 0,
+      });
+    }
+    console.log(`INSERT WORLD PLAYERS: ${players}`);
+  }
+);
+
+function getTargetablesNearQuad(
+  ctx: ReducerCtx<S>,
+  entityId: bigint,
+  numPlayers: bigint
+): GameTargetableState[] {
+  const result = [];
+  for (let id = entityId; id < numPlayers; id++) {
+    for (const liveTargetable of ctx.db.gameLiveTargetableState.quad.filter(
+      id
+    )) {
+      const targetable = ctx.db.gameTargetableState.entity_id.find(
+        liveTargetable.entity_id
+      );
+      if (targetable == null) {
+        throw new Error('Identity not found');
+      }
+      result.push(targetable);
+    }
+  }
+  return result;
+}
+
+const MAX_MOVE_TIMESTAMPS = 20;
+
+function moveAgent(
+  ctx: ReducerCtx<S>,
+  agent: GameEnemyAiAgentState,
+  agentCoord: SmallHexTile,
+  currentTimeMs: bigint
+) {
+  const entityId = agent.entity_id;
+
+  const enemy = ctx.db.gameEnemyState.entity_id.find(entityId);
+  if (enemy == null) {
+    throw new Error('GameEnemyState Entity ID not found');
+  }
+  ctx.db.gameEnemyState.entity_id.update(enemy);
+
+  agent.next_action_timestamp = currentTimeMs + 2000n;
+
+  agent.last_move_timestamps.push(currentTimeMs);
+  if (agent.last_move_timestamps.length > MAX_MOVE_TIMESTAMPS) {
+    agent.last_move_timestamps.splice(0, 1);
+  }
+
+  const targetable = ctx.db.gameTargetableState.entity_id.find(entityId);
+  if (targetable == null) {
+    throw new Error('GameTargetableState Entity ID not found');
+  }
+  const newHash = calculateHash(targetable.quad);
+  targetable.quad = newHash;
+  ctx.db.gameTargetableState.entity_id.update(targetable);
+
+  if (ctx.db.gameLiveTargetableState.entity_id.find(entityId) != null) {
+    ctx.db.gameLiveTargetableState.entity_id.delete(entityId);
+    ctx.db.gameLiveTargetableState.insert({
+      entity_id: entityId,
+      quad: newHash,
+    });
+  }
+
+  const mobileEntityRes = ctx.db.gameMobileEntityState.entity_id.find(entityId);
+  if (mobileEntityRes == null) {
+    throw new Error('GameMobileEntityState Entity ID not found');
+  }
+  const mobileEntity = {
+    entity_id: entityId,
+    location_x: mobileEntityRes.location_x + 1,
+    location_y: mobileEntityRes.location_y + 1,
+    timestamp: agent.next_action_timestamp,
+  };
+
+  ctx.db.gameEnemyAiAgentState.entity_id.update(agent);
+
+  ctx.db.gameMobileEntityState.entity_id.update(mobileEntity);
+}
+
+function agentLoop(
+  ctx: ReducerCtx<S>,
+  agent: GameEnemyAiAgentState,
+  agentTargetable: GameTargetableState,
+  surroundingAgents: GameTargetableState[],
+  currentTimeMs: bigint
+) {
+  const entityId = agent.entity_id;
+
+  const coordinates = ctx.db.gameMobileEntityState.entity_id.find(entityId);
+  if (coordinates == null) {
+    throw new Error('GameMobileEntityState Entity ID not found');
+  }
+
+  const agentEntity = ctx.db.gameEnemyState.entity_id.find(entityId);
+  if (agentEntity == null) {
+    throw new Error('GameEnemyState Entity ID not found');
+  }
+
+  const agentHerd = ctx.db.gameHerdCache.id.find(agentEntity.herd_id);
+  if (agentHerd == null) {
+    throw new Error('GameHerdCache Entity ID not found');
+  }
+
+  const agentHerdCoordinates = agentHerd.location;
+
+  moveAgent(ctx, agent, agentHerdCoordinates, currentTimeMs);
+}
+
+export const gameLoopEnemyIa = spacetimedb.reducer(
+  { name: 'game_loop_enemy_ia' },
+  { players: t.u64() },
+  (ctx: ReducerCtx<S>, { players }) => {
+    let count = 0;
+    const currentTimeMs = momentMilliseconds();
+
+    for (const agent of ctx.db.gameEnemyAiAgentState.iter()) {
+      const agentTargetable = ctx.db.gameTargetableState.entity_id.find(
+        agent.entity_id
+      );
+      if (agentTargetable == null) {
+        throw new Error('No TargetableState for AgentState entity');
+      }
+
+      const surroundingAgents = getTargetablesNearQuad(
+        ctx,
+        agentTargetable.entity_id,
+        players
+      );
+
+      agent.action = { tag: 'Fighting' };
+
+      agentLoop(ctx, agent, agentTargetable, surroundingAgents, currentTimeMs);
+
+      count += 1;
+    }
+
+    console.log(`ENEMY IA LOOP PLAYERS: ${players}, processed: ${count}`);
+  }
+);
+
+export const initGameIaLoop = spacetimedb.reducer(
+  { name: 'init_game_ia_loop' },
+  { initial_load: t.u32() },
+  (ctx, { initial_load }) => {
+    const load = newLoad(initial_load);
+
+    insertBulkPosition(ctx, { count: load.biggestTable });
+    insertBulkVelocity(ctx, { count: load.bigTable });
+    updatePositionAll(ctx, { expected: load.biggestTable });
+    updatePositionWithVelocity(ctx, { expected: load.bigTable });
+
+    insertWorld(ctx, { players: load.numPlayers });
+  }
+);
+
+export const runGameIaLoop = spacetimedb.reducer(
+  { name: 'run_game_ia_loop' },
+  { initial_load: t.u32() },
+  (ctx, { initial_load }) => {
+    const load = newLoad(initial_load);
+
+    gameLoopEnemyIa(ctx, { players: load.numPlayers });
+  }
+);

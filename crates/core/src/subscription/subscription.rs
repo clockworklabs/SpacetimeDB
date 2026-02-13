@@ -23,31 +23,32 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use super::module_subscription_manager::Plan;
 use super::query;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
-use crate::messages::websocket as ws;
 use crate::sql::ast::SchemaViewer;
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::AuthError;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::DbTable;
-use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::ProductValue;
+use spacetimedb_schema::def::error::AuthError;
+use spacetimedb_schema::relation::DbTable;
+use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
 use std::iter;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -80,8 +81,8 @@ impl SupportedQuery {
         self.expr.source.get_db_table().unwrap().table_id
     }
 
-    pub fn return_name(&self) -> String {
-        self.expr.source.table_name().to_owned()
+    pub fn return_name(&self) -> &TableName {
+        self.expr.source.table_name()
     }
 
     /// This is the same as the return table unless this is a join.
@@ -211,10 +212,10 @@ impl IncrementalJoin {
     /// An error is returned if the expression is not well-formed.
     pub fn new(expr: &QueryExpr) -> anyhow::Result<Self> {
         if expr.query.len() != 1 {
-            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
+            return Err(anyhow::anyhow!("expected a single index join, but got {expr:#?}"));
         }
         let expr::Query::IndexJoin(ref join) = expr.query[0] else {
-            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
+            return Err(anyhow::anyhow!("expected a single index join, but got {expr:#?}"));
         };
 
         let index_table = join
@@ -299,7 +300,7 @@ impl IncrementalJoin {
     /// B(t) refers to the state of table B as of transaction t.
     /// In particular, B(t) includes all of the changes from t.
     /// B(s) refers to the state of table B as of transaction s,
-    /// where s is the transaction immediately preceeding t.
+    /// where s is the transaction immediately preceding t.
     ///
     /// Now we may ask,
     /// given a set of updates to tables A and/or B,
@@ -316,7 +317,7 @@ impl IncrementalJoin {
     /// Because they have no bearing on newly inserted rows of A.
     ///
     /// Now consider rows that were deleted from A.
-    /// Similary we want to know if they join with any deleted rows of B,
+    /// Similarly we want to know if they join with any deleted rows of B,
     /// or if they join with any previously existing rows of B.
     /// That is:
     ///
@@ -512,21 +513,22 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
-    pub fn eval<F: WebsocketFormat>(
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
         db: &RelationalDB,
         tx: &Tx,
+        rlb_pool: &impl RowListBuilderSource<F>,
         slow_query_threshold: Option<Duration>,
-        compression: Compression,
-    ) -> ws::DatabaseUpdate<F> {
+        compression: ws_v1::Compression,
+    ) -> ws_v1::DatabaseUpdate<F> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
-            .par_iter()
-            .filter_map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
+            .iter()
+            .filter_map(|unit| unit.eval(db, tx, rlb_pool, &unit.sql, slow_query_threshold, compression))
             .collect();
-        ws::DatabaseUpdate { tables }
+        ws_v1::DatabaseUpdate { tables }
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -602,26 +604,45 @@ impl From<Vec<SupportedQuery>> for ExecutionSet {
 }
 
 impl AuthAccess for ExecutionSet {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        self.exec_units.iter().try_for_each(|eu| eu.check_auth(owner, caller))
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.exec_units.iter().try_for_each(|eu| eu.check_auth(auth))
     }
 }
 
-/// Queries all the [`StTableType::User`] tables *right now*
+/// Querieshttps://github.com/clockworklabs/SpacetimeDBPrivate/pull/2207 all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
-pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<Plan>, DBError> {
-    Ok(relational_db
-        .get_all_tables(tx)?
-        .iter()
-        .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
+pub(crate) fn get_all<T, F, I>(
+    get_all_tables: F,
+    relational_db: &RelationalDB,
+    tx: &T,
+    auth: &AuthCtx,
+) -> Result<Vec<Plan>, DBError>
+where
+    T: StateView,
+    F: Fn(&RelationalDB, &T) -> Result<I, DBError>,
+    I: Iterator<Item = Arc<TableSchema>>,
+{
+    Ok(get_all_tables(relational_db, tx)?
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
-            SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth), auth)
-                .map(|(plans, has_param)| Plan::new(plans, QueryHash::from_string(&sql, auth.caller, has_param), sql))
+            let tx = SchemaViewer::new(tx, auth);
+            SubscriptionPlan::compile(&sql, &tx, auth).map(|(plans, has_param)| {
+                Plan::new(
+                    plans,
+                    QueryHash::from_string(
+                        &sql,
+                        auth.caller(),
+                        // Note that when generating hashes for queries from owners,
+                        // we always treat them as if they were parameterized by :sender.
+                        // This is because RLS is not applicable to owners.
+                        // Hence owner hashes must never overlap with client hashes.
+                        auth.bypass_rls() || has_param,
+                    ),
+                    sql,
+                )
+            })
         })
         .collect::<Result<_, _>>()?)
 }
@@ -635,13 +656,13 @@ pub(crate) fn legacy_get_all(
     tx: &Tx,
     auth: &AuthCtx,
 ) -> Result<Vec<SupportedQuery>, DBError> {
+    use std::ops::Deref;
+
     Ok(relational_db
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
@@ -653,12 +674,11 @@ pub(crate) fn legacy_get_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{begin_tx, TestDB};
     use crate::sql::compiler::compile_sql;
-    use spacetimedb_lib::relation::DbTable;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
     use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_schema::relation::DbTable;
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
 
     #[test]
@@ -681,22 +701,22 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
         let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         // Create an insert for an incremental update.
@@ -706,12 +726,12 @@ mod tests {
         let (expr, _sources) = with_delta_table(join, Some(delta), None);
         let expr: QueryExpr = expr.into();
         let mut expr = expr.optimize(&|_, _| i64::MAX);
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         let IndexJoin {
@@ -729,7 +749,7 @@ mod tests {
             return_index_rows: false,
         } = join
         else {
-            panic!("unexpected index join {:#?}", join);
+            panic!("unexpected index join {join:#?}");
         };
 
         assert!(lhs.is_empty());
@@ -761,22 +781,22 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
         let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         // Create an insert for an incremental update.
@@ -787,13 +807,13 @@ mod tests {
         let expr = QueryExpr::from(expr);
         let mut expr = expr.optimize(&|_, _| i64::MAX);
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
         assert!(expr.source.is_db_table());
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         let IndexJoin {
@@ -811,7 +831,7 @@ mod tests {
             return_index_rows: true,
         } = join
         else {
-            panic!("unexpected index join {:#?}", join);
+            panic!("unexpected index join {join:#?}");
         };
 
         assert!(!rhs.is_empty());
@@ -845,7 +865,7 @@ mod tests {
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
@@ -855,17 +875,16 @@ mod tests {
             .remove(0);
 
         let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let src_join = &expr.query[0];
         assert!(
             matches!(src_join, Query::IndexJoin(_)),
-            "expected an index join, but got {:#?}",
-            src_join
+            "expected an index join, but got {src_join:#?}"
         );
 
         let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");
@@ -878,7 +897,7 @@ mod tests {
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
         let Query::JoinInner(ref incr_join) = incr_join else {
-            panic!("expected an inner semijoin, but got {:#?}", incr_join);
+            panic!("expected an inner semijoin, but got {incr_join:#?}");
         };
         assert!(incr_join.rhs.source.is_mem_table());
         assert_ne!(incr_join.rhs.source.head(), expr.source.head());

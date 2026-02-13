@@ -1,18 +1,18 @@
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use anyhow::Context;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
 use spacetimedb_expr::check::SchemaView;
 use spacetimedb_expr::statement::compile_sql_stmt;
-use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::error::RelationError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{ColExpr, FieldName};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+use spacetimedb_schema::def::error::RelationError;
+use spacetimedb_schema::relation::{ColExpr, FieldName};
+use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{Expr, FieldExpr, FieldOp};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -171,7 +171,7 @@ impl From {
     }
 
     /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<Box<str>> {
+    pub fn table_names(&self) -> Vec<TableName> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 
@@ -492,23 +492,23 @@ impl<T> Deref for SchemaViewer<'_, T> {
 
 impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
     fn table_id(&self, name: &str) -> Option<TableId> {
-        let AuthCtx { owner, caller } = self.auth;
         // Get the schema from the in-memory state instead of fetching from the database for speed
         self.tx
             .table_id_from_name(name)
             .ok()
             .flatten()
             .and_then(|table_id| self.schema_for_table(table_id))
-            .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
+            .filter(|schema| self.auth.has_read_access(schema.table_access))
             .map(|schema| schema.table_id)
     }
 
-    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
-        let AuthCtx { owner, caller } = self.auth;
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
         self.tx
             .get_schema(table_id)
-            .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
-            .cloned()
+            .filter(|schema| self.auth.has_read_access(schema.table_access))
+            .map(Arc::clone)
+            .map(TableOrViewSchema::from)
+            .map(Arc::new)
     }
 
     fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {

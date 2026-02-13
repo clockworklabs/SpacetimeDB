@@ -40,10 +40,11 @@ impl TimeDuration {
     /// Returns `Err(abs(self) as Duration)` if `self` is negative.
     pub fn to_duration(self) -> Result<Duration, Duration> {
         let micros = self.to_micros();
+        let duration = Duration::from_micros(micros.unsigned_abs());
         if micros >= 0 {
-            Ok(Duration::from_micros(micros as u64))
+            Ok(duration)
         } else {
-            Err(Duration::from_micros((-micros) as u64))
+            Err(duration)
         }
     }
 
@@ -54,6 +55,11 @@ impl TimeDuration {
         match self.to_duration() {
             Ok(dur) | Err(dur) => dur,
         }
+    }
+
+    /// Converts `self` to `Duration`, clamping to 0 if negative.
+    pub fn to_duration_saturating(self) -> Duration {
+        self.to_duration().unwrap_or(Duration::ZERO)
     }
 
     /// Returns a positive `TimeDuration` with the magnitude of `self`.
@@ -81,6 +87,22 @@ impl TimeDuration {
     /// Returns `Some(self - other)`, or `None` if that value would be out of bounds for [`TimeDuration`].
     pub fn checked_sub(self, other: Self) -> Option<Self> {
         self.to_micros().checked_sub(other.to_micros()).map(Self::from_micros)
+    }
+
+    /// Generate an `iso8601` format string.
+    ///
+    /// This is the better supported format for use for the `pg wire protocol`.
+    ///
+    /// Example:
+    /// ```rust
+    /// use std::time::Duration;
+    /// use spacetimedb_sats::time_duration::TimeDuration;
+    /// assert_eq!( TimeDuration::from_micros(0).to_iso8601().as_str(), "P0D");
+    /// assert_eq!( TimeDuration::from_micros(-1_000_000).to_iso8601().as_str(), "-PT1S");
+    /// assert_eq!( TimeDuration::from_duration(Duration::from_secs(60 * 24)).to_iso8601().as_str(), "PT1440S");
+    /// ```
+    pub fn to_iso8601(self) -> String {
+        chrono::Duration::microseconds(self.to_micros()).to_string()
     }
 }
 

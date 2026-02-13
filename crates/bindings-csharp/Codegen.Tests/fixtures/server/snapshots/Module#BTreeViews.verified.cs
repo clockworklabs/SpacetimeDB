@@ -6,18 +6,23 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        Id = BSATN.Id.Read(reader);
-        X = BSATN.X.Read(reader);
-        Y = BSATN.Y.Read(reader);
-        Faction = BSATN.Faction.Read(reader);
+        Id = BSATN.IdRW.Read(reader);
+        X = BSATN.XRW.Read(reader);
+        Y = BSATN.YRW.Read(reader);
+        Faction = BSATN.FactionRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.Id.Write(writer, Id);
-        BSATN.X.Write(writer, X);
-        BSATN.Y.Write(writer, Y);
-        BSATN.Faction.Write(writer, Faction);
+        BSATN.IdRW.Write(writer, Id);
+        BSATN.XRW.Write(writer, X);
+        BSATN.YRW.Write(writer, Y);
+        BSATN.FactionRW.Write(writer, Faction);
+    }
+
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
     }
 
     public override string ToString() =>
@@ -25,13 +30,17 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<BTreeViews>
     {
-        internal static readonly SpacetimeDB.Identity.BSATN Id = new();
-        internal static readonly SpacetimeDB.BSATN.U32 X = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Y = new();
-        internal static readonly SpacetimeDB.BSATN.String Faction = new();
+        internal static readonly SpacetimeDB.Identity.BSATN IdRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 XRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 YRW = new();
+        internal static readonly SpacetimeDB.BSATN.String FactionRW = new();
 
-        public BTreeViews Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<BTreeViews>(reader);
+        public BTreeViews Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new BTreeViews();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, BTreeViews value)
         {
@@ -44,10 +53,10 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
             registrar.RegisterType<BTreeViews>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(Id), Id.GetAlgebraicType(registrar)),
-                    new(nameof(X), X.GetAlgebraicType(registrar)),
-                    new(nameof(Y), Y.GetAlgebraicType(registrar)),
-                    new(nameof(Faction), Faction.GetAlgebraicType(registrar))
+                    new("Id", IdRW.GetAlgebraicType(registrar)),
+                    new("X", XRW.GetAlgebraicType(registrar)),
+                    new("Y", YRW.GetAlgebraicType(registrar)),
+                    new("Faction", FactionRW.GetAlgebraicType(registrar))
                 }
             ));
 
@@ -58,16 +67,22 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public override int GetHashCode()
     {
-        return Id.GetHashCode() ^ X.GetHashCode() ^ Y.GetHashCode() ^ Faction.GetHashCode();
+        var ___hashId = Id.GetHashCode();
+        var ___hashX = X.GetHashCode();
+        var ___hashY = Y.GetHashCode();
+        var ___hashFaction = Faction == null ? 0 : Faction.GetHashCode();
+        return ___hashId ^ ___hashX ^ ___hashY ^ ___hashFaction;
     }
 
 #nullable enable
     public bool Equals(BTreeViews that)
     {
-        return Id.Equals(that.Id)
-            && X.Equals(that.X)
-            && Y.Equals(that.Y)
-            && Faction.Equals(that.Faction);
+        var ___eqId = this.Id.Equals(that.Id);
+        var ___eqX = this.X.Equals(that.X);
+        var ___eqY = this.Y.Equals(that.Y);
+        var ___eqFaction =
+            this.Faction == null ? that.Faction == null : this.Faction.Equals(that.Faction);
+        return ___eqId && ___eqX && ___eqY && ___eqFaction;
     }
 
     public override bool Equals(object? that)

@@ -8,10 +8,12 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod procedure;
 mod reducer;
 mod sats;
 mod table;
 mod util;
+mod view;
 
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
@@ -46,6 +48,7 @@ mod sym {
     symbol!(columns);
     symbol!(crate_, crate);
     symbol!(direct);
+    symbol!(hash);
     symbol!(index);
     symbol!(init);
     symbol!(name);
@@ -57,6 +60,7 @@ mod sym {
     symbol!(scheduled);
     symbol!(unique);
     symbol!(update);
+    symbol!(default);
 
     symbol!(u8);
     symbol!(i8);
@@ -104,11 +108,36 @@ mod sym {
 }
 
 #[proc_macro_attribute]
+pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+        let args = procedure::ProcedureArgs::parse(args)?;
+        procedure::procedure_impl(args, original_function)
+    })
+}
+
+#[proc_macro_attribute]
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
         let args = reducer::ReducerArgs::parse(args)?;
         reducer::reducer_impl(args, original_function)
     })
+}
+
+#[proc_macro_attribute]
+pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    let item_ts: TokenStream = item.into();
+    let original_function = match syn::parse2::<ItemFn>(item_ts.clone()) {
+        Ok(f) => f,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    let args = match view::ViewArgs::parse(args.into(), &original_function.sig.ident) {
+        Ok(a) => a,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    match view::view_impl(args, &original_function) {
+        Ok(ts) => ts.into(),
+        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    }
 }
 
 /// It turns out to be shockingly difficult to construct an [`Attribute`].
@@ -167,7 +196,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index))]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, default))]
 pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)
 }

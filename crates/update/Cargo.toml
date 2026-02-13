@@ -34,3 +34,6 @@ zip = "2.3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+
+[lints]
+workspace = true

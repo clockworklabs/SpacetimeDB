@@ -1,0 +1,53 @@
+[package]
+name = "spacetimedb-datastore"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "The datastore library for SpacetimeDB"
+rust-version.workspace = true
+
+[dependencies]
+spacetimedb-data-structures.workspace = true
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
+spacetimedb-commitlog.workspace = true
+spacetimedb-durability.workspace = true
+spacetimedb-metrics.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-sats = { workspace = true, features = ["serde"] }
+spacetimedb-schema.workspace = true
+spacetimedb-table.workspace = true
+spacetimedb-snapshot.workspace = true
+spacetimedb-execution.workspace = true
+
+anyhow = { workspace = true, features = ["backtrace"] }
+bytes.workspace = true
+derive_more.workspace = true
+enum-as-inner.workspace = true
+enum-map.workspace = true
+itertools.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+once_cell.workspace = true
+parking_lot.workspace = true
+prometheus.workspace = true
+smallvec.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+thin-vec.workspace = true
+
+[features]
+# Print a warning when doing an unindexed `iter_by_col_range` on a large table.
+unindexed_iter_by_col_range_warn = []
+default = ["unindexed_iter_by_col_range_warn"]
+# Enable test helpers and utils
+test = ["spacetimedb-commitlog/test"]
+
+[dev-dependencies]
+spacetimedb-lib = { path = "../lib", features = ["proptest"] }
+spacetimedb-sats = { path = "../sats", features = ["proptest"] }
+spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
+
+# Also as dev-dependencies for use in _this_ crate's tests.
+proptest.workspace = true
+pretty_assertions.workspace = true

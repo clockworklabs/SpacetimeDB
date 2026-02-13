@@ -1,3 +1,5 @@
+// Wrap these tests in a `mod` whose name contains `csharp`
+// so that we can run tests with `--skip csharp` in environments without dotnet installed.
 use serial_test::serial;
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
 use spacetimedb_schema::def::ModuleDef;
@@ -8,11 +10,11 @@ fn get_normalized_schema(module_name: &str) -> ModuleDef {
     module.extract_schema_blocking()
 }
 
-fn assert_identical_modules(module_name_prefix: &str) {
+fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &str) {
     let rs = get_normalized_schema(module_name_prefix);
-    let cs = get_normalized_schema(&format!("{module_name_prefix}-cs"));
+    let cs = get_normalized_schema(&format!("{module_name_prefix}-{suffix}"));
     let mut diff = ponder_auto_migrate(&cs, &rs)
-        .expect("could not compute a diff between Rust and C#")
+        .unwrap_or_else(|e| panic!("could not compute a diff between Rust and {lang_name}: {e:?}"))
         .steps;
 
     // In any migration plan, all `RowLevelSecurityDef`s are ALWAYS removed and
@@ -26,9 +28,20 @@ fn assert_identical_modules(module_name_prefix: &str) {
         )
     });
 
+    // TODO: Remove this once we have view bindings for C# and TypeScript
+    diff.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::DisconnectAllUsers
+                | AutoMigrateStep::AddView(_)
+                | AutoMigrateStep::RemoveView(_)
+                | AutoMigrateStep::UpdateView(_)
+        )
+    });
+
     assert!(
         diff.is_empty(),
-        "Rust and C# modules are not identical. Here are the steps to migrate from C# to Rust: {diff:#?}"
+        "Rust and {lang_name} modules are not identical. Here are the steps to migrate from {lang_name} to Rust: {diff:#?}"
     );
 
     let mut rls_rs = rs.row_level_security().collect::<Vec<_>>();
@@ -37,25 +50,44 @@ fn assert_identical_modules(module_name_prefix: &str) {
     rls_cs.sort();
     assert_eq!(
         rls_rs, rls_cs,
-        "Rust and C# modules are not identical: different row level security policies"
+        "Rust and {lang_name} modules are not identical: different row level security policies"
     )
 }
 
 macro_rules! declare_tests {
-    ($($name:ident => $path:literal,)*) => {
-        $(
-            #[test]
-            #[serial]
-            fn $name() {
-                assert_identical_modules($path);
+        ($($name:ident => $path:literal,)*) => {
+            mod ensure_same_schema_rust_csharp {
+                use super::*;
+                $(
+                    #[test]
+                    #[serial]
+                    fn $name() {
+                        super::assert_identical_modules($path, "C#", "cs");
+                    }
+                )*
             }
-        )*
+            mod ensure_same_schema_rust_typescript {
+                use super::*;
+                $(
+                    #[test]
+                    #[serial]
+                    fn $name() {
+                        super::assert_identical_modules($path, "typescript", "ts");
+                    }
+                )*
+            }
+        }
     }
-}
 
 declare_tests! {
+    benchmarks => "benchmarks",
     module_test => "module-test",
     sdk_test_connect_disconnect => "sdk-test-connect-disconnect",
     sdk_test => "sdk-test",
-    benchmarks => "benchmarks",
+}
+
+#[test]
+#[serial]
+fn ensure_same_schema_rust_csharp_benchmarks() {
+    assert_identical_modules("benchmarks", "C#", "cs");
 }

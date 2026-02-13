@@ -1,10 +1,12 @@
 use core::hash::{Hash, Hasher};
+use derive_more::From;
 use spacetimedb_execution::Row;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::relation::{ColExpr, ColExprRef, Header};
-use spacetimedb_sats::bsatn::{ser::BsatnError, ToBsatn};
+use spacetimedb_sats::bsatn::{ser::BsatnError, BufReservedFill, ToBsatn};
+use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::{impl_serialize, AlgebraicValue};
+use spacetimedb_schema::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
@@ -15,7 +17,7 @@ use std::sync::Arc;
 /// or an ephemeral row constructed during query execution.
 ///
 /// A `RelValue` is the type generated/consumed by queries.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub enum RelValue<'a> {
     /// A reference to a row in a table.
     Row(RowRef<'a>),
@@ -171,7 +173,7 @@ impl ToBsatn for RelValue<'_> {
             RelValue::ProjRef(this) => (*this).to_bsatn_vec(),
         }
     }
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError> {
         match self {
             RelValue::Row(this) => this.to_bsatn_extend(buf),
             RelValue::Projection(this) => this.to_bsatn_extend(buf),

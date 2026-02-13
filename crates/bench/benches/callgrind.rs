@@ -408,6 +408,7 @@ mod callgrind_benches {
     // ========================= FIND =========================
 
     #[derive(Deserialize)]
+    #[expect(unused)] // TODO
     struct FindBenchmark<DB: BenchDatabase, T: BenchTable + RandomTable> {
         bench: String,
         db: String,

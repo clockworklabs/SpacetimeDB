@@ -1,0 +1,4 @@
+src/sdk/client_api/*.ts linguist-generated=true
+src/lib/autogen/*.ts linguist-generated=true
+test-app/src/module_bindings/*.ts linguist-generated=true
+examples/quickstart/client/src/module_bindings/*.ts linguist-generated=true

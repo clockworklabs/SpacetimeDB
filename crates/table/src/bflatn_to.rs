@@ -5,10 +5,6 @@
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset, RowPointer, SquashedOffset},
-    layout::{
-        align_to, bsatn_len, required_var_len_granules_for_row, AlgebraicTypeLayout, HasLayout, ProductTypeLayout,
-        RowTypeLayout, SumTypeLayout, VarLenType,
-    },
     page::{GranuleOffsetIter, Page, VarView},
     page_pool::PagePool,
     pages::Pages,
@@ -20,7 +16,11 @@ use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError},
     buffer::BufWriter,
     de::DeserializeSeed as _,
-    i256, u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
+    i256,
+    layout::{
+        align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+    },
+    u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
 };
 use thiserror::Error;
 
@@ -80,7 +80,13 @@ pub unsafe fn write_row_to_pages(
     val: &ProductValue,
     squashed_offset: SquashedOffset,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
-    let num_granules = required_var_len_granules_for_row(val);
+    let num_granules = if ty.layout().fixed {
+        // Fast-path: The row type doesn't contain var-len members,
+        // so 0 granules are needed.
+        0
+    } else {
+        required_var_len_granules_for_row(val)
+    };
 
     match pages.with_page_to_insert_row(pool, ty.size(), num_granules, |page| {
         // SAFETY:
@@ -146,8 +152,14 @@ pub unsafe fn write_row_to_page(
         return Err(e);
     }
 
-    // Haven't stored large blobs or init those granules with blob hashes yet, so do it now.
-    let blob_store_inserted_bytes = serialized.write_large_blobs(blob_store);
+    let blob_store_inserted_bytes = if ty.layout.fixed {
+        // The layout is fixed, so there are no large blobs to write.
+        <_>::default()
+    } else {
+        // Haven't stored large blobs or init those granules with blob hashes yet,
+        // so do it now.
+        serialized.write_large_blobs(blob_store)
+    };
 
     Ok((fixed_offset, blob_store_inserted_bytes))
 }
@@ -197,6 +209,8 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
+    #[cold]
+    #[inline(never)]
     fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
         let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (vlr, value) in self.large_blob_insertions {
@@ -227,7 +241,7 @@ impl BflatnSerializedRowBuffer<'_> {
             // and finally write the tag.
             (AlgebraicTypeLayout::Sum(ty), AlgebraicValue::Sum(val)) => self.write_sum(ty, val)?,
             // For products, write every element in order.
-            (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty, val)?,
+            (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty.view(), val)?,
 
             // For primitive types, write their contents by LE-encoding.
             (&AlgebraicTypeLayout::Bool, AlgebraicValue::Bool(val)) => self.write_bool(*val),
@@ -285,7 +299,7 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Write an `val`, a [`ProductValue`], typed at `ty`, to the buffer.
-    fn write_product(&mut self, ty: &ProductTypeLayout, val: &ProductValue) -> Result<(), Error> {
+    fn write_product(&mut self, ty: ProductTypeLayoutView<'_>, val: &ProductValue) -> Result<(), Error> {
         // `Iterator::zip` silently drops elements if the two iterators have different lengths,
         // so we need to check that our `ProductValue` has the same number of elements
         // as our `ProductTypeLayout` to be sure it's typed correctly.
@@ -498,6 +512,42 @@ impl BflatnSerializedRowBuffer<'_> {
     fn write_f64(&mut self, val: f64) {
         self.write_bytes(&val.to_le_bytes());
     }
+}
+
+/// Counts the number of [`VarLenGranule`] allocations required to store `val` in a page.
+fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
+    fn traverse_av(val: &AlgebraicValue, count: &mut usize) {
+        match val {
+            AlgebraicValue::Product(val) => traverse_product(val, count),
+            AlgebraicValue::Sum(val) => traverse_av(&val.value, count),
+            AlgebraicValue::Array(_) => add_for_bytestring(bsatn_len(val), count),
+            AlgebraicValue::String(val) => add_for_bytestring(val.len(), count),
+            _ => (),
+        }
+    }
+
+    fn traverse_product(val: &ProductValue, count: &mut usize) {
+        for elt in val {
+            traverse_av(elt, count);
+        }
+    }
+
+    fn add_for_bytestring(len_in_bytes: usize, count: &mut usize) {
+        *count += VarLenGranule::bytes_to_granules(len_in_bytes).0;
+    }
+
+    let mut required_granules: usize = 0;
+    traverse_product(val, &mut required_granules);
+    required_granules
+}
+
+/// Computes the size of `val` when BSATN encoding without actually encoding.
+fn bsatn_len(val: &AlgebraicValue) -> usize {
+    // We store arrays and maps BSATN-encoded,
+    // so we need to go through BSATN encoding to determine the size of the resulting byte blob,
+    // but we don't actually need that byte blob in this calculation,
+    // instead, we can just count them as a serialization format.
+    bsatn::to_len(val).unwrap()
 }
 
 #[cfg(test)]

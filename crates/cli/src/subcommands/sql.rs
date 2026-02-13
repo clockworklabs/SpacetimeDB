@@ -10,11 +10,12 @@ use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
+use spacetimedb_lib::sats::satn::PsqlClient;
 use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
-        .about(format!("Runs a SQL query on the database. {}", UNSTABLE_WARNING))
+        .about(format!("Runs a SQL query on the database. {UNSTABLE_WARNING}"))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -34,6 +35,7 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("query")
                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
+        .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
@@ -110,7 +112,7 @@ fn print_stmt_result(
     for (pos, result) in if_empty
         .into_iter()
         .chain(stmt_results.iter().map(|stmt_result| {
-            let (stats, table) = stmt_result_to_table(stmt_result)?;
+            let (stats, table) = stmt_result_to_table(PsqlClient::SpacetimeDB, stmt_result)?;
 
             anyhow::Ok(StmtResult {
                 stats: with_stats.is_some().then_some(stats),
@@ -129,7 +131,7 @@ fn print_stmt_result(
 
     if let Some(with_stats) = with_stats {
         f.write_char('\n')?;
-        f.write_str(&format!("Roundtrip time: {:.2?}", with_stats))?;
+        f.write_str(&format!("Roundtrip time: {with_stats:.2?}"))?;
         f.write_char('\n')?;
     }
     Ok(())
@@ -151,17 +153,18 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
 
     let mut out = String::new();
     print_stmt_result(&stmt_result_json, with_stats.then_some(now.elapsed()), &mut out)?;
-    println!("{}", out);
+    println!("{out}");
 
     Ok(())
 }
 
-fn stmt_result_to_table(stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStats, tabled::Table)> {
+fn stmt_result_to_table(client: PsqlClient, stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStats, tabled::Table)> {
     let stats = StmtStats::from(stmt_result);
     let SqlStmtResult { schema, rows, .. } = stmt_result;
     let ty = Typespace::EMPTY.with_type(schema);
 
     let table = build_table(
+        client,
         schema,
         rows.iter().map(|row| from_json_seed(row.get(), SeedWrapper(ty))),
     )?;
@@ -170,7 +173,7 @@ fn stmt_result_to_table(stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStat
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
         let con = parse_req(config, args).await?;
@@ -178,34 +181,39 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         crate::repl::exec(con).await?;
     } else {
         let query = args.get_one::<String>("query").unwrap();
+        let confirmed = args.get_flag("confirmed");
 
         let con = parse_req(config, args).await?;
-        let api = ClientApi::new(con);
+        let mut api = ClientApi::new(con).sql();
+        if confirmed {
+            api = api.query(&[("confirmed", "true")]);
+        }
 
-        run_sql(api.sql(), query, false).await?;
+        run_sql(api, query, false).await?;
     }
     Ok(())
 }
 
 /// Generates a [`tabled::Table`] from a schema and rows, using the style of a psql table.
 fn build_table<E>(
+    client: PsqlClient,
     schema: &ProductType,
     rows: impl Iterator<Item = Result<ProductValue, E>>,
 ) -> Result<tabled::Table, E> {
     let mut builder = tabled::builder::Builder::default();
-    builder.set_header(
-        schema
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
-    );
+    builder.set_header(schema.elements.iter().enumerate().map(|(i, e)| {
+        e.name
+            .as_ref()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("column {i}"))
+    }));
 
     let ty = Typespace::EMPTY.with_type(schema);
     for row in rows {
         let row = row?;
         builder.push_record(ty.with_values(&row).enumerate().map(|(idx, value)| {
             let ty = satn::PsqlType {
+                client,
                 tuple: ty.ty(),
                 field: &ty.ty().elements[idx],
                 idx,
@@ -231,7 +239,7 @@ mod tests {
     use spacetimedb_lib::sats::time_duration::TimeDuration;
     use spacetimedb_lib::sats::timestamp::Timestamp;
     use spacetimedb_lib::sats::{product, GroundSpacetimeType, ProductType};
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ConnectionId, Identity};
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ConnectionId, Identity, Uuid};
 
     fn make_row(row: &[AlgebraicValue]) -> Result<Box<RawValue>, serde_json::Error> {
         let json = serde_json::json!(row);
@@ -441,8 +449,10 @@ Roundtrip time: 1.00ms"#,
         Ok(())
     }
 
-    fn expect_psql_table(ty: &ProductType, rows: Vec<ProductValue>, expected: &str) {
-        let table = build_table(ty, rows.into_iter().map(Ok::<_, ()>)).unwrap().to_string();
+    fn expect_psql_table(client: PsqlClient, ty: &ProductType, rows: Vec<ProductValue>, expected: &str) {
+        let table = build_table(client, ty, rows.into_iter().map(Ok::<_, ()>))
+            .unwrap()
+            .to_string();
         let mut table = table.split('\n').map(|x| x.trim_end()).join("\n");
         table.insert(0, '\n');
         assert_eq!(expected, table);
@@ -459,6 +469,7 @@ Roundtrip time: 1.00ms"#,
             ConnectionId::get_type(),
             Timestamp::get_type(),
             TimeDuration::get_type(),
+            Uuid::get_type(),
         ]
         .into();
         let value = product![
@@ -467,16 +478,28 @@ Roundtrip time: 1.00ms"#,
             Identity::ZERO,
             ConnectionId::ZERO,
             Timestamp::UNIX_EPOCH,
-            TimeDuration::ZERO
+            TimeDuration::ZERO,
+            Uuid::NIL
         ];
 
         expect_psql_table(
+            PsqlClient::SpacetimeDB,
+            &kind,
+            vec![value.clone()],
+            r#"
+ column 0 | column 1 | column 2                                                           | column 3                           | column 4                  | column 5  | column 6
+----------+----------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------+----------------------------------------
+ "a"      | 0        | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000 | "00000000-0000-0000-0000-000000000000""#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
             &kind,
             vec![value],
             r#"
- column 0 | column 1 | column 2                                                           | column 3                           | column 4                  | column 5
-----------+----------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------
- "a"      | 0        | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000"#,
+ column 0 | column 1 | column 2                                                             | column 3                             | column 4                    | column 5 | column 6
+----------+----------+----------------------------------------------------------------------+--------------------------------------+-----------------------------+----------+----------------------------------------
+ "a"      | 0        | "0x0000000000000000000000000000000000000000000000000000000000000000" | "0x00000000000000000000000000000000" | "1970-01-01T00:00:00+00:00" | "P0D"    | "00000000-0000-0000-0000-000000000000""#,
         );
 
         // Check struct
@@ -488,6 +511,7 @@ Roundtrip time: 1.00ms"#,
             ("connection_id", ConnectionId::get_type()),
             ("timestamp", Timestamp::get_type()),
             ("duration", TimeDuration::get_type()),
+            ("uuid", Uuid::get_type()),
         ]
         .into();
 
@@ -498,16 +522,28 @@ Roundtrip time: 1.00ms"#,
             Identity::ZERO,
             ConnectionId::ZERO,
             Timestamp::UNIX_EPOCH,
-            TimeDuration::ZERO
+            TimeDuration::ZERO,
+            Uuid::NIL
         ];
 
         expect_psql_table(
+            PsqlClient::SpacetimeDB,
             &kind,
             vec![value.clone()],
             r#"
- bool | str                   | bytes            | identity                                                           | connection_id                      | timestamp                 | duration
-------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------
- true | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000"#,
+ bool | str                   | bytes            | identity                                                           | connection_id                      | timestamp                 | duration  | uuid
+------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------+----------------------------------------
+ true | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000 | "00000000-0000-0000-0000-000000000000""#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
+            &kind,
+            vec![value.clone()],
+            r#"
+ bool | str                   | bytes              | identity                                                             | connection_id                        | timestamp                   | duration | uuid
+------+-----------------------+--------------------+----------------------------------------------------------------------+--------------------------------------+-----------------------------+----------+----------------------------------------
+ true | "This is spacetimedb" | "0x01020304050607" | "0x0000000000000000000000000000000000000000000000000000000000000000" | "0x00000000000000000000000000000000" | "1970-01-01T00:00:00+00:00" | "P0D"    | "00000000-0000-0000-0000-000000000000""#,
         );
 
         // Check nested struct, tuple...
@@ -516,12 +552,23 @@ Roundtrip time: 1.00ms"#,
         let value = product![value.clone()];
 
         expect_psql_table(
+            PsqlClient::SpacetimeDB,
             &kind,
             vec![value.clone()],
             r#"
  column 0
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000)"#,
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000, uuid = "00000000-0000-0000-0000-000000000000")"#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
+            &kind,
+            vec![value.clone()],
+            r#"
+ column 0
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"bool": true, "str": "This is spacetimedb", "bytes": "0x01020304050607", "identity": "0x0000000000000000000000000000000000000000000000000000000000000000", "connection_id": "0x00000000000000000000000000000000", "timestamp": "1970-01-01T00:00:00+00:00", "duration": "P0D", "uuid": "00000000-0000-0000-0000-000000000000"}"#,
         );
 
         let kind: ProductType = [("tuple", AlgebraicType::product(kind))].into();
@@ -529,12 +576,23 @@ Roundtrip time: 1.00ms"#,
         let value = product![value];
 
         expect_psql_table(
+            PsqlClient::SpacetimeDB,
+            &kind,
+            vec![value.clone()],
+            r#"
+ tuple
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (col_0 = (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000, uuid = "00000000-0000-0000-0000-000000000000"))"#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
             &kind,
             vec![value],
             r#"
  tuple
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- (0 = (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000))"#,
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"col_0": {"bool": true, "str": "This is spacetimedb", "bytes": "0x01020304050607", "identity": "0x0000000000000000000000000000000000000000000000000000000000000000", "connection_id": "0x00000000000000000000000000000000", "timestamp": "1970-01-01T00:00:00+00:00", "duration": "P0D", "uuid": "00000000-0000-0000-0000-000000000000"}}"#,
         );
 
         Ok(())

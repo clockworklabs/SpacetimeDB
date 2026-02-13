@@ -9,7 +9,7 @@ This provides the various modules used for benchmarking SpacetimeDB, with the cr
 
 ### [`circles.rs`](src/circles.rs)
 
-Implements a smaller variation of the [Blackholio](https://github.com/clockworklabs/Blackholio) game.
+Implements a smaller variation of the [Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio) game.
 
 Circles are spawned and then queried to evaluate `CROSS JOIN` performance.
 

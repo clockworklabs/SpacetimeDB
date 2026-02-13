@@ -6,6 +6,7 @@ use spacetimedb_sats::{
     de::Deserialize,
     impl_st,
     ser::Serialize,
+    sum_type::{SCHEDULE_AT_INTERVAL_TAG, SCHEDULE_AT_TIME_TAG},
     AlgebraicType, AlgebraicValue,
 };
 
@@ -57,8 +58,8 @@ impl ScheduleAt {
     /// Get the special `AlgebraicType` for `ScheduleAt`.
     pub fn get_type() -> AlgebraicType {
         AlgebraicType::sum([
-            ("Interval", AlgebraicType::time_duration()),
-            ("Time", AlgebraicType::timestamp()),
+            (SCHEDULE_AT_INTERVAL_TAG, AlgebraicType::time_duration()),
+            (SCHEDULE_AT_TIME_TAG, AlgebraicType::timestamp()),
         ])
     }
 }

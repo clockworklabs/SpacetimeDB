@@ -2,8 +2,8 @@ use core::iter;
 
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::relation::ColExpr;
 use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_schema::relation::ColExpr;
 
 /// A trait for dealing with fallible iterators for the database.
 pub trait RelOps<'a> {

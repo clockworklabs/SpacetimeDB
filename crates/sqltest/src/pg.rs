@@ -76,7 +76,7 @@ impl Pg {
         let (client, conn) = tokio_postgres::connect("postgresql://postgres@localhost/TestSpace", NoTls).await?;
         tokio::spawn(async move {
             if let Err(e) = conn.await {
-                eprintln!("connection error: {}", e);
+                eprintln!("connection error: {e}");
             }
         });
         client.batch_execute(SQL_DROP).await?;
@@ -148,7 +148,7 @@ impl FromSql<'_> for Scalar {
             &Type::VARCHAR | &Type::TEXT | &Type::BPCHAR | &Type::NAME | &Type::UNKNOWN => {
                 let x: Option<String> = FromSql::from_sql(ty, raw)?;
                 if let Some(x) = x {
-                    format!("'{}'", x).into()
+                    format!("'{x}'").into()
                 } else {
                     "null".to_string().into()
                 }
@@ -164,11 +164,11 @@ impl FromSql<'_> for Scalar {
             }
             &Type::FLOAT4 => {
                 let x: f32 = FromSql::from_sql(ty, raw)?;
-                format!("{:?}", x).into()
+                format!("{x:?}").into()
             }
             &Type::FLOAT8 => {
                 let x: f32 = FromSql::from_sql(ty, raw)?;
-                format!("{:?}", x).into()
+                format!("{x:?}").into()
             }
             &Type::NUMERIC => {
                 let x: Decimal = FromSql::from_sql(ty, raw)?;
@@ -176,7 +176,7 @@ impl FromSql<'_> for Scalar {
                 if txt.contains('.') {
                     txt.into()
                 } else {
-                    format!("{}.0", txt).into()
+                    format!("{txt}.0").into()
                 }
             }
             &Type::BOOL => {
@@ -187,19 +187,19 @@ impl FromSql<'_> for Scalar {
             }
             &Type::DATE => {
                 let x: chrono::NaiveDate = FromSql::from_sql(ty, raw)?;
-                format!("{:?}", x).into()
+                format!("{x:?}").into()
             }
             &Type::TIME => {
                 let x: chrono::NaiveTime = FromSql::from_sql(ty, raw)?;
-                format!("{:?}", x).into()
+                format!("{x:?}").into()
             }
             &Type::TIMESTAMP => {
                 let x: chrono::DateTime<Local> = FromSql::from_sql(ty, raw)?;
-                format!("{:?}", x).into()
+                format!("{x:?}").into()
             }
             &Type::TIMESTAMPTZ => {
                 let x: chrono::DateTime<Local> = FromSql::from_sql(ty, raw)?;
-                format!("{:?}", x).into()
+                format!("{x:?}").into()
             }
             _ => unimplemented!("{}", ty),
         };

@@ -53,7 +53,7 @@ pub struct EnergyBalanceUpdate {
     pub identity: Identity,
     pub energy_balance: i128,
 }
-// A message to syncronize energy balances from control node to worker node.
+// A message to synchronize energy balances from control node to worker node.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnergyBalanceState {
     pub balances: Vec<EnergyBalance>,

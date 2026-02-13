@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using SpacetimeDB;
 
 #pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
@@ -57,6 +57,19 @@ public partial class CustomNestedClass
 }
 
 [SpacetimeDB.Type]
+public partial class ContainsNestedLists
+{
+    public List<int> IntList = [];
+    public List<string> StringList = [];
+    public int[] IntArray = [];
+    public string[] StringArray = [];
+    public List<int[][]> IntArrayArrayList = [];
+    public List<List<int>>[] IntListListArray = [];
+    public List<string[][]> StringArrayArrayList = [];
+    public List<List<string>>[] StringListListArray = [];
+}
+
+[SpacetimeDB.Type]
 public partial class EmptyClass { }
 
 [SpacetimeDB.Type]
@@ -81,10 +94,10 @@ public partial record CustomTaggedEnum
         string? NullableStringVariant
     )>;
 
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Event = true)]
 public partial class PrivateTable { }
 
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public = true)]
 public partial struct PublicTable
 {
     [SpacetimeDB.AutoInc]
@@ -245,8 +258,37 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
     public uint Unique2;
 }
 
+/// <summary>
+/// These used to cause conflicts when generating the BSATN struct for a type.
+/// </summary>
+[SpacetimeDB.Type]
+partial struct FormerlyForbiddenFieldNames
+{
+    public uint Read;
+    public uint Write;
+    public uint GetAlgebraicType;
+}
+
 public class Module
 {
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ALL_PUBLIC_TABLES = new Filter.Sql("SELECT * FROM PublicTable");
+
+    [SpacetimeDB.View(Name = "public_table_view", Public = true)]
+    public static PublicTable? PublicTableByIdentity(ViewContext ctx)
+    {
+        return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
+    }
+
+    [SpacetimeDB.View(Name = "public_table_query", Public = true)]
+    public static Query<PublicTable> PublicTableQuery(ViewContext ctx)
+    {
+        return ctx.From.PublicTable().Where(cols => cols.Id.Eq(0)).Build();
+    }
+
+    [SpacetimeDB.View(Name = "find_public_table__by_identity", Public = true)]
+    public static PublicTable? FindPublicTableByIdentity(AnonymousViewContext ctx)
+    {
+        return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
+    }
 }

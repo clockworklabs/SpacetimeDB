@@ -318,7 +318,7 @@ public static class Utils
                         .AppendLine(" {");
                 }
 
-                // Loop through the full parent type hiearchy, starting with the outermost.
+                // Loop through the full parent type hierarchy, starting with the outermost.
                 foreach (
                     var (i, typeScope) in Scope.typeScopes.Select((ts, i) => (i, ts)).Reverse()
                 )

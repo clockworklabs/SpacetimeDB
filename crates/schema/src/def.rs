@@ -21,34 +21,41 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
-use deserialize::ReducerArgsDeserializeSeed;
+use deserialize::ArgsSeed;
 use enum_map::EnumMap;
-use hashbrown::Equivalent;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
+use spacetimedb_lib::db::raw_def::v10::{
+    RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
+    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
+    RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+};
 use spacetimedb_lib::db::raw_def::v9::{
-    Lifecycle, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9,
-    RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9,
-    RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
+    Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
+    RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
+    RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
+    RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ReducerId, TableId};
-use spacetimedb_sats::AlgebraicType;
-use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewFnPtr};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
 
 pub mod deserialize;
+pub mod error;
 pub mod validate;
 
 /// A map from `Identifier`s to values of type `T`.
 pub type IdentifierMap<T> = HashMap<Identifier, T>;
 
-/// A map from `Box<str>`s to values of type `T`.
-pub type StrMap<T> = HashMap<Box<str>, T>;
+/// A map from `RawIdentifier`s to values of type `T`.
+pub type StrMap<T> = HashMap<RawIdentifier, T>;
 
 // We may eventually want to reorganize this module to look more
 // like the system tables, with numeric IDs used for lookups
@@ -63,6 +70,7 @@ pub type StrMap<T> = HashMap<Box<str>, T>;
 ///
 /// ```rust
 /// use spacetimedb_lib::RawModuleDef;
+/// use spacetimedb_sats::raw_identifier::RawIdentifier;
 /// use spacetimedb_schema::def::{ModuleDef, TableDef, IndexDef, TypeDef, ModuleDefLookup, ScopedTypeName};
 /// use spacetimedb_schema::identifier::Identifier;
 ///
@@ -75,11 +83,11 @@ pub type StrMap<T> = HashMap<Box<str>, T>;
 /// let module_def = ModuleDef::try_from(raw_module_def).expect("valid module def");
 ///
 /// let table_name = Identifier::new("my_table".into()).expect("valid table name");
-/// let index_name = "my_table_my_column_idx_btree";
+/// let index_name: RawIdentifier = "my_table_my_column_idx_btree".into();
 /// let scoped_type_name = ScopedTypeName::try_new([], "MyType").expect("valid scoped type name");
 ///
 /// let table: Option<&TableDef> = module_def.lookup(&table_name);
-/// let index: Option<&IndexDef> = module_def.lookup(index_name);
+/// let index: Option<&IndexDef> = module_def.lookup(&index_name);
 /// let type_def: Option<&TypeDef> = module_def.lookup(&scoped_type_name);
 /// // etc.
 /// ```
@@ -100,6 +108,18 @@ pub struct ModuleDef {
     /// Note: this is using IndexMap because reducer order is important
     /// and must be preserved for future calls to `__call_reducer__`.
     reducers: IndexMap<Identifier, ReducerDef>,
+
+    /// The procedures of the module definition.
+    ///
+    /// Like `reducers`, this uses [`IndexMap`] to preserve order
+    /// so that `__call_procedure__` receives stable integer IDs.
+    procedures: IndexMap<Identifier, ProcedureDef>,
+
+    /// The views of the module definition.
+    ///
+    /// Like `reducers`, this uses [`IndexMap`] to preserve order
+    /// so that `__call_view__` receives stable integer IDs.
+    views: IndexMap<Identifier, ViewDef>,
 
     /// A map from lifecycle reducer kind to reducer id.
     lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
@@ -126,9 +146,27 @@ pub struct ModuleDef {
     ///
     /// **Note**: Are only validated syntax-wise.
     row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
+
+    /// Indicates which raw module definition semantics this module
+    /// was authored under.
+    #[allow(unused)]
+    raw_module_def_version: RawModuleDefVersion,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RawModuleDefVersion {
+    /// Represents [`RawModuleDefV9`] and earlier.
+    V9OrEarlier,
+    /// Represents [`RawModuleDefV10`].
+    V10,
 }
 
 impl ModuleDef {
+    /// The raw module definition version this module was authored under.
+    pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
+        self.raw_module_def_version
+    }
+
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
@@ -157,6 +195,21 @@ impl ModuleDef {
     /// The reducers of the module definition.
     pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
         self.reducers.values()
+    }
+
+    /// Returns an iterator over all reducer ids and definitions.
+    pub fn reducer_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (ReducerId, &ReducerDef)> {
+        self.reducers.values().enumerate().map(|(idx, def)| (idx.into(), def))
+    }
+
+    /// The procedures of the module definition.
+    pub fn procedures(&self) -> impl Iterator<Item = &ProcedureDef> {
+        self.procedures.values()
+    }
+
+    /// The views of the module definition.
+    pub fn views(&self) -> impl Iterator<Item = &ViewDef> {
+        self.views.values()
     }
 
     /// The type definitions of the module definition.
@@ -193,7 +246,7 @@ impl ModuleDef {
     /// The `TableDef` an entity in the global namespace is stored in, if any.
     ///
     /// Generally, you will want to use the `lookup` method on the entity type instead.
-    pub fn stored_in_table_def(&self, name: &str) -> Option<&TableDef> {
+    pub fn stored_in_table_def(&self, name: &RawIdentifier) -> Option<&TableDef> {
         self.stored_in_table_def
             .get(name)
             .and_then(|table_name| self.tables.get(table_name))
@@ -214,6 +267,18 @@ impl ModuleDef {
     pub fn table<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&TableDef> {
         // If the string IS a valid identifier, we can just look it up.
         self.tables.get(name)
+    }
+
+    /// Convenience method to look up a view, possibly by a string.
+    pub fn view<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ViewDef> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.views.get(name)
+    }
+
+    /// Convenience method to look up a view, possibly by a string, returning its id as well.
+    pub fn view_full<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<(ViewFnPtr, &ViewDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.views.get(name).map(|def| (def.fn_ptr, def))
     }
 
     /// Convenience method to look up a reducer, possibly by a string.
@@ -241,19 +306,47 @@ impl ModuleDef {
         self.reducers.get_index(id.idx()).map(|(_, def)| def)
     }
 
+    /// Look up a view by its id, and whether it is anonymous.
+    pub fn get_view_by_id(&self, id: ViewFnPtr, is_anonymous: bool) -> Option<&ViewDef> {
+        self.views
+            .iter()
+            .find(|(_, def)| def.fn_ptr == id && def.is_anonymous == is_anonymous)
+            .map(|(_, def)| def)
+    }
+
+    /// Convenience method to look up a procedure, possibly by a string.
+    pub fn procedure<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ProcedureDef> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.procedures.get(name)
+    }
+
+    /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
+    pub fn procedure_full<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<(ProcedureId, &ProcedureDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.procedures.get_full(name).map(|(idx, _, def)| (idx.into(), def))
+    }
+
+    /// Look up a procuedure by its id, panicking if it doesn't exist.
+    pub fn procedure_by_id(&self, id: ProcedureId) -> &ProcedureDef {
+        &self.procedures[id.idx()]
+    }
+
+    /// Look up a procuedure by its id, returning `None` if it doesn't exist.
+    pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
+        self.procedures.get_index(id.idx()).map(|(_, def)| def)
+    }
+
     /// Looks up a lifecycle reducer defined in the module.
     pub fn lifecycle_reducer(&self, lifecycle: Lifecycle) -> Option<(ReducerId, &ReducerDef)> {
         self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
     }
 
-    /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
-    /// at the parameter type of the reducer named `name`.
-    pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
-        &self,
-        name: &K,
-    ) -> Option<(ReducerId, ReducerArgsDeserializeSeed)> {
-        let (id, reducer) = self.reducer_full(name)?;
-        Some((id, ReducerArgsDeserializeSeed(self.typespace.with_type(reducer))))
+    /// Returns a `DeserializeSeed` that can pull data from a `Deserializer` for `def`.
+    pub fn arg_seed_for<'a, T>(&'a self, def: &'a T) -> ArgsSeed<'a, T> {
+        ArgsSeed(self.typespace.with_type(def))
     }
 
     /// Look up the name corresponding to an `AlgebraicTypeRef`.
@@ -284,7 +377,7 @@ impl ModuleDef {
         if let Some(result) = T::lookup(self, key) {
             result
         } else {
-            panic!("expected ModuleDef to contain {:?}, but it does not", key);
+            panic!("expected ModuleDef to contain {key:?}, but it does not");
         }
     }
 
@@ -293,8 +386,7 @@ impl ModuleDef {
         if let Some(my_def) = self.lookup(def.key()) {
             assert_eq!(
                 def as *const Def, my_def as *const Def,
-                "expected ModuleDef to contain {:?}, but it contained {:?}",
-                def, my_def
+                "expected ModuleDef to contain {def:?}, but it contained {my_def:?}"
             );
         } else {
             panic!("expected ModuleDef to contain {:?}, but it does not", def.key());
@@ -309,6 +401,7 @@ impl TryFrom<RawModuleDef> for ModuleDef {
         match raw {
             RawModuleDef::V8BackCompat(v8_mod) => Self::try_from(v8_mod),
             RawModuleDef::V9(v9_mod) => Self::try_from(v9_mod),
+            RawModuleDef::V10(v10_mod) => Self::try_from(v10_mod),
             _ => unimplemented!(),
         }
     }
@@ -333,6 +426,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
             tables,
+            views,
             reducers,
             lifecycle_reducers: _,
             types,
@@ -341,16 +435,137 @@ impl From<ModuleDef> for RawModuleDefV9 {
             typespace_for_generate: _,
             refmap: _,
             row_level_security_raw,
+            procedures,
+            raw_module_def_version: _,
         } = val;
+
+        // Extract column defaults from tables before consuming tables
+        let column_defaults: Vec<_> = tables
+            .iter()
+            .flat_map(|(table_name, table_def)| {
+                table_def.columns.iter().enumerate().filter_map(|(col_id, col)| {
+                    col.default_value.as_ref().map(|default_val| {
+                        RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {
+                            table: table_name.clone().into(),
+                            col_id: ColId(col_id as u16),
+                            value: spacetimedb_sats::bsatn::to_vec(default_val).unwrap().into(),
+                        })
+                    })
+                })
+            })
+            .collect();
 
         RawModuleDefV9 {
             tables: to_raw(tables),
             reducers: reducers.into_iter().map(|(_, def)| def.into()).collect(),
             types: to_raw(types),
-            misc_exports: vec![],
+            misc_exports: column_defaults
+                .into_iter()
+                .chain(procedures.into_iter().map(|(_, def)| def.into()))
+                .chain(views.into_iter().map(|(_, def)| def.into()))
+                .collect(),
             typespace,
             row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
+    }
+}
+
+impl TryFrom<raw_def::v10::RawModuleDefV10> for ModuleDef {
+    type Error = ValidationErrors;
+
+    fn try_from(v10_mod: raw_def::v10::RawModuleDefV10) -> Result<Self, Self::Error> {
+        validate::v10::validate(v10_mod)
+    }
+}
+
+impl From<ModuleDef> for RawModuleDefV10 {
+    fn from(val: ModuleDef) -> Self {
+        let ModuleDef {
+            tables,
+            views,
+            reducers,
+            lifecycle_reducers,
+            types,
+            typespace,
+            stored_in_table_def: _,
+            typespace_for_generate: _,
+            refmap: _,
+            row_level_security_raw,
+            procedures,
+            raw_module_def_version: _,
+        } = val;
+
+        let mut sections = Vec::new();
+
+        sections.push(RawModuleDefV10Section::Typespace(typespace));
+
+        // Extract lifecycle reducer names before consuming reducers.
+        let raw_lifecycle: Vec<RawLifeCycleReducerDefV10> = lifecycle_reducers
+            .into_iter()
+            .filter_map(|(lifecycle, reducer_id)| {
+                let id = reducer_id?;
+                let (name, _) = reducers.get_index(id.idx())?;
+                Some(RawLifeCycleReducerDefV10 {
+                    lifecycle_spec: lifecycle,
+                    function_name: name.clone().into(),
+                })
+            })
+            .collect();
+
+        let raw_types: Vec<RawTypeDefV10> = types.into_values().map(Into::into).collect();
+        if !raw_types.is_empty() {
+            sections.push(RawModuleDefV10Section::Types(raw_types));
+        }
+
+        // Collect schedules from tables (V10 stores them in a separate section).
+        let mut schedules = Vec::new();
+        let raw_tables: Vec<RawTableDefV10> = tables
+            .into_values()
+            .map(|td| {
+                if let Some(sched) = td.schedule.clone() {
+                    schedules.push(RawScheduleDefV10 {
+                        source_name: Some(sched.name.into()),
+                        table_name: td.name.clone().into(),
+                        schedule_at_col: sched.at_column,
+                        function_name: sched.function_name.into(),
+                    });
+                }
+                td.into()
+            })
+            .collect();
+        if !raw_tables.is_empty() {
+            sections.push(RawModuleDefV10Section::Tables(raw_tables));
+        }
+
+        let raw_reducers: Vec<RawReducerDefV10> = reducers.into_values().map(Into::into).collect();
+        if !raw_reducers.is_empty() {
+            sections.push(RawModuleDefV10Section::Reducers(raw_reducers));
+        }
+
+        let raw_procedures: Vec<RawProcedureDefV10> = procedures.into_values().map(Into::into).collect();
+        if !raw_procedures.is_empty() {
+            sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
+        }
+
+        let raw_views: Vec<RawViewDefV10> = views.into_values().map(Into::into).collect();
+        if !raw_views.is_empty() {
+            sections.push(RawModuleDefV10Section::Views(raw_views));
+        }
+
+        if !schedules.is_empty() {
+            sections.push(RawModuleDefV10Section::Schedules(schedules));
+        }
+
+        if !raw_lifecycle.is_empty() {
+            sections.push(RawModuleDefV10Section::LifeCycleReducers(raw_lifecycle));
+        }
+
+        let raw_rls: Vec<RawRowLevelSecurityDefV10> = row_level_security_raw.into_values().collect();
+        if !raw_rls.is_empty() {
+            sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
+        }
+
+        RawModuleDefV10 { sections }
     }
 }
 
@@ -426,6 +641,12 @@ pub struct TableDef {
 
     /// Whether this table is public or private.
     pub table_access: TableAccess,
+
+    /// Whether this is an event table.
+    ///
+    /// Event tables persist to the commitlog but are not merged into committed state.
+    /// Their rows are only visible to V2 subscribers in the transaction that inserted them.
+    pub is_event: bool,
 }
 
 impl TableDef {
@@ -452,6 +673,7 @@ impl From<TableDef> for RawTableDefV9 {
             schedule,
             table_type,
             table_access,
+            is_event: _, // V9 does not support event tables; ignore when converting back
         } = val;
 
         RawTableDefV9 {
@@ -468,11 +690,68 @@ impl From<TableDef> for RawTableDefV9 {
     }
 }
 
+impl From<TableDef> for RawTableDefV10 {
+    fn from(val: TableDef) -> Self {
+        let TableDef {
+            name,
+            product_type_ref,
+            primary_key,
+            columns: _, // will be reconstructed from the product type.
+            indexes,
+            constraints,
+            sequences,
+            schedule: _, // V10 stores schedules in a separate section; handled in From<ModuleDef>.
+            table_type,
+            table_access,
+            is_event,
+        } = val;
+
+        RawTableDefV10 {
+            source_name: name.into(),
+            product_type_ref,
+            primary_key: ColList::from_iter(primary_key),
+            indexes: indexes.into_values().map(Into::into).collect(),
+            constraints: constraints.into_values().map(Into::into).collect(),
+            sequences: sequences.into_values().map(Into::into).collect(),
+            table_type,
+            table_access,
+            default_values: Vec::new(),
+            is_event,
+        }
+    }
+}
+
+impl From<ViewDef> for TableDef {
+    fn from(def: ViewDef) -> Self {
+        use TableAccess::*;
+        let ViewDef {
+            name,
+            is_public,
+            product_type_ref,
+            return_columns,
+            ..
+        } = def;
+        Self {
+            name,
+            product_type_ref,
+            primary_key: None,
+            columns: return_columns.into_iter().map(ColumnDef::from).collect(),
+            indexes: <_>::default(),
+            constraints: <_>::default(),
+            sequences: <_>::default(),
+            schedule: None,
+            table_type: TableType::User,
+            table_access: if is_public { Public } else { Private },
+            is_event: false,
+        }
+    }
+}
+
 /// A sequence definition for a database table column.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
     /// The name of the sequence. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -510,6 +789,19 @@ impl From<SequenceDef> for RawSequenceDefV9 {
     }
 }
 
+impl From<SequenceDef> for RawSequenceDefV10 {
+    fn from(val: SequenceDef) -> Self {
+        RawSequenceDefV10 {
+            source_name: Some(val.name),
+            column: val.column,
+            start: val.start,
+            min_value: val.min_value,
+            max_value: val.max_value,
+            increment: val.increment,
+        }
+    }
+}
+
 /// A struct representing the validated definition of a database index.
 ///
 /// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
@@ -518,7 +810,7 @@ impl From<SequenceDef> for RawSequenceDefV9 {
 #[non_exhaustive]
 pub struct IndexDef {
     /// The name of the index. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -549,9 +841,20 @@ impl From<IndexDef> for RawIndexDefV9 {
             name: Some(val.name),
             algorithm: match val.algorithm {
                 IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
+                IndexAlgorithm::Hash(HashAlgorithm { columns }) => RawIndexAlgorithm::Hash { columns },
                 IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
             accessor_name: val.accessor_name.map(Into::into),
+        }
+    }
+}
+
+impl From<IndexDef> for RawIndexDefV10 {
+    fn from(val: IndexDef) -> Self {
+        RawIndexDefV10 {
+            source_name: Some(val.name),
+            accessor_name: val.accessor_name.map(Into::into),
+            algorithm: val.algorithm.into(),
         }
     }
 }
@@ -562,8 +865,20 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
+    /// Implemented using a rust `HashMap`.
+    Hash(HashAlgorithm),
     /// Implemented using `DirectUniqueIndex`.
     Direct(DirectAlgorithm),
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for IndexAlgorithm {
+    fn heap_usage(&self) -> usize {
+        match self {
+            Self::BTree(a) => a.heap_usage(),
+            Self::Direct(a) => a.heap_usage(),
+            Self::Hash(a) => a.heap_usage(),
+        }
+    }
 }
 
 impl IndexAlgorithm {
@@ -571,6 +886,7 @@ impl IndexAlgorithm {
     pub fn columns(&self) -> ColOrCols<'_> {
         match self {
             Self::BTree(btree) => ColOrCols::ColList(&btree.columns),
+            Self::Hash(hash) => ColOrCols::ColList(&hash.columns),
             Self::Direct(direct) => ColOrCols::Col(direct.column),
         }
     }
@@ -586,6 +902,7 @@ impl From<IndexAlgorithm> for RawIndexAlgorithm {
     fn from(val: IndexAlgorithm) -> Self {
         match val {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Hash(HashAlgorithm { columns }) => Self::Hash { columns },
             IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
         }
     }
@@ -598,9 +915,48 @@ pub struct BTreeAlgorithm {
     pub columns: ColList,
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for BTreeAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
+}
+
+impl<CL: Into<ColList>> From<CL> for BTreeAlgorithm {
+    fn from(columns: CL) -> Self {
+        let columns = columns.into();
+        Self { columns }
+    }
+}
+
 impl From<BTreeAlgorithm> for IndexAlgorithm {
     fn from(val: BTreeAlgorithm) -> Self {
         IndexAlgorithm::BTree(val)
+    }
+}
+
+/// Data specifying a Hash index.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HashAlgorithm {
+    /// The columns to index.
+    pub columns: ColList,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for HashAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
+}
+
+impl<CL: Into<ColList>> From<CL> for HashAlgorithm {
+    fn from(columns: CL) -> Self {
+        let columns = columns.into();
+        Self { columns }
+    }
+}
+
+impl From<HashAlgorithm> for IndexAlgorithm {
+    fn from(val: HashAlgorithm) -> Self {
+        IndexAlgorithm::Hash(val)
     }
 }
 
@@ -609,6 +965,19 @@ impl From<BTreeAlgorithm> for IndexAlgorithm {
 pub struct DirectAlgorithm {
     /// The column to index.
     pub column: ColId,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for DirectAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.column.heap_usage()
+    }
+}
+
+impl<C: Into<ColId>> From<C> for DirectAlgorithm {
+    fn from(column: C) -> Self {
+        let column = column.into();
+        Self { column }
+    }
 }
 
 impl From<DirectAlgorithm> for IndexAlgorithm {
@@ -645,13 +1014,97 @@ pub struct ColumnDef {
 
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
+
+    /// The default value of this column, if present.
+    pub default_value: Option<AlgebraicValue>,
+}
+
+impl From<ViewColumnDef> for ColumnDef {
+    fn from(def: ViewColumnDef) -> Self {
+        let ViewColumnDef {
+            name,
+            col_id,
+            ty,
+            ty_for_generate,
+            view_name: table_name,
+        } = def;
+        Self {
+            name,
+            col_id,
+            ty,
+            ty_for_generate,
+            table_name,
+            default_value: None,
+        }
+    }
+}
+
+/// A struct representing a validated view column
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ViewColumnDef {
+    /// The name of the column.
+    pub name: Identifier,
+
+    /// The position of this column in the view's return type.
+    pub col_id: ColId,
+
+    /// The type of this column.
+    pub ty: AlgebraicType,
+
+    /// The type of the column, formatted for client code generation.
+    pub ty_for_generate: AlgebraicTypeUse,
+
+    /// The view this def is stored in.
+    pub view_name: Identifier,
+}
+
+impl From<ColumnDef> for ViewColumnDef {
+    fn from(
+        ColumnDef {
+            name,
+            col_id,
+            ty,
+            ty_for_generate,
+            table_name: view_name,
+            ..
+        }: ColumnDef,
+    ) -> Self {
+        Self {
+            name,
+            col_id,
+            ty,
+            ty_for_generate,
+            view_name,
+        }
+    }
+}
+
+/// A struct representing a validated view parameter
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ViewParamDef {
+    /// The name of the parameter.
+    pub name: Identifier,
+
+    /// The position of this parameter in the view's parameter list.
+    pub col_id: ColId,
+
+    /// The type of this parameter.
+    pub ty: AlgebraicType,
+
+    /// The type of the parameter, formatted for client code generation.
+    pub ty_for_generate: AlgebraicTypeUse,
+
+    /// The view this def is stored in.
+    pub view_name: Identifier,
 }
 
 /// A constraint definition attached to a table.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConstraintDef {
     /// The name of the constraint. Unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: RawIdentifier,
 
     /// The data for the constraint.
     pub data: ConstraintData,
@@ -666,11 +1119,28 @@ impl From<ConstraintDef> for RawConstraintDefV9 {
     }
 }
 
+impl From<ConstraintDef> for RawConstraintDefV10 {
+    fn from(val: ConstraintDef) -> Self {
+        RawConstraintDefV10 {
+            source_name: Some(val.name),
+            data: val.data.into(),
+        }
+    }
+}
+
 /// Data for a constraint attached to a table.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ConstraintData {
     Unique(UniqueConstraintData),
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for ConstraintData {
+    fn heap_usage(&self) -> usize {
+        match self {
+            ConstraintData::Unique(d) => d.heap_usage(),
+        }
+    }
 }
 
 impl ConstraintData {
@@ -700,6 +1170,12 @@ pub struct UniqueConstraintData {
     pub columns: ColSet,
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for UniqueConstraintData {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
+}
+
 impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
     fn from(val: UniqueConstraintData) -> Self {
         RawUniqueConstraintDataV9 {
@@ -727,12 +1203,35 @@ impl From<RowLevelSecurityDef> for RawRowLevelSecurityDefV9 {
     }
 }
 
-/// Marks a table as a timer table for a scheduled reducer.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Ord, PartialOrd)]
+pub enum FunctionKind {
+    /// Functions which have not yet been determined to be reducers or procedures.
+    ///
+    /// Used as a placeholder during module validation,
+    /// when pre-processing [`ScheduleDef`]s prior to validating their scheduled functions.
+    /// Will never appear in a fully-validated [`ModuleDef`],
+    /// and should not be placed in errors either.
+    Unknown,
+    Reducer,
+    Procedure,
+}
+
+impl fmt::Display for FunctionKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            FunctionKind::Unknown => "exported function",
+            FunctionKind::Reducer => "reducer",
+            FunctionKind::Procedure => "procedure",
+        })
+    }
+}
+
+/// Marks a table as a timer table for a scheduled reducer or procedure.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ScheduleDef {
     /// The name of the schedule. Must be unique within the containing `ModuleDef`.
-    pub name: Box<str>,
+    pub name: Identifier,
 
     /// The name of the column that stores the desired invocation time.
     ///
@@ -744,16 +1243,18 @@ pub struct ScheduleDef {
     /// Must be named `scheduled_id` and be of type `u64`.
     pub id_column: ColId,
 
-    /// The name of the reducer to call. Not yet an `Identifier` because
-    /// reducer names are not currently validated.
-    pub reducer_name: Identifier,
+    /// The name of the reducer or procedure to call.
+    pub function_name: Identifier,
+
+    /// Whether the `function_name` refers to a reducer or a procedure.
+    pub function_kind: FunctionKind,
 }
 
 impl From<ScheduleDef> for RawScheduleDefV9 {
     fn from(val: ScheduleDef) -> Self {
         RawScheduleDefV9 {
-            name: Some(val.name),
-            reducer_name: val.reducer_name.into(),
+            name: Some(val.name.into()),
+            reducer_name: val.function_name.into(),
             scheduled_at_column: val.at_column,
         }
     }
@@ -778,6 +1279,16 @@ impl From<TypeDef> for RawTypeDefV9 {
     fn from(val: TypeDef) -> Self {
         RawTypeDefV9 {
             name: val.name.into(),
+            ty: val.ty,
+            custom_ordering: val.custom_ordering,
+        }
+    }
+}
+
+impl From<TypeDef> for RawTypeDefV10 {
+    fn from(val: TypeDef) -> Self {
+        RawTypeDefV10 {
+            source_name: val.name.into(),
             ty: val.ty,
             custom_ordering: val.custom_ordering,
         }
@@ -851,7 +1362,7 @@ impl fmt::Debug for ScopedTypeName {
         // none of its elements contain quotes.
         f.write_char('"')?;
         for scope in &*self.scope {
-            write!(f, "{}::", scope)?;
+            write!(f, "{scope}::")?;
         }
         write!(f, "{}\"", self.name)
     }
@@ -859,7 +1370,7 @@ impl fmt::Debug for ScopedTypeName {
 impl fmt::Display for ScopedTypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for scope in &*self.scope {
-            write!(f, "{}::", scope)?;
+            write!(f, "{scope}::")?;
         }
         fmt::Display::fmt(&self.name, f)
     }
@@ -874,8 +1385,180 @@ impl TryFrom<RawScopedTypeNameV9> for ScopedTypeName {
 impl From<ScopedTypeName> for RawScopedTypeNameV9 {
     fn from(val: ScopedTypeName) -> Self {
         RawScopedTypeNameV9 {
-            scope: val.scope.into_vec().into_iter().map_into().collect(),
+            scope: val.scope.into_vec().into_iter().map(|id| id.into()).collect(),
             name: val.name.into(),
+        }
+    }
+}
+
+impl From<ScopedTypeName> for RawScopedTypeNameV10 {
+    fn from(val: ScopedTypeName) -> Self {
+        RawScopedTypeNameV10 {
+            scope: val.scope.into_vec().into_iter().map(|id| id.into()).collect(),
+            source_name: val.name.into(),
+        }
+    }
+}
+
+/// A view exported by the module.
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ViewDef {
+    /// The name of the view. This must be unique within the module.
+    pub name: Identifier,
+
+    /// Is this a public or a private view?
+    /// Currently only public views are supported.
+    /// Private views may be supported in the future.
+    pub is_public: bool,
+
+    /// Is this view anonymous?
+    /// An anonymous view does not know who called it.
+    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
+    /// This type does not have access to the `Identity` of the caller.
+    pub is_anonymous: bool,
+
+    /// It represents the unique index of this view within the module.
+    /// Module contains separate list for anonymous and non-anonymous views,
+    /// so `is_anonymous` is needed to fully identify the view along with this index.
+    pub fn_ptr: ViewFnPtr,
+
+    /// The parameters of the view.
+    ///
+    /// This `ProductType` need not be registered in the module's `Typespace`.
+    pub params: ProductType,
+
+    /// The parameters of the view, formatted for client codegen.
+    ///
+    /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
+    pub params_for_generate: ProductTypeDef,
+
+    /// The return type of the view.
+    /// Either `Option<T>` or `Vec<T>` where:
+    ///
+    /// 1. `T` is a [`ProductType`] containing the columns of the view,
+    /// 2. `T` is registered in the module's typespace,
+    /// 3. `Option<T>` refers to [`AlgebraicType::option()`], and
+    /// 4. `Vec<T>` refers to [`AlgebraicType::array()`]
+    pub return_type: AlgebraicType,
+
+    /// The return type of the view, formatted for client codegen.
+    pub return_type_for_generate: AlgebraicTypeUse,
+
+    /// The single source of truth for the view's columns.
+    ///
+    /// If a view can return only `Option<T>` or `Vec<T>`,
+    /// this is a reference to the inner product type `T`.
+    /// All elements of `T` must have names.
+    pub product_type_ref: AlgebraicTypeRef,
+
+    /// The return columns of this view.
+    /// The same information is stored in `product_type_ref`.
+    /// This is just a more convenient-to-access format.
+    pub return_columns: Vec<ViewColumnDef>,
+
+    /// The columns that track the arguments of this view.
+    /// The same information is stored in `params`.
+    /// This is just a more convenient-to-access format.
+    pub param_columns: Vec<ViewParamDef>,
+}
+
+impl ViewDef {
+    /// Get a column by the column's name.
+    pub fn get_column_by_name(&self, name: &Identifier) -> Option<&ViewColumnDef> {
+        self.return_columns.iter().find(|c| &c.name == name)
+    }
+
+    /// Get a parameter by the parameter's name.
+    pub fn get_param_by_name(&self, name: &Identifier) -> Option<&ViewParamDef> {
+        self.param_columns.iter().find(|c| &c.name == name)
+    }
+}
+
+impl From<ViewDef> for RawViewDefV9 {
+    fn from(val: ViewDef) -> Self {
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            return_type,
+            fn_ptr: index,
+            ..
+        } = val;
+        RawViewDefV9 {
+            name: name.into(),
+            index: index.into(),
+            is_anonymous,
+            is_public,
+            params,
+            return_type,
+        }
+    }
+}
+
+impl From<ViewDef> for RawViewDefV10 {
+    fn from(val: ViewDef) -> Self {
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            return_type,
+            fn_ptr,
+            ..
+        } = val;
+        RawViewDefV10 {
+            source_name: name.into(),
+            index: fn_ptr.into(),
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+        }
+    }
+}
+
+impl From<ViewDef> for RawMiscModuleExportV9 {
+    fn from(def: ViewDef) -> Self {
+        Self::View(def.into())
+    }
+}
+
+/// The visibility of a function (reducer or procedure).
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum FunctionVisibility {
+    /// Not callable by arbitrary clients.
+    ///
+    /// Still callable by the module owner, collaborators,
+    /// and internal module code.
+    Private,
+
+    /// Callable from client code.
+    ClientCallable,
+}
+
+impl FunctionVisibility {
+    pub fn is_private(&self) -> bool {
+        matches!(self, FunctionVisibility::Private)
+    }
+}
+
+use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawFunctionVisibility;
+impl From<RawFunctionVisibility> for FunctionVisibility {
+    fn from(val: RawFunctionVisibility) -> Self {
+        match val {
+            RawFunctionVisibility::Private => FunctionVisibility::Private,
+            RawFunctionVisibility::ClientCallable => FunctionVisibility::ClientCallable,
+        }
+    }
+}
+
+impl From<FunctionVisibility> for RawFunctionVisibility {
+    fn from(val: FunctionVisibility) -> Self {
+        match val {
+            FunctionVisibility::Private => RawFunctionVisibility::Private,
+            FunctionVisibility::ClientCallable => RawFunctionVisibility::ClientCallable,
         }
     }
 }
@@ -884,8 +1567,8 @@ impl From<ScopedTypeName> for RawScopedTypeNameV9 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReducerDef {
-    /// The name of the reducer. This must be unique within the module.
-    pub name: Identifier,
+    /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
+    pub name: ReducerName,
 
     /// The parameters of the reducer.
     ///
@@ -899,6 +1582,15 @@ pub struct ReducerDef {
 
     /// The special role of this reducer in the module lifecycle, if any.
     pub lifecycle: Option<Lifecycle>,
+
+    /// The visibility of this reducer.
+    pub visibility: FunctionVisibility,
+
+    /// The return type of the reducer on success.
+    pub ok_return_type: AlgebraicType,
+
+    /// The return type of the reducer on error.
+    pub err_return_type: AlgebraicType,
 }
 
 impl From<ReducerDef> for RawReducerDefV9 {
@@ -908,6 +1600,79 @@ impl From<ReducerDef> for RawReducerDefV9 {
             params: val.params,
             lifecycle: val.lifecycle,
         }
+    }
+}
+
+impl From<ReducerDef> for RawReducerDefV10 {
+    fn from(val: ReducerDef) -> Self {
+        RawReducerDefV10 {
+            source_name: val.name.into(),
+            params: val.params,
+            visibility: val.visibility.into(),
+            ok_return_type: val.ok_return_type,
+            err_return_type: val.err_return_type,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ProcedureDef {
+    /// The name of the procedure.
+    ///
+    /// This must be unique within the module's set of reducers and procedures.
+    pub name: Identifier,
+
+    /// The parameters of the procedure.
+    ///
+    /// This `ProductType` need not be registered in the module's `Typespace`.
+    pub params: ProductType,
+
+    /// The parameters of the procedure, formatted for client codegen.
+    ///
+    /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
+    pub params_for_generate: ProductTypeDef,
+
+    /// The return type of the procedure.
+    ///
+    /// If this is a non-special compound type, it should be registered in the module's `Typespace`
+    /// and indirected through an [`AlgebraicType::Ref`].
+    pub return_type: AlgebraicType,
+
+    /// The return type of the procedure.
+    ///
+    /// If this is a non-special compound type, it should be registered in the module's `TypespaceForGenerate`
+    /// and indirected through an [`AlgebraicTypeUse::Ref`].
+    pub return_type_for_generate: AlgebraicTypeUse,
+
+    /// The visibility of this procedure.
+    pub visibility: FunctionVisibility,
+}
+
+impl From<ProcedureDef> for RawProcedureDefV9 {
+    fn from(val: ProcedureDef) -> Self {
+        RawProcedureDefV9 {
+            name: val.name.into(),
+            params: val.params,
+            return_type: val.return_type,
+        }
+    }
+}
+
+impl From<ProcedureDef> for RawProcedureDefV10 {
+    fn from(val: ProcedureDef) -> Self {
+        RawProcedureDefV10 {
+            source_name: val.name.into(),
+            params: val.params,
+            return_type: val.return_type,
+            visibility: val.visibility.into(),
+        }
+    }
+}
+
+impl From<ProcedureDef> for RawMiscModuleExportV9 {
+    fn from(def: ProcedureDef) -> Self {
+        Self::Procedure(def.into())
     }
 }
 
@@ -924,7 +1689,7 @@ impl ModuleDefLookup for TableDef {
 }
 
 impl ModuleDefLookup for SequenceDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -936,7 +1701,7 @@ impl ModuleDefLookup for SequenceDef {
 }
 
 impl ModuleDefLookup for IndexDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -965,8 +1730,42 @@ impl ModuleDefLookup for ColumnDef {
     }
 }
 
+impl ModuleDefLookup for ViewColumnDef {
+    // We don't use `ColId` here because we want this to be portable
+    // across migrations.
+    type Key<'a> = (&'a Identifier, &'a Identifier);
+
+    fn key(&self) -> Self::Key<'_> {
+        (&self.view_name, &self.name)
+    }
+
+    fn lookup<'a>(module_def: &'a ModuleDef, (view_name, name): Self::Key<'_>) -> Option<&'a Self> {
+        module_def
+            .views
+            .get(view_name)
+            .and_then(|view| view.get_column_by_name(name))
+    }
+}
+
+impl ModuleDefLookup for ViewParamDef {
+    // We don't use `ColId` here because we want this to be portable
+    // across migrations.
+    type Key<'a> = (&'a Identifier, &'a Identifier);
+
+    fn key(&self) -> Self::Key<'_> {
+        (&self.view_name, &self.name)
+    }
+
+    fn lookup<'a>(module_def: &'a ModuleDef, (view_name, name): Self::Key<'_>) -> Option<&'a Self> {
+        module_def
+            .views
+            .get(view_name)
+            .and_then(|view| view.get_param_by_name(name))
+    }
+}
+
 impl ModuleDefLookup for ConstraintDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a RawIdentifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -990,15 +1789,15 @@ impl ModuleDefLookup for RawRowLevelSecurityDefV9 {
 }
 
 impl ModuleDefLookup for ScheduleDef {
-    type Key<'a> = &'a str;
+    type Key<'a> = &'a Identifier;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        let schedule = module_def.stored_in_table_def(key)?.schedule.as_ref()?;
-        if &schedule.name[..] == key {
+        let schedule = module_def.stored_in_table_def(key.as_raw())?.schedule.as_ref()?;
+        if &schedule.name == key {
             Some(schedule)
         } else {
             None
@@ -1019,18 +1818,31 @@ impl ModuleDefLookup for TypeDef {
 }
 
 impl ModuleDefLookup for ReducerDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a ReducerName;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        let key = &**key;
         module_def.reducers.get(key)
     }
 }
 
-fn to_raw<Def, RawDef, Name, A>(data: HashMap<Name, Def, A>) -> Vec<RawDef>
+impl ModuleDefLookup for ViewDef {
+    type Key<'a> = &'a Identifier;
+
+    fn key(&self) -> Self::Key<'_> {
+        &self.name
+    }
+
+    fn lookup<'a>(view_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        view_def.views.get(key)
+    }
+}
+
+fn to_raw<Def, RawDef, Name>(data: HashMap<Name, Def>) -> Vec<RawDef>
 where
     Def: ModuleDefLookup + Into<RawDef>,
     Name: Eq + Ord + 'static,
@@ -1041,8 +1853,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::{def::validate::tests::expect_identifier, error::ValidationError};
+
     use super::*;
     use proptest::prelude::*;
+    use spacetimedb_data_structures::{expect_error_matching, map::HashCollectionExt as _};
+    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 
     proptest! {
         #[test]
@@ -1057,5 +1873,57 @@ mod tests {
             let raw2: Vec<RawTypeDefV9> = to_raw(map);
             prop_assert_eq!(raw, raw2);
         }
+    }
+
+    #[test]
+    fn validate_new_column_with_multiple_values() {
+        let mut old_builder = RawModuleDefV9Builder::new();
+        old_builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                true,
+            )
+            .with_default_column_value(1, AlgebraicValue::U16(12))
+            .with_default_column_value(1, AlgebraicValue::U16(10))
+            .finish();
+
+        let result: Result<ModuleDef, ValidationErrors> = old_builder.finish().try_into();
+        let apples = expect_identifier("Apples");
+
+        expect_error_matching!(
+            result,
+            ValidationError::MultipleColumnDefaultValues {
+                table,
+                ..
+            } => *table == apples.clone().into()
+        );
+    }
+
+    #[test]
+    fn validate_new_column_with_malformed_value() {
+        let mut old_builder = RawModuleDefV9Builder::new();
+        old_builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                true,
+            )
+            .with_default_column_value(1, AlgebraicValue::Bool(false))
+            .with_default_column_value(1, AlgebraicValue::unit())
+            .finish();
+
+        let result: Result<ModuleDef, ValidationErrors> = old_builder.finish().try_into();
+        let apples = expect_identifier("Apples");
+
+        expect_error_matching!(
+            result,
+            ValidationError::ColumnDefaultValueMalformed { table, col_id, .. } => *table == apples.clone().into() && *col_id == ColId(1)
+        );
+        assert!(result.is_err_and(|e| e
+            .into_iter()
+            .filter(|e| matches!(e, ValidationError::ColumnDefaultValueMalformed { .. }))
+            .count()
+            == 2))
     }
 }

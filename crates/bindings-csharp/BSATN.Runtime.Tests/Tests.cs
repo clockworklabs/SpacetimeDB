@@ -1,6 +1,9 @@
 namespace SpacetimeDB;
 
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using CsCheck;
+using SpacetimeDB.BSATN;
 using Xunit;
 
 public static partial class BSATNRuntimeTests
@@ -244,20 +247,12 @@ public static partial class BSATNRuntimeTests
     }
 
     [Type]
-    public partial struct BasicDataStruct
+    public partial struct BasicDataStruct((int x, string y, int? z, string? w) data)
     {
-        public int X;
-        public string Y;
-        public int? Z;
-        public string? W;
-
-        public BasicDataStruct((int x, string y, int? z, string? w) data)
-        {
-            X = data.x;
-            Y = data.y;
-            Z = data.z;
-            W = data.w;
-        }
+        public int X = data.x;
+        public string Y = data.y;
+        public int? Z = data.z;
+        public string? W = data.w;
     }
 
     [Type]
@@ -296,9 +291,77 @@ public static partial class BSATNRuntimeTests
         (int X, string Y, int? Z, string? W) c2
     )> GenTwoBasic = Gen.Select(GenBasic, GenBasic, (c1, c2) => (c1, c2));
 
-    [Fact]
-    public static void TestGeneratedEquals()
+    /// <summary>
+    /// Count collisions when comparing hashcodes of non-equal structures.
+    /// </summary>
+    struct CollisionCounter
     {
+        private uint Comparisons;
+        private uint Collisions;
+
+        public void Add(bool collides)
+        {
+            Comparisons += 1;
+            if (collides)
+            {
+                Collisions += 1;
+            }
+        }
+
+        public readonly double CollisionFraction
+        {
+            get => (double)Collisions / (double)Comparisons;
+        }
+
+        public readonly void AssertCollisionsLessThan(double fraction)
+        {
+            Assert.True(
+                CollisionFraction < fraction,
+                $"Expected {fraction} portion of collisions, but got {CollisionFraction} = {Collisions} / {Comparisons}"
+            );
+        }
+    }
+
+    static void TestRoundTrip<T, BSATN>(Gen<T> gen, BSATN serializer)
+        where BSATN : IReadWrite<T>
+    {
+        gen.Sample(
+            (value) =>
+            {
+                var stream = new MemoryStream();
+                var writer = new BinaryWriter(stream);
+                serializer.Write(writer, value);
+                stream.Seek(0, SeekOrigin.Begin);
+                var reader = new BinaryReader(stream);
+                var result = serializer.Read(reader);
+                Assert.Equal(value, result);
+            },
+            iter: 10_000
+        );
+    }
+
+    [Fact]
+    public static void GeneratedProductRoundTrip()
+    {
+        TestRoundTrip(
+            GenBasic.Select(value => new BasicDataClass(value)),
+            new BasicDataClass.BSATN()
+        );
+        TestRoundTrip(
+            GenBasic.Select(value => new BasicDataRecord(value)),
+            new BasicDataRecord.BSATN()
+        );
+        TestRoundTrip(
+            GenBasic.Select(value => new BasicDataStruct(value)),
+            new BasicDataStruct.BSATN()
+        );
+    }
+
+    [Fact]
+    public static void GeneratedProductEqualsWorks()
+    {
+        CollisionCounter collisionCounter = new();
+
         GenTwoBasic.Sample(
             example =>
             {
@@ -355,10 +418,13 @@ public static partial class BSATNRuntimeTests
                     // hash code should not depend on the type of object.
                     Assert.Equal(class1.GetHashCode(), record1.GetHashCode());
                     Assert.Equal(record1.GetHashCode(), struct1.GetHashCode());
+
+                    collisionCounter.Add(class1.GetHashCode() == class2.GetHashCode());
                 }
             },
             iter: 10_000
         );
+        collisionCounter.AssertCollisionsLessThan(0.05);
     }
 
     [Type]
@@ -395,22 +461,17 @@ public static partial class BSATNRuntimeTests
         (e1, e2) => (e1, e2)
     );
 
-    [Type]
-    public partial class ContainsList
+    [Fact]
+    public static void GeneratedSumRoundTrip()
     {
-        public List<BasicEnum?> TheList = [];
-
-        public ContainsList() { }
-
-        public ContainsList(List<BasicEnum?> theList)
-        {
-            TheList = theList;
-        }
+        TestRoundTrip(GenBasicEnum, new BasicEnum.BSATN());
     }
 
     [Fact]
-    public static void GeneratedEnumsWork()
+    public static void GeneratedSumEqualsWorks()
     {
+        CollisionCounter collisionCounter = new();
+
         GenTwoBasicEnum.Sample(
             example =>
             {
@@ -442,10 +503,226 @@ public static partial class BSATNRuntimeTests
                     Assert.False(example.e1 == example.e2);
                     Assert.True(example.e1 != example.e2);
                     Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                    collisionCounter.Add(example.e1.GetHashCode() == example.e2.GetHashCode());
                 }
             },
             iter: 10_000
         );
+        collisionCounter.AssertCollisionsLessThan(0.05);
+    }
+
+    [Type]
+    public partial class ContainsList
+    {
+        public List<BasicEnum?>? TheList = [];
+
+        public ContainsList() { }
+
+        public ContainsList(List<BasicEnum?>? theList)
+        {
+            TheList = theList;
+        }
+    }
+
+    static readonly Gen<ContainsList> GenContainsList = GenBasicEnum
+        .Null()
+        .List[0, 2]
+        .Null()
+        .Select(list => new ContainsList(list));
+    static readonly Gen<(ContainsList e1, ContainsList e2)> GenTwoContainsList = Gen.Select(
+        GenContainsList,
+        GenContainsList,
+        (e1, e2) => (e1, e2)
+    );
+
+    [Fact]
+    public static void GeneratedListRoundTrip()
+    {
+        TestRoundTrip(GenContainsList, new ContainsList.BSATN());
+    }
+
+    [Fact]
+    public static void GeneratedListEqualsWorks()
+    {
+        CollisionCounter collisionCounter = new();
+        GenTwoContainsList.Sample(
+            example =>
+            {
+                var equal =
+                    example.e1.TheList == null
+                        ? example.e2.TheList == null
+                        : (
+                            example.e2.TheList == null
+                                ? false
+                                : example.e1.TheList.SequenceEqual(example.e2.TheList)
+                        );
+
+                if (equal)
+                {
+                    Assert.Equal(example.e1, example.e2);
+                    Assert.True(example.e1 == example.e2);
+                    Assert.False(example.e1 != example.e2);
+                    Assert.Equal(example.e1.ToString(), example.e2.ToString());
+                    Assert.Equal(example.e1.GetHashCode(), example.e2.GetHashCode());
+                }
+                else
+                {
+                    Assert.NotEqual(example.e1, example.e2);
+                    Assert.False(example.e1 == example.e2);
+                    Assert.True(example.e1 != example.e2);
+                    Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                    collisionCounter.Add(example.e1.GetHashCode() == example.e2.GetHashCode());
+                }
+            },
+            iter: 10_000
+        );
+        collisionCounter.AssertCollisionsLessThan(0.05);
+    }
+
+    [Type]
+    public partial class ContainsNestedList
+    {
+        public List<BasicEnum[][]> TheList = [];
+
+        public ContainsNestedList() { }
+
+        public ContainsNestedList(List<BasicEnum[][]> theList)
+        {
+            TheList = theList;
+        }
+    }
+
+    // For the serialization test, forbid nulls.
+    static readonly Gen<ContainsNestedList> GenContainsNestedListNoNulls = GenBasicEnum
+        .Array[0, 2]
+        .Array[0, 2]
+        .List[0, 2]
+        .Select(list => new ContainsNestedList(list));
+
+    [Fact]
+    public static void GeneratedNestedListRoundTrip()
+    {
+        TestRoundTrip(GenContainsNestedListNoNulls, new ContainsNestedList.BSATN());
+    }
+
+    // However, for the equals + hashcode test, throw in some nulls, just to be paranoid.
+    // The user might have constructed a bad one of these in-memory.
+
+#pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
+    static readonly Gen<ContainsNestedList> GenContainsNestedList = GenBasicEnum
+        .Null()
+        .Array[0, 2]
+        .Null()
+        .Array[0, 2]
+        .Null()
+        .List[0, 2]
+        .Select(list => new ContainsNestedList(list));
+#pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
+
+    static readonly Gen<(ContainsNestedList e1, ContainsNestedList e2)> GenTwoContainsNestedList =
+        Gen.Select(GenContainsNestedList, GenContainsNestedList, (e1, e2) => (e1, e2));
+
+    class EnumerableEqualityComparer<T>(EqualityComparer<T> equalityComparer)
+        : EqualityComparer<IEnumerable<T>>
+    {
+        private readonly EqualityComparer<T> EqualityComparer = equalityComparer;
+
+        public override bool Equals(IEnumerable<T>? x, IEnumerable<T>? y) =>
+            x == null ? y == null : (y == null ? false : x.SequenceEqual(y, EqualityComparer));
+
+        public override int GetHashCode([DisallowNull] IEnumerable<T> obj)
+        {
+            var hashCode = 0;
+            foreach (var item in obj)
+            {
+                if (item != null)
+                {
+                    hashCode ^= EqualityComparer.GetHashCode(item);
+                }
+            }
+            return hashCode;
+        }
+    }
+
+    [Type]
+    enum Banana
+    {
+        Cavendish,
+        LadyFinger,
+        RedBanana,
+        Manzano,
+        BlueJava,
+        GreenPlantain,
+        YellowPlantain,
+        PisangRaja,
+    }
+
+    [Fact]
+    public static void EnumSerializationWorks()
+    {
+        var serializer = new Enum<Banana>();
+        var bananas = new Banana[]
+        {
+            Banana.Cavendish,
+            Banana.LadyFinger,
+            Banana.RedBanana,
+            Banana.Manzano,
+            Banana.BlueJava,
+            Banana.GreenPlantain,
+            Banana.YellowPlantain,
+            Banana.PisangRaja,
+        };
+        for (var i = 0; i < bananas.Length; i++)
+        {
+            var stream = new MemoryStream();
+            var writer = new BinaryWriter(stream);
+            var banana = bananas[i];
+            serializer.Write(writer, banana);
+
+            stream.Seek(0, SeekOrigin.Begin);
+            var tag = new BinaryReader(stream).ReadByte();
+            Assert.Equal(tag, i);
+
+            stream.Seek(0, SeekOrigin.Begin);
+            var newBanana = serializer.Read(new BinaryReader(stream));
+            Assert.Equal(banana, newBanana);
+        }
+    }
+
+    [Fact]
+    public static void GeneratedNestedListEqualsWorks()
+    {
+        var equalityComparer = new EnumerableEqualityComparer<IEnumerable<IEnumerable<BasicEnum>>>(
+            new EnumerableEqualityComparer<IEnumerable<BasicEnum>>(
+                new EnumerableEqualityComparer<BasicEnum>(EqualityComparer<BasicEnum>.Default)
+            )
+        );
+        CollisionCounter collisionCounter = new();
+        GenTwoContainsNestedList.Sample(
+            example =>
+            {
+                var equal = equalityComparer.Equals(example.e1.TheList, example.e2.TheList);
+
+                if (equal)
+                {
+                    Assert.Equal(example.e1, example.e2);
+                    Assert.True(example.e1 == example.e2);
+                    Assert.False(example.e1 != example.e2);
+                    Assert.Equal(example.e1.ToString(), example.e2.ToString());
+                    Assert.Equal(example.e1.GetHashCode(), example.e2.GetHashCode());
+                }
+                else
+                {
+                    Assert.NotEqual(example.e1, example.e2);
+                    Assert.False(example.e1 == example.e2);
+                    Assert.True(example.e1 != example.e2);
+                    Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                    collisionCounter.Add(example.e1.GetHashCode() == example.e2.GetHashCode());
+                }
+            },
+            iter: 10_000
+        );
+        collisionCounter.AssertCollisionsLessThan(0.05);
     }
 
     [Fact]
@@ -516,5 +793,208 @@ public static partial class BSATNRuntimeTests
                 ]
             ).ToString()
         );
+#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
+        Assert.Equal(
+            "ContainsNestedList { TheList = [ [ [ X(1), null ], null ], null ] }",
+            new ContainsNestedList(
+                [
+                    [
+                        [new BasicEnum.X(1), null],
+                        null,
+                    ],
+                    null,
+                ]
+            ).ToString()
+        );
+#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
+    }
+
+    [Fact]
+    public static void NonNullableStringSerializationRejectsNull()
+    {
+        var stream = new MemoryStream();
+        var writer = new BinaryWriter(stream);
+
+        var serializer = new BSATN.String();
+        var ex = Assert.Throws<ArgumentNullException>(() => serializer.Write(writer, null!));
+        Assert.Contains("nullable string", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public static void NullableStringOptionRoundTripsNull()
+    {
+        var stream = new MemoryStream();
+        var writer = new BinaryWriter(stream);
+        var serializer = new BSATN.RefOption<string, BSATN.String>();
+
+        serializer.Write(writer, null);
+
+        stream.Seek(0, SeekOrigin.Begin);
+        var reader = new BinaryReader(stream);
+        var value = serializer.Read(reader);
+        Assert.Null(value);
+    }
+
+    [Type]
+    partial struct ContainsEnum
+    {
+        public Banana TheBanana;
+        public int BananaCount;
+    }
+
+    static readonly Gen<(Banana, int)> GenContainsEnum = Gen.Select(
+        Gen.Enum<Banana>(),
+        Gen.Int[0, 3]
+    );
+    static readonly Gen<((Banana, int), (Banana, int))> GenTwoContainsEnum = Gen.Select(
+        GenContainsEnum,
+        GenContainsEnum
+    );
+
+    [Fact]
+    public static void GeneratedEnumEqualsWorks()
+    {
+        GenTwoContainsEnum.Sample(
+            example =>
+            {
+                var ((b1, c1), (b2, c2)) = example;
+                var struct1 = new ContainsEnum { TheBanana = b1, BananaCount = c1 };
+                var struct2 = new ContainsEnum { TheBanana = b2, BananaCount = c2 };
+
+                if ((b1, c1) == (b2, c2))
+                {
+                    Assert.True(struct1.Equals(struct2));
+                    Assert.Equal(struct1, struct2);
+                }
+                else
+                {
+                    Assert.False(struct1.Equals(struct2));
+                    Assert.NotEqual(struct1, struct2);
+                }
+            },
+            iter: 10_000
+        );
+    }
+
+    [Fact]
+    public static void UUidRoundTrip()
+    {
+        var u1 = Uuid.NIL;
+        var s = u1.ToString();
+        var u2 = Uuid.Parse(s);
+        Assert.Equal(u1, u2);
+        Assert.Equal(u1.ToGuid(), u2.ToGuid());
+        Assert.Equal(s, u2.ToString());
+    }
+
+    [Fact]
+    public static void UuidToString()
+    {
+        foreach (
+            var uuid in new[]
+            {
+                Uuid.NIL,
+                new Uuid(new U128(0x0102030405060708UL, 0x090A0B0C0D0E0F10UL)),
+                Uuid.MAX,
+            }
+        )
+        {
+            var s = uuid.ToString();
+            var uuid2 = Uuid.Parse(s);
+            Assert.Equal(uuid, uuid2);
+            var g = new Guid(s);
+            Assert.Equal(s, g.ToString()); // same canonical form
+        }
+    }
+
+    [Fact]
+    public static void WrapAround()
+    {
+        // Check wraparound behavior
+        var counter = int.MaxValue;
+        var ts = Timestamp.UNIX_EPOCH;
+
+        _ = Uuid.FromCounterV7(ref counter, ts, new byte[4]);
+
+        Assert.Equal(0, counter);
+    }
+
+    [Fact]
+    public static void NegativeTimestampThrows()
+    {
+        var counter = 0;
+        var ts = new Timestamp(-1);
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => Uuid.FromCounterV7(ref counter, ts, new byte[4])
+        );
+
+        Assert.Contains("timestamp", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public static void UuidOrdered()
+    {
+        var u1 = new Uuid(new U128(1, 0));
+        var u2 = new Uuid(new U128(2, 0));
+
+        Assert.True(u1 < u2);
+        Assert.True(u2 > u1);
+        Assert.Equal(u1, u1);
+        Assert.NotEqual(u1, u2);
+
+        // Check we start from zero
+        var counter = 0;
+        var ts = Timestamp.UNIX_EPOCH;
+
+        var uStart = Uuid.FromCounterV7(ref counter, ts, new byte[4]);
+        Assert.Equal(0, uStart.GetCounter());
+
+        // Check ordering across many UUIDs
+        const int total = 10_000_000;
+        counter = int.MaxValue - total;
+
+        var uuids = Enumerable
+            .Range(0, 1000)
+            .Select(_ =>
+            {
+                var bytes = new byte[4];
+                RandomNumberGenerator.Fill(bytes);
+                return Uuid.FromCounterV7(ref counter, ts, bytes);
+            })
+            .ToList();
+
+        for (var i = 0; i < uuids.Count - 1; i++)
+        {
+            var a = uuids[i];
+            var b = uuids[i + 1];
+
+            Assert.Equal(Uuid.UuidVersion.V7, a.GetVersion());
+
+            Assert.True(a < b, $"UUIDs are not ordered at {i}: {a} !< {b}");
+            Assert.True(
+                a.GetCounter() < b.GetCounter(),
+                $"UUID counters are not ordered at {i}: {a.GetCounter()} !< {b.GetCounter()}"
+            );
+        }
+    }
+
+    [Fact]
+    public static void UuidVersion()
+    {
+        var u = Uuid.NIL;
+        Assert.Equal(Uuid.UuidVersion.Nil, u.GetVersion());
+
+        u = Uuid.MAX;
+        Assert.Equal(Uuid.UuidVersion.Max, u.GetVersion());
+
+        var randomBytes = new byte[16];
+        RandomNumberGenerator.Fill(randomBytes);
+        u = Uuid.FromRandomBytesV4(randomBytes);
+        Assert.Equal(Uuid.UuidVersion.V4, u.GetVersion());
+
+        var counter = 0;
+        u = Uuid.FromCounterV7(ref counter, Timestamp.UNIX_EPOCH, randomBytes.AsSpan()[..4]);
+        Assert.Equal(Uuid.UuidVersion.V7, u.GetVersion());
     }
 }

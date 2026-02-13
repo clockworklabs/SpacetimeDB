@@ -1,11 +1,12 @@
-use std::any::TypeId;
-use std::ops::{Index, IndexMut};
-use std::rc::Rc;
-use std::sync::Arc;
-
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
 use crate::WithTypespace;
+use core::any::TypeId;
+use core::ops::{Index, IndexMut};
+use ethnum::{i256, u256};
+use smallvec::SmallVec;
+use std::rc::Rc;
+use std::sync::Arc;
 
 /// An error that occurs when attempting to resolve a type.
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -21,7 +22,7 @@ pub enum TypeRefError {
 
 /// A `Typespace` represents the typing context in SATS.
 ///
-/// That is, this is the `Δ` or `Γ` you'll see in type theory litterature.
+/// That is, this is the `Δ` or `Γ` you'll see in type theory literature.
 ///
 /// We use (sort of) [deBrujin indices](https://en.wikipedia.org/wiki/De_Bruijn_index)
 /// to represent our type variables.
@@ -116,6 +117,9 @@ impl Typespace {
     /// Returns the `AlgebraicType` that `r` resolves to in the context of the `Typespace`.
     ///
     /// Panics if `r` is not known by the `Typespace`.
+    ///
+    /// Note, this is not recursive.
+    /// To resolve all nested refs, call `resolve_refs()` on the result.
     pub fn resolve(&self, r: AlgebraicTypeRef) -> WithTypespace<'_, AlgebraicType> {
         self.with_type(&self[r])
     }
@@ -290,6 +294,7 @@ pub trait GroundSpacetimeType {
 /// - `String` and `&str`, utf-8 string data
 /// - `()`, the unit type
 /// - `Option<T> where T: SpacetimeType`
+/// - `Result<T, E> where T: SpacetimeType, E: SpacetimeType`
 /// - `Vec<T> where T: SpacetimeType`
 ///
 /// (Storing collections in rows of a database table is a form of [denormalization](https://en.wikipedia.org/wiki/Denormalization).)
@@ -312,8 +317,6 @@ pub trait SpacetimeType {
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
 }
 
-use ethnum::{i256, u256};
-use smallvec::SmallVec;
 pub use spacetimedb_bindings_macro::SpacetimeType;
 
 /// A trait for types that can build a [`Typespace`].
@@ -410,8 +413,10 @@ impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
 impl_st!([T, const N: usize] SmallVec<[T; N]>, ts => <[T]>::make_type(ts));
 impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
+impl_st!([] spacetimedb_primitives::ArgId, AlgebraicType::U64);
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
 impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::ViewId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::IndexId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::SequenceId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::ConstraintId, AlgebraicType::U32);
@@ -424,6 +429,16 @@ impl_st!([] bytes::Bytes, AlgebraicType::bytes());
 
 #[cfg(feature = "bytestring")]
 impl_st!([] bytestring::ByteString, AlgebraicType::String);
+
+impl<T, E> SpacetimeType for Result<T, E>
+where
+    T: SpacetimeType,
+    E: SpacetimeType,
+{
+    fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::result(T::make_type(typespace), E::make_type(typespace))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -447,7 +462,7 @@ mod tests {
 
         fn assert_not_valid(ty: AlgebraicType) {
             let typespace = Typespace::new(vec![ty.clone()]);
-            assert!(!typespace.is_valid_for_client_code_generation(), "{:?}", ty);
+            assert!(!typespace.is_valid_for_client_code_generation(), "{ty:?}");
         }
         assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
         assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));
@@ -464,5 +479,18 @@ mod tests {
         assert_not_valid(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
             bad_inner_1.clone(),
         ))));
+
+        assert_not_valid(AlgebraicType::result(bad_inner_1.clone(), AlgebraicType::U8));
+        assert_not_valid(AlgebraicType::result(AlgebraicType::U8, bad_inner_2.clone()));
+
+        assert_not_valid(AlgebraicType::result(
+            AlgebraicType::array(AlgebraicType::result(bad_inner_1.clone(), AlgebraicType::U8)),
+            AlgebraicType::U8,
+        ));
+
+        assert_not_valid(AlgebraicType::result(
+            AlgebraicType::U8,
+            AlgebraicType::array(AlgebraicType::result(AlgebraicType::U8, bad_inner_2.clone())),
+        ));
     }
 }

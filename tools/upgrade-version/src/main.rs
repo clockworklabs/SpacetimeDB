@@ -1,20 +1,31 @@
 #![allow(clippy::disallowed_macros)]
 
-use clap::{Arg, Command};
+use anyhow::Context;
+use chrono::{Datelike, Local};
+use clap::{Arg, ArgGroup, Command};
 use duct::cmd;
 use regex::Regex;
+use semver::Version;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-fn process_license_file(upgrade_version: &str) {
-    let path = "LICENSE.txt";
+fn process_license_file(path: &str, version: &str) {
     let file = fs::read_to_string(path).unwrap();
-    let re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)$").unwrap();
-    let file = re.replace_all(&file, |caps: &regex::Captures| {
-        format!("{}{}", &caps[1], upgrade_version)
-    });
+
+    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)\r?$").unwrap();
+    let file = version_re.replace_all(&file, |caps: &regex::Captures| format!("{}{}", &caps[1], version));
+
+    let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}\r?$").unwrap();
+    let new_date = Local::now()
+        .with_year(Local::now().year() + 5)
+        .unwrap()
+        .format("Change Date:          %Y-%m-%d")
+        .to_string();
+
+    let file = date_re.replace_all(&file, new_date.as_str());
+
     fs::write(path, &*file).unwrap();
 }
 
@@ -23,6 +34,88 @@ fn edit_toml(path: impl AsRef<Path>, f: impl FnOnce(&mut toml_edit::DocumentMut)
     let mut doc = fs::read_to_string(path)?.parse::<toml_edit::DocumentMut>()?;
     f(&mut doc);
     fs::write(path, doc.to_string())?;
+    Ok(())
+}
+
+// Update only the first occurrence of the top-level "version" field in a JSON file,
+// preserving original formatting and key order.
+fn rewrite_json_version_inplace(path: impl AsRef<Path>, new_version: &str) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    let contents = fs::read_to_string(path)?;
+    let re = Regex::new(r#"(?m)^(\s*\"version\"\s*:\s*\")(.*?)(\")"#).unwrap();
+    let mut replaced = false;
+    let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
+        replaced = true;
+        format!("{}{}{}", &caps[1], new_version, &caps[3])
+    });
+    if !replaced {
+        anyhow::bail!(
+            "Could not find top-level \"version\" field to update in {}",
+            path.display()
+        );
+    }
+    fs::write(path, updated.as_ref())?;
+    Ok(())
+}
+
+pub fn rewrite_package_json_dependency_version_inplace(
+    path: impl AsRef<Path>,
+    new_version: &str,
+) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    let contents = fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+
+    // This regex matches:
+    // "spacetimedb": "1.5.*" → capturing leading whitespace and quotes, then replacing only the version.
+    let re = Regex::new(r#"(?m)^(\s*"spacetimedb"\s*:\s*")([^"]*)(")"#).expect("Invalid regex");
+
+    let mut replaced = false;
+    let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
+        replaced = true;
+        format!("{}{}{}", &caps[1], new_version, &caps[3])
+    });
+
+    if !replaced {
+        anyhow::bail!(
+            "Could not find \"spacetimedb\" dependency to update in {}",
+            path.display()
+        );
+    }
+
+    fs::write(path, updated.as_ref()).with_context(|| format!("Failed to write updated file to {}", path.display()))?;
+
+    Ok(())
+}
+
+fn rewrite_cmake_version_inplace(path: impl AsRef<Path>, new_version: &str) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    let contents = fs::read_to_string(path)?;
+
+    let mut updated = contents.clone();
+    let mut replaced_any = false;
+
+    // (?s) enables dotall mode so . matches newlines
+    // Matches: project(...VERSION <version>...) across multiple lines
+    let re_project = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([\d\.]+)").unwrap();
+    let replaced_project = re_project.replacen(&updated, 1, |caps: &regex::Captures| {
+        replaced_any = true;
+        format!("{}{}", &caps[1], new_version)
+    });
+    updated = replaced_project.to_string();
+
+    // Matches: set(SPACETIMEDB_CPP_VERSION "1.12.0" ...)
+    let re_set = Regex::new(r#"(?m)(\bset\(SPACETIMEDB_CPP_VERSION\s+\")(.*?)(\"\s+CACHE\s+STRING)"#).unwrap();
+    let replaced_set = re_set.replacen(&updated, 1, |caps: &regex::Captures| {
+        replaced_any = true;
+        format!("{}{}{}", &caps[1], new_version, &caps[3])
+    });
+    updated = replaced_set.to_string();
+
+    if !replaced_any {
+        anyhow::bail!("Could not find CMake version to update in {}", path.display());
+    }
+
+    fs::write(path, updated)?;
     Ok(())
 }
 
@@ -38,14 +131,62 @@ fn main() -> anyhow::Result<()> {
         .arg(
             Arg::new("spacetime-path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value("../..")
                 .long("spacetime-path")
-                .help("The path to SpacetimeDB"),
+                .help("The path to SpacetimeDB. If not provided, uses the current directory."),
+        )
+        .arg(
+            Arg::new("typescript")
+                .long("typescript")
+                .action(clap::ArgAction::SetTrue)
+                .help("Also bump the version of the TypeScript SDK (crates/bindings-typescript/package.json)"),
+        )
+        .arg(
+            Arg::new("rust-and-cli")
+                .long("rust-and-cli")
+                .action(clap::ArgAction::SetTrue)
+                .help("Whether to update Rust workspace TOMLs, CLI template, and license files (default: true)"),
+        )
+        .arg(
+            Arg::new("csharp")
+                .long("csharp")
+                .action(clap::ArgAction::SetTrue)
+                .help("Also bump versions in C# SDK and templates"),
+        )
+        .arg(
+            Arg::new("cpp")
+                .long("cpp")
+                .action(clap::ArgAction::SetTrue)
+                .help("Also bump the version in C++ bindings (crates/bindings-cpp/CMakeLists.txt)"),
+        )
+        .arg(
+            Arg::new("all")
+                .long("all")
+                .action(clap::ArgAction::SetTrue)
+                .help("Update all targets (equivalent to --typescript --rust-and-cli --csharp --cpp)")
+                .conflicts_with_all(["typescript", "rust-and-cli", "csharp", "cpp"]),
+        )
+        .arg(
+            Arg::new("accept-snapshots")
+                .long("accept-snapshots")
+                .action(clap::ArgAction::SetTrue)
+                .help("If there are snapshots to review automatically accept them all."),
+        )
+        .group(
+            ArgGroup::new("update-targets")
+                .args(["all", "typescript", "rust-and-cli", "csharp", "cpp"])
+                .required(true)
+                .multiple(true),
         )
         .get_matches();
 
-    let version = matches.get_one::<String>("upgrade_version").unwrap();
-    env::set_current_dir(matches.get_one::<PathBuf>("spacetime-path").unwrap()).ok();
+    let unparsed_version_arg = matches.get_one::<String>("upgrade_version").unwrap();
+    let semver = Version::parse(unparsed_version_arg).expect("Invalid semver provided to upgrade-version");
+    let full_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
+    let wildcard_patch = format!("{}.{}.*", semver.major, semver.minor);
+
+    if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
+        env::set_current_dir(path).ok();
+    }
 
     let current_dir = env::current_dir().expect("No current directory!");
     let dir_name = current_dir.file_name().expect("No current directory!");
@@ -53,26 +194,181 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
     }
 
-    // root Cargo.toml
-    edit_toml("Cargo.toml", |doc| {
-        doc["workspace"]["package"]["version"] = toml_edit::value(version);
-        for (key, dep) in doc["workspace"]["dependencies"]
-            .as_table_like_mut()
-            .expect("workspace.dependencies is not a table")
-            .iter_mut()
-        {
-            if key.get().starts_with("spacetime") {
-                dep["version"] = toml_edit::value(version)
+    if matches.get_flag("rust-and-cli") || matches.get_flag("all") {
+        // Use `=` for dependency versions, to avoid issues where Cargo automatically rolls forward to later minor versions.
+        // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
+        let dep_version = format!("={full_version}");
+
+        // root Cargo.toml
+        edit_toml("Cargo.toml", |doc| {
+            doc["workspace"]["package"]["version"] = toml_edit::value(full_version.clone());
+            for (key, dep) in doc["workspace"]["dependencies"]
+                .as_table_like_mut()
+                .expect("workspace.dependencies is not a table")
+                .iter_mut()
+            {
+                if key.get().starts_with("spacetime") {
+                    dep["version"] = toml_edit::value(dep_version.clone())
+                }
             }
+        })?;
+
+        process_license_file("LICENSE.txt", &full_version);
+        process_license_file("licenses/BSL.txt", &full_version);
+        // Rebuild `Cargo.lock`
+        println!("$> cargo check");
+        cmd!("cargo", "check").run().expect("Cargo check failed!");
+
+        println!("$> pnpm install");
+        cmd!("pnpm", "install").run().expect("pnpm run build failed!");
+
+        println!("$> pnpm run build");
+        cmd!("pnpm", "run", "build").run().expect("pnpm run build failed!");
+
+        println!("$> pnpm --dir templates/chat-react-ts generate");
+        cmd!("pnpm", "--dir", "templates/chat-react-ts", "generate")
+            .run()
+            .expect("pnpm generate failed!");
+
+        if matches.get_flag("accept-snapshots") {
+            // Generate and auto-accept snapshots
+            println!("$> INSTA_UPDATE=always cargo test -p spacetimedb-codegen --test codegen");
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .env("INSTA_UPDATE", "always")
+                .run()
+                .expect("cargo test -p spacetimedb-codegen --test codegen (INSTA_UPDATE=always) failed!");
+        } else {
+            println!("$> cargo install cargo-insta");
+            cmd!("cargo", "install", "cargo-insta")
+                .run()
+                .expect("cargo install cargo-insta failed!");
+
+            // Initial test - this will generate snapshots. This is expected to fail.
+            println!("$> cargo test -p spacetimedb-codegen --test codegen");
+            let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen").run();
+
+            // Review the new snapshots
+            println!("$> cargo insta review");
+            cmd!("cargo", "insta", "review")
+                .run()
+                .expect("cargo insta review failed!");
+
+            // Test again now that the user has had a chance to accept the snapshots
+            println!("$> cargo test -p spacetimedb-codegen --test codegen");
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen", "--test", "codegen")
+                .run()
+                .expect("cargo test -p spacetimedb-codegen --test codegen failed!");
         }
-    })?;
+    }
 
-    edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
-        doc["dependencies"]["spacetimedb"] = toml_edit::value(version);
-    })?;
+    if matches.get_flag("typescript") || matches.get_flag("all") {
+        rewrite_json_version_inplace("crates/bindings-typescript/package.json", &full_version)?;
 
-    process_license_file(version);
-    cmd!("cargo", "check").run().expect("Cargo check failed!");
+        rewrite_package_json_dependency_version_inplace(
+            "crates/cli/src/subcommands/project/typescript/package._json",
+            &wildcard_patch,
+        )?;
+    }
 
+    if matches.get_flag("csharp") || matches.get_flag("all") {
+        // Helpers for XML edits
+        fn rewrite_xml_tag_value(path: &str, tag: &str, new_value: &str) -> anyhow::Result<()> {
+            let contents = fs::read_to_string(path)?;
+            let re = Regex::new(&format!(r"(?ms)(<\s*{tag}\s*>\s*)([^<]*?)(\s*<\s*/\s*{tag}\s*>)")).unwrap();
+            let mut replaced = false;
+            let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
+                replaced = true;
+                format!("{}{}{}", &caps[1], new_value, &caps[3])
+            });
+            if replaced {
+                fs::write(path, updated.as_ref())?;
+            }
+            Ok(())
+        }
+
+        fn rewrite_csproj_package_ref_version(path: &str, package: &str, new_version: &str) -> anyhow::Result<()> {
+            let contents = fs::read_to_string(path)?;
+            let mut changed = false;
+            // Version as attribute
+            let re_attr = Regex::new(&format!(
+                r#"(?ms)(<PackageReference[^>]*?Include="{}"[^>]*?\sVersion=")(.*?)(")"#,
+                regex::escape(package)
+            ))
+            .unwrap();
+            let updated_attr = re_attr.replace_all(&contents, |caps: &regex::Captures| {
+                changed = true;
+                format!("{}{}{}", &caps[1], new_version, &caps[3])
+            });
+
+            // Version as child element
+            let re_child = Regex::new(&format!(
+                r#"(?ms)(<PackageReference[^>]*?Include="{}"[^>]*?>.*?<Version>)([^<]*?)(</Version>)"#,
+                regex::escape(package)
+            ))
+            .unwrap();
+            let updated = re_child.replace_all(updated_attr.as_ref(), |caps: &regex::Captures| {
+                changed = true;
+                format!("{}{}{}", &caps[1], new_version, &caps[3])
+            });
+
+            if changed {
+                fs::write(path, updated.as_ref())?;
+            }
+            Ok(())
+        }
+
+        // 1) Client SDK csproj
+        let client_sdk = "sdks/csharp/SpacetimeDB.ClientSDK.csproj";
+        rewrite_xml_tag_value(client_sdk, "Version", &full_version)?;
+        rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &full_version)?;
+        // Update SpacetimeDB.BSATN.Runtime dependency to major.minor.*
+        rewrite_csproj_package_ref_version(client_sdk, "SpacetimeDB.BSATN.Runtime", &wildcard_patch)?;
+
+        // Also bump the C# SDK package.json version (preserve formatting)
+        rewrite_json_version_inplace("sdks/csharp/package.json", &full_version)?;
+
+        // 2) StdbModule.csproj files: SpacetimeDB.Runtime dependency -> major.minor
+        let stdb_modules: &[&str] = &[
+            "demo/Blackholio/server-csharp/StdbModule.csproj",
+            "templates/chat-console-cs/spacetimedb/StdbModule.csproj",
+            "sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
+        ];
+        for path in stdb_modules {
+            rewrite_csproj_package_ref_version(path, "SpacetimeDB.Runtime", &wildcard_patch)?;
+        }
+
+        // 3) Version in BSATN.Runtime.csproj, Runtime.csproj, BSATN.Codegen.csproj, Codegen.csproj
+        rewrite_xml_tag_value(
+            "crates/bindings-csharp/BSATN.Runtime/BSATN.Runtime.csproj",
+            "Version",
+            &full_version,
+        )?;
+        rewrite_xml_tag_value(
+            "crates/bindings-csharp/Runtime/Runtime.csproj",
+            "Version",
+            &full_version,
+        )?;
+        rewrite_xml_tag_value(
+            "crates/bindings-csharp/BSATN.Codegen/BSATN.Codegen.csproj",
+            "Version",
+            &full_version,
+        )?;
+        rewrite_xml_tag_value(
+            "crates/bindings-csharp/Codegen/Codegen.csproj",
+            "Version",
+            &full_version,
+        )?;
+
+        // 4) Template StdbModule.csproj: SpacetimeDB.Runtime dependency -> major.minor.*
+        rewrite_csproj_package_ref_version(
+            "templates/basic-cs/spacetimedb/StdbModule.csproj",
+            "SpacetimeDB.Runtime",
+            &wildcard_patch,
+        )?;
+    }
+    if matches.get_flag("cpp") || matches.get_flag("all") {
+        rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
+        rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &full_version)?;
+    }
     Ok(())
 }

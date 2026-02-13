@@ -1,26 +1,45 @@
-use std::borrow::Cow;
-
-use anyhow::Context;
-use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
-use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
-
-use crate::energy::{EnergyQuanta, ReducerBudget};
+use self::wasm_instance_env::WasmInstanceEnv;
+use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostActor, WasmModuleInstance};
+use super::wasm_common::{abi, ModuleCreationError};
+use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
 use crate::module_host_context::ModuleCreationContext;
+use crate::util::jobs::AllocatedJobCore;
+use anyhow::Context;
+use spacetimedb_paths::server::ServerDataDir;
+use std::borrow::Cow;
+use std::time::Duration;
+use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
+pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
+#[cfg(unix)]
+mod pooling_stack_creator;
 mod wasm_instance_env;
 mod wasmtime_module;
-
-use wasmtime_module::WasmtimeModule;
-
-use self::wasm_instance_env::WasmInstanceEnv;
-
-use super::wasm_common::module_host_actor::InitializationError;
-use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
 pub struct WasmtimeRuntime {
     engine: Engine,
     linker: Box<Linker<WasmInstanceEnv>>,
+}
+
+const EPOCH_TICK_LENGTH: Duration = Duration::from_millis(10);
+
+pub(crate) const EPOCH_TICKS_PER_SECOND: u64 = ticks_in_duration(Duration::from_secs(1));
+
+pub(crate) const fn ticks_in_duration(duration: Duration) -> u64 {
+    duration.div_duration_f64(EPOCH_TICK_LENGTH) as u64
+}
+
+pub(crate) fn epoch_ticker(mut on_tick: impl 'static + Send + FnMut() -> Option<()>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
+        loop {
+            interval.tick().await;
+            let Some(()) = on_tick() else {
+                return;
+            };
+        }
+    });
 }
 
 impl WasmtimeRuntime {
@@ -29,7 +48,23 @@ impl WasmtimeRuntime {
         config
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
             .consume_fuel(true)
-            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+            .epoch_interruption(true)
+            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable)
+            // We need async support to enable suspending execution of procedures
+            // when waiting for e.g. HTTP responses or the transaction lock.
+            // We don't enable either fuel-based or epoch-based yielding
+            // (see https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.epoch_deadline_async_yield_and_update
+            // and https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.fuel_async_yield_interval)
+            // so reducers will always execute to completion during the first `Future::poll` call,
+            // and procedures will only yield when performing an asynchronous operation.
+            // These futures are executed on a separate single-threaded executor not related to the "global" Tokio runtime,
+            // which is responsible only for executing WASM. See `crate::util::jobs` for this infrastructure.
+            .async_support(true);
+
+        #[cfg(unix)]
+        config
+            .async_stack_size(self::pooling_stack_creator::ASYNC_STACK_SIZE)
+            .with_host_stack(self::pooling_stack_creator::PoolingStackCreator::new());
 
         // Offer a compile-time flag for enabling perfmap generation,
         // so `perf` can display JITted symbol names.
@@ -38,38 +73,48 @@ impl WasmtimeRuntime {
         #[cfg(feature = "perfmap")]
         config.profiler(wasmtime::ProfilingStrategy::PerfMap);
 
-        // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
         if let Some(data_dir) = data_dir {
-            let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+            let mut cache_config = wasmtime::CacheConfig::new();
+            cache_config.with_directory(data_dir.wasmtime_cache().0);
+            match wasmtime::Cache::new(cache_config) {
+                Ok(cache) => {
+                    config.cache(Some(cache));
+                }
+                Err(e) => {
+                    // caching is just an optimization, so if it fails, just log and continue
+                    tracing::warn!("failed to set up wasmtime cache: {e:#}")
+                }
+            }
         }
 
         let engine = Engine::new(&config).unwrap();
+
+        let weak_engine = engine.weak();
+        epoch_ticker(move || {
+            let engine = weak_engine.upgrade()?;
+            engine.increment_epoch();
+            Some(())
+        });
 
         let mut linker = Box::new(Linker::new(&engine));
         WasmtimeModule::link_imports(&mut linker).unwrap();
 
         WasmtimeRuntime { engine, linker }
     }
+}
 
-    fn set_cache_config(config: &mut wasmtime::Config, cache_dir: WasmtimeCacheDir) -> anyhow::Result<()> {
-        use std::io::Write;
-        let cache_config = toml::toml! {
-            // see <https://docs.wasmtime.dev/cli-cache.html> for options here
-            [cache]
-            enabled = true
-            directory = (toml::Value::try_from(cache_dir.0)?)
-        };
-        let tmpfile = tempfile::NamedTempFile::new()?;
-        write!(&tmpfile, "{}", cache_config)?;
-        config.cache_config_load(tmpfile.path())?;
-        Ok(())
-    }
+pub type Module = WasmModuleHostActor<WasmtimeModule>;
+pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
+impl WasmtimeRuntime {
     pub fn make_actor(
         &self,
         mcc: ModuleCreationContext,
-    ) -> Result<impl super::module_host::Module, ModuleCreationError> {
-        let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+        program_bytes: &[u8],
+        core: AllocatedJobCore,
+    ) -> anyhow::Result<super::module_host::ModuleWithInstance> {
+        let module =
+            wasmtime::Module::new(&self.engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -85,7 +130,12 @@ impl WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+        let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
+        Ok(super::module_host::ModuleWithInstance::Wasm {
+            module,
+            executor: core.spawn_async_executor(),
+            init_inst: Box::new(init_inst),
+        })
     }
 }
 
@@ -99,30 +149,27 @@ pub enum WasmError {
 #[derive(Copy, Clone)]
 struct WasmtimeFuel(u64);
 
-impl WasmtimeFuel {
-    /// 1000 energy quanta == 1 wasmtime fuel unit
-    const QUANTA_MULTIPLIER: u64 = 1_000;
-}
+impl WasmtimeFuel {}
 
-impl From<ReducerBudget> for WasmtimeFuel {
-    fn from(v: ReducerBudget) -> Self {
+impl From<FunctionBudget> for WasmtimeFuel {
+    fn from(v: FunctionBudget) -> Self {
         // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
         // would be u64::MAX even if it did nothing. ask how I know.
-        WasmtimeFuel(v.get() / Self::QUANTA_MULTIPLIER)
+        WasmtimeFuel(v.get())
     }
 }
 
-impl From<WasmtimeFuel> for ReducerBudget {
+impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
-        ReducerBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+        FunctionBudget::new(v.0)
     }
 }
 
 impl From<WasmtimeFuel> for EnergyQuanta {
     fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0) * u128::from(WasmtimeFuel::QUANTA_MULTIPLIER))
+        EnergyQuanta::new(u128::from(fuel.0))
     }
 }
 
@@ -163,6 +210,18 @@ impl WasmPointee for spacetimedb_lib::Identity {
     }
 }
 
+impl WasmPointee for spacetimedb_lib::ConnectionId {
+    type Pointer = u32;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
+        let bytes = self.as_le_byte_array();
+        mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
+        Ok(Self::from_le_byte_array(*mem.deref_array(ptr)?))
+    }
+}
+
 type WasmPtr<T> = <T as WasmPointee>::Pointer;
 
 /// Wraps access to WASM linear memory with some additional functionality.
@@ -182,12 +241,15 @@ impl Mem {
 
     /// Creates and returns a view into the actual memory `store`.
     /// This view allows for reads and writes.
-    pub fn view_and_store_mut<'a, T>(&self, store: impl Into<StoreContextMut<'a, T>>) -> (&'a mut MemView, &'a mut T) {
+    pub fn view_and_store_mut<'a, T: 'static>(
+        &self,
+        store: impl Into<StoreContextMut<'a, T>>,
+    ) -> (&'a mut MemView, &'a mut T) {
         let (mem, store_data) = self.memory.data_and_store_mut(store);
         (MemView::from_slice_mut(mem), store_data)
     }
 
-    fn view<'a, T: 'a>(&self, store: impl Into<StoreContext<'a, T>>) -> &'a MemView {
+    fn view<'a, T: 'static>(&self, store: impl Into<StoreContext<'a, T>>) -> &'a MemView {
         MemView::from_slice(self.memory.data(store))
     }
 }
@@ -224,7 +286,7 @@ impl MemView {
 
     /// Lossily get a utf8 slice of wasm memory given a pointer and a length, converting any
     /// non-utf8 bytes to `U+FFFD REPLACEMENT CHARACTER`.
-    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<str>, MemError> {
+    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<'_, str>, MemError> {
         self.deref_slice(offset, len).map(String::from_utf8_lossy)
     }
 

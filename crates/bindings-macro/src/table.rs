@@ -40,7 +40,7 @@ impl TableAccess {
 
 struct ScheduledArg {
     span: Span,
-    reducer: Path,
+    reducer_or_procedure: Path,
     at: Option<Ident>,
 }
 
@@ -61,6 +61,7 @@ impl IndexArg {
 
 enum IndexType {
     BTree { columns: Vec<Ident> },
+    Hash { columns: Vec<Ident> },
     Direct { column: Ident },
 }
 
@@ -113,7 +114,7 @@ impl TableArgs {
 impl ScheduledArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let span = meta.path.span();
-        let mut reducer = None;
+        let mut reducer_or_procedure = None;
         let mut at = None;
 
         meta.parse_nested_meta(|meta| {
@@ -126,16 +127,26 @@ impl ScheduledArg {
                     }
                 })
             } else {
-                check_duplicate_msg(&reducer, &meta, "can only specify one scheduled reducer")?;
-                reducer = Some(meta.path);
+                check_duplicate_msg(
+                    &reducer_or_procedure,
+                    &meta,
+                    "can only specify one scheduled reducer or procedure",
+                )?;
+                reducer_or_procedure = Some(meta.path);
             }
             Ok(())
         })?;
 
-        let reducer = reducer.ok_or_else(|| {
-            meta.error("must specify scheduled reducer associated with the table: scheduled(reducer_name)")
+        let reducer_or_procedure = reducer_or_procedure.ok_or_else(|| {
+            meta.error(
+                "must specify scheduled reducer or procedure associated with the table: scheduled(function_name)",
+            )
         })?;
-        Ok(Self { span, reducer, at })
+        Ok(Self {
+            span,
+            reducer_or_procedure,
+            at,
+        })
     }
 }
 
@@ -154,6 +165,10 @@ impl IndexArg {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_btree(meta)?);
                 }
+                sym::hash => {
+                    check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
+                    algo = Some(Self::parse_hash(meta)?);
+                }
                 sym::direct => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_direct(meta)?);
@@ -163,13 +178,16 @@ impl IndexArg {
         })?;
         let name = name.ok_or_else(|| meta.error("missing index name, e.g. name = my_index"))?;
         let kind = algo.ok_or_else(|| {
-            meta.error("missing index algorithm, e.g., `btree(columns = [col1, col2])` or `direct(column = col1)`")
+            meta.error(
+                "missing index algorithm, e.g., `btree(columns = [col1, col2])`, \
+                `hash(columns = [col1, col2])`, or `direct(column = col1)`",
+            )
         })?;
 
         Ok(IndexArg::new(name, kind))
     }
 
-    fn parse_btree(meta: ParseNestedMeta) -> syn::Result<IndexType> {
+    fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
         let mut columns = None;
         meta.parse_nested_meta(|meta| {
             match_meta!(match meta {
@@ -187,9 +205,21 @@ impl IndexArg {
             });
             Ok(())
         })?;
+        Ok(columns)
+    }
+
+    fn parse_btree(meta: ParseNestedMeta) -> syn::Result<IndexType> {
+        let columns = Self::parse_columns(&meta)?;
         let columns = columns
             .ok_or_else(|| meta.error("must specify columns for btree index, e.g. `btree(columns = [col1, col2])`"))?;
         Ok(IndexType::BTree { columns })
+    }
+
+    fn parse_hash(meta: ParseNestedMeta) -> syn::Result<IndexType> {
+        let columns = Self::parse_columns(&meta)?;
+        let columns = columns
+            .ok_or_else(|| meta.error("must specify columns for hash index, e.g. `hash(columns = [col1, col2])`"))?;
+        Ok(IndexType::Hash { columns })
     }
 
     fn parse_direct(meta: ParseNestedMeta) -> syn::Result<IndexType> {
@@ -211,7 +241,7 @@ impl IndexArg {
         Ok(IndexType::Direct { column })
     }
 
-    /// Parses an inline `#[index(btree)]` or `#[index(direct)]` attribute on a field.
+    /// Parses an inline `#[index(btree)]`, `#[index(hash)]`, or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
         attr.parse_nested_meta(|meta| {
@@ -219,6 +249,12 @@ impl IndexArg {
                 sym::btree => {
                     check_duplicate_msg(&kind, &meta, "index type specified twice")?;
                     kind = Some(IndexType::BTree {
+                        columns: vec![field.clone()],
+                    });
+                }
+                sym::hash => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::Hash {
                         columns: vec![field.clone()],
                     });
                 }
@@ -237,10 +273,14 @@ impl IndexArg {
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| find_column(cols, ident);
-        let kind = match &self.kind {
+        let (kind, kind_str) = match &self.kind {
             IndexType::BTree { columns } => {
                 let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
-                ValidatedIndexType::BTree { cols }
+                (ValidatedIndexType::BTree { cols }, "btree")
+            }
+            IndexType::Hash { columns } => {
+                let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
+                (ValidatedIndexType::Hash { cols }, "hash")
             }
             IndexType::Direct { column } => {
                 let col = find_column(column)?;
@@ -252,16 +292,13 @@ impl IndexArg {
                     ));
                 }
 
-                ValidatedIndexType::Direct { col }
+                (ValidatedIndexType::Direct { col }, "direct")
             }
         };
         // See crates/schema/src/validate/v9.rs for the format of index names.
         // It's slightly unnerving that we just trust that component to generate this format correctly,
         // but what can you do.
-        let (cols, kind_str) = match &kind {
-            ValidatedIndexType::BTree { cols } => (&**cols, "btree"),
-            ValidatedIndexType::Direct { col } => (&[*col] as &[_], "direct"),
-        };
+        let cols = kind.columns();
         let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
         let cols = cols.join("_");
         let index_name = format!("{table_name}_{cols}_idx_{kind_str}");
@@ -275,6 +312,55 @@ impl IndexArg {
     }
 }
 
+enum AccessorType {
+    Read,
+    ReadWrite,
+}
+
+impl AccessorType {
+    fn unique(&self) -> proc_macro2::TokenStream {
+        match self {
+            AccessorType::Read => quote!(spacetimedb::UniqueColumnReadOnly),
+            AccessorType::ReadWrite => quote!(spacetimedb::UniqueColumn),
+        }
+    }
+
+    fn range(&self) -> proc_macro2::TokenStream {
+        match self {
+            AccessorType::Read => quote!(spacetimedb::RangedIndexReadOnly),
+            AccessorType::ReadWrite => quote!(spacetimedb::RangedIndex),
+        }
+    }
+
+    fn point(&self) -> proc_macro2::TokenStream {
+        match self {
+            AccessorType::Read => quote!(spacetimedb::PointIndexReadOnly),
+            AccessorType::ReadWrite => quote!(spacetimedb::PointIndex),
+        }
+    }
+
+    fn unique_doc_typename(&self) -> &'static str {
+        match self {
+            AccessorType::Read => "UniqueColumnReadOnly",
+            AccessorType::ReadWrite => "UniqueColumn",
+        }
+    }
+
+    fn range_doc_typename(&self) -> &'static str {
+        match self {
+            AccessorType::Read => "RangedIndexReadOnly",
+            AccessorType::ReadWrite => "RangedIndex",
+        }
+    }
+
+    fn point_doc_typename(&self) -> &'static str {
+        match self {
+            AccessorType::Read => "PointIndexReadOnly",
+            AccessorType::ReadWrite => "PointIndex",
+        }
+    }
+}
+
 struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
@@ -284,7 +370,24 @@ struct ValidatedIndex<'a> {
 
 enum ValidatedIndexType<'a> {
     BTree { cols: Vec<&'a Column<'a>> },
+    Hash { cols: Vec<&'a Column<'a>> },
     Direct { col: &'a Column<'a> },
+}
+
+impl ValidatedIndexType<'_> {
+    fn columns(&self) -> &[&Column<'_>] {
+        match self {
+            Self::BTree { cols } | Self::Hash { cols } => cols,
+            Self::Direct { col } => slice::from_ref(col),
+        }
+    }
+
+    fn one_col(&self) -> Option<&Column<'_>> {
+        match self.columns() {
+            [col] => Some(col),
+            _ => None,
+        }
+    }
 }
 
 impl ValidatedIndex<'_> {
@@ -293,6 +396,12 @@ impl ValidatedIndex<'_> {
             ValidatedIndexType::BTree { cols } => {
                 let col_ids = cols.iter().map(|col| col.index);
                 quote!(spacetimedb::table::IndexAlgo::BTree {
+                    columns: &[#(#col_ids),*]
+                })
+            }
+            ValidatedIndexType::Hash { cols } => {
+                let col_ids = cols.iter().map(|col| col.index);
+                quote!(spacetimedb::table::IndexAlgo::Hash {
                     columns: &[#(#col_ids),*]
                 })
             }
@@ -312,46 +421,63 @@ impl ValidatedIndex<'_> {
         })
     }
 
-    fn accessor(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
-        let cols = match &self.kind {
-            ValidatedIndexType::BTree { cols } => &**cols,
-            ValidatedIndexType::Direct { col } => slice::from_ref(col),
-        };
+    fn accessor(
+        &self,
+        vis: &syn::Visibility,
+        row_type_ident: &Ident,
+        tbl_type_ident: &Ident,
+        flavor: AccessorType,
+    ) -> TokenStream {
         if self.is_unique {
-            assert_eq!(cols.len(), 1);
-            let col = cols[0];
-            self.accessor_unique(col, row_type_ident)
+            self.unique_accessor(row_type_ident, tbl_type_ident, flavor)
         } else {
-            self.accessor_general(vis, row_type_ident, cols)
+            self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor)
         }
     }
 
-    fn accessor_unique(&self, col: &Column<'_>, row_type_ident: &Ident) -> TokenStream {
+    fn unique_accessor(&self, row_type_ident: &Ident, tbl_type_ident: &Ident, flavor: AccessorType) -> TokenStream {
+        let col = self.kind.one_col().unwrap();
         let index_ident = self.accessor_name;
         let vis = col.vis;
         let col_ty = col.ty;
         let column_ident = col.ident;
 
+        let unique_ty = flavor.unique();
+        let tbl_token = quote!(#tbl_type_ident);
+        let doc_type = flavor.unique_doc_typename();
+
         let doc = format!(
-            "Gets the [`UniqueColumn`][spacetimedb::UniqueColumn] for the \
+            "Gets the [`{doc_type}`][spacetimedb::{doc_type}] for the \
              [`{column_ident}`][{row_type_ident}::{column_ident}] column."
         );
         quote! {
             #[doc = #doc]
-            #vis fn #column_ident(&self) -> spacetimedb::UniqueColumn<Self, #col_ty, __indices::#index_ident> {
-                spacetimedb::UniqueColumn::__NEW
+            #vis fn #column_ident(&self) -> #unique_ty<#tbl_token, #col_ty, __indices::#index_ident> {
+                #unique_ty::__NEW
             }
         }
     }
 
-    fn accessor_general(&self, vis: &syn::Visibility, row_type_ident: &Ident, cols: &[&Column<'_>]) -> TokenStream {
+    fn non_unique_accessor(
+        &self,
+        vis: &syn::Visibility,
+        row_type_ident: &Ident,
+        tbl_type_ident: &Ident,
+        flavor: AccessorType,
+    ) -> TokenStream {
         let index_ident = self.accessor_name;
-        let col_tys = cols.iter().map(|col| col.ty);
+        let cols = self.kind.columns();
+        let col_tys = cols.iter().map(|c| c.ty);
+
+        let (handle_ty, doc_type, kind_doc) = match &self.kind {
+            ValidatedIndexType::BTree { .. } => (flavor.range(), flavor.range_doc_typename(), "B-tree"),
+            // Should be unreachable, but we might as well include this.
+            ValidatedIndexType::Direct { .. } => (flavor.range(), flavor.range_doc_typename(), "Direct"),
+            ValidatedIndexType::Hash { .. } => (flavor.point(), flavor.point_doc_typename(), "Hash"),
+        };
         let mut doc = format!(
-            "Gets the `{index_ident}` [`RangedIndex`][spacetimedb::RangedIndex] as defined \
-             on this table. \n\
-             \n\
-             This B-tree index is defined on the following columns, in order:\n"
+            "Gets the `{index_ident}` [`{doc_type}`][spacetimedb::{doc_type}] as defined \
+                    on this table.\n\nThis {kind_doc} index is defined on the following columns, in order:\n"
         );
         for col in cols {
             use std::fmt::Write;
@@ -363,20 +489,27 @@ impl ValidatedIndex<'_> {
             )
             .unwrap();
         }
+
+        let tbl_token = quote!(#tbl_type_ident);
         quote! {
             #[doc = #doc]
-            #vis fn #index_ident(&self) -> spacetimedb::RangedIndex<Self, (#(#col_tys,)*), __indices::#index_ident> {
-                spacetimedb::RangedIndex::__NEW
+            #vis fn #index_ident(&self) -> #handle_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
+                #handle_ty::__NEW
             }
         }
     }
 
-    fn marker_type(&self, vis: &syn::Visibility, tablehandle_ident: &Ident) -> TokenStream {
+    fn marker_type(
+        &self,
+        vis: &syn::Visibility,
+        tablehandle_ident: &Ident,
+        primary_key_column: Option<&Column<'_>>,
+    ) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
 
-        let (cols, typeck_direct_index) = match &self.kind {
-            ValidatedIndexType::BTree { cols } => (&**cols, None),
+        let (typeck_direct_index, is_ranged) = match &self.kind {
+            ValidatedIndexType::BTree { .. } => (None, true),
             ValidatedIndexType::Direct { col } => {
                 let col_ty = col.ty;
                 let typeck = quote_spanned!(col_ty.span()=>
@@ -384,22 +517,31 @@ impl ValidatedIndex<'_> {
                         spacetimedb::spacetimedb_lib::assert_column_type_valid_for_direct_index::<#col_ty>();
                     };
                 );
-                (slice::from_ref(col), Some(typeck))
+                (Some(typeck), true)
             }
+            ValidatedIndexType::Hash { .. } => (None, false),
         };
         let vis = if self.is_unique {
-            assert_eq!(cols.len(), 1);
-            cols[0].vis
+            self.kind.one_col().unwrap().vis
         } else {
             vis
         };
         let vis = superize_vis(vis);
 
+        let cols = self.kind.columns();
+        let num_cols = cols.len();
+        let index_kind_trait = if is_ranged {
+            quote!(IndexIsRanged)
+        } else {
+            quote!(IndexIsPointed)
+        };
         let mut decl = quote! {
             #typeck_direct_index
 
             #vis struct #index_ident;
+            impl spacetimedb::table::#index_kind_trait for #index_ident {}
             impl spacetimedb::table::Index for #index_ident {
+                const NUM_COLS_INDEXED: usize = #num_cols;
                 fn index_id() -> spacetimedb::table::IndexId {
                     static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();
                     *INDEX_ID.get_or_init(|| {
@@ -409,7 +551,7 @@ impl ValidatedIndex<'_> {
             }
         };
         if self.is_unique {
-            let col = cols[0];
+            let col = self.kind.one_col().unwrap();
             let col_ty = col.ty;
             let col_name = col.ident.to_string();
             let field_ident = col.ident;
@@ -423,6 +565,9 @@ impl ValidatedIndex<'_> {
                     }
                 }
             });
+            if primary_key_column.is_some_and(|pk| col.ident == pk.ident) {
+                decl.extend(quote!(impl spacetimedb::table::PrimaryKey for #index_ident {}));
+            }
         }
         decl
     }
@@ -451,12 +596,13 @@ fn superize_vis(vis: &syn::Visibility) -> Cow<'_, syn::Visibility> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 struct Column<'a> {
     index: u16,
     vis: &'a syn::Visibility,
     ident: &'a syn::Ident,
     ty: &'a syn::Type,
+    default_value: Option<syn::Expr>,
 }
 
 fn try_find_column<'a, 'b, T: ?Sized>(cols: &'a [Column<'b>], name: &T) -> Option<&'a Column<'b>>
@@ -475,6 +621,7 @@ enum ColumnAttr {
     AutoInc(Span),
     PrimaryKey(Span),
     Index(IndexArg),
+    Default(syn::Expr, Span),
 }
 
 impl ColumnAttr {
@@ -494,10 +641,38 @@ impl ColumnAttr {
         } else if ident == sym::primary_key {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::PrimaryKey(ident.span()))
+        } else if ident == sym::default {
+            Some(parse_default_attr(attr, ident)?)
         } else {
             None
         })
     }
+}
+
+fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<ColumnAttr> {
+    if let Ok(expr) = attr.parse_args::<syn::Expr>() {
+        return Ok(ColumnAttr::Default(expr, ident.span()));
+    }
+
+    Err(syn::Error::new_spanned(
+        &attr.meta,
+        "expected default value in format `#[default(CONSTANT_VALUE)]`",
+    ))
+}
+
+use std::collections::HashSet;
+use std::sync::Mutex;
+
+// Same struct can be annotated with `#[spacetimedb::table]` multiple times.
+// This mutex keeps track of which structs we've already generated code for.
+// This avoids duplicate definitions when the same struct is annotated multiple times.
+static GENERATED_STRUCTS: std::sync::LazyLock<Mutex<HashSet<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn is_first_appearance(struct_name: &str) -> bool {
+    let mut set = GENERATED_STRUCTS.lock().expect("mutex poisoned");
+
+    set.insert(struct_name.to_string())
 }
 
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -506,6 +681,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.name;
+    let view_trait_ident = format_ident!("{}__view", table_ident);
+    let query_trait_ident = format_ident!("{}__query", table_ident);
+    let query_cols_struct = format_ident!("{}Cols", original_struct_ident);
+    let query_ix_cols_struct = format_ident!("{}IxCols", original_struct_ident);
     let table_name = table_ident.unraw().to_string();
     let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
@@ -548,6 +727,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let mut unique = None;
         let mut auto_inc = None;
         let mut primary_key = None;
+        let mut default_value = None;
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
                 continue;
@@ -566,7 +746,20 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     primary_key = Some(span);
                 }
                 ColumnAttr::Index(index_arg) => args.indices.push(index_arg),
+                ColumnAttr::Default(expr, span) => {
+                    check_duplicate(&default_value, span)?;
+                    default_value = Some(expr);
+                }
             }
+        }
+
+        if let Some(default_value) = &default_value {
+            if auto_inc.is_some() || primary_key.is_some() || unique.is_some() {
+                return Err(syn::Error::new(
+                    default_value.span(),
+                    "invalid combination: auto_inc, unique index or primary key cannot have a default value",
+                ));
+            };
         }
 
         let column = Column {
@@ -574,20 +767,21 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             ident: field_ident,
             vis: field.vis,
             ty: field.ty,
+            default_value,
         };
 
         if unique.is_some() || primary_key.is_some() {
-            unique_columns.push(column);
+            unique_columns.push(column.clone());
         }
         if auto_inc.is_some() {
-            sequenced_columns.push(column);
+            sequenced_columns.push(column.clone());
         }
         if let Some(span) = primary_key {
             check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
-            primary_key_column = Some(column);
+            primary_key_column = Some(column.clone());
         }
 
-        columns.push(column);
+        columns.push(column.clone());
     }
 
     let row_type = quote!(#original_struct_ident);
@@ -597,7 +791,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     for unique_col in &unique_columns {
         if args.indices.iter_mut().any(|index| {
             let covered_by_index = match &index.kind {
-                IndexType::BTree { columns } => &**columns == slice::from_ref(unique_col.ident),
+                IndexType::BTree { columns } | IndexType::Hash { columns } => {
+                    &**columns == slice::from_ref(unique_col.ident)
+                }
                 IndexType::Direct { column } => column == unique_col.ident,
             };
             index.is_unique |= covered_by_index;
@@ -622,14 +818,24 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         .iter()
         .map(|index| index.validate(&table_name, &columns))
         .collect::<syn::Result<Vec<_>>>()?;
+
     // Order unique accessors before index accessors.
     indices.sort_by_key(|index| !index.is_unique);
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
+    let viewhandle_ident = format_ident!("{}__ViewHandle", table_ident);
 
     let index_descs = indices.iter().map(|index| index.desc());
-    let index_accessors = indices.iter().map(|index| index.accessor(vis, original_struct_ident));
-    let index_marker_types = indices.iter().map(|index| index.marker_type(vis, &tablehandle_ident));
+    let index_accessors_rw = indices
+        .iter()
+        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::ReadWrite));
+    let index_accessors_ro = indices
+        .iter()
+        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::Read));
+    let index_marker_types: Vec<_> = indices
+        .iter()
+        .map(|index| index.marker_type(vis, &tablehandle_ident, primary_key_column.as_ref()))
+        .collect();
 
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.
@@ -647,8 +853,44 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let table_access = args.access.iter().map(|acc| acc.to_value());
     let unique_col_ids = unique_columns.iter().map(|col| col.index);
-    let primary_col_id = primary_key_column.iter().map(|col| col.index);
+    let primary_col_id = primary_key_column.clone().into_iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
+
+    let default_type_check: TokenStream = columns
+        .iter()
+        .filter_map(|col| {
+            if let Some(val) = &col.default_value {
+                let ty = &col.ty;
+                let ident_span = col.ident.span();
+                Some(quote_spanned! { ident_span =>
+                    // This closure enforces that `val` is of type `ty` at compile-time.
+                    let _check: #ty = #val;
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let col_defaults: Vec<TokenStream> = columns.iter().filter_map(|col| {
+        if let Some(val) = &col.default_value {
+            let col_id = col.index;
+            Some(quote! {
+                spacetimedb::table::ColumnDefault {
+                    col_id: #col_id,
+                    value: #val.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed"),
+                },
+            })
+        } else {
+            None
+        }
+    }).collect();
+
+    let default_fn: TokenStream = quote! {
+        fn get_default_col_values() -> Vec<spacetimedb::table::ColumnDefault> {
+            [#(#col_defaults)*].to_vec()
+        }
+    };
 
     let (schedule, schedule_typecheck) = args
         .scheduled
@@ -684,17 +926,20 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 )
             })?;
 
-            let reducer = &sched.reducer;
+            let reducer_or_procedure = &sched.reducer_or_procedure;
             let scheduled_at_id = scheduled_at_column.index;
             let desc = quote!(spacetimedb::table::ScheduleDesc {
-                reducer_name: <#reducer as spacetimedb::rt::ReducerInfo>::NAME,
+                reducer_or_procedure_name: <#reducer_or_procedure as spacetimedb::rt::FnInfo>::NAME,
                 scheduled_at_column: #scheduled_at_id,
             });
 
             let primary_key_ty = primary_key_column.ty;
             let scheduled_at_ty = scheduled_at_column.ty;
             let typecheck = quote! {
-                spacetimedb::rt::scheduled_reducer_typecheck::<#original_struct_ident>(#reducer);
+                spacetimedb::rt::scheduled_typecheck::<
+                    #original_struct_ident,
+                    <#reducer_or_procedure as spacetimedb::rt::FnInfo>::FnKind,
+                >(#reducer_or_procedure);
                 spacetimedb::rt::assert_scheduled_table_primary_key::<#primary_key_ty>();
                 let _ = |x: #scheduled_at_ty| { let _: spacetimedb::ScheduleAt = x; };
             };
@@ -719,6 +964,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
     let tabletype_impl = quote! {
+        use spacetimedb::Serialize;
         impl spacetimedb::Table for #tablehandle_ident {
             type Row = #row_type;
 
@@ -738,6 +984,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #(const SCHEDULE: Option<spacetimedb::table::ScheduleDesc<'static>> = Some(#schedule);)*
 
             #table_id_from_name_func
+            #default_fn
         }
     };
 
@@ -763,25 +1010,139 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    let trait_def_view = quote_spanned! {table_ident.span()=>
+        #[allow(non_camel_case_types, dead_code)]
+        #vis trait #view_trait_ident {
+            fn #table_ident(&self) -> &#viewhandle_ident;
+        }
+        impl #view_trait_ident for spacetimedb::LocalReadOnly {
+            #[inline]
+            fn #table_ident(&self) -> &#viewhandle_ident {
+                &#viewhandle_ident {}
+            }
+        }
+    };
+
+    let cols_struct_fields = fields.iter().map(|col| {
+        let ident = col.ident.unwrap();
+        let ty = &col.ty;
+
+        quote! {
+            pub #ident: spacetimedb::query_builder::Col<#original_struct_ident, #ty>,
+        }
+    });
+
+    let ix_cols_struct_fields = indices.iter().filter_map(|index| {
+        let ident = index.accessor_name.clone();
+        let ty = index.kind.one_col()?.ty;
+
+        Some(quote! {
+            pub #ident: spacetimedb::query_builder::IxCol<#original_struct_ident, #ty>,
+        })
+    });
+
+    let cols_init = fields.iter().map(|col| {
+        let ident = col.ident.as_ref().unwrap();
+
+        quote! {
+            #ident: spacetimedb::query_builder::Col::new(_table_name, stringify!(#ident)),
+        }
+    });
+
+    let ix_cols_init = indices.iter().map(|index| {
+        if index.kind.one_col().is_none() {
+            quote! {}
+        } else {
+            let ident = index.accessor_name;
+            quote! {
+                #ident: spacetimedb::query_builder::IxCol::new(_table_name, stringify!(#ident)),
+            }
+        }
+    });
+
+    let query_builder_helper_structs = quote_spanned! {table_ident.span()=>
+           #[allow(non_camel_case_types, dead_code)]
+           pub struct #query_cols_struct{
+               #(#cols_struct_fields)*
+           }
+
+           impl spacetimedb::query_builder::HasCols for #original_struct_ident  {
+               type Cols = #query_cols_struct;
+                fn cols(_table_name: &'static str) -> Self::Cols {
+                     #query_cols_struct {
+                          #(#cols_init)*
+                     }
+                }
+           }
+
+        #[allow(non_camel_case_types, dead_code)]
+        pub struct #query_ix_cols_struct{
+            #(#ix_cols_struct_fields)*
+        }
+        impl spacetimedb::query_builder::HasIxCols for #original_struct_ident {
+            type IxCols = #query_ix_cols_struct;
+            fn ix_cols(_table_name: &'static str) -> Self::IxCols {
+                #query_ix_cols_struct {
+                    #(#ix_cols_init)*
+                }
+            }
+        }
+
+    };
+
+    let table_query_handle_def = quote! {
+           #[allow(non_camel_case_types, dead_code)]
+           #vis trait #query_trait_ident {
+               fn #table_ident(&self) -> spacetimedb::query_builder::Table<#original_struct_ident> {
+                   spacetimedb::query_builder::Table::new(stringify!(#table_ident))
+               }
+           }
+           impl #query_trait_ident for spacetimedb::QueryBuilder {}
+    };
+
     let tablehandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
         #vis struct #tablehandle_ident {}
     };
 
+    let viewhandle_def = quote! {
+        #[allow(non_camel_case_types)]
+        #[non_exhaustive]
+        #vis struct #viewhandle_ident {}
+    };
+
+    let struct_name = original_struct_ident.to_string();
+    let is_first_table = is_first_appearance(&struct_name);
+
+    let struct_level_query_impl = if is_first_table {
+        quote! { #query_builder_helper_structs }
+    } else {
+        quote! {}
+    };
+
     let emission = quote! {
         const _: () = {
             #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
             #schedule_typecheck
+            #default_type_check
         };
 
         #trait_def
+        #trait_def_view
 
         #tablehandle_def
+        #viewhandle_def
+        #table_query_handle_def
+        #struct_level_query_impl
 
         const _: () = {
             impl #tablehandle_ident {
-                #(#index_accessors)*
+                #(#index_accessors_rw)*
+            }
+
+            impl #viewhandle_ident {
+                #(#index_accessors_ro)*
             }
 
             #tabletype_impl
@@ -800,7 +1161,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
         {
             #![allow(clippy::disallowed_macros)]
-            println!("{}", emission);
+            println!("{emission}");
         }
     }
 

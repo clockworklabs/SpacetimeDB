@@ -1,93 +1,102 @@
 use std::{
     cmp,
-    fmt::Debug,
+    fmt::{self, Debug},
     io::{self, Seek as _, SeekFrom},
-    iter::repeat,
-    sync::RwLockWriteGuard,
+    iter,
+    ops::Range,
 };
 
-use log::debug;
+use log::{debug, info};
+use pretty_assertions::assert_matches;
 
 use crate::{
-    commitlog, error, payload,
+    commitlog, payload,
     repo::{self, Repo, SegmentLen},
-    segment::FileLike,
-    tests::helpers::enable_logging,
-    Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
+    segment::{self, FileLike},
+    tests::helpers::{enable_logging, fill_log_with},
+    Commit, Options, TxOffset, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 #[test]
-fn traversal() {
+#[should_panic(expected = "failed to flush segment")]
+fn panics_on_partial_write() {
     enable_logging();
 
     let mut log = open_log::<[u8; 32]>(ShortMem::new(800));
-    let total_commits = 100;
-    let total_txs = fill_log_enospc(&mut log, total_commits, (1..=10).cycle());
-
-    assert_eq!(
-        total_txs,
-        log.transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
-    );
-    assert_eq!(total_commits, log.commits_from(0).map(Result::unwrap).count());
-}
-
-// Note: Write errors cause the in-flight commit to be written to a fresh
-// segment. So as long as we write through the public API, partial writes
-// never surface (i.e. the log is contiguous).
-#[test]
-fn reopen() {
-    enable_logging();
-
-    let repo = ShortMem::new(800);
-    let num_commits = 10;
-
-    let mut total_txs = 0;
-    for i in 0..2 {
-        let mut log = open_log::<[u8; 32]>(repo.clone());
-        total_txs += fill_log_enospc(&mut log, num_commits, (1..=10).cycle());
-
-        debug!("fill {} done", i + 1);
-    }
-
-    assert_eq!(
-        total_txs,
-        open_log::<[u8; 32]>(repo.clone())
-            .transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
-    );
-
-    // Let's see if we hit a funny case in any of the segments.
-    for offset in repo.existing_offsets().unwrap().into_iter().rev() {
-        let meta = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, offset)
-            .unwrap()
-            .metadata()
-            .unwrap();
-        debug!("dropping segment: segment::{meta:?}");
-        repo.remove_segment(offset).unwrap();
-        assert_eq!(
-            meta.tx_range.start,
-            open_log::<[u8; 32]>(repo.clone())
-                .transactions_from(0, &payload::ArrayDecoder)
-                .map(Result::unwrap)
-                .count() as u64
-        );
+    for i in 0..20 {
+        info!("commit {i}");
+        log.commit([(i, [b'z'; 32])]).expect("unexpected `Err` result");
     }
 }
 
+fn fill_log(mut log: commitlog::Generic<ShortMem, [u8; 32]>, range: Range<TxOffset>) {
+    debug!("writing range {range:?}");
+
+    let end = range.end;
+    for i in range {
+        info!("commit {i}");
+        log.commit([(i, [b'z'; 32])]).unwrap();
+    }
+    log.flush().unwrap();
+
+    // Try to write one more, which should fail.
+    log.commit([(end, [b'x'; 32])]).unwrap();
+    assert_matches!(
+        log.flush(),
+        Err(e) if e.kind() == io::ErrorKind::StorageFull
+    );
+}
+/// Tests that, when a partial write occurs, we can read all flushed commits
+/// up until the faulty one.
 #[test]
-fn overwrite_reopen() {
+fn read_log_up_to_partial_write() {
     enable_logging();
 
-    let repo = ShortMem::new(800);
-    let num_commits = 10;
-    let txs_per_commit = 5;
+    const MAX_SEGMENT_SIZE: usize = 800;
+    const TXDATA_SIZE: usize = 32;
+    const COMMIT_SIZE: usize = Commit::FRAMING_LEN + TXDATA_SIZE;
+    const TOTAL_TXS: usize = MAX_SEGMENT_SIZE / COMMIT_SIZE;
 
-    let mut log = open_log::<[u8; 32]>(repo.clone());
-    let mut total_txs = fill_log_enospc(&mut log, num_commits, repeat(txs_per_commit));
+    let repo = ShortMem::new(MAX_SEGMENT_SIZE as u64);
+    fill_log(open_log::<[u8; TXDATA_SIZE]>(repo.clone()), 0..(TOTAL_TXS as u64));
 
+    let txs = commitlog::transactions_from(
+        repo,
+        DEFAULT_LOG_FORMAT_VERSION,
+        0,
+        &payload::ArrayDecoder::<TXDATA_SIZE>,
+    )
+    .unwrap()
+    .map(Result::unwrap)
+    .count();
+
+    assert_eq!(txs, TOTAL_TXS,);
+}
+
+/// Tests:
+///
+/// - fill log until a partial write occurs
+/// - corrupt the last successfully written commit
+/// - fill log until a partial write occurs
+///
+/// The log should detect the corrupt commit, create a fresh segment, and write
+/// the second batch until ENOSPC. Traversal should work.
+#[test]
+fn reopen_with_corrupt_last_commit() {
+    enable_logging();
+
+    const MAX_SEGMENT_SIZE: usize = 800;
+    const TXDATA_SIZE: usize = 32;
+    const COMMIT_SIZE: usize = Commit::FRAMING_LEN + TXDATA_SIZE;
+    const TXS_PER_SEGMENT: u64 = (MAX_SEGMENT_SIZE / COMMIT_SIZE) as u64;
+    const TOTAL_TXS: u64 = (TXS_PER_SEGMENT * 2) - 1;
+
+    let repo = ShortMem::new(MAX_SEGMENT_SIZE as u64);
+
+    // Fill with as many txs as possible until ENOSPC.
+    fill_log(open_log::<[u8; TXDATA_SIZE]>(repo.clone()), 0..TXS_PER_SEGMENT);
+
+    // Invalidate the checksum of the last commit.
     let last_segment_offset = repo.existing_offsets().unwrap().last().copied().unwrap();
     let last_commit: Commit = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, last_segment_offset)
         .unwrap()
@@ -96,49 +105,62 @@ fn overwrite_reopen() {
         .last()
         .unwrap()
         .into();
-    debug!("last commit: {last_commit:?}");
-
     {
         let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
-        let mut data = last_segment.buf_mut();
-        let pos = data.len() - last_commit.encoded_len() + 1;
-        data[pos] = 255;
+        let pos = last_segment.len() - last_commit.encoded_len() + 1;
+        last_segment.modify_byte_at(pos, |_| 255);
     }
 
-    let mut log = open_log::<[u8; 32]>(repo.clone());
-    for (i, commit) in log.commits_from(0).enumerate() {
-        if i < num_commits - 1 {
-            commit.expect("all but last commit should be good");
-        } else {
-            let last_good_offset = txs_per_commit * (num_commits - 1);
-            assert!(
-                matches!(
-                    commit,
-                    Err(error::Traversal::Checksum { offset, .. }) if offset == last_good_offset as u64,
-                ),
-                "expected checksum error with offset={}: {:?}",
-                last_good_offset,
-                commit
-            );
-        }
-    }
-
-    // Write some more data.
-    total_txs += fill_log_enospc(&mut log, num_commits, repeat(txs_per_commit));
-    // Log should be contiguous, but missing one corrupted commit.
-    assert_eq!(
-        total_txs - txs_per_commit,
-        log.transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
+    // Write a second batch, starting with the offset of the corrupt commit.
+    fill_log(
+        open_log::<[u8; TXDATA_SIZE]>(repo.clone()),
+        last_commit.min_tx_offset..TOTAL_TXS,
     );
-    // Check that this is true if we reopen the log.
-    assert_eq!(
-        total_txs - txs_per_commit,
-        open_log::<[u8; 32]>(repo)
-            .transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
+
+    let txs = commitlog::transactions_from(
+        repo,
+        DEFAULT_LOG_FORMAT_VERSION,
+        0,
+        &payload::ArrayDecoder::<TXDATA_SIZE>,
+    )
+    .unwrap()
+    .map(Result::unwrap)
+    .count();
+
+    assert_eq!(txs as u64, TOTAL_TXS);
+}
+
+/// Edge case surfaced in production:
+///
+/// If the first commit in the last segment is corrupt, creating a new segment
+/// would fail because the `tx_range` is the same as the corrupt segment.
+///
+/// We don't automatically recover from that, but test that `open` returns an
+/// error providing some context.
+#[test]
+fn first_commit_in_last_segment_corrupt() {
+    enable_logging();
+
+    let repo = repo::Memory::unlimited();
+    let options = Options {
+        max_segment_size: 512,
+        ..<_>::default()
+    };
+    {
+        let mut log = commitlog::Generic::open(repo.clone(), options).unwrap();
+        fill_log_with(&mut log, iter::once([b'x'; 64]).cycle().take(9));
+    }
+    let segments = repo.existing_offsets().unwrap();
+    assert_eq!(2, segments.len(), "repo should contain 2 segments");
+
+    {
+        let mut last_segment = repo.open_segment_writer(*segments.last().unwrap()).unwrap();
+        last_segment.modify_bytes_at(segment::Header::LEN + 1.., |data| data.fill(0));
+    }
+
+    assert_matches!(
+        commitlog::Generic::<_, [u8; 64]>::open(repo, options),
+        Err(e) if e.kind() == io::ErrorKind::InvalidData,
     );
 }
 
@@ -164,8 +186,12 @@ struct ShortSegment {
 }
 
 impl ShortSegment {
-    fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
-        self.inner.buf_mut()
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
+        self.inner.modify_byte_at(pos, f);
     }
 }
 
@@ -182,6 +208,11 @@ impl FileLike for ShortSegment {
 
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> std::io::Result<()> {
         self.inner.ftruncate(tx_offset, size)
+    }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        self.inner.fallocate(size)
     }
 }
 
@@ -225,9 +256,15 @@ struct ShortMem {
 impl ShortMem {
     pub fn new(max_len: u64) -> Self {
         Self {
-            inner: repo::Memory::new(),
+            inner: repo::Memory::new(max_len * 4096),
             max_len,
         }
+    }
+}
+
+impl fmt::Display for ShortMem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.inner, f)
     }
 }
 
@@ -264,39 +301,4 @@ impl Repo for ShortMem {
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
         self.inner.existing_offsets()
     }
-}
-
-/// Like [`crate::tests::helpers::fill_log`], but expect that ENOSPC happens at
-/// least once.
-fn fill_log_enospc<T>(
-    log: &mut commitlog::Generic<ShortMem, T>,
-    num_commits: usize,
-    txs_per_commit: impl Iterator<Item = usize>,
-) -> usize
-where
-    T: Debug + Default + Encode,
-{
-    let mut seen_enospc = false;
-
-    let mut total_txs = 0;
-    for (_, n) in (0..num_commits).zip(txs_per_commit) {
-        for _ in 0..n {
-            log.append(T::default()).unwrap();
-            total_txs += 1;
-        }
-        let res = log.commit();
-        if let Err(Some(os)) = res.as_ref().map_err(|e| e.raw_os_error()) {
-            if os == ENOSPC {
-                debug!("fill: ignoring ENOSPC");
-                seen_enospc = true;
-                log.commit().unwrap();
-                continue;
-            }
-        }
-        res.unwrap();
-    }
-
-    assert!(seen_enospc, "expected to see ENOSPC");
-
-    total_txs
 }

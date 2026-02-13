@@ -14,6 +14,7 @@ import unittest
 import logging
 import http.client
 import tomllib
+import functools
 
 # miscellaneous file paths
 TEST_DIR = Path(__file__).parent
@@ -21,13 +22,14 @@ STDB_DIR = TEST_DIR.parent
 exe_suffix = ".exe" if sys.platform == "win32" else ""
 SPACETIME_BIN = STDB_DIR / ("target/debug/spacetime" + exe_suffix)
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
-STDB_CONFIG = TEST_DIR / "config.toml"
+BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
 # the contents of files for the base smoketest project template
-TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/lib._rs").read()
-TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/Cargo._toml").read()
+TEMPLATE_LIB_RS = open(STDB_DIR / "templates/basic-rs/spacetimedb/src/lib.rs").read()
+TEMPLATE_CARGO_TOML = open(STDB_DIR / "templates/basic-rs/spacetimedb/Cargo.toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
+TYPESCRIPT_BINDINGS_PATH = (STDB_DIR / "crates/bindings-typescript").absolute()
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
     .sub(f'spacetimedb = {{ path = "{escaped_bindings_path}", features = {{features}} }}', TEMPLATE_CARGO_TOML))
 
@@ -37,8 +39,19 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
-# default value can be overriden by `--compose-file` flag
-COMPOSE_FILE = "./docker-compose.yml"
+# When we pass --spacetime-login, we are running against a server that requires "real" spacetime logins (rather than `--server-issued-login`).
+# This is used to skip tests that don't work with that.
+USE_SPACETIME_LOGIN = False
+
+# If we pass `--remote-server`, the server address will be something other than the default. This is used to skip tests that rely on use
+# having the default localhost server.
+REMOTE_SERVER = False
+
+# default value can be overridden by `--compose-file` flag
+COMPOSE_FILE = ".github/docker-compose.yml"
+
+# this will be initialized by main()
+STDB_CONFIG = ''
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
@@ -61,6 +74,15 @@ def requires_dotnet(item):
         return item
     return unittest.skip("dotnet 8.0 not available")(item)
 
+def requires_anonymous_login(item):
+    if USE_SPACETIME_LOGIN:
+        return unittest.skip("using `spacetime login`")(item)
+    return item
+
+def requires_local_server(item):
+    if REMOTE_SERVER:
+        return unittest.skip("running against a remote server")(item)
+    return item
 
 def build_template_target():
     if not TEMPLATE_TARGET_DIR.exists():
@@ -100,6 +122,17 @@ def extract_fields(cmd_output, field_name):
         if label == field_name:
             out.append(val)
     return out
+
+def parse_sql_result(res: str) -> list[dict]:
+    """Parse tabular output from an SQL query into a list of dicts."""
+    lines = res.splitlines()
+    headers = lines[0].split('|') if '|' in lines[0] else [lines[0]]
+    headers = [header.strip() for header in headers]
+    rows = []
+    for row in lines[2:]:
+        cols = [col.strip() for col in row.split('|')]
+        rows.append(dict(zip(headers, cols)))
+    return rows
 
 def extract_field(cmd_output, field_name):
     field, = extract_fields(cmd_output, field_name)
@@ -142,6 +175,21 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
         output.check_returncode()
     return output if full_output else output.stdout
 
+@functools.cache
+def pnpm_path():
+    pnpm = shutil.which("pnpm")
+    if not pnpm:
+        raise Exception("pnpm not installed")
+    return pnpm
+
+def pnpm(*args, **kwargs):
+    return run_cmd(pnpm_path(), *args, **kwargs)
+
+@functools.cache
+def build_typescript_sdk():
+    pnpm("install", cwd=TYPESCRIPT_BINDINGS_PATH)
+    pnpm("build", cwd=TYPESCRIPT_BINDINGS_PATH)
+
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
 
@@ -169,11 +217,10 @@ class Smoketest(unittest.TestCase):
         if not hasattr(self, "database_identity"):
             raise Exception("Cannot use this function without publishing a module")
 
-    def call(self, reducer, *args, anon=False):
+    def call(self, reducer, *args, anon=False, check=True, full_output = False):
         self._check_published()
         anon = ["--anonymous"] if anon else []
-        self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
-
+        return self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args), check = check, full_output=full_output)
 
     def sql(self, sql):
         self._check_published()
@@ -188,8 +235,8 @@ class Smoketest(unittest.TestCase):
         logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.database_identity)
         return list(map(json.loads, logs.splitlines()))
 
-    def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
-        print("publishing module", self.publish_module)
+    def publish_module(self, domain=None, *, clear=True, capture_stderr=True,
+                       num_replicas=None, break_clients=False, organization=None):
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
@@ -199,14 +246,19 @@ class Smoketest(unittest.TestCase):
             # because the server address is `node` which doesn't look like `localhost` or `127.0.0.1`
             # and so the publish step prompts for confirmation.
             "--yes",
+            *["--num-replicas", f"{num_replicas}"] if num_replicas is not None else [],
+            *["--break-clients"] if break_clients else [],
+            *["--organization", f"{organization}"] if organization is not None else [],
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
-        self.database_identity = domain if domain is not None else self.resolved_identity
+        self.database_identity = self.resolved_identity
 
     @classmethod
     def reset_config(cls):
-        shutil.copy(STDB_CONFIG, cls.config_path)
+        if not STDB_CONFIG:
+            raise Exception("config toml has not been initialized yet")
+        cls.config_path.write_text(STDB_CONFIG)
 
     def fingerprint(self):
         # Fetch the server's fingerprint; required for `identity list`.
@@ -215,11 +267,23 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n):
+    def subscribe(self, *queries, n, confirmed = False, database = None):
         self._check_published()
         assert isinstance(n, int)
 
-        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "600", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [
+            SPACETIME_BIN,
+            "--config-path", str(self.config_path),
+            "subscribe",
+            database if database is not None else self.database_identity,
+            "-t", "600",
+            "-n", str(n),
+            "--print-initial-update",
+        ]
+        if confirmed:
+            args.append("--confirmed")
+        args.extend(["--", *queries])
+
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
@@ -237,7 +301,7 @@ class Smoketest(unittest.TestCase):
                 code = proc.wait()
                 if code:
                     raise subprocess.CalledProcessError(code, fake_args)
-                print("no inital update, but no error code either")
+                print("no initial update, but no error code either")
             except subprocess.TimeoutExpired:
                 print("no initial update, but process is still running")
 
@@ -253,22 +317,49 @@ class Smoketest(unittest.TestCase):
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
-    def api_call(self, method, path, body = None, headers = {}):
+    def get_server_address(self):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
-            host = config['default_server']
             token = config['spacetimedb_token']
-            conn = http.client.HTTPConnection(host)
-            auth = {"Authorization": f'Bearer {token}'}
-            headers.update(auth)
-            log_cmd([method, path])
-            conn.request(method, path, body, headers)
-            resp = conn.getresponse()
-            logging.debug(f"{resp.status} {resp.read()}")
-            if resp.status != 200:
-                raise resp
-            resp
+            server_name = config['default_server']
+            server_config = next((c for c in config['server_configs'] if c['nickname'] == server_name), None)
+            if server_config is None:
+                raise Exception(f"Unable to find server in config with nickname {server_name}")
+            address = server_config['host']
+            host = address
+            port = None
+            if ":" in host:
+                host, port = host.split(":", 1)
+            protocol = server_config['protocol']
 
+            return dict(address=address, host=host, port=port, protocol=protocol, token=token)
+
+    # Make an HTTP call with `method` to `path`.
+    #
+    # If the response is 200, return the body.
+    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
+    def api_call(self, method, path, body=None, headers={}):
+        server = self.get_server_address()
+        host = server["address"]
+        protocol = server["protocol"]
+        token = server["token"]
+        conn = None
+        if protocol == "http":
+            conn = http.client.HTTPConnection(host)
+        elif protocol == "https":
+            conn = http.client.HTTPSConnection(host)
+        else:
+            raise Exception(f"Unknown protocol: {protocol}")
+        auth = {"Authorization": f'Bearer {token}'}
+        headers.update(auth)
+        log_cmd([method, path])
+        conn.request(method, path, body, headers)
+        resp = conn.getresponse()
+        body = resp.read()
+        logging.debug(f"{resp.status} {body}")
+        if resp.status != 200:
+            raise Exception(resp, body)
+        return body
 
     @classmethod
     def write_module_code(cls, module_code):
@@ -297,7 +388,7 @@ class Smoketest(unittest.TestCase):
         if "database_identity" in self.__dict__:
             try:
                 # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.database_identity)
+                self.spacetime("delete", "--yes", self.database_identity)
             except Exception:
                 pass
 
@@ -306,7 +397,7 @@ class Smoketest(unittest.TestCase):
        if hasattr(cls, "database_identity"):
            try:
                # TODO: save the credentials in publish_module()
-               cls.spacetime("delete", cls.database_identity)
+               cls.spacetime("delete", "--yes", cls.database_identity)
            except Exception:
                pass
 
@@ -318,6 +409,13 @@ class Smoketest(unittest.TestCase):
             cls.addClassCleanup(cm.__exit__, None, None, None)
             return result
 
+    def assertSql(self, sql: str, expected: str):
+        """Assert that executing `sql` produces the expected output."""
+        self.maxDiff = None
+        sql_out = self.spacetime("sql", self.database_identity, sql)
+        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
+        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
+        self.assertMultiLineEqual(sql_out, expected)
 
 # This is a custom thread class that will propagate an exception to the caller of `.join()`.
 # This is required because, by default, threads do not propagate exceptions to their callers,

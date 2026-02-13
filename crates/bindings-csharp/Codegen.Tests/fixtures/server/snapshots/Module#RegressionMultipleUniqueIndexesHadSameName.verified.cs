@@ -8,14 +8,19 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        Unique1 = BSATN.Unique1.Read(reader);
-        Unique2 = BSATN.Unique2.Read(reader);
+        Unique1 = BSATN.Unique1RW.Read(reader);
+        Unique2 = BSATN.Unique2RW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.Unique1.Write(writer, Unique1);
-        BSATN.Unique2.Write(writer, Unique2);
+        BSATN.Unique1RW.Write(writer, Unique1);
+        BSATN.Unique2RW.Write(writer, Unique2);
+    }
+
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
     }
 
     public override string ToString() =>
@@ -24,13 +29,15 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
     public readonly partial struct BSATN
         : SpacetimeDB.BSATN.IReadWrite<RegressionMultipleUniqueIndexesHadSameName>
     {
-        internal static readonly SpacetimeDB.BSATN.U32 Unique1 = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Unique2 = new();
+        internal static readonly SpacetimeDB.BSATN.U32 Unique1RW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 Unique2RW = new();
 
-        public RegressionMultipleUniqueIndexesHadSameName Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<RegressionMultipleUniqueIndexesHadSameName>(
-                reader
-            );
+        public RegressionMultipleUniqueIndexesHadSameName Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new RegressionMultipleUniqueIndexesHadSameName();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(
             System.IO.BinaryWriter writer,
@@ -47,8 +54,8 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(Unique1), Unique1.GetAlgebraicType(registrar)),
-                        new(nameof(Unique2), Unique2.GetAlgebraicType(registrar))
+                        new("Unique1", Unique1RW.GetAlgebraicType(registrar)),
+                        new("Unique2", Unique2RW.GetAlgebraicType(registrar))
                     }
                 )
             );
@@ -60,13 +67,17 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
 
     public override int GetHashCode()
     {
-        return Unique1.GetHashCode() ^ Unique2.GetHashCode();
+        var ___hashUnique1 = Unique1.GetHashCode();
+        var ___hashUnique2 = Unique2.GetHashCode();
+        return ___hashUnique1 ^ ___hashUnique2;
     }
 
 #nullable enable
     public bool Equals(RegressionMultipleUniqueIndexesHadSameName that)
     {
-        return Unique1.Equals(that.Unique1) && Unique2.Equals(that.Unique2);
+        var ___eqUnique1 = this.Unique1.Equals(that.Unique1);
+        var ___eqUnique2 = this.Unique2.Equals(that.Unique2);
+        return ___eqUnique1 && ___eqUnique2;
     }
 
     public override bool Equals(object? that)

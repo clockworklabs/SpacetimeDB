@@ -1,4 +1,4 @@
-from .. import Smoketest
+from .. import Smoketest, requires_anonymous_login
 import time
 
 class NewUserFlow(Smoketest):
@@ -25,6 +25,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 }
 """
 
+    @requires_anonymous_login
     def test_new_user_flow(self):
         """Test the entirety of the new user flow."""
 

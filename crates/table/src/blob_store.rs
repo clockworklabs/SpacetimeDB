@@ -12,10 +12,10 @@
 //!   It is not optimize and is mainly intended for testing purposes.
 
 use blake3::hash;
-use spacetimedb_data_structures::map::{Entry, HashMap};
+use core::mem;
+use spacetimedb_data_structures::map::{hash_map::Entry, HashMap};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
-
-use crate::MemoryUsage;
+use spacetimedb_memory_usage::MemoryUsage;
 
 /// The content address of a blob-stored object.
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug, Serialize, Deserialize)]
@@ -234,15 +234,20 @@ impl BlobStore for HashMapBlobStore {
     }
 }
 
+impl HashMapBlobStore {
+    /// Merge `src_bs` into `self`.
+    pub fn merge_from(&mut self, src_bs: Self) {
+        for (hash, mut obj) in src_bs.map {
+            let uses = mem::take(&mut obj.uses);
+            self.map.entry(hash).or_insert(obj).uses += uses;
+        }
+    }
+}
+
 #[cfg(test)]
 impl HashMapBlobStore {
-    /// Returns an iterator over the (hash, usage count, blob bytes) triple.
-    fn iter(&self) -> impl Iterator<Item = (&BlobHash, usize, &[u8])> + '_ {
-        self.map.iter().map(|(hash, obj)| (hash, obj.uses, &*obj.blob))
-    }
-
     /// Returns a map relating blob hashes to the usage count in this blob store.
     pub fn usage_counter(&self) -> HashMap<BlobHash, usize> {
-        self.iter().map(|(hash, uses, _)| (*hash, uses)).collect()
+        self.iter_blobs().map(|(hash, uses, _)| (*hash, uses)).collect()
     }
 }
