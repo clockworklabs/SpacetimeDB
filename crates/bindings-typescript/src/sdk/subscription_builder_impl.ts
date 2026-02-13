@@ -1,4 +1,5 @@
 import type { DbConnectionImpl } from './db_connection_impl';
+import { INTERNAL_REMOTE_MODULE } from './internal';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
@@ -125,7 +126,11 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * including dropping subscriptions, corrupting the client cache, or throwing errors.
    */
   subscribeToAllTables(): void {
-    this.subscribe('SELECT * FROM *');
+    const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
+    const queries = remoteModule.tables.map(
+      table => `SELECT * FROM ${table.name}`
+    );
+    this.subscribe(queries);
   }
 }
 
@@ -142,7 +147,7 @@ export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
 }
 
 export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
-  #queryId: number;
+  #querySetId: number;
   #unsubscribeCalled: boolean = false;
   #endedState: boolean = false;
   #activeState: boolean = false;
@@ -174,7 +179,11 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
         }
       }
     );
-    this.#queryId = this.db.registerSubscription(this, this.#emitter, querySql);
+    this.#querySetId = this.db.registerSubscription(
+      this,
+      this.#emitter,
+      querySql
+    );
   }
 
   /**
@@ -187,7 +196,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#queryId);
+    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
       (_ctx: SubscriptionEventContextInterface<RemoteModule>) => {
@@ -217,7 +226,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#queryId);
+    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
       (ctx: SubscriptionEventContextInterface<RemoteModule>) => {

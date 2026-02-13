@@ -1264,8 +1264,6 @@ namespace SpacetimeDB.Internal.TableHandles
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
-
-            public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
         }
 
         public BarUniqueIndex Bar => new();
@@ -1496,10 +1494,6 @@ namespace SpacetimeDB.Internal.TableHandles
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
                 FindSingle(key);
-
-            public global::RegressionMultipleUniqueIndexesHadSameName Update(
-                global::RegressionMultipleUniqueIndexesHadSameName row
-            ) => DoUpdate(row);
         }
 
         internal Unique1UniqueIndex Unique1 => new();
@@ -1520,10 +1514,6 @@ namespace SpacetimeDB.Internal.TableHandles
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
                 FindSingle(key);
-
-            public global::RegressionMultipleUniqueIndexesHadSameName Update(
-                global::RegressionMultipleUniqueIndexesHadSameName row
-            ) => DoUpdate(row);
         }
 
         internal Unique2UniqueIndex Unique2 => new();

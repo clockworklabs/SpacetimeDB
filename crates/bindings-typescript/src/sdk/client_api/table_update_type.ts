@@ -9,13 +9,11 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import CompressableQueryUpdate from './compressable_query_update_type';
+import TableUpdateRows from './table_update_rows_type';
 
 export default __t.object('TableUpdate', {
-  tableId: __t.u32(),
   tableName: __t.string(),
-  numRows: __t.u64(),
-  get updates() {
-    return __t.array(CompressableQueryUpdate);
+  get rows() {
+    return __t.array(TableUpdateRows);
   },
 });

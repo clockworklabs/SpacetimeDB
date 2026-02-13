@@ -281,9 +281,9 @@ public static partial class ia_loop
         targetable.quad = new_hash;
         ctx.Db.game_targetable_state.entity_id.Update(targetable);
 
-        if (ctx.Db.game_live_targetable_state.entity_id.Find(entity_id) is not null)
+        if (ctx.Db.game_live_targetable_state.entity_id.Delete(entity_id))
         {
-            ctx.Db.game_live_targetable_state.entity_id.Update(new(entity_id, new_hash));
+            ctx.Db.game_live_targetable_state.Insert(new(entity_id, new_hash));
         }
 
         GameMobileEntityState mobile_entity =

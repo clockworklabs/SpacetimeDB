@@ -9,16 +9,15 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import QueryId from './query_id_type';
-import SubscribeRows from './subscribe_rows_type';
+import QuerySetId from './query_set_id_type';
+import QueryRows from './query_rows_type';
 
 export default __t.object('SubscribeApplied', {
   requestId: __t.u32(),
-  totalHostExecutionDurationMicros: __t.u64(),
-  get queryId() {
-    return QueryId;
+  get querySetId() {
+    return QuerySetId;
   },
   get rows() {
-    return SubscribeRows;
+    return QueryRows;
   },
 });

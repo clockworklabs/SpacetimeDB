@@ -22,8 +22,6 @@ impl __sdk::InModule for InsertResultEveryPrimitiveStructStringArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertResultEveryPrimitiveStructStringCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_result_every_primitive_struct_string`.
 ///
@@ -33,87 +31,41 @@ pub trait insert_result_every_primitive_struct_string {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_result_every_primitive_struct_string`] callbacks.
-    fn insert_result_every_primitive_struct_string(&self, r: Result<EveryPrimitiveStruct, String>)
-        -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_result_every_primitive_struct_string`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertResultEveryPrimitiveStructStringCallbackId`] can be passed to [`Self::remove_on_insert_result_every_primitive_struct_string`]
-    /// to cancel the callback.
-    fn on_insert_result_every_primitive_struct_string(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &Result<EveryPrimitiveStruct, String>) + Send + 'static,
-    ) -> InsertResultEveryPrimitiveStructStringCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_result_every_primitive_struct_string`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_result_every_primitive_struct_string(
-        &self,
-        callback: InsertResultEveryPrimitiveStructStringCallbackId,
-    );
-}
-
-impl insert_result_every_primitive_struct_string for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_result_every_primitive_struct_string:insert_result_every_primitive_struct_string_then`] to run a callback after the reducer completes.
     fn insert_result_every_primitive_struct_string(
         &self,
         r: Result<EveryPrimitiveStruct, String>,
     ) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "insert_result_every_primitive_struct_string",
-            InsertResultEveryPrimitiveStructStringArgs { r },
-        )
+        self.insert_result_every_primitive_struct_string_then(r, |_, _| {})
     }
-    fn on_insert_result_every_primitive_struct_string(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Result<EveryPrimitiveStruct, String>) + Send + 'static,
-    ) -> InsertResultEveryPrimitiveStructStringCallbackId {
-        InsertResultEveryPrimitiveStructStringCallbackId(self.imp.on_reducer(
-            "insert_result_every_primitive_struct_string",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertResultEveryPrimitiveStructString { r },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, r)
-            }),
-        ))
-    }
-    fn remove_on_insert_result_every_primitive_struct_string(
-        &self,
-        callback: InsertResultEveryPrimitiveStructStringCallbackId,
-    ) {
-        self.imp
-            .remove_on_reducer("insert_result_every_primitive_struct_string", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_result_every_primitive_struct_string`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_result_every_primitive_struct_string {
-    /// Set the call-reducer flags for the reducer `insert_result_every_primitive_struct_string` to `flags`.
+    /// Request that the remote module invoke the reducer `insert_result_every_primitive_struct_string` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_result_every_primitive_struct_string(&self, flags: __ws::CallReducerFlags);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_result_every_primitive_struct_string_then(
+        &self,
+        r: Result<EveryPrimitiveStruct, String>,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
-impl set_flags_for_insert_result_every_primitive_struct_string for super::SetReducerFlags {
-    fn insert_result_every_primitive_struct_string(&self, flags: __ws::CallReducerFlags) {
+impl insert_result_every_primitive_struct_string for super::RemoteReducers {
+    fn insert_result_every_primitive_struct_string_then(
+        &self,
+        r: Result<EveryPrimitiveStruct, String>,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
         self.imp
-            .set_call_reducer_flags("insert_result_every_primitive_struct_string", flags);
+            .invoke_reducer_with_callback(InsertResultEveryPrimitiveStructStringArgs { r }, callback)
     }
 }

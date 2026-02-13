@@ -112,6 +112,7 @@ function tbl<const Name extends string, Row extends RowObj>(
     delete?: string;
     insert_or_panic?: string;
     update_by?: [string, keyof Row];
+    update_non_pk_by?: [string, keyof Row];
     delete_by?: [string, keyof Row];
   },
   row: Row
@@ -140,6 +141,13 @@ function tbl<const Name extends string, Row extends RowObj>(
         const [reducer, col] = ops.update_by;
         exports[reducer] = spacetimedb.reducer(row, (ctx, args) => {
           (ctx.db[toCamelCase(name)] as any)[col].update({ ...args });
+        });
+      }
+      if (ops.update_non_pk_by) {
+        const [reducer, col] = ops.update_non_pk_by;
+        exports[reducer] = spacetimedb.reducer(row, (ctx, args) => {
+          (ctx.db[toCamelCase(name)] as any)[col].delete(args[col as any]);
+          (ctx.db[toCamelCase(name)] as any).insert({ ...args });
         });
       }
       if (ops.delete_by) {
@@ -382,7 +390,7 @@ const uniqueTables = [
     'unique_u8',
     {
       insert_or_panic: 'insert_unique_u8',
-      update_by: ['update_unique_u8', 'n'],
+      update_non_pk_by: ['update_unique_u8', 'n'],
       delete_by: ['delete_unique_u8', 'n'],
     },
     { n: t.u8().unique(), data: t.i32() }
@@ -392,7 +400,7 @@ const uniqueTables = [
     'unique_u16',
     {
       insert_or_panic: 'insert_unique_u16',
-      update_by: ['update_unique_u16', 'n'],
+      update_non_pk_by: ['update_unique_u16', 'n'],
       delete_by: ['delete_unique_u16', 'n'],
     },
     { n: t.u16().unique(), data: t.i32() }
@@ -402,7 +410,7 @@ const uniqueTables = [
     'unique_u32',
     {
       insert_or_panic: 'insert_unique_u32',
-      update_by: ['update_unique_u32', 'n'],
+      update_non_pk_by: ['update_unique_u32', 'n'],
       delete_by: ['delete_unique_u32', 'n'],
     },
     { n: t.u32().unique(), data: t.i32() }
@@ -412,7 +420,7 @@ const uniqueTables = [
     'unique_u64',
     {
       insert_or_panic: 'insert_unique_u64',
-      update_by: ['update_unique_u64', 'n'],
+      update_non_pk_by: ['update_unique_u64', 'n'],
       delete_by: ['delete_unique_u64', 'n'],
     },
     { n: t.u64().unique(), data: t.i32() }
@@ -422,7 +430,7 @@ const uniqueTables = [
     'unique_u128',
     {
       insert_or_panic: 'insert_unique_u128',
-      update_by: ['update_unique_u128', 'n'],
+      update_non_pk_by: ['update_unique_u128', 'n'],
       delete_by: ['delete_unique_u128', 'n'],
     },
     { n: t.u128().unique(), data: t.i32() }
@@ -432,7 +440,7 @@ const uniqueTables = [
     'unique_u256',
     {
       insert_or_panic: 'insert_unique_u256',
-      update_by: ['update_unique_u256', 'n'],
+      update_non_pk_by: ['update_unique_u256', 'n'],
       delete_by: ['delete_unique_u256', 'n'],
     },
     { n: t.u256().unique(), data: t.i32() }
@@ -442,7 +450,7 @@ const uniqueTables = [
     'unique_i8',
     {
       insert_or_panic: 'insert_unique_i8',
-      update_by: ['update_unique_i8', 'n'],
+      update_non_pk_by: ['update_unique_i8', 'n'],
       delete_by: ['delete_unique_i8', 'n'],
     },
     { n: t.i8().unique(), data: t.i32() }
@@ -452,7 +460,7 @@ const uniqueTables = [
     'unique_i16',
     {
       insert_or_panic: 'insert_unique_i16',
-      update_by: ['update_unique_i16', 'n'],
+      update_non_pk_by: ['update_unique_i16', 'n'],
       delete_by: ['delete_unique_i16', 'n'],
     },
     { n: t.i16().unique(), data: t.i32() }
@@ -462,7 +470,7 @@ const uniqueTables = [
     'unique_i32',
     {
       insert_or_panic: 'insert_unique_i32',
-      update_by: ['update_unique_i32', 'n'],
+      update_non_pk_by: ['update_unique_i32', 'n'],
       delete_by: ['delete_unique_i32', 'n'],
     },
     { n: t.i32().unique(), data: t.i32() }
@@ -472,7 +480,7 @@ const uniqueTables = [
     'unique_i64',
     {
       insert_or_panic: 'insert_unique_i64',
-      update_by: ['update_unique_i64', 'n'],
+      update_non_pk_by: ['update_unique_i64', 'n'],
       delete_by: ['delete_unique_i64', 'n'],
     },
     { n: t.i64().unique(), data: t.i32() }
@@ -482,7 +490,7 @@ const uniqueTables = [
     'unique_i128',
     {
       insert_or_panic: 'insert_unique_i128',
-      update_by: ['update_unique_i128', 'n'],
+      update_non_pk_by: ['update_unique_i128', 'n'],
       delete_by: ['delete_unique_i128', 'n'],
     },
     { n: t.i128().unique(), data: t.i32() }
@@ -492,7 +500,7 @@ const uniqueTables = [
     'unique_i256',
     {
       insert_or_panic: 'insert_unique_i256',
-      update_by: ['update_unique_i256', 'n'],
+      update_non_pk_by: ['update_unique_i256', 'n'],
       delete_by: ['delete_unique_i256', 'n'],
     },
     { n: t.i256().unique(), data: t.i32() }
@@ -502,7 +510,7 @@ const uniqueTables = [
     'unique_bool',
     {
       insert_or_panic: 'insert_unique_bool',
-      update_by: ['update_unique_bool', 'b'],
+      update_non_pk_by: ['update_unique_bool', 'b'],
       delete_by: ['delete_unique_bool', 'b'],
     },
     { b: t.bool().unique(), data: t.i32() }
@@ -512,7 +520,7 @@ const uniqueTables = [
     'unique_string',
     {
       insert_or_panic: 'insert_unique_string',
-      update_by: ['update_unique_string', 's'],
+      update_non_pk_by: ['update_unique_string', 's'],
       delete_by: ['delete_unique_string', 's'],
     },
     { s: t.string().unique(), data: t.i32() }
@@ -522,7 +530,7 @@ const uniqueTables = [
     'unique_identity',
     {
       insert_or_panic: 'insert_unique_identity',
-      update_by: ['update_unique_identity', 'i'],
+      update_non_pk_by: ['update_unique_identity', 'i'],
       delete_by: ['delete_unique_identity', 'i'],
     },
     { i: t.identity().unique(), data: t.i32() }
@@ -532,7 +540,7 @@ const uniqueTables = [
     'unique_connection_id',
     {
       insert_or_panic: 'insert_unique_connection_id',
-      update_by: ['update_unique_connection_id', 'a'],
+      update_non_pk_by: ['update_unique_connection_id', 'a'],
       delete_by: ['delete_unique_connection_id', 'a'],
     },
     { a: t.connectionId().unique(), data: t.i32() }
@@ -542,7 +550,7 @@ const uniqueTables = [
     'unique_uuid',
     {
       insert_or_panic: 'insert_unique_uuid',
-      update_by: ['update_unique_uuid', 'u'],
+      update_non_pk_by: ['update_unique_uuid', 'u'],
       delete_by: ['delete_unique_uuid', 'u'],
     },
     { u: t.uuid().unique(), data: t.i32() }
