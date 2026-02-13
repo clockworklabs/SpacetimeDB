@@ -1855,7 +1855,7 @@ mod tests {
     use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
+    use spacetimedb_durability::{Durability, EmptyHistory, Transaction, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
@@ -1940,13 +1940,10 @@ mod tests {
     impl Durability for ManualDurability {
         type TxData = Txdata;
 
-        fn append_tx(&self, tx: Self::TxData) {
+        fn append_tx(&self, tx: Transaction<Self::TxData>) {
             let mut commitlog = self.commitlog.write().unwrap();
-            if let Err(tx) = commitlog.append(tx) {
-                commitlog.commit().expect("error flushing commitlog");
-                commitlog.append(tx).expect("should be able to append after flush");
-            }
-            commitlog.commit().expect("error flushing commitlog");
+            commitlog.commit([tx]).expect("commit failed");
+            commitlog.flush().expect("error flushing commitlog");
         }
 
         fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
