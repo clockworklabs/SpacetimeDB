@@ -214,6 +214,7 @@ record TableAccessor
 {
     public readonly string Name;
     public readonly bool IsPublic;
+    public readonly bool IsEvent;
     public readonly Scheduled? Scheduled;
 
     public TableAccessor(TableDeclaration table, AttributeData data, DiagReporter diag)
@@ -222,6 +223,7 @@ record TableAccessor
 
         Name = attr.Name ?? table.ShortName;
         IsPublic = attr.Public;
+        IsEvent = attr.Event;
         if (
             attr.Scheduled is { } reducer
             && table.GetColumnIndex(data, attr.ScheduledAt, diag) is { } scheduledAtIndex
@@ -388,7 +390,7 @@ record TableIndex
     public string GenerateIndexDef() =>
         $$"""
             new(
-                Name: null,
+                SourceName: null,
                 AccessorName: "{{AccessorName}}",
                 Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{string.Join(
                     ", ",
@@ -732,8 +734,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     return row;
                 }
 
-                public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                    Name: nameof({{{v.Name}}}),
+                public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                    SourceName: nameof({{{v.Name}}}),
                     ProductTypeRef: (uint) new {{{globalName}}}.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [{{{GetPrimaryKey(v)?.ToString() ?? ""}}}],
                     Indexes: [
@@ -747,14 +749,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     ],
                     Constraints: {{{GenConstraintList(v, ColumnAttrs.Unique, $"{iTable}.MakeUniqueConstraint")}}},
                     Sequences: {{{GenConstraintList(v, ColumnAttrs.AutoInc, $"{iTable}.MakeSequence")}}},
-                    Schedule: {{{(
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.{{{(v.IsPublic ? "Public" : "Private")}}},
+                    DefaultValues: [],
+                    IsEvent: {{{(v.IsEvent ? "true" : "false")}}}
+                );
+
+                public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => {{{(
                         v.Scheduled is { } scheduled
                         ? $"{iTable}.MakeSchedule(\"{scheduled.ReducerName}\", {scheduled.ScheduledAtColumn})"
                         : "null"
-                    )}}},
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.{{{(v.IsPublic ? "Public" : "Private")}}}
-                );
+                    )}}};
 
                 public ulong Count => {{{iTable}}}.DoCount();
                 public IEnumerable<{{{globalName}}}> Iter() => {{{iTable}}}.DoIter();
@@ -1139,8 +1144,8 @@ record ViewDeclaration
 
     public string GenerateViewDef(uint Index) =>
         $$$"""
-            new global::SpacetimeDB.Internal.RawViewDefV9(
-                Name: "{{{Name}}}",
+            new global::SpacetimeDB.Internal.RawViewDefV10(
+                SourceName: "{{{Name}}}",
                 Index: {{{Index}}},
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
@@ -1218,7 +1223,7 @@ record ViewDeclaration
             sealed class {{{Name}}}ViewDispatcher : {{{interfaceName}}} {
                 {{{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Parameters)}}}
                 
-                public SpacetimeDB.Internal.RawViewDefV9 {{{makeViewDefMethod}}}(SpacetimeDB.BSATN.ITypeRegistrar registrar)
+                public SpacetimeDB.Internal.RawViewDefV10 {{{makeViewDefMethod}}}(SpacetimeDB.BSATN.ITypeRegistrar registrar)
                     => {{{GenerateViewDef(index)}}}
 
                 public byte[] Invoke(
@@ -1305,17 +1310,21 @@ record ReducerDeclaration
              class {{Name}}: SpacetimeDB.Internal.IReducer {
                  {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
-                 public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                     nameof({{Name}}),
-                     [{{MemberDeclaration.GenerateDefs(Args)}}],
-                     {{Kind switch
+                 public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                     SourceName: nameof({{Name}}),
+                     Params: [{{MemberDeclaration.GenerateDefs(Args)}}],
+                     Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                     OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                     ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+                 );
+
+                 public SpacetimeDB.Internal.Lifecycle? Lifecycle => {{Kind switch
         {
             ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
             ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
             ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
             _ => "null"
-        }}}
-                 );
+        }}};
 
                  public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
                      {{invocation}};
@@ -1505,10 +1514,11 @@ record ProcedureDeclaration
             class {{{Name}}} : SpacetimeDB.Internal.IProcedure {
                 {{{classFields}}}
 
-                public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
-                    nameof({{{Name}}}),
-                    [{{{MemberDeclaration.GenerateDefs(Args)}}}],
-                    {{{returnTypeExpr}}}
+                public SpacetimeDB.Internal.RawProcedureDefV10 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
+                    SourceName: nameof({{{Name}}}),
+                    Params: [{{{MemberDeclaration.GenerateDefs(Args)}}}],
+                    ReturnType: {{{returnTypeExpr}}},
+                    Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
                 );
 
                 public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {

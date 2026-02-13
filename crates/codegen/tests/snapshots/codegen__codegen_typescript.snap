@@ -252,8 +252,8 @@ import TestFRow from "./test_f_table";
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
-const tablesSchema = __schema(
-  __table({
+const tablesSchema = __schema({
+  logged_out_player: __table({
     name: 'logged_out_player',
     indexes: [
       { name: 'logged_out_player_identity_idx_btree', algorithm: 'btree', columns: [
@@ -272,7 +272,7 @@ const tablesSchema = __schema(
       { name: 'logged_out_player_player_id_key', constraint: 'unique', columns: ['playerId'] },
     ],
   }, LoggedOutPlayerRow),
-  __table({
+  person: __table({
     name: 'person',
     indexes: [
       { name: 'person_age_idx_btree', algorithm: 'btree', columns: [
@@ -286,7 +286,7 @@ const tablesSchema = __schema(
       { name: 'person_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, PersonRow),
-  __table({
+  player: __table({
     name: 'player',
     indexes: [
       { name: 'player_identity_idx_btree', algorithm: 'btree', columns: [
@@ -305,28 +305,28 @@ const tablesSchema = __schema(
       { name: 'player_player_id_key', constraint: 'unique', columns: ['playerId'] },
     ],
   }, PlayerRow),
-  __table({
+  test_d: __table({
     name: 'test_d',
     indexes: [
     ],
     constraints: [
     ],
   }, TestDRow),
-  __table({
+  test_f: __table({
     name: 'test_f',
     indexes: [
     ],
     constraints: [
     ],
   }, TestFRow),
-  __table({
+  my_player: __table({
     name: 'my_player',
     indexes: [
     ],
     constraints: [
     ],
   }, MyPlayerRow),
-);
+});
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(

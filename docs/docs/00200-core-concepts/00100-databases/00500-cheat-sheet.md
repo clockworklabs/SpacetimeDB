@@ -209,7 +209,7 @@ SPACETIMEDB_ENUM(PlayerStatus, Active, Inactive);
 ```typescript
 import { schema } from 'spacetimedb/server';
 
-const spacetimedb = schema(player);
+const spacetimedb = schema({ player });
 export default spacetimedb;
 
 // Basic reducer
@@ -390,7 +390,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) { /* ... */ }
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: 'send_reminder' },
+  { name: 'reminder', scheduled: (): any => send_reminder },
   {
     id: t.u64().primaryKey().autoInc(),
     message: t.string(),

@@ -436,7 +436,7 @@ const message = table(
   }
 );
 
-const spacetimedb = schema(message);
+const spacetimedb = schema({ message });
 export default spacetimedb;
 
 // Public view that only returns messages the caller can see
@@ -576,7 +576,7 @@ const userAccount = table(
   }
 );
 
-const spacetimedb = schema(userAccount);
+const spacetimedb = schema({ userAccount });
 export default spacetimedb;
 
 // Public type without sensitive columns
@@ -771,7 +771,7 @@ const employee = table(
   }
 );
 
-const spacetimedb = schema(employee);
+const spacetimedb = schema({ employee });
 export default spacetimedb;
 
 // Public type for colleagues (no salary)
