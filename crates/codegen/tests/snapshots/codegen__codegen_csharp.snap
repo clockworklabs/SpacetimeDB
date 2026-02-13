@@ -1577,19 +1577,11 @@ namespace SpacetimeDB
 
         internal static string[] AllTablesSqlQueries() => new string[]
         {
-            new QueryBuilder().From.HasSpecialStuff().ToSql(),
             new QueryBuilder().From.LoggedOutPlayer().ToSql(),
             new QueryBuilder().From.MyPlayer().ToSql(),
             new QueryBuilder().From.Person().ToSql(),
-            new QueryBuilder().From.PkMultiIdentity().ToSql(),
             new QueryBuilder().From.Player().ToSql(),
-            new QueryBuilder().From.Points().ToSql(),
-            new QueryBuilder().From.PrivateTable().ToSql(),
-            new QueryBuilder().From.RepeatingTestArg().ToSql(),
-            new QueryBuilder().From.TableToRemove().ToSql(),
-            new QueryBuilder().From.TestA().ToSql(),
             new QueryBuilder().From.TestD().ToSql(),
-            new QueryBuilder().From.TestE().ToSql(),
             new QueryBuilder().From.TestF().ToSql(),
         }
         ;
