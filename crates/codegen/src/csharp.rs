@@ -999,7 +999,7 @@ impl Lang for Csharp<'_> {
             writeln!(output);
             writeln!(output, "internal static string[] AllTablesSqlQueries() => new string[]");
             indented_block(output, |output| {
-                for (table_name, _) in iter_table_names_and_types(module) {
+                for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
                     let method_name = table_name.deref().to_case(Case::Pascal);
                     writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
                 }
