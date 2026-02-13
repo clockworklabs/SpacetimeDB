@@ -13,19 +13,19 @@
 #include "PlayerTable.g.generated.h"
 
 UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UPlayerIdentityUniqueIndex : public UObject
+class CLIENT_UNREAL_API UPlayerPlayerIdentityIdxBtreeUniqueIndex : public UObject
 {
     GENERATED_BODY()
 
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FPlayerType, FSpacetimeDBIdentity, FTableCache<FPlayerType>> IdentityIndexHelper;
+    FUniqueIndexHelper<FPlayerType, FSpacetimeDBIdentity, FTableCache<FPlayerType>> PlayerIdentityIdxBtreeIndexHelper;
 
 public:
-    UPlayerIdentityUniqueIndex()
+    UPlayerPlayerIdentityIdxBtreeUniqueIndex()
         // Initialize the helper with the specific unique index name
-        : IdentityIndexHelper("identity") {
+        : PlayerIdentityIdxBtreeIndexHelper("identity") {
     }
 
     /**
@@ -37,32 +37,32 @@ public:
     FPlayerType Find(FSpacetimeDBIdentity Key)
     {
         // Simply delegate the call to the internal helper
-        return IdentityIndexHelper.FindUniqueIndex(Key);
+        return PlayerIdentityIdxBtreeIndexHelper.FindUniqueIndex(Key);
     }
 
     // A public setter to provide the cache to the helper after construction
     // This is a common pattern when the cache might be created or provided by another system.
     void SetCache(TSharedPtr<const FTableCache<FPlayerType>> InPlayerCache)
     {
-        IdentityIndexHelper.Cache = InPlayerCache;
+        PlayerIdentityIdxBtreeIndexHelper.Cache = InPlayerCache;
     }
 };
 /***/
 
 UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UPlayerPlayerIdUniqueIndex : public UObject
+class CLIENT_UNREAL_API UPlayerPlayerPlayerIdIdxBtreeUniqueIndex : public UObject
 {
     GENERATED_BODY()
 
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FPlayerType, int32, FTableCache<FPlayerType>> PlayerIdIndexHelper;
+    FUniqueIndexHelper<FPlayerType, int32, FTableCache<FPlayerType>> PlayerPlayerIdIdxBtreeIndexHelper;
 
 public:
-    UPlayerPlayerIdUniqueIndex()
+    UPlayerPlayerPlayerIdIdxBtreeUniqueIndex()
         // Initialize the helper with the specific unique index name
-        : PlayerIdIndexHelper("player_id") {
+        : PlayerPlayerIdIdxBtreeIndexHelper("player_id") {
     }
 
     /**
@@ -74,14 +74,14 @@ public:
     FPlayerType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
-        return PlayerIdIndexHelper.FindUniqueIndex(Key);
+        return PlayerPlayerIdIdxBtreeIndexHelper.FindUniqueIndex(Key);
     }
 
     // A public setter to provide the cache to the helper after construction
     // This is a common pattern when the cache might be created or provided by another system.
     void SetCache(TSharedPtr<const FTableCache<FPlayerType>> InPlayerCache)
     {
-        PlayerIdIndexHelper.Cache = InPlayerCache;
+        PlayerPlayerIdIdxBtreeIndexHelper.Cache = InPlayerCache;
     }
 };
 /***/
@@ -93,10 +93,10 @@ class CLIENT_UNREAL_API UPlayerTable : public URemoteTable
 
 public:
     UPROPERTY(BlueprintReadOnly)
-    UPlayerIdentityUniqueIndex* Identity;
+    UPlayerPlayerIdentityIdxBtreeUniqueIndex* PlayerIdentityIdxBtree;
 
     UPROPERTY(BlueprintReadOnly)
-    UPlayerPlayerIdUniqueIndex* PlayerId;
+    UPlayerPlayerPlayerIdIdxBtreeUniqueIndex* PlayerPlayerIdIdxBtree;
 
     void PostInitialize();
 
