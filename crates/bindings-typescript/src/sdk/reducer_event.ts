@@ -1,7 +1,6 @@
-import { ConnectionId, type Infer } from '../';
+import { type Infer } from '../';
 import { Timestamp } from '../';
-import { Identity } from '../';
-import type UpdateStatus from './client_api/update_status_type.ts';
+import type ReducerOutcome from './client_api/reducer_outcome_type.ts';
 import type { ReducerEventInfo } from './reducers.ts';
 
 export type ReducerEvent<Reducer extends ReducerEventInfo> = {
@@ -14,31 +13,9 @@ export type ReducerEvent<Reducer extends ReducerEventInfo> = {
   timestamp: Timestamp;
 
   /**
-   * Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
+   * The reducer outcome, including optional return value and updates.
    */
-  status: Infer<typeof UpdateStatus>;
-
-  /**
-   * The identity of the caller.
-   * TODO: Revise these to reflect the forthcoming Identity proposal.
-   */
-  callerIdentity: Identity;
-
-  /**
-   * The connection ID of the caller.
-   *
-   * May be `null`, e.g. for scheduled reducers.
-   */
-  callerConnectionId?: ConnectionId;
-
-  /**
-   * The amount of energy consumed by the reducer run, in eV.
-   * (Not literal eV, but our SpacetimeDB energy unit eV.)
-   * May be present or undefined at the implementor's discretion;
-   * future work may determine an interface for module developers
-   * to request this value be published or hidden.
-   */
-  energyConsumed?: bigint;
+  outcome: Infer<typeof ReducerOutcome>;
 
   reducer: Reducer;
 };

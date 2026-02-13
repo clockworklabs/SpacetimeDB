@@ -498,6 +498,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 continue;
             }
             var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
+            var updateMethod = ct.Attr.HasFlag(ColumnAttrs.PrimaryKey)
+                ? $"public {globalName} Update({globalName} row) => DoUpdate(row);"
+                : "";
             yield return $$"""
                 {{vis}} sealed class {{f.Name}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     internal {{f.Name}}UniqueIndex() : base("{{standardIndexName}}") {}
@@ -505,7 +508,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
                     public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
-                    public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
+                    {{updateMethod}}
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new();
                 """;

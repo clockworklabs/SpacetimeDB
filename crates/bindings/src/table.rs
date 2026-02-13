@@ -274,6 +274,11 @@ pub trait Column {
     fn get_field(row: &<Self::Table as Table>::Row) -> &Self::ColType;
 }
 
+/// A marker trait for columns that are the primary key of their table.
+///
+/// This is used to restrict [`UniqueColumn::update`] to only work on primary key columns.
+pub trait PrimaryKey {}
+
 /// A handle to a unique index on a column.
 /// Available for `#[unique]` and `#[primary_key]` columns.
 ///
@@ -358,13 +363,21 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`, and
     /// then inserts the `new_row`.
     ///
-    /// Returns the new row as actually inserted, with  computed values substituted for any auto-inc placeholders.
+    /// Returns the new row as actually inserted, with computed values substituted for any auto-inc placeholders.
+    ///
+    /// This method can only be called on primary key columns, not any unique column.
+    /// This prevents confusion regarding what constitutes a row update vs. a delete+insert.
+    /// To perform this operation for a non-primary unique column, call
+    /// `.delete(key)` followed by `.insert(row)`.
     ///
     /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
-    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
+    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row
+    where
+        Col: PrimaryKey,
+    {
         let buf = IterBuf::take();
         update::<Tbl>(Col::index_id(), new_row, buf)
     }

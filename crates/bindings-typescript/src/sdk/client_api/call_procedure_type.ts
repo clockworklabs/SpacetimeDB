@@ -11,8 +11,8 @@ import {
 } from '../../lib/type_builders';
 
 export default __t.object('CallProcedure', {
-  procedure: __t.string(),
-  args: __t.byteArray(),
   requestId: __t.u32(),
   flags: __t.u8(),
+  procedure: __t.string(),
+  args: __t.byteArray(),
 });

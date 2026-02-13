@@ -258,7 +258,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
             "
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {{
         __sdk::InternalError::failed_parse(
@@ -344,7 +344,6 @@ pub(super) fn parse_table_update(
 
         let reducer_name = reducer.name.deref();
         let func_name = reducer_function_name(reducer);
-        let set_reducer_flags_trait = reducer_flags_trait_name(reducer);
         let args_type = function_args_type_name(&reducer.name);
         let enum_variant_name = reducer_variant_name(&reducer.name);
 
@@ -368,11 +367,8 @@ pub(super) fn parse_table_update(
 
         out.newline();
 
-        let callback_id = reducer_callback_id_name(&reducer.name);
-
         let FormattedArglist {
             arglist_no_delimiters,
-            arg_type_refs,
             arg_names,
         } = FormattedArglist::for_arguments(module, &reducer.params_for_generate.elements);
 
@@ -417,8 +413,6 @@ impl __sdk::InModule for {args_type} {{
     type Module = super::RemoteModule;
 }}
 
-pub struct {callback_id}(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `{reducer_name}`.
 ///
@@ -428,68 +422,36 @@ pub trait {func_name} {{
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_{func_name}`] callbacks.
-    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `{reducer_name}`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`{func_name}:{func_name}_then`] to run a callback after the reducer completes.
+    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()> {{
+        self.{func_name}_then({arg_names} |_, _| {{}})
+    }}
+
+    /// Request that the remote module invoke the reducer `{reducer_name}` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`{callback_id}`] can be passed to [`Self::remove_on_{func_name}`]
-    /// to cancel the callback.
-    fn on_{func_name}(&self, callback: impl FnMut(&super::ReducerEventContext, {arg_type_refs}) + Send + 'static) -> {callback_id};
-    /// Cancel a callback previously registered by [`Self::on_{func_name}`],
-    /// causing it not to run in the future.
-    fn remove_on_{func_name}(&self, callback: {callback_id});
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn {func_name}_then(
+        &self,
+        {arglist_no_delimiters}
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }}
 
 impl {func_name} for super::RemoteReducers {{
-    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()> {{
-        self.imp.call_reducer({reducer_name:?}, {args_type} {{ {arg_names} }})
-    }}
-    fn on_{func_name}(
+    fn {func_name}_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, {arg_type_refs}) + Send + 'static,
-    ) -> {callback_id} {{
-        {callback_id}(self.imp.on_reducer(
-            {reducer_name:?},
-            Box::new(move |ctx: &super::ReducerEventContext| {{
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {{
-                    event: __sdk::ReducerEvent {{
-                        reducer: super::Reducer::{enum_variant_name} {{
-                            {arg_names}
-                        }},
-                        ..
-                    }},
-                    ..
-                }} = ctx else {{ unreachable!() }};
-                callback(ctx, {arg_names})
-            }}),
-        ))
-    }}
-    fn remove_on_{func_name}(&self, callback: {callback_id}) {{
-        self.imp.remove_on_reducer({reducer_name:?}, callback.0)
-    }}
-}}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `{reducer_name}`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait {set_reducer_flags_trait} {{
-    /// Set the call-reducer flags for the reducer `{reducer_name}` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn {func_name}(&self, flags: __ws::CallReducerFlags);
-}}
-
-impl {set_reducer_flags_trait} for super::SetReducerFlags {{
-    fn {func_name}(&self, flags: __ws::CallReducerFlags) {{
-        self.imp.set_call_reducer_flags({reducer_name:?}, flags);
+        {arglist_no_delimiters}
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {{
+        self.imp.invoke_reducer_with_callback({args_type} {{ {arg_names} }}, callback)
     }}
 }}
 "
@@ -861,11 +823,6 @@ struct FormattedArglist {
     ///
     /// Always carries a trailing comma, unless it's zero elements.
     arglist_no_delimiters: String,
-    /// The argument types as `&ty, &ty, &ty,`,
-    /// for use as the params in a function/closure type.
-    ///
-    /// Always carries a trailing comma, unless it's zero elements.
-    arg_type_refs: String,
     /// The argument names as `ident, ident, ident,`,
     /// for passing to function call and struct literal expressions.
     ///
@@ -879,13 +836,8 @@ impl FormattedArglist {
         write_arglist_no_delimiters(module, &mut arglist_no_delimiters, params, None)
             .expect("Writing to a String failed... huh?");
 
-        let mut arg_type_refs = String::new();
         let mut arg_names = String::new();
-        for (arg_ident, arg_ty) in params {
-            arg_type_refs += "&";
-            write_type(module, &mut arg_type_refs, arg_ty).expect("Writing to a String failed... huh?");
-            arg_type_refs += ", ";
-
+        for (arg_ident, _) in params {
             let arg_name = arg_ident.deref().to_case(Case::Snake);
             arg_names += &arg_name;
             arg_names += ", ";
@@ -893,7 +845,6 @@ impl FormattedArglist {
 
         Self {
             arglist_no_delimiters,
-            arg_type_refs,
             arg_names,
         }
     }
@@ -1099,10 +1050,6 @@ fn reducer_variant_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Pascal)
 }
 
-fn reducer_callback_id_name(reducer_name: &ReducerName) -> String {
-    reducer_name.deref().to_case(Case::Pascal) + "CallbackId"
-}
-
 fn reducer_module_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Snake) + "_reducer"
 }
@@ -1121,10 +1068,6 @@ fn procedure_function_name(procedure: &ProcedureDef) -> String {
 
 fn procedure_function_with_callback_name(procedure: &ProcedureDef) -> String {
     procedure_function_name(procedure) + "_then"
-}
-
-fn reducer_flags_trait_name(reducer: &ReducerDef) -> String {
-    format!("set_flags_for_{}", reducer_function_name(reducer))
 }
 
 /// Iterate over all of the Rust `mod`s for types, reducers, views, and tables in the `module`.
@@ -1164,12 +1107,7 @@ fn print_module_reexports(module: &ModuleDef, visibility: CodegenVisibility, out
     for reducer in iter_reducers(module, visibility) {
         let mod_name = reducer_module_name(&reducer.name);
         let reducer_trait_name = reducer_function_name(reducer);
-        let flags_trait_name = reducer_flags_trait_name(reducer);
-        let callback_id_name = reducer_callback_id_name(&reducer.name);
-        writeln!(
-            out,
-            "pub use {mod_name}::{{{reducer_trait_name}, {flags_trait_name}, {callback_id_name}}};"
-        );
+        writeln!(out, "pub use {mod_name}::{reducer_trait_name};");
     }
     for procedure in iter_procedures(module, visibility) {
         let mod_name = procedure_module_name(&procedure.name);
@@ -1250,58 +1188,64 @@ impl __sdk::InModule for Reducer {{
                 },
                 "}\n",
             );
-        },
-        "}\n",
-    );
-
-    out.delimited_block(
-        "impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {",
-        |out| {
-            writeln!(out, "type Error = __sdk::Error;");
-            // We define an "args struct" for each reducer in `generate_reducer`.
-            // This is not user-facing, and is not exported past the "root" `mod.rs`;
-            // it is an internal helper for serialization and deserialization.
-            // We actually want to ser/de instances of `enum Reducer`, but:
-            //
-            // - `Reducer` will have struct-like variants, which SATS ser/de does not support.
-            // - The WS format does not contain a BSATN-serialized `Reducer` instance;
-            //   it holds the reducer name or ID separately from the argument bytes.
-            //   We could work up some magic with `DeserializeSeed`
-            //   and/or custom `Serializer` and `Deserializer` types
-            //   to account for this, but it's much easier to just use an intermediate struct per reducer.
-            //
-            // As such, we deserialize from the `value.args` bytes into that "args struct,"
-            // then convert it into a `Reducer` variant via `Into::into`,
-            // which we also implement in `generate_reducer`.
+            writeln!(out, "#[allow(clippy::clone_on_copy)]");
             out.delimited_block(
-                "fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {",
+                "fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {",
                 |out| {
                     out.delimited_block(
-                        "match &value.reducer_name[..] {",
+                        "match self {",
                         |out| {
                             for reducer in iter_reducers(module, visibility) {
-                                writeln!(
+                                write!(out, "Reducer::{}", reducer_variant_name(&reducer.name));
+                                if !reducer.params_for_generate.elements.is_empty() {
+                                    // Because we're emitting unit variants when the payload is empty,
+                                    // we will emit different patterns for empty vs non-empty variants.
+                                    // This is not strictly required;
+                                    // Rust allows matching a struct-like pattern
+                                    // against a unit-like enum variant,
+                                    // but we prefer the clarity of not including the braces for unit variants.
+
+                                    out.delimited_block(
+                                        "{",
+                                        |out| {
+                                            for (ident, _) in &reducer.params_for_generate.elements {
+                                                writeln!(out, "{},", ident.deref().to_case(Case::Snake));
+                                            }
+                                        },
+                                        "}",
+                                    );
+                                }
+
+                                write!(
                                     out,
-                                    "{:?} => Ok(__sdk::parse_reducer_args::<{}::{}>({:?}, &value.args)?.into()),",
-                                    reducer.name.deref(),
+                                    " => __sats::bsatn::to_vec(&{}::{}",
                                     reducer_module_name(&reducer.name),
-                                    function_args_type_name(&reducer.name),
-                                    reducer.name.deref(),
+                                    function_args_type_name(&reducer.name)
+                                );
+                                out.delimited_block(
+                                    " {",
+                                    |out| {
+                                        for (ident, _) in &reducer.params_for_generate.elements {
+                                            let field = ident.deref().to_case(Case::Snake);
+                                            writeln!(out, "{field}: {field}.clone(),");
+                                        }
+                                    },
+                                    "}),\n",
                                 );
                             }
-                            writeln!(
-                                out,
-                                "unknown => Err(__sdk::InternalError::unknown_name(\"reducer\", unknown, \"ReducerCallInfo\").into()),",
-                            );
+                            // Write a catch-all pattern to handle the case where the module defines zero reducers,
+                            // 'cause references are always considered inhabited,
+                            // even references to uninhabited types.
+                            writeln!(out, "_ => unreachable!(),");
                         },
                         "}\n",
-                    )
+                    );
                 },
                 "}\n",
             );
         },
         "}\n",
-    )
+    );
 }
 
 fn print_db_update_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
@@ -1327,11 +1271,11 @@ fn print_db_update_defn(module: &ModuleDef, visibility: CodegenVisibility, out: 
 
     out.delimited_block(
         "
-impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
+impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
     type Error = __sdk::Error;
-    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
+    fn try_from(raw: __ws::v2::TransactionUpdate) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
-        for table_update in raw.tables {
+        for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
 ",
         |out| {
@@ -1409,6 +1353,72 @@ impl __sdk::InModule for DbUpdate {{
                 "
                     diff
                 }\n",
+            );
+
+            out.delimited_block(
+                "fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {",
+                |out| {
+                    writeln!(out, "let mut db_update = DbUpdate::default();");
+                    out.delimited_block(
+                        "for table_rows in raw.tables {",
+                        |out| {
+                            out.delimited_block(
+                                "match &table_rows.table[..] {",
+                                |out| {
+                                    for (table_name, _) in iter_table_names_and_types(module, visibility) {
+                                        writeln!(
+                                            out,
+                                            "{:?} => db_update.{}.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),",
+                                            table_name.deref(),
+                                            table_method_name(table_name),
+                                        );
+                                    }
+                                    writeln!(
+                                        out,
+                                        "unknown => {{ return Err(__sdk::InternalError::unknown_name(\"table\", unknown, \"QueryRows\").into()); }}"
+                                    );
+                                },
+                                "}",
+                            );
+                        },
+                        "}",
+                    );
+                    writeln!(out, "Ok(db_update)");
+                },
+                "}\n",
+            );
+
+            out.delimited_block(
+                "fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {",
+                |out| {
+                    writeln!(out, "let mut db_update = DbUpdate::default();");
+                    out.delimited_block(
+                        "for table_rows in raw.tables {",
+                        |out| {
+                            out.delimited_block(
+                                "match &table_rows.table[..] {",
+                                |out| {
+                                    for (table_name, _) in iter_table_names_and_types(module, visibility) {
+                                        writeln!(
+                                            out,
+                                            "{:?} => db_update.{}.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),",
+                                            table_name.deref(),
+                                            table_method_name(table_name),
+                                        );
+                                    }
+                                    writeln!(
+                                        out,
+                                        "unknown => {{ return Err(__sdk::InternalError::unknown_name(\"table\", unknown, \"QueryRows\").into()); }}"
+                                    );
+                                },
+                                "}",
+                            );
+                        },
+                        "}",
+                    );
+                    writeln!(out, "Ok(db_update)");
+                },
+                "}\n",
             );
         },
         "}\n",
@@ -1488,7 +1498,7 @@ type ErrorContext = ErrorContext;
 type Reducer = Reducer;
 type DbView = RemoteTables;
 type Reducers = RemoteReducers;
-type SetReducerFlags = SetReducerFlags;
+type Procedures = RemoteProcedures;
 type DbUpdate = DbUpdate;
 type AppliedDiff<'r> = AppliedDiff<'r>;
 type SubscriptionHandle = SubscriptionHandle;
@@ -1503,6 +1513,15 @@ type QueryBuilder = __sdk::QueryBuilder;
                     }
                 },
                 "}\n",
+            );
+            out.delimited_block(
+                "const ALL_TABLE_NAMES: &'static [&'static str] = &[",
+                |out| {
+                    for (table_name, _) in iter_table_names_and_types(module, visibility) {
+                        writeln!(out, "\"{table_name}\",");
+                    }
+                },
+                "];\n",
             );
         },
         "}\n",
@@ -1540,20 +1559,6 @@ impl __sdk::InModule for RemoteProcedures {{
     type Module = RemoteModule;
 }}
 
-#[doc(hidden)]
-/// The `set_reducer_flags` field of [`DbConnection`],
-/// with methods provided by extension traits for each reducer defined by the module.
-/// Each method sets the flags for the reducer with the same name.
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub struct SetReducerFlags {{
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}}
-
-impl __sdk::InModule for SetReducerFlags {{
-    type Module = RemoteModule;
-}}
-
 /// The `db` field of [`EventContext`] and [`DbConnection`],
 /// with methods provided by extension traits for each table defined by the module.
 pub struct RemoteTables {{
@@ -1586,11 +1591,6 @@ pub struct DbConnection {{
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
     #[doc(hidden)]
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
 
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
@@ -1606,7 +1606,6 @@ impl __sdk::DbContext for DbConnection {{
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {{
         &self.db
@@ -1616,9 +1615,6 @@ impl __sdk::DbContext for DbConnection {{
     }}
     fn procedures(&self) -> &Self::Procedures {{
         &self.procedures
-    }}
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {{
-        &self.set_reducer_flags
     }}
 
     fn is_active(&self) -> bool {{
@@ -1723,7 +1719,6 @@ impl __sdk::DbConnection for DbConnection {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
             procedures: RemoteProcedures {{ imp: imp.clone() }},
-            set_reducer_flags: SetReducerFlags {{ imp: imp.clone() }},
             imp,
         }}
     }}
@@ -1775,13 +1770,11 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {{
 pub trait RemoteDbContext: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
-    SetReducerFlags = SetReducerFlags,
     SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
 > {{}}
 impl<Ctx: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
-    SetReducerFlags = SetReducerFlags,
     SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
 >> RemoteDbContext for Ctx {{}}
 ",
@@ -1863,11 +1856,6 @@ pub struct {struct_and_trait_name} {{
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
     /// The event which caused these callbacks to run.
@@ -1884,7 +1872,6 @@ impl __sdk::AbstractEventContext for {struct_and_trait_name} {{
         Self {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
-            set_reducer_flags: SetReducerFlags {{ imp: imp.clone() }},
             procedures: RemoteProcedures {{ imp: imp.clone() }},
             event,
             imp,
@@ -1904,11 +1891,6 @@ pub struct {struct_and_trait_name} {{
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
     imp: __sdk::DbContextImpl<RemoteModule>,
@@ -1924,7 +1906,6 @@ impl __sdk::AbstractEventContext for {struct_and_trait_name} {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
             procedures: RemoteProcedures {{ imp: imp.clone() }},
-            set_reducer_flags: SetReducerFlags {{ imp: imp.clone() }},
             imp,
         }}
     }}
@@ -1944,7 +1925,6 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {{
         &self.db
@@ -1954,9 +1934,6 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
     }}
     fn procedures(&self) -> &Self::Procedures {{
         &self.procedures
-    }}
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {{
-        &self.set_reducer_flags
     }}
 
     fn is_active(&self) -> bool {{

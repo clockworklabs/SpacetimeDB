@@ -913,8 +913,6 @@ namespace SpacetimeDB.Internal.TableHandles
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
-
-            public global::Player Update(global::Player row) => DoUpdate(row);
         }
 
         public IdentityUniqueIndex Identity => new();
@@ -1022,9 +1020,6 @@ namespace SpacetimeDB.Internal.TableHandles
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
-
-            public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
-                DoUpdate(row);
         }
 
         public IdentityFieldUniqueIndex IdentityField => new();

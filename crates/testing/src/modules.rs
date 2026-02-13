@@ -21,8 +21,8 @@ use tokio::runtime::{Builder, Runtime};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::host::FunctionArgs;
-use spacetimedb::messages::websocket::CallReducerFlags;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
@@ -59,7 +59,7 @@ impl ModuleHandle {
     async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
         let result = self
             .client
-            .call_reducer(reducer, args, 0, Instant::now(), CallReducerFlags::FullUpdate)
+            .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
             .await;
         let result = match result {
             Ok(result) => result.into(),

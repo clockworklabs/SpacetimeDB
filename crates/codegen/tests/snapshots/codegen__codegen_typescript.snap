@@ -356,7 +356,7 @@ const proceduresSchema = __procedures(
 /** The remote SpacetimeDB module schema, both runtime and type information. */
 const REMOTE_MODULE = {
   versionInfo: {
-    cliVersion: "1.12.0" as const,
+    cliVersion: "2.0.0" as const,
   },
   tables: tablesSchema.schemaType.tables,
   reducers: reducersSchema.reducersType.reducers,
@@ -367,11 +367,8 @@ const REMOTE_MODULE = {
   typeof proceduresSchema
 >;
 
-/** The tables available in this remote SpacetimeDB module. */
-export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);
-
-/** A typed query builder for this remote SpacetimeDB module. */
-export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);
+/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */
+export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);
 
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);

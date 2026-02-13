@@ -18,8 +18,6 @@ impl __sdk::InModule for IdentityDisconnectedArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct IdentityDisconnectedCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `identity_disconnected`.
 ///
@@ -29,73 +27,36 @@ pub trait identity_disconnected {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_identity_disconnected`] callbacks.
-    fn identity_disconnected(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `identity_disconnected`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`identity_disconnected:identity_disconnected_then`] to run a callback after the reducer completes.
+    fn identity_disconnected(&self) -> __sdk::Result<()> {
+        self.identity_disconnected_then(|_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `identity_disconnected` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`IdentityDisconnectedCallbackId`] can be passed to [`Self::remove_on_identity_disconnected`]
-    /// to cancel the callback.
-    fn on_identity_disconnected(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn identity_disconnected_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> IdentityDisconnectedCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_identity_disconnected`],
-    /// causing it not to run in the future.
-    fn remove_on_identity_disconnected(&self, callback: IdentityDisconnectedCallbackId);
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl identity_disconnected for super::RemoteReducers {
-    fn identity_disconnected(&self) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("identity_disconnected", IdentityDisconnectedArgs {})
-    }
-    fn on_identity_disconnected(
+    fn identity_disconnected_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> IdentityDisconnectedCallbackId {
-        IdentityDisconnectedCallbackId(self.imp.on_reducer(
-            "identity_disconnected",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::IdentityDisconnected {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_identity_disconnected(&self, callback: IdentityDisconnectedCallbackId) {
-        self.imp.remove_on_reducer("identity_disconnected", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `identity_disconnected`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_identity_disconnected {
-    /// Set the call-reducer flags for the reducer `identity_disconnected` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn identity_disconnected(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_identity_disconnected for super::SetReducerFlags {
-    fn identity_disconnected(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("identity_disconnected", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp
+            .invoke_reducer_with_callback(IdentityDisconnectedArgs {}, callback)
     }
 }

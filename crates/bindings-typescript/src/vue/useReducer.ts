@@ -13,11 +13,17 @@ type ParamsType<R extends UntypedReducerDef> = MaybeParams<
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef
-): (...params: ParamsType<ReducerDef>) => void {
+): (...params: ParamsType<ReducerDef>) => Promise<void> {
   const conn = useSpacetimeDB();
   const reducerName = reducerDef.accessorName;
 
-  const queueRef = shallowRef<ParamsType<ReducerDef>[]>([]);
+  const queueRef = shallowRef<
+    {
+      params: ParamsType<ReducerDef>;
+      resolve: () => void;
+      reject: (err: unknown) => void;
+    }[]
+  >([]);
 
   const stopWatch = watch(
     () => conn.isActive,
@@ -27,11 +33,11 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
 
       const fn = (connection.reducers as any)[reducerName] as (
         ...p: ParamsType<ReducerDef>
-      ) => void;
+      ) => Promise<void>;
       if (queueRef.value.length) {
         const pending = queueRef.value.splice(0);
-        for (const params of pending) {
-          fn(...params);
+        for (const item of pending) {
+          fn(...item.params).then(item.resolve, item.reject);
         }
       }
     },
@@ -45,12 +51,13 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
   return (...params: ParamsType<ReducerDef>) => {
     const connection = conn.getConnection();
     if (!connection) {
-      queueRef.value.push(params);
-      return;
+      return new Promise<void>((resolve, reject) => {
+        queueRef.value.push({ params, resolve, reject });
+      });
     }
     const fn = (connection.reducers as any)[reducerName] as (
       ...p: ParamsType<ReducerDef>
-    ) => void;
-    fn(...params);
+    ) => Promise<void>;
+    return fn(...params);
   };
 }

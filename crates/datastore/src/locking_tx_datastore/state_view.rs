@@ -4,10 +4,10 @@ use crate::error::{DatastoreError, TableError};
 use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
-    StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewRow,
-    SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID,
-    ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    StConstraintFields, StConstraintRow, StEventTableFields, StIndexFields, StIndexRow, StScheduledFields,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields,
+    StViewRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID,
+    ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -159,6 +159,20 @@ pub trait StateView {
             .unwrap_or(None)
             .transpose()?;
 
+        // Check if this table is an event table by looking up `st_event_table`.
+        //
+        // When restoring a pre-event-tables snapshot, `st_event_table` won't exist yet:
+        //   1. `restore_from_snapshot` restores pages and calls `schema_for_table_raw` (here)
+        //   2. `apply_history` replays the commit log
+        //   3. `migrate_system_tables` creates any missing system tables, including `st_event_table`
+        //
+        // We're in step 1, so `st_event_table` may not exist. Default to `false` in that case.
+        // After step 3 it will be a proper (empty) system table.
+        let is_event = match self.iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, value_eq) {
+            Ok(mut iter) => iter.next().is_some(),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => false,
+            Err(e) => return Err(e),
+        };
         Ok(TableSchema::new(
             table_id,
             table_name,
@@ -171,6 +185,7 @@ pub trait StateView {
             table_access,
             schedule,
             table_primary_key,
+            is_event,
         ))
     }
 
