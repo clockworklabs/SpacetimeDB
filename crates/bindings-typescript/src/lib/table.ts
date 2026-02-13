@@ -117,6 +117,7 @@ export type UntypedTableDef = {
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
   tableDef: Infer<typeof RawTableDefV10>;
+  isEvent?: boolean;
 };
 
 /**
@@ -172,6 +173,7 @@ export type TableOpts<Row extends RowObj> = {
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
+<<<<<<< HEAD
   scheduled?: () =>
     | ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>
     | ProcedureExport<
@@ -179,6 +181,10 @@ export type TableOpts<Row extends RowObj> = {
         { [k: string]: RowBuilder<RowObj> },
         ReturnType<typeof t.unit>
       >;
+=======
+  scheduled?: string;
+  event?: boolean;
+>>>>>>> 1d669cbd1 (Add event table support to codegen (Rust/TS/C#) and client SDKs (TS/C#))
 };
 
 /**
@@ -301,6 +307,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     public: isPublic = false,
     indexes: userIndexes = [],
     scheduled,
+    event: isEvent = false,
   } = opts;
 
   // 1. column catalogue + helpers
@@ -448,6 +455,25 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     index.sourceName = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
   }
 
+<<<<<<< HEAD
+=======
+  // Temporarily set the type ref to 0. We will set this later
+  // in the schema function.
+
+  const tableDef = (ctx: ModuleContext): Infer<typeof RawTableDefV10> => ({
+    sourceName: name,
+    productTypeRef: ctx.registerTypesRecursively(row).ref,
+    primaryKey: pk,
+    indexes,
+    constraints,
+    sequences,
+    tableType: { tag: 'User' },
+    tableAccess: { tag: isPublic ? 'Public' : 'Private' },
+    defaultValues,
+    isEvent,
+  });
+
+>>>>>>> 1d669cbd1 (Add event table support to codegen (Rust/TS/C#) and client SDKs (TS/C#))
   const productType = row.algebraicType.value as RowBuilder<
     CoerceRow<Row>
   >['algebraicType']['value'];

@@ -3,7 +3,7 @@
 Tracking progress against the [event tables proposal](../SpacetimeDBPrivate/proposals/00XX-event-tables.md).
 
 **Branches:**
-- `tyler/impl-event-tables` -- full implementation (rebased on `phoebe/rust-sdk-ws-v2`)
+- `tyler/impl-event-tables` -- full implementation (rebased on `jlarabie/csharp-sdk-ws-v2-rebase2`)
 - `tyler/event-tables-datastore` -- datastore-only subset (off `master`, PR [#4251](https://github.com/clockworklabs/SpacetimeDB/pull/4251))
 
 ## Implemented
@@ -106,23 +106,35 @@ The proposal says event tables MAY be accessible in view functions but cannot re
 
 ## Not Yet Implemented
 
-### Server: Untested Behaviors
+### Server: Constraint/Index Tests on Event Tables
 
-These are described in the proposal as expected to work but have no dedicated tests:
-
-- [ ] RLS (Row-Level Security) on event tables -- proposal says RLS should apply with same semantics as non-event tables
-- [ ] Primary key, unique constraints, indexes on event tables -- proposal says these should work within a single transaction
-- [ ] Sequences and `auto_inc` on event tables -- proposal says these should work
+- [x] Primary key enforced within single transaction (`test_event_table_primary_key_enforced_within_tx`)
+- [x] Unique constraint enforced within single transaction (`test_event_table_unique_constraint_within_tx`)
+- [x] Btree index lookup works within transaction (`test_event_table_index_lookup_within_tx`)
+- [x] Auto-increment generates distinct values within transaction (`test_event_table_auto_inc_within_tx`)
+- [x] Constraints reset across transactions -- no committed state carryover (`test_event_table_constraints_reset_across_txs`)
 
 ### Server: Module-side for Other Languages
 
-- [ ] TypeScript module bindings: `event` attribute on table declarations
-- [ ] C# module bindings: `event` attribute on table declarations
+- [x] TypeScript module bindings: `event` option on `table()` function (`crates/bindings-typescript/src/lib/table.ts`)
+- [x] C# module bindings: `[Table(Event = true)]` attribute + `RawModuleDefV10` support (already implemented)
 
-### Client: Other SDKs
+### Client: TypeScript SDK
 
-- [ ] TypeScript SDK: `EventTable` support and client codegen
-- [ ] C# SDK: `EventTable` support and client codegen
+- [x] `isEvent` property on `UntypedTableDef` (`crates/bindings-typescript/src/lib/table.ts`)
+- [x] Event table cache bypass: `on_insert` callbacks fire, rows not stored (`crates/bindings-typescript/src/sdk/table_cache.ts`)
+- [x] TypeScript codegen emits `event: true` for event tables (`crates/codegen/src/typescript.rs`)
+
+### Client: C# SDK
+
+- [x] `IsEventTable` flag on `RemoteTableHandle` (`sdks/csharp/src/Table.cs`)
+- [x] Event table rows parsed from `EventTableRows` wire format (Parse/ParseInsertOnly/ParseDeleteOnly)
+- [x] Event tables skip cache storage in `Apply()`, fire only `OnInsert` in `PostApply()`
+- [x] C# codegen passes `isEventTable: true` to constructor (`crates/codegen/src/csharp.rs`)
+
+### Not Yet Implemented
+
+- [ ] RLS (Row-Level Security) on event tables -- proposal says RLS should apply with same semantics; needs integration test
 - [ ] C++ SDK: `EventTable` support and client codegen
 
 ### Documentation
@@ -168,7 +180,12 @@ These are pre-existing issues in the v2 WebSocket implementation, not caused by 
 | Physical plan | `crates/physical-plan/src/plan.rs` (`reads_from_event_table`) |
 | View validation | `crates/core/src/host/wasm_common/module_host_actor.rs` |
 | Rust codegen | `crates/codegen/src/rust.rs` |
+| TypeScript codegen | `crates/codegen/src/typescript.rs` |
+| C# codegen | `crates/codegen/src/csharp.rs` |
 | Rust SDK | `sdks/rust/src/table.rs`, `sdks/rust/src/client_cache.rs` |
+| TypeScript SDK | `crates/bindings-typescript/src/sdk/table_cache.ts`, `crates/bindings-typescript/src/sdk/db_connection_impl.ts` |
+| TypeScript bindings | `crates/bindings-typescript/src/lib/table.ts` |
+| C# SDK | `sdks/csharp/src/Table.cs` |
 | Test module | `modules/sdk-test-event-table/src/lib.rs` |
 | Test client | `sdks/rust/tests/event-table-client/src/main.rs` |
 | Test harness | `sdks/rust/tests/test.rs` (`event_table_tests` module) |

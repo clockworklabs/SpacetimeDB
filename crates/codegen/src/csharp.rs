@@ -608,10 +608,17 @@ impl Lang for Csharp<'_> {
                     index_names.push(csharp_index_name);
                 }
 
-                writeln!(
-                    output,
-                    "internal {csharp_table_class_name}(DbConnection conn) : base(conn)"
-                );
+                if table.is_event {
+                    writeln!(
+                        output,
+                        "internal {csharp_table_class_name}(DbConnection conn) : base(conn, isEventTable: true)"
+                    );
+                } else {
+                    writeln!(
+                        output,
+                        "internal {csharp_table_class_name}(DbConnection conn) : base(conn)"
+                    );
+                }
                 indented_block(output, |output| {
                     for csharp_index_name in &index_names {
                         writeln!(output, "{csharp_index_name} = new(this);");

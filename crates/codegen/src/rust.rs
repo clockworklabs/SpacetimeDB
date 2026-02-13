@@ -129,7 +129,6 @@ impl __sdk::InModule for {type_name} {{
         let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
         let insert_callback_id = table_name_pascalcase.clone() + "InsertCallbackId";
-        let delete_callback_id = table_name_pascalcase.clone() + "DeleteCallbackId";
         let accessor_trait = table_access_trait_name(&table.name);
         let accessor_method = table_method_name(&table.name);
 
@@ -169,7 +168,71 @@ impl {accessor_trait} for super::RemoteTables {{
 }}
 
 pub struct {insert_callback_id}(__sdk::CallbackId);
-pub struct {delete_callback_id}(__sdk::CallbackId);
+"
+        );
+
+        if table.is_event {
+            // Event tables: implement EventTable (insert-only, no delete/update callbacks)
+            write!(
+                out,
+                "
+impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
+    type Row = {row_type};
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {{ self.imp.count() }}
+    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
+
+    type InsertCallbackId = {insert_callback_id};
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> {insert_callback_id} {{
+        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
+    }}
+
+    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
+        self.imp.remove_on_insert(callback.0)
+    }}
+}}
+"
+            );
+
+            // Event tables: no unique constraints in register_table
+            out.delimited_block(
+                "
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+",
+                |out| {
+                    writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
+                },
+                "}",
+            );
+
+            // Event tables: parse_table_update takes __ws::v2::TableUpdate
+            out.newline();
+            write!(
+                out,
+                "
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {{
+        __sdk::InternalError::failed_parse(
+            \"TableUpdate<{row_type}>\",
+            \"TableUpdate\",
+        ).with_cause(e).into()
+    }})
+}}
+"
+            );
+        } else {
+            // Normal tables: implement Table with delete callbacks
+            let delete_callback_id = table_name_pascalcase.clone() + "DeleteCallbackId";
+            write!(
+                out,
+                "pub struct {delete_callback_id}(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
     type Row = {row_type};
@@ -205,32 +268,32 @@ impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
     }}
 }}
 "
-        );
+            );
 
-        out.delimited_block(
-            "
+            out.delimited_block(
+                "
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 ",
-            |out| {
-                writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
-                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(module.typespace_for_generate(), &schema, product_def) {
-                    let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                    let unique_field_type = type_name(module, unique_field_type_use);
-                    writeln!(
-                        out,
-                        "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name});",
-                    );
-                }
-            },
-            "}",
-        );
+                |out| {
+                    writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
+                    for (unique_field_ident, unique_field_type_use) in iter_unique_cols(module.typespace_for_generate(), &schema, product_def) {
+                        let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+                        let unique_field_type = type_name(module, unique_field_type_use);
+                        writeln!(
+                            out,
+                            "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name});",
+                        );
+                    }
+                },
+                "}",
+            );
 
-        if table.primary_key.is_some() {
-            let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
-            write!(
-                out,
-                "
+            if table.primary_key.is_some() {
+                let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
+                write!(
+                    out,
+                    "
 pub struct {update_callback_id}(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
@@ -248,14 +311,14 @@ impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
     }}
 }}
 "
-            );
-        }
+                );
+            }
 
-        out.newline();
+            out.newline();
 
-        write!(
-            out,
-            "
+            write!(
+                out,
+                "
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
@@ -268,20 +331,20 @@ pub(super) fn parse_table_update(
     }})
 }}
 "
-        );
+            );
 
-        for (unique_field_ident, unique_field_type_use) in
-            iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
-        {
-            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-            let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
+            for (unique_field_ident, unique_field_type_use) in
+                iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
+            {
+                let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+                let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
-            let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-            let unique_field_type = type_name(module, unique_field_type_use);
+                let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
+                let unique_field_type = type_name(module, unique_field_type_use);
 
-            write!(
-                out,
-                "
+                write!(
+                    out,
+                    "
         /// Access to the `{unique_field_name}` unique index on the table `{table_name}`,
         /// which allows point queries on the field of the same name
         /// via the [`{unique_constraint}::find`] method.
@@ -312,7 +375,8 @@ pub(super) fn parse_table_update(
             }}
         }}
         "
-            );
+                );
+            }
         }
 
         implement_query_table_accessor(table, out, &row_type).expect("failed to implement query table accessor");
