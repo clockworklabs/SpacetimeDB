@@ -6,7 +6,6 @@ import type {
   UseSuspenseQueryResult,
 } from '@tanstack/react-query';
 import type { UntypedTableDef, RowType } from '../lib/table';
-import type { Expr, ColumnsFromRow } from '../lib/filter';
 import { spacetimeDBQuery } from './SpacetimeDBQueryClient';
 
 export type UseSpacetimeDBQueryResult<T> = [
@@ -22,11 +21,15 @@ export type UseSpacetimeDBSuspenseQueryResult<T> = [
 ];
 
 // Wraps TanStack Query useQuery and returns [data, loading, query]
-// pass 'skip' as the filter to set enabled: false, disabling the query
+// pass 'skip' as the second argument to set enabled: false, disabling the query
 // until a condition is met
+//
+// Usage:
+//   useSpacetimeDBQuery(tables.person)
+//   useSpacetimeDBQuery(tables.user.where(r => r.online.eq(true)))
+//   useSpacetimeDBQuery(condition ? tables.user : 'skip')
 export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
-  table: TableDef,
-  whereOrSkip?: Expr<ColumnsFromRow<RowType<TableDef>>> | 'skip',
+  queryOrSkip: ({ toSql(): string } & Record<string, any>) | 'skip',
   // any useQuery option (e.g. enabled, refetchInterval, select, placeholderData),
   // except queryKey, queryFn, and meta (managed internally)
   options?: Omit<
@@ -40,9 +43,9 @@ export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
   >
 ): UseSpacetimeDBQueryResult<RowType<TableDef>> {
   const queryOptions =
-    whereOrSkip === 'skip'
-      ? spacetimeDBQuery(table, 'skip')
-      : spacetimeDBQuery(table, whereOrSkip);
+    queryOrSkip === 'skip'
+      ? spacetimeDBQuery('skip')
+      : spacetimeDBQuery(queryOrSkip);
 
   const query = useQuery({
     ...queryOptions,
@@ -57,8 +60,7 @@ export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
 // until data is ready, a parent <Suspense fallback={…}> handles the loading UI.
 // does not support 'skip' because useSuspenseQuery must always resolve
 export function useSpacetimeDBSuspenseQuery<TableDef extends UntypedTableDef>(
-  table: TableDef,
-  where?: Expr<ColumnsFromRow<RowType<TableDef>>>,
+  query: { toSql(): string } & Record<string, any>,
   options?: Omit<
     UseSuspenseQueryOptions<
       RowType<TableDef>[],
@@ -69,12 +71,12 @@ export function useSpacetimeDBSuspenseQuery<TableDef extends UntypedTableDef>(
     'queryKey' | 'queryFn' | 'meta'
   >
 ): UseSpacetimeDBSuspenseQueryResult<RowType<TableDef>> {
-  const queryOptions = spacetimeDBQuery(table, where);
+  const queryOptions = spacetimeDBQuery(query);
 
-  const query = useSuspenseQuery({
+  const q = useSuspenseQuery({
     ...queryOptions,
     ...options,
   } as UseSuspenseQueryOptions<RowType<TableDef>[], Error>);
 
-  return [query.data, false, query];
+  return [q.data, false, q];
 }
