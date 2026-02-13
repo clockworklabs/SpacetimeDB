@@ -445,6 +445,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableType: { tag: 'User' },
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
     defaultValues,
+    isEvent: false,
   });
 
   const productType = row.algebraicType.value as RowBuilder<
