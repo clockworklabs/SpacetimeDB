@@ -101,14 +101,13 @@ function runTest(
 
 describe('TableCache', () => {
   describe('Unindexed player table', () => {
-    console.log(tables);
-    const newTable = () => new TableCacheImpl(tables.unindexed_player);
+    const newTable = () => new TableCacheImpl(tables.unindexedPlayer.tableDef);
     const mkOperation = (
       type: 'insert' | 'delete',
-      row: Infer<typeof tables.unindexed_player.columns>
+      row: Infer<typeof UnindexedPlayer>
     ) => {
       const rowId = AlgebraicType.intoMapKey(
-        { tag: 'Product', value: tables.unindexed_player.rowType },
+        { tag: 'Product', value: tables.unindexedPlayer.rowType },
         row
       );
       return {
@@ -405,7 +404,7 @@ describe('TableCache', () => {
     });
   });
   describe('Indexed player table', () => {
-    const newTable = () => new TableCacheImpl(tables.player);
+    const newTable = () => new TableCacheImpl(tables.player.tableDef);
     const mkOperation = (
       type: 'insert' | 'delete',
       row: Infer<typeof Player>
@@ -757,7 +756,7 @@ describe('TableCache', () => {
   });
 
   test('should be empty on creation', () => {
-    const tableCache = new TableCacheImpl(tables.player);
+    const tableCache = new TableCacheImpl(tables.player.tableDef);
     expect(tableCache.count()).toEqual(0n);
   });
 });
