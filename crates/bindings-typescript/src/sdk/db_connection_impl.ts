@@ -409,7 +409,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       ClientMessage.Unsubscribe({
         querySetId: { id: querySetId },
         requestId,
-        flags: UnsubscribeFlags.Default,
+        flags: UnsubscribeFlags.SendDroppedRows,
       })
     );
   }
@@ -680,6 +680,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           const tableUpdates = result.value.transactionUpdate.querySets.flatMap(
             qs => this.#querySetUpdateToTableUpdates(qs)
           );
+          // TODO: Fix this context.
           const event: Event<never> = { tag: 'UnknownTransaction' };
           const eventContext = this.#makeEventContext(event);
           const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
