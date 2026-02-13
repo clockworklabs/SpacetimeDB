@@ -1,5 +1,7 @@
 use std::{
     io,
+    num::NonZeroU16,
+    panic,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering::Relaxed},
@@ -32,12 +34,8 @@ pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 pub struct Options {
     /// Periodically flush and sync the log this often.
     ///
-    /// Default: 50ms
+    /// Default: 500ms
     pub sync_interval: Duration,
-    /// If `true`, flush (but not sync) each transaction.
-    ///
-    /// Default: false
-    pub flush_each_tx: bool,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
 }
@@ -45,8 +43,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            sync_interval: Duration::from_millis(50),
-            flush_each_tx: false,
+            sync_interval: Duration::from_millis(500),
             commitlog: Default::default(),
         }
     }
@@ -83,7 +80,7 @@ pub struct Local<T> {
     /// [`PersisterTask`].
     ///
     /// Note that this is unbounded!
-    queue: mpsc::UnboundedSender<Transaction<Txdata<T>>>,
+    queue: mpsc::UnboundedSender<Txdata<T>>,
     /// How many transactions are sitting in the `queue`.
     ///
     /// This is mainly for observability purposes, and can thus be updated with
@@ -135,7 +132,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                     queue_depth: queue_depth.clone(),
 
                     sync_interval: opts.sync_interval,
-                    flush_each_tx: opts.flush_each_tx,
+                    max_records_in_commit: opts.commitlog.max_records_in_commit,
 
                     lock,
                 }
@@ -194,7 +191,7 @@ struct Actor<T> {
     queue_depth: Arc<AtomicU64>,
 
     sync_interval: Duration,
-    flush_each_tx: bool,
+    max_records_in_commit: NonZeroU16,
 
     #[allow(unused)]
     lock: Lock,
@@ -204,7 +201,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
         self,
-        mut transactions_rx: mpsc::UnboundedReceiver<Transaction<Txdata<T>>>,
+        mut txdata_rx: mpsc::UnboundedReceiver<Txdata<T>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
@@ -227,7 +224,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                 biased;
 
                 Some(reply) = shutdown_rx.recv() => {
-                    transactions_rx.close();
+                    txdata_rx.close();
                     let _ = reply.send(self.lock.notified());
                 },
 
@@ -238,24 +235,21 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     }
                 },
 
-                tx = transactions_rx.recv() => {
-                    let Some(tx) = tx else {
+                data = txdata_rx.recv() => {
+                    let Some(txdata) = data else {
                         break;
                     };
                     self.queue_depth.fetch_sub(1, Relaxed);
-                    let clog = self.clog.clone();
-                    let flush = self.flush_each_tx;
-                    spawn_blocking(move || -> io::Result<()> {
-                        clog.commit([tx])?;
-                        if flush {
-                            clog.flush()?;
-                        }
-
-                        Ok(())
-                    })
-                    .await
-                    .expect("commitlog write panicked")
-                    .expect("commitlog write failed");
+                    // If we are writing one commit per tx, trying to buffer is
+                    // fairly pointless. Immediately flush instead.
+                    //
+                    // Otherwise, try `Commitlog::append` as a fast-path
+                    // that doesn't require `spawn_blocking`.
+                    if self.max_records_in_commit.get() == 1 {
+                        self.flush_append(txdata, true).await;
+                    } else if let Err(retry) = self.clog.append(txdata) {
+                        self.flush_append(retry, false).await
+                    }
                 },
             }
         }
@@ -265,6 +259,30 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
         }
 
         info!("exiting durability actor");
+    }
+
+    #[instrument(skip_all)]
+    async fn flush_append(&self, txdata: Txdata<T>, flush_after: bool) {
+        let clog = self.clog.clone();
+        let span = Span::current();
+        spawn_blocking(move || {
+            let _span = span.enter();
+            let mut retry = Some(txdata);
+            while let Some(txdata) = retry.take() {
+                if let Err(error::Append { txdata, source }) = clog.append_maybe_flush(txdata) {
+                    flush_error("append-maybe-flush", &source);
+                    retry = Some(txdata);
+                }
+            }
+
+            if flush_after {
+                clog.flush()
+                    .map(drop)
+                    .unwrap_or_else(|e| flush_error("flush-after", &e));
+            }
+        })
+        .await
+        .expect("commitlog append blocking task panicked")
     }
 
     #[instrument(skip_all)]
@@ -284,7 +302,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
         })
         .await
         .expect("commitlog flush-and-sync blocking task panicked")
-        .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
+        .inspect_err(|e| flush_error("flush-and-sync", e))
         .inspect(|maybe_offset| {
             if let Some(new_offset) = maybe_offset {
                 trace!("synced to offset {new_offset}");
@@ -324,11 +342,25 @@ impl Drop for Lock {
     }
 }
 
+/// Handle an error flushing the commitlog.
+///
+/// Panics if the error indicates that the log may be permanently unwritable.
+#[inline]
+#[track_caller]
+fn flush_error(task: &str, e: &io::Error) {
+    warn!("error flushing commitlog ({task}): {e:?}");
+    if matches!(e.kind(), io::ErrorKind::AlreadyExists | io::ErrorKind::StorageFull) {
+        panic!("{e}");
+    }
+}
+
 impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
-    fn append_tx(&self, tx: Transaction<Self::TxData>) {
-        self.queue.send(tx).expect("durability actor crashed");
+    fn append_tx(&self, tx: Self::TxData) {
+        if self.queue.send(tx).is_err() {
+            panic!("durability actor crashed");
+        }
         self.queue_depth.fetch_add(1, Relaxed);
     }
 
