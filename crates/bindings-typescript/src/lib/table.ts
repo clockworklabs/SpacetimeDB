@@ -3,8 +3,6 @@ import type RawConstraintDefV10 from './autogen/raw_constraint_def_v_10_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV10 from './autogen/raw_index_def_v_10_type';
 import type RawSequenceDefV10 from './autogen/raw_sequence_def_v_10_type';
-import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
-import type RawScheduleDefV10 from './autogen/raw_schedule_def_v_10_type';
 import type RawColumnDefaultValueV10 from './autogen/raw_column_default_value_v_10_type';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type {
@@ -15,7 +13,6 @@ import type {
   ReadonlyIndexes,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type { ModuleContext } from './schema';
 import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
@@ -33,6 +30,8 @@ import type {
 } from './type_util';
 import { toPascalCase } from './util';
 import BinaryWriter from './binary_writer';
+import type { ProcedureExport, ReducerExport, t } from '../server';
+import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -110,13 +109,14 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
  * An untyped representation of a table's schema.
  */
 export type UntypedTableDef = {
-  name: string;
+  sourceName: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
   // This is really just a ProductType where all the elements have names.
   rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
+  tableDef: Infer<typeof RawTableDefV10>;
 };
 
 /**
@@ -168,11 +168,17 @@ type NormalizeIndexColumns<
  * - `scheduled`: The name of the reducer to be executed based on the scheduled rows in this table.
  */
 export type TableOpts<Row extends RowObj> = {
-  name: string;
+  name?: string;
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
-  scheduled?: string;
+  scheduled?: () =>
+    | ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>
+    | ProcedureExport<
+        any,
+        { [k: string]: RowBuilder<RowObj> },
+        ReturnType<typeof t.unit>
+      >;
 };
 
 /**
@@ -289,7 +295,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,
     public: isPublic = false,
@@ -303,10 +309,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   if (!(row instanceof RowBuilder)) {
     row = new RowBuilder(row);
-  }
-
-  if (row.typeName === undefined) {
-    row.typeName = toPascalCase(name);
   }
 
   row.algebraicType.value.elements.forEach((elem, i) => {
@@ -446,41 +448,37 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     index.sourceName = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
   }
 
-  // Temporarily set the type ref to 0. We will set this later
-  // in the schema function.
-
-  const tableDef = (ctx: ModuleContext): Infer<typeof RawTableDefV10> => ({
-    sourceName: name,
-    productTypeRef: ctx.registerTypesRecursively(row).ref,
-    primaryKey: pk,
-    indexes,
-    constraints,
-    sequences,
-    tableType: { tag: 'User' },
-    tableAccess: { tag: isPublic ? 'Public' : 'Private' },
-    defaultValues,
-    isEvent: false,
-  });
-
   const productType = row.algebraicType.value as RowBuilder<
     CoerceRow<Row>
   >['algebraicType']['value'];
 
-  const schedule: Infer<typeof RawScheduleDefV10> | undefined =
+  const schedule =
     scheduled && scheduleAtCol !== undefined
-      ? {
-          sourceName: undefined,
-          tableName: name,
-          functionName: scheduled,
-          scheduleAtCol: scheduleAtCol,
-        }
+      ? { scheduleAtCol, reducer: scheduled }
       : undefined;
 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
-    tableDef,
+    tableDef: (ctx, accName) => {
+      const tableName = name ?? accName;
+      if (row.typeName === undefined) {
+        row.typeName = toPascalCase(tableName);
+      }
+      return {
+        sourceName: tableName,
+        productTypeRef: ctx.registerTypesRecursively(row).ref,
+        primaryKey: pk,
+        indexes,
+        constraints,
+        sequences,
+        tableType: { tag: 'User' },
+        tableAccess: { tag: isPublic ? 'Public' : 'Private' },
+        defaultValues,
+        isEvent: false,
+      };
+    },
     idxs: {} as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
     schedule,

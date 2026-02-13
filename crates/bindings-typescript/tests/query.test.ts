@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Identity } from '../src/lib/identity';
 import { makeQueryBuilder, and, or, not, toSql } from '../src/server/query';
-import type { UntypedSchemaDef } from '../src/lib/schema';
+import { ModuleContext, tablesToSchema } from '../src/lib/schema';
 import { table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
 
@@ -43,26 +43,10 @@ const ordersTable = table(
   }
 );
 
-const schemaDef = {
-  tables: [
-    {
-      name: personTable.tableName,
-      accessorName: personTable.tableName,
-      columns: personTable.rowType.row,
-      rowType: personTable.rowSpacetimeType,
-      indexes: personTable.idxs,
-      constraints: personTable.constraints,
-    },
-    {
-      name: ordersTable.tableName,
-      accessorName: ordersTable.tableName,
-      columns: ordersTable.rowType.row,
-      rowType: ordersTable.rowSpacetimeType,
-      indexes: ordersTable.idxs,
-      constraints: ordersTable.constraints,
-    },
-  ],
-} as const satisfies UntypedSchemaDef;
+const schemaDef = tablesToSchema(new ModuleContext(), {
+  person: personTable,
+  orders: ordersTable,
+});
 
 describe('TableScan.toSql', () => {
   it('renders a full-table scan when no filters are applied', () => {

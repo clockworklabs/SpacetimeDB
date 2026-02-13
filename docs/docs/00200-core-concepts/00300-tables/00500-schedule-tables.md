@@ -24,7 +24,7 @@ The table attribute uses `scheduled` (with a "d") because it refers to the **sch
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: 'send_reminder' },
+  { name: 'reminder', scheduled: (): any => send_reminder },
   {
     scheduled_id: t.u64().primaryKey().autoInc(),
     scheduled_at: t.scheduleAt(),
@@ -130,7 +130,7 @@ Use intervals for periodic tasks like game ticks, heartbeats, or recurring maint
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
-const spacetimedb = schema();
+const spacetimedb = schema({});
 export default spacetimedb;
 
 export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
@@ -233,7 +233,7 @@ Use specific times for one-shot actions like sending a reminder at a particular 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
-const spacetimedb = schema();
+const spacetimedb = schema({});
 export default spacetimedb;
 
 export const schedule_timed_tasks = spacetimedb.reducer((ctx) => {

@@ -29,7 +29,7 @@ const userAvatar = table(
   }
 );
 
-const spacetimedb = schema(userAvatar);
+const spacetimedb = schema({ userAvatar });
 export default spacetimedb;
 
 export const upload_avatar = spacetimedb.reducer({
@@ -197,7 +197,7 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Called after uploading file to external storage
@@ -387,7 +387,7 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Upload file to S3 and register in database

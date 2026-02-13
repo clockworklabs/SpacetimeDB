@@ -29,7 +29,7 @@ const user = table(
   }
 );
 
-const spacetimedb = schema(user);
+const spacetimedb = schema({ user });
 export default spacetimedb;
 
 export const create_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
@@ -129,7 +129,7 @@ const player = table(
   }
 );
 
-const spacetimedb = schema(player);
+const spacetimedb = schema({ player });
 export default spacetimedb;
 
 export const update_score = spacetimedb.reducer({ newScore: t.u32() }, (ctx, { newScore }) => {
@@ -272,7 +272,7 @@ This is particularly important for [scheduled reducers](/functions/reducers) tha
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
 const scheduledTask = table(
-  { name: 'scheduled_task', scheduled: 'send_reminder' },
+  { name: 'scheduled_task', scheduled: (): any => send_reminder },
   {
     taskId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -280,7 +280,7 @@ const scheduledTask = table(
   }
 );
 
-const spacetimedb = schema(scheduledTask);
+const spacetimedb = schema({ scheduledTask });
 export default spacetimedb;
 
 export const send_reminder = spacetimedb.reducer({ arg: scheduledTask.rowType }, (ctx, { arg }) => {

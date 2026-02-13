@@ -7,6 +7,7 @@ import type {
 import { EventEmitter } from './event_emitter';
 import type { UntypedRemoteModule } from './spacetime_module';
 import { isRowTypedQuery, toSql, type RowTypedQuery } from '../lib/query';
+import type { Values } from '../lib/type_util';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
@@ -87,7 +88,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
     queryFn: (
-      tables: RemoteModule['tables'][number]
+      tables: Values<RemoteModule['tables']>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
@@ -140,8 +141,8 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    */
   subscribeToAllTables(): void {
     const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
-    const queries = remoteModule.tables.map(
-      table => `SELECT * FROM ${table.name}`
+    const queries = Object.values(remoteModule.tables).map(
+      table => `SELECT * FROM ${table.sourceName}`
     );
     this.subscribe(queries);
   }
