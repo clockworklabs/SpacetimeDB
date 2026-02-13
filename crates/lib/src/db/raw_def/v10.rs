@@ -367,6 +367,9 @@ pub struct RawIndexDefV10 {
     /// Even though there is ABSOLUTELY NO REASON TO.
     pub source_name: Option<RawIdentifier>,
 
+    // not to be used in v10
+    pub accessor_name: Option<RawIdentifier>,
+
     /// The algorithm parameters for the index.
     pub algorithm: RawIndexAlgorithm,
 }
@@ -1146,6 +1149,7 @@ impl RawTableDefBuilderV10<'_> {
     pub fn with_index(mut self, algorithm: RawIndexAlgorithm, source_name: impl Into<RawIdentifier>) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
             source_name: Some(source_name.into()),
+            accessor_name: None,
             algorithm,
         });
         self
@@ -1155,6 +1159,7 @@ impl RawTableDefBuilderV10<'_> {
     pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
             source_name: None,
+            accessor_name: None,
             algorithm,
         });
         self

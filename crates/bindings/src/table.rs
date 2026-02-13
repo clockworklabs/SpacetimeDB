@@ -138,7 +138,7 @@ pub trait TableInternal: Sized {
 /// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
-    pub accessor_name: &'a str,
+    pub source_name: &'a str,
     pub index_name: &'a str,
     pub algo: IndexAlgo<'a>,
 }

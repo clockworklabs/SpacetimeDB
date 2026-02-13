@@ -794,11 +794,10 @@ function makeTableView(
       } as RangedIndex<any, any>;
     }
 
-    //TODO: use accessor name
-    if (Object.hasOwn(tableView, indexDef.sourceName!)) {
-      freeze(Object.assign(tableView[indexDef.sourceName!], index));
+    if (Object.hasOwn(tableView, indexDef.accessorName!)) {
+      freeze(Object.assign(tableView[indexDef.accessorName!], index));
     } else {
-      tableView[indexDef.sourceName!] = freeze(index) as any;
+      tableView[indexDef.accessorName!] = freeze(index) as any;
     }
   }
 

@@ -100,8 +100,7 @@ function tableToSchema<T extends UntypedTableSchema>(
           ? [idx.algorithm.value]
           : idx.algorithm.value;
       return {
-// use accessor name?
-        name: idx.sourceName!,
+        name: idx.accessorName!,
         unique: tableDef.constraints.some(c =>
           c.data.value.columns.every(col => columnIds.includes(col))
         ),
