@@ -214,10 +214,12 @@ pub fn create_segment_writer<R: Repo>(
             records: Vec::new(),
             epoch,
         },
-        inner: io::BufWriter::with_capacity(opts.write_buffer_size, storage),
+        inner: io::BufWriter::new(storage),
 
         min_tx_offset: offset,
         bytes_written: Header::LEN as u64,
+
+        max_records_in_commit: opts.max_records_in_commit,
 
         offset_index_head: create_offset_index_writer(repo, offset, opts),
     })
@@ -290,6 +292,8 @@ pub fn resume_segment_writer<R: Repo>(
 
         min_tx_offset: tx_range.start,
         bytes_written: size_in_bytes,
+
+        max_records_in_commit: opts.max_records_in_commit,
 
         offset_index_head: create_offset_index_writer(repo, offset, opts),
     }))

@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     io::{self, BufWriter, ErrorKind, SeekFrom, Write as _},
-    num::NonZeroU64,
+    num::{NonZeroU16, NonZeroU64},
     ops::Range,
 };
 
@@ -100,52 +100,58 @@ pub struct Writer<W: io::Write> {
     pub(crate) min_tx_offset: u64,
     pub(crate) bytes_written: u64,
 
+    pub(crate) max_records_in_commit: NonZeroU16,
+
     pub(crate) offset_index_head: Option<OffsetIndexWriter>,
 }
 
 impl<W: io::Write> Writer<W> {
-    pub fn commit<T: Into<Transaction<U>>, U: Encode>(
-        &mut self,
-        transactions: impl IntoIterator<Item = T>,
-    ) -> io::Result<Option<Committed>> {
-        for tx in transactions {
-            let tx = tx.into();
-            let expected_offset = self.commit.min_tx_offset + self.commit.n as u64;
-            if tx.offset != expected_offset {
-                self.commit.n = 0;
-                self.commit.records.clear();
-
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("invalid transaction offset {}, expected {}", tx.offset, expected_offset),
-                ));
-            }
-            assert!(
-                self.commit.n < u16::MAX,
-                "maximum number of transactions in a single commit exceeded"
-            );
+    /// Append the record (aka transaction) `T` to the segment.
+    ///
+    /// If the number of currently buffered records would exceed `max_records_in_commit`
+    /// after the method returns, the argument is returned in an `Err` and not
+    /// appended to this writer's buffer.
+    ///
+    /// Otherwise, the `record` is encoded and and stored in the buffer.
+    ///
+    /// An `Err` result indicates that [`Self::commit`] should be called in
+    /// order to flush the buffered records to persistent storage.
+    pub fn append<T: Encode>(&mut self, record: T) -> Result<(), T> {
+        if self.commit.n == u16::MAX || self.commit.n + 1 > self.max_records_in_commit.get() {
+            Err(record)
+        } else {
             self.commit.n += 1;
-            tx.txdata.encode_record(&mut self.commit.records);
+            record.encode_record(&mut self.commit.records);
+            Ok(())
         }
+    }
 
+    /// Write the current [`Commit`] to the underlying [`io::Write`].
+    ///
+    /// Will do nothing if the current commit is empty (i.e. `Commit::n` is zero).
+    /// In this case, `None` is returned.
+    ///
+    /// Otherwise `Some` [`Committed`] is returned, providing some metadata about
+    /// the commit.
+    pub fn commit(&mut self) -> io::Result<Option<Committed>> {
         if self.commit.n == 0 {
             return Ok(None);
         }
+        let checksum = self.commit.write(&mut self.inner)?;
+        self.inner.flush()?;
 
-        let checksum = self
-            .commit
-            .write(&mut self.inner)
-            // Panic here as we don't know how much of the commit has been
-            // written (if anything). Further commits would leave corrupted data
-            // in the log.
-            .unwrap_or_else(|e| panic!("failed to write commit {}: {:#}", self.commit.min_tx_offset, e));
         let commit_len = self.commit.encoded_len() as u64;
-
-        if let Some(index) = self.offset_index_head.as_mut() {
-            let _ = index
+        self.offset_index_head.as_mut().map(|index| {
+            debug!(
+                "append_after commit min_tx_offset={} bytes_written={} commit_len={}",
+                self.commit.min_tx_offset, self.bytes_written, commit_len
+            );
+            index
                 .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
-                .inspect_err(|e| debug!("failed to append to offset index: {e}"));
-        }
+                .map_err(|e| {
+                    debug!("failed to append to offset index: {e:?}");
+                })
+        });
 
         let tx_range_start = self.commit.min_tx_offset;
 
@@ -158,10 +164,6 @@ impl<W: io::Write> Writer<W> {
             tx_range: tx_range_start..self.commit.min_tx_offset,
             checksum,
         }))
-    }
-
-    pub fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
     }
 
     /// Get the current epoch.
@@ -535,12 +537,6 @@ pub struct Transaction<T> {
     pub txdata: T,
 }
 
-impl<T> From<(u64, T)> for Transaction<T> {
-    fn from((offset, txdata): (u64, T)) -> Self {
-        Self { offset, txdata }
-    }
-}
-
 pub struct Commits<R> {
     pub header: Header,
     reader: R,
@@ -748,13 +744,15 @@ impl Metadata {
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
-    use pretty_assertions::assert_matches;
-    use spacetimedb_paths::server::CommitLogDir;
-    use tempfile::tempdir;
+    use std::num::NonZeroU16;
 
     use super::*;
     use crate::{payload::ArrayDecoder, repo, Options};
+    use itertools::Itertools;
+    use pretty_assertions::assert_matches;
+    use proptest::prelude::*;
+    use spacetimedb_paths::server::CommitLogDir;
+    use tempfile::tempdir;
 
     #[test]
     fn header_roundtrip() {
@@ -774,9 +772,20 @@ mod tests {
     fn write_read_roundtrip() {
         let repo = repo::Memory::unlimited();
 
-        let mut writer = repo::create_segment_writer(&repo, <_>::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
-        writer.commit([(0, [0; 32]), (1, [1; 32]), (2, [2; 32])]).unwrap();
-        writer.flush().unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(4).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
+        writer.append([0; 32]).unwrap();
+        writer.append([1; 32]).unwrap();
+        writer.append([2; 32]).unwrap();
+        writer.commit().unwrap();
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
         let header = reader.header;
@@ -801,15 +810,27 @@ mod tests {
     fn metadata() {
         let repo = repo::Memory::unlimited();
 
-        let mut writer = repo::create_segment_writer(&repo, <_>::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(3).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
         // Commit 0..2
-        writer.commit([(0, [0; 32]), (1, [0; 32])]).unwrap();
+        writer.append([0; 32]).unwrap();
+        writer.append([0; 32]).unwrap();
+        writer.commit().unwrap();
         // Commit 2..3
-        writer.commit([(2, [1; 32])]).unwrap();
+        writer.append([1; 32]).unwrap();
+        writer.commit().unwrap();
         // Commit 3..5
-        writer.commit([(3, [2; 32]), (4, [2; 32])]).unwrap();
-
-        writer.flush().unwrap();
+        writer.append([2; 32]).unwrap();
+        writer.append([2; 32]).unwrap();
+        writer.commit().unwrap();
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
         let metadata = reader.metadata().unwrap();
@@ -830,32 +851,37 @@ mod tests {
     #[test]
     fn commits() {
         let repo = repo::Memory::unlimited();
-        let commits = vec![
-            vec![(0, [1; 32]), (1, [2; 32])],
-            vec![(2, [3; 32])],
-            vec![(3, [4; 32]), (4, [5; 32])],
-        ];
+        let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, <_>::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(3).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
 
         for commit in &commits {
-            writer.commit(commit.clone()).unwrap();
+            for tx in commit {
+                writer.append(*tx).unwrap();
+            }
+            writer.commit().unwrap();
         }
-
-        writer.flush().unwrap();
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
         let mut commits1 = Vec::with_capacity(commits.len());
         let mut min_tx_offset = 0;
         for txs in commits {
-            let n = txs.len();
             commits1.push(Commit {
                 min_tx_offset,
-                n: n as u16,
-                records: itertools::concat(txs.into_iter().map(|(_, payload)| payload.to_vec())),
+                n: txs.len() as u16,
+                records: txs.concat(),
                 epoch: 0,
             });
-            min_tx_offset += n as u64;
+            min_tx_offset += txs.len() as u64;
         }
         let commits2 = reader
             .commits()
@@ -868,25 +894,73 @@ mod tests {
     #[test]
     fn transactions() {
         let repo = repo::Memory::unlimited();
-        let commits = vec![
-            vec![(0, [1; 32]), (1, [2; 32])],
-            vec![(2, [3; 32])],
-            vec![(3, [4; 32]), (4, [5; 32])],
-        ];
+        let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, <_>::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(3).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
         for commit in &commits {
-            writer.commit(commit.clone()).unwrap();
+            for tx in commit {
+                writer.append(*tx).unwrap();
+            }
+            writer.commit().unwrap();
         }
-
-        writer.flush().unwrap();
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
         let txs = reader
             .transactions(&ArrayDecoder)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert_eq!(txs, commits.into_iter().flatten().map(Into::into).collect::<Vec<_>>());
+        assert_eq!(
+            txs,
+            commits
+                .into_iter()
+                .flatten()
+                .enumerate()
+                .map(|(offset, txdata)| Transaction {
+                    offset: offset as u64,
+                    txdata
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn max_records_in_commit(max_records_in_commit in any::<NonZeroU16>()) {
+            let mut writer = Writer {
+                commit: Commit::default(),
+                inner: BufWriter::new(Vec::new()),
+
+                min_tx_offset: 0,
+                bytes_written: 0,
+
+                max_records_in_commit,
+
+                offset_index_head: None,
+            };
+
+            for i in 0..max_records_in_commit.get() {
+                assert!(
+                    writer.append([0; 16]).is_ok(),
+                    "less than {} records written: {}",
+                    max_records_in_commit.get(),
+                    i
+                );
+            }
+            assert!(
+                writer.append([0; 16]).is_err(),
+                "more than {} records written",
+                max_records_in_commit.get()
+            );
+        }
     }
 
     #[test]
@@ -898,14 +972,20 @@ mod tests {
             min_tx_offset: 0,
             bytes_written: 0,
 
+            max_records_in_commit: NonZeroU16::MAX,
             offset_index_head: None,
         };
 
         assert_eq!(0, writer.next_tx_offset());
-        writer.commit([(0, [0; 16])]).unwrap();
+        writer.append([0; 16]).unwrap();
+        assert_eq!(0, writer.next_tx_offset());
+        writer.commit().unwrap();
         assert_eq!(1, writer.next_tx_offset());
-        writer.commit([(1, [1; 16])]).unwrap();
-        writer.commit([(2, [1; 16])]).unwrap();
+        writer.commit().unwrap();
+        assert_eq!(1, writer.next_tx_offset());
+        writer.append([1; 16]).unwrap();
+        writer.append([1; 16]).unwrap();
+        writer.commit().unwrap();
         assert_eq!(3, writer.next_tx_offset());
     }
 
