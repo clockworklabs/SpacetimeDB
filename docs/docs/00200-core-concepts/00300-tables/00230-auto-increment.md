@@ -23,7 +23,7 @@ const post = table(
   }
 );
 
-const spacetimedb = schema(post);
+const spacetimedb = schema({ post });
 export default spacetimedb;
 
 export const add_post = spacetimedb.reducer({ title: t.string() }, (ctx, { title }) => {

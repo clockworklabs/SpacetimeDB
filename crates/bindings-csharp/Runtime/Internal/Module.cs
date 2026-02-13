@@ -2,12 +2,25 @@ namespace SpacetimeDB.Internal;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
-partial class RawModuleDefV9
+partial class RawModuleDefV10
 {
+    private readonly Typespace typespace = new();
+    private readonly List<RawTypeDefV10> typeDefs = [];
+    private readonly List<RawTableDefV10> tableDefs = [];
+    private readonly List<RawScheduleDefV10> scheduleDefs = [];
+    private readonly List<RawReducerDefV10> reducerDefs = [];
+    private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
+    private readonly List<RawProcedureDefV10> procedureDefs = [];
+    private readonly List<RawViewDefV10> viewDefs = [];
+    private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
+    private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
+        new(StringComparer.Ordinal);
+
     // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
     // Fix it up to a different mangling scheme if it causes problems.
     private static string GetFriendlyName(Type type) =>
@@ -15,54 +28,159 @@ partial class RawModuleDefV9
             ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
-    private void RegisterTypeName<T>(AlgebraicType.Ref typeRef)
-    {
-        var scopedName = new RawScopedTypeNameV9([], GetFriendlyName(typeof(T)));
-        Types.Add(new(scopedName, (uint)typeRef.Ref_, CustomOrdering: true));
-    }
+    private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
+        new(new List<string>(), GetFriendlyName(type));
 
     internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
     {
-        var types = Typespace.Types;
-        var typeRef = new AlgebraicType.Ref(types.Count);
+        var typeList = typespace.Types;
+        var typeRef = new AlgebraicType.Ref(typeList.Count);
         // Put a dummy self-reference just so that we get stable index even if `makeType` recursively adds more types.
-        types.Add(typeRef);
-        // Now we can safely call `makeType` and assign the result to the reserved slot.
-        types[typeRef.Ref_] = makeType(typeRef);
-        RegisterTypeName<T>(typeRef);
+        typeList.Add(typeRef);
+        typeList[typeRef.Ref_] = makeType(typeRef);
+        typeDefs.Add(
+            new RawTypeDefV10(
+                SourceName: MakeScopedTypeName(typeof(T)),
+                Ty: (uint)typeRef.Ref_,
+                CustomOrdering: true
+            )
+        );
         return typeRef;
     }
 
-    internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
+    internal void RegisterReducer(RawReducerDefV10 reducer, Lifecycle? lifecycle)
+    {
+        reducerDefs.Add(reducer);
+        if (lifecycle is { } lifecycleSpec)
+        {
+            lifecycleReducerDefs.Add(
+                new RawLifeCycleReducerDefV10(lifecycleSpec, reducer.SourceName)
+            );
+            reducer.Visibility = FunctionVisibility.Private;
+        }
+    }
 
-    internal void RegisterProcedure(RawProcedureDefV9 procedure) =>
-        MiscExports.Add(new RawMiscModuleExportV9.Procedure(procedure));
+    internal void RegisterProcedure(RawProcedureDefV10 procedure) => procedureDefs.Add(procedure);
 
-    internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
+    internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
+    {
+        tableDefs.Add(table);
+        if (schedule is { } scheduleDef)
+        {
+            scheduleDefs.Add(scheduleDef);
+        }
+    }
 
-    internal void RegisterView(RawViewDefV9 view) =>
-        MiscExports.Add(new RawMiscModuleExportV9.View(view));
+    internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
-        RowLevelSecurity.Add(rls);
+        rowLevelSecurityDefs.Add(rls);
 
     internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
     {
-        var byteList = new List<byte>(value);
-        MiscExports.Add(
-            new RawMiscModuleExportV9.ColumnDefaultValue(
-                new RawColumnDefaultValueV9(table, colId, byteList)
-            )
-        );
+        if (!defaultValuesByTable.TryGetValue(table, out var defaults))
+        {
+            defaults = [];
+            defaultValuesByTable.Add(table, defaults);
+        }
+        defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
+    }
+
+    internal RawModuleDefV10 BuildModuleDefinition()
+    {
+        var builtTables = new List<RawTableDefV10>(tableDefs.Count);
+        foreach (var table in tableDefs)
+        {
+            defaultValuesByTable.TryGetValue(table.SourceName, out var defaults);
+            builtTables.Add(
+                new RawTableDefV10(
+                    SourceName: table.SourceName,
+                    ProductTypeRef: table.ProductTypeRef,
+                    PrimaryKey: table.PrimaryKey,
+                    Indexes: table.Indexes,
+                    Constraints: table.Constraints,
+                    Sequences: table.Sequences,
+                    TableType: table.TableType,
+                    TableAccess: table.TableAccess,
+                    DefaultValues: defaults is null
+                        ? []
+                        : new List<RawColumnDefaultValueV10>(defaults),
+                    IsEvent: table.IsEvent
+                )
+            );
+        }
+
+        var internalFunctions = lifecycleReducerDefs
+            .Select(l => l.FunctionName)
+            .Concat(scheduleDefs.Select(s => s.FunctionName))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var reducer in reducerDefs)
+        {
+            if (internalFunctions.Contains(reducer.SourceName))
+            {
+                reducer.Visibility = FunctionVisibility.Private;
+            }
+        }
+
+        foreach (var procedure in procedureDefs)
+        {
+            if (internalFunctions.Contains(procedure.SourceName))
+            {
+                procedure.Visibility = FunctionVisibility.Private;
+            }
+        }
+
+        var sections = new List<RawModuleDefV10Section>
+        {
+            new RawModuleDefV10Section.Typespace(typespace),
+        };
+
+        if (typeDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Types(typeDefs));
+        }
+        if (builtTables.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Tables(builtTables));
+        }
+        if (reducerDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Reducers(reducerDefs));
+        }
+        if (procedureDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Procedures(procedureDefs));
+        }
+        if (viewDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Views(viewDefs));
+        }
+        if (scheduleDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Schedules(scheduleDefs));
+        }
+        if (lifecycleReducerDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.LifeCycleReducers(lifecycleReducerDefs));
+        }
+        // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
+        if (rowLevelSecurityDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.RowLevelSecurity(rowLevelSecurityDefs));
+        }
+
+        Sections = sections;
+        return this;
     }
 }
 
 public static class Module
 {
-    private static readonly RawModuleDefV9 moduleDef = new();
+    private static readonly RawModuleDefV10 moduleDef = new();
+
     private static readonly List<IReducer> reducers = [];
     private static readonly List<IProcedure> procedures = [];
-    private static readonly List<Action<BytesSink>> viewDefs = [];
     private static readonly List<IView> viewDispatchers = [];
     private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
 
@@ -134,7 +252,7 @@ public static class Module
     {
         var reducer = new R();
         reducers.Add(reducer);
-        moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar));
+        moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar), reducer.Lifecycle);
     }
 
     public static void RegisterProcedure<P>()
@@ -147,8 +265,10 @@ public static class Module
 
     public static void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new() =>
-        moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
+        where View : ITableView<View, T>, new()
+    {
+        moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar), View.MakeScheduleDesc());
+    }
 
     public static void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
@@ -260,14 +380,10 @@ public static class Module
     {
         try
         {
-            // We need this explicit cast here to make `ToBytes` understand the types correctly.
-            RawModuleDef versioned = new RawModuleDef.V9(moduleDef);
+            var module = moduleDef.BuildModuleDefinition();
+            RawModuleDef versioned = new RawModuleDef.V10(module);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
-            foreach (var writeView in viewDefs)
-            {
-                writeView(description);
-            }
         }
         catch (Exception e)
         {

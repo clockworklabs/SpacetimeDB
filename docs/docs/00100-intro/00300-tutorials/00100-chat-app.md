@@ -278,7 +278,7 @@ For each `User`, we'll store their `Identity` (the caller's unique identifier), 
 Add to `spacetimedb/src/index.ts`:
 
 ```ts server
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -287,7 +287,7 @@ const User = table(
   }
 );
 
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -297,7 +297,7 @@ const Message = table(
 );
 
 // Compose the schema (gives us ctx.db.user and ctx.db.message, etc.)
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ user, message });
 export default spacetimedb;
 ```
 

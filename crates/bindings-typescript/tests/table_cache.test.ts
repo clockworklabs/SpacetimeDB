@@ -101,7 +101,7 @@ function runTest(
 
 describe('TableCache', () => {
   describe('Unindexed player table', () => {
-    const newTable = () => new TableCacheImpl(tables.unindexedPlayer);
+    const newTable = () => new TableCacheImpl(tables.unindexedPlayer.tableDef);
     const mkOperation = (
       type: 'insert' | 'delete',
       row: Infer<typeof UnindexedPlayer>
@@ -404,7 +404,7 @@ describe('TableCache', () => {
     });
   });
   describe('Indexed player table', () => {
-    const newTable = () => new TableCacheImpl(tables.player);
+    const newTable = () => new TableCacheImpl(tables.player.tableDef);
     const mkOperation = (
       type: 'insert' | 'delete',
       row: Infer<typeof Player>
@@ -756,7 +756,7 @@ describe('TableCache', () => {
   });
 
   test('should be empty on creation', () => {
-    const tableCache = new TableCacheImpl(tables.player);
+    const tableCache = new TableCacheImpl(tables.player.tableDef);
     expect(tableCache.count()).toEqual(0n);
   });
 });

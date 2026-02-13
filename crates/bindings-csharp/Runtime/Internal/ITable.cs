@@ -102,7 +102,9 @@ public interface ITableView<View, T>
     where T : IStructuralReadWrite, new()
 {
     // These are the methods that codegen needs to implement.
-    static abstract RawTableDefV9 MakeTableDesc(ITypeRegistrar registrar);
+    static abstract RawTableDefV10 MakeTableDesc(ITypeRegistrar registrar);
+
+    static abstract RawScheduleDefV10? MakeScheduleDesc();
 
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
@@ -179,12 +181,17 @@ public interface ITableView<View, T>
         return out_ > 0;
     }
 
-    protected static RawScheduleDefV9 MakeSchedule(string reducerName, ushort colIndex) =>
-        new(Name: $"{tableName}_sched", ReducerName: reducerName, ScheduledAtColumn: colIndex);
-
-    protected static RawSequenceDefV9 MakeSequence(ushort colIndex) =>
+    protected static RawScheduleDefV10 MakeSchedule(string reducerName, ushort colIndex) =>
         new(
-            Name: null,
+            SourceName: null,
+            TableName: tableName,
+            ScheduleAtCol: colIndex,
+            FunctionName: reducerName
+        );
+
+    protected static RawSequenceDefV10 MakeSequence(ushort colIndex) =>
+        new(
+            SourceName: null,
             Column: colIndex,
             Start: null,
             MinValue: null,
@@ -192,6 +199,6 @@ public interface ITableView<View, T>
             Increment: 1
         );
 
-    protected static RawConstraintDefV9 MakeUniqueConstraint(ushort colIndex) =>
-        new(Name: null, Data: new RawConstraintDataV9.Unique(new([colIndex])));
+    protected static RawConstraintDefV10 MakeUniqueConstraint(ushort colIndex) =>
+        new(SourceName: null, Data: new RawConstraintDataV9.Unique(new([colIndex])));
 }

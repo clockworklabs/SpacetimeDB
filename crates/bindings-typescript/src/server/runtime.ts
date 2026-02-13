@@ -286,9 +286,9 @@ class ModuleHooksImpl implements ModuleHooks {
   get #dbView() {
     return (this.#dbView_ ??= freeze(
       Object.fromEntries(
-        this.#schema.moduleDef.tables.map(table => [
-          toCamelCase(table.sourceName),
-          makeTableView(this.#schema.typespace, table),
+        Object.values(this.#schema.schemaType.tables).map(table => [
+          toCamelCase(table.accessorName),
+          makeTableView(this.#schema.typespace, table.tableDef),
         ])
       )
     ));
