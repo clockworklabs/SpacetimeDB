@@ -504,7 +504,7 @@ namespace SpacetimeDB.Types
         /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
         /// </summary>
         public TypedSubscriptionBuilder AddQuery<TRow>(
-            Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build
+            Func<QueryBuilder, global::SpacetimeDB.IQuery<TRow>> build
         )
         {
             var typed = new TypedSubscriptionBuilder(conn, Applied, Error);
@@ -610,7 +610,7 @@ namespace SpacetimeDB.Types
             return this;
         }
 
-        public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)
+        public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.IQuery<TRow>> build)
         {
             var qb = new QueryBuilder();
             querySqls.Add(build(qb).ToSql());
