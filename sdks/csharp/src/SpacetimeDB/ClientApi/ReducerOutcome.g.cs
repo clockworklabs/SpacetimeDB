@@ -8,9 +8,10 @@ using System;
 namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
-    public partial record CompressableQueryUpdate : SpacetimeDB.TaggedEnum<(
-        QueryUpdate Uncompressed,
-        System.Collections.Generic.List<byte> Brotli,
-        System.Collections.Generic.List<byte> Gzip
+    public partial record ReducerOutcome : SpacetimeDB.TaggedEnum<(
+        ReducerOk Ok,
+        SpacetimeDB.Unit Okmpty,
+        System.Collections.Generic.List<byte> Err,
+        string InternalError
     )>;
 }

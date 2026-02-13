@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void PlayerSplit()
         {
-            conn.InternalCallReducer(new Reducer.PlayerSplit(), this.SetCallReducerFlags.PlayerSplitFlags);
+            conn.InternalCallReducer(new Reducer.PlayerSplit());
         }
 
         public bool InvokePlayerSplit(ReducerEventContext ctx, Reducer.PlayerSplit args)
@@ -49,11 +49,5 @@ namespace SpacetimeDB.Types
         {
             string IReducerArgs.ReducerName => "player_split";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags PlayerSplitFlags;
-        public void PlayerSplit(CallReducerFlags flags) => PlayerSplitFlags = flags;
     }
 }

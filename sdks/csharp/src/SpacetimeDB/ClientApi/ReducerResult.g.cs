@@ -11,25 +11,29 @@ namespace SpacetimeDB.ClientApi
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class UnsubscribeMulti
+    public sealed partial class ReducerResult
     {
         [DataMember(Name = "request_id")]
         public uint RequestId;
-        [DataMember(Name = "query_id")]
-        public QueryId QueryId;
+        [DataMember(Name = "timestamp")]
+        public SpacetimeDB.Timestamp Timestamp;
+        [DataMember(Name = "result")]
+        public ReducerOutcome Result;
 
-        public UnsubscribeMulti(
+        public ReducerResult(
             uint RequestId,
-            QueryId QueryId
+            SpacetimeDB.Timestamp Timestamp,
+            ReducerOutcome Result
         )
         {
             this.RequestId = RequestId;
-            this.QueryId = QueryId;
+            this.Timestamp = Timestamp;
+            this.Result = Result;
         }
 
-        public UnsubscribeMulti()
+        public ReducerResult()
         {
-            this.QueryId = new();
+            this.Result = null!;
         }
     }
 }

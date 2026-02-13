@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void ConsumeEntity(SpacetimeDB.Types.ConsumeEntityTimer request)
         {
-            conn.InternalCallReducer(new Reducer.ConsumeEntity(request), this.SetCallReducerFlags.ConsumeEntityFlags);
+            conn.InternalCallReducer(new Reducer.ConsumeEntity(request));
         }
 
         public bool InvokeConsumeEntity(ReducerEventContext ctx, Reducer.ConsumeEntity args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "consume_entity";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags ConsumeEntityFlags;
-        public void ConsumeEntity(CallReducerFlags flags) => ConsumeEntityFlags = flags;
     }
 }
