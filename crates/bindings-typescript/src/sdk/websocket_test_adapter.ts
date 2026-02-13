@@ -43,7 +43,11 @@ class WebsocketTestAdapter {
   async createWebSocketFn(_args: {
     url: URL;
     wsProtocol: string;
+    nameOrAddress: string;
     authToken?: string;
+    compression: 'gzip' | 'none';
+    lightMode: boolean;
+    confirmedReads?: boolean;
   }): Promise<WebsocketTestAdapter> {
     return this;
   }

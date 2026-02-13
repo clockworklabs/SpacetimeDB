@@ -9,10 +9,12 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import ReducerOutcome from './reducer_outcome_type';
 
-export default __t.object('CallProcedure', {
+export default __t.object('ReducerResult', {
   requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+  timestamp: __t.timestamp(),
+  get result() {
+    return ReducerOutcome;
+  },
 });

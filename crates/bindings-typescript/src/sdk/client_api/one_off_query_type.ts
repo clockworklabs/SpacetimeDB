@@ -11,6 +11,6 @@ import {
 } from '../../lib/type_builders';
 
 export default __t.object('OneOffQuery', {
-  messageId: __t.byteArray(),
+  requestId: __t.u32(),
   queryString: __t.string(),
 });

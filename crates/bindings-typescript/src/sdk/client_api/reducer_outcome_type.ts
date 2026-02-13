@@ -9,10 +9,16 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import ReducerOk from './reducer_ok_type';
 
-export default __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
+// The tagged union or sum type for the algebraic type `ReducerOutcome`.
+const ReducerOutcome = __t.enum('ReducerOutcome', {
+  get Ok() {
+    return ReducerOk;
+  },
+  OkEmpty: __t.unit(),
+  Err: __t.byteArray(),
+  InternalError: __t.string(),
 });
+
+export default ReducerOutcome;

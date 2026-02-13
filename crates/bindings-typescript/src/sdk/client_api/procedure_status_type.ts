@@ -13,7 +13,6 @@ import {
 // The tagged union or sum type for the algebraic type `ProcedureStatus`.
 const ProcedureStatus = __t.enum('ProcedureStatus', {
   Returned: __t.byteArray(),
-  OutOfEnergy: __t.unit(),
   InternalError: __t.string(),
 });
 
