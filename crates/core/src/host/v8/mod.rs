@@ -601,20 +601,24 @@ async fn spawn_instance_worker(
 
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
-            if result_tx.send(res).is_err() {
-                unreachable!("should have a live receiver");
-            }
+            result_tx.send(res).inspect_err(|_| {
+                // This should never happen as we immediately `.recv` on the
+                // other end of the channel, but sometimes it gets cancelled.
+                log::error!("startup result receiver disconnected");
+            })
         };
         let (hooks, module_common) = match startup_instance_worker(scope, program, module_or_mcc) {
             Err(err) => {
                 // There was some error in module setup.
                 // Return the error and terminate the worker.
-                send_result(Err(err));
+                let _ = send_result(Err(err));
                 return;
             }
             Ok((crf, module_common)) => {
                 // Success! Send `module_common` to the spawner.
-                send_result(Ok(module_common.clone()));
+                if send_result(Ok(module_common.clone())).is_err() {
+                    return;
+                }
                 (crf, module_common)
             }
         };

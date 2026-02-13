@@ -103,7 +103,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<PkSimpleEnum>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkSimpleEnum>", "TableUpdate")

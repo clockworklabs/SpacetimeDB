@@ -336,13 +336,10 @@ impl Lang for TypeScript {
         out.dedent(1);
 
         writeln!(out);
-        writeln!(out, "/** The tables available in this remote SpacetimeDB module. */");
-        writeln!(out, "export const tables = tablesSchema.schemaType.tables;");
-        writeln!(out);
-        writeln!(out, "/** A typed query builder for this remote SpacetimeDB module. */");
+        writeln!(out, "/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */");
         writeln!(
             out,
-            "export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
+            "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
         );
         writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");

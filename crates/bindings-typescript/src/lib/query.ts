@@ -57,34 +57,46 @@ export function toSql(q: Query<any>): string {
 }
 
 // A query builder with a single table.
-type From<TableDef extends TypedTableDef> = Readonly<{
-  where(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): From<TableDef>;
-  rightSemijoin<RightTable extends TypedTableDef>(
-    other: TableRef<RightTable>,
-    on: (
-      left: IndexedRowExpr<TableDef>,
-      right: IndexedRowExpr<RightTable>
-    ) => EqExpr<TableDef | RightTable>
-  ): SemijoinBuilder<RightTable>;
-  leftSemijoin<RightTable extends TypedTableDef>(
-    other: TableRef<RightTable>,
-    on: (
-      left: IndexedRowExpr<TableDef>,
-      right: IndexedRowExpr<RightTable>
-    ) => EqExpr<TableDef | RightTable>
-  ): SemijoinBuilder<TableDef>;
-  build(): Query<TableDef>;
-}>;
+type From<TableDef extends TypedTableDef> = RowTypedQuery<
+  RowType<TableDef>,
+  TableDef['rowType']
+> &
+  Readonly<{
+    toSql(): string;
+    where(
+      predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+    ): From<TableDef>;
+    rightSemijoin<RightTable extends TypedTableDef>(
+      other: TableRef<RightTable>,
+      on: (
+        left: IndexedRowExpr<TableDef>,
+        right: IndexedRowExpr<RightTable>
+      ) => BooleanExpr<TableDef | RightTable>
+    ): SemijoinBuilder<RightTable>;
+    leftSemijoin<RightTable extends TypedTableDef>(
+      other: TableRef<RightTable>,
+      on: (
+        left: IndexedRowExpr<TableDef>,
+        right: IndexedRowExpr<RightTable>
+      ) => BooleanExpr<TableDef | RightTable>
+    ): SemijoinBuilder<TableDef>;
+    /** @deprecated No longer needed — builder is already a valid query. */
+    build(): Query<TableDef>;
+  }>;
 
 // A query builder with a semijoin.
-type SemijoinBuilder<TableDef extends TypedTableDef> = Readonly<{
-  where(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): SemijoinBuilder<TableDef>;
-  build(): Query<TableDef>;
-}>;
+type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
+  RowType<TableDef>,
+  TableDef['rowType']
+> &
+  Readonly<{
+    toSql(): string;
+    where(
+      predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+    ): SemijoinBuilder<TableDef>;
+    /** @deprecated No longer needed — builder is already a valid query. */
+    build(): Query<TableDef>;
+  }>;
 
 class SemijoinImpl<TableDef extends TypedTableDef>
   implements SemijoinBuilder<TableDef>, TableTypedQuery<TableDef>
@@ -94,7 +106,7 @@ class SemijoinImpl<TableDef extends TypedTableDef>
   constructor(
     readonly sourceQuery: FromBuilder<TableDef>,
     readonly filterQuery: FromBuilder<any>,
-    readonly joinCondition: EqExpr<any>
+    readonly joinCondition: BooleanExpr<any>
   ) {
     if (sourceQuery.table.sourceName === filterQuery.table.sourceName) {
       // TODO: Handle aliasing properly instead of just forbidding it.
@@ -158,7 +170,7 @@ class FromBuilder<TableDef extends TypedTableDef>
   ): FromBuilder<TableDef> {
     const newCondition = predicate(this.table.cols);
     const nextWhere = this.whereClause
-      ? and(this.whereClause, newCondition)
+      ? this.whereClause.and(newCondition)
       : newCondition;
     return new FromBuilder<TableDef>(this.table, nextWhere);
   }
@@ -168,13 +180,13 @@ class FromBuilder<TableDef extends TypedTableDef>
     on: (
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<OtherTable>
-    ) => EqExpr<TableDef | OtherTable>
+    ) => BooleanExpr<TableDef | OtherTable>
   ): SemijoinBuilder<OtherTable> {
     const sourceQuery = new FromBuilder(right);
     const joinCondition = on(
       this.table.indexedCols,
       right.indexedCols
-    ) as EqExpr<any>;
+    ) as BooleanExpr<any>;
     return new SemijoinImpl<OtherTable>(sourceQuery, this, joinCondition);
   }
 
@@ -183,13 +195,13 @@ class FromBuilder<TableDef extends TypedTableDef>
     on: (
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<OtherTable>
-    ) => EqExpr<TableDef | OtherTable>
+    ) => BooleanExpr<TableDef | OtherTable>
   ): SemijoinBuilder<TableDef> {
     const filterQuery = new FromBuilder(right);
     const joinCondition = on(
       this.table.indexedCols,
       right.indexedCols
-    ) as EqExpr<any>;
+    ) as BooleanExpr<any>;
     return new SemijoinImpl<TableDef>(this, filterQuery, joinCondition);
   }
 
@@ -215,22 +227,43 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
 export type TableRef<TableDef extends TypedTableDef> = Readonly<{
   type: 'table';
   sourceName: TableDef['sourceName'];
+  accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
-  // Maybe redundant.
   tableDef: TableDef;
+  // Delegated UntypedTableDef properties for compatibility.
+  columns: TableDef['columns'];
+  indexes: TableDef['indexes'];
+  rowType: TableDef['rowType'];
+  constraints: any;
 }>;
 
 class TableRefImpl<TableDef extends TypedTableDef>
   implements TableRef<TableDef>, From<TableDef>
 {
+  readonly [QueryBrand] = true;
   readonly type = 'table' as const;
   sourceName: string;
+  accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
   tableDef: TableDef;
+  // Delegate UntypedTableDef properties from tableDef so this can be used as a table def.
+  get columns() {
+    return this.tableDef.columns;
+  }
+  get indexes() {
+    return this.tableDef.indexes;
+  }
+  get rowType() {
+    return this.tableDef.rowType;
+  }
+  get constraints() {
+    return (this.tableDef as any).constraints;
+  }
   constructor(tableDef: TableDef) {
     this.sourceName = tableDef.sourceName;
+    this.accessorName = tableDef.accessorName;
     this.cols = createRowExpr(tableDef);
     // this.indexedCols = createIndexedRowExpr(tableDef, this.cols);
     // TODO: we could create an indexedRowExpr to avoid having the extra columns.
@@ -280,10 +313,6 @@ class TableRefImpl<TableDef extends TypedTableDef>
   }
 }
 
-export type RefSource<TableDef extends TypedTableDef> =
-  | TableRef<TableDef>
-  | { ref(): TableRef<TableDef> };
-
 export function createTableRefFromDef<TableDef extends TypedTableDef>(
   tableDef: TableDef
 ): TableRef<TableDef> {
@@ -324,21 +353,6 @@ function createRowExpr<TableDef extends TypedTableDef>(
   return Object.freeze(row) as RowExpr<TableDef>;
 }
 
-export function from<TableDef extends TypedTableDef>(
-  source: RefSource<TableDef>
-): From<TableDef> {
-  return new FromBuilder(resolveTableRef(source));
-}
-
-function resolveTableRef<TableDef extends TypedTableDef>(
-  source: RefSource<TableDef>
-): TableRef<TableDef> {
-  if (typeof (source as { ref?: unknown }).ref === 'function') {
-    return (source as { ref(): TableRef<TableDef> }).ref();
-  }
-  return source as TableRef<TableDef>;
-}
-
 function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   table: TableRef<Table>,
   where?: BooleanExpr<Table>,
@@ -363,6 +377,7 @@ export type TypedTableDef<
   > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
 > = {
   sourceName: string;
+  accessorName: string;
   columns: Columns;
   indexes: readonly IndexOpts<any>[];
   rowType: RowBuilder<Columns>['algebraicType']['value'];
@@ -437,18 +452,34 @@ export class ColumnExpression<
     this.spacetimeType = spacetimeType;
   }
 
-  eq(literal: LiteralValue & RowType<TableDef>[ColumnName]): EqExpr<TableDef>;
+  eq(
+    literal: LiteralValue & RowType<TableDef>[ColumnName]
+  ): BooleanExpr<TableDef>;
   eq<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
-  ): EqExpr<TableDef | ExtractTable<OtherCol>>;
+  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
 
-  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
   eq(x: any): any {
-    return {
+    return new BooleanExpr({
       type: 'eq',
       left: this as unknown as ValueExpr<TableDef, any>,
       right: normalizeValue(x) as ValueExpr<TableDef, any>,
-    } as EqExpr<TableDef>;
+    });
+  }
+
+  ne(
+    literal: LiteralValue & RowType<TableDef>[ColumnName]
+  ): BooleanExpr<TableDef>;
+  ne<OtherCol extends ColumnExpr<any, any>>(
+    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
+  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+
+  ne(x: any): any {
+    return new BooleanExpr({
+      type: 'ne',
+      left: this as unknown as ValueExpr<TableDef, any>,
+      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+    });
   }
 
   lt(
@@ -458,14 +489,14 @@ export class ColumnExpression<
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
   ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
 
-  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
   lt(x: any): any {
-    return {
+    return new BooleanExpr({
       type: 'lt',
       left: this as unknown as ValueExpr<TableDef, any>,
       right: normalizeValue(x) as ValueExpr<TableDef, any>,
-    } as BooleanExpr<TableDef>;
+    });
   }
+
   lte(
     literal: LiteralValue & RowType<TableDef>[ColumnName]
   ): BooleanExpr<TableDef>;
@@ -473,13 +504,12 @@ export class ColumnExpression<
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
   ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
 
-  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
   lte(x: any): any {
-    return {
+    return new BooleanExpr({
       type: 'lte',
       left: this as unknown as ValueExpr<TableDef, any>,
       right: normalizeValue(x) as ValueExpr<TableDef, any>,
-    } as BooleanExpr<TableDef>;
+    });
   }
 
   gt(
@@ -489,14 +519,14 @@ export class ColumnExpression<
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
   ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
 
-  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
   gt(x: any): any {
-    return {
+    return new BooleanExpr({
       type: 'gt',
       left: this as unknown as ValueExpr<TableDef, any>,
       right: normalizeValue(x) as ValueExpr<TableDef, any>,
-    } as BooleanExpr<TableDef>;
+    });
   }
+
   gte(
     literal: LiteralValue & RowType<TableDef>[ColumnName]
   ): BooleanExpr<TableDef>;
@@ -504,13 +534,12 @@ export class ColumnExpression<
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
   ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
 
-  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
   gte(x: any): any {
-    return {
+    return new BooleanExpr({
       type: 'gte',
       left: this as unknown as ValueExpr<TableDef, any>,
       right: normalizeValue(x) as ValueExpr<TableDef, any>,
-    } as BooleanExpr<TableDef>;
+    });
   }
 }
 
@@ -623,15 +652,9 @@ function normalizeValue(val: ValueInput<any>): ValueExpr<any, any> {
   return literal(val as LiteralValue);
 }
 
-type EqExpr<Table extends TypedTableDef = any> = {
-  type: 'eq';
-  left: ValueExpr<Table, any>;
-  right: ValueExpr<Table, any>;
-} & {
-  _tableType?: Table;
-};
+type EqExpr<Table extends TypedTableDef = any> = BooleanExpr<Table>;
 
-type BooleanExpr<Table extends TypedTableDef> = (
+type BooleanExprData<Table extends TypedTableDef> = (
   | {
       type: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
       left: ValueExpr<Table, any>;
@@ -640,75 +663,105 @@ type BooleanExpr<Table extends TypedTableDef> = (
   | {
       type: 'and';
       clauses: readonly [
-        BooleanExpr<Table>,
-        BooleanExpr<Table>,
-        ...BooleanExpr<Table>[],
+        BooleanExprData<Table>,
+        BooleanExprData<Table>,
+        ...BooleanExprData<Table>[],
       ];
     }
   | {
       type: 'or';
       clauses: readonly [
-        BooleanExpr<Table>,
-        BooleanExpr<Table>,
-        ...BooleanExpr<Table>[],
+        BooleanExprData<Table>,
+        BooleanExprData<Table>,
+        ...BooleanExprData<Table>[],
       ];
     }
   | {
       type: 'not';
-      clause: BooleanExpr<Table>;
+      clause: BooleanExprData<Table>;
     }
 ) & {
   _tableType?: Table;
-  // readonly [BooleanExprBrand]: Table?;
 };
+
+export class BooleanExpr<Table extends TypedTableDef> {
+  constructor(readonly data: BooleanExprData<Table>) {}
+
+  and(other: BooleanExpr<Table>): BooleanExpr<Table> {
+    return new BooleanExpr({ type: 'and', clauses: [this.data, other.data] });
+  }
+
+  or(other: BooleanExpr<Table>): BooleanExpr<Table> {
+    return new BooleanExpr({ type: 'or', clauses: [this.data, other.data] });
+  }
+
+  not(): BooleanExpr<Table> {
+    return new BooleanExpr({ type: 'not', clause: this.data });
+  }
+}
 
 export function not<T extends TypedTableDef>(
   clause: BooleanExpr<T>
 ): BooleanExpr<T> {
-  return { type: 'not', clause };
+  return new BooleanExpr({ type: 'not', clause: clause.data });
 }
 
 export function and<T extends TypedTableDef>(
   ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
 ): BooleanExpr<T> {
-  return { type: 'and', clauses };
+  return new BooleanExpr({
+    type: 'and',
+    clauses: clauses.map(c => c.data) as [
+      BooleanExprData<T>,
+      BooleanExprData<T>,
+      ...BooleanExprData<T>[],
+    ],
+  });
 }
 
 export function or<T extends TypedTableDef>(
   ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
 ): BooleanExpr<T> {
-  return { type: 'or', clauses };
+  return new BooleanExpr({
+    type: 'or',
+    clauses: clauses.map(c => c.data) as [
+      BooleanExprData<T>,
+      BooleanExprData<T>,
+      ...BooleanExprData<T>[],
+    ],
+  });
 }
 
 function booleanExprToSql<Table extends TypedTableDef>(
-  expr: BooleanExpr<Table>,
+  expr: BooleanExpr<Table> | BooleanExprData<Table>,
   tableAlias?: string
 ): string {
-  switch (expr.type) {
+  const data = expr instanceof BooleanExpr ? expr.data : expr;
+  switch (data.type) {
     case 'eq':
-      return `${valueExprToSql(expr.left, tableAlias)} = ${valueExprToSql(expr.right, tableAlias)}`;
+      return `${valueExprToSql(data.left, tableAlias)} = ${valueExprToSql(data.right, tableAlias)}`;
     case 'ne':
-      return `${valueExprToSql(expr.left, tableAlias)} <> ${valueExprToSql(expr.right, tableAlias)}`;
+      return `${valueExprToSql(data.left, tableAlias)} <> ${valueExprToSql(data.right, tableAlias)}`;
     case 'gt':
-      return `${valueExprToSql(expr.left, tableAlias)} > ${valueExprToSql(expr.right, tableAlias)}`;
+      return `${valueExprToSql(data.left, tableAlias)} > ${valueExprToSql(data.right, tableAlias)}`;
     case 'gte':
-      return `${valueExprToSql(expr.left, tableAlias)} >= ${valueExprToSql(expr.right, tableAlias)}`;
+      return `${valueExprToSql(data.left, tableAlias)} >= ${valueExprToSql(data.right, tableAlias)}`;
     case 'lt':
-      return `${valueExprToSql(expr.left, tableAlias)} < ${valueExprToSql(expr.right, tableAlias)}`;
+      return `${valueExprToSql(data.left, tableAlias)} < ${valueExprToSql(data.right, tableAlias)}`;
     case 'lte':
-      return `${valueExprToSql(expr.left, tableAlias)} <= ${valueExprToSql(expr.right, tableAlias)}`;
+      return `${valueExprToSql(data.left, tableAlias)} <= ${valueExprToSql(data.right, tableAlias)}`;
     case 'and':
-      return expr.clauses
+      return data.clauses
         .map(c => booleanExprToSql(c, tableAlias))
         .map(wrapInParens)
         .join(' AND ');
     case 'or':
-      return expr.clauses
+      return data.clauses
         .map(c => booleanExprToSql(c, tableAlias))
         .map(wrapInParens)
         .join(' OR ');
     case 'not':
-      return `NOT ${wrapInParens(booleanExprToSql(expr.clause, tableAlias))}`;
+      return `NOT ${wrapInParens(booleanExprToSql(data.clause, tableAlias))}`;
   }
 }
 
@@ -757,6 +810,80 @@ function isLiteralExpr<Value>(
   expr: ValueExpr<any, Value>
 ): expr is LiteralExpr<Value & LiteralValue> {
   return (expr as LiteralExpr<Value>).type === 'literal';
+}
+
+/**
+ * Evaluate a BooleanExpr against a row at runtime for client-side filtering.
+ */
+export function evaluateBooleanExpr(
+  expr: BooleanExpr<any>,
+  row: Record<string, any>
+): boolean {
+  return evaluateData(expr.data, row);
+}
+
+function evaluateData(
+  data: BooleanExprData<any>,
+  row: Record<string, any>
+): boolean {
+  switch (data.type) {
+    case 'eq':
+      return resolveValue(data.left, row) === resolveValue(data.right, row);
+    case 'ne':
+      return resolveValue(data.left, row) !== resolveValue(data.right, row);
+    case 'gt':
+      return resolveValue(data.left, row) > resolveValue(data.right, row);
+    case 'gte':
+      return resolveValue(data.left, row) >= resolveValue(data.right, row);
+    case 'lt':
+      return resolveValue(data.left, row) < resolveValue(data.right, row);
+    case 'lte':
+      return resolveValue(data.left, row) <= resolveValue(data.right, row);
+    case 'and':
+      return data.clauses.every(c => evaluateData(c, row));
+    case 'or':
+      return data.clauses.some(c => evaluateData(c, row));
+    case 'not':
+      return !evaluateData(data.clause, row);
+  }
+}
+
+function resolveValue(
+  expr: ValueExpr<any, any>,
+  row: Record<string, any>
+): any {
+  if (isLiteralExpr(expr)) {
+    return expr.value;
+  }
+  return row[expr.column];
+}
+
+/**
+ * Extract the table name from a query builder expression.
+ */
+export function getQueryTableName(query: any): string {
+  if (query.table) return query.table.name; // FromBuilder
+  if (query.name) return query.name; // TableRefImpl
+  if (query.sourceQuery) return query.sourceQuery.table.name; // SemijoinImpl (source table)
+  throw new Error('Cannot extract table name from query');
+}
+
+/**
+ * Extract the accessor name from a query builder expression.
+ */
+export function getQueryAccessorName(query: any): string {
+  if (query.table) return query.table.accessorName; // FromBuilder
+  if (query.accessorName) return query.accessorName; // TableRefImpl
+  if (query.sourceQuery) return query.sourceQuery.table.accessorName; // SemijoinImpl
+  throw new Error('Cannot extract accessor name from query');
+}
+
+/**
+ * Extract the BooleanExpr from a query builder, if any.
+ */
+export function getQueryWhereClause(query: any): BooleanExpr<any> | undefined {
+  if (query.whereClause) return query.whereClause; // FromBuilder
+  return undefined; // TableRefImpl has no where clause
 }
 
 // TODO: Fix this.

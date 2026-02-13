@@ -3,16 +3,19 @@ import type {
   QueryKey,
   QueryFunction,
 } from '@tanstack/react-query';
-import type { UntypedTableDef, RowType } from '../lib/table';
 import {
-  type Expr,
-  type ColumnsFromRow,
-  evaluate,
-  toString,
-} from '../lib/filter';
+  type BooleanExpr,
+  evaluateBooleanExpr,
+  getQueryAccessorName,
+  getQueryWhereClause,
+} from '../lib/query';
 
-const tableRegistry = new Map<string, UntypedTableDef>();
-const whereRegistry = new Map<string, Expr<any>>();
+type QueryInput = { toSql(): string } & Record<string, any>;
+
+const queryRegistry = new Map<
+  string,
+  { accessorName: string; whereExpr?: BooleanExpr<any> }
+>();
 
 export interface SpacetimeDBQueryOptions {
   queryKey: readonly ['spacetimedb', string, string];
@@ -26,42 +29,34 @@ export interface SpacetimeDBQueryOptionsSkipped
 
 // creates query options for useQuery/useSuspenseQuery.
 // useQuery(spacetimeDBQuery(tables.person));
-// useQuery(spacetimeDBQuery(tables.user, where(eq('role', 'admin'))));
-// useQuery(spacetimeDBQuery(tables.user, userId ? where(eq('id', userId)) : 'skip'));
-export function spacetimeDBQuery<TableDef extends UntypedTableDef>(
-  table: TableDef,
-  whereOrSkip: 'skip'
+// useQuery(spacetimeDBQuery(tables.user.where(r => r.online.eq(true))));
+// useQuery(spacetimeDBQuery(condition ? tables.user : 'skip'));
+export function spacetimeDBQuery(
+  queryOrSkip: 'skip'
 ): SpacetimeDBQueryOptionsSkipped;
 
-export function spacetimeDBQuery<TableDef extends UntypedTableDef>(
-  table: TableDef,
-  where?: Expr<ColumnsFromRow<RowType<TableDef>>>
-): SpacetimeDBQueryOptions;
+export function spacetimeDBQuery(query: QueryInput): SpacetimeDBQueryOptions;
 
-export function spacetimeDBQuery<TableDef extends UntypedTableDef>(
-  table: TableDef,
-  whereOrSkip?: Expr<ColumnsFromRow<RowType<TableDef>>> | 'skip'
+export function spacetimeDBQuery(
+  queryOrSkip: QueryInput | 'skip'
 ): SpacetimeDBQueryOptions | SpacetimeDBQueryOptionsSkipped {
-  tableRegistry.set(table.sourceName, table);
-
-  if (whereOrSkip === 'skip') {
+  if (queryOrSkip === 'skip') {
     return {
-      queryKey: ['spacetimedb', table.sourceName, 'skip'] as const,
+      queryKey: ['spacetimedb', '', 'skip'] as const,
       staleTime: Infinity,
       enabled: false,
     };
   }
 
-  const where = whereOrSkip;
-  const whereStr = where ? toString(table, where) : '';
+  const query = queryOrSkip;
+  const accessorName = getQueryAccessorName(query);
+  const whereExpr = getQueryWhereClause(query);
+  const querySql = query.toSql();
 
-  if (where) {
-    const whereKey = `${table.sourceName}:${whereStr}`;
-    whereRegistry.set(whereKey, where);
-  }
+  queryRegistry.set(querySql, { accessorName, whereExpr });
 
   return {
-    queryKey: ['spacetimedb', table.sourceName, whereStr] as const,
+    queryKey: ['spacetimedb', accessorName, querySql] as const,
     staleTime: Infinity,
   };
 }
@@ -89,8 +84,8 @@ export class SpacetimeDBQueryClient {
     string,
     Array<{
       resolve: (data: any[]) => void;
-      tableDef: any;
-      whereClause?: Expr<any>;
+      querySql: string;
+      whereExpr?: BooleanExpr<any>;
     }>
   >();
   private cacheUnsubscribe: (() => void) | null = null;
@@ -104,24 +99,34 @@ export class SpacetimeDBQueryClient {
   connect(queryClient: QueryClient): void {
     this.queryClient = queryClient;
 
-    this.cacheUnsubscribe = queryClient.getQueryCache().subscribe(event => {
-      if (
-        event.type === 'removed' &&
-        event.query.queryKey[0] === 'spacetimedb'
-      ) {
-        const keyStr = JSON.stringify(event.query.queryKey);
-        const sub = this.subscriptions.get(keyStr);
-        if (sub) {
-          sub.unsubscribe();
-          this.subscriptions.delete(keyStr);
+    this.cacheUnsubscribe = queryClient
+      .getQueryCache()
+      .subscribe((event: any) => {
+        if (
+          event.type === 'removed' &&
+          event.query.queryKey[0] === 'spacetimedb'
+        ) {
+          const keyStr = JSON.stringify(event.query.queryKey);
+          const sub = this.subscriptions.get(keyStr);
+          if (sub) {
+            sub.unsubscribe();
+            this.subscriptions.delete(keyStr);
+          }
         }
-      }
-    });
+      });
   }
 
-  queryFn: QueryFunction<any[], QueryKey> = async ({ queryKey }) => {
+  queryFn: QueryFunction<any[], QueryKey> = async ({
+    queryKey,
+  }: {
+    queryKey: QueryKey;
+  }) => {
     const keyStr = JSON.stringify(queryKey);
-    const [prefix, tableName, whereStr] = queryKey as [string, string, string];
+    const [prefix, accessorName, querySql] = queryKey as [
+      string,
+      string,
+      string,
+    ];
 
     if (prefix !== 'spacetimedb') {
       throw new Error(
@@ -129,32 +134,34 @@ export class SpacetimeDBQueryClient {
       );
     }
 
-    const tableDef = tableRegistry.get(tableName);
-    const whereKey = `${tableName}:${whereStr}`;
-    const whereClause = whereStr ? whereRegistry.get(whereKey) : undefined;
+    const registered = queryRegistry.get(querySql);
+    const whereExpr = registered?.whereExpr;
 
     const existingSub = this.subscriptions.get(keyStr);
     if (existingSub?.applied) {
-      return this.getTableData(existingSub.tableInstance, whereClause);
+      return this.getTableData(existingSub.tableInstance, whereExpr);
     }
 
     // queue query if connection not ready yet
     if (!this.connection) {
       return new Promise<any[]>(resolve => {
         const pending = this.pendingQueries.get(keyStr) || [];
-        pending.push({ resolve, tableDef, whereClause });
+        pending.push({ resolve, querySql, whereExpr });
         this.pendingQueries.set(keyStr, pending);
       });
     }
 
-    return this.setupSubscription(queryKey, tableName, tableDef, whereClause);
+    return this.setupSubscription(queryKey, accessorName, querySql, whereExpr);
   };
 
-  private getTableData(tableInstance: any, whereClause?: Expr<any>): any[] {
+  private getTableData(
+    tableInstance: any,
+    whereExpr?: BooleanExpr<any>
+  ): any[] {
     const allRows = Array.from(tableInstance.iter());
-    if (whereClause) {
+    if (whereExpr) {
       return allRows.filter(row =>
-        evaluate(whereClause, row as Record<string, unknown>)
+        evaluateBooleanExpr(whereExpr, row as Record<string, any>)
       );
     }
     return allRows;
@@ -162,9 +169,9 @@ export class SpacetimeDBQueryClient {
 
   private setupSubscription(
     queryKey: QueryKey,
-    tableName: string,
-    tableDef: any,
-    whereClause?: Expr<any>
+    accessorName: string,
+    querySql: string,
+    whereExpr?: BooleanExpr<any>
   ): Promise<any[]> {
     if (!this.connection) {
       return Promise.resolve([]);
@@ -173,13 +180,10 @@ export class SpacetimeDBQueryClient {
     const keyStr = JSON.stringify(queryKey);
     const db = this.connection.db;
 
-    const accessorName = tableDef?.accessorName ?? tableName;
     const tableInstance = db[accessorName];
 
     if (!tableInstance) {
-      console.warn(
-        `SpacetimeDBQueryClient: table "${tableName}" (accessor: ${accessorName}) not found`
-      );
+      console.warn(`SpacetimeDBQueryClient: table "${accessorName}" not found`);
       return Promise.resolve([]);
     }
 
@@ -188,26 +192,20 @@ export class SpacetimeDBQueryClient {
     if (existingSub) {
       if (existingSub.applied) {
         return Promise.resolve(
-          this.getTableData(existingSub.tableInstance, whereClause)
+          this.getTableData(existingSub.tableInstance, whereExpr)
         );
       }
       return new Promise(resolve => {
         const pending = this.pendingQueries.get(keyStr) || [];
-        pending.push({ resolve, tableDef, whereClause });
+        pending.push({ resolve, querySql, whereExpr });
         this.pendingQueries.set(keyStr, pending);
       });
     }
 
-    const query =
-      `SELECT * FROM ${tableName}` +
-      (whereClause && tableDef
-        ? ` WHERE ${toString(tableDef, whereClause as any)}`
-        : '');
-
     return new Promise<any[]>(resolve => {
       const updateCache = () => {
         if (!this.queryClient) return [];
-        const data = this.getTableData(tableInstance, whereClause);
+        const data = this.getTableData(tableInstance, whereExpr);
         this.queryClient.setQueryData(queryKey, data);
         return data;
       };
@@ -230,7 +228,7 @@ export class SpacetimeDBQueryClient {
             this.pendingQueries.delete(keyStr);
           }
         })
-        .subscribe(query);
+        .subscribe(querySql);
 
       // push updates to cache when data changes
       const onTableChange = () => {
@@ -265,15 +263,15 @@ export class SpacetimeDBQueryClient {
 
     for (const [keyStr, pending] of pendingEntries) {
       const queryKey = JSON.parse(keyStr) as QueryKey;
-      const [, tableName] = queryKey as [string, string, string];
+      const [, accessorName] = queryKey as [string, string, string];
 
       if (pending.length > 0) {
         const first = pending[0];
         this.setupSubscription(
           queryKey,
-          tableName,
-          first.tableDef,
-          first.whereClause
+          accessorName,
+          first.querySql,
+          first.whereExpr
         )
           .then(data => {
             for (const p of pending) {

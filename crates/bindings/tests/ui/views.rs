@@ -156,20 +156,20 @@ struct PlayerInfo {
 
 /// Comparing incompatible types in `where` condition: Identity != int
 #[view(name = view_bad_where, public)]
-fn view_bad_where(ctx: &ViewContext) -> Query<Player> {
+fn view_bad_where(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
 }
 
 /// Comparing incompatible types in `where` condition: u8 != u32
 #[view(name = view_bad_where_int_types, public)]
-fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
+fn view_bad_where_int_types(ctx: &ViewContext) -> impl Query<PlayerInfo> {
     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
 }
 
 /// Joining incompatible types
 /// -- weight is u32, identity is Identity
 #[view(name = view_bad_join, public)]
-fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
+fn view_bad_join(ctx: &ViewContext) -> impl Query<PlayerInfo> {
     ctx.from
         .player_info()
         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
@@ -179,7 +179,7 @@ fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
 /// Joining non-index columns
 /// -- age is not indexed
 #[view(name = view_join_non_indexed_column, public)]
-fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
+fn view_join_non_indexed_column(ctx: &ViewContext) -> impl Query<PlayerInfo> {
     ctx.from
         .player()
         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
@@ -189,7 +189,7 @@ fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
 /// Right join returns right table's type
 /// -- should be PlayerInfo, not Player
 #[view(name = view_right_join_wrong_return_type, public)]
-fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
+fn view_right_join_wrong_return_type(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from
         .player()
         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
@@ -199,7 +199,7 @@ fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
 /// Using non-existent table
 /// -- xyz table does not exist
 #[view(name = view_nonexistent_table, public)]
-fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
     ctx.from.xyz().build()
 }
 

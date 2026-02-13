@@ -476,6 +476,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         tableType: { tag: 'User' },
         tableAccess: { tag: isPublic ? 'Public' : 'Private' },
         defaultValues,
+        isEvent: false,
       };
     },
     idxs: {} as OptsIndices<Opts>,

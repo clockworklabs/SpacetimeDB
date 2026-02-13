@@ -60,7 +60,12 @@ public static class SqlLit
         new(SqlFormat.FormatHexLiteral(value.ToString()));
 }
 
-public readonly struct Query<TRow>
+public interface IQuery<TRow>
+{
+    string ToSql();
+}
+
+public readonly struct Query<TRow> : IQuery<TRow>
 {
     public string Sql { get; }
 
@@ -86,6 +91,8 @@ public readonly struct BoolExpr<TRow>
     public BoolExpr<TRow> And(BoolExpr<TRow> other) => new($"({Sql} AND {other.Sql})");
 
     public BoolExpr<TRow> Or(BoolExpr<TRow> other) => new($"({Sql} OR {other.Sql})");
+
+    public BoolExpr<TRow> Not() => new($"(NOT {Sql})");
 
     public override string ToString() => Sql;
 }
@@ -247,7 +254,7 @@ public readonly struct NullableIxCol<TRow, TValue>
     public override string ToString() => RefSql;
 }
 
-public sealed class Table<TRow, TCols, TIxCols>
+public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
 {
     private readonly string tableName;
     private readonly TCols cols;
@@ -301,7 +308,7 @@ public sealed class Table<TRow, TCols, TIxCols>
     ) => new(this, right, on(ixCols, right.ixCols), leftWhereExpr: null);
 }
 
-public sealed class FromWhere<TRow, TCols, TIxCols>
+public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
 {
     private readonly Table<TRow, TCols, TIxCols> table;
     private readonly BoolExpr<TRow> expr;
@@ -324,7 +331,9 @@ public sealed class FromWhere<TRow, TCols, TIxCols>
     public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) =>
         Where(predicate);
 
-    public Query<TRow> Build() => new($"{table.ToSql()} WHERE {expr.Sql}");
+    public string ToSql() => $"{table.ToSql()} WHERE {expr.Sql}";
+
+    public Query<TRow> Build() => new(ToSql());
 
     public LeftSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> LeftSemijoin<
         TRightRow,
@@ -352,7 +361,7 @@ public sealed class LeftSemiJoin<
     TRightRow,
     TRightCols,
     TRightIxCols
->
+> : IQuery<TLeftRow>
 {
     private readonly Table<TLeftRow, TLeftCols, TLeftIxCols> left;
     private readonly Table<TRightRow, TRightCols, TRightIxCols> right;
@@ -430,13 +439,13 @@ public sealed class LeftSemiJoin<
         TRightIxCols
     > Filter(Func<TLeftCols, TLeftIxCols, BoolExpr<TLeftRow>> predicate) => Where(predicate);
 
-    public Query<TLeftRow> Build()
+    public string ToSql()
     {
         var whereClause = whereExpr.HasValue ? $" WHERE {whereExpr.Value.Sql}" : string.Empty;
-        return new(
-            $"SELECT {left.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}"
-        );
+        return $"SELECT {left.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}";
     }
+
+    public Query<TLeftRow> Build() => new(ToSql());
 }
 
 public sealed class RightSemiJoin<
@@ -446,7 +455,7 @@ public sealed class RightSemiJoin<
     TRightRow,
     TRightCols,
     TRightIxCols
->
+> : IQuery<TRightRow>
 {
     private readonly Table<TLeftRow, TLeftCols, TLeftIxCols> left;
     private readonly Table<TRightRow, TRightCols, TRightIxCols> right;
@@ -541,7 +550,7 @@ public sealed class RightSemiJoin<
         TRightIxCols
     > Filter(Func<TRightCols, TRightIxCols, BoolExpr<TRightRow>> predicate) => Where(predicate);
 
-    public Query<TRightRow> Build()
+    public string ToSql()
     {
         var whereClause = string.Empty;
 
@@ -558,10 +567,10 @@ public sealed class RightSemiJoin<
             whereClause = $" WHERE {rightWhereExpr.Value.Sql}";
         }
 
-        return new(
-            $"SELECT {right.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}"
-        );
+        return $"SELECT {right.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}";
     }
+
+    public Query<TRightRow> Build() => new(ToSql());
 }
 
 public static class QueryBuilderExtensions
