@@ -192,7 +192,7 @@ export default defineConfig([
       moduleSideEffects: ['src/server/polyfills.ts'],
     },
     external: ['undici', /^spacetime:sys.*$/],
-    noExternal: ['base64-js', 'fast-text-encoding', 'statuses', 'pure-rand'],
+    noExternal: ['base64-js', 'statuses', 'pure-rand'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
