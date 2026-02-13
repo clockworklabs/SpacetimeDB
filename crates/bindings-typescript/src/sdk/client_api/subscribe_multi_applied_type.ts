@@ -9,14 +9,14 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import QueryId from './query_id_type';
+import QuerySetId from './query_set_id_type';
 import DatabaseUpdate from './database_update_type';
 
 export default __t.object('SubscribeMultiApplied', {
   requestId: __t.u32(),
   totalHostExecutionDurationMicros: __t.u64(),
   get queryId() {
-    return QueryId;
+    return QuerySetId;
   },
   get update() {
     return DatabaseUpdate;

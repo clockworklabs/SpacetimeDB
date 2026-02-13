@@ -14,12 +14,16 @@ type ParamsType<R extends UntypedReducerDef> = MaybeParams<
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef
-): (...params: ParamsType<ReducerDef>) => void {
+): (...params: ParamsType<ReducerDef>) => Promise<void> {
   const connectionStore = useSpacetimeDB();
   const reducerName = reducerDef.accessorName;
 
   // Holds calls made before the connection exists
-  const queueRef: ParamsType<ReducerDef>[] = [];
+  const queueRef: {
+    params: ParamsType<ReducerDef>;
+    resolve: () => void;
+    reject: (err: unknown) => void;
+  }[] = [];
 
   // Flush when we finally have a connection
   const unsubscribe = connectionStore.subscribe(state => {
@@ -28,11 +32,11 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
 
     const fn = (conn.reducers as any)[reducerName] as (
       ...p: ParamsType<ReducerDef>
-    ) => void;
+    ) => Promise<void>;
     if (queueRef.length) {
       const pending = queueRef.splice(0);
-      for (const params of pending) {
-        fn(...params);
+      for (const item of pending) {
+        fn(...item.params).then(item.resolve, item.reject);
       }
     }
   });
@@ -45,12 +49,13 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
     const state = get(connectionStore);
     const conn = state.getConnection();
     if (!conn) {
-      queueRef.push(params);
-      return;
+      return new Promise<void>((resolve, reject) => {
+        queueRef.push({ params, resolve, reject });
+      });
     }
     const fn = (conn.reducers as any)[reducerName] as (
       ...p: ParamsType<ReducerDef>
-    ) => void;
+    ) => Promise<void>;
     return fn(...params);
   };
 }

@@ -170,7 +170,6 @@
   ],
   "dependencies": {
     "base64-js": "^1.5.1",
-    "fast-text-encoding": "^1.0.0",
     "headers-polyfill": "^4.0.3",
     "prettier": "^3.3.3",
     "pure-rand": "^7.0.1",

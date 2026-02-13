@@ -30,7 +30,7 @@ use std::hint::black_box;
 
 #[spacetimedb::table(name = unique_0_u32_u64_str)]
 pub struct unique_0_u32_u64_str_t {
-    #[unique]
+    #[primary_key]
     id: u32,
     age: u64,
     name: String,
@@ -55,7 +55,7 @@ pub struct btree_each_column_u32_u64_str_t {
 
 #[spacetimedb::table(name = unique_0_u32_u64_u64)]
 pub struct unique_0_u32_u64_u64_t {
-    #[unique]
+    #[primary_key]
     id: u32,
     x: u64,
     y: u64,

@@ -15,9 +15,6 @@ const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
     'Connected to SpacetimeDB with identity:',
     identity.toHexString()
   );
-  conn.reducers.onSendMessage(() => {
-    console.log('Message sent.');
-  });
 };
 
 const onDisconnect = () => {

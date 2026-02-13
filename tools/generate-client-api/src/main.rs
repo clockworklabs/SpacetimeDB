@@ -49,7 +49,7 @@ fn main() -> Result<()> {
             "-p",
             "spacetimedb-client-api-messages",
             "--example",
-            "get_ws_schema",
+            "get_ws_schema_v2",
         ],
     )?;
     use std::io::Write;
