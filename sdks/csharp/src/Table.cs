@@ -355,30 +355,58 @@ namespace SpacetimeDB
             {
                 if (rowSet is TableUpdateRows.PersistentTable(var persistent))
                 {
-                    // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
-                    // to the table, it doesn't matter that we call Add before Remove here.
-                    var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
-                    for (var i = 0; i < insertRowCount; i++)
+                    if (IsEventTable)
                     {
-                        var obj = Decode(insertReader, out var pk);
-                        delta.Delta.Add(pk, obj);
+                        // Be tolerant of persistent rowsets for event tables.
+                        // Treat inserts as event rows, matching Rust SDK behavior.
+                        var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
+                        delta.EventRows ??= new();
+                        for (var i = 0; i < insertRowCount; i++)
+                        {
+                            var obj = DecodeValue(insertReader);
+                            delta.EventRows.Add(obj);
+                        }
                     }
-
-                    var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
-                    for (var i = 0; i < deleteRowCount; i++)
+                    else
                     {
-                        var obj = Decode(deleteReader, out var pk);
-                        delta.Delta.Remove(pk, obj);
+                        // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
+                        // to the table, it doesn't matter that we call Add before Remove here.
+                        var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
+                        for (var i = 0; i < insertRowCount; i++)
+                        {
+                            var obj = Decode(insertReader, out var pk);
+                            delta.Delta.Add(pk, obj);
+                        }
+
+                        var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
+                        for (var i = 0; i < deleteRowCount; i++)
+                        {
+                            var obj = Decode(deleteReader, out var pk);
+                            delta.Delta.Remove(pk, obj);
+                        }
                     }
                 }
                 else if (rowSet is TableUpdateRows.EventTable(var events))
                 {
-                    var (eventReader, eventRowCount) = CompressionHelpers.ParseRowList(events.Events);
-                    delta.EventRows ??= new();
-                    for (var i = 0; i < eventRowCount; i++)
+                    if (IsEventTable)
                     {
-                        var obj = DecodeValue(eventReader);
-                        delta.EventRows.Add(obj);
+                        var (eventReader, eventRowCount) = CompressionHelpers.ParseRowList(events.Events);
+                        delta.EventRows ??= new();
+                        for (var i = 0; i < eventRowCount; i++)
+                        {
+                            var obj = DecodeValue(eventReader);
+                            delta.EventRows.Add(obj);
+                        }
+                    }
+                    else
+                    {
+                        // Be tolerant of event rowsets for non-event tables by treating them as inserts.
+                        var (eventReader, eventRowCount) = CompressionHelpers.ParseRowList(events.Events);
+                        for (var i = 0; i < eventRowCount; i++)
+                        {
+                            var obj = Decode(eventReader, out var pk);
+                            delta.Delta.Add(pk, obj);
+                        }
                     }
                 }
             }
