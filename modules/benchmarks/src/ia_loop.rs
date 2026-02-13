@@ -332,13 +332,11 @@ fn move_agent(
         .find(entity_id)
         .is_some()
     {
-        ctx.db
-            .game_live_targetable_state()
-            .entity_id()
-            .update(GameLiveTargetableState {
-                entity_id,
-                quad: new_hash,
-            });
+        ctx.db.game_live_targetable_state().entity_id().delete(entity_id);
+        ctx.db.game_live_targetable_state().insert(GameLiveTargetableState {
+            entity_id,
+            quad: new_hash,
+        });
     }
     let mobile_entity = ctx
         .db

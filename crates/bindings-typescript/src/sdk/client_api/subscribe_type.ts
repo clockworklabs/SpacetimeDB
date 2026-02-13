@@ -9,8 +9,12 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
+import QuerySetId from './query_set_id_type';
 
 export default __t.object('Subscribe', {
-  queryStrings: __t.array(__t.string()),
   requestId: __t.u32(),
+  get querySetId() {
+    return QuerySetId;
+  },
+  queryStrings: __t.array(__t.string()),
 });

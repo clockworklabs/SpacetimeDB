@@ -210,6 +210,13 @@ pub struct RawTableDefV10 {
 
     /// Default values for columns in this table.
     pub default_values: Vec<RawColumnDefaultValueV10>,
+
+    /// Whether this is an event table.
+    ///
+    /// Event tables are write-only: their rows are persisted to the commitlog
+    /// but are NOT merged into committed state. They are only visible to V2
+    /// subscribers in the transaction that inserted them.
+    pub is_event: bool,
 }
 
 /// Marks a particular table column as having a particular default value.
@@ -776,6 +783,7 @@ impl RawModuleDefV10Builder {
                 table_type: TableType::User,
                 table_access: TableAccess::Public,
                 default_values: vec![],
+                is_event: false,
             },
         }
     }
@@ -1098,6 +1106,12 @@ impl RawTableDefBuilderV10<'_> {
     /// Sets the access rights for the table and return it.
     pub fn with_access(mut self, table_access: TableAccess) -> Self {
         self.table.table_access = table_access;
+        self
+    }
+
+    /// Sets whether this table is an event table.
+    pub fn with_event(mut self, is_event: bool) -> Self {
+        self.table.is_event = is_event;
         self
     }
 

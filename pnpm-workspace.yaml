@@ -5,6 +5,7 @@ packages:
   - 'templates/react-ts'
   - 'templates/basic-ts'
   - 'templates/vue-ts'
+  - 'templates/tanstack-ts'
   - 'templates/browser-ts'
   - 'templates/svelte-ts'
   - 'templates/nuxt-ts'

@@ -61,21 +61,21 @@ error[E0425]: cannot find type `ScheduledTable` in this scope
     |                                             ^^^^^^^^^^^^^^ not found in this scope
 
 error[E0425]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:202:55
+   --> tests/ui/views.rs:202:60
     |
-202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
-    |                                                       ^ not found in this scope
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
+    |                                                            ^ not found in this scope
     |
 help: you might be missing a type parameter
     |
-202 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> Query<T> {
+202 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> impl Query<T> {
     |                          +++
 
 error[E0425]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:202:55
+   --> tests/ui/views.rs:202:60
     |
-202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
-    |                                                       ^ not found in this scope
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
+    |                                                            ^ not found in this scope
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:106:1
@@ -264,17 +264,14 @@ help: the trait `ViewReturn` is not implemented for `Player`
     |
  68 | struct Player {
     | ^^^^^^^^^^^^^
-help: the following other types implement trait `ViewReturn`
-   --> src/rt.rs
-    |
-    | impl<T: SpacetimeType + Serialize> ViewReturn for Vec<T> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<T>`
-...
-    | impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Option<T>`
-...
-    | impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Query<T>`
+    = help: the following other types implement trait `ViewReturn`:
+              FromWhere<T>
+              LeftSemiJoin<L>
+              Option<T>
+              RawQuery<T>
+              RightSemiJoin<R, L>
+              Vec<T>
+              spacetimedb::spacetimedb_query_builder::Table<T>
 
 error[E0277]: invalid view signature
    --> tests/ui/views.rs:128:1
@@ -482,20 +479,6 @@ error[E0609]: no field `age` on type `&PlayerInfoIxCols`
     |                                                                        ^^^ unknown field
     |
     = note: available fields are: `identity`, `weight`
-
-error[E0308]: mismatched types
-   --> tests/ui/views.rs:193:5
-    |
-192 |   fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
-    |                                                              ------------- expected `Query<Player>` because of return type
-193 | /     ctx.from
-194 | |         .player()
-195 | |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
-196 | |         .build()
-    | |________________^ expected `Query<Player>`, found `Query<PlayerInfo>`
-    |
-    = note: expected struct `Query<Player>`
-               found struct `Query<PlayerInfo>`
 
 error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the current scope
    --> tests/ui/views.rs:203:14

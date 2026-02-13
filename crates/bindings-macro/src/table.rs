@@ -538,7 +538,12 @@ impl ValidatedIndex<'_> {
         }
     }
 
-    fn marker_type(&self, vis: &syn::Visibility, tablehandle_ident: &Ident) -> TokenStream {
+    fn marker_type(
+        &self,
+        vis: &syn::Visibility,
+        tablehandle_ident: &Ident,
+        primary_key_column: Option<&Column<'_>>,
+    ) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
 
@@ -599,6 +604,9 @@ impl ValidatedIndex<'_> {
                     }
                 }
             });
+            if primary_key_column.is_some_and(|pk| col.ident == pk.ident) {
+                decl.extend(quote!(impl spacetimedb::table::PrimaryKey for #index_ident {}));
+            }
         }
         decl
     }
@@ -865,7 +873,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let index_accessors_ro = indices
         .iter()
         .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::Read));
-    let index_marker_types = indices.iter().map(|index| index.marker_type(vis, &tablehandle_ident));
+    let index_marker_types: Vec<_> = indices
+        .iter()
+        .map(|index| index.marker_type(vis, &tablehandle_ident, primary_key_column.as_ref()))
+        .collect();
 
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.

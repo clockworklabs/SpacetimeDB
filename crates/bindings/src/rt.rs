@@ -1,6 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use crate::query_builder::Query;
+use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
@@ -329,9 +329,33 @@ impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
     }
 }
 
-impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
+impl<T: SpacetimeType + Serialize> ViewReturn for RawQuery<T> {
     fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
         bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql().to_string()))
+    }
+}
+
+impl<T: HasCols + SpacetimeType + Serialize> ViewReturn for QbTable<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
+    }
+}
+
+impl<T: HasCols + SpacetimeType + Serialize> ViewReturn for FromWhere<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
+    }
+}
+
+impl<L: HasCols + SpacetimeType + Serialize> ViewReturn for LeftSemiJoin<L> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
+    }
+}
+
+impl<R: HasCols + SpacetimeType + Serialize, L: HasCols> ViewReturn for RightSemiJoin<R, L> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
     }
 }
 

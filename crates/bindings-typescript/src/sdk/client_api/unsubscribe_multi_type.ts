@@ -9,11 +9,11 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import QueryId from './query_id_type';
+import QuerySetId from './query_set_id_type';
 
 export default __t.object('UnsubscribeMulti', {
   requestId: __t.u32(),
   get queryId() {
-    return QueryId;
+    return QuerySetId;
   },
 });

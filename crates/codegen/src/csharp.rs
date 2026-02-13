@@ -482,7 +482,7 @@ const REDUCER_EVENTS: &str = r#"
         /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
         /// </summary>
         public TypedSubscriptionBuilder AddQuery<TRow>(
-            Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build
+            Func<QueryBuilder, global::SpacetimeDB.IQuery<TRow>> build
         )
         {
             var typed = new TypedSubscriptionBuilder(conn, Applied, Error);
@@ -1122,7 +1122,7 @@ impl Lang for Csharp<'_> {
             });
             writeln!(output);
 
-            writeln!(output, "public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)");
+            writeln!(output, "public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.IQuery<TRow>> build)");
             indented_block(output, |output| {
                 writeln!(output, "var qb = new QueryBuilder();");
                 writeln!(output, "querySqls.Add(build(qb).ToSql());");

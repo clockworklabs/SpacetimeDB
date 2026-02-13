@@ -2,13 +2,7 @@ import React, { useState } from 'react';
 import './App.css';
 import { tables, reducers } from './module_bindings';
 import type * as Types from './module_bindings/types';
-import {
-  useSpacetimeDB,
-  useTable,
-  where,
-  eq,
-  useReducer,
-} from 'spacetimedb/react';
+import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 
 export type PrettyMessage = {
@@ -32,36 +26,37 @@ function App() {
   const [messages] = useTable(tables.message);
 
   // Subscribe to all online users in the chat
-  // so we can show who's online and demonstrate
-  // the `where` and `eq` query expressions
-  const [onlineUsers] = useTable(tables.user, where(eq('online', true)), {
-    onInsert: user => {
-      // All users being inserted here are online
-      const name = user.name || user.identity.toHexString().substring(0, 8);
-      setSystemMessages(prev => [
-        ...prev,
-        {
-          sender: Identity.zero(),
-          text: `${name} has connected.`,
-          sent: Timestamp.now(),
-        },
-      ]);
-    },
-    onDelete: user => {
-      // All users being deleted here are offline
-      const name = user.name || user.identity.toHexString().substring(0, 8);
-      setSystemMessages(prev => [
-        ...prev,
-        {
-          sender: Identity.zero(),
-          text: `${name} has disconnected.`,
-          sent: Timestamp.now(),
-        },
-      ]);
-    },
-  });
+  const [onlineUsers] = useTable(
+    tables.user.where(r => r.online.eq(true)),
+    {
+      onInsert: user => {
+        // All users being inserted here are online
+        const name = user.name || user.identity.toHexString().substring(0, 8);
+        setSystemMessages(prev => [
+          ...prev,
+          {
+            sender: Identity.zero(),
+            text: `${name} has connected.`,
+            sent: Timestamp.now(),
+          },
+        ]);
+      },
+      onDelete: user => {
+        // All users being deleted here are offline
+        const name = user.name || user.identity.toHexString().substring(0, 8);
+        setSystemMessages(prev => [
+          ...prev,
+          {
+            sender: Identity.zero(),
+            text: `${name} has disconnected.`,
+            sent: Timestamp.now(),
+          },
+        ]);
+      },
+    }
+  );
 
-  const [offlineUsers] = useTable(tables.user, where(eq('online', false)));
+  const [offlineUsers] = useTable(tables.user.where(r => r.online.eq(false)));
   const users = [...onlineUsers, ...offlineUsers];
 
   const prettyMessages: PrettyMessage[] = messages
@@ -103,7 +98,13 @@ function App() {
   const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setNewMessage('');
-    sendMessage({ text: newMessage });
+    sendMessage({ text: newMessage })
+      .then(() => {
+        console.log('Message sent.');
+      })
+      .catch(err => {
+        console.error('Error sending message:', err);
+      });
   };
 
   return (
