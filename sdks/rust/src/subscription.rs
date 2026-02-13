@@ -214,11 +214,11 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
         self.subscribe(all_subs)
     }
 
-    pub fn add_query<T>(self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> TypedSubscriptionBuilder<M> {
+    pub fn add_query<T, Q: Query<T>>(self, build: impl Fn(M::QueryBuilder) -> Q) -> TypedSubscriptionBuilder<M> {
         let query = build(M::QueryBuilder::default());
         TypedSubscriptionBuilder {
             builder: self,
-            queries: vec![query.sql().to_string()],
+            queries: vec![query.into_sql()],
         }
     }
 }
@@ -231,9 +231,9 @@ pub struct TypedSubscriptionBuilder<M: SpacetimeModule> {
 
 impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
     /// Build a query and invoke `subscribe` in order to subscribe to its results.
-    pub fn add_query<T>(mut self, build: impl Fn(M::QueryBuilder) -> Query<T>) -> Self {
+    pub fn add_query<T, Q: Query<T>>(mut self, build: impl Fn(M::QueryBuilder) -> Q) -> Self {
         let query = build(M::QueryBuilder::default());
-        self.queries.push(query.sql().to_string());
+        self.queries.push(query.into_sql());
         self
     }
 

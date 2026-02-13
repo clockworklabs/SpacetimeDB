@@ -3,7 +3,7 @@ use crate::TableNameStr;
 use super::{
     expr::{format_expr, BoolExpr},
     table::{ColumnRef, HasCols, HasIxCols, Table},
-    Query,
+    Query, RawQuery,
 };
 use std::marker::PhantomData;
 
@@ -127,6 +127,18 @@ impl<L: HasIxCols> super::FromWhere<L> {
     }
 }
 
+impl<L: HasCols> Query<L> for LeftSemiJoin<L> {
+    fn into_sql(self) -> String {
+        self.build().into_sql()
+    }
+}
+
+impl<R: HasCols, L: HasCols> Query<R> for RightSemiJoin<R, L> {
+    fn into_sql(self) -> String {
+        self.build().into_sql()
+    }
+}
+
 // LeftSemiJoin where() operates on L
 impl<L: HasCols> LeftSemiJoin<L> {
     pub fn r#where<F>(self, f: F) -> Self
@@ -154,7 +166,7 @@ impl<L: HasCols> LeftSemiJoin<L> {
         self.r#where(f)
     }
 
-    pub fn build(self) -> Query<L> {
+    pub fn build(self) -> RawQuery<L> {
         let where_clause = self
             .where_expr
             .map(|e| format!(" WHERE {}", format_expr(&e)))
@@ -171,7 +183,7 @@ impl<L: HasCols> LeftSemiJoin<L> {
             self.right_col,
             where_clause
         );
-        Query::new(sql)
+        RawQuery::new(sql)
     }
 }
 
@@ -203,7 +215,7 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
         self.r#where(f)
     }
 
-    pub fn build(self) -> Query<R> {
+    pub fn build(self) -> RawQuery<R> {
         let mut where_parts = Vec::new();
 
         if let Some(left_expr) = self.left_where_expr {
@@ -231,6 +243,6 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
             self.right_col.column_name(),
             where_clause
         );
-        Query::new(sql)
+        RawQuery::new(sql)
     }
 }
