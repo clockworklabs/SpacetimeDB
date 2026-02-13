@@ -711,13 +711,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             eventContext,
             result.value.transactionUpdate
           );
-          const cb = this.#reducerCallbacks.get(requestId);
-          this.#reducerCallbacks.delete(requestId);
-          cb?.(result);
           for (const callback of callbacks) {
             callback.cb();
           }
-          break;
         }
         const cb = this.#reducerCallbacks.get(requestId);
         this.#reducerCallbacks.delete(requestId);

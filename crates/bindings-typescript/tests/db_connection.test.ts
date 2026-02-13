@@ -1,13 +1,14 @@
 import { DbConnection } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ConnectionId, type Infer } from '../src';
+import { ConnectionId, Timestamp, type Infer } from '../src';
 import ServerMessage from '../src/sdk/client_api/server_message_type';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
 import {
   anIdentity,
   bobIdentity,
+  encodePlayer,
   encodeUser,
   makeQuerySetUpdate,
   sallyIdentity,
@@ -55,6 +56,38 @@ class Deferred<T> {
 }
 
 beforeEach(() => {});
+
+function getLastCallReducerRequestId(wsAdapter: WebsocketTestAdapter): number {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'CallReducer') {
+      return message.value.requestId;
+    }
+
+    console.log('Message: ', JSON.stringify(message));
+  }
+  console.log('Outgoing messages length: ', wsAdapter.outgoingMessages.length);
+  throw new Error('No CallReducer message found in messageQueue.');
+}
+
+function makeReducerResult(
+  requestId: number,
+  reducerQuerySetUpdate: ReturnType<typeof makeQuerySetUpdate>
+) {
+  return ServerMessage.ReducerResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    result: {
+      tag: 'Ok',
+      value: {
+        retValue: new Uint8Array(),
+        transactionUpdate: {
+          querySets: [reducerQuerySetUpdate],
+        },
+      },
+    },
+  });
+}
 
 describe('DbConnection', () => {
   test('call onConnectError callback after websocket connection failed to be established', async () => {
@@ -111,6 +144,63 @@ describe('DbConnection', () => {
     await onConnectPromise.promise;
 
     expect(called).toBeTruthy();
+  });
+
+  test('fires row callbacks after reducer resolution in ReducerResult', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    let reducerResolved = false;
+
+    const rowCallbackPromise = new Deferred<void>();
+    client.db.player.onInsert(() => {
+      expect(reducerResolved).toBeFalsy();
+      rowCallbackPromise.resolve();
+    });
+
+    const reducerPromise = client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 1, y: 2 },
+    });
+    reducerPromise.then(() => {
+      reducerResolved = true;
+    });
+    // Hack to get the request sent from the client.
+    await Promise.resolve();
+    const requestId = getLastCallReducerRequestId(wsAdapter);
+    const reducerQuerySetUpdate = makeQuerySetUpdate(
+      0,
+      'player',
+      encodePlayer({
+        id: 1,
+        userId: anIdentity,
+        name: 'A Player',
+        location: { x: 1, y: 2 },
+      })
+    );
+    wsAdapter.sendToClient(makeReducerResult(requestId, reducerQuerySetUpdate));
+
+    await rowCallbackPromise.promise;
+    await reducerPromise;
   });
 
   /*
