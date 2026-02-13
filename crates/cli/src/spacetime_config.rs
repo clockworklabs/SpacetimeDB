@@ -417,6 +417,49 @@ impl CommandSchema {
             .collect()
     }
 
+    /// Get user-facing CLI flags (e.g. `--bin-path`) for all module-specific options
+    /// that were explicitly provided via CLI.
+    pub fn module_specific_cli_flags(&self, command: &Command, matches: &ArgMatches) -> Vec<String> {
+        self.module_specific_cli_args(matches)
+            .iter()
+            .map(|arg| {
+                let clap_name = self.clap_arg_name_for(arg);
+                command
+                    .get_arguments()
+                    .find(|a| a.get_id().as_str() == clap_name)
+                    .and_then(|a| a.get_long())
+                    .map(|long| format!("--{long}"))
+                    .unwrap_or_else(|| format!("--{}", clap_name.replace('_', "-")))
+            })
+            .collect()
+    }
+
+    /// Validate that module-specific CLI flags are not used when operating on multiple targets.
+    pub fn validate_no_module_specific_cli_args_for_multiple_targets(
+        &self,
+        command: &Command,
+        matches: &ArgMatches,
+        target_count: usize,
+        operation_context: &str,
+        resolution_hint: &str,
+    ) -> anyhow::Result<()> {
+        if target_count <= 1 {
+            return Ok(());
+        }
+
+        let display_args = self.module_specific_cli_flags(command, matches);
+        if display_args.is_empty() {
+            return Ok(());
+        }
+
+        anyhow::bail!(
+            "Cannot use module-specific arguments ({}) when {}. {}",
+            display_args.join(", "),
+            operation_context,
+            resolution_hint
+        );
+    }
+
     /// Get the clap argument name for a config key.
     pub fn clap_arg_name_for<'a>(&'a self, config_name: &'a str) -> &'a str {
         self.config_to_clap
@@ -1886,6 +1929,42 @@ mod tests {
         assert_eq!(module_specific.len(), 2);
         assert!(module_specific.contains(&"project_path"));
         assert!(module_specific.contains(&"build_options"));
+    }
+
+    #[test]
+    fn test_validate_module_specific_uses_user_facing_flag_names() {
+        use clap::{Arg, Command};
+        use std::path::PathBuf;
+
+        let cmd = Command::new("test").arg(
+            Arg::new("wasm_file")
+                .long("bin-path")
+                .value_parser(clap::value_parser!(PathBuf)),
+        );
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["test", "--bin-path", "./module.wasm"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new::<PathBuf>("wasm_file").module_specific())
+            .build(&cmd)
+            .unwrap();
+
+        let err = schema
+            .validate_no_module_specific_cli_args_for_multiple_targets(
+                &cmd,
+                &matches,
+                2,
+                "testing multiple targets",
+                "Select a single target.",
+            )
+            .unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("--bin-path"),
+            "Expected --bin-path in error, got: {err_msg}"
+        );
     }
 
     #[test]

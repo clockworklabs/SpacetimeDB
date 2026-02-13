@@ -33,15 +33,20 @@ use std::io::Read;
 /// and CLI arguments, with CLI arguments taking precedence over config values.
 fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
     CommandSchemaBuilder::new()
-        .key(Key::new::<Language>("language").from_clap("lang").required())
-        .key(Key::new::<PathBuf>("out_dir"))
-        .key(Key::new::<PathBuf>("uproject_dir"))
-        .key(Key::new::<PathBuf>("module_path"))
-        .key(Key::new::<PathBuf>("wasm_file"))
-        .key(Key::new::<PathBuf>("js_file"))
-        .key(Key::new::<String>("namespace"))
-        .key(Key::new::<String>("module_name"))
-        .key(Key::new::<String>("build_options"))
+        .key(
+            Key::new::<Language>("language")
+                .from_clap("lang")
+                .required()
+                .module_specific(),
+        )
+        .key(Key::new::<PathBuf>("out_dir").module_specific())
+        .key(Key::new::<PathBuf>("uproject_dir").module_specific())
+        .key(Key::new::<PathBuf>("module_path").module_specific())
+        .key(Key::new::<PathBuf>("wasm_file").module_specific())
+        .key(Key::new::<PathBuf>("js_file").module_specific())
+        .key(Key::new::<String>("namespace").module_specific())
+        .key(Key::new::<String>("module_name").module_specific())
+        .key(Key::new::<String>("build_options").module_specific())
         .key(Key::new::<String>("include_private"))
         .exclude("json_module")
         .exclude("force")
@@ -55,6 +60,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
 /// the module path
 fn get_filtered_generate_configs<'a>(
     spacetime_config: &'a SpacetimeConfig,
+    command: &clap::Command,
     schema: &'a CommandSchema,
     args: &'a clap::ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
@@ -108,6 +114,14 @@ fn get_filtered_generate_configs<'a>(
     } else {
         all_command_configs
     };
+
+    schema.validate_no_module_specific_cli_args_for_multiple_targets(
+        command,
+        args,
+        filtered_configs.len(),
+        "generating for multiple targets",
+        "Please specify --module-path to select a single target, or remove these arguments.",
+    )?;
 
     Ok(filtered_configs)
 }
@@ -224,7 +238,7 @@ pub async fn exec_ex(
         if !quiet_config {
             println!("Using configuration from {}", config_path.display());
         }
-        let filtered = get_filtered_generate_configs(spacetime_config, &schema, args)?;
+        let filtered = get_filtered_generate_configs(spacetime_config, &cmd, &schema, args)?;
         // If filtering resulted in no matches, use CLI args with empty config
         if filtered.is_empty() {
             (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
@@ -564,7 +578,7 @@ mod tests {
             "/tmp/out",
         ]);
 
-        let filtered = get_filtered_generate_configs(&spacetime_config, &schema, &matches).unwrap();
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
         // The filtering should match module1 config only
         assert_eq!(
@@ -616,7 +630,7 @@ mod tests {
 
         // No module_path provided via CLI
         let matches = cmd.clone().get_matches_from(vec!["generate"]);
-        let filtered = get_filtered_generate_configs(&spacetime_config, &schema, &matches).unwrap();
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
         // Should return all configs
         assert_eq!(filtered.len(), 2);
@@ -657,10 +671,60 @@ mod tests {
             "--out-dir",
             "/tmp/out",
         ]);
-        let filtered = get_filtered_generate_configs(&spacetime_config, &schema, &matches).unwrap();
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
         // Should match despite different path representations
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_module_specific_args_error_with_multiple_targets() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let mut config1 = HashMap::new();
+        config1.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
+        config1.insert(
+            "module_path".to_string(),
+            serde_json::Value::String("./module1".to_string()),
+        );
+        config1.insert(
+            "out_dir".to_string(),
+            serde_json::Value::String("/tmp/out1".to_string()),
+        );
+
+        let mut config2 = HashMap::new();
+        config2.insert(
+            "language".to_string(),
+            serde_json::Value::String("typescript".to_string()),
+        );
+        config2.insert(
+            "module_path".to_string(),
+            serde_json::Value::String("./module2".to_string()),
+        );
+        config2.insert(
+            "out_dir".to_string(),
+            serde_json::Value::String("/tmp/out2".to_string()),
+        );
+
+        let spacetime_config = SpacetimeConfig {
+            generate: Some(vec![config1, config2]),
+            ..Default::default()
+        };
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["generate", "--out-dir", "/tmp/override"]);
+        let err = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("--out-dir"),
+            "Expected error to mention --out-dir, got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("multiple targets"),
+            "Expected error to mention multiple targets, got: {err_msg}"
+        );
     }
 
     // Language-Specific Validation Tests

@@ -82,30 +82,13 @@ pub fn get_filtered_publish_configs<'a>(
         all_configs
     };
 
-    // Validate module-specific args aren't used with multiple targets
-    if filtered_configs.len() > 1 {
-        let module_specific_args = schema.module_specific_cli_args(args);
-        if !module_specific_args.is_empty() {
-            let display_args = module_specific_args
-                .iter()
-                .map(|arg| {
-                    let clap_name = schema.clap_arg_name_for(arg);
-                    command
-                        .get_arguments()
-                        .find(|a| a.get_id().as_str() == clap_name)
-                        .and_then(|a| a.get_long())
-                        .map(|long| format!("--{long}"))
-                        .unwrap_or_else(|| format!("--{}", clap_name.replace('_', "-")))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            anyhow::bail!(
-                "Cannot use module-specific arguments ({}) when publishing to multiple targets. \
-                 Please specify the database name or identity to select a single target, or remove these arguments.",
-                display_args
-            );
-        }
-    }
+    schema.validate_no_module_specific_cli_args_for_multiple_targets(
+        command,
+        args,
+        filtered_configs.len(),
+        "publishing to multiple targets",
+        "Please specify the database name or identity to select a single target, or remove these arguments.",
+    )?;
 
     Ok(filtered_configs)
 }
