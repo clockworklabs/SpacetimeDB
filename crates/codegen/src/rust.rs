@@ -778,7 +778,17 @@ impl __sdk::__query_builder::HasIxCols for {struct_name} {{
         }}
     }}
 }}"#
-    )
+    )?;
+
+    // Event tables cannot be used as lookup tables in semijoins.
+    if !table.is_event {
+        writeln!(
+            out,
+            "\nimpl __sdk::__query_builder::CanBeLookupTable for {struct_name} {{}}"
+        )?;
+    }
+
+    Ok(())
 }
 
 pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, struct_name: &String) -> fmt::Result {

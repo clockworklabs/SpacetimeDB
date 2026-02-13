@@ -272,7 +272,7 @@ const tablesSchema = __schema({
       { name: 'logged_out_player_player_id_key', constraint: 'unique', columns: ['playerId'] },
     ],
   }, LoggedOutPlayerRow),
-  __table({
+  person: __table({
     name: 'person',
     indexes: [
       { name: 'age', algorithm: 'btree', columns: [
