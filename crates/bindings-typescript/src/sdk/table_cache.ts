@@ -268,7 +268,7 @@ export class TableCacheImpl<
         if (op.type === 'insert') {
           pendingCallbacks.push({
             type: 'insert',
-            table: this.tableDef.name,
+            table: this.tableDef.sourceName,
             cb: () => {
               this.emitter.emit('insert', ctx, op.row);
             },
