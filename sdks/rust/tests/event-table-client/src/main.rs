@@ -91,18 +91,19 @@ fn subscribe_these_then(
 
 fn exec_event_table() {
     let test_counter = TestCounter::new();
+    let sub_applied_result = test_counter.add_test("subscription_applied");
+    let on_insert_result = test_counter.add_test("event-table-on-insert");
+    let on_insert_result = std::sync::Mutex::new(Some(on_insert_result));
 
     connect_then(&test_counter, {
-        let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 // Event table should be empty on subscription applied
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
-
-                let mut on_insert_result = Some(test_counter.add_test("event-table-on-insert"));
+                sub_applied_result(Ok(()));
 
                 ctx.db.test_event().on_insert(move |ctx, row| {
-                    if let Some(set_result) = on_insert_result.take() {
+                    if let Some(set_result) = on_insert_result.lock().unwrap().take() {
                         let run_checks = || {
                             assert_eq_or_bail!("hello", row.name);
                             assert_eq_or_bail!(42u64, row.value);
@@ -137,16 +138,17 @@ fn exec_event_table() {
 /// Test that multiple events emitted in a single reducer call all arrive as inserts.
 fn exec_multiple_events() {
     let test_counter = TestCounter::new();
+    let sub_applied_result = test_counter.add_test("subscription_applied");
+    let result = test_counter.add_test("multiple-events");
+    let result = std::sync::Mutex::new(Some(result));
 
     connect_then(&test_counter, {
-        let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
+                sub_applied_result(Ok(()));
 
                 let received = std::sync::Arc::new(AtomicU32::new(0));
-                let result = test_counter.add_test("multiple-events");
-                let result = std::sync::Mutex::new(Some(result));
 
                 ctx.db.test_event().on_insert({
                     let received = received.clone();
@@ -172,16 +174,17 @@ fn exec_multiple_events() {
 /// verify we didn't receive any additional event inserts.
 fn exec_events_dont_persist() {
     let test_counter = TestCounter::new();
+    let sub_applied_result = test_counter.add_test("subscription_applied");
+    let noop_result = test_counter.add_test("events-dont-persist");
+    let noop_result = std::sync::Mutex::new(Some(noop_result));
 
     connect_then(&test_counter, {
-        let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
+                sub_applied_result(Ok(()));
 
                 let insert_count = std::sync::Arc::new(AtomicU32::new(0));
-                let noop_result = test_counter.add_test("events-dont-persist");
-                let noop_result = std::sync::Mutex::new(Some(noop_result));
 
                 ctx.db.test_event().on_insert({
                     let insert_count = insert_count.clone();

@@ -1384,21 +1384,31 @@ impl __sdk::InModule for DbUpdate {{
                 ",
                 |out| {
                     for table in iter_tables(module, visibility) {
-                        let with_updates = table
-                            .primary_key
-                            .map(|col| {
-                                let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
-                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
-                            })
-                            .unwrap_or_default();
-
                         let field_name = table_method_name(&table.name);
-                        writeln!(
-                            out,
-                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
-                            type_ref_name(module, table.product_type_ref),
-                            table.name.deref(),
-                        );
+                        if table.is_event {
+                            // Event tables bypass the client cache entirely.
+                            // We construct an applied diff directly from the inserts,
+                            // which will fire on_insert callbacks without storing rows.
+                            writeln!(
+                                out,
+                                "diff.{field_name} = self.{field_name}.into_event_diff();",
+                            );
+                        } else {
+                            let with_updates = table
+                                .primary_key
+                                .map(|col| {
+                                    let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
+                                    format!(".with_updates_by_pk(|row| &row.{pk_field})")
+                                })
+                                .unwrap_or_default();
+
+                            writeln!(
+                                out,
+                                "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
+                                type_ref_name(module, table.product_type_ref),
+                                table.name.deref(),
+                            );
+                        }
                     }
                     for view in iter_views(module) {
                         let field_name = table_method_name(&view.name);
