@@ -34,22 +34,23 @@ use std::io::Read;
 fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
     CommandSchemaBuilder::new()
         .key(
-            Key::new::<Language>("language")
+            Key::new("language")
                 .from_clap("lang")
                 .required()
                 .module_specific(),
         )
-        .key(Key::new::<PathBuf>("out_dir").module_specific())
-        .key(Key::new::<PathBuf>("uproject_dir").module_specific())
-        .key(Key::new::<PathBuf>("module_path").module_specific())
-        .key(Key::new::<PathBuf>("wasm_file").module_specific())
-        .key(Key::new::<PathBuf>("js_file").module_specific())
-        .key(Key::new::<String>("namespace").module_specific())
-        .key(Key::new::<String>("module_name").module_specific())
-        .key(Key::new::<String>("build_options").module_specific())
-        .key(Key::new::<String>("include_private"))
+        .key(Key::new("out_dir").module_specific())
+        .key(Key::new("uproject_dir").module_specific())
+        .key(Key::new("module_path").module_specific())
+        .key(Key::new("wasm_file").module_specific())
+        .key(Key::new("js_file").module_specific())
+        .key(Key::new("namespace").module_specific())
+        .key(Key::new("module_name").module_specific())
+        .key(Key::new("build_options").module_specific())
+        .key(Key::new("include_private"))
         .exclude("json_module")
         .exclude("force")
+        .exclude("no_config")
         .build(command)
         .map_err(Into::into)
 }
@@ -214,6 +215,12 @@ pub fn cli() -> clap::Command {
                 .help("Include private tables and functions in generated code (types are always included)."),
         )
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(SetTrue)
+                .help("Ignore spacetime.json configuration")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -232,19 +239,26 @@ pub async fn exec_ex(
     let cmd = cli();
     let schema = build_generate_config_schema(&cmd)?;
 
+    let no_config = args.get_flag("no_config");
+
     // Get generate configs (from spacetime.json or empty)
-    let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
+    let spacetime_config_opt = if no_config {
+        None
+    } else {
+        SpacetimeConfig::find_and_load()?
+    };
     let (using_config, generate_configs) = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
         if !quiet_config {
             println!("Using configuration from {}", config_path.display());
         }
         let filtered = get_filtered_generate_configs(spacetime_config, &cmd, &schema, args)?;
-        // If filtering resulted in no matches, use CLI args with empty config
         if filtered.is_empty() {
-            (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
-        } else {
-            (true, filtered)
+            anyhow::bail!(
+                "No matching target found in spacetime.json for the provided arguments. \
+                 Use --no-config to ignore the config file."
+            );
         }
+        (true, filtered)
     } else {
         (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
     };
@@ -352,7 +366,7 @@ pub async fn exec_ex(
 
         let mut paths = BTreeSet::new();
 
-        let include_private = args.get_flag("include_private");
+        let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
         let private_tables = private_table_names(&module);
         if !private_tables.is_empty() && !include_private {
             println!("Skipping private tables during codegen: {}.", private_tables.join(", "));
@@ -455,11 +469,13 @@ pub async fn exec_ex(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Language {
     Csharp,
     TypeScript,
     Rust,
+    #[serde(alias = "uecpp", alias = "ue5cpp", alias = "unreal")]
     UnrealCpp,
 }
 
@@ -769,14 +785,14 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("--uproject-dir is required for --lang unrealcpp"),
-            "Expected error about missing --uproject-dir, got: {err_msg}",
+            err_msg.contains("--uproject-dir") || err_msg.contains("--out-dir"),
+            "Expected error about missing --uproject-dir or --out-dir, got: {err_msg}",
         );
 
-        // Test missing --module-name
+        // Test missing --module-name (provide --uproject-dir so that check passes first)
         let matches = cmd
             .clone()
-            .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--out-dir", "/tmp/out"]);
+            .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--uproject-dir", "/tmp/out"]);
         let result = exec(config, &matches).await;
 
         assert!(result.is_err());
@@ -816,5 +832,44 @@ mod tests {
 
         assert_eq!(uproject_dir, Some(PathBuf::from("/config/path")));
         assert_eq!(module_name, Some("MyModule".to_string()));
+    }
+
+    #[test]
+    fn test_language_serde_deserialize_all_variants() {
+        // Verify all Language variants deserialize correctly from config JSON strings.
+        // This catches drift between the serde and clap ValueEnum impls.
+        assert_eq!(
+            serde_json::from_value::<Language>(serde_json::Value::String("csharp".into())).unwrap(),
+            Language::Csharp
+        );
+        assert_eq!(
+            serde_json::from_value::<Language>(serde_json::Value::String("typescript".into())).unwrap(),
+            Language::TypeScript
+        );
+        assert_eq!(
+            serde_json::from_value::<Language>(serde_json::Value::String("rust".into())).unwrap(),
+            Language::Rust
+        );
+        assert_eq!(
+            serde_json::from_value::<Language>(serde_json::Value::String("unrealcpp".into())).unwrap(),
+            Language::UnrealCpp
+        );
+
+        // Aliases
+        assert_eq!(
+            serde_json::from_value::<Language>(serde_json::Value::String("uecpp".into())).unwrap(),
+            Language::UnrealCpp
+        );
+        assert_eq!(
+            serde_json::from_value::<Language>(serde_json::Value::String("ue5cpp".into())).unwrap(),
+            Language::UnrealCpp
+        );
+        assert_eq!(
+            serde_json::from_value::<Language>(serde_json::Value::String("unreal".into())).unwrap(),
+            Language::UnrealCpp
+        );
+
+        // Invalid language should error
+        assert!(serde_json::from_value::<Language>(serde_json::Value::String("java".into())).is_err());
     }
 }

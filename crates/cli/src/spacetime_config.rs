@@ -1,16 +1,12 @@
 use anyhow::Context;
-use clap::{ArgMatches, Command, ValueEnum};
-use json5;
+use clap::{ArgMatches, Command};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-
-use crate::subcommands::generate::Language;
 
 /// The filename for configuration
 pub const CONFIG_FILENAME: &str = "spacetime.json";
@@ -67,15 +63,8 @@ pub enum CommandConfigError {
     #[error("Config key '{config_key}' is not supported in the config file. Available keys: {available_keys}")]
     UnsupportedConfigKey { config_key: String, available_keys: String },
 
-    #[error("Required key '{key}' is missing from the config file")]
+    #[error("Required key '{key}' is missing from the config file or CLI")]
     MissingRequiredKey { key: String },
-
-    #[error("Mismatch between definition and access of `{key}`. Could not downcast to {requested_type}, need to downcast to {expected_type}")]
-    TypeMismatch {
-        key: String,
-        requested_type: String,
-        expected_type: String,
-    },
 
     #[error("Failed to convert config value for key '{key}' to type {target_type}")]
     ConversionError {
@@ -149,8 +138,34 @@ pub struct PublishConfig {
 }
 
 impl PublishConfig {
+    /// Collect all publish targets with parent→child inheritance.
+    /// Children inherit unset fields from their parent's `additional_fields`.
+    /// Returns owned `PublishConfig` instances with inherited fields filled in.
+    pub fn collect_all_targets_with_inheritance(&self) -> Vec<PublishConfig> {
+        let mut result = vec![self.clone()];
+
+        if let Some(children) = &self.children {
+            for child in children {
+                let mut inherited = child.clone();
+                // Inherit unset fields from parent
+                for (key, value) in &self.additional_fields {
+                    if !inherited.additional_fields.contains_key(key) {
+                        inherited.additional_fields.insert(key.clone(), value.clone());
+                    }
+                }
+                // Recurse for nested children
+                let child_targets = inherited.collect_all_targets_with_inheritance();
+                result.extend(child_targets);
+            }
+        }
+
+        result
+    }
+
     /// Iterate through all publish targets (self + children recursively).
     /// Returns an iterator that yields references to PublishConfig instances.
+    /// Note: Does NOT apply parent→child inheritance. Use
+    /// `collect_all_targets_with_inheritance()` for that.
     pub fn iter_all_targets(&self) -> Box<dyn Iterator<Item = &PublishConfig> + '_> {
         Box::new(
             std::iter::once(self).chain(
@@ -191,8 +206,6 @@ pub struct CommandConfig<'a> {
 pub struct CommandSchema {
     /// Key definitions
     keys: Vec<Key>,
-    /// Type information for validation (keyed by config name)
-    type_map: HashMap<String, TypeId>,
     /// Map from config name to clap arg name (for from_clap mapping)
     config_to_clap: HashMap<String, String>,
     /// Map from config name to alias (for alias mapping)
@@ -216,7 +229,7 @@ impl CommandSchemaBuilder {
     }
 
     /// Add a key definition to the builder.
-    /// Example: `.key(Key::new::<String>("server"))`
+    /// Example: `.key(Key::new("server"))`
     pub fn key(mut self, key: Key) -> Self {
         self.keys.push(key);
         self
@@ -269,7 +282,6 @@ impl CommandSchemaBuilder {
             }
         }
 
-        let mut type_map = HashMap::new();
         // A list of clap args that are referenced by the config keys
         let mut referenced_clap_args = HashSet::new();
         let mut config_to_clap_map = HashMap::new();
@@ -280,7 +292,6 @@ impl CommandSchemaBuilder {
             let clap_name = key.clap_arg_name().to_string();
 
             referenced_clap_args.insert(clap_name.clone());
-            type_map.insert(config_name.clone(), key.type_id());
 
             // Track the mapping from config name to clap arg name (if using from_clap)
             if key.clap_name.is_some() {
@@ -312,7 +323,6 @@ impl CommandSchemaBuilder {
 
         Ok(CommandSchema {
             keys: self.keys,
-            type_map,
             config_to_clap: config_to_clap_map,
             config_to_alias: config_to_alias_map,
         })
@@ -333,22 +343,6 @@ impl CommandSchema {
         matches: &ArgMatches,
         config_name: &str,
     ) -> Result<Option<T>, CommandConfigError> {
-        let requested_type_id = TypeId::of::<T>();
-
-        // Validate type if we have type information
-        if let Some(&expected_type_id) = self.type_map.get(config_name) {
-            if requested_type_id != expected_type_id {
-                let expected_type_name = type_name_from_id(expected_type_id);
-                let requested_type_name = std::any::type_name::<T>();
-
-                return Err(CommandConfigError::TypeMismatch {
-                    key: config_name.to_string(),
-                    requested_type: requested_type_name.to_string(),
-                    expected_type: expected_type_name.to_string(),
-                });
-            }
-        }
-
         // Check clap with mapped name (if from_clap was used, use that name, otherwise use config name)
         let clap_name = self
             .config_to_clap
@@ -483,26 +477,23 @@ pub struct Key {
     module_specific: bool,
     /// Whether this key is required in the config file
     required: bool,
-    /// The expected TypeId for this key
-    type_id: TypeId,
 }
 
 impl Key {
     /// Returns a new Key instance
-    pub fn new<T: 'static>(name: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             config_name: name.into(),
             clap_name: None,
             clap_alias: None,
             module_specific: false,
             required: false,
-            type_id: TypeId::of::<T>(),
         }
     }
 
     /// Map this config key to a different clap argument name. When fetching values
     /// the key that is defined should be used.
-    /// Example: Key::new::<String>("module-path").from_clap("project-path")
+    /// Example: Key::new("module-path").from_clap("project-path")
     ///          - in this case the value for either project-path in clap or
     ///            for module-path in the config file will be fetched
     pub fn from_clap(mut self, clap_arg_name: impl Into<String>) -> Self {
@@ -512,7 +503,7 @@ impl Key {
 
     /// Add an alias for a clap argument name that also maps to this key.
     /// This is useful for backwards compatibility when renaming arguments.
-    /// Example: Key::new::<String>("module-path").alias("project-path")
+    /// Example: Key::new("module-path").alias("project-path")
     ///
     /// This allows both --module-path and --project-path to map to the same config key.
     /// The value should then be accessed by using `module-path`
@@ -547,11 +538,6 @@ impl Key {
     /// Get the config name
     pub fn config_name(&self) -> &str {
         &self.config_name
-    }
-
-    /// Get the type_id
-    pub fn type_id(&self) -> TypeId {
-        self.type_id
     }
 
     /// Check if this key is required
@@ -608,13 +594,15 @@ impl<'a> CommandConfig<'a> {
 
     /// Get a single value from the config as a specific type.
     /// First checks clap args (via schema), then falls back to config values.
-    /// Validates that the requested type matches the schema definition.
     ///
     /// Returns:
     /// - Ok(Some(T)) if the value exists and can be converted
     /// - Ok(None) if the value doesn't exist in either clap or config
-    /// - Err if the type doesn't match or conversion fails
-    pub fn get_one<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Result<Option<T>, CommandConfigError> {
+    /// - Err if conversion fails
+    pub fn get_one<T: Clone + Send + Sync + serde::de::DeserializeOwned + 'static>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, CommandConfigError> {
         // Try clap arguments first (CLI takes precedence) via schema
         let from_cli = self.schema.get_clap_arg::<T>(self.matches, key)?;
         if let Some(ref value) = from_cli {
@@ -623,27 +611,16 @@ impl<'a> CommandConfig<'a> {
 
         // Fall back to config values using the config name
         if let Some(value) = self.config_values.get(key) {
-            from_json_value::<T>(value)
-                .map_err(|source| CommandConfigError::ConversionError {
+            serde_json::from_value::<T>(value.clone())
+                .map_err(|e| CommandConfigError::ConversionError {
                     key: key.to_string(),
                     target_type: std::any::type_name::<T>().to_string(),
-                    source,
+                    source: e.into(),
                 })
                 .map(Some)
         } else {
             Ok(None)
         }
-    }
-
-    /// Check if a key exists in either clap or config.
-    pub fn contains(&self, matches: &ArgMatches, key: &str) -> bool {
-        // Check if provided via CLI using schema
-        if self.schema.is_from_cli(matches, key) {
-            return true;
-        }
-
-        // Check config key
-        self.config_values.contains_key(key)
     }
 
     /// Get a config value (from config file only, not merged with CLI).
@@ -654,11 +631,13 @@ impl<'a> CommandConfig<'a> {
         self.config_values.get(key)
     }
 
-    /// Validate that all required keys are present in the config file.
-    /// Note: This only checks config file keys. CLI required validation is handled by clap.
+    /// Validate that all required keys are present in either config or CLI.
     pub fn validate(&self) -> Result<(), CommandConfigError> {
         for key in &self.schema.keys {
-            if key.is_required() && !self.config_values.contains_key(key.config_name()) {
+            if key.is_required()
+                && !self.config_values.contains_key(key.config_name())
+                && !self.schema.is_from_cli(self.matches, key.config_name())
+            {
                 return Err(CommandConfigError::MissingRequiredKey {
                     key: key.config_name().to_string(),
                 });
@@ -668,54 +647,6 @@ impl<'a> CommandConfig<'a> {
     }
 }
 
-/// Helper to get a human-readable type name from a TypeId
-fn type_name_from_id(type_id: TypeId) -> &'static str {
-    if type_id == TypeId::of::<String>() {
-        "alloc::string::String"
-    } else if type_id == TypeId::of::<PathBuf>() {
-        "std::path::PathBuf"
-    } else if type_id == TypeId::of::<bool>() {
-        "bool"
-    } else if type_id == TypeId::of::<i64>() {
-        "i64"
-    } else if type_id == TypeId::of::<u64>() {
-        "u64"
-    } else if type_id == TypeId::of::<f64>() {
-        "f64"
-    } else if type_id == TypeId::of::<Language>() {
-        "spacetimedb_cli::subcommands::generate::Language"
-    } else {
-        "unknown"
-    }
-}
-
-/// Helper to convert JSON values to Rust types (for config file values)
-fn from_json_value<T: Clone + Send + Sync + 'static>(value: &Value) -> anyhow::Result<T> {
-    let type_id = TypeId::of::<T>();
-
-    let any: Box<dyn std::any::Any> = match type_id {
-        t if t == TypeId::of::<String>() => Box::new(value.as_str().context("Expected string value")?.to_string()),
-        t if t == TypeId::of::<PathBuf>() => Box::new(PathBuf::from(
-            value.as_str().context("Expected string value for PathBuf")?,
-        )),
-        t if t == TypeId::of::<bool>() => Box::new(value.as_bool().context("Expected boolean value")?),
-        t if t == TypeId::of::<i64>() => Box::new(value.as_i64().context("Expected i64 value")?),
-        t if t == TypeId::of::<u64>() => Box::new(value.as_u64().context("Expected u64 value")?),
-        t if t == TypeId::of::<f64>() => Box::new(value.as_f64().context("Expected f64 value")?),
-        t if t == TypeId::of::<Language>() => {
-            let s = value.as_str().context("Expected string value for Language")?;
-            // Use ValueEnum's from_str method which handles aliases automatically
-            let lang = Language::from_str(s, true).map_err(|_| anyhow::anyhow!("Invalid language: {}", s))?;
-            Box::new(lang)
-        }
-        _ => anyhow::bail!("Unsupported type for conversion from JSON"),
-    };
-
-    // Now downcast to T
-    any.downcast::<T>()
-        .map(|boxed| *boxed)
-        .map_err(|_| anyhow::anyhow!("Failed to downcast value"))
-}
 
 impl SpacetimeConfig {
     /// Find and load a spacetime.json file.
@@ -1027,9 +958,9 @@ mod tests {
 
         // Build schema
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("language").from_clap("lang"))
-            .key(Key::new::<String>("out-dir"))
-            .key(Key::new::<String>("server"))
+            .key(Key::new("language").from_clap("lang"))
+            .key(Key::new("out-dir"))
+            .key(Key::new("server"))
             .build(&cmd)
             .unwrap();
 
@@ -1123,13 +1054,13 @@ mod tests {
 
         // Build schema with snake_case keys
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("database"))
-            .key(Key::new::<String>("server"))
-            .key(Key::new::<String>("module_path"))
-            .key(Key::new::<String>("build_options"))
-            .key(Key::new::<bool>("break_clients"))
+            .key(Key::new("database"))
+            .key(Key::new("server"))
+            .key(Key::new("module_path"))
+            .key(Key::new("build_options"))
+            .key(Key::new("break_clients"))
             // Config uses "anonymous", clap uses "anon_identity"
-            .key(Key::new::<bool>("anonymous").from_clap("anon_identity"))
+            .key(Key::new("anonymous").from_clap("anon_identity"))
             .build(&cmd)
             .unwrap();
 
@@ -1159,34 +1090,6 @@ mod tests {
     }
 
     #[test]
-    fn test_type_mismatch_error() {
-        use clap::{Arg, Command};
-
-        let cmd = Command::new("test").arg(
-            Arg::new("server")
-                .long("server")
-                .value_parser(clap::value_parser!(String)),
-        );
-
-        let matches = cmd.clone().get_matches_from(vec!["test", "--server", "local"]);
-
-        let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
-            .build(&cmd)
-            .unwrap();
-
-        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
-
-        // Trying to get as i64 when it's defined as String should error
-        let result = command_config.get_one::<i64>("server");
-        assert!(matches!(
-            result.unwrap_err(),
-            CommandConfigError::TypeMismatch { key, requested_type, expected_type }
-                if key == "server" && requested_type.contains("i64") && expected_type.contains("String")
-        ));
-    }
-
-    #[test]
     fn test_schema_missing_key_definition_error() {
         use clap::{Arg, Command};
 
@@ -1201,8 +1104,8 @@ mod tests {
 
         // Try to build schema but don't define all keys (missing "server" key)
         let result = CommandSchemaBuilder::new()
-            .key(Key::new::<bool>("yes"))
-            // Missing .key(Key::new::<String>("server"))
+            .key(Key::new("yes"))
+            // Missing .key(Key::new("server"))
             .build(&cmd);
 
         // This should error because "server" is in clap but not defined in the builder
@@ -1229,7 +1132,7 @@ mod tests {
             .get_matches_from(vec!["test", "--project-path", "./my-project"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module_path").from_clap("project-path"))
+            .key(Key::new("module_path").from_clap("project-path"))
             .build(&cmd)
             .unwrap();
 
@@ -1264,7 +1167,7 @@ mod tests {
             .get_matches_from(vec!["test", "--project-path", "./my-project"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module-path"))
+            .key(Key::new("module-path"))
             .build(&cmd)
             .unwrap();
 
@@ -1290,7 +1193,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
+            .key(Key::new("server"))
             .build(&cmd)
             .unwrap();
 
@@ -1323,7 +1226,7 @@ mod tests {
             .get_matches_from(vec!["test", "--project-path", "./deprecated"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module-path").alias("project-path"))
+            .key(Key::new("module-path").alias("project-path"))
             .build(&cmd)
             .unwrap();
 
@@ -1363,7 +1266,7 @@ mod tests {
         ]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module-path").alias("project-path"))
+            .key(Key::new("module-path").alias("project-path"))
             .build(&cmd)
             .unwrap();
 
@@ -1397,7 +1300,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module_path").alias("project-path"))
+            .key(Key::new("module_path").alias("project-path"))
             .build(&cmd)
             .unwrap();
 
@@ -1426,7 +1329,7 @@ mod tests {
 
         // Try to map to a non-existent clap arg
         let result = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module-path").from_clap("non-existent"))
+            .key(Key::new("module-path").from_clap("non-existent"))
             .exclude("server") // Exclude the server arg we're not using
             .build(&cmd);
 
@@ -1449,7 +1352,7 @@ mod tests {
 
         // Try to alias a non-existent clap arg
         let result = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module-path").alias("non-existent-alias"))
+            .key(Key::new("module-path").alias("non-existent-alias"))
             .build(&cmd);
 
         assert!(matches!(
@@ -1472,7 +1375,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
+            .key(Key::new("server"))
             .build(&cmd)
             .unwrap();
 
@@ -1500,7 +1403,7 @@ mod tests {
 
         // Try to create a key that references "language" via from_clap, but clap has "lang"
         let result = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("lang").from_clap("language"))
+            .key(Key::new("lang").from_clap("language"))
             .build(&cmd);
 
         // Should fail because "language" doesn't exist in the Command
@@ -1522,7 +1425,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
+            .key(Key::new("server"))
             .exclude("yes")
             .build(&cmd)
             .unwrap();
@@ -1559,8 +1462,8 @@ mod tests {
             .get_matches_from(vec!["test", "--server", "localhost", "--port", "8080"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
-            .key(Key::new::<i64>("port"))
+            .key(Key::new("server"))
+            .key(Key::new("port"))
             .build(&cmd)
             .unwrap();
 
@@ -1587,8 +1490,8 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test", "--server", "localhost"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
-            .key(Key::new::<i64>("port"))
+            .key(Key::new("server"))
+            .key(Key::new("port"))
             .build(&cmd)
             .unwrap();
 
@@ -1624,9 +1527,9 @@ mod tests {
             .get_matches_from(vec!["test", "--module-path", "./module", "--server", "local"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
-            .key(Key::new::<String>("module-path").module_specific())
-            .key(Key::new::<String>("database"))
+            .key(Key::new("server"))
+            .key(Key::new("module-path").module_specific())
+            .key(Key::new("database"))
             .build(&cmd)
             .unwrap();
 
@@ -1644,7 +1547,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test", "--name", "my-db"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("database").from_clap("name"))
+            .key(Key::new("database").from_clap("name"))
             .build(&cmd)
             .unwrap();
 
@@ -1676,7 +1579,7 @@ mod tests {
             .get_matches_from(vec!["test", "--project-path", "./my-project"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("module-path").alias("project-path"))
+            .key(Key::new("module-path").alias("project-path"))
             .build(&cmd)
             .unwrap();
 
@@ -1699,7 +1602,7 @@ mod tests {
 
         // Try to exclude a non-existent arg
         let result = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
+            .key(Key::new("server"))
             .exclude("non-existent")
             .build(&cmd);
 
@@ -1718,7 +1621,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<i64>("port"))
+            .key(Key::new("port"))
             .build(&cmd)
             .unwrap();
 
@@ -1756,8 +1659,8 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("database").required())
-            .key(Key::new::<String>("server"))
+            .key(Key::new("database").required())
+            .key(Key::new("server"))
             .build(&cmd)
             .unwrap();
 
@@ -1793,8 +1696,8 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("database").required())
-            .key(Key::new::<String>("server"))
+            .key(Key::new("database").required())
+            .key(Key::new("server"))
             .build(&cmd)
             .unwrap();
 
@@ -1821,7 +1724,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("server"))
+            .key(Key::new("server"))
             .build(&cmd)
             .unwrap();
 
@@ -1857,8 +1760,8 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<PathBuf>("project_path"))
-            .key(Key::new::<String>("build_options"))
+            .key(Key::new("project_path"))
+            .key(Key::new("build_options"))
             .build(&cmd)
             .unwrap();
 
@@ -1907,8 +1810,8 @@ mod tests {
         let matches_no_cli = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<PathBuf>("project_path").module_specific())
-            .key(Key::new::<String>("build_options").module_specific())
+            .key(Key::new("project_path").module_specific())
+            .key(Key::new("build_options").module_specific())
             .build(&cmd)
             .unwrap();
 
@@ -1947,7 +1850,7 @@ mod tests {
             .get_matches_from(vec!["test", "--bin-path", "./module.wasm"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<PathBuf>("wasm_file").module_specific())
+            .key(Key::new("wasm_file").module_specific())
             .build(&cmd)
             .unwrap();
 
@@ -1980,7 +1883,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("build_options"))
+            .key(Key::new("build_options"))
             .build(&cmd)
             .unwrap();
 
@@ -2009,7 +1912,7 @@ mod tests {
         );
 
         let result = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("nonexistent_arg"))
+            .key(Key::new("nonexistent_arg"))
             .build(&cmd);
 
         assert!(result.is_err());
@@ -2025,7 +1928,7 @@ mod tests {
 
         // Reference a valid arg (name) but add invalid alias (nonexistent) via .alias()
         let result = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("my_key").from_clap("name").alias("nonexistent"))
+            .key(Key::new("my_key").from_clap("name").alias("nonexistent"))
             .build(&cmd);
 
         assert!(result.is_err());
@@ -2046,7 +1949,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("some_arg"))
+            .key(Key::new("some_arg"))
             .build(&cmd)
             .unwrap();
 
@@ -2062,7 +1965,7 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test", "my-database"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("database").from_clap("name|identity"))
+            .key(Key::new("database").from_clap("name|identity"))
             .build(&cmd)
             .unwrap();
 
@@ -2097,9 +2000,9 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["test", "--cli-arg", "from-cli"]);
 
         let schema = CommandSchemaBuilder::new()
-            .key(Key::new::<String>("cli_arg"))
-            .key(Key::new::<String>("default_arg"))
-            .key(Key::new::<String>("config_arg"))
+            .key(Key::new("cli_arg"))
+            .key(Key::new("default_arg"))
+            .key(Key::new("config_arg"))
             .build(&cmd)
             .unwrap();
 
@@ -2183,5 +2086,243 @@ mod tests {
         assert!(config.dev.is_none());
         assert!(config.publish.is_none());
         assert!(config.generate.is_none());
+    }
+
+    #[test]
+    fn test_serde_deserialize_u8_from_config() {
+        // Verifies that serde_json::from_value handles u8 (num_replicas) correctly,
+        // which was broken with the old TypeId-based approach.
+        let cmd = Command::new("test").arg(
+            Arg::new("num_replicas")
+                .long("num-replicas")
+                .value_parser(clap::value_parser!(u8)),
+        );
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new("num_replicas"))
+            .build(&cmd)
+            .unwrap();
+
+        let mut config_values = HashMap::new();
+        config_values.insert("num_replicas".to_string(), Value::Number(serde_json::Number::from(3u8)));
+
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
+
+        assert_eq!(command_config.get_one::<u8>("num_replicas").unwrap(), Some(3u8));
+    }
+
+    #[test]
+    fn test_serde_deserialize_bool_from_config() {
+        // Verifies that bool values (like include_private) can be read from config.
+        let cmd = Command::new("test").arg(
+            Arg::new("include_private")
+                .long("include-private")
+                .action(clap::ArgAction::SetTrue),
+        );
+
+        let matches = cmd.clone().get_matches_from(vec!["test"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new("include_private"))
+            .build(&cmd)
+            .unwrap();
+
+        let mut config_values = HashMap::new();
+        config_values.insert("include_private".to_string(), Value::Bool(true));
+
+        let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
+
+        assert_eq!(
+            command_config.get_one::<bool>("include_private").unwrap(),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn test_validate_required_key_provided_via_cli_only() {
+        // Verifies that validate() passes when a required key is provided
+        // via CLI but not in the config file.
+        let cmd = Command::new("test")
+            .arg(
+                Arg::new("database")
+                    .long("database")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .value_parser(clap::value_parser!(String)),
+            );
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["test", "--database", "my-db"]);
+
+        let schema = CommandSchemaBuilder::new()
+            .key(Key::new("database").required())
+            .key(Key::new("server"))
+            .build(&cmd)
+            .unwrap();
+
+        // Config is empty - required key "database" is only in CLI
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
+
+        // Should pass validation because CLI provides the required key
+        assert!(command_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_parent_child_inheritance() {
+        // Verifies that children inherit unset fields from the parent.
+        let json = r#"{
+            "database": "parent-db",
+            "server": "local",
+            "module-path": "./parent-module",
+            "build-options": "--release",
+            "children": [
+                {
+                    "database": "child-1",
+                    "module-path": "./child-module"
+                },
+                {
+                    "database": "child-2",
+                    "module-path": "./child-module",
+                    "server": "maincloud"
+                }
+            ]
+        }"#;
+
+        let publish_config: PublishConfig = json5::from_str(json).unwrap();
+        let targets = publish_config.collect_all_targets_with_inheritance();
+
+        // Should have 3 targets: parent + 2 children
+        assert_eq!(targets.len(), 3);
+
+        // Parent target
+        assert_eq!(
+            targets[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("parent-db")
+        );
+        assert_eq!(
+            targets[0].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local")
+        );
+
+        // Child 1: inherits server and build-options from parent
+        assert_eq!(
+            targets[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("child-1")
+        );
+        assert_eq!(
+            targets[1].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local") // inherited from parent
+        );
+        assert_eq!(
+            targets[1].additional_fields.get("build-options").and_then(|v| v.as_str()),
+            Some("--release") // inherited from parent
+        );
+
+        // Child 2: overrides server, inherits build-options
+        assert_eq!(
+            targets[2].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("child-2")
+        );
+        assert_eq!(
+            targets[2].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("maincloud") // overridden
+        );
+        assert_eq!(
+            targets[2].additional_fields.get("build-options").and_then(|v| v.as_str()),
+            Some("--release") // inherited from parent
+        );
+    }
+
+    #[test]
+    fn test_parent_child_inheritance_no_children() {
+        // When there are no children, collect_all_targets_with_inheritance
+        // returns just the parent.
+        let json = r#"{
+            "database": "single-db",
+            "server": "local",
+            "module-path": "./module"
+        }"#;
+
+        let publish_config: PublishConfig = json5::from_str(json).unwrap();
+        let targets = publish_config.collect_all_targets_with_inheritance();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(
+            targets[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("single-db")
+        );
+    }
+
+    #[test]
+    fn test_nested_inheritance_grandchildren() {
+        // Verifies that inheritance works recursively: grandchildren
+        // inherit from their parent (which already inherited from grandparent).
+        let json = r#"{
+            "server": "production",
+            "build-options": "--release",
+            "database": "root",
+            "children": [
+                {
+                    "database": "mid",
+                    "module-path": "./mid-module",
+                    "children": [
+                        {
+                            "database": "leaf"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let publish_config: PublishConfig = json5::from_str(json).unwrap();
+        let targets = publish_config.collect_all_targets_with_inheritance();
+
+        // root + mid + leaf = 3
+        assert_eq!(targets.len(), 3);
+
+        // Root
+        assert_eq!(
+            targets[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("root")
+        );
+
+        // Mid: inherits server and build-options from root, has own module-path
+        assert_eq!(
+            targets[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("mid")
+        );
+        assert_eq!(
+            targets[1].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("production")
+        );
+        assert_eq!(
+            targets[1].additional_fields.get("module-path").and_then(|v| v.as_str()),
+            Some("./mid-module")
+        );
+
+        // Leaf: inherits server and build-options (from root via mid),
+        // AND inherits module-path from mid
+        assert_eq!(
+            targets[2].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("leaf")
+        );
+        assert_eq!(
+            targets[2].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("production")
+        );
+        assert_eq!(
+            targets[2].additional_fields.get("build-options").and_then(|v| v.as_str()),
+            Some("--release")
+        );
+        assert_eq!(
+            targets[2].additional_fields.get("module-path").and_then(|v| v.as_str()),
+            Some("./mid-module")
+        );
     }
 }

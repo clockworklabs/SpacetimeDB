@@ -18,35 +18,36 @@ use crate::{build, common_args};
 /// Build the CommandSchema for publish command
 pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
     CommandSchemaBuilder::new()
-        .key(Key::new::<String>("database").from_clap("name|identity").required())
-        .key(Key::new::<String>("server"))
-        .key(Key::new::<PathBuf>("module_path").module_specific())
-        .key(Key::new::<String>("build_options").module_specific())
-        .key(Key::new::<PathBuf>("wasm_file").module_specific())
-        .key(Key::new::<PathBuf>("js_file").module_specific())
-        .key(Key::new::<u8>("num_replicas"))
-        .key(Key::new::<bool>("break_clients"))
-        .key(Key::new::<bool>("anon_identity"))
-        .key(Key::new::<String>("parent"))
-        .key(Key::new::<String>("organization"))
+        .key(Key::new("database").from_clap("name|identity").required())
+        .key(Key::new("server"))
+        .key(Key::new("module_path").module_specific())
+        .key(Key::new("build_options").module_specific())
+        .key(Key::new("wasm_file").module_specific())
+        .key(Key::new("js_file").module_specific())
+        .key(Key::new("num_replicas"))
+        .key(Key::new("break_clients"))
+        .key(Key::new("anon_identity"))
+        .key(Key::new("parent"))
+        .key(Key::new("organization"))
         .exclude("clear-database")
         .exclude("force")
+        .exclude("no_config")
         .build(command)
         .map_err(Into::into)
 }
 
 /// Get filtered publish configs based on CLI arguments
 pub fn get_filtered_publish_configs<'a>(
-    spacetime_config: &'a SpacetimeConfig,
+    spacetime_config: &SpacetimeConfig,
     command: &clap::Command,
     schema: &'a CommandSchema,
     args: &'a ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
-    // Get all publish targets from config
+    // Get all publish targets from config with parent→child inheritance
     let all_targets: Vec<_> = spacetime_config
         .publish
         .as_ref()
-        .map(|p| p.iter_all_targets().collect())
+        .map(|p| p.collect_all_targets_with_inheritance())
         .unwrap_or_default();
 
     // If no config file, return empty (will use CLI args only)
@@ -58,7 +59,7 @@ pub fn get_filtered_publish_configs<'a>(
     let all_configs: Vec<CommandConfig> = all_targets
         .into_iter()
         .map(|target| {
-            let config = CommandConfig::new(schema, target.additional_fields.clone(), args)?;
+            let config = CommandConfig::new(schema, target.additional_fields, args)?;
             config.validate()?;
             Ok(config)
         })
@@ -189,6 +190,12 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
         .arg(
             common_args::yes()
         )
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(SetTrue)
+                .help("Ignore spacetime.json configuration")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -234,34 +241,53 @@ fn confirm_major_version_upgrade() -> Result<(), anyhow::Error> {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    exec_with_options(config, args, false).await
+    exec_with_options(config, args, false, None).await
 }
 
 /// This function can be used when calling publish programatically rather than straight from the
 /// CLI, like we do in `spacetime dev`. When calling from `spacetime dev` we don't want to display
 /// information about using the `spacetime.json` file as it's already announced as part of the
 /// `dev` command
-pub async fn exec_with_options(mut config: Config, args: &ArgMatches, quiet_config: bool) -> Result<(), anyhow::Error> {
+pub async fn exec_with_options(
+    mut config: Config,
+    args: &ArgMatches,
+    quiet_config: bool,
+    pre_loaded_config: Option<&SpacetimeConfig>,
+) -> Result<(), anyhow::Error> {
     // Build schema
     let cmd = cli();
     let schema = build_publish_schema(&cmd)?;
 
+    let no_config = args.get_flag("no_config");
+
     // Get publish configs (from spacetime.json or empty)
-    let spacetime_config_opt = SpacetimeConfig::find_and_load()?;
-    let (using_config, publish_configs) = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
-        if !quiet_config {
-            println!("Using configuration from {}", config_path.display());
+    let owned_config;
+    let spacetime_config_ref = if no_config {
+        None
+    } else if let Some(pre) = pre_loaded_config {
+        Some(pre)
+    } else {
+        owned_config = SpacetimeConfig::find_and_load()?;
+        owned_config.as_ref().map(|(_path, cfg)| {
+            if !quiet_config {
+                println!("Using configuration from {}", _path.display());
+            }
+            cfg
+        })
+    };
+
+    let (using_config, publish_configs) = if let Some(spacetime_config) = spacetime_config_ref {
+        if !quiet_config && pre_loaded_config.is_none() {
+            // Already printed above in the find_and_load path
         }
         let filtered = get_filtered_publish_configs(spacetime_config, &cmd, &schema, args)?;
-        // If filtering resulted in no matches, use CLI args with empty config
         if filtered.is_empty() {
-            (
-                false,
-                vec![CommandConfig::new(&schema, std::collections::HashMap::new(), args)?],
-            )
-        } else {
-            (true, filtered)
+            anyhow::bail!(
+                "No matching target found in spacetime.json for the provided arguments. \
+                 Use --no-config to ignore the config file."
+            );
         }
+        (true, filtered)
     } else {
         (
             false,
@@ -828,5 +854,52 @@ mod tests {
         let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
         assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_publish_filter_inherits_parent_fields() {
+        // Verifies that get_filtered_publish_configs returns targets
+        // with inherited fields from the parent.
+        use crate::spacetime_config::*;
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let mut parent_config = HashMap::new();
+        parent_config.insert(
+            "database".to_string(),
+            serde_json::Value::String("parent-db".to_string()),
+        );
+        parent_config.insert(
+            "server".to_string(),
+            serde_json::Value::String("local".to_string()),
+        );
+
+        let mut child_config = HashMap::new();
+        child_config.insert("database".to_string(), serde_json::Value::String("child-db".to_string()));
+        // child does NOT set "server" — should inherit from parent
+
+        let spacetime_config = SpacetimeConfig {
+            publish: Some(PublishConfig {
+                additional_fields: parent_config,
+                children: Some(vec![PublishConfig {
+                    additional_fields: child_config,
+                    children: None,
+                }]),
+            }),
+            ..Default::default()
+        };
+
+        // Filter to the child target
+        let matches = cmd.clone().get_matches_from(vec!["publish", "child-db"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        // The child should have inherited "server" from the parent
+        assert_eq!(
+            filtered[0].get_one::<String>("server").unwrap(),
+            Some("local".to_string())
+        );
     }
 }

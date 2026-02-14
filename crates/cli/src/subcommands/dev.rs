@@ -102,6 +102,12 @@ pub fn cli() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .help("Only run the server (module) without starting the client"),
         )
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(clap::ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
 }
 
 #[derive(Deserialize)]
@@ -154,14 +160,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         None => project_dir.join("spacetimedb"),
     };
 
+    let no_config = args.get_flag("no_config");
+
     // Load spacetime.json config early so we can use it for determining project
     // directories
-    let spacetime_config = match SpacetimeConfig::load_from_dir(&project_dir) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("{} Failed to load spacetime.json: {}", "✗".red(), e);
-            std::process::exit(1);
-        }
+    let spacetime_config = if no_config {
+        None
+    } else {
+        SpacetimeConfig::load_from_dir(&project_dir)
+            .with_context(|| "Failed to load spacetime.json")?
     };
     let using_spacetime_config = spacetime_config.is_some();
     let has_publish_targets_in_config = spacetime_config.as_ref().and_then(|c| c.publish.as_ref()).is_some();
@@ -283,10 +290,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         // if we have publish configs and we're past spacetimedb_dir manipulation,
         // we should set spacetimedb_dir to the path of the first config as this will be
         // later used for next steps
-        spacetimedb_dir = config
+        if let Some(path) = config
             .get_one::<PathBuf>("module_path")
-            .expect("module_path")
-            .expect("module_path is required");
+            .context("failed to read module_path from config")?
+        {
+            spacetimedb_dir = path;
+        }
     }
 
     let use_local = resolved_server == "local";
@@ -396,31 +405,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else if let Some(cmd) = args.get_one::<String>("run") {
         // Explicit CLI flag takes priority
         Some(cmd.clone())
-    } else {
-        // Try to load config, handling errors properly
-        match SpacetimeConfig::load_from_dir(&project_dir) {
-            Ok(Some(config)) => {
-                // Config file exists and parsed successfully
-                let config_path = project_dir.join("spacetime.json");
-                println!("{} Using configuration from {}", "✓".green(), config_path.display());
+    } else if let Some(ref config) = spacetime_config {
+        // Reuse already-loaded config instead of loading again
+        let config_path = project_dir.join("spacetime.json");
+        println!("{} Using configuration from {}", "✓".green(), config_path.display());
 
-                // If config exists but dev.run is None, try to detect and update
-                if config.dev.as_ref().and_then(|d| d.run.as_ref()).is_none() {
-                    detect_and_save_client_command(&project_dir, Some(config))
-                } else {
-                    config.dev.and_then(|d| d.run)
-                }
-            }
-            Ok(None) => {
-                // No config file - try to detect and create new
-                detect_and_save_client_command(&project_dir, None)
-            }
-            Err(e) => {
-                // Config file exists but failed to parse - show error and exit
-                eprintln!("{} Failed to load spacetime.json: {}", "✗".red(), e);
-                std::process::exit(1);
-            }
+        if config.dev.as_ref().and_then(|d| d.run.as_ref()).is_none() {
+            detect_and_save_client_command(&project_dir, Some(config.clone()))
+        } else {
+            config.dev.as_ref().and_then(|d| d.run.clone())
         }
+    } else {
+        // No config file - try to detect and create new
+        detect_and_save_client_command(&project_dir, None)
     };
 
     // Extract database names from publish configs for log streaming
@@ -430,10 +427,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             config
                 .get_config_value("database")
                 .and_then(|v| v.as_str())
-                .expect("database is a required field")
-                .to_string()
+                .ok_or_else(|| anyhow::anyhow!("database is a required field in publish config"))
+                .map(|s| s.to_string())
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Use first database for client process
     let db_name_for_client = &db_names_for_logging[0];
@@ -760,14 +757,20 @@ async fn generate_build_and_publish(
         }
 
         println!("{}", "Generating module bindings...".cyan());
+        let spacetimedb_dir_str = spacetimedb_dir
+            .to_str()
+            .context("non-UTF-8 path in spacetimedb_dir")?;
+        let module_bindings_dir_str = module_bindings_dir
+            .to_str()
+            .context("non-UTF-8 path in module_bindings_dir")?;
         let mut generate_argv = vec![
             "generate",
             "--lang",
             client_language_str,
             "--module-path",
-            spacetimedb_dir.to_str().unwrap(),
+            spacetimedb_dir_str,
             "--out-dir",
-            module_bindings_dir.to_str().unwrap(),
+            module_bindings_dir_str,
         ];
         if yes {
             generate_argv.push("--yes");
@@ -784,7 +787,6 @@ async fn generate_build_and_publish(
 
     println!("{}", "Publishing...".cyan());
 
-    let module_path_str = spacetimedb_dir.to_str().unwrap();
     let clear_flag = match clear_database {
         ClearMode::Always => "always",
         ClearMode::Never => "never",
@@ -796,7 +798,20 @@ async fn generate_build_and_publish(
         let db_name = config_entry
             .get_config_value("database")
             .and_then(|v| v.as_str())
-            .expect("database is a required field");
+            .ok_or_else(|| anyhow::anyhow!("database is a required field in publish config"))?;
+
+        // Read module_path from each config entry, falling back to the shared spacetimedb_dir
+        let entry_module_path = config_entry
+            .get_config_value("module_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let module_path_str = entry_module_path
+            .as_deref()
+            .unwrap_or_else(|| {
+                spacetimedb_dir
+                    .to_str()
+                    .expect("spacetimedb_dir should be valid UTF-8")
+            });
 
         if publish_configs.len() > 1 {
             println!("{} {}...", "Publishing to".cyan(), db_name.cyan().bold());
@@ -811,9 +826,27 @@ async fn generate_build_and_publish(
             format!("--delete-data={}", clear_flag),
         ];
 
-        // Only pass --server if it was explicitly provided via CLI
+        // Forward per-target server from config if set, or CLI server override
         if let Some(srv) = server {
             publish_args.extend_from_slice(&["--server".to_string(), srv.to_string()]);
+        } else if let Some(srv) = config_entry.get_config_value("server").and_then(|v| v.as_str()) {
+            publish_args.extend_from_slice(&["--server".to_string(), srv.to_string()]);
+        }
+
+        // Forward per-target build options if set
+        if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str()) {
+            if !build_opts.is_empty() {
+                publish_args.extend_from_slice(&["--build-options".to_string(), build_opts.to_string()]);
+            }
+        }
+
+        // Forward break-clients if set
+        if config_entry
+            .get_config_value("break_clients")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            publish_args.push("--break-clients".to_string());
         }
 
         let publish_cmd = publish::cli();
@@ -821,7 +854,7 @@ async fn generate_build_and_publish(
             .try_get_matches_from(publish_args)
             .context("Failed to create publish arguments")?;
 
-        publish::exec_with_options(config.clone(), &publish_matches, true).await?;
+        publish::exec_with_options(config.clone(), &publish_matches, true, None).await?;
     }
 
     println!("{}", "Published successfully!".green().bold());
