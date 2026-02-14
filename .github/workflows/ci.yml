@@ -24,9 +24,9 @@ jobs:
       matrix:
         include:
           - name: Linux
-            runner: boppy-experimental
-          - name: Windows
             runner: none
+          - name: Windows
+            runner: boppy-experimental
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
