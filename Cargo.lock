@@ -7585,6 +7585,7 @@ dependencies = [
  "fs_extra",
  "futures",
  "git2",
+ "glob",
  "http 1.3.1",
  "indicatif",
  "is-terminal",

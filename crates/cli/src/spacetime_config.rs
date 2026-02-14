@@ -77,40 +77,51 @@ pub enum CommandConfigError {
 
 /// Project configuration loaded from spacetime.json.
 ///
-/// Example:
+/// The root object IS a database entity. `generate` is per-database
+/// (inherited by children), and `dev` is root-only.
+///
+/// Example (simple):
 /// ```json
 /// {
-///   "dev": {
-///     "run": "pnpm dev"
-///   },
+///   "database": "my-database",
+///   "server": "local",
+///   "module-path": "./server",
+///   "dev": { "run": "pnpm dev" },
 ///   "generate": [
-///     {
-///       "language": "typescript",
-///       "out-dir": "./src/module_bindings"
-///     }
-///   ],
-///   "publish": {
-///     "database": "my-database",
-///     "server": "https://testnet.spacetimedb.com"
-///   }
+///     { "language": "typescript", "out-dir": "./src/module_bindings" }
+///   ]
+/// }
+/// ```
+///
+/// Example (multi-database):
+/// ```json
+/// {
+///   "server": "local",
+///   "module-path": "./server",
+///   "children": [
+///     { "database": "region-1" },
+///     { "database": "region-2", "module-path": "./region-server" }
+///   ]
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub struct SpacetimeConfig {
-    /// Configuration for the dev command.
+    /// Configuration for the dev command. Root-level only, not inherited.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dev: Option<DevConfig>,
 
-    /// List of generate configurations for creating client bindings.
-    /// Each entry configures code generation for a specific language.
+    /// Per-database generate entries. Inherited by children unless overridden.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate: Option<Vec<HashMap<String, Value>>>,
 
-    /// Configuration for publishing the database.
-    /// Can include nested children for multi-database configurations.
+    /// Child database entities.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub publish: Option<PublishConfig>,
+    pub children: Option<Vec<SpacetimeConfig>>,
+
+    /// All other entity-level fields (database, module-path, server, etc.)
+    #[serde(flatten)]
+    pub additional_fields: HashMap<String, Value>,
 }
 
 /// Configuration for `spacetime dev` command.
@@ -124,37 +135,67 @@ pub struct DevConfig {
     pub run: Option<String>,
 }
 
-/// Configuration for `spacetime publish` command.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
-pub struct PublishConfig {
-    /// Child databases
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub children: Option<Vec<PublishConfig>>,
-
-    /// Configuration fields
-    #[serde(flatten)]
-    pub additional_fields: HashMap<String, Value>,
+/// A fully resolved database target after inheritance.
+/// Contains all fields needed for both publish and generate operations.
+#[derive(Debug, Clone)]
+pub struct FlatTarget {
+    /// All entity-level fields (database, module-path, server, etc.)
+    pub fields: HashMap<String, Value>,
+    /// Generate entries for this target (inherited or overridden)
+    pub generate: Option<Vec<HashMap<String, Value>>>,
 }
 
-impl PublishConfig {
-    /// Collect all publish targets with parent→child inheritance.
-    /// Children inherit unset fields from their parent's `additional_fields`.
-    /// Returns owned `PublishConfig` instances with inherited fields filled in.
-    pub fn collect_all_targets_with_inheritance(&self) -> Vec<PublishConfig> {
-        let mut result = vec![self.clone()];
+/// Result of loading config from one or more files.
+pub struct LoadedConfig {
+    pub config: SpacetimeConfig,
+    pub config_dir: PathBuf,
+    /// Which files contributed to this config
+    pub loaded_files: Vec<PathBuf>,
+    /// Whether a dev-specific file (spacetime.dev.json or spacetime.dev.local.json) was loaded
+    pub has_dev_file: bool,
+}
+
+impl SpacetimeConfig {
+    /// Collect all database targets with parent→child inheritance.
+    /// Children inherit unset `additional_fields` and `generate` from their parent.
+    /// `dev` and `children` are NOT propagated to child targets.
+    /// Returns `Vec<FlatTarget>` with fully resolved fields.
+    pub fn collect_all_targets_with_inheritance(&self) -> Vec<FlatTarget> {
+        self.collect_targets_inner(None, None)
+    }
+
+    fn collect_targets_inner(
+        &self,
+        parent_fields: Option<&HashMap<String, Value>>,
+        parent_generate: Option<&Vec<HashMap<String, Value>>>,
+    ) -> Vec<FlatTarget> {
+        // Build this node's fields by inheriting from parent
+        let mut fields = self.additional_fields.clone();
+        if let Some(parent) = parent_fields {
+            for (key, value) in parent {
+                if !fields.contains_key(key) {
+                    fields.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        // Generate: child's generate replaces parent's; if absent, inherit parent's
+        let effective_generate = if self.generate.is_some() {
+            self.generate.clone()
+        } else {
+            parent_generate.cloned()
+        };
+
+        let target = FlatTarget {
+            fields: fields.clone(),
+            generate: effective_generate.clone(),
+        };
+
+        let mut result = vec![target];
 
         if let Some(children) = &self.children {
             for child in children {
-                let mut inherited = child.clone();
-                // Inherit unset fields from parent
-                for (key, value) in &self.additional_fields {
-                    if !inherited.additional_fields.contains_key(key) {
-                        inherited.additional_fields.insert(key.clone(), value.clone());
-                    }
-                }
-                // Recurse for nested children
-                let child_targets = inherited.collect_all_targets_with_inheritance();
+                let child_targets = child.collect_targets_inner(Some(&fields), effective_generate.as_ref());
                 result.extend(child_targets);
             }
         }
@@ -162,11 +203,10 @@ impl PublishConfig {
         result
     }
 
-    /// Iterate through all publish targets (self + children recursively).
-    /// Returns an iterator that yields references to PublishConfig instances.
+    /// Iterate through all database targets (self + children recursively).
     /// Note: Does NOT apply parent→child inheritance. Use
     /// `collect_all_targets_with_inheritance()` for that.
-    pub fn iter_all_targets(&self) -> Box<dyn Iterator<Item = &PublishConfig> + '_> {
+    pub fn iter_all_targets(&self) -> Box<dyn Iterator<Item = &SpacetimeConfig> + '_> {
         Box::new(
             std::iter::once(self).chain(
                 self.children
@@ -454,6 +494,54 @@ impl CommandSchema {
         );
     }
 
+    /// Get all generate-entry-specific keys that were provided via CLI.
+    pub fn generate_entry_specific_cli_args(&self, matches: &ArgMatches) -> Vec<&str> {
+        self.keys
+            .iter()
+            .filter(|k| k.generate_entry_specific && self.is_from_cli(matches, k.config_name()))
+            .map(|k| k.config_name())
+            .collect()
+    }
+
+    /// Get user-facing CLI flags for generate-entry-specific options provided via CLI.
+    pub fn generate_entry_specific_cli_flags(&self, command: &Command, matches: &ArgMatches) -> Vec<String> {
+        self.generate_entry_specific_cli_args(matches)
+            .iter()
+            .map(|arg| {
+                let clap_name = self.clap_arg_name_for(arg);
+                command
+                    .get_arguments()
+                    .find(|a| a.get_id().as_str() == clap_name)
+                    .and_then(|a| a.get_long())
+                    .map(|long| format!("--{long}"))
+                    .unwrap_or_else(|| format!("--{}", clap_name.replace('_', "-")))
+            })
+            .collect()
+    }
+
+    /// Validate that generate-entry-specific CLI flags are not used when operating on multiple generate entries.
+    pub fn validate_no_generate_entry_specific_cli_args(
+        &self,
+        command: &Command,
+        matches: &ArgMatches,
+        entry_count: usize,
+    ) -> anyhow::Result<()> {
+        if entry_count <= 1 {
+            return Ok(());
+        }
+
+        let display_args = self.generate_entry_specific_cli_flags(command, matches);
+        if display_args.is_empty() {
+            return Ok(());
+        }
+
+        anyhow::bail!(
+            "Cannot use generate-entry-specific arguments ({}) when generating for multiple entries. \
+             Specify a database name to select a single target, or remove these arguments.",
+            display_args.join(", "),
+        );
+    }
+
     /// Get the clap argument name for a config key.
     pub fn clap_arg_name_for<'a>(&'a self, config_name: &'a str) -> &'a str {
         self.config_to_clap
@@ -473,8 +561,10 @@ pub struct Key {
     /// Alias for a clap argument, useful for example if we have to deprecate a clap
     /// argument and still allow to use it in the CLI args, but not in the config file
     clap_alias: Option<String>,
-    /// Whether this key is module-specific
+    /// Whether this key is module-specific (per-database)
     module_specific: bool,
+    /// Whether this key is generate-entry-specific (per-generate-entry within a database)
+    generate_entry_specific: bool,
     /// Whether this key is required in the config file
     required: bool,
 }
@@ -487,6 +577,7 @@ impl Key {
             clap_name: None,
             clap_alias: None,
             module_specific: false,
+            generate_entry_specific: false,
             required: false,
         }
     }
@@ -520,6 +611,14 @@ impl Key {
     /// multiple publish targets
     pub fn module_specific(mut self) -> Self {
         self.module_specific = true;
+        self
+    }
+
+    /// Mark this key as generate-entry-specific. These keys (like `language`, `out_dir`)
+    /// only make sense when a single generate entry is targeted. If multiple generate
+    /// entries exist and this key is provided via CLI, it's an error.
+    pub fn generate_entry_specific(mut self) -> Self {
+        self.generate_entry_specific = true;
         self
     }
 
@@ -649,7 +748,7 @@ impl<'a> CommandConfig<'a> {
 
 
 impl SpacetimeConfig {
-    /// Find and load a spacetime.json file.
+    /// Find and load a spacetime.json file (convenience wrapper for no env).
     ///
     /// Searches for spacetime.json starting from the current directory
     /// and walking up the directory tree until found or filesystem root is reached.
@@ -666,22 +765,10 @@ impl SpacetimeConfig {
     /// Searches for spacetime.json starting from `start_dir`
     /// and walking up the directory tree until found or filesystem root is reached.
     pub fn find_and_load_from(start_dir: PathBuf) -> anyhow::Result<Option<(PathBuf, Self)>> {
-        let mut current_dir = start_dir;
-        loop {
-            let config_path = current_dir.join("spacetime.json");
-            if config_path.exists() {
-                let config = Self::load(&config_path)
-                    .with_context(|| format!("Failed to parse config file: {}", config_path.display()))?;
-                return Ok(Some((config_path, config)));
-            }
-
-            // Try to go up one directory
-            if !current_dir.pop() {
-                // Reached filesystem root
-                break;
-            }
-        }
-        Ok(None)
+        Ok(find_and_load_with_env_from(None, start_dir)?.map(|loaded| {
+            let config_path = loaded.config_dir.join(CONFIG_FILENAME);
+            (config_path, loaded.config)
+        }))
     }
 
     /// Load a spacetime.json file from a specific path.
@@ -759,6 +846,109 @@ impl SpacetimeConfig {
         self.save(&path)?;
         Ok(path)
     }
+}
+
+/// Find the config directory by walking up from start_dir looking for spacetime.json.
+fn find_config_dir(start_dir: PathBuf) -> Option<PathBuf> {
+    let mut current_dir = start_dir;
+    loop {
+        let config_path = current_dir.join("spacetime.json");
+        if config_path.exists() {
+            return Some(current_dir);
+        }
+        if !current_dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Load a JSON5 file as a serde_json::Value, or None if the file doesn't exist.
+fn load_json_value(path: &Path) -> anyhow::Result<Option<serde_json::Value>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("Failed to read config file: {}", path.display()))?;
+    let value: serde_json::Value =
+        json5::from_str(&content).map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
+    Ok(Some(value))
+}
+
+/// Overlay `overlay` values onto `base` using top-level key replacement (shallow merge).
+fn overlay_json(base: &mut serde_json::Value, overlay: serde_json::Value) {
+    if let (Some(base_obj), Some(overlay_obj)) = (base.as_object_mut(), overlay.as_object()) {
+        for (key, value) in overlay_obj {
+            base_obj.insert(key.clone(), value.clone());
+        }
+    }
+}
+
+/// Find and load config with environment layering from the current directory.
+///
+/// Loading order (each overlays the previous via top-level key replacement):
+/// 1. `spacetime.json` (required)
+/// 2. `spacetime.<env>.json` (if env specified and file exists)
+/// 3. `spacetime.local.json` (if exists)
+/// 4. `spacetime.<env>.local.json` (if env specified and file exists)
+pub fn find_and_load_with_env(env: Option<&str>) -> anyhow::Result<Option<LoadedConfig>> {
+    find_and_load_with_env_from(env, std::env::current_dir()?)
+}
+
+/// Find and load config with environment layering starting from a specific directory.
+pub fn find_and_load_with_env_from(env: Option<&str>, start_dir: PathBuf) -> anyhow::Result<Option<LoadedConfig>> {
+    let config_dir = match find_config_dir(start_dir) {
+        Some(dir) => dir,
+        None => return Ok(None),
+    };
+
+    let base_path = config_dir.join("spacetime.json");
+    let mut merged = load_json_value(&base_path)?
+        .ok_or_else(|| anyhow::anyhow!("spacetime.json not found in {}", config_dir.display()))?;
+
+    let mut loaded_files = vec![base_path];
+    let mut has_dev_file = false;
+
+    // Overlay environment-specific file
+    if let Some(env_name) = env {
+        let env_path = config_dir.join(format!("spacetime.{env_name}.json"));
+        if let Some(env_value) = load_json_value(&env_path)? {
+            overlay_json(&mut merged, env_value);
+            loaded_files.push(env_path);
+            if env_name == "dev" {
+                has_dev_file = true;
+            }
+        }
+    }
+
+    // Overlay local file
+    let local_path = config_dir.join("spacetime.local.json");
+    if let Some(local_value) = load_json_value(&local_path)? {
+        overlay_json(&mut merged, local_value);
+        loaded_files.push(local_path);
+    }
+
+    // Overlay environment-specific local file
+    if let Some(env_name) = env {
+        let env_local_path = config_dir.join(format!("spacetime.{env_name}.local.json"));
+        if let Some(env_local_value) = load_json_value(&env_local_path)? {
+            overlay_json(&mut merged, env_local_value);
+            loaded_files.push(env_local_path);
+            if env_name == "dev" {
+                has_dev_file = true;
+            }
+        }
+    }
+
+    let config: SpacetimeConfig = serde_json::from_value(merged)
+        .context("Failed to deserialize merged config")?;
+
+    Ok(Some(LoadedConfig {
+        config,
+        config_dir,
+        loaded_files,
+        has_dev_file,
+    }))
 }
 
 /// Set up a spacetime.json config for a project.
@@ -852,6 +1042,9 @@ mod tests {
             "dev": {
                 "run": "pnpm dev"
             },
+            "database": "bitcraft",
+            "module-path": "spacetimedb",
+            "server": "local",
             "generate": [
                 {
                     "out-dir": "./foobar",
@@ -864,21 +1057,16 @@ mod tests {
                     "language": "csharp"
                 }
             ],
-            "publish": {
-                "database": "bitcraft",
-                "module-path": "spacetimedb",
-                "server": "local",
-                "children": [
-                    {
-                        "database": "region-1",
-                        "module-path": "region-module"
-                    },
-                    {
-                        "database": "region-2",
-                        "module-path": "region-module"
-                    }
-                ]
-            }
+            "children": [
+                {
+                    "database": "region-1",
+                    "module-path": "region-module"
+                },
+                {
+                    "database": "region-2",
+                    "module-path": "region-module"
+                }
+            ]
         }"#;
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
@@ -890,17 +1078,16 @@ mod tests {
         assert_eq!(generate[0].get("out-dir").and_then(|v| v.as_str()), Some("./foobar"));
         assert_eq!(generate[0].get("language").and_then(|v| v.as_str()), Some("csharp"));
 
-        let publish = config.publish.as_ref().unwrap();
         assert_eq!(
-            publish.additional_fields.get("database").and_then(|v| v.as_str()),
+            config.additional_fields.get("database").and_then(|v| v.as_str()),
             Some("bitcraft")
         );
         assert_eq!(
-            publish.additional_fields.get("module-path").and_then(|v| v.as_str()),
+            config.additional_fields.get("module-path").and_then(|v| v.as_str()),
             Some("spacetimedb")
         );
 
-        let children = publish.children.as_ref().unwrap();
+        let children = config.children.as_ref().unwrap();
         assert_eq!(children.len(), 2);
         assert_eq!(
             children[0].additional_fields.get("database").and_then(|v| v.as_str()),
@@ -939,7 +1126,8 @@ mod tests {
 
         assert!(config.dev.is_none());
         assert!(config.generate.is_none());
-        assert!(config.publish.is_none());
+        assert!(config.children.is_none());
+        assert!(config.additional_fields.is_empty());
     }
 
     #[test]
@@ -988,10 +1176,10 @@ mod tests {
     }
 
     #[test]
-    fn test_publish_config_extraction() {
+    fn test_database_entity_config_extraction() {
         use clap::{Arg, Command};
 
-        // Parse a PublishConfig from JSON
+        // Parse a database entity config from JSON (database-centric model)
         let json = r#"{
             "database": "my-database",
             "server": "local",
@@ -1001,39 +1189,39 @@ mod tests {
             "anonymous": false
         }"#;
 
-        let publish_config: PublishConfig = json5::from_str(json).unwrap();
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
 
         // Verify children field
-        assert!(publish_config.children.is_none());
+        assert!(config.children.is_none());
 
         // Verify all fields are in additional_fields
         assert_eq!(
-            publish_config
+            config
                 .additional_fields
                 .get("database")
                 .and_then(|v| v.as_str()),
             Some("my-database")
         );
         assert_eq!(
-            publish_config.additional_fields.get("server").and_then(|v| v.as_str()),
+            config.additional_fields.get("server").and_then(|v| v.as_str()),
             Some("local")
         );
         assert_eq!(
-            publish_config
+            config
                 .additional_fields
                 .get("module-path")
                 .and_then(|v| v.as_str()),
             Some("./my-module")
         );
         assert_eq!(
-            publish_config
+            config
                 .additional_fields
                 .get("build-options")
                 .and_then(|v| v.as_str()),
             Some("--features extra")
         );
         assert_eq!(
-            publish_config
+            config
                 .additional_fields
                 .get("break-clients")
                 .and_then(|v| v.as_bool()),
@@ -1065,7 +1253,7 @@ mod tests {
             .unwrap();
 
         // Just pass the additional_fields directly - they will be normalized from kebab to snake_case
-        let command_config = CommandConfig::new(&schema, publish_config.additional_fields, &matches).unwrap();
+        let command_config = CommandConfig::new(&schema, config.additional_fields, &matches).unwrap();
 
         // database comes from config
         assert_eq!(
@@ -2084,7 +2272,7 @@ mod tests {
         assert!(result.is_some());
         let (_, config) = result.unwrap();
         assert!(config.dev.is_none());
-        assert!(config.publish.is_none());
+        assert!(config.children.is_none());
         assert!(config.generate.is_none());
     }
 
@@ -2194,47 +2382,47 @@ mod tests {
             ]
         }"#;
 
-        let publish_config: PublishConfig = json5::from_str(json).unwrap();
-        let targets = publish_config.collect_all_targets_with_inheritance();
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let targets = config.collect_all_targets_with_inheritance();
 
         // Should have 3 targets: parent + 2 children
         assert_eq!(targets.len(), 3);
 
         // Parent target
         assert_eq!(
-            targets[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            targets[0].fields.get("database").and_then(|v| v.as_str()),
             Some("parent-db")
         );
         assert_eq!(
-            targets[0].additional_fields.get("server").and_then(|v| v.as_str()),
+            targets[0].fields.get("server").and_then(|v| v.as_str()),
             Some("local")
         );
 
         // Child 1: inherits server and build-options from parent
         assert_eq!(
-            targets[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            targets[1].fields.get("database").and_then(|v| v.as_str()),
             Some("child-1")
         );
         assert_eq!(
-            targets[1].additional_fields.get("server").and_then(|v| v.as_str()),
+            targets[1].fields.get("server").and_then(|v| v.as_str()),
             Some("local") // inherited from parent
         );
         assert_eq!(
-            targets[1].additional_fields.get("build-options").and_then(|v| v.as_str()),
+            targets[1].fields.get("build-options").and_then(|v| v.as_str()),
             Some("--release") // inherited from parent
         );
 
         // Child 2: overrides server, inherits build-options
         assert_eq!(
-            targets[2].additional_fields.get("database").and_then(|v| v.as_str()),
+            targets[2].fields.get("database").and_then(|v| v.as_str()),
             Some("child-2")
         );
         assert_eq!(
-            targets[2].additional_fields.get("server").and_then(|v| v.as_str()),
+            targets[2].fields.get("server").and_then(|v| v.as_str()),
             Some("maincloud") // overridden
         );
         assert_eq!(
-            targets[2].additional_fields.get("build-options").and_then(|v| v.as_str()),
+            targets[2].fields.get("build-options").and_then(|v| v.as_str()),
             Some("--release") // inherited from parent
         );
     }
@@ -2249,12 +2437,12 @@ mod tests {
             "module-path": "./module"
         }"#;
 
-        let publish_config: PublishConfig = json5::from_str(json).unwrap();
-        let targets = publish_config.collect_all_targets_with_inheritance();
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let targets = config.collect_all_targets_with_inheritance();
 
         assert_eq!(targets.len(), 1);
         assert_eq!(
-            targets[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            targets[0].fields.get("database").and_then(|v| v.as_str()),
             Some("single-db")
         );
     }
@@ -2280,49 +2468,169 @@ mod tests {
             ]
         }"#;
 
-        let publish_config: PublishConfig = json5::from_str(json).unwrap();
-        let targets = publish_config.collect_all_targets_with_inheritance();
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let targets = config.collect_all_targets_with_inheritance();
 
         // root + mid + leaf = 3
         assert_eq!(targets.len(), 3);
 
         // Root
         assert_eq!(
-            targets[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            targets[0].fields.get("database").and_then(|v| v.as_str()),
             Some("root")
         );
 
         // Mid: inherits server and build-options from root, has own module-path
         assert_eq!(
-            targets[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            targets[1].fields.get("database").and_then(|v| v.as_str()),
             Some("mid")
         );
         assert_eq!(
-            targets[1].additional_fields.get("server").and_then(|v| v.as_str()),
+            targets[1].fields.get("server").and_then(|v| v.as_str()),
             Some("production")
         );
         assert_eq!(
-            targets[1].additional_fields.get("module-path").and_then(|v| v.as_str()),
+            targets[1].fields.get("module-path").and_then(|v| v.as_str()),
             Some("./mid-module")
         );
 
         // Leaf: inherits server and build-options (from root via mid),
         // AND inherits module-path from mid
         assert_eq!(
-            targets[2].additional_fields.get("database").and_then(|v| v.as_str()),
+            targets[2].fields.get("database").and_then(|v| v.as_str()),
             Some("leaf")
         );
         assert_eq!(
-            targets[2].additional_fields.get("server").and_then(|v| v.as_str()),
+            targets[2].fields.get("server").and_then(|v| v.as_str()),
             Some("production")
         );
         assert_eq!(
-            targets[2].additional_fields.get("build-options").and_then(|v| v.as_str()),
+            targets[2].fields.get("build-options").and_then(|v| v.as_str()),
             Some("--release")
         );
         assert_eq!(
-            targets[2].additional_fields.get("module-path").and_then(|v| v.as_str()),
+            targets[2].fields.get("module-path").and_then(|v| v.as_str()),
             Some("./mid-module")
+        );
+    }
+
+    #[test]
+    fn test_generate_inheritance_from_parent() {
+        // Children inherit generate from parent if they don't define their own
+        let json = r#"{
+            "database": "parent-db",
+            "server": "local",
+            "generate": [
+                { "language": "typescript", "out-dir": "./client/src/bindings" }
+            ],
+            "children": [
+                { "database": "child-1" },
+                {
+                    "database": "child-2",
+                    "generate": [
+                        { "language": "csharp", "out-dir": "./csharp-bindings" }
+                    ]
+                }
+            ]
+        }"#;
+
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let targets = config.collect_all_targets_with_inheritance();
+
+        assert_eq!(targets.len(), 3);
+
+        // Parent has its own generate
+        let parent_gen = targets[0].generate.as_ref().unwrap();
+        assert_eq!(parent_gen.len(), 1);
+        assert_eq!(parent_gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
+
+        // Child 1 inherits parent's generate
+        let child1_gen = targets[1].generate.as_ref().unwrap();
+        assert_eq!(child1_gen.len(), 1);
+        assert_eq!(child1_gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
+
+        // Child 2 overrides with its own generate
+        let child2_gen = targets[2].generate.as_ref().unwrap();
+        assert_eq!(child2_gen.len(), 1);
+        assert_eq!(child2_gen[0].get("language").and_then(|v| v.as_str()), Some("csharp"));
+    }
+
+    #[test]
+    fn test_find_and_load_with_env_layering() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        // Base config
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{ "database": "my-db", "server": "local" }"#,
+        )
+        .unwrap();
+
+        // Dev environment overlay - replaces server
+        fs::write(
+            root.join("spacetime.dev.json"),
+            r#"{ "server": "maincloud" }"#,
+        )
+        .unwrap();
+
+        // Load without env
+        let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
+        assert_eq!(
+            result.config.additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local")
+        );
+        assert!(!result.has_dev_file);
+
+        // Load with dev env
+        let result = find_and_load_with_env_from(Some("dev"), root.to_path_buf()).unwrap().unwrap();
+        assert_eq!(
+            result.config.additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("maincloud")
+        );
+        assert_eq!(
+            result.config.additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("my-db")
+        );
+        assert!(result.has_dev_file);
+        assert_eq!(result.loaded_files.len(), 2);
+    }
+
+    #[test]
+    fn test_find_and_load_with_env_local_overlay() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        // Base config
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{ "database": "my-db", "server": "local" }"#,
+        )
+        .unwrap();
+
+        // Local overlay
+        fs::write(
+            root.join("spacetime.local.json"),
+            r#"{ "database": "my-local-db" }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
+        // Local overlay replaces database
+        assert_eq!(
+            result.config.additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("my-local-db")
+        );
+        // Server is preserved from base
+        assert_eq!(
+            result.config.additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local")
         );
     }
 }

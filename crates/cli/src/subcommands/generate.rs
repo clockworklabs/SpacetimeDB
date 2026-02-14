@@ -16,14 +16,16 @@ use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::spacetime_config::{CommandConfig, CommandSchema, CommandSchemaBuilder, Key, SpacetimeConfig};
+use crate::spacetime_config::{
+    find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
+};
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{find_module_path, resolve_sibling_binary, y_or_n};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
-use serde_json::Value;
+
 use std::collections::{BTreeSet, HashMap};
 use std::io::Read;
 
@@ -37,100 +39,143 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
             Key::new("language")
                 .from_clap("lang")
                 .required()
-                .module_specific(),
+                .generate_entry_specific(),
         )
-        .key(Key::new("out_dir").module_specific())
-        .key(Key::new("uproject_dir").module_specific())
+        .key(Key::new("out_dir").generate_entry_specific())
+        .key(Key::new("uproject_dir").generate_entry_specific())
         .key(Key::new("module_path").module_specific())
         .key(Key::new("wasm_file").module_specific())
         .key(Key::new("js_file").module_specific())
-        .key(Key::new("namespace").module_specific())
-        .key(Key::new("module_name").module_specific())
+        .key(Key::new("namespace").generate_entry_specific())
+        .key(Key::new("unreal_module_name").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("include_private"))
         .exclude("json_module")
         .exclude("force")
         .exclude("no_config")
+        .exclude("env")
+        .exclude("database")
         .build(command)
         .map_err(Into::into)
 }
 
-/// Get filtered generate configs based on CLI arguments. When the user sets
-/// the module path as a CLI argument and the config file is available,
-/// we should only run the generate command for config entries that match
-/// the module path
+/// Get filtered generate configs based on CLI arguments.
+///
+/// Uses the database-centric model: collects all targets with inheritance,
+/// filters by database name (glob), then collects generate entries from matched targets.
+/// Deduplicates by (canonical_module_path, serialized_generate_entry).
 fn get_filtered_generate_configs<'a>(
-    spacetime_config: &'a SpacetimeConfig,
+    spacetime_config: &SpacetimeConfig,
     command: &clap::Command,
     schema: &'a CommandSchema,
     args: &'a clap::ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
-    // Get all generate configs from spacetime.json
-    let all_configs: Vec<HashMap<String, Value>> = spacetime_config.generate.as_ref().cloned().unwrap_or_default();
+    // Get all database targets from config with parent→child inheritance
+    let all_targets = spacetime_config.collect_all_targets_with_inheritance();
 
-    // If no config file, return empty (will use CLI args only)
-    if all_configs.is_empty() {
+    if all_targets.is_empty() {
         return Ok(vec![]);
     }
 
-    // Build CommandConfig for each generate config - this merges any arguments passed
-    // through the CLI with the values from the config file
-    let all_command_configs: Vec<CommandConfig> = all_configs
-        .into_iter()
-        .map(|config| {
-            let command_config = CommandConfig::new(schema, config, args)?;
-            command_config.validate()?;
-            Ok(command_config)
-        })
-        .collect::<Result<Vec<_>, anyhow::Error>>()?;
+    // Filter by database name pattern (glob) if provided via CLI
+    let filtered_targets = if let Some(cli_database) = args.get_one::<String>("database") {
+        let pattern = glob::Pattern::new(cli_database)
+            .with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
 
-    // Filter by module_path if provided via CLI
-    let filtered_configs: Vec<CommandConfig> = if schema.is_from_cli(args, "module_path") {
-        let cli_module_path = schema.get_clap_arg::<PathBuf>(args, "module_path")?;
-        // Canonicalize the CLI path for comparison (if it exists)
-        let cli_canonical = cli_module_path.as_ref().and_then(|p| p.canonicalize().ok());
-
-        all_command_configs
+        let matched: Vec<_> = all_targets
             .into_iter()
-            .filter(|config| {
-                // Get module_path from CONFIG ONLY (not merged with CLI)
-                let config_module_path = config
-                    .get_config_value("module_path")
+            .filter(|target| {
+                target
+                    .fields
+                    .get("database")
                     .and_then(|v| v.as_str())
-                    .map(PathBuf::from);
-
-                // If we have a canonical CLI path, try to canonicalize config path and compare
-                if let Some(ref cli_canon) = cli_canonical {
-                    if let Some(ref config_path) = config_module_path {
-                        if let Ok(config_canon) = config_path.canonicalize() {
-                            return cli_canon == &config_canon;
-                        }
-                    }
-                }
-
-                // Fallback to direct comparison if canonicalization fails
-                config_module_path.as_ref() == cli_module_path.as_ref()
+                    .is_some_and(|db| pattern.matches(db))
             })
-            .collect()
+            .collect();
+
+        if matched.is_empty() {
+            anyhow::bail!(
+                "No database target matches '{}'. Available databases: {}",
+                cli_database,
+                spacetime_config
+                    .collect_all_targets_with_inheritance()
+                    .iter()
+                    .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        matched
     } else {
-        all_command_configs
+        all_targets
     };
 
+    // Collect generate entries from matched targets, inheriting entity fields
+    // Deduplicate by (module_path, serialized_generate_entry)
+    let mut seen = std::collections::HashSet::new();
+    let mut generate_configs = Vec::new();
+
+    for target in &filtered_targets {
+        let generate_entries = match &target.generate {
+            Some(entries) if !entries.is_empty() => entries,
+            _ => continue,
+        };
+
+        // Get module_path from the target's entity fields for dedup
+        let module_path = target
+            .fields
+            .get("module-path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        for entry in generate_entries {
+            // Deduplicate: same module path + same generate entry config = generate once
+            let dedup_key = format!("{}:{}", module_path, serde_json::to_string(entry).unwrap_or_default());
+            if !seen.insert(dedup_key) {
+                continue;
+            }
+
+            // Merge entity-level fields (module-path, etc.) with the generate entry
+            let mut merged = entry.clone();
+            // Inherit module-path from the target entity if not set in the generate entry
+            if let Some(mp) = target.fields.get("module-path") {
+                merged.entry("module-path".to_string()).or_insert_with(|| mp.clone());
+            }
+
+            let command_config = CommandConfig::new(schema, merged, args)?;
+            command_config.validate()?;
+            generate_configs.push(command_config);
+        }
+    }
+
+    if generate_configs.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Validate generate-entry-specific flags when multiple entries
+    schema.validate_no_generate_entry_specific_cli_args(command, args, generate_configs.len())?;
+
+    // Also validate module-specific flags
     schema.validate_no_module_specific_cli_args_for_multiple_targets(
         command,
         args,
-        filtered_configs.len(),
+        generate_configs.len(),
         "generating for multiple targets",
-        "Please specify --module-path to select a single target, or remove these arguments.",
+        "Please specify a database name to select a single target, or remove these arguments.",
     )?;
 
-    Ok(filtered_configs)
+    Ok(generate_configs)
 }
 
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]")
+        .override_usage("spacetime generate [DATABASE] --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]")
+        .arg(
+            Arg::new("database")
+                .help("Database name or glob pattern to filter which databases to generate for"),
+        )
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -188,8 +233,9 @@ pub fn cli() -> clap::Command {
                 .help("The namespace that should be used"),
         )
         .arg(
-            Arg::new("module_name")
-                .long("module-name")
+            Arg::new("unreal_module_name")
+                .long("unreal-module-name")
+                .alias("module-name")
                 .help("The module name that should be used for DLL export macros (required for lang unrealcpp)")
         )
         .arg(
@@ -221,11 +267,18 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Ignore spacetime.json configuration")
         )
-        .after_help("Run `spacetime help publish` for more detailed information.")
+        .arg(
+            Arg::new("env")
+                .long("env")
+                .value_name("ENV")
+                .action(Set)
+                .help("Environment name for config file layering (e.g., dev, staging)")
+        )
+        .after_help("Run `spacetime help generate` for more detailed information.")
 }
 
 pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
-    exec_ex(config, args, extract_descriptions, false).await
+    exec_ex(config, args, extract_descriptions, false, None).await
 }
 
 /// Like `exec`, but lets you specify a custom a function to extract a schema from a file.
@@ -234,27 +287,36 @@ pub async fn exec_ex(
     args: &clap::ArgMatches,
     extract_descriptions: ExtractDescriptions,
     quiet_config: bool,
+    pre_loaded_config: Option<&LoadedConfig>,
 ) -> anyhow::Result<()> {
     // Build schema
     let cmd = cli();
     let schema = build_generate_config_schema(&cmd)?;
 
     let no_config = args.get_flag("no_config");
+    let env = args.get_one::<String>("env").map(|s| s.as_str());
 
     // Get generate configs (from spacetime.json or empty)
-    let spacetime_config_opt = if no_config {
+    let owned_loaded;
+    let loaded_config_ref = if no_config {
         None
+    } else if let Some(pre) = pre_loaded_config {
+        Some(pre)
     } else {
-        SpacetimeConfig::find_and_load()?
+        owned_loaded = find_and_load_with_env(env)?;
+        owned_loaded.as_ref().inspect(|loaded| {
+            if !quiet_config {
+                for path in &loaded.loaded_files {
+                    println!("Using configuration from {}", path.display());
+                }
+            }
+        })
     };
-    let (using_config, generate_configs) = if let Some((config_path, ref spacetime_config)) = spacetime_config_opt {
-        if !quiet_config {
-            println!("Using configuration from {}", config_path.display());
-        }
-        let filtered = get_filtered_generate_configs(spacetime_config, &cmd, &schema, args)?;
+    let (using_config, generate_configs) = if let Some(loaded) = loaded_config_ref {
+        let filtered = get_filtered_generate_configs(&loaded.config, &cmd, &schema, args)?;
         if filtered.is_empty() {
             anyhow::bail!(
-                "No matching target found in spacetime.json for the provided arguments. \
+                "No matching generate target found in spacetime.json for the provided arguments. \
                  Use --no-config to ignore the config file."
             );
         }
@@ -294,7 +356,7 @@ pub async fn exec_ex(
         let namespace = command_config
             .get_one::<String>("namespace")?
             .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
-        let module_name = command_config.get_one::<String>("module_name")?;
+        let module_name = command_config.get_one::<String>("unreal_module_name")?;
         let force = args.get_flag("force");
         let build_options = command_config
             .get_one::<String>("build_options")?
@@ -333,7 +395,7 @@ pub async fn exec_ex(
                     return Err(anyhow::anyhow!("--uproject-dir is required for --lang unrealcpp"));
                 }
                 if module_name.is_none() {
-                    return Err(anyhow::anyhow!("--module-name is required for --lang unrealcpp"));
+                    return Err(anyhow::anyhow!("--unreal-module-name is required for --lang unrealcpp"));
                 }
             }
         }
@@ -539,194 +601,196 @@ mod tests {
     use crate::spacetime_config::*;
     use std::collections::HashMap;
 
-    // get_filtered_generate_configs Tests
-
-    #[test]
-    fn test_filter_by_module_path_from_cli() {
-        use tempfile::TempDir;
-        let temp = TempDir::new().unwrap();
-        let module1 = temp.path().join("module1");
-        let module2 = temp.path().join("module2");
-        std::fs::create_dir_all(&module1).unwrap();
-        std::fs::create_dir_all(&module2).unwrap();
-
-        let cmd = cli();
-        let schema = build_generate_config_schema(&cmd).unwrap();
-
-        let mut config1 = HashMap::new();
-        config1.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
-        config1.insert(
-            "module_path".to_string(),
-            serde_json::Value::String(module1.display().to_string()),
-        );
-        config1.insert(
-            "out_dir".to_string(),
-            serde_json::Value::String("/tmp/out1".to_string()),
-        );
-
-        let mut config2 = HashMap::new();
-        config2.insert(
-            "language".to_string(),
-            serde_json::Value::String("typescript".to_string()),
-        );
-        config2.insert(
-            "module_path".to_string(),
-            serde_json::Value::String(module2.display().to_string()),
-        );
-        config2.insert(
-            "out_dir".to_string(),
-            serde_json::Value::String("/tmp/out2".to_string()),
-        );
-
-        let spacetime_config = SpacetimeConfig {
-            generate: Some(vec![config1, config2]),
+    /// Helper to build a SpacetimeConfig with generate entries (database-centric)
+    fn make_gen_config(
+        fields: HashMap<String, serde_json::Value>,
+        generate: Vec<HashMap<String, serde_json::Value>>,
+    ) -> SpacetimeConfig {
+        SpacetimeConfig {
+            generate: Some(generate),
+            additional_fields: fields,
             ..Default::default()
-        };
-
-        // Filter by module1
-        let matches = cmd.clone().get_matches_from(vec![
-            "generate",
-            "--module-path",
-            module1.to_str().unwrap(),
-            "--lang",
-            "rust",
-            "--out-dir",
-            "/tmp/out",
-        ]);
-
-        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
-
-        // The filtering should match module1 config only
-        assert_eq!(
-            filtered.len(),
-            1,
-            "Expected 1 config but got {}. Filter should only match module1.",
-            filtered.len()
-        );
-
-        // Verify it's the correct config (module1)
-        let filtered_module_path = filtered[0].get_one::<PathBuf>("module_path").unwrap().unwrap();
-        assert_eq!(filtered_module_path, module1);
+        }
     }
 
     #[test]
-    fn test_no_filter_when_module_path_not_from_cli() {
+    fn test_filter_by_database_name() {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let mut config1 = HashMap::new();
-        config1.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
-        config1.insert(
-            "module_path".to_string(),
-            serde_json::Value::String("./module1".to_string()),
-        );
-        config1.insert(
-            "out_dir".to_string(),
-            serde_json::Value::String("/tmp/out1".to_string()),
-        );
+        let mut db1_fields = HashMap::new();
+        db1_fields.insert("database".to_string(), serde_json::json!("db1"));
+        db1_fields.insert("module-path".to_string(), serde_json::json!("./module1"));
 
-        let mut config2 = HashMap::new();
-        config2.insert(
-            "language".to_string(),
-            serde_json::Value::String("typescript".to_string()),
-        );
-        config2.insert(
-            "module_path".to_string(),
-            serde_json::Value::String("./module2".to_string()),
-        );
-        config2.insert(
-            "out_dir".to_string(),
-            serde_json::Value::String("/tmp/out2".to_string()),
-        );
+        let gen1 = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("rust"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out1"));
+            m
+        };
+
+        let mut db2_fields = HashMap::new();
+        db2_fields.insert("database".to_string(), serde_json::json!("db2"));
+        db2_fields.insert("module-path".to_string(), serde_json::json!("./module2"));
+
+        let gen2 = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("typescript"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out2"));
+            m
+        };
 
         let spacetime_config = SpacetimeConfig {
-            generate: Some(vec![config1, config2]),
+            children: Some(vec![
+                make_gen_config(db1_fields, vec![gen1]),
+                make_gen_config(db2_fields, vec![gen2]),
+            ]),
             ..Default::default()
         };
 
-        // No module_path provided via CLI
+        // Filter by db1
+        let matches = cmd.clone().get_matches_from(vec!["generate", "db1"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 1, "Should only match db1's generate entry");
+    }
+
+    #[test]
+    fn test_no_filter_returns_all_generate_entries() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let mut fields = HashMap::new();
+        fields.insert("module-path".to_string(), serde_json::json!("./module"));
+
+        let gen1 = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("rust"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out1"));
+            m
+        };
+        let gen2 = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("typescript"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out2"));
+            m
+        };
+
+        let spacetime_config = make_gen_config(fields, vec![gen1, gen2]);
+
         let matches = cmd.clone().get_matches_from(vec!["generate"]);
         let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
-        // Should return all configs
         assert_eq!(filtered.len(), 2);
     }
 
     #[test]
-    fn test_path_normalization_in_filtering() {
-        use tempfile::TempDir;
-        let temp = TempDir::new().unwrap();
-        let module_dir = temp.path().join("mymodule");
-        std::fs::create_dir_all(&module_dir).unwrap();
-
+    fn test_generate_entry_inherits_module_path_from_parent() {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        // Config uses absolute path
-        let mut config = HashMap::new();
-        config.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
-        config.insert(
-            "module_path".to_string(),
-            serde_json::Value::String(module_dir.display().to_string()),
-        );
-        config.insert("out_dir".to_string(), serde_json::Value::String("/tmp/out".to_string()));
+        let mut parent_fields = HashMap::new();
+        parent_fields.insert("module-path".to_string(), serde_json::json!("./server"));
+
+        let mut child_fields = HashMap::new();
+        child_fields.insert("database".to_string(), serde_json::json!("my-db"));
+
+        let gen = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("rust"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
+            m
+        };
 
         let spacetime_config = SpacetimeConfig {
-            generate: Some(vec![config]),
+            additional_fields: parent_fields,
+            children: Some(vec![make_gen_config(child_fields, vec![gen])]),
             ..Default::default()
         };
 
-        // CLI uses path with ./ and ..
-        let cli_path = module_dir.join("..").join("mymodule");
-        let matches = cmd.clone().get_matches_from(vec![
-            "generate",
-            "--module-path",
-            cli_path.to_str().unwrap(),
-            "--lang",
-            "rust",
-            "--out-dir",
-            "/tmp/out",
-        ]);
+        let matches = cmd.clone().get_matches_from(vec!["generate", "my-db"]);
         let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
 
-        // Should match despite different path representations
         assert_eq!(filtered.len(), 1);
+        // module_path should be inherited from parent
+        assert_eq!(
+            filtered[0].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./server"))
+        );
     }
 
     #[test]
-    fn test_module_specific_args_error_with_multiple_targets() {
+    fn test_generate_deduplication() {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let mut config1 = HashMap::new();
-        config1.insert("language".to_string(), serde_json::Value::String("rust".to_string()));
-        config1.insert(
-            "module_path".to_string(),
-            serde_json::Value::String("./module1".to_string()),
-        );
-        config1.insert(
-            "out_dir".to_string(),
-            serde_json::Value::String("/tmp/out1".to_string()),
-        );
+        let gen = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("typescript"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
+            m
+        };
 
-        let mut config2 = HashMap::new();
-        config2.insert(
-            "language".to_string(),
-            serde_json::Value::String("typescript".to_string()),
-        );
-        config2.insert(
-            "module_path".to_string(),
-            serde_json::Value::String("./module2".to_string()),
-        );
-        config2.insert(
-            "out_dir".to_string(),
-            serde_json::Value::String("/tmp/out2".to_string()),
-        );
+        let mut parent_fields = HashMap::new();
+        parent_fields.insert("module-path".to_string(), serde_json::json!("./server"));
 
         let spacetime_config = SpacetimeConfig {
-            generate: Some(vec![config1, config2]),
+            additional_fields: parent_fields,
+            generate: Some(vec![gen]),
+            children: Some(vec![
+                {
+                    let mut f = HashMap::new();
+                    f.insert("database".to_string(), serde_json::json!("region-1"));
+                    SpacetimeConfig {
+                        additional_fields: f,
+                        ..Default::default()
+                    }
+                },
+                {
+                    let mut f = HashMap::new();
+                    f.insert("database".to_string(), serde_json::json!("region-2"));
+                    SpacetimeConfig {
+                        additional_fields: f,
+                        ..Default::default()
+                    }
+                },
+            ]),
             ..Default::default()
         };
+
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        // Same module-path + same generate entry = deduplicated
+        assert_eq!(
+            filtered.len(),
+            1,
+            "Expected deduplication: same module + same generate config = generate once"
+        );
+    }
+
+    #[test]
+    fn test_generate_entry_specific_args_error_with_multiple_entries() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let mut fields = HashMap::new();
+        fields.insert("module-path".to_string(), serde_json::json!("./module"));
+
+        let gen1 = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("rust"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out1"));
+            m
+        };
+        let gen2 = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("typescript"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out2"));
+            m
+        };
+
+        let spacetime_config = make_gen_config(fields, vec![gen1, gen2]);
 
         let matches = cmd
             .clone()
@@ -736,10 +800,6 @@ mod tests {
         assert!(
             err_msg.contains("--out-dir"),
             "Expected error to mention --out-dir, got: {err_msg}"
-        );
-        assert!(
-            err_msg.contains("multiple targets"),
-            "Expected error to mention multiple targets, got: {err_msg}"
         );
     }
 
@@ -760,7 +820,6 @@ mod tests {
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        // The error should be about missing output directory
         assert!(
             err_msg.contains("--out-dir") || err_msg.contains("--uproject-dir"),
             "Expected error about missing output directory, got: {err_msg}"
@@ -768,7 +827,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_unrealcpp_requires_uproject_dir_and_module_name() {
+    async fn test_unrealcpp_requires_uproject_dir_and_unreal_module_name() {
         use crate::config::Config;
         use spacetimedb_paths::cli::CliTomlPath;
         use spacetimedb_paths::FromPathUnchecked;
@@ -776,7 +835,7 @@ mod tests {
         let cmd = cli();
         let config = Config::new_with_localhost(CliTomlPath::from_path_unchecked("/tmp/test-config.toml"));
 
-        // Test missing --uproject-dir
+        // Test missing --uproject-dir (use alias --module-name for backwards compat)
         let matches =
             cmd.clone()
                 .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--module-name", "MyModule"]);
@@ -789,7 +848,7 @@ mod tests {
             "Expected error about missing --uproject-dir or --out-dir, got: {err_msg}",
         );
 
-        // Test missing --module-name (provide --uproject-dir so that check passes first)
+        // Test missing --unreal-module-name
         let matches = cmd
             .clone()
             .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--uproject-dir", "/tmp/out"]);
@@ -798,8 +857,8 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("--module-name is required for --lang unrealcpp"),
-            "Expected error about missing --module-name, got: {err_msg}"
+            err_msg.contains("--unreal-module-name is required for --lang unrealcpp"),
+            "Expected error about missing --unreal-module-name, got: {err_msg}"
         );
     }
 
@@ -819,16 +878,15 @@ mod tests {
             serde_json::Value::String("/config/path".to_string()),
         );
 
-        // CLI provides module_name
+        // CLI provides unreal_module_name (via alias --module-name)
         let matches =
             cmd.clone()
                 .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--module-name", "MyModule"]);
 
         let command_config = CommandConfig::new(&schema, config, &matches).unwrap();
 
-        // Both should be available (one from CLI, one from config)
         let uproject_dir = command_config.get_one::<PathBuf>("uproject_dir").unwrap();
-        let module_name = command_config.get_one::<String>("module_name").unwrap();
+        let module_name = command_config.get_one::<String>("unreal_module_name").unwrap();
 
         assert_eq!(uproject_dir, Some(PathBuf::from("/config/path")));
         assert_eq!(module_name, Some("MyModule".to_string()));

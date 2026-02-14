@@ -1,7 +1,9 @@
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
-use crate::spacetime_config::{detect_client_command, CommandConfig, CommandSchema, SpacetimeConfig};
+use crate::spacetime_config::{
+    detect_client_command, find_and_load_with_env_from, CommandConfig, CommandSchema, SpacetimeConfig,
+};
 use crate::subcommands::init;
 use crate::util::{
     add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
@@ -108,6 +110,24 @@ pub fn cli() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .help("Ignore spacetime.json configuration"),
         )
+        .arg(
+            Arg::new("env")
+                .long("env")
+                .value_name("ENV")
+                .help("Environment name for config file layering (e.g., dev, staging). Defaults to 'dev'."),
+        )
+        .arg(
+            Arg::new("skip_publish")
+                .long("skip-publish")
+                .action(clap::ArgAction::SetTrue)
+                .help("Skip the publish step"),
+        )
+        .arg(
+            Arg::new("skip_generate")
+                .long("skip-generate")
+                .action(clap::ArgAction::SetTrue)
+                .help("Skip the generate step"),
+        )
 }
 
 #[derive(Deserialize)]
@@ -161,19 +181,30 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     };
 
     let no_config = args.get_flag("no_config");
+    let skip_publish = args.get_flag("skip_publish");
+    let skip_generate = args.get_flag("skip_generate");
+
+    // --env defaults to "dev" for spacetime dev
+    let env = args
+        .get_one::<String>("env")
+        .map(|s| s.as_str())
+        .unwrap_or("dev");
 
     // Load spacetime.json config early so we can use it for determining project
     // directories
-    let spacetime_config = if no_config {
+    let loaded_config = if no_config {
         None
     } else {
-        SpacetimeConfig::load_from_dir(&project_dir)
+        find_and_load_with_env_from(Some(env), project_dir.clone())
             .with_context(|| "Failed to load spacetime.json")?
     };
+    let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
     let using_spacetime_config = spacetime_config.is_some();
-    let has_publish_targets_in_config = spacetime_config.as_ref().and_then(|c| c.publish.as_ref()).is_some();
+    // A config has publish targets if it has a "database" field or children
+    let has_publish_targets_in_config = spacetime_config
+        .map(|c| c.additional_fields.contains_key("database") || c.children.is_some())
+        .unwrap_or(false);
     let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> = spacetime_config
-        .as_ref()
         .and_then(|c| c.generate.clone())
         .unwrap_or_default();
     let has_generate_targets_in_config = !generate_configs_from_file.is_empty();
@@ -237,7 +268,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let mut publish_configs = determine_publish_configs(
         database_name_from_cli,
-        spacetime_config.as_ref(),
+        spacetime_config,
         &publish_cmd,
         &publish_schema,
         &publish_args,
@@ -359,10 +390,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Either because --server maincloud was provided, or because any of the publish configs use maincloud
     let needs_maincloud_login = resolved_server == "maincloud"
         || spacetime_config
-            .as_ref()
-            .and_then(|c| c.publish.as_ref())
-            .map(|publish| {
-                publish.iter_all_targets().any(|target| {
+            .map(|c| {
+                c.iter_all_targets().any(|target| {
                     target
                         .additional_fields
                         .get("server")
@@ -405,15 +434,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else if let Some(cmd) = args.get_one::<String>("run") {
         // Explicit CLI flag takes priority
         Some(cmd.clone())
-    } else if let Some(ref config) = spacetime_config {
+    } else if let Some(sc) = spacetime_config {
         // Reuse already-loaded config instead of loading again
-        let config_path = project_dir.join("spacetime.json");
-        println!("{} Using configuration from {}", "✓".green(), config_path.display());
+        if let Some(ref lc) = loaded_config {
+            let files: Vec<_> = lc.loaded_files.iter().map(|f| f.display().to_string()).collect();
+            println!("{} Using configuration from {}", "✓".green(), files.join(", "));
+        }
 
-        if config.dev.as_ref().and_then(|d| d.run.as_ref()).is_none() {
-            detect_and_save_client_command(&project_dir, Some(config.clone()))
+        if sc.dev.as_ref().and_then(|d| d.run.as_ref()).is_none() {
+            detect_and_save_client_command(&project_dir, Some(sc.clone()))
         } else {
-            config.dev.as_ref().and_then(|d| d.run.clone())
+            sc.dev.as_ref().and_then(|d| d.run.clone())
         }
     } else {
         // No config file - try to detect and create new
@@ -459,6 +490,27 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     }
 
+    // Safety prompt: warn if publishing from spacetime.json (not a dev-specific config)
+    if let Some(ref lc) = loaded_config {
+        if !lc.has_dev_file && !force {
+            eprintln!(
+                "{} Publishing from spacetime.json (not a dev-specific config).",
+                "Warning:".yellow().bold()
+            );
+            eprintln!(
+                "{}",
+                "Consider creating spacetime.dev.json for development settings.".dimmed()
+            );
+            let should_continue = Confirm::new()
+                .with_prompt("Continue?")
+                .default(true)
+                .interact()?;
+            if !should_continue {
+                anyhow::bail!("Aborted.");
+            }
+        }
+    }
+
     if let Some(ref cmd) = client_command {
         println!("Client command: {}", cmd.cyan());
     }
@@ -477,6 +529,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         using_spacetime_config,
         server_from_cli,
         force,
+        skip_publish,
+        skip_generate,
     )
     .await?;
 
@@ -582,6 +636,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 using_spacetime_config,
                 server_from_cli,
                 force,
+                skip_publish,
+                skip_generate,
             )
             .await
             {
@@ -597,7 +653,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
 fn determine_publish_configs<'a>(
     database_name: Option<String>,
-    spacetime_config: Option<&'a SpacetimeConfig>,
+    spacetime_config: Option<&SpacetimeConfig>,
     publish_cmd: &Command,
     publish_schema: &'a CommandSchema,
     publish_args: &'a ArgMatches,
@@ -609,8 +665,8 @@ fn determine_publish_configs<'a>(
     let mut publish_configs: Vec<CommandConfig> = vec![];
 
     if let Some(config) = spacetime_config {
-        // Get and filter publish configs
-        if config.publish.is_some() {
+        // Get and filter publish configs if the config has database targets
+        if config.additional_fields.contains_key("database") || config.children.is_some() {
             publish_configs = publish::get_filtered_publish_configs(config, publish_cmd, publish_schema, publish_args)?;
         }
     }
@@ -693,13 +749,17 @@ async fn generate_build_and_publish(
     using_spacetime_config: bool,
     server: Option<&str>,
     yes: bool,
+    skip_publish: bool,
+    skip_generate: bool,
 ) -> Result<(), anyhow::Error> {
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) =
         tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
-    if using_spacetime_config {
+    if skip_generate {
+        println!("{}", "Skipping generate step (--skip-generate).".dimmed());
+    } else if using_spacetime_config {
         if generate_configs.is_empty() {
             println!(
                 "{}",
@@ -717,6 +777,7 @@ async fn generate_build_and_publish(
                 &generate_args,
                 crate::generate::extract_descriptions,
                 true,
+                None,
             )
             .await?;
         }
@@ -781,8 +842,14 @@ async fn generate_build_and_publish(
             &generate_args,
             crate::generate::extract_descriptions,
             true,
+            None,
         )
         .await?;
+    }
+
+    if skip_publish {
+        println!("{}", "Skipping publish step (--skip-publish).".dimmed());
+        return Ok(());
     }
 
     println!("{}", "Publishing...".cyan());
@@ -1257,15 +1324,13 @@ mod tests {
     fn test_detect_and_save_preserves_existing_config() {
         let temp = TempDir::new().unwrap();
 
-        // Create a config with generate and publish but no dev-run
+        // Create a database-centric config with generate but no dev-run
         let initial_config = r#"{
+            "database": "test-db",
+            "server": "maincloud",
             "generate": [
                 { "out-dir": "./foo-client/src/module_bindings", "module-path": "foo", "language": "rust" }
-            ],
-            "publish": {
-                "database": "test-db",
-                "server": "maincloud"
-            }
+            ]
         }"#;
 
         let config_path = temp.path().join("spacetime.json");
@@ -1284,7 +1349,10 @@ mod tests {
         let loaded_config = SpacetimeConfig::load(&config_path).unwrap();
         assert!(loaded_config.dev.is_none());
         assert!(loaded_config.generate.is_some());
-        assert!(loaded_config.publish.is_some());
+        assert_eq!(
+            loaded_config.additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("test-db")
+        );
 
         // Call detect_and_save_client_command which should detect "npm run dev"
         let detected = detect_and_save_client_command(temp.path(), Some(loaded_config));
@@ -1297,7 +1365,16 @@ mod tests {
             "dev.run should be set"
         );
         assert!(reloaded_config.generate.is_some(), "generate field should be preserved");
-        assert!(reloaded_config.publish.is_some(), "publish field should be preserved");
+        assert_eq!(
+            reloaded_config.additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("test-db"),
+            "database field should be preserved"
+        );
+        assert_eq!(
+            reloaded_config.additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("maincloud"),
+            "server field should be preserved"
+        );
 
         // Verify the generate array has the expected content
         let generate = reloaded_config.generate.unwrap();
@@ -1305,13 +1382,6 @@ mod tests {
         assert_eq!(
             generate[0].get("out-dir").unwrap().as_str().unwrap(),
             "./foo-client/src/module_bindings"
-        );
-
-        // Verify the publish object has the expected content
-        let publish = reloaded_config.publish.unwrap();
-        assert_eq!(
-            publish.additional_fields.get("database").unwrap().as_str().unwrap(),
-            "test-db"
         );
     }
 }
