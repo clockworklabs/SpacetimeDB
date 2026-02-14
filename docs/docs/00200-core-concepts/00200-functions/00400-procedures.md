@@ -129,7 +129,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureCtx.withTx`.
 
 ```typescript
-const MyTable = table(
+const myTable = table(
     { name: "my_table" },
     {
         a: t.u32(),
@@ -137,7 +137,7 @@ const MyTable = table(
     },
 )
 
-const spacetimedb = schema(MyTable);
+const spacetimedb = schema({ myTable });
 export default spacetimedb;
 
 export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
@@ -429,7 +429,7 @@ may return a value, and that value will be returned to the calling procedure.
 Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
 
 ```typescript
-const Player = table(
+const player = table(
     { name: "player" },
     {
         id: t.identity(),
@@ -437,7 +437,7 @@ const Player = table(
     },
 );
 
-const spacetimedb = schema(Player);
+const spacetimedb = schema({ player });
 export default spacetimedb;
 
 export const find_highest_level_player = spacetimedb.procedure(t.unit(), ctx => {
@@ -1190,7 +1190,7 @@ A common use case for procedures is integrating with external APIs like OpenAI's
 ```typescript
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 
-const AiMessage = table(
+const aiMessage = table(
   { name: 'ai_message', public: true },
   {
     user: t.identity(),
@@ -1200,7 +1200,7 @@ const AiMessage = table(
   }
 );
 
-const spacetimedb = schema(AiMessage);
+const spacetimedb = schema({ aiMessage });
 export default spacetimedb;
 
 export const ask_ai = spacetimedb.procedure(

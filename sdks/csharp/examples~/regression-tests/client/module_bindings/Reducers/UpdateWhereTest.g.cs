@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void UpdateWhereTest(uint id, uint value, string name)
         {
-            conn.InternalCallReducer(new Reducer.UpdateWhereTest(id, value, name), this.SetCallReducerFlags.UpdateWhereTestFlags);
+            conn.InternalCallReducer(new Reducer.UpdateWhereTest(id, value, name));
         }
 
         public bool InvokeUpdateWhereTest(ReducerEventContext ctx, Reducer.UpdateWhereTest args)
@@ -75,11 +75,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "UpdateWhereTest";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags UpdateWhereTestFlags;
-        public void UpdateWhereTest(CallReducerFlags flags) => UpdateWhereTestFlags = flags;
     }
 }

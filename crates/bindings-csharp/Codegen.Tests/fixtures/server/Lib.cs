@@ -94,7 +94,7 @@ public partial record CustomTaggedEnum
         string? NullableStringVariant
     )>;
 
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Event = true)]
 public partial class PrivateTable { }
 
 [SpacetimeDB.Table(Public = true)]

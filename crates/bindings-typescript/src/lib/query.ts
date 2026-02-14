@@ -2,25 +2,28 @@ import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
 import type { UntypedSchemaDef } from './schema';
-import type { TableSchema } from './table_schema';
+import type { UntypedTableSchema } from './table_schema';
 import type {
   ColumnBuilder,
   ColumnMetadata,
   RowBuilder,
   TypeBuilder,
 } from './type_builders';
+import type { Values } from './type_util';
 
 /**
  * Helper to get the set of table names.
  */
-export type TableNames<SchemaDef extends UntypedSchemaDef> =
-  SchemaDef['tables'][number]['name'] & string;
+export type TableNames<SchemaDef extends UntypedSchemaDef> = Values<
+  SchemaDef['tables']
+>['accessorName'] &
+  string;
 
 /** helper: pick the table def object from the schema by its name */
 export type TableDefByName<
   SchemaDef extends UntypedSchemaDef,
   Name extends TableNames<SchemaDef>,
-> = Extract<SchemaDef['tables'][number], { name: Name }>;
+> = Extract<Values<SchemaDef['tables']>, { accessorName: Name }>;
 
 // internal only — NOT exported.
 // This is how we make sure queries are only created with our helpers.
@@ -105,7 +108,7 @@ class SemijoinImpl<TableDef extends TypedTableDef>
     readonly filterQuery: FromBuilder<any>,
     readonly joinCondition: BooleanExpr<any>
   ) {
-    if (sourceQuery.table.name === filterQuery.table.name) {
+    if (sourceQuery.table.sourceName === filterQuery.table.sourceName) {
       // TODO: Handle aliasing properly instead of just forbidding it.
       throw new Error('Cannot semijoin a table to itself');
     }
@@ -129,8 +132,8 @@ class SemijoinImpl<TableDef extends TypedTableDef>
   toSql(): string {
     const left = this.filterQuery;
     const right = this.sourceQuery;
-    const leftTable = quoteIdentifier(left.table.name);
-    const rightTable = quoteIdentifier(right.table.name);
+    const leftTable = quoteIdentifier(left.table.sourceName);
+    const rightTable = quoteIdentifier(right.table.sourceName);
     let sql = `SELECT ${rightTable}.* FROM ${leftTable} JOIN ${rightTable} ON ${booleanExprToSql(this.joinCondition)}`;
 
     const clauses: string[] = [];
@@ -212,8 +215,9 @@ class FromBuilder<TableDef extends TypedTableDef>
 }
 
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in SchemaDef['tables'][number] as Tbl['accessorName']]: TableRef<Tbl> &
-    From<Tbl>;
+  readonly [Tbl in Values<
+    SchemaDef['tables']
+  > as Tbl['accessorName']]: TableRef<Tbl> & From<Tbl>;
 } & {};
 
 /**
@@ -222,7 +226,7 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
  */
 export type TableRef<TableDef extends TypedTableDef> = Readonly<{
   type: 'table';
-  name: TableDef['name'];
+  sourceName: TableDef['sourceName'];
   accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
@@ -239,7 +243,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
 {
   readonly [QueryBrand] = true;
   readonly type = 'table' as const;
-  name: string;
+  sourceName: string;
   accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
@@ -258,7 +262,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
     return (this.tableDef as any).constraints;
   }
   constructor(tableDef: TableDef) {
-    this.name = tableDef.name;
+    this.sourceName = tableDef.sourceName;
     this.accessorName = tableDef.accessorName;
     this.cols = createRowExpr(tableDef);
     // this.indexedCols = createIndexedRowExpr(tableDef, this.cols);
@@ -319,7 +323,7 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
   schema: SchemaDef
 ): QueryBuilder<SchemaDef> {
   const qb = Object.create(null) as QueryBuilder<SchemaDef>;
-  for (const table of schema.tables) {
+  for (const table of Object.values(schema.tables)) {
     const ref = createTableRefFromDef(
       table as TableDefByName<SchemaDef, TableNames<SchemaDef>>
     );
@@ -337,7 +341,7 @@ function createRowExpr<TableDef extends TypedTableDef>(
   >) {
     const columnBuilder = tableDef.columns[columnName];
     const column = new ColumnExpression<TableDef, typeof columnName>(
-      tableDef.name,
+      tableDef.sourceName,
       columnName,
       columnBuilder.typeBuilder.algebraicType as InferSpacetimeTypeOfColumn<
         TableDef,
@@ -354,7 +358,7 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   where?: BooleanExpr<Table>,
   extraClauses: readonly string[] = []
 ): string {
-  const quotedTable = quoteIdentifier(table.name);
+  const quotedTable = quoteIdentifier(table.sourceName);
   const sql = `SELECT * FROM ${quotedTable}`;
   const clauses: string[] = [];
   if (where) clauses.push(booleanExprToSql(where));
@@ -372,16 +376,14 @@ export type TypedTableDef<
     ColumnBuilder<any, any, ColumnMetadata<any>>
   > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
 > = {
-  name: string;
+  sourceName: string;
   accessorName: string;
   columns: Columns;
   indexes: readonly IndexOpts<any>[];
   rowType: RowBuilder<Columns>['algebraicType']['value'];
 };
 
-export type TableSchemaAsTableDef<
-  TSchema extends TableSchema<any, any, readonly any[]>,
-> = {
+export type TableSchemaAsTableDef<TSchema extends UntypedTableSchema> = {
   name: TSchema['tableName'];
   columns: TSchema['rowType']['row'];
   indexes: TSchema['idxs'];
@@ -435,13 +437,13 @@ export class ColumnExpression<
 > {
   readonly type = 'column' as const;
   readonly column: ColumnName;
-  readonly table: TableDef['name'];
+  readonly table: TableDef['sourceName'];
   // phantom: actual runtime value is undefined
   readonly tsValueType?: RowType<TableDef>[ColumnName];
   readonly spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>;
 
   constructor(
-    table: TableDef['name'],
+    table: TableDef['sourceName'],
     column: ColumnName,
     spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>
   ) {

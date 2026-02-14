@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void SpawnFood(SpacetimeDB.Types.SpawnFoodTimer timer)
         {
-            conn.InternalCallReducer(new Reducer.SpawnFood(timer), this.SetCallReducerFlags.SpawnFoodFlags);
+            conn.InternalCallReducer(new Reducer.SpawnFood(timer));
         }
 
         public bool InvokeSpawnFood(ReducerEventContext ctx, Reducer.SpawnFood args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "spawn_food";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SpawnFoodFlags;
-        public void SpawnFood(CallReducerFlags flags) => SpawnFoodFlags = flags;
     }
 }

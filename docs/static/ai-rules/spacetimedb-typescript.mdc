@@ -156,7 +156,7 @@ const newId = row.id;  // Extract .id from returned row
 ### Schema export
 ```typescript
 // At end of schema.ts
-export const spacetimedb = schema(Table1, Table2, Table3);
+export const spacetimedb = schema({ table1, table2, table3 });
 ```
 
 ---
@@ -324,7 +324,7 @@ conn.reducers.doSomething({ param: 'value' });
 // Scheduled table MUST use scheduledId and scheduledAt columns
 export const CleanupJob = table({ 
   name: 'cleanup_job', 
-  scheduled: 'run_cleanup'  // reducer name
+  scheduled: (): any => run_cleanup  // reducer name
 }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),

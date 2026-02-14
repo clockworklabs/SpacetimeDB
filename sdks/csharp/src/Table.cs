@@ -271,18 +271,27 @@ namespace SpacetimeDB
         {
             var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
 
-            foreach (var cqu in update.Updates)
+            foreach (var rowSet in update.Rows)
             {
-                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
-                if (qu.Deletes.RowsData.Count > 0)
+                if (rowSet is TableUpdateRows.PersistentTable(var persistent))
                 {
-                    Log.Warn("Non-insert during an insert-only server message!");
+                    if (persistent.Deletes.RowsData.Count > 0)
+                    {
+                        Log.Warn("Non-insert during an insert-only server message!");
+                    }
+                    var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
+                    for (var i = 0; i < insertRowCount; i++)
+                    {
+                        var obj = Decode(insertReader, out var pk);
+                        delta.Delta.Add(pk, obj);
+                    }
                 }
-                var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(qu.Inserts);
-                for (var i = 0; i < insertRowCount; i++)
+                else if (rowSet is TableUpdateRows.EventTable(var events))
                 {
-                    var obj = Decode(insertReader, out var pk);
-                    delta.Delta.Add(pk, obj);
+                    if (events.Events.RowsData.Count > 0)
+                    {
+                        Log.Warn($"Event-table rows are not yet supported by the C# SDK; ignoring insert-only event rows for table `{RemoteTableName}`.");
+                    }
                 }
             }
         }
@@ -295,19 +304,27 @@ namespace SpacetimeDB
         void IRemoteTableHandle.ParseDeleteOnly(TableUpdate update, ParsedDatabaseUpdate dbOps)
         {
             var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
-            foreach (var cqu in update.Updates)
+            foreach (var rowSet in update.Rows)
             {
-                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
-                if (qu.Inserts.RowsData.Count > 0)
+                if (rowSet is TableUpdateRows.PersistentTable(var persistent))
                 {
-                    Log.Warn("Non-delete during a delete-only operation!");
+                    if (persistent.Inserts.RowsData.Count > 0)
+                    {
+                        Log.Warn("Non-delete during a delete-only operation!");
+                    }
+                    var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
+                    for (var i = 0; i < deleteRowCount; i++)
+                    {
+                        var obj = Decode(deleteReader, out var pk);
+                        delta.Delta.Remove(pk, obj);
+                    }
                 }
-
-                var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(qu.Deletes);
-                for (var i = 0; i < deleteRowCount; i++)
+                else if (rowSet is TableUpdateRows.EventTable(var events))
                 {
-                    var obj = Decode(deleteReader, out var pk);
-                    delta.Delta.Remove(pk, obj);
+                    if (events.Events.RowsData.Count > 0)
+                    {
+                        Log.Warn($"Event-table rows are not yet supported by the C# SDK; ignoring delete-only event rows for table `{RemoteTableName}`.");
+                    }
                 }
             }
         }
@@ -320,25 +337,32 @@ namespace SpacetimeDB
         void IRemoteTableHandle.Parse(TableUpdate update, ParsedDatabaseUpdate dbOps)
         {
             var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
-            foreach (var cqu in update.Updates)
+            foreach (var rowSet in update.Rows)
             {
-                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
-
-                // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
-                // to the table, it doesn't matter that we call Add before Remove here.
-
-                var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(qu.Inserts);
-                for (var i = 0; i < insertRowCount; i++)
+                if (rowSet is TableUpdateRows.PersistentTable(var persistent))
                 {
-                    var obj = Decode(insertReader, out var pk);
-                    delta.Delta.Add(pk, obj);
+                    // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
+                    // to the table, it doesn't matter that we call Add before Remove here.
+                    var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
+                    for (var i = 0; i < insertRowCount; i++)
+                    {
+                        var obj = Decode(insertReader, out var pk);
+                        delta.Delta.Add(pk, obj);
+                    }
+
+                    var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
+                    for (var i = 0; i < deleteRowCount; i++)
+                    {
+                        var obj = Decode(deleteReader, out var pk);
+                        delta.Delta.Remove(pk, obj);
+                    }
                 }
-
-                var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(qu.Deletes);
-                for (var i = 0; i < deleteRowCount; i++)
+                else if (rowSet is TableUpdateRows.EventTable(var events))
                 {
-                    var obj = Decode(deleteReader, out var pk);
-                    delta.Delta.Remove(pk, obj);
+                    if (events.Events.RowsData.Count > 0)
+                    {
+                        Log.Warn($"Event-table rows are not yet supported by the C# SDK; ignoring event rows for table `{RemoteTableName}`.");
+                    }
                 }
             }
 
