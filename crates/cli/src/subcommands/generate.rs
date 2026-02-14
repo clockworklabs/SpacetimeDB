@@ -893,6 +893,144 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_dedup_with_inherited_generate_from_parent() {
+        // Two sibling databases inheriting the same generate + same module-path from parent
+        // should deduplicate to a single generate entry
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let gen = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("typescript"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/bindings"));
+            m
+        };
+
+        let mut parent_fields = HashMap::new();
+        parent_fields.insert("module-path".to_string(), serde_json::json!("./server"));
+
+        let spacetime_config = SpacetimeConfig {
+            additional_fields: parent_fields,
+            generate: Some(vec![gen]),
+            children: Some(vec![
+                {
+                    let mut f = HashMap::new();
+                    f.insert("database".to_string(), serde_json::json!("region-1"));
+                    SpacetimeConfig {
+                        additional_fields: f,
+                        ..Default::default()
+                    }
+                },
+                {
+                    let mut f = HashMap::new();
+                    f.insert("database".to_string(), serde_json::json!("region-2"));
+                    SpacetimeConfig {
+                        additional_fields: f,
+                        ..Default::default()
+                    }
+                },
+            ]),
+            ..Default::default()
+        };
+
+        // No filter — all 3 targets (parent + 2 children) share same module-path + same generate
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        // Should be deduplicated to 1 entry since all have same (module_path, generate_entry)
+        assert_eq!(
+            filtered.len(),
+            1,
+            "Inherited generate entries with same module-path should be deduplicated"
+        );
+    }
+
+    #[test]
+    fn test_generate_glob_filter_matches_pattern() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let gen = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("rust"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
+            m
+        };
+
+        let spacetime_config = SpacetimeConfig {
+            children: Some(vec![
+                make_gen_config(
+                    {
+                        let mut m = HashMap::new();
+                        m.insert("database".to_string(), serde_json::json!("region-1"));
+                        m.insert("module-path".to_string(), serde_json::json!("./m1"));
+                        m
+                    },
+                    vec![gen.clone()],
+                ),
+                make_gen_config(
+                    {
+                        let mut m = HashMap::new();
+                        m.insert("database".to_string(), serde_json::json!("region-2"));
+                        m.insert("module-path".to_string(), serde_json::json!("./m2"));
+                        m
+                    },
+                    vec![gen.clone()],
+                ),
+                make_gen_config(
+                    {
+                        let mut m = HashMap::new();
+                        m.insert("database".to_string(), serde_json::json!("global"));
+                        m.insert("module-path".to_string(), serde_json::json!("./m3"));
+                        m
+                    },
+                    vec![gen],
+                ),
+            ]),
+            ..Default::default()
+        };
+
+        // Glob: region-* should match region-1 and region-2 but not global
+        let matches = cmd.clone().get_matches_from(vec!["generate", "region-*"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        // region-1 and region-2 have different module-paths, so no dedup → 2 entries
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_generate_error_when_glob_matches_nothing() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let gen = {
+            let mut m = HashMap::new();
+            m.insert("language".to_string(), serde_json::json!("rust"));
+            m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
+            m
+        };
+
+        let spacetime_config = make_gen_config(
+            {
+                let mut m = HashMap::new();
+                m.insert("database".to_string(), serde_json::json!("my-db"));
+                m.insert("module-path".to_string(), serde_json::json!("./server"));
+                m
+            },
+            vec![gen],
+        );
+
+        let matches = cmd.clone().get_matches_from(vec!["generate", "nonexistent-*"]);
+        let result = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("No database target matches"),
+            "Error should mention no match, got: {err_msg}"
+        );
+    }
+
+    #[test]
     fn test_language_serde_deserialize_all_variants() {
         // Verify all Language variants deserialize correctly from config JSON strings.
         // This catches drift between the serde and clap ValueEnum impls.

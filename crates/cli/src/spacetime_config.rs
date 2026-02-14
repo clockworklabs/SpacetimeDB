@@ -2633,4 +2633,240 @@ mod tests {
             Some("local")
         );
     }
+
+    #[test]
+    fn test_multi_level_env_layering_staging() {
+        // Full overlay order: base → staging → local → staging.local
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        // Base config
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{ "database": "base-db", "server": "local", "module-path": "./server" }"#,
+        )
+        .unwrap();
+
+        // Staging env overlay
+        fs::write(
+            root.join("spacetime.staging.json"),
+            r#"{ "server": "staging-server", "database": "staging-db" }"#,
+        )
+        .unwrap();
+
+        // Local overlay (applies after env)
+        fs::write(
+            root.join("spacetime.local.json"),
+            r#"{ "database": "local-override-db" }"#,
+        )
+        .unwrap();
+
+        // Staging local overlay (applies last)
+        fs::write(
+            root.join("spacetime.staging.local.json"),
+            r#"{ "database": "staging-local-db" }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(Some("staging"), root.to_path_buf())
+            .unwrap()
+            .unwrap();
+
+        // database: base-db → staging-db → local-override-db → staging-local-db
+        assert_eq!(
+            result.config.additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("staging-local-db")
+        );
+        // server: local → staging-server (not overridden by local files)
+        assert_eq!(
+            result.config.additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("staging-server")
+        );
+        // module-path: only in base, preserved through all overlays
+        assert_eq!(
+            result.config.additional_fields.get("module-path").and_then(|v| v.as_str()),
+            Some("./server")
+        );
+        // 4 files loaded
+        assert_eq!(result.loaded_files.len(), 4);
+    }
+
+    #[test]
+    fn test_has_dev_file_false_for_non_dev_env() {
+        // has_dev_file should only be true for env="dev", not for other envs
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{ "database": "my-db" }"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("spacetime.staging.json"),
+            r#"{ "server": "staging" }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(Some("staging"), root.to_path_buf())
+            .unwrap()
+            .unwrap();
+        assert!(
+            !result.has_dev_file,
+            "has_dev_file should be false for staging env"
+        );
+
+        // But dev env should set it
+        fs::write(
+            root.join("spacetime.dev.json"),
+            r#"{ "server": "local" }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(Some("dev"), root.to_path_buf())
+            .unwrap()
+            .unwrap();
+        assert!(
+            result.has_dev_file,
+            "has_dev_file should be true for dev env"
+        );
+    }
+
+    #[test]
+    fn test_dev_not_propagated_to_children() {
+        // dev is root-only and should NOT appear in child targets
+        let json = r#"{
+            "database": "parent-db",
+            "server": "local",
+            "dev": { "run": "npm run dev" },
+            "children": [
+                { "database": "child-db" }
+            ]
+        }"#;
+
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let targets = config.collect_all_targets_with_inheritance();
+
+        assert_eq!(targets.len(), 2);
+
+        // Parent should have database and server in fields
+        assert_eq!(
+            targets[0].fields.get("database").and_then(|v| v.as_str()),
+            Some("parent-db")
+        );
+
+        // Child should inherit server but NOT have dev in fields
+        assert_eq!(
+            targets[1].fields.get("database").and_then(|v| v.as_str()),
+            Some("child-db")
+        );
+        assert_eq!(
+            targets[1].fields.get("server").and_then(|v| v.as_str()),
+            Some("local")
+        );
+        // dev should not be in additional_fields of FlatTarget
+        assert!(
+            !targets[1].fields.contains_key("dev"),
+            "dev should not be propagated to children via additional_fields"
+        );
+        // Also verify parent's flat target doesn't leak dev into fields
+        assert!(
+            !targets[0].fields.contains_key("dev"),
+            "dev should not appear in FlatTarget fields (it's a typed field, not in additional_fields)"
+        );
+    }
+
+    #[test]
+    fn test_generate_dedup_with_inherited_generate() {
+        // Two sibling databases sharing parent's generate + same module path
+        // should deduplicate to a single generate entry
+        let json = r#"{
+            "module-path": "./server",
+            "generate": [
+                { "language": "typescript", "out-dir": "./client/src/bindings" }
+            ],
+            "children": [
+                { "database": "region-1" },
+                { "database": "region-2" }
+            ]
+        }"#;
+
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let targets = config.collect_all_targets_with_inheritance();
+
+        // All 3 targets (parent + 2 children) share the same module-path and generate
+        assert_eq!(targets.len(), 3);
+        for target in &targets {
+            assert_eq!(
+                target.fields.get("module-path").and_then(|v| v.as_str()),
+                Some("./server")
+            );
+            let gen = target.generate.as_ref().unwrap();
+            assert_eq!(gen.len(), 1);
+            assert_eq!(
+                gen[0].get("language").and_then(|v| v.as_str()),
+                Some("typescript")
+            );
+        }
+
+        // All have the same (module-path, generate) so dedup should reduce to 1
+        // (this is verified in generate.rs tests, but we confirm the data here)
+    }
+
+    #[test]
+    fn test_iter_all_targets_includes_self_and_descendants() {
+        let json = r#"{
+            "database": "root",
+            "children": [
+                {
+                    "database": "mid",
+                    "children": [
+                        { "database": "leaf" }
+                    ]
+                }
+            ]
+        }"#;
+
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let all: Vec<_> = config.iter_all_targets().collect();
+        assert_eq!(all.len(), 3);
+        assert_eq!(
+            all[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("root")
+        );
+        assert_eq!(
+            all[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("mid")
+        );
+        assert_eq!(
+            all[2].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("leaf")
+        );
+    }
+
+    #[test]
+    fn test_count_targets() {
+        let json = r#"{
+            "database": "root",
+            "children": [
+                { "database": "child-1" },
+                {
+                    "database": "child-2",
+                    "children": [
+                        { "database": "grandchild" }
+                    ]
+                }
+            ]
+        }"#;
+
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        assert_eq!(config.count_targets(), 4); // root + child-1 + child-2 + grandchild
+    }
 }

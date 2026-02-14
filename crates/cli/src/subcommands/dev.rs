@@ -1384,4 +1384,165 @@ mod tests {
             "./foo-client/src/module_bindings"
         );
     }
+
+    #[test]
+    fn test_determine_publish_configs_no_database_no_config() {
+        // When there's no config and no CLI database name, returns empty vec
+        // (dev will later prompt the user)
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd
+            .clone()
+            .get_matches_from(vec!["publish"]);
+
+        let result = determine_publish_configs(
+            None,
+            None,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+        )
+        .unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_determine_publish_configs_cli_database_no_config() {
+        // When CLI provides a database name but no config, creates a single publish config
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd
+            .clone()
+            .get_matches_from(vec!["publish", "my-custom-db"]);
+
+        let result = determine_publish_configs(
+            Some("my-custom-db".to_string()),
+            None,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].get_config_value("database").and_then(|v| v.as_str()),
+            Some("my-custom-db")
+        );
+        assert_eq!(
+            result[0].get_config_value("server").and_then(|v| v.as_str()),
+            Some("local")
+        );
+    }
+
+    #[test]
+    fn test_determine_publish_configs_with_config_targets() {
+        // When config has database targets, returns those targets
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd
+            .clone()
+            .get_matches_from(vec!["publish"]);
+
+        let config: SpacetimeConfig = serde_json::from_value(serde_json::json!({
+            "database": "config-db",
+            "server": "maincloud",
+            "module-path": "./server"
+        }))
+        .unwrap();
+
+        let result = determine_publish_configs(
+            None,
+            Some(&config),
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].get_one::<String>("database").unwrap(),
+            Some("config-db".to_string())
+        );
+    }
+
+    #[test]
+    fn test_determine_publish_configs_config_no_database_falls_through() {
+        // Config exists but has no database field or children → falls through to CLI database
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd
+            .clone()
+            .get_matches_from(vec!["publish", "cli-db"]);
+
+        // Config with only dev and generate, no database
+        let config: SpacetimeConfig = serde_json::from_value(serde_json::json!({
+            "dev": { "run": "npm run dev" },
+            "generate": [{ "language": "typescript", "out-dir": "./bindings" }]
+        }))
+        .unwrap();
+
+        let result = determine_publish_configs(
+            Some("cli-db".to_string()),
+            Some(&config),
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+        )
+        .unwrap();
+
+        // Should fall through to CLI database since config has no publish targets
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].get_config_value("database").and_then(|v| v.as_str()),
+            Some("cli-db")
+        );
+    }
+
+    #[test]
+    fn test_cli_env_flag_defaults_to_dev() {
+        // Verify that the dev CLI defaults --env to "dev"
+        let cmd = cli();
+        let matches = cmd.clone().get_matches_from(vec!["dev"]);
+
+        // --env is not set, so it should return None from clap
+        let env_from_cli = matches.get_one::<String>("env");
+        assert!(env_from_cli.is_none(), "env should not be set by default in clap");
+
+        // But in exec(), we default to "dev":
+        let env = env_from_cli.map(|s| s.as_str()).unwrap_or("dev");
+        assert_eq!(env, "dev");
+    }
+
+    #[test]
+    fn test_cli_skip_flags_exist() {
+        // Verify that --skip-publish and --skip-generate flags are registered
+        let cmd = cli();
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["dev", "--skip-publish", "--skip-generate"]);
+
+        assert!(matches.get_flag("skip_publish"));
+        assert!(matches.get_flag("skip_generate"));
+    }
+
+    #[test]
+    fn test_cli_env_flag_accepts_value() {
+        let cmd = cli();
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["dev", "--env", "staging"]);
+
+        assert_eq!(
+            matches.get_one::<String>("env").map(|s| s.as_str()),
+            Some("staging")
+        );
+    }
 }

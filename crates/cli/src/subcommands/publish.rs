@@ -925,4 +925,135 @@ mod tests {
             Some("local".to_string())
         );
     }
+
+    #[test]
+    fn test_glob_star_matches_all() {
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let spacetime_config = make_config_with_children(
+            HashMap::new(),
+            vec![
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("alpha"));
+                    m
+                }),
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("beta"));
+                    m
+                }),
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("gamma"));
+                    m
+                }),
+            ],
+        );
+
+        // Glob: * should match all databases
+        let matches = cmd.clone().get_matches_from(vec!["publish", "*"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_glob_exact_match() {
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let spacetime_config = make_config_with_children(
+            HashMap::new(),
+            vec![
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("region-1"));
+                    m
+                }),
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("region-2"));
+                    m
+                }),
+            ],
+        );
+
+        // Exact match should return only one
+        let matches = cmd.clone().get_matches_from(vec!["publish", "region-1"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(
+            filtered[0].get_one::<String>("database").unwrap(),
+            Some("region-1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_glob_multiple_wildcards() {
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let spacetime_config = make_config_with_children(
+            HashMap::new(),
+            vec![
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("us-east-prod"));
+                    m
+                }),
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("us-west-prod"));
+                    m
+                }),
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("eu-east-staging"));
+                    m
+                }),
+                make_config({
+                    let mut m = HashMap::new();
+                    m.insert("database".to_string(), serde_json::json!("us-east-staging"));
+                    m
+                }),
+            ],
+        );
+
+        // Pattern with multiple wildcards: *-east-*
+        let matches = cmd.clone().get_matches_from(vec!["publish", "*-east-*"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 3); // us-east-prod, eu-east-staging, us-east-staging
+    }
+
+    #[test]
+    fn test_glob_empty_pattern_error() {
+        use std::collections::HashMap;
+
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let spacetime_config = make_config_with_children(
+            HashMap::new(),
+            vec![make_config({
+                let mut m = HashMap::new();
+                m.insert("database".to_string(), serde_json::json!("my-db"));
+                m
+            })],
+        );
+
+        // Empty string as pattern — won't match anything
+        let matches = cmd.clone().get_matches_from(vec!["publish", ""]);
+        let result = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches);
+        assert!(result.is_err());
+    }
 }
