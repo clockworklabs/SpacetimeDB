@@ -321,7 +321,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
 
 Run `spacetime help publish` for more detailed information.
 
@@ -335,7 +335,7 @@ Run `spacetime help publish` for more detailed information.
 * `--namespace <NAMESPACE>` — The namespace that should be used
 
   Default value: `SpacetimeDB.Types`
-* `--module-name <MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
+* `--unreal-module-name <MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
 * `-l`, `--lang <LANG>` — The language to generate
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`

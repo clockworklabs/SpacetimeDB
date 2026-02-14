@@ -304,13 +304,13 @@ To generate UnrealCPP bindings for your SpacetimeDB module, use the SpacetimeDB 
 ### Basic Command
 
 ```bash
-cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir <uproject_directory> --module-path <module_path> --module-name <ModuleName>
+cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir <uproject_directory> --module-path <module_path> --unreal-module-name <ModuleName>
 ```
 
 ### Example
 
 ```bash
-cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crates/sdk-unreal/examples/QuickstartChat --module-path modules/quickstart-chat --module-name QuickstartChat
+cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crates/sdk-unreal/examples/QuickstartChat --module-path modules/quickstart-chat --unreal-module-name QuickstartChat
 ```
 
 ### Parameters
@@ -318,11 +318,11 @@ cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crat
 - `--lang unrealcpp`: Specifies the UnrealCPP code generator
 - `--uproject-dir`: Directory containing Unreal's .uproject or .uplugin file
 - `--module-path`: Path to your SpacetimeDB module source code
-- `--module-name`: **Required** - Name used for generated classes, API prefix and putting generated module bindings in the correct Module's Source
+- `--unreal-module-name`: **Required** - Name used for generated classes, API prefix and putting generated module bindings in the correct Module's Source
 
 ### Why Module Name is Required
 
-The `--module-name` parameter is **mandatory** for UnrealCPP generation because:
+The `--unreal-module-name` parameter is **mandatory** for UnrealCPP generation because:
 
 1. **Unreal Engine API Macro**: Generated classes use `MODULENAME_API` macros (e.g., `QUICKSTARTCHAT_API`) for proper DLL export/import in Unreal Engine
 2. **Class Prefixing**: All the optional generated classes are prefixed with the module name to avoid naming conflicts (e.g., `FQuickstartChatOptionalString`)

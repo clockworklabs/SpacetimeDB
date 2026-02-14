@@ -72,7 +72,7 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 <TabItem value="unreal" label="Unreal">
 
 ```bash
-spacetime generate --lang unrealcpp --uproject-dir PATH-TO-UPROJECT --module-path PATH-TO-MODULE-DIRECTORY --module-name YOUR_MODULE_NAME
+spacetime generate --lang unrealcpp --uproject-dir PATH-TO-UPROJECT --module-path PATH-TO-MODULE-DIRECTORY --unreal-module-name YOUR_MODULE_NAME
 ```
 
 This generates Unreal C++ files in your project's `ModuleBindings` directory. The generated files are automatically included in your Unreal project.
