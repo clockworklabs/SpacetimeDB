@@ -44,16 +44,17 @@ public abstract class EntityController : MonoBehaviour
 
 	public virtual void OnDelete(EventContext context)
 	{
-		if (context.Event is SpacetimeDB.Event<Reducer>.Reducer reducer &&
-			reducer.ReducerEvent.Reducer is Reducer.ConsumeEntity consume)
-		{
-			var consumerId = consume.Request.ConsumerEntityId;
-			if (GameManager.Entities.TryGetValue(consumerId, out var consumerEntity))
-			{
-				StartCoroutine(DespawnCoroutine(consumerEntity.transform));
-				return;
-			}
-		}
+		// TODO: Refactor to Event Tables
+		// if (context.Event is SpacetimeDB.Event<Reducer>.Reducer reducer &&
+		// 	reducer.ReducerEvent.Reducer is Reducer.ConsumeEntity consume)
+		// {
+		// 	var consumerId = consume.Request.ConsumerEntityId;
+		// 	if (GameManager.Entities.TryGetValue(consumerId, out var consumerEntity))
+		// 	{
+		// 		StartCoroutine(DespawnCoroutine(consumerEntity.transform));
+		// 		return;
+		// 	}
+		// }
 
 		Destroy(gameObject);
 	}
