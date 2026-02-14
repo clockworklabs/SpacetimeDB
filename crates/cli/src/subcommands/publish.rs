@@ -58,12 +58,10 @@ pub fn get_filtered_publish_configs<'a>(
 
     // Filter by database name pattern (glob) if provided via CLI
     let filtered_targets: Vec<FlatTarget> = if schema.is_from_cli(args, "database") {
-        let cli_database = schema
-            .get_clap_arg::<String>(args, "database")?
-            .unwrap_or_default();
+        let cli_database = schema.get_clap_arg::<String>(args, "database")?.unwrap_or_default();
 
-        let pattern = glob::Pattern::new(&cli_database)
-            .with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
+        let pattern =
+            glob::Pattern::new(&cli_database).with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
 
         let matched: Vec<FlatTarget> = all_targets
             .into_iter()

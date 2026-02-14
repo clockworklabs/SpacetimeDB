@@ -79,8 +79,8 @@ fn get_filtered_generate_configs<'a>(
 
     // Filter by database name pattern (glob) if provided via CLI
     let filtered_targets = if let Some(cli_database) = args.get_one::<String>("database") {
-        let pattern = glob::Pattern::new(cli_database)
-            .with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
+        let pattern =
+            glob::Pattern::new(cli_database).with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
 
         let matched: Vec<_> = all_targets
             .into_iter()
@@ -123,11 +123,7 @@ fn get_filtered_generate_configs<'a>(
         };
 
         // Get module_path from the target's entity fields for dedup
-        let module_path = target
-            .fields
-            .get("module-path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let module_path = target.fields.get("module-path").and_then(|v| v.as_str()).unwrap_or("");
 
         for entry in generate_entries {
             // Deduplicate: same module path + same generate entry config = generate once
@@ -849,9 +845,9 @@ mod tests {
         );
 
         // Test missing --unreal-module-name
-        let matches = cmd
-            .clone()
-            .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--uproject-dir", "/tmp/out"]);
+        let matches =
+            cmd.clone()
+                .get_matches_from(vec!["generate", "--lang", "unrealcpp", "--uproject-dir", "/tmp/out"]);
         let result = exec(config, &matches).await;
 
         assert!(result.is_err());

@@ -746,7 +746,6 @@ impl<'a> CommandConfig<'a> {
     }
 }
 
-
 impl SpacetimeConfig {
     /// Find and load a spacetime.json file (convenience wrapper for no env).
     ///
@@ -870,8 +869,8 @@ fn load_json_value(path: &Path) -> anyhow::Result<Option<serde_json::Value>> {
     }
     let content =
         std::fs::read_to_string(path).with_context(|| format!("Failed to read config file: {}", path.display()))?;
-    let value: serde_json::Value =
-        json5::from_str(&content).map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
+    let value: serde_json::Value = json5::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
     Ok(Some(value))
 }
 
@@ -940,8 +939,7 @@ pub fn find_and_load_with_env_from(env: Option<&str>, start_dir: PathBuf) -> any
         }
     }
 
-    let config: SpacetimeConfig = serde_json::from_value(merged)
-        .context("Failed to deserialize merged config")?;
+    let config: SpacetimeConfig = serde_json::from_value(merged).context("Failed to deserialize merged config")?;
 
     Ok(Some(LoadedConfig {
         config,
@@ -1196,10 +1194,7 @@ mod tests {
 
         // Verify all fields are in additional_fields
         assert_eq!(
-            config
-                .additional_fields
-                .get("database")
-                .and_then(|v| v.as_str()),
+            config.additional_fields.get("database").and_then(|v| v.as_str()),
             Some("my-database")
         );
         assert_eq!(
@@ -1207,24 +1202,15 @@ mod tests {
             Some("local")
         );
         assert_eq!(
-            config
-                .additional_fields
-                .get("module-path")
-                .and_then(|v| v.as_str()),
+            config.additional_fields.get("module-path").and_then(|v| v.as_str()),
             Some("./my-module")
         );
         assert_eq!(
-            config
-                .additional_fields
-                .get("build-options")
-                .and_then(|v| v.as_str()),
+            config.additional_fields.get("build-options").and_then(|v| v.as_str()),
             Some("--features extra")
         );
         assert_eq!(
-            config
-                .additional_fields
-                .get("break-clients")
-                .and_then(|v| v.as_bool()),
+            config.additional_fields.get("break-clients").and_then(|v| v.as_bool()),
             Some(true)
         );
 
@@ -1380,10 +1366,7 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
-        let schema = CommandSchemaBuilder::new()
-            .key(Key::new("server"))
-            .build(&cmd)
-            .unwrap();
+        let schema = CommandSchemaBuilder::new().key(Key::new("server")).build(&cmd).unwrap();
 
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
 
@@ -1562,10 +1545,7 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
-        let schema = CommandSchemaBuilder::new()
-            .key(Key::new("server"))
-            .build(&cmd)
-            .unwrap();
+        let schema = CommandSchemaBuilder::new().key(Key::new("server")).build(&cmd).unwrap();
 
         // Config has a key that's not defined in CommandConfig
         let mut config_values = HashMap::new();
@@ -1808,10 +1788,7 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
-        let schema = CommandSchemaBuilder::new()
-            .key(Key::new("port"))
-            .build(&cmd)
-            .unwrap();
+        let schema = CommandSchemaBuilder::new().key(Key::new("port")).build(&cmd).unwrap();
 
         // Config has a string value for port, but clap expects i64
         let mut config_values = HashMap::new();
@@ -1911,10 +1888,7 @@ mod tests {
 
         let matches = cmd.clone().get_matches_from(vec!["test"]);
 
-        let schema = CommandSchemaBuilder::new()
-            .key(Key::new("server"))
-            .build(&cmd)
-            .unwrap();
+        let schema = CommandSchemaBuilder::new().key(Key::new("server")).build(&cmd).unwrap();
 
         // No required keys, empty config should be fine
         let config_values = HashMap::new();
@@ -2099,9 +2073,7 @@ mod tests {
                 .value_parser(clap::value_parser!(String)),
         );
 
-        let result = CommandSchemaBuilder::new()
-            .key(Key::new("nonexistent_arg"))
-            .build(&cmd);
+        let result = CommandSchemaBuilder::new().key(Key::new("nonexistent_arg")).build(&cmd);
 
         assert!(result.is_err());
         assert!(matches!(
@@ -2322,10 +2294,7 @@ mod tests {
 
         let command_config = CommandConfig::new(&schema, config_values, &matches).unwrap();
 
-        assert_eq!(
-            command_config.get_one::<bool>("include_private").unwrap(),
-            Some(true)
-        );
+        assert_eq!(command_config.get_one::<bool>("include_private").unwrap(), Some(true));
     }
 
     #[test]
@@ -2344,9 +2313,7 @@ mod tests {
                     .value_parser(clap::value_parser!(String)),
             );
 
-        let matches = cmd
-            .clone()
-            .get_matches_from(vec!["test", "--database", "my-db"]);
+        let matches = cmd.clone().get_matches_from(vec!["test", "--database", "my-db"]);
 
         let schema = CommandSchemaBuilder::new()
             .key(Key::new("database").required())
@@ -2393,10 +2360,7 @@ mod tests {
             targets[0].fields.get("database").and_then(|v| v.as_str()),
             Some("parent-db")
         );
-        assert_eq!(
-            targets[0].fields.get("server").and_then(|v| v.as_str()),
-            Some("local")
-        );
+        assert_eq!(targets[0].fields.get("server").and_then(|v| v.as_str()), Some("local"));
 
         // Child 1: inherits server and build-options from parent
         assert_eq!(
@@ -2475,16 +2439,10 @@ mod tests {
         assert_eq!(targets.len(), 3);
 
         // Root
-        assert_eq!(
-            targets[0].fields.get("database").and_then(|v| v.as_str()),
-            Some("root")
-        );
+        assert_eq!(targets[0].fields.get("database").and_then(|v| v.as_str()), Some("root"));
 
         // Mid: inherits server and build-options from root, has own module-path
-        assert_eq!(
-            targets[1].fields.get("database").and_then(|v| v.as_str()),
-            Some("mid")
-        );
+        assert_eq!(targets[1].fields.get("database").and_then(|v| v.as_str()), Some("mid"));
         assert_eq!(
             targets[1].fields.get("server").and_then(|v| v.as_str()),
             Some("production")
@@ -2496,10 +2454,7 @@ mod tests {
 
         // Leaf: inherits server and build-options (from root via mid),
         // AND inherits module-path from mid
-        assert_eq!(
-            targets[2].fields.get("database").and_then(|v| v.as_str()),
-            Some("leaf")
-        );
+        assert_eq!(targets[2].fields.get("database").and_then(|v| v.as_str()), Some("leaf"));
         assert_eq!(
             targets[2].fields.get("server").and_then(|v| v.as_str()),
             Some("production")
@@ -2542,12 +2497,18 @@ mod tests {
         // Parent has its own generate
         let parent_gen = targets[0].generate.as_ref().unwrap();
         assert_eq!(parent_gen.len(), 1);
-        assert_eq!(parent_gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
+        assert_eq!(
+            parent_gen[0].get("language").and_then(|v| v.as_str()),
+            Some("typescript")
+        );
 
         // Child 1 inherits parent's generate
         let child1_gen = targets[1].generate.as_ref().unwrap();
         assert_eq!(child1_gen.len(), 1);
-        assert_eq!(child1_gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
+        assert_eq!(
+            child1_gen[0].get("language").and_then(|v| v.as_str()),
+            Some("typescript")
+        );
 
         // Child 2 overrides with its own generate
         let child2_gen = targets[2].generate.as_ref().unwrap();
@@ -2571,11 +2532,7 @@ mod tests {
         .unwrap();
 
         // Dev environment overlay - replaces server
-        fs::write(
-            root.join("spacetime.dev.json"),
-            r#"{ "server": "maincloud" }"#,
-        )
-        .unwrap();
+        fs::write(root.join("spacetime.dev.json"), r#"{ "server": "maincloud" }"#).unwrap();
 
         // Load without env
         let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
@@ -2586,7 +2543,9 @@ mod tests {
         assert!(!result.has_dev_file);
 
         // Load with dev env
-        let result = find_and_load_with_env_from(Some("dev"), root.to_path_buf()).unwrap().unwrap();
+        let result = find_and_load_with_env_from(Some("dev"), root.to_path_buf())
+            .unwrap()
+            .unwrap();
         assert_eq!(
             result.config.additional_fields.get("server").and_then(|v| v.as_str()),
             Some("maincloud")
@@ -2615,11 +2574,7 @@ mod tests {
         .unwrap();
 
         // Local overlay
-        fs::write(
-            root.join("spacetime.local.json"),
-            r#"{ "database": "my-local-db" }"#,
-        )
-        .unwrap();
+        fs::write(root.join("spacetime.local.json"), r#"{ "database": "my-local-db" }"#).unwrap();
 
         let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
         // Local overlay replaces database
@@ -2687,7 +2642,11 @@ mod tests {
         );
         // module-path: only in base, preserved through all overlays
         assert_eq!(
-            result.config.additional_fields.get("module-path").and_then(|v| v.as_str()),
+            result
+                .config
+                .additional_fields
+                .get("module-path")
+                .and_then(|v| v.as_str()),
             Some("./server")
         );
         // 4 files loaded
@@ -2703,40 +2662,22 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
 
-        fs::write(
-            root.join("spacetime.json"),
-            r#"{ "database": "my-db" }"#,
-        )
-        .unwrap();
+        fs::write(root.join("spacetime.json"), r#"{ "database": "my-db" }"#).unwrap();
 
-        fs::write(
-            root.join("spacetime.staging.json"),
-            r#"{ "server": "staging" }"#,
-        )
-        .unwrap();
+        fs::write(root.join("spacetime.staging.json"), r#"{ "server": "staging" }"#).unwrap();
 
         let result = find_and_load_with_env_from(Some("staging"), root.to_path_buf())
             .unwrap()
             .unwrap();
-        assert!(
-            !result.has_dev_file,
-            "has_dev_file should be false for staging env"
-        );
+        assert!(!result.has_dev_file, "has_dev_file should be false for staging env");
 
         // But dev env should set it
-        fs::write(
-            root.join("spacetime.dev.json"),
-            r#"{ "server": "local" }"#,
-        )
-        .unwrap();
+        fs::write(root.join("spacetime.dev.json"), r#"{ "server": "local" }"#).unwrap();
 
         let result = find_and_load_with_env_from(Some("dev"), root.to_path_buf())
             .unwrap()
             .unwrap();
-        assert!(
-            result.has_dev_file,
-            "has_dev_file should be true for dev env"
-        );
+        assert!(result.has_dev_file, "has_dev_file should be true for dev env");
     }
 
     #[test]
@@ -2767,10 +2708,7 @@ mod tests {
             targets[1].fields.get("database").and_then(|v| v.as_str()),
             Some("child-db")
         );
-        assert_eq!(
-            targets[1].fields.get("server").and_then(|v| v.as_str()),
-            Some("local")
-        );
+        assert_eq!(targets[1].fields.get("server").and_then(|v| v.as_str()), Some("local"));
         // dev should not be in additional_fields of FlatTarget
         assert!(
             !targets[1].fields.contains_key("dev"),
@@ -2810,10 +2748,7 @@ mod tests {
             );
             let gen = target.generate.as_ref().unwrap();
             assert_eq!(gen.len(), 1);
-            assert_eq!(
-                gen[0].get("language").and_then(|v| v.as_str()),
-                Some("typescript")
-            );
+            assert_eq!(gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
         }
 
         // All have the same (module-path, generate) so dedup should reduce to 1

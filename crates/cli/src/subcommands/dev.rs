@@ -185,18 +185,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let skip_generate = args.get_flag("skip_generate");
 
     // --env defaults to "dev" for spacetime dev
-    let env = args
-        .get_one::<String>("env")
-        .map(|s| s.as_str())
-        .unwrap_or("dev");
+    let env = args.get_one::<String>("env").map(|s| s.as_str()).unwrap_or("dev");
 
     // Load spacetime.json config early so we can use it for determining project
     // directories
     let loaded_config = if no_config {
         None
     } else {
-        find_and_load_with_env_from(Some(env), project_dir.clone())
-            .with_context(|| "Failed to load spacetime.json")?
+        find_and_load_with_env_from(Some(env), project_dir.clone()).with_context(|| "Failed to load spacetime.json")?
     };
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
     let using_spacetime_config = spacetime_config.is_some();
@@ -204,9 +200,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let has_publish_targets_in_config = spacetime_config
         .map(|c| c.additional_fields.contains_key("database") || c.children.is_some())
         .unwrap_or(false);
-    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> = spacetime_config
-        .and_then(|c| c.generate.clone())
-        .unwrap_or_default();
+    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> =
+        spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
     let has_generate_targets_in_config = !generate_configs_from_file.is_empty();
 
     let module_path_from_cli_flag = args.value_source("module-path") == Some(ValueSource::CommandLine);
@@ -501,10 +496,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 "{}",
                 "Consider creating spacetime.dev.json for development settings.".dimmed()
             );
-            let should_continue = Confirm::new()
-                .with_prompt("Continue?")
-                .default(true)
-                .interact()?;
+            let should_continue = Confirm::new().with_prompt("Continue?").default(true).interact()?;
             if !should_continue {
                 anyhow::bail!("Aborted.");
             }
@@ -818,9 +810,7 @@ async fn generate_build_and_publish(
         }
 
         println!("{}", "Generating module bindings...".cyan());
-        let spacetimedb_dir_str = spacetimedb_dir
-            .to_str()
-            .context("non-UTF-8 path in spacetimedb_dir")?;
+        let spacetimedb_dir_str = spacetimedb_dir.to_str().context("non-UTF-8 path in spacetimedb_dir")?;
         let module_bindings_dir_str = module_bindings_dir
             .to_str()
             .context("non-UTF-8 path in module_bindings_dir")?;
@@ -874,11 +864,7 @@ async fn generate_build_and_publish(
             .map(|s| s.to_string());
         let module_path_str = entry_module_path
             .as_deref()
-            .unwrap_or_else(|| {
-                spacetimedb_dir
-                    .to_str()
-                    .expect("spacetimedb_dir should be valid UTF-8")
-            });
+            .unwrap_or_else(|| spacetimedb_dir.to_str().expect("spacetimedb_dir should be valid UTF-8"));
 
         if publish_configs.len() > 1 {
             println!("{} {}...", "Publishing to".cyan(), db_name.cyan().bold());
@@ -1366,7 +1352,10 @@ mod tests {
         );
         assert!(reloaded_config.generate.is_some(), "generate field should be preserved");
         assert_eq!(
-            reloaded_config.additional_fields.get("database").and_then(|v| v.as_str()),
+            reloaded_config
+                .additional_fields
+                .get("database")
+                .and_then(|v| v.as_str()),
             Some("test-db"),
             "database field should be preserved"
         );
@@ -1391,19 +1380,10 @@ mod tests {
         // (dev will later prompt the user)
         let publish_cmd = publish::cli();
         let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
-        let publish_args = publish_cmd
-            .clone()
-            .get_matches_from(vec!["publish"]);
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish"]);
 
-        let result = determine_publish_configs(
-            None,
-            None,
-            &publish_cmd,
-            &publish_schema,
-            &publish_args,
-            "local",
-        )
-        .unwrap();
+        let result =
+            determine_publish_configs(None, None, &publish_cmd, &publish_schema, &publish_args, "local").unwrap();
 
         assert!(result.is_empty());
     }
@@ -1413,9 +1393,7 @@ mod tests {
         // When CLI provides a database name but no config, creates a single publish config
         let publish_cmd = publish::cli();
         let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
-        let publish_args = publish_cmd
-            .clone()
-            .get_matches_from(vec!["publish", "my-custom-db"]);
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish", "my-custom-db"]);
 
         let result = determine_publish_configs(
             Some("my-custom-db".to_string()),
@@ -1443,9 +1421,7 @@ mod tests {
         // When config has database targets, returns those targets
         let publish_cmd = publish::cli();
         let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
-        let publish_args = publish_cmd
-            .clone()
-            .get_matches_from(vec!["publish"]);
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish"]);
 
         let config: SpacetimeConfig = serde_json::from_value(serde_json::json!({
             "database": "config-db",
@@ -1476,9 +1452,7 @@ mod tests {
         // Config exists but has no database field or children → falls through to CLI database
         let publish_cmd = publish::cli();
         let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
-        let publish_args = publish_cmd
-            .clone()
-            .get_matches_from(vec!["publish", "cli-db"]);
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish", "cli-db"]);
 
         // Config with only dev and generate, no database
         let config: SpacetimeConfig = serde_json::from_value(serde_json::json!({
@@ -1536,13 +1510,8 @@ mod tests {
     #[test]
     fn test_cli_env_flag_accepts_value() {
         let cmd = cli();
-        let matches = cmd
-            .clone()
-            .get_matches_from(vec!["dev", "--env", "staging"]);
+        let matches = cmd.clone().get_matches_from(vec!["dev", "--env", "staging"]);
 
-        assert_eq!(
-            matches.get_one::<String>("env").map(|s| s.as_str()),
-            Some("staging")
-        );
+        assert_eq!(matches.get_one::<String>("env").map(|s| s.as_str()), Some("staging"));
     }
 }
