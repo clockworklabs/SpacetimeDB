@@ -19,6 +19,9 @@ const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Function() {
     return NameMapping;
   },
+  get Index() {
+    return NameMapping;
+  },
 });
 
 export default ExplicitNameEntry;

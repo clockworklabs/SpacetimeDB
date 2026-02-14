@@ -150,7 +150,9 @@ export class ModuleContext {
     views: [],
     lifeCycleReducers: [],
     caseConversionPolicy: { tag: 'SnakeCase' },
-    explicitNames: { entries: [] },
+    explicitNames: {
+      entries: [],
+    },
   };
 
   get moduleDef(): ModuleDef {

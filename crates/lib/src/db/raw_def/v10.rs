@@ -84,12 +84,13 @@ pub enum RawModuleDefV10Section {
 
     RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
 
+    /// Case conversion policy for identifiers in this module.
     CaseConversionPolicy(CaseConversionPolicy),
 
+    /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
 }
 
-/// Specifies how identifiers should be converted when interpreting module definitions.
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
@@ -111,7 +112,26 @@ pub enum CaseConversionPolicy {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
 #[non_exhaustive]
 pub struct NameMapping {
+    /// The original name as defined or generated inside module.
+    ///
+    /// Generated as:
+    /// - Tables: value from `#[spacetimedb::table(accessor = ...)]`.
+    /// - Reducers/Procedures/Views: function name
+    /// - Indexes: `{table_name}_{column_names}_idx_{algorithm}`
+    ///
+    /// During validation, this may be replaced by `canonical_name`
+    /// if an explicit or policy-based name is applied.
     pub source_name: RawIdentifier,
+
+    /// The canonical identifier used in system tables and client code generation.
+    ///
+    /// Set via:
+    /// - `#[spacetimedb::table(name = "...")]` for tables
+    /// - `#[spacetimedb::reducer(name = "...")]` for reducers
+    /// - `#[name("...")]` for other entities
+    ///
+    /// If not explicitly provided, this defaults to `source_name`
+    /// after validation. No particular format should be assumed.
     pub canonical_name: RawIdentifier,
 }
 
@@ -122,6 +142,7 @@ pub struct NameMapping {
 pub enum ExplicitNameEntry {
     Table(NameMapping),
     Function(NameMapping),
+    Index(NameMapping),
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -129,6 +150,10 @@ pub enum ExplicitNameEntry {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
 #[non_exhaustive]
 pub struct ExplicitNames {
+    /// Explicit name mappings defined in the module.
+    ///
+    /// These override policy-based or auto-generated names
+    /// during schema validation.
     entries: Vec<ExplicitNameEntry>,
 }
 
