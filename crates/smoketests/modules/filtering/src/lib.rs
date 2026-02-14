@@ -13,24 +13,16 @@ pub struct Person {
 
 #[spacetimedb::reducer]
 pub fn insert_person(ctx: &ReducerContext, id: i32, name: String, nick: String) {
-    ctx.db.person().insert(Person { id, name, nick });
+    ctx.db.person().insert(Person { id, name, nick} );
 }
 
 #[spacetimedb::reducer]
 pub fn insert_person_twice(ctx: &ReducerContext, id: i32, name: String, nick: String) {
     // We'd like to avoid an error due to a set-semantic error.
     let name2 = format!("{name}2");
-    ctx.db.person().insert(Person {
-        id,
-        name,
-        nick: nick.clone(),
-    });
-    match ctx.db.person().try_insert(Person {
-        id,
-        name: name2,
-        nick: nick.clone(),
-    }) {
-        Ok(_) => {}
+    ctx.db.person().insert(Person { id, name, nick: nick.clone()} );
+    match ctx.db.person().try_insert(Person { id, name: name2, nick: nick.clone()}) {
+        Ok(_) => {},
         Err(_) => {
             log::info!("UNIQUE CONSTRAINT VIOLATION ERROR: id = {}, nick = {}", id, nick)
         }
@@ -93,7 +85,7 @@ pub struct NonuniquePerson {
 
 #[spacetimedb::reducer]
 pub fn insert_nonunique_person(ctx: &ReducerContext, id: i32, name: String, is_human: bool) {
-    ctx.db.nonunique_person().insert(NonuniquePerson { id, name, is_human });
+    ctx.db.nonunique_person().insert(NonuniquePerson { id, name, is_human } );
 }
 
 #[spacetimedb::reducer]
@@ -166,11 +158,7 @@ struct IndexedPerson {
 
 #[spacetimedb::reducer]
 fn insert_indexed_person(ctx: &ReducerContext, id: i32, given_name: String, surname: String) {
-    ctx.db.indexed_person().insert(IndexedPerson {
-        id,
-        given_name,
-        surname,
-    });
+    ctx.db.indexed_person().insert(IndexedPerson { id, given_name, surname });
 }
 
 #[spacetimedb::reducer]
@@ -181,12 +169,7 @@ fn delete_indexed_person(ctx: &ReducerContext, id: i32) {
 #[spacetimedb::reducer]
 fn find_indexed_people(ctx: &ReducerContext, surname: String) {
     for person in ctx.db.indexed_person().surname().filter(&surname) {
-        log::info!(
-            "INDEXED FOUND: id {}: {}, {}",
-            person.id,
-            person.surname,
-            person.given_name
-        );
+        log::info!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
     }
 }
 
@@ -194,11 +177,6 @@ fn find_indexed_people(ctx: &ReducerContext, surname: String) {
 fn find_indexed_people_read_only(ctx: &ReducerContext, surname: String) {
     let ctx = ctx.as_read_only();
     for person in ctx.db.indexed_person().surname().filter(&surname) {
-        log::info!(
-            "INDEXED FOUND: id {}: {}, {}",
-            person.id,
-            person.surname,
-            person.given_name
-        );
+        log::info!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
     }
 }

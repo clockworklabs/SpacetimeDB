@@ -112,6 +112,8 @@ Run `spacetime help publish` for more detailed information.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
+* `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 
 
 
@@ -245,6 +247,10 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL) for project initialization
 * `--run <COMMAND>` — Command to run the client development server (overrides spacetime.json config)
 * `--server-only` — Only run the server (module) without starting the client
+* `--no-config` — Ignore spacetime.json configuration
+* `--env <ENV>` — Environment name for config file layering (e.g., dev, staging). Defaults to 'dev'.
+* `--skip-publish` — Skip the publish step
+* `--skip-generate` — Skip the generate step
 
 
 
@@ -321,9 +327,13 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime spacetime generate [DATABASE] --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
 
-Run `spacetime help publish` for more detailed information.
+Run `spacetime help generate` for more detailed information.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or glob pattern to filter which databases to generate for
 
 ###### **Options:**
 
@@ -335,7 +345,7 @@ Run `spacetime help publish` for more detailed information.
 * `--namespace <NAMESPACE>` — The namespace that should be used
 
   Default value: `SpacetimeDB.Types`
-* `--unreal-module-name <MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
+* `--unreal-module-name <UNREAL_MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
 * `-l`, `--lang <LANG>` — The language to generate
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
@@ -347,6 +357,8 @@ Run `spacetime help publish` for more detailed information.
 
   Default value: `false`
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
+* `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 
 
 

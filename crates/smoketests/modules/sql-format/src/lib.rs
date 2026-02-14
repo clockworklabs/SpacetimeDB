@@ -1,5 +1,5 @@
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, Uuid};
+use spacetimedb::{ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration, SpacetimeType, Uuid};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = t_ints)]
@@ -44,13 +44,13 @@ pub struct TOthers {
     identity: Identity,
     connection_id: ConnectionId,
     timestamp: Timestamp,
-    duration: TimeDuration,
+    duration:  TimeDuration,
     uuid: Uuid,
 }
 
 #[spacetimedb::table(name = t_others_tuple)]
 pub struct TOthersTuple {
-    tuple: TOthers,
+    tuple: TOthers
 }
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
@@ -101,7 +101,7 @@ pub fn test(ctx: &ReducerContext) {
         f32: 594806.58906,
         f64: -3454353.345389043278459,
         str: "This is spacetimedb".to_string(),
-        bytes: vec![1, 2, 3, 4, 5, 6, 7],
+        bytes: vec!(1, 2, 3, 4, 5, 6, 7),
         identity: Identity::ONE,
         connection_id: ConnectionId::ZERO,
         timestamp: Timestamp::UNIX_EPOCH,
