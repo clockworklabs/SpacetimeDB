@@ -1645,6 +1645,9 @@ pub struct ProcedureDef {
     /// and indirected through an [`AlgebraicTypeUse::Ref`].
     pub return_type_for_generate: AlgebraicTypeUse,
 
+    /// The name of the procedure to invoke if this procedure aborts.
+    pub on_abort: Option<Identifier>,
+
     /// The visibility of this procedure.
     pub visibility: FunctionVisibility,
 }
@@ -1655,6 +1658,7 @@ impl From<ProcedureDef> for RawProcedureDefV9 {
             name: val.name.into(),
             params: val.params,
             return_type: val.return_type,
+            on_abort: val.on_abort.map(Into::into),
         }
     }
 }
@@ -1665,6 +1669,7 @@ impl From<ProcedureDef> for RawProcedureDefV10 {
             source_name: val.name.into(),
             params: val.params,
             return_type: val.return_type,
+            on_abort: val.on_abort.map(Into::into),
             visibility: val.visibility.into(),
         }
     }

@@ -119,6 +119,15 @@ pub enum ValidationError {
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
+    #[error("Procedure {procedure} specifies on_abort handler {handler} that does not exist")]
+    MissingProcedureOnAbortHandler { procedure: Identifier, handler: Identifier },
+    #[error("Procedure {procedure} on_abort handler {handler} expected params {expected}, but has params {actual}")]
+    ProcedureOnAbortParamsMismatch {
+        procedure: Identifier,
+        handler: Identifier,
+        expected: PrettyAlgebraicType,
+        actual: PrettyAlgebraicType,
+    },
     #[error("Table name is reserved for system use: {table}")]
     TableNameReserved { table: Identifier },
     #[error("Row-level security invalid: `{error}`, query: `{sql}")]

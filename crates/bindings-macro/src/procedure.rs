@@ -10,6 +10,8 @@ use syn::{ItemFn, LitStr};
 pub(crate) struct ProcedureArgs {
     /// For consistency with reducers: allow specifying a different export name than the Rust function name.
     name: Option<LitStr>,
+    /// Optional procedure to invoke if this procedure aborts.
+    on_abort: Option<LitStr>,
 }
 
 impl ProcedureArgs {
@@ -20,6 +22,10 @@ impl ProcedureArgs {
                 sym::name => {
                     check_duplicate(&args.name, &meta)?;
                     args.name = Some(meta.value()?.parse()?);
+                }
+                sym::on_abort => {
+                    check_duplicate(&args.on_abort, &meta)?;
+                    args.on_abort = Some(meta.value()?.parse()?);
                 }
             });
             Ok(())
@@ -34,6 +40,10 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
     let vis = &original_function.vis;
 
     let procedure_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
+    let on_abort = match args.on_abort {
+        Some(lit) => quote!(Some(#lit)),
+        None => quote!(None),
+    };
 
     assert_only_lifetime_generics(original_function, "procedures")?;
 
@@ -114,6 +124,9 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
 
             /// The name of this function
             const NAME: &'static str = #procedure_name;
+
+            /// The name of the on-abort handler, if any.
+            const ON_ABORT: Option<&'static str> = #on_abort;
 
             /// The parameter names of this function
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];

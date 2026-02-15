@@ -52,6 +52,7 @@ mod sym {
     symbol!(index);
     symbol!(init);
     symbol!(name);
+    symbol!(on_abort);
     symbol!(primary_key);
     symbol!(private);
     symbol!(public);

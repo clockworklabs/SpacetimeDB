@@ -4,8 +4,8 @@ use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
-    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name, identifier,
-    CoreValidator, TableValidator, ViewValidator,
+    check_function_names_are_unique, check_procedure_on_abort_handlers, check_scheduled_functions_exist,
+    generate_schedule_name, identifier, CoreValidator, TableValidator, ViewValidator,
 };
 use crate::def::*;
 use crate::error::ValidationError;
@@ -164,6 +164,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
+                check_procedure_on_abort_handlers(&procedures)?;
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
 
@@ -519,6 +520,7 @@ impl<'a> ModuleValidatorV10<'a> {
             source_name,
             params,
             return_type,
+            on_abort,
             visibility,
         } = procedure_def;
 
@@ -538,9 +540,10 @@ impl<'a> ModuleValidatorV10<'a> {
         );
 
         let name_result = identifier(source_name);
+        let on_abort = on_abort.map(identifier).transpose();
 
-        let (name_result, params_for_generate, return_type_for_generate) =
-            (name_result, params_for_generate, return_type_for_generate).combine_errors()?;
+        let (name_result, params_for_generate, return_type_for_generate, on_abort) =
+            (name_result, params_for_generate, return_type_for_generate, on_abort).combine_errors()?;
 
         Ok(ProcedureDef {
             name: name_result,
@@ -551,6 +554,7 @@ impl<'a> ModuleValidatorV10<'a> {
             },
             return_type,
             return_type_for_generate,
+            on_abort,
             visibility: visibility.into(),
         })
     }
@@ -1491,8 +1495,13 @@ mod tests {
     fn duplicate_procedure_names() {
         let mut builder = RawModuleDefV10Builder::new();
 
-        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
-        builder.add_procedure("foo", [("name", AlgebraicType::String)].into(), AlgebraicType::unit());
+        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit(), None);
+        builder.add_procedure(
+            "foo",
+            [("name", AlgebraicType::String)].into(),
+            AlgebraicType::unit(),
+            None,
+        );
 
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1506,7 +1515,7 @@ mod tests {
         let mut builder = RawModuleDefV10Builder::new();
 
         builder.add_reducer("foo", [("i", AlgebraicType::I32)].into());
-        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
+        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit(), None);
 
         let result: Result<ModuleDef> = builder.finish().try_into();
 

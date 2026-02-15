@@ -158,6 +158,9 @@ pub trait FnInfo {
     /// The name of the function.
     const NAME: &'static str;
 
+    /// The name of the on-abort handler, if any.
+    const ON_ABORT: Option<&'static str> = None;
+
     /// The lifecycle of the function, if there is one.
     const LIFECYCLE: Option<LifecycleReducer> = None;
 
@@ -799,7 +802,9 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
-        module.inner.add_procedure(I::NAME, params, ret_ty);
+        module
+            .inner
+            .add_procedure(I::NAME, params, ret_ty, I::ON_ABORT.map(Into::into));
         module.procedures.push(I::INVOKE);
     })
 }

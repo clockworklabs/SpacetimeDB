@@ -592,6 +592,9 @@ pub struct RawProcedureDefV9 {
     /// This `ProductType` need not be registered in the typespace.
     pub params: ProductType,
 
+    /// The name of the procedure to invoke if this procedure aborts.
+    pub on_abort: Option<RawIdentifier>,
+
     /// The type of the return value.
     ///
     /// If this is a user-defined product or sum type,
@@ -784,8 +787,9 @@ impl RawModuleDefV9Builder {
     pub fn add_procedure(
         &mut self,
         name: impl Into<RawIdentifier>,
-        params: spacetimedb_sats::ProductType,
-        return_type: spacetimedb_sats::AlgebraicType,
+        params: ProductType,
+        return_type: AlgebraicType,
+        on_abort: Option<RawIdentifier>,
     ) {
         self.module
             .misc_exports
@@ -793,6 +797,7 @@ impl RawModuleDefV9Builder {
                 name: name.into(),
                 params,
                 return_type,
+                on_abort,
             }))
     }
 

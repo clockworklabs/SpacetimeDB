@@ -342,6 +342,9 @@ pub struct RawProcedureDefV10 {
     /// it should be registered in the typespace and indirected through an [`AlgebraicType::Ref`].
     pub return_type: AlgebraicType,
 
+    /// The name of the procedure to invoke if this procedure aborts.
+    pub on_abort: Option<RawIdentifier>,
+
     /// Whether this procedure is callable from clients or is internal-only.
     pub visibility: FunctionVisibility,
 }
@@ -927,11 +930,13 @@ impl RawModuleDefV10Builder {
         source_name: impl Into<RawIdentifier>,
         params: ProductType,
         return_type: AlgebraicType,
+        on_abort: Option<RawIdentifier>,
     ) {
         self.procedures_mut().push(RawProcedureDefV10 {
             source_name: source_name.into(),
             params,
             return_type,
+            on_abort,
             visibility: FunctionVisibility::ClientCallable,
         })
     }

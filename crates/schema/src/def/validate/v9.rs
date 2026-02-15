@@ -131,6 +131,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
                 check_non_procedure_misc_exports(misc_exports, &validator, &mut tables),
             )
                 .combine_errors()?;
+            check_procedure_on_abort_handlers(&procedures)?;
             check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
             Ok((tables, types, reducers, procedures, views))
         });
@@ -376,6 +377,7 @@ impl ModuleValidatorV9<'_> {
             name,
             params,
             return_type,
+            on_abort,
         } = procedure_def;
 
         let params_for_generate =
@@ -396,9 +398,11 @@ impl ModuleValidatorV9<'_> {
         // Procedures share the "function namespace" with reducers.
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
         let name = identifier(name);
+        let on_abort = on_abort.map(identifier).transpose();
 
         let (name, params_for_generate, return_type_for_generate) =
             (name, params_for_generate, return_type_for_generate).combine_errors()?;
+        let on_abort = on_abort?;
 
         Ok(ProcedureDef {
             name,
@@ -409,6 +413,7 @@ impl ModuleValidatorV9<'_> {
             },
             return_type,
             return_type_for_generate,
+            on_abort,
             visibility: FunctionVisibility::ClientCallable,
         })
     }
@@ -1275,6 +1280,35 @@ pub fn generate_unique_constraint_name(
 /// TODO: memoize this.
 pub(crate) fn identifier(name: RawIdentifier) -> Result<Identifier> {
     Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
+}
+
+/// Check that every procedure's on-abort handler exists and has matching params.
+pub(crate) fn check_procedure_on_abort_handlers(procedures: &IndexMap<Identifier, ProcedureDef>) -> Result<()> {
+    procedures
+        .values()
+        .filter_map(|procedure| procedure.on_abort.as_ref().map(|handler| (procedure, handler)))
+        .map(|(procedure, handler)| {
+            let Some(handler_def) = procedures.get(handler) else {
+                return Err(ValidationError::MissingProcedureOnAbortHandler {
+                    procedure: procedure.name.clone(),
+                    handler: handler.clone(),
+                }
+                .into());
+            };
+
+            if handler_def.params == procedure.params {
+                Ok(())
+            } else {
+                Err(ValidationError::ProcedureOnAbortParamsMismatch {
+                    procedure: procedure.name.clone(),
+                    handler: handler.clone(),
+                    expected: procedure.params.clone().into(),
+                    actual: handler_def.params.clone().into(),
+                }
+                .into())
+            }
+        })
+        .collect_all_errors()
 }
 
 /// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure
@@ -2206,8 +2240,18 @@ mod tests {
     fn duplicate_procedure_names() {
         let mut builder = RawModuleDefV9Builder::new();
 
-        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
-        builder.add_procedure("foo", [("name", AlgebraicType::String)].into(), AlgebraicType::unit());
+        builder.add_procedure(
+            "foo",
+            [("i", AlgebraicType::I32)].into(),
+            AlgebraicType::unit(),
+            /* on_abort */ None,
+        );
+        builder.add_procedure(
+            "foo",
+            [("name", AlgebraicType::String)].into(),
+            AlgebraicType::unit(),
+            /* on_abort */ None,
+        );
 
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -2221,7 +2265,12 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
 
         builder.add_reducer("foo", [("i", AlgebraicType::I32)].into(), None);
-        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
+        builder.add_procedure(
+            "foo",
+            [("i", AlgebraicType::I32)].into(),
+            AlgebraicType::unit(),
+            /* on_abort */ None,
+        );
 
         let result: Result<ModuleDef> = builder.finish().try_into();
 
