@@ -82,6 +82,10 @@ pub trait WasmInstance {
 
     fn tx_slot(&self) -> TxSlot;
 
+    /// Set the module definition on this instance.
+    /// This is needed for re-entrant view evaluation during procedure commits.
+    fn set_module_def(&mut self, _module_def: Arc<ModuleDef>) {}
+
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult;
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
@@ -114,7 +118,7 @@ impl EnergyStats {
     }
 }
 
-fn deserialize_view_rows(
+pub(crate) fn deserialize_view_rows(
     row_type: AlgebraicTypeRef,
     bytes: Bytes,
     typespace: &Typespace,
@@ -333,8 +337,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
-    fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
+    fn make_from_instance(&self, mut instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
+        // Provide the module definition to the instance so that
+        // re-entrant view evaluation can look up view metadata during procedure commits.
+        instance.set_module_def(Arc::new(common.info().module_def.clone()));
         WasmModuleInstance {
             instance,
             common,
@@ -1244,59 +1251,75 @@ impl InstanceCommon {
         expected_row_type: &ProductType,
         call_info: &ViewCallInfo,
     ) -> anyhow::Result<Vec<ProductValue>> {
-        if the_query.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Views bypass RLS, since views should enforce their own access control procedurally.
-        let auth = AuthCtx::for_current(self.info.database_identity);
-        let schema_view = SchemaViewer::new(&*tx, &auth);
-
-        // Compile to subscription plans.
-        let (plans, has_params) = SubscriptionPlan::compile(the_query, &schema_view, &auth)?;
-        ensure!(
-            !has_params,
-            "parameterized SQL is not supported for view materialization yet"
-        );
-
-        // Validate shape and disallow views-on-views.
-        for plan in &plans {
-            let phys = plan.optimized_physical_plan();
-            let Some(source_schema) = phys.return_table() else {
-                bail!("query does not return plain table rows");
-            };
-            if phys.reads_from_view(true) || phys.reads_from_view(false) {
-                bail!("view definition cannot read from other views");
-            }
-            if source_schema.row_type != *expected_row_type {
-                bail!(
-                    "query returns `{}` but view expects `{}`",
-                    fmt_algebraic_type(&AlgebraicType::Product(source_schema.row_type.clone())),
-                    fmt_algebraic_type(&AlgebraicType::Product(expected_row_type.clone())),
-                );
-            }
-        }
-
-        let op = FuncCallType::View(call_info.clone());
-        let mut metrics = ExecutionMetrics::default();
-        let mut rows = Vec::new();
-
-        for plan in plans {
-            // Track read sets for all tables involved in this plan.
-            // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
-            for table_id in plan.table_ids() {
-                tx.record_table_scan(&op, table_id);
-            }
-
-            let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
-            pipelined.execute(&*tx, &mut metrics, &mut |row| {
-                rows.push(row.to_product_value());
-                Ok(())
-            })?;
-        }
-
-        Ok(rows)
+        evaluate_view_sql(tx, the_query, expected_row_type, call_info, self.info.database_identity)
     }
+}
+
+/// Compiles and runs a SQL query that was returned from a view.
+/// This is a standalone function extracted from `InstanceCommon::run_query_for_view`
+/// so it can be called from re-entrant view evaluation during procedure commits.
+pub(crate) fn evaluate_view_sql(
+    tx: &mut MutTxId,
+    the_query: &str,
+    expected_row_type: &ProductType,
+    call_info: &ViewCallInfo,
+    database_identity: Identity,
+) -> anyhow::Result<Vec<ProductValue>> {
+    if the_query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Views bypass RLS, since views should enforce their own access control procedurally.
+    let auth = AuthCtx::for_current(database_identity);
+    let schema_view = SchemaViewer::new(&*tx, &auth);
+
+    // Compile to subscription plans.
+    let (plans, has_params) = SubscriptionPlan::compile(the_query, &schema_view, &auth)?;
+    ensure!(
+        !has_params,
+        "parameterized SQL is not supported for view materialization yet"
+    );
+
+    // Validate shape and disallow views-on-views.
+    for plan in &plans {
+        let phys = plan.optimized_physical_plan();
+        let Some(source_schema) = phys.return_table() else {
+            bail!("query does not return plain table rows");
+        };
+        if phys.reads_from_view(true) || phys.reads_from_view(false) {
+            bail!("view definition cannot read from other views");
+        }
+        if source_schema.row_type != *expected_row_type {
+            bail!(
+                "query returns `{}` but view expects `{}`",
+                fmt_algebraic_type(&AlgebraicType::Product(source_schema.row_type.clone())),
+                fmt_algebraic_type(&AlgebraicType::Product(expected_row_type.clone())),
+            );
+        }
+    }
+
+    let op = FuncCallType::View(call_info.clone());
+    let mut metrics = ExecutionMetrics::default();
+    let mut rows = Vec::new();
+
+    for plan in plans {
+        // Track read sets for all tables involved in this plan.
+        // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
+        for table_id in plan.table_ids() {
+            tx.record_table_scan(&op, table_id);
+        }
+
+        let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
+        pipelined.execute(&*tx, &mut metrics, &mut |row| {
+            rows.push(row.to_product_value());
+            Ok(())
+        })?;
+    }
+
+    Ok(rows)
+}
+
+impl InstanceCommon {
     /// A [`MutTxId`] knows which views must be updated (re-evaluated).
     /// This method re-evaluates them and updates their backing tables.
     pub(crate) fn call_views_with_tx<I: WasmInstance>(

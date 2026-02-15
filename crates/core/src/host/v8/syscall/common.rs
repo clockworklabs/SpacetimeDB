@@ -654,6 +654,9 @@ pub fn procedure_commit_mut_tx(
 ) -> SysCallResult<()> {
     let env = get_env(scope)?;
 
+    // TODO(#4296): V8 needs equivalent re-entrant view evaluation during procedure commits.
+    // The wasmtime backend evaluates dirty views re-entrantly before committing.
+    // V8 currently skips this step and just commits directly.
     env.instance_env.commit_mutable_tx()?;
 
     Ok(())

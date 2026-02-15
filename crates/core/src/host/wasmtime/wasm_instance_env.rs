@@ -14,11 +14,19 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use std::future::Future;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::Instant;
-use wasmtime::{AsContext, Caller, StoreContextMut};
+use wasmtime::{AsContext, Caller, StoreContextMut, TypedFunc};
+
+/// The function signature of `__call_view__` (re-exported from wasmtime_module for re-entrant calls).
+pub(super) type CallViewType = TypedFunc<(u32, u64, u64, u64, u64, u32, u32), i32>;
+
+/// The function signature of `__call_view_anon__` (re-exported from wasmtime_module for re-entrant calls).
+pub(super) type CallViewAnonType = TypedFunc<(u32, u32, u32), i32>;
 
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
@@ -116,6 +124,15 @@ pub(super) struct WasmInstanceEnv {
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
+
+    /// Cached handle to `__call_view__` for re-entrant view calls during procedure commits.
+    pub(super) call_view: Option<CallViewType>,
+
+    /// Cached handle to `__call_view_anon__` for re-entrant anonymous view calls during procedure commits.
+    pub(super) call_view_anon: Option<CallViewAnonType>,
+
+    /// The module definition, needed to look up view metadata during re-entrant view evaluation.
+    pub(super) module_def: Option<Arc<ModuleDef>>,
 }
 
 const STANDARD_BYTES_SINK: u32 = 1;
@@ -138,6 +155,9 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
+            call_view: None,
+            call_view_anon: None,
+            module_def: None,
         }
     }
 
@@ -1592,14 +1612,208 @@ impl WasmInstanceEnv {
     ///   are not exposed to modules.
     pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
         Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |mut caller| {
-            let (_, env) = Self::mem_env(&mut caller);
-
-            {
-                env.instance_env.commit_mutable_tx()?;
-                Ok(0u16.into())
-            }
-            .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
+            Self::procedure_commit_mut_tx_inner(&mut caller)
+                .map_err(WasmError::Db)
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
         })
+    }
+
+    /// Inner implementation of procedure_commit_mut_tx that evaluates dirty views
+    /// re-entrantly before committing the transaction.
+    fn procedure_commit_mut_tx_inner(caller: &mut Caller<'_, Self>) -> Result<u32, NodesError> {
+        use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+        use crate::host::wasm_common::module_host_actor::ViewReturnData;
+        use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+        use futures_util::FutureExt as _;
+        use spacetimedb_client_api_messages::energy::EnergyQuanta;
+        use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
+        use spacetimedb_lib::Timestamp;
+        use std::time::Duration;
+
+        let env = caller.data_mut();
+
+        // Finish the anonymous tx context (validates we're in one).
+        env.instance_env.finish_anon_tx()?;
+
+        // Take the transaction from the slot.
+        let tx = env.instance_env.take_tx()?;
+
+        // Collect the set of dirty views that need re-evaluation.
+        let dirty_views: Vec<ViewCallInfo> = tx.view_for_update().cloned().collect();
+
+        // Get module_def and database identity for view evaluation.
+        let module_def = env.module_def.clone();
+        let replica_ctx = env.instance_env.replica_ctx.clone();
+        let stdb = replica_ctx.relational_db.clone();
+        let database_identity = *env.instance_env.database_identity();
+        let call_view_func = env.call_view.clone();
+        let call_view_anon_func = env.call_view_anon.clone();
+        let mut tx_slot = env.instance_env.tx.clone();
+        let _timestamp = env.instance_env.start_time;
+
+        // If there are no dirty views, skip re-entrant evaluation.
+        let tx = if dirty_views.is_empty() || module_def.is_none() {
+            tx
+        } else {
+            let module_def = module_def.as_ref().unwrap();
+            let mut current_tx = tx;
+
+            for view_info in &dirty_views {
+                let is_anonymous = view_info.sender.is_none();
+                let view_def = module_def
+                    .get_view_by_id(view_info.fn_ptr, is_anonymous)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "view with fn_ptr `{}` (anonymous={}) not found in module_def",
+                            view_info.fn_ptr, is_anonymous
+                        )
+                    });
+
+                let view_name = view_def.name.clone();
+                let row_type = view_def.product_type_ref;
+
+                // Put the tx back in the slot so the view function can access it.
+                let call_view_ref = &call_view_func;
+                let call_view_anon_ref = &call_view_anon_func;
+                let (mut returned_tx, call_result) = tx_slot.set(current_tx, || {
+                    // Set up bytes source (empty args) and result sink.
+                    let args_bytes = bytes::Bytes::new(); // Views take no args.
+
+                    let env = caller.data_mut();
+                    let args_source = env.create_bytes_source(args_bytes).unwrap_or(BytesSourceId::INVALID);
+                    let result_sink = env.setup_standard_bytes_sink();
+
+                    // Call the view function re-entrantly.
+                    let code = if let Some(sender) = &view_info.sender {
+                        // Non-anonymous view: use call_view with sender identity.
+                        let Some(call_view) = call_view_ref else {
+                            log::error!("No __call_view__ export but view `{view_name}` needs evaluation");
+                            return Err(anyhow::anyhow!("No __call_view__ export"));
+                        };
+                        let [s0, s1, s2, s3] = super::wasmtime_module::prepare_identity_for_call(*sender);
+                        call_view
+                            .call_async(
+                                &mut *caller,
+                                (view_info.fn_ptr.0, s0, s1, s2, s3, args_source.0, result_sink),
+                            )
+                            .now_or_never()
+                            .expect("view call should not yield")
+                    } else {
+                        // Anonymous view: use call_view_anon.
+                        let Some(call_view_anon) = call_view_anon_ref else {
+                            log::error!(
+                                "No __call_view_anon__ export but anonymous view `{view_name}` needs evaluation"
+                            );
+                            return Err(anyhow::anyhow!("No __call_view_anon__ export"));
+                        };
+                        call_view_anon
+                            .call_async(&mut *caller, (view_info.fn_ptr.0, args_source.0, result_sink))
+                            .now_or_never()
+                            .expect("anonymous view call should not yield")
+                    };
+
+                    // Get the result bytes.
+                    let result_bytes = caller.data_mut().take_standard_bytes_sink();
+
+                    // Process the return code.
+                    let code = match code {
+                        Ok(c) => c,
+                        Err(e) => return Err(e),
+                    };
+
+                    // Parse the view result.
+                    let view_return_data = match code {
+                        0 => ViewReturnData::Rows(result_bytes.into()),
+                        2 => ViewReturnData::HeaderFirst(result_bytes.into()),
+                        _ => {
+                            return Err(anyhow::anyhow!("view `{view_name}` returned unexpected code {code}"));
+                        }
+                    };
+
+                    Ok(view_return_data)
+                });
+
+                // Process the view result and materialize rows.
+                if let Err(e) = Self::process_view_result_and_materialize(
+                    call_result,
+                    &view_name,
+                    row_type,
+                    view_info,
+                    module_def,
+                    &stdb,
+                    &mut returned_tx,
+                    database_identity,
+                ) {
+                    log::error!("Error processing view `{view_name}` during procedure commit: {e:?}");
+                }
+
+                current_tx = returned_tx;
+            }
+
+            current_tx
+        };
+
+        // Now commit the transaction (with any view materializations included).
+        let subs = replica_ctx.subscriptions.clone();
+        let event = ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: stdb.database_identity(),
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            request_id: None,
+            timer: None,
+            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            host_execution_duration: Duration::from_millis(0),
+        };
+        let event = commit_and_broadcast_event(&subs, None, event, tx);
+        caller.data_mut().instance_env.procedure_last_tx_offset = Some(event.tx_offset);
+
+        Ok(0u16.into())
+    }
+
+    /// Process a view's return data: deserialize rows or execute SQL, then materialize.
+    #[allow(clippy::too_many_arguments)]
+    fn process_view_result_and_materialize(
+        call_result: Result<crate::host::wasm_common::module_host_actor::ViewReturnData, anyhow::Error>,
+        _view_name: &spacetimedb_schema::identifier::Identifier,
+        row_type: spacetimedb_sats::AlgebraicTypeRef,
+        view_info: &spacetimedb_datastore::locking_tx_datastore::ViewCallInfo,
+        module_def: &ModuleDef,
+        stdb: &crate::db::relational_db::RelationalDB,
+        tx: &mut spacetimedb_datastore::locking_tx_datastore::MutTxId,
+        database_identity: spacetimedb_lib::Identity,
+    ) -> anyhow::Result<()> {
+        use crate::host::wasm_common::module_host_actor::{evaluate_view_sql, ViewResult};
+
+        let view_return_data = call_result?;
+        let view_result = ViewResult::from_return_data(view_return_data)?;
+        let typespace = module_def.typespace();
+
+        let row_product_type = typespace
+            .resolve(row_type)
+            .resolve_refs()
+            .map_err(|e| anyhow::anyhow!("Error resolving row type: {e}"))?
+            .into_product()
+            .map_err(|_| anyhow::anyhow!("Row type is not a product type"))?;
+
+        let rows = match view_result {
+            ViewResult::Rows(bytes) => {
+                crate::host::wasm_common::module_host_actor::deserialize_view_rows(row_type, bytes, typespace)
+                    .map_err(|e| anyhow::anyhow!(e))?
+            }
+            ViewResult::RawSql(query) => {
+                evaluate_view_sql(tx, &query, &row_product_type, view_info, database_identity)?
+            }
+        };
+
+        match &view_info.sender {
+            Some(sender) => stdb.materialize_view(tx, view_info.table_id, *sender, rows)?,
+            None => stdb.materialize_anonymous_view(tx, view_info.table_id, rows)?,
+        };
+
+        Ok(())
     }
 
     /// Aborts a mutable transaction,

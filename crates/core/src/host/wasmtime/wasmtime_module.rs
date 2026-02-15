@@ -210,6 +210,12 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         let call_view = get_call_view(&mut store, &instance);
         let call_view_anon = get_call_view_anon(&mut store, &instance);
 
+        // Store copies of view function handles in the WasmInstanceEnv
+        // so that procedure_commit_mut_tx can make re-entrant view calls.
+        // TypedFunc is Copy, so this is cheap.
+        store.data_mut().call_view = call_view.clone();
+        store.data_mut().call_view_anon = call_view_anon.clone();
+
         Ok(WasmtimeInstance {
             store,
             instance,
@@ -351,6 +357,10 @@ pub struct WasmtimeInstance {
 }
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
+    fn set_module_def(&mut self, module_def: Arc<spacetimedb_schema::def::ModuleDef>) {
+        self.store.data_mut().module_def = Some(module_def);
+    }
+
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
 
@@ -617,7 +627,7 @@ fn prepare_store_for_call(store: &mut Store<WasmInstanceEnv>, budget: FunctionBu
 /// # let identity = Identity::ZERO;
 /// let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(identity);
 /// ```
-fn prepare_identity_for_call(caller_identity: Identity) -> [u64; 4] {
+pub(super) fn prepare_identity_for_call(caller_identity: Identity) -> [u64; 4] {
     // Encode this as a LITTLE-ENDIAN byte array
     bytemuck::must_cast(caller_identity.to_byte_array())
 }

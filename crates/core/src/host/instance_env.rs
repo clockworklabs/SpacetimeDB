@@ -52,7 +52,7 @@ pub struct InstanceEnv {
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
-    procedure_last_tx_offset: Option<TransactionOffset>,
+    pub(crate) procedure_last_tx_offset: Option<TransactionOffset>,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -715,7 +715,7 @@ impl InstanceEnv {
     /// Finishes an anonymous transaction,
     /// returning `Some(_)` if there was no ongoing one,
     /// in which case the caller should return early.
-    fn finish_anon_tx(&mut self) -> Result<(), NodesError> {
+    pub(crate) fn finish_anon_tx(&mut self) -> Result<(), NodesError> {
         if self.in_anon_tx {
             self.in_anon_tx = false;
             Ok(())
