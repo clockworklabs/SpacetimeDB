@@ -342,7 +342,15 @@ enum CiCmd {
     /// - CLI reference docs: `cargo ci cli-docs`
     /// - Codegen snapshot tests: `cargo test -p spacetimedb-codegen` (uses insta snapshots,
     ///   update with `cargo insta review`)
-    Regen,
+    Regen {
+        /// Only check if bindings are up-to-date, without modifying files.
+        ///
+        /// Regenerates all bindings into a temporary state and then runs
+        /// `tools/check-diff.sh` to verify nothing changed. Exits with
+        /// an error if any bindings are stale.
+        #[arg(long, default_value_t = false)]
+        check: bool,
+    },
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -648,7 +656,7 @@ fn main() -> Result<()> {
             check_global_json_policy()?;
         }
 
-        Some(CiCmd::Regen) => {
+        Some(CiCmd::Regen { check }) => {
             ensure_repo_root()?;
 
             // Rust SDK test bindings: (module_dir, client_dir, include_private)
@@ -817,6 +825,45 @@ fn main() -> Result<()> {
             // Format
             log::info!("Running cargo fmt");
             cmd!("cargo", "fmt", "--all").run()?;
+
+            if check {
+                log::info!("Checking for stale bindings");
+                let codegen_dirs = [
+                    "sdks/rust/tests/test-client/src/module_bindings",
+                    "sdks/rust/tests/connect_disconnect_client/src/module_bindings",
+                    "sdks/rust/tests/procedure-client/src/module_bindings",
+                    "sdks/rust/tests/view-client/src/module_bindings",
+                    "sdks/rust/tests/event-table-client/src/module_bindings",
+                    "demo/Blackholio/client-unity/Assets/Scripts/autogen",
+                    "crates/bindings-csharp/Runtime/Internal/Autogen",
+                    "templates/chat-console-cs/module_bindings",
+                    "sdks/csharp/examples~/regression-tests",
+                    "templates/chat-react-ts/src/module_bindings",
+                    "crates/bindings-typescript/src/lib/autogen",
+                    "crates/bindings-cpp/include/spacetimedb/internal/autogen",
+                ];
+                let mut stale = Vec::new();
+                for dir in &codegen_dirs {
+                    if cmd("bash", &["tools/check-diff.sh", dir])
+                        .stdout_null()
+                        .stderr_null()
+                        .unchecked()
+                        .run()?
+                        .status
+                        .code()
+                        != Some(0)
+                    {
+                        stale.push(*dir);
+                    }
+                }
+                if !stale.is_empty() {
+                    for dir in &stale {
+                        log::error!("Stale bindings: {dir}");
+                    }
+                    bail!("Bindings are stale. Run `cargo ci regen` to regenerate them.");
+                }
+                log::info!("All bindings are up-to-date.");
+            }
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,
