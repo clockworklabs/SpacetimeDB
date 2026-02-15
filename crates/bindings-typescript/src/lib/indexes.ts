@@ -9,7 +9,7 @@ import type { ColumnIsUnique } from './constraints';
  * existing column names are referenced.
  */
 export type IndexOpts<AllowedCol extends string> = {
-  name?: string;
+  accessor?: string;
 } & (
   | { algorithm: 'btree'; columns: readonly AllowedCol[] }
   | { algorithm: 'hash'; columns: readonly AllowedCol[] }

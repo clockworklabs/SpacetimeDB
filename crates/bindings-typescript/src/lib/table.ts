@@ -422,7 +422,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     // the name and accessor name of an index across all SDKs.
     indexes.push({
       sourceName: undefined,
-      accessorName: indexOpts.name,
+      accessorName: indexOpts.accessor,
       algorithm,
     });
   }
@@ -437,15 +437,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       constraints.push({ sourceName: constraintOpts.name, data });
       continue;
     }
-  }
-
-  for (const index of indexes) {
-    const cols =
-      index.algorithm.tag === 'Direct'
-        ? [index.algorithm.value]
-        : index.algorithm.value;
-    const colS = cols.map(i => colNameList[i]).join('_');
-    index.sourceName = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
   }
 
   const productType = row.algebraicType.value as RowBuilder<
@@ -466,8 +457,20 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       if (row.typeName === undefined) {
         row.typeName = toPascalCase(tableName);
       }
+
+          // Build index source names using accName
+    for (const index of indexes) {
+      const cols =
+        index.algorithm.tag === 'Direct'
+          ? [index.algorithm.value]
+          : index.algorithm.value;
+
+      const colS = cols.map(i => colNameList[i]).join('_');
+      index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
+    }
+    
       return {
-        sourceName: tableName,
+        sourceName: accName,
         productTypeRef: ctx.registerTypesRecursively(row).ref,
         primaryKey: pk,
         indexes,
