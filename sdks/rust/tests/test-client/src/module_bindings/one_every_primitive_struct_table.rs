@@ -41,7 +41,6 @@ impl OneEveryPrimitiveStructTableAccess for super::RemoteTables {
 }
 
 pub struct OneEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
-
 pub struct OneEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {

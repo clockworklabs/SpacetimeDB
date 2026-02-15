@@ -38,7 +38,6 @@ impl OneF64TableAccess for super::RemoteTables {
 }
 
 pub struct OneF64InsertCallbackId(__sdk::CallbackId);
-
 pub struct OneF64DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {

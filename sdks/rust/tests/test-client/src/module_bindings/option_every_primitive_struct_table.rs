@@ -41,7 +41,6 @@ impl OptionEveryPrimitiveStructTableAccess for super::RemoteTables {
 }
 
 pub struct OptionEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
-
 pub struct OptionEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {

@@ -38,7 +38,6 @@ impl OneUuidTableAccess for super::RemoteTables {
 }
 
 pub struct OneUuidInsertCallbackId(__sdk::CallbackId);
-
 pub struct OneUuidDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneUuidTableHandle<'ctx> {

@@ -38,7 +38,6 @@ impl VecU8TableAccess for super::RemoteTables {
 }
 
 pub struct VecU8InsertCallbackId(__sdk::CallbackId);
-
 pub struct VecU8DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for VecU8TableHandle<'ctx> {

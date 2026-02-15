@@ -38,7 +38,6 @@ impl ProcInsertsIntoTableAccess for super::RemoteTables {
 }
 
 pub struct ProcInsertsIntoInsertCallbackId(__sdk::CallbackId);
-
 pub struct ProcInsertsIntoDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {

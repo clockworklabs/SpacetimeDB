@@ -39,7 +39,6 @@ impl PkSimpleEnumTableAccess for super::RemoteTables {
 }
 
 pub struct PkSimpleEnumInsertCallbackId(__sdk::CallbackId);
-
 pub struct PkSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {

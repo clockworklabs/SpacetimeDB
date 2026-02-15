@@ -38,7 +38,6 @@ impl PkStringTableAccess for super::RemoteTables {
 }
 
 pub struct PkStringInsertCallbackId(__sdk::CallbackId);
-
 pub struct PkStringDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {

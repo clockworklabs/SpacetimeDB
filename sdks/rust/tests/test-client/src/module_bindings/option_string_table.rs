@@ -38,7 +38,6 @@ impl OptionStringTableAccess for super::RemoteTables {
 }
 
 pub struct OptionStringInsertCallbackId(__sdk::CallbackId);
-
 pub struct OptionStringDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {

@@ -38,7 +38,6 @@ impl DisconnectedTableAccess for super::RemoteTables {
 }
 
 pub struct DisconnectedInsertCallbackId(__sdk::CallbackId);
-
 pub struct DisconnectedDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for DisconnectedTableHandle<'ctx> {

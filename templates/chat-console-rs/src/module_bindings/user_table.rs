@@ -38,7 +38,6 @@ impl UserTableAccess for super::RemoteTables {
 }
 
 pub struct UserInsertCallbackId(__sdk::CallbackId);
-
 pub struct UserDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for UserTableHandle<'ctx> {

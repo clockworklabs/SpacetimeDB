@@ -38,7 +38,6 @@ impl PkUuidTableAccess for super::RemoteTables {
 }
 
 pub struct PkUuidInsertCallbackId(__sdk::CallbackId);
-
 pub struct PkUuidDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {

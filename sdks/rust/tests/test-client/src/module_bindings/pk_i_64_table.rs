@@ -38,7 +38,6 @@ impl PkI64TableAccess for super::RemoteTables {
 }
 
 pub struct PkI64InsertCallbackId(__sdk::CallbackId);
-
 pub struct PkI64DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkI64TableHandle<'ctx> {

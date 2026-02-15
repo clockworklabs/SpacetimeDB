@@ -38,7 +38,6 @@ impl UniqueStringTableAccess for super::RemoteTables {
 }
 
 pub struct UniqueStringInsertCallbackId(__sdk::CallbackId);
-
 pub struct UniqueStringDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for UniqueStringTableHandle<'ctx> {

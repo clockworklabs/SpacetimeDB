@@ -38,7 +38,6 @@ impl UniqueU256TableAccess for super::RemoteTables {
 }
 
 pub struct UniqueU256InsertCallbackId(__sdk::CallbackId);
-
 pub struct UniqueU256DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for UniqueU256TableHandle<'ctx> {

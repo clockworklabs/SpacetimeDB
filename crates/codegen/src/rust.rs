@@ -169,7 +169,6 @@ impl {accessor_trait} for super::RemoteTables {{
 }}
 
 pub struct {insert_callback_id}(__sdk::CallbackId);
-
 "
         );
 

@@ -38,7 +38,6 @@ impl UniqueConnectionIdTableAccess for super::RemoteTables {
 }
 
 pub struct UniqueConnectionIdInsertCallbackId(__sdk::CallbackId);
-
 pub struct UniqueConnectionIdDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {

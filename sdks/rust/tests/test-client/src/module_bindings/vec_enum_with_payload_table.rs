@@ -39,7 +39,6 @@ impl VecEnumWithPayloadTableAccess for super::RemoteTables {
 }
 
 pub struct VecEnumWithPayloadInsertCallbackId(__sdk::CallbackId);
-
 pub struct VecEnumWithPayloadDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {

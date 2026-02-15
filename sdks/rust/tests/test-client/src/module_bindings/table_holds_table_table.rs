@@ -40,7 +40,6 @@ impl TableHoldsTableTableAccess for super::RemoteTables {
 }
 
 pub struct TableHoldsTableInsertCallbackId(__sdk::CallbackId);
-
 pub struct TableHoldsTableDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for TableHoldsTableTableHandle<'ctx> {

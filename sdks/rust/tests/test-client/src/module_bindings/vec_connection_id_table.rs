@@ -38,7 +38,6 @@ impl VecConnectionIdTableAccess for super::RemoteTables {
 }
 
 pub struct VecConnectionIdInsertCallbackId(__sdk::CallbackId);
-
 pub struct VecConnectionIdDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for VecConnectionIdTableHandle<'ctx> {

@@ -44,7 +44,6 @@ impl LargeTableTableAccess for super::RemoteTables {
 }
 
 pub struct LargeTableInsertCallbackId(__sdk::CallbackId);
-
 pub struct LargeTableDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for LargeTableTableHandle<'ctx> {

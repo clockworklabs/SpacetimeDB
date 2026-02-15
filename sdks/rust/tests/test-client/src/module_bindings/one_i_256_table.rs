@@ -38,7 +38,6 @@ impl OneI256TableAccess for super::RemoteTables {
 }
 
 pub struct OneI256InsertCallbackId(__sdk::CallbackId);
-
 pub struct OneI256DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneI256TableHandle<'ctx> {

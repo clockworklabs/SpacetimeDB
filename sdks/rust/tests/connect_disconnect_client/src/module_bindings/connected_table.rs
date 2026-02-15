@@ -38,7 +38,6 @@ impl ConnectedTableAccess for super::RemoteTables {
 }
 
 pub struct ConnectedInsertCallbackId(__sdk::CallbackId);
-
 pub struct ConnectedDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for ConnectedTableHandle<'ctx> {
