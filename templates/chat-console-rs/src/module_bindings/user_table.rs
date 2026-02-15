@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for UserTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<User>("user");
-    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-}
 pub struct UserUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for UserTableHandle<'ctx> {
@@ -98,15 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for UserTableHandle<'ctx> {
     fn remove_on_update(&self, callback: UserUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<User>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<User>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `identity` unique index on the table `user`,
@@ -137,6 +123,21 @@ impl<'ctx> UserIdentityUnique<'ctx> {
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<User> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<User>("user");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<User>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<User>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

@@ -6,40 +6,40 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct IdentityDisconnectedArgs {}
+pub(super) struct EmitMultipleTestEventsArgs {}
 
-impl From<IdentityDisconnectedArgs> for super::Reducer {
-    fn from(args: IdentityDisconnectedArgs) -> Self {
-        Self::IdentityDisconnected
+impl From<EmitMultipleTestEventsArgs> for super::Reducer {
+    fn from(args: EmitMultipleTestEventsArgs) -> Self {
+        Self::EmitMultipleTestEvents
     }
 }
 
-impl __sdk::InModule for IdentityDisconnectedArgs {
+impl __sdk::InModule for EmitMultipleTestEventsArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `identity_disconnected`.
+/// Extension trait for access to the reducer `emit_multiple_test_events`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait identity_disconnected {
-    /// Request that the remote module invoke the reducer `identity_disconnected` to run as soon as possible.
+pub trait emit_multiple_test_events {
+    /// Request that the remote module invoke the reducer `emit_multiple_test_events` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`identity_disconnected:identity_disconnected_then`] to run a callback after the reducer completes.
-    fn identity_disconnected(&self) -> __sdk::Result<()> {
-        self.identity_disconnected_then(|_, _| {})
+    /// /// Use [`emit_multiple_test_events:emit_multiple_test_events_then`] to run a callback after the reducer completes.
+    fn emit_multiple_test_events(&self) -> __sdk::Result<()> {
+        self.emit_multiple_test_events_then(|_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `identity_disconnected` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `emit_multiple_test_events` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn identity_disconnected_then(
+    fn emit_multiple_test_events_then(
         &self,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
@@ -48,8 +48,8 @@ pub trait identity_disconnected {
     ) -> __sdk::Result<()>;
 }
 
-impl identity_disconnected for super::RemoteReducers {
-    fn identity_disconnected_then(
+impl emit_multiple_test_events for super::RemoteReducers {
+    fn emit_multiple_test_events_then(
         &self,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
@@ -57,6 +57,6 @@ impl identity_disconnected for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(IdentityDisconnectedArgs {}, callback)
+            .invoke_reducer_with_callback(EmitMultipleTestEventsArgs {}, callback)
     }
 }

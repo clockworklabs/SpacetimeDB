@@ -15,16 +15,15 @@ namespace SpacetimeDB.Types
         public void InvalidRequest(ProcedureCallback<string> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalInvalidRequest((ctx, result) =>
+            InternalInvalidRequest((ctx, result) => {
+            if (result.IsSuccess && result.Value != null)
             {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<string>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<string>.Failure(result.Error!));
-                }
+                callback(ctx, ProcedureCallbackResult<string>.Success(result.Value.Value));
+            }
+            else
+            {
+                callback(ctx, ProcedureCallbackResult<string>.Failure(result.Error!));
+            }
             });
         }
 

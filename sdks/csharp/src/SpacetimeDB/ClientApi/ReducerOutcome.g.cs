@@ -10,7 +10,7 @@ namespace SpacetimeDB.ClientApi
     [SpacetimeDB.Type]
     public partial record ReducerOutcome : SpacetimeDB.TaggedEnum<(
         ReducerOk Ok,
-        SpacetimeDB.Unit Okmpty,
+        SpacetimeDB.Unit OkEmpty,
         System.Collections.Generic.List<byte> Err,
         string InternalError
     )>;

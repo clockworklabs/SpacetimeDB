@@ -53,8 +53,8 @@ fn test_spacetimedb_ns_csharp() {
     let namespace = "SpacetimeDB.Types";
     assert_eq!(
         count_matches(tmpdir.path(), &format!("namespace {}", namespace)),
-        7,
-        "Expected 7 occurrences of 'namespace {}'",
+        5,
+        "Expected 5 occurrences of 'namespace {}'",
         namespace
     );
     assert_eq!(
@@ -92,13 +92,13 @@ fn test_custom_ns_csharp() {
 
     assert_eq!(
         count_matches(tmpdir.path(), &format!("namespace {}", namespace)),
-        7,
-        "Expected 7 occurrences of 'namespace {}'",
+        5,
+        "Expected 5 occurrences of 'namespace {}'",
         namespace
     );
     assert_eq!(
         count_matches(tmpdir.path(), "using SpacetimeDB;"),
-        7,
-        "Expected 7 occurrences of 'using SpacetimeDB;'"
+        5,
+        "Expected 5 occurrences of 'using SpacetimeDB;'"
     );
 }

@@ -692,6 +692,13 @@ public static partial class Module
         public uint Attempts;
     }
 
+    [SpacetimeDB.Table(Name = "test_event", Public = true, Event = true)]
+    public partial struct TestEvent
+    {
+        public string Name;
+        public ulong Value;
+    }
+
     [SpacetimeDB.Procedure]
     public static void InsertWithTxRetry(ProcedureContext ctx)
     {
@@ -734,6 +741,15 @@ public static partial class Module
 
         Debug.Assert(outcome.IsSuccess, "Retry should have succeeded");
     }
+
+    [SpacetimeDB.Reducer]
+    public static void EmitTestEvent(ReducerContext ctx, string name, ulong value)
+    {
+        ctx.Db.test_event.Insert(new TestEvent { Name = name, Value = value });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void Noop(ReducerContext ctx) { }
 
     [SpacetimeDB.Procedure]
     public static void InsertWithTxPanic(ProcedureContext ctx)

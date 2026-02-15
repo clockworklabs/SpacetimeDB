@@ -521,9 +521,14 @@ impl Lang for Csharp<'_> {
             let csharp_table_class_name = csharp_table_name.clone() + "Handle";
             let table_type = type_ref_name(module, table.product_type_ref);
 
+            let base_class = if table.is_event {
+                "RemoteEventTableHandle"
+            } else {
+                "RemoteTableHandle"
+            };
             writeln!(
                 output,
-                "public sealed class {csharp_table_class_name} : RemoteTableHandle<EventContext, {table_type}>"
+                "public sealed class {csharp_table_class_name} : {base_class}<EventContext, {table_type}>"
             );
             indented_block(output, |output| {
                 writeln!(

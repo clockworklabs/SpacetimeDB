@@ -6,41 +6,49 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct IdentityConnectedArgs {}
+pub(super) struct EmitTestEventArgs {
+    pub name: String,
+    pub value: u64,
+}
 
-impl From<IdentityConnectedArgs> for super::Reducer {
-    fn from(args: IdentityConnectedArgs) -> Self {
-        Self::IdentityConnected
+impl From<EmitTestEventArgs> for super::Reducer {
+    fn from(args: EmitTestEventArgs) -> Self {
+        Self::EmitTestEvent {
+            name: args.name,
+            value: args.value,
+        }
     }
 }
 
-impl __sdk::InModule for IdentityConnectedArgs {
+impl __sdk::InModule for EmitTestEventArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `identity_connected`.
+/// Extension trait for access to the reducer `emit_test_event`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait identity_connected {
-    /// Request that the remote module invoke the reducer `identity_connected` to run as soon as possible.
+pub trait emit_test_event {
+    /// Request that the remote module invoke the reducer `emit_test_event` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`identity_connected:identity_connected_then`] to run a callback after the reducer completes.
-    fn identity_connected(&self) -> __sdk::Result<()> {
-        self.identity_connected_then(|_, _| {})
+    /// /// Use [`emit_test_event:emit_test_event_then`] to run a callback after the reducer completes.
+    fn emit_test_event(&self, name: String, value: u64) -> __sdk::Result<()> {
+        self.emit_test_event_then(name, value, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `identity_connected` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `emit_test_event` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn identity_connected_then(
+    fn emit_test_event_then(
         &self,
+        name: String,
+        value: u64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -48,15 +56,17 @@ pub trait identity_connected {
     ) -> __sdk::Result<()>;
 }
 
-impl identity_connected for super::RemoteReducers {
-    fn identity_connected_then(
+impl emit_test_event for super::RemoteReducers {
+    fn emit_test_event_then(
         &self,
+        name: String,
+        value: u64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(IdentityConnectedArgs {}, callback)
+            .invoke_reducer_with_callback(EmitTestEventArgs { name, value }, callback)
     }
 }

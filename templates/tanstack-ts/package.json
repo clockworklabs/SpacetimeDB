@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "PORT=4000 node .output/server/index.mjs",
+    "generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path spacetimedb && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
     "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local",
     "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud"

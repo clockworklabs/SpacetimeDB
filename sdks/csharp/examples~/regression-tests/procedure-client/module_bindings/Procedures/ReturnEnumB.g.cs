@@ -15,16 +15,15 @@ namespace SpacetimeDB.Types
         public void ReturnEnumB(string b, ProcedureCallback<SpacetimeDB.Types.ReturnEnum> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalReturnEnumB(b, (ctx, result) =>
+            InternalReturnEnumB(b, (ctx, result) => {
+            if (result.IsSuccess && result.Value != null)
             {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnEnum>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnEnum>.Failure(result.Error!));
-                }
+                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnEnum>.Success(result.Value.Value));
+            }
+            else
+            {
+                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnEnum>.Failure(result.Error!));
+            }
             });
         }
 

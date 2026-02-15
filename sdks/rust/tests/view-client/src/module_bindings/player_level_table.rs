@@ -78,21 +78,6 @@ impl<'ctx> __sdk::Table for PlayerLevelTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PlayerLevel>("player_level");
-    _table.add_unique_constraint::<u64>("entity_id", |row| &row.entity_id);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PlayerLevel>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PlayerLevel>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
 /// Access to the `entity_id` unique index on the table `player_level`,
 /// which allows point queries on the field of the same name
 /// via the [`PlayerLevelEntityIdUnique::find`] method.
@@ -121,6 +106,21 @@ impl<'ctx> PlayerLevelEntityIdUnique<'ctx> {
     pub fn find(&self, col_val: &u64) -> Option<PlayerLevel> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PlayerLevel>("player_level");
+    _table.add_unique_constraint::<u64>("entity_id", |row| &row.entity_id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PlayerLevel>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PlayerLevel>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]
