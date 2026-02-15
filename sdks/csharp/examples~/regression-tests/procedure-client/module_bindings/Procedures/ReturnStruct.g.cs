@@ -15,16 +15,15 @@ namespace SpacetimeDB.Types
         public void ReturnStruct(uint a, string b, ProcedureCallback<SpacetimeDB.Types.ReturnStruct> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalReturnStruct(a, b, (ctx, result) =>
+            InternalReturnStruct(a, b, (ctx, result) => {
+            if (result.IsSuccess && result.Value != null)
             {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Failure(result.Error!));
-                }
+                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Success(result.Value.Value));
+            }
+            else
+            {
+                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Failure(result.Error!));
+            }
             });
         }
 
