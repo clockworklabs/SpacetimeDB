@@ -832,7 +832,6 @@ impl LoggedOutPlayerTableAccess for super::RemoteTables {
 
 pub struct LoggedOutPlayerInsertCallbackId(__sdk::CallbackId);
 
-
 pub struct LoggedOutPlayerDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for LoggedOutPlayerTableHandle<'ctx> {
@@ -2048,7 +2047,6 @@ impl MyPlayerTableAccess for super::RemoteTables {
 
 pub struct MyPlayerInsertCallbackId(__sdk::CallbackId);
 
-
 pub struct MyPlayerDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for MyPlayerTableHandle<'ctx> {
@@ -2226,7 +2224,6 @@ impl PersonTableAccess for super::RemoteTables {
 }
 
 pub struct PersonInsertCallbackId(__sdk::CallbackId);
-
 
 pub struct PersonDeleteCallbackId(__sdk::CallbackId);
 
@@ -2530,7 +2527,6 @@ impl PlayerTableAccess for super::RemoteTables {
 }
 
 pub struct PlayerInsertCallbackId(__sdk::CallbackId);
-
 
 pub struct PlayerDeleteCallbackId(__sdk::CallbackId);
 
@@ -3503,7 +3499,6 @@ impl TestDTableAccess for super::RemoteTables {
 
 pub struct TestDInsertCallbackId(__sdk::CallbackId);
 
-
 pub struct TestDDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for TestDTableHandle<'ctx> {
@@ -3750,7 +3745,6 @@ impl TestFTableAccess for super::RemoteTables {
 }
 
 pub struct TestFInsertCallbackId(__sdk::CallbackId);
-
 
 pub struct TestFDeleteCallbackId(__sdk::CallbackId);
 
