@@ -92,8 +92,6 @@ export function injectTable<TableDef extends UntypedTableDef>(
 ): Signal<TableRows<TableDef>> {
   assertInInjectionContext(injectTable);
 
-  type UseTableRowType = RowType<TableDef>;
-
   const connState = inject(SPACETIMEDB_CONNECTION);
 
   const accessorName = getQueryAccessorName(query);
@@ -140,7 +138,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
     });
   };
 
-  effect(onCleanup => {
+  effect((onCleanup: (fn: () => void) => void) => {
     const state = connState();
     if (!state.isActive) {
       return;

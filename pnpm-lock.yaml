@@ -81,6 +81,12 @@ importers:
         specifier: ^3.3.0
         version: 3.5.26(typescript@5.9.3)
     devDependencies:
+      '@angular/compiler':
+        specifier: ^21.1.0
+        version: 21.1.4
+      '@angular/core':
+        specifier: ^21.1.0
+        version: 21.1.4(@angular/compiler@21.1.4)(rxjs@7.8.2)
       '@eslint/js':
         specifier: ^9.17.0
         version: 9.33.0

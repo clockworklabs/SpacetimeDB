@@ -13,7 +13,7 @@ export function injectReducer<ReducerDef extends UntypedReducerDef>(
   const reducerName = reducerDef.accessorName;
 
   // flush queued calls when connection becomes active
-  effect(onCleanup => {
+  effect((onCleanup: (fn: () => void) => void) => {
     const state = connState();
     if (!state.isActive) {
       return;
