@@ -29,7 +29,7 @@ Use the `spacetime generate` command to create bindings from your module:
 
 ```bash
 mkdir -p src/module_bindings
-spacetime generate --lang typescript --out-dir src/module_bindings --project-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang typescript --out-dir src/module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 This generates TypeScript files in `src/module_bindings/`. Import them in your client:
@@ -45,7 +45,7 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --project-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang cs --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 This generates C# files in `module_bindings/`. The generated files are automatically included in your project.
@@ -57,7 +57,7 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 
 ```bash
 mkdir -p src/module_bindings
-spacetime generate --lang rust --out-dir client/src/module_bindings --project-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang rust --out-dir client/src/module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 This generates Rust files in `client/src/module_bindings/`. Import them in your client with:
@@ -72,7 +72,7 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 <TabItem value="unreal" label="Unreal">
 
 ```bash
-spacetime generate --lang unrealcpp --uproject-dir PATH-TO-UPROJECT --project-path PATH-TO-MODULE-DIRECTORY --module-name YOUR_MODULE_NAME
+spacetime generate --lang unrealcpp --uproject-dir PATH-TO-UPROJECT --module-path PATH-TO-MODULE-DIRECTORY --unreal-module-name YOUR_MODULE_NAME
 ```
 
 This generates Unreal C++ files in your project's `ModuleBindings` directory. The generated files are automatically included in your Unreal project.

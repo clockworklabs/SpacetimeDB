@@ -765,28 +765,28 @@ From the `quickstart-chat` directory:
 <TabItem value="typescript" label="TypeScript">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
 <TabItem value="cpp" label="C++">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
@@ -1320,7 +1320,7 @@ Before we can run the app, we need to generate the TypeScript bindings that `App
 In your `quickstart-chat` directory, run:
 
 ```bash
-spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb
+spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 Take a look inside `src/module_bindings`. The CLI should have generated several files:
@@ -1668,7 +1668,7 @@ The `spacetime` CLI's `generate` command will generate client-side interfaces fo
 In your `quickstart-chat` directory, run:
 
 ```bash
-spacetime generate --lang csharp --out-dir module_bindings --project-path spacetimedb
+spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb
 ```
 
 Take a look inside `module_bindings`. The CLI should have generated three folders and nine files:
@@ -2235,7 +2235,7 @@ The `spacetime` CLI's `generate` command will generate client-side interfaces fo
 In your `quickstart-chat` directory, run:
 
 ```bash
-spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb
+spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 Take a look inside `src/module_bindings`. The CLI should have generated a few files:

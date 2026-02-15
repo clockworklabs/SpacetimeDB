@@ -45,7 +45,7 @@ fn test_spacetimedb_ns_csharp() {
         "--out-dir",
         tmpdir.path().to_str().unwrap(),
         "--lang=csharp",
-        "--project-path",
+        "--module-path",
         project_path.to_str().unwrap(),
     ])
     .unwrap();
@@ -85,7 +85,7 @@ fn test_custom_ns_csharp() {
         "--lang=csharp",
         "--namespace",
         namespace,
-        "--project-path",
+        "--module-path",
         project_path.to_str().unwrap(),
     ])
     .unwrap();

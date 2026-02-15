@@ -220,6 +220,7 @@ insta = { version = "1.21.0", features = ["toml", "filters"] }
 is-terminal = "0.4"
 itertools = "0.12"
 itoa = "1"
+json5 = "0.4"
 jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
 junction = "1"
 jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
