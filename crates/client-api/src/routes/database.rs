@@ -223,19 +223,20 @@ fn assert_content_type_json(content_type: headers::ContentType) -> axum::respons
     }
 }
 
-fn reducer_outcome_response(owner_identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> (StatusCode, String) {
+fn reducer_outcome_response(
+    owner_identity: &Identity,
+    reducer: &str,
+    outcome: ReducerOutcome,
+) -> (StatusCode, Box<str>) {
     match outcome {
-        ReducerOutcome::Committed => (StatusCode::OK, "".to_owned()),
+        ReducerOutcome::Committed => (StatusCode::OK, "".into()),
         ReducerOutcome::Failed(errmsg) => {
             // TODO: different status code? this is what cloudflare uses, sorta
-            (StatusCode::from_u16(530).unwrap(), errmsg)
+            (StatusCode::from_u16(530).unwrap(), *errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
             log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
-            (
-                StatusCode::PAYMENT_REQUIRED,
-                "Module energy budget exhausted.".to_owned(),
-            )
+            (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
         }
     }
 }
@@ -650,6 +651,8 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     host_type: HostType,
     parent: Option<NameOrIdentity>,
+    #[serde(alias = "org")]
+    organization: Option<NameOrIdentity>,
 }
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
@@ -662,6 +665,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         policy,
         host_type,
         parent,
+        organization,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -709,6 +713,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
     };
+    let maybe_org_identity = match organization.as_ref() {
+        None => None,
+        Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
+    };
 
     // Check that the replication factor looks somewhat sane.
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
@@ -721,19 +729,18 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .await
         .map_err(log_and_500)?;
     match existing.as_ref() {
-        // If not, check that the we caller is sufficiently authenticated.
         None => {
             allow_creation(&auth)?;
-            if let Some(parent) = maybe_parent_database_identity {
-                ctx.authorize_action(
-                    auth.claims.identity,
-                    database_identity,
-                    Action::CreateDatabase { parent: Some(parent) },
-                )
-                .await?;
-            }
+            ctx.authorize_action(
+                auth.claims.identity,
+                database_identity,
+                Action::CreateDatabase {
+                    parent: maybe_parent_database_identity,
+                    organization: maybe_org_identity,
+                },
+            )
+            .await?;
         }
-        // If yes, authorize via ctx.
         Some(database) => {
             ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
                 .await?;
@@ -767,6 +774,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 num_replicas,
                 host_type,
                 parent,
+                organization: maybe_org_identity,
             },
             schema_migration_policy,
         )
@@ -921,6 +929,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 num_replicas: None,
                 host_type,
                 parent: None,
+                organization: None,
             },
             style,
         )
@@ -933,6 +942,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             new_module_hash,
             breaks_client,
             plan,
+            major_version_upgrade,
         } => {
             info!(
                 "planned auto-migration of database {} from {} to {}",
@@ -949,12 +959,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
+                major_version_upgrade,
             }))
         }
-        MigratePlanResult::AutoMigrationError(e) => {
+        MigratePlanResult::AutoMigrationError {
+            error: e,
+            major_version_upgrade,
+        } => {
             info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
+                major_version_upgrade,
             }))
         }
     }
@@ -1078,7 +1093,7 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
+        if ctx.lookup_database_identity(name.as_str()).await.unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

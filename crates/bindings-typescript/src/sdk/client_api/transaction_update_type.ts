@@ -9,22 +9,10 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import UpdateStatus from './update_status_type';
-import ReducerCallInfo from './reducer_call_info_type';
-import EnergyQuanta from './energy_quanta_type';
+import QuerySetUpdate from './query_set_update_type';
 
 export default __t.object('TransactionUpdate', {
-  get status() {
-    return UpdateStatus;
+  get querySets() {
+    return __t.array(QuerySetUpdate);
   },
-  timestamp: __t.timestamp(),
-  callerIdentity: __t.identity(),
-  callerConnectionId: __t.connectionId(),
-  get reducerCall() {
-    return ReducerCallInfo;
-  },
-  get energyQuantaUsed() {
-    return EnergyQuanta;
-  },
-  totalHostExecutionDuration: __t.timeDuration(),
 });

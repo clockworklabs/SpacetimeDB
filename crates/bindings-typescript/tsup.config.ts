@@ -1,8 +1,8 @@
 // tsup.config.ts
 import { defineConfig, type Options } from 'tsup';
 
-function commonEsbuildTweaks() {
-  return (options: any) => {
+function commonEsbuildTweaks(): NonNullable<Options['esbuildOptions']> {
+  return options => {
     // Prefer "exports"."development" when deps provide it; harmless otherwise.
     options.conditions = ['development', 'import', 'default'];
     options.mainFields = ['browser', 'module', 'main'];
@@ -151,7 +151,7 @@ export default defineConfig([
     clean: true,
     platform: 'neutral',
     treeshake: 'smallest',
-    external: ['@angular/core', '@angular/common'],
+    external: ['@angular/core'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -167,7 +167,7 @@ export default defineConfig([
     clean: true,
     platform: 'browser',
     treeshake: 'smallest',
-    external: ['@angular/core', '@angular/common'],
+    external: ['@angular/core'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -204,11 +204,11 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
-  // Server subpath (SSR / node-friendly): dist/server/index.{mjs,cjs}
+  // Server subpath (SSR / node-friendly): dist/server/index.mjs
   {
     entry: { index: 'src/server/index.ts' },
-    format: ['esm', 'cjs'],
-    target: 'es2022',
+    format: 'esm',
+    target: 'esnext',
     outDir: 'dist/server',
     dts: false,
     sourcemap: true,
@@ -221,13 +221,31 @@ export default defineConfig([
         '(globalThis.window=globalThis.window||globalThis));',
     },
     treeshake: {
-      moduleSideEffects: [
-        'src/server/polyfills.ts',
-        'src/server/register_hooks.ts',
-      ],
+      moduleSideEffects: ['src/server/polyfills.ts'],
     },
     external: ['undici', /^spacetime:sys.*$/],
-    noExternal: ['base64-js', 'fast-text-encoding', 'statuses'],
+    noExternal: ['object-inspect', 'base64-js', 'statuses', 'pure-rand'],
+    outExtension,
+    esbuildOptions: (options, ctx) => {
+      // object-inspect tries to import the node `util` module,
+      // which we want to disable.
+      options.alias = { util: './src/util-stub.ts' };
+      commonEsbuildTweaks()(options, ctx);
+    },
+  },
+
+  // TanStack subpath (SSR-friendly): dist/tanstack/index.{mjs,cjs}
+  {
+    entry: { index: 'src/tanstack/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/tanstack',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['react', '@tanstack/react-query'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },

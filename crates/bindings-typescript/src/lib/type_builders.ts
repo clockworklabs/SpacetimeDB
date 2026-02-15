@@ -178,11 +178,17 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
   }
 
   serialize(writer: BinaryWriter, value: Type): void {
-    AlgebraicType.serializeValue(writer, this.algebraicType, value);
+    const serialize = (this.serialize = AlgebraicType.makeSerializer(
+      this.algebraicType
+    ));
+    serialize(writer, value);
   }
 
   deserialize(reader: BinaryReader): Type {
-    return AlgebraicType.deserializeValue(reader, this.algebraicType);
+    const deserialize = (this.deserialize = AlgebraicType.makeDeserializer(
+      this.algebraicType
+    ));
+    return deserialize(reader);
   }
 }
 
@@ -2064,7 +2070,7 @@ export class UuidBuilder
  * The type of index types that can be applied to a column.
  * `undefined` is the default
  */
-export type IndexTypes = 'btree' | 'direct' | undefined;
+export type IndexTypes = 'btree' | 'direct' | 'hash' | undefined;
 
 /**
  * Metadata describing column constraints and index type
@@ -2114,14 +2120,11 @@ export class ColumnBuilder<
   }
 
   serialize(writer: BinaryWriter, value: Type): void {
-    AlgebraicType.serializeValue(writer, this.typeBuilder.algebraicType, value);
+    this.typeBuilder.serialize(writer, value);
   }
 
   deserialize(reader: BinaryReader): Type {
-    return AlgebraicType.deserializeValue(
-      reader,
-      this.typeBuilder.algebraicType
-    );
+    return this.typeBuilder.deserialize(reader);
   }
 }
 
@@ -3871,7 +3874,7 @@ export const t = {
   enum: enumImpl,
 
   /**
-   * This is a special helper function for conveniently creating {@link Product} type columns with no fields.
+   * This is a special helper function for conveniently creating `Product` type columns with no fields.
    *
    * @returns A new {@link ProductBuilder} instance with no fields.
    */
@@ -3999,10 +4002,10 @@ export const t = {
   },
 
   /**
-   * This is a convenience method for creating a column with the {@link ByteArray} type.
+   * This is a convenience method for creating a column with the `ByteArray` type.
    * You can create a column of the same type by constructing an `array` of `u8`.
    * The TypeScript representation is {@link Uint8Array}.
-   * @returns A new {@link ByteArrayBuilder} instance with the {@link ByteArray} type.
+   * @returns A new {@link ByteArrayBuilder} instance with the `ByteArray` type.
    */
   byteArray: (): ByteArrayBuilder => {
     return new ByteArrayBuilder();

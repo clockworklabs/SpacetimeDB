@@ -9,37 +9,25 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import CallReducer from './call_reducer_type';
 import Subscribe from './subscribe_type';
-import OneOffQuery from './one_off_query_type';
-import SubscribeSingle from './subscribe_single_type';
-import SubscribeMulti from './subscribe_multi_type';
 import Unsubscribe from './unsubscribe_type';
-import UnsubscribeMulti from './unsubscribe_multi_type';
+import OneOffQuery from './one_off_query_type';
+import CallReducer from './call_reducer_type';
 import CallProcedure from './call_procedure_type';
 
 // The tagged union or sum type for the algebraic type `ClientMessage`.
 const ClientMessage = __t.enum('ClientMessage', {
-  get CallReducer() {
-    return CallReducer;
-  },
   get Subscribe() {
     return Subscribe;
-  },
-  get OneOffQuery() {
-    return OneOffQuery;
-  },
-  get SubscribeSingle() {
-    return SubscribeSingle;
-  },
-  get SubscribeMulti() {
-    return SubscribeMulti;
   },
   get Unsubscribe() {
     return Unsubscribe;
   },
-  get UnsubscribeMulti() {
-    return UnsubscribeMulti;
+  get OneOffQuery() {
+    return OneOffQuery;
+  },
+  get CallReducer() {
+    return CallReducer;
   },
   get CallProcedure() {
     return CallProcedure;

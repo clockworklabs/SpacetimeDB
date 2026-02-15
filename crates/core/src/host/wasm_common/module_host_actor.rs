@@ -19,7 +19,7 @@ use crate::host::{
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
-use crate::module_host_context::ModuleCreationContextLimited;
+use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
@@ -51,6 +51,8 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValu
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
@@ -158,7 +160,7 @@ impl ExecutionTimings {
 }
 
 /// The result that `__call_reducer__` produces during normal non-trap execution.
-pub type ReducerResult = Result<(), Box<str>>;
+pub type ReducerResult = Result<Option<Bytes>, Box<str>>;
 
 pub struct ExecutionStats {
     pub energy: EnergyStats,
@@ -193,7 +195,7 @@ pub struct ExecutionResult<T, E> {
     pub call_result: Result<T, E>,
 }
 
-pub type ReducerExecuteResult = ExecutionResult<(), ExecutionError>;
+pub type ReducerExecuteResult = ExecutionResult<Option<Bytes>, ExecutionError>;
 
 impl<T, E> ExecutionResult<T, E> {
     pub fn map_result<X, Y>(self, f: impl FnOnce(Result<T, E>) -> Result<X, Y>) -> ExecutionResult<X, Y> {
@@ -293,7 +295,7 @@ pub enum DescribeError {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(
-        mcc: ModuleCreationContextLimited,
+        mcc: ModuleCreationContext,
         module: T,
     ) -> Result<(Self, WasmModuleInstance<T::Instance>), InitializationError> {
         log::trace!(
@@ -600,6 +602,7 @@ impl InstanceCommon {
                         caller_connection_id: None,
                         function_call: ModuleFunctionCall::update(),
                         status: EventStatus::Committed(DatabaseUpdate::default()),
+                        reducer_return_value: None,
                         energy_quanta_used: energy_quanta_used.into(),
                         host_execution_duration,
                         request_id: None,
@@ -647,7 +650,7 @@ impl InstanceCommon {
 
             for sub in tx.lookup_st_view_subs(view_id)? {
                 view_calls.push(CallViewParams {
-                    view_name: view_name.to_owned().into(),
+                    view_name: view_name.clone(),
                     view_id,
                     table_id,
                     fn_ptr: *fn_ptr,
@@ -680,7 +683,7 @@ impl InstanceCommon {
         // We've already validated by this point that the procedure exists,
         // so it's fine to use the panicking `procedure_by_id`.
         let procedure_def = self.info.module_def.procedure_by_id(procedure_id);
-        let procedure_name: &str = &procedure_def.name;
+        let procedure_name = &procedure_def.name;
 
         // TODO(observability): Add tracing spans, energy, metrics?
         // These will require further thinking once we implement procedure suspend/resume,
@@ -688,7 +691,7 @@ impl InstanceCommon {
 
         let op = ProcedureOp {
             id: procedure_id,
-            name: procedure_name.into(),
+            name: procedure_name.clone(),
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -798,7 +801,7 @@ impl InstanceCommon {
         let stdb = &*replica_ctx.relational_db.clone();
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
-        let reducer_name = &*reducer_def.name;
+        let reducer_name = &reducer_def.name;
 
         // Do some `with_label_values`.
         // TODO(perf, centril): consider caching this.
@@ -835,11 +838,11 @@ impl InstanceCommon {
         // However, that does not necessarily apply to e.g., V8.
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let status = match result.call_result {
+        let (status, mut reducer_return_value) = match result.call_result {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                self.handle_outer_error(&result.stats.energy, reducer_name)
+                (self.handle_outer_error(&result.stats.energy, reducer_name), None)
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(
@@ -849,11 +852,11 @@ impl InstanceCommon {
                     &err,
                     &self.info.module_hash,
                 );
-                EventStatus::Failed(err.into())
+                (EventStatus::FailedUser(err.into()), None)
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            Ok(()) => {
+            Ok(return_value) => {
                 // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
                 // We handle OnConnect events before running the reducer.
                 let res = match reducer_def.lifecycle {
@@ -863,7 +866,7 @@ impl InstanceCommon {
                     _ => Ok(()),
                 };
                 match res {
-                    Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
+                    Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
                         let err = err.to_string();
                         log_reducer_error(
@@ -873,7 +876,7 @@ impl InstanceCommon {
                             &err,
                             &self.info.module_hash,
                         );
-                        EventStatus::Failed(err)
+                        (EventStatus::FailedInternal(err), None)
                     }
                 }
             }
@@ -893,9 +896,12 @@ impl InstanceCommon {
 
         let status = match out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
-            ViewOutcome::Failed(err) => EventStatus::Failed(err),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
             ViewOutcome::Success => status,
         };
+        if !matches!(status, EventStatus::Committed(_)) {
+            reducer_return_value = None;
+        }
 
         let energy_quanta_used = result.stats.energy_used().into();
         let total_duration = result.stats.total_duration();
@@ -905,11 +911,12 @@ impl InstanceCommon {
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_string(),
+                reducer: Some(reducer_name.clone()),
                 reducer_id,
                 args,
             },
             status,
+            reducer_return_value,
             energy_quanta_used,
             host_execution_duration: total_duration,
             request_id,
@@ -935,7 +942,7 @@ impl InstanceCommon {
         if energy.remaining.get() == 0 {
             EventStatus::OutOfEnergy
         } else {
-            EventStatus::Failed("The instance encountered a fatal error.".into())
+            EventStatus::FailedInternal("The instance encountered a fatal error.".into())
         }
     }
 
@@ -994,7 +1001,7 @@ impl InstanceCommon {
                 sender,
                 auth,
                 request,
-                timer,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1009,7 +1016,7 @@ impl InstanceCommon {
                 sender,
                 auth,
                 subscribe,
-                timer,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1025,11 +1032,41 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-            ViewCommand::AddMultiSubscription {
+            ViewCommand::AddSubscriptionV2 {
+                sender,
+                auth,
+                request,
+                _timer: timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::RemoveSubscriptionV2 {
                 sender,
                 auth,
                 request,
                 timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::AddMultiSubscription {
+                sender,
+                auth,
+                request,
+                _timer: timer,
             } => {
                 let res = info
                     .subscriptions
@@ -1040,7 +1077,6 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
-
             ViewCommand::Sql {
                 db,
                 sql_text,
@@ -1273,14 +1309,13 @@ impl InstanceCommon {
     ) -> (ViewCallResult, bool) {
         let view_calls = tx
             .view_for_update()
-            .cloned()
             .map(|info| {
                 let view_def = module_def
                     .get_view_by_id(info.fn_ptr, info.sender.is_none())
                     .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
 
                 CallViewParams {
-                    view_name: view_def.name.clone().into(),
+                    view_name: view_def.name.clone(),
                     view_id: info.view_id,
                     table_id: info.table_id,
                     fn_ptr: view_def.fn_ptr,
@@ -1550,7 +1585,7 @@ fn lifecyle_modifications_to_tx(
 */
 
 pub trait InstanceOp {
-    fn name(&self) -> &str;
+    fn name(&self) -> &Identifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1558,7 +1593,7 @@ pub trait InstanceOp {
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
-    pub name: &'a str,
+    pub name: &'a Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1568,7 +1603,7 @@ pub struct ViewOp<'a> {
 }
 
 impl InstanceOp for ViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         self.name
     }
 
@@ -1589,7 +1624,7 @@ impl InstanceOp for ViewOp<'_> {
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
-    pub name: &'a str,
+    pub name: &'a Identifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1598,7 +1633,7 @@ pub struct AnonymousViewOp<'a> {
 }
 
 impl InstanceOp for AnonymousViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         self.name
     }
 
@@ -1620,7 +1655,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
 #[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
-    pub name: &'a str,
+    pub name: &'a ReducerName,
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
@@ -1629,8 +1664,8 @@ pub struct ReducerOp<'a> {
 }
 
 impl InstanceOp for ReducerOp<'_> {
-    fn name(&self) -> &str {
-        self.name
+    fn name(&self) -> &Identifier {
+        self.name.as_identifier()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1652,7 +1687,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
         }: ReducerOp<'_>,
     ) -> Self {
         Self {
-            name: name.to_owned(),
+            name: name.clone(),
             caller_identity: *caller_identity,
             caller_connection_id: *caller_connection_id,
             timestamp,
@@ -1665,7 +1700,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
 #[derive(Clone, Debug)]
 pub struct ProcedureOp {
     pub id: ProcedureId,
-    pub name: Box<str>,
+    pub name: Identifier,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,
@@ -1673,7 +1708,7 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Identifier {
         &self.name
     }
     fn timestamp(&self) -> Timestamp {

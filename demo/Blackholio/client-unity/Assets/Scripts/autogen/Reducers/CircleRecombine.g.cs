@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void CircleRecombine(SpacetimeDB.Types.CircleRecombineTimer timer)
         {
-            conn.InternalCallReducer(new Reducer.CircleRecombine(timer), this.SetCallReducerFlags.CircleRecombineFlags);
+            conn.InternalCallReducer(new Reducer.CircleRecombine(timer));
         }
 
         public bool InvokeCircleRecombine(ReducerEventContext ctx, Reducer.CircleRecombine args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "circle_recombine";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags CircleRecombineFlags;
-        public void CircleRecombine(CallReducerFlags flags) => CircleRecombineFlags = flags;
     }
 }

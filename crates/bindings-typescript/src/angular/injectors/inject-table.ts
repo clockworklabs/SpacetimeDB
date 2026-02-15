@@ -9,25 +9,15 @@ import type { RowType, UntypedTableDef } from '../../lib/table';
 import type { Prettify } from '../../lib/type_util';
 import { SPACETIMEDB_CONNECTION } from '../connection_state';
 import {
-  type Value,
-  type Expr,
-  type ColumnsFromRow,
-  eq,
-  and,
-  or,
-  isEq,
-  isAnd,
-  isOr,
-  evaluate,
-  toString,
-  where,
-  classifyMembership,
-} from '../../lib/filter';
+  type Query,
+  type BooleanExpr,
+  toSql,
+  evaluateBooleanExpr,
+  getQueryAccessorName,
+  getQueryWhereClause,
+} from '../../lib/query';
 import type { EventContextInterface } from '../../sdk';
 import type { UntypedRemoteModule } from '../../sdk/spacetime_module';
-
-export { eq, and, or, isEq, isAnd, isOr, where };
-export type { Value, Expr };
 
 export type RowTypeDef<TableDef extends UntypedTableDef> = Prettify<
   RowType<TableDef>
@@ -44,9 +34,20 @@ export interface InjectTableCallbacks<RowType> {
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
 }
 
-export interface InjectTableOptions<TableDef extends UntypedTableDef> {
-  where?: Expr<ColumnsFromRow<RowType<TableDef>>>;
-  callbacks?: InjectTableCallbacks<RowTypeDef<TableDef>>;
+type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
+
+function classifyMembership(
+  whereExpr: BooleanExpr<any> | undefined,
+  oldRow: Record<string, any>,
+  newRow: Record<string, any>
+): MembershipChange {
+  if (!whereExpr) return 'stayIn';
+  const oldIn = evaluateBooleanExpr(whereExpr, oldRow);
+  const newIn = evaluateBooleanExpr(whereExpr, newRow);
+  if (oldIn && !newIn) return 'leave';
+  if (!oldIn && newIn) return 'enter';
+  if (oldIn && newIn) return 'stayIn';
+  return 'stayOut';
 }
 
 /**
@@ -54,24 +55,31 @@ export interface InjectTableOptions<TableDef extends UntypedTableDef> {
  *
  * Must be called within an injection context (component field initializer or constructor).
  *
+ * Accepts a query builder expression as the first argument:
+ * - `tables.user` — subscribe to all rows
+ * - `tables.user.where(r => r.online.eq(true))` — subscribe with a filter
+ *
  * @template TableDef The table definition type.
  *
- * @param tableDef - The table definition to subscribe to.
- * @param options - Optional configuration including where clause and callbacks.
+ * @param query - A query builder expression (table reference or filtered query).
+ * @param callbacks - Optional callbacks for row insert, delete, and update events.
  *
  * @returns A signal containing the current rows and loading state.
  *
  * @example
  * ```typescript
  * export class UsersComponent {
- *   users = injectTable(User, {
- *     where: where(eq('isActive', true)),
- *     callbacks: {
+ *   users = injectTable(tables.user);
+ *
+ *   // With a filter:
+ *   onlineUsers = injectTable(
+ *     tables.user.where(r => r.online.eq(true)),
+ *     {
  *       onInsert: (row) => console.log('Inserted:', row),
  *       onDelete: (row) => console.log('Deleted:', row),
  *       onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
  *     }
- *   });
+ *   );
  *
  *   // In template: {{ users().rows.length }} users
  *   // Loading state: {{ users().isLoading }}
@@ -79,8 +87,8 @@ export interface InjectTableOptions<TableDef extends UntypedTableDef> {
  * ```
  */
 export function injectTable<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  options?: InjectTableOptions<TableDef>
+  query: Query<TableDef>,
+  callbacks?: InjectTableCallbacks<RowTypeDef<TableDef>>
 ): Signal<TableRows<TableDef>> {
   assertInInjectionContext(injectTable);
 
@@ -88,10 +96,9 @@ export function injectTable<TableDef extends UntypedTableDef>(
 
   const connState = inject(SPACETIMEDB_CONNECTION);
 
-  const tableName = tableDef.name;
-  const accessorName = tableDef.accessorName;
-  const whereClause = options?.where;
-  const callbacks = options?.callbacks;
+  const accessorName = getQueryAccessorName(query);
+  const whereExpr = getQueryWhereClause(query);
+  const querySql = toSql(query);
 
   const tableSignal = signal<TableRows<TableDef>>({
     isLoading: true,
@@ -100,10 +107,6 @@ export function injectTable<TableDef extends UntypedTableDef>(
 
   let latestTransactionEvent: any = null;
   let subscribeApplied = false;
-
-  const whereKey = whereClause ? toString(tableDef, whereClause) : '';
-  const query =
-    `SELECT * FROM ${tableName}` + (whereClause ? ` WHERE ${whereKey}` : '');
 
   // Note: this code is mostly derived from the React useTable implementation
   // in order to keep behavior consistent across frameworks.
@@ -121,9 +124,9 @@ export function injectTable<TableDef extends UntypedTableDef>(
 
     const table = connection.db[accessorName];
 
-    if (whereClause) {
+    if (whereExpr) {
       return Array.from(table.iter()).filter(row =>
-        evaluate(whereClause, row as UseTableRowType)
+        evaluateBooleanExpr(whereExpr, row as Record<string, any>)
       ) as RowTypeDef<TableDef>[];
     }
 
@@ -154,7 +157,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
       ctx: EventContextInterface<UntypedRemoteModule>,
       row: any
     ) => {
-      if (whereClause && !evaluate(whereClause, row)) {
+      if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
         return;
       }
 
@@ -170,7 +173,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
       ctx: EventContextInterface<UntypedRemoteModule>,
       row: any
     ) => {
-      if (whereClause && !evaluate(whereClause, row)) {
+      if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
         return;
       }
 
@@ -187,7 +190,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
       oldRow: any,
       newRow: any
     ) => {
-      const change = classifyMembership(whereClause, oldRow, newRow);
+      const change = classifyMembership(whereExpr, oldRow, newRow);
 
       switch (change) {
         case 'leave':
@@ -219,7 +222,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
         subscribeApplied = true;
         updateSnapshot();
       })
-      .subscribe(query);
+      .subscribe(querySql);
 
     onCleanup(() => {
       table.removeOnInsert(onInsert);

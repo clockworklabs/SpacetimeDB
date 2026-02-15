@@ -5,9 +5,8 @@ use metrics::QueryMetrics;
 use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate,
-};
+use spacetimedb_client_api_messages::websocket::common::ByteListLen as _;
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_datastore::{
     db_metrics::DB_METRICS, execution_context::WorkloadType, locking_tx_datastore::datastore::MetricsRecorder,
 };
@@ -18,6 +17,7 @@ use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn::ToBsatn;
 use spacetimedb_sats::Serialize;
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 
 pub mod delta;
@@ -174,11 +174,11 @@ pub enum TableUpdateType {
 pub fn collect_table_update_for_view<Tx, F>(
     plan_fragments: &[ViewProject],
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     tx: &Tx,
     update_type: TableUpdateType,
     rlb_pool: &impl RowListBuilderSource<F>,
-) -> Result<(TableUpdate<F>, ExecutionMetrics)>
+) -> Result<(ws_v1::TableUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: BuildableWebsocketFormat,
@@ -186,11 +186,11 @@ where
     execute_plan_for_view::<F>(plan_fragments, tx, rlb_pool).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
         let qu = match update_type {
-            TableUpdateType::Subscribe => QueryUpdate {
+            TableUpdateType::Subscribe => ws_v1::QueryUpdate {
                 deletes: empty,
                 inserts: rows,
             },
-            TableUpdateType::Unsubscribe => QueryUpdate {
+            TableUpdateType::Unsubscribe => ws_v1::QueryUpdate {
                 deletes: rows,
                 inserts: empty,
             },
@@ -198,9 +198,13 @@ where
         // We will compress the outer server message,
         // after we release the tx lock.
         // There's no need to compress the inner table update too.
-        let update = F::into_query_update(qu, Compression::None);
+        let update = F::into_query_update(qu, ws_v1::Compression::None);
         (
-            TableUpdate::new(table_id, table_name, SingleQueryUpdate { update, num_rows }),
+            ws_v1::TableUpdate::new(
+                table_id,
+                table_name.clone().into(),
+                ws_v1::SingleQueryUpdate { update, num_rows },
+            ),
             metrics,
         )
     })
@@ -210,19 +214,19 @@ where
 pub fn collect_table_update<F: BuildableWebsocketFormat>(
     plan_fragments: &[PipelinedProject],
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     tx: &(impl Datastore + DeltaStore),
     update_type: TableUpdateType,
     rlb_pool: &impl RowListBuilderSource<F>,
-) -> Result<(TableUpdate<F>, ExecutionMetrics)> {
+) -> Result<(ws_v1::TableUpdate<F>, ExecutionMetrics)> {
     execute_plan::<F>(plan_fragments, tx, rlb_pool).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
         let qu = match update_type {
-            TableUpdateType::Subscribe => QueryUpdate {
+            TableUpdateType::Subscribe => ws_v1::QueryUpdate {
                 deletes: empty,
                 inserts: rows,
             },
-            TableUpdateType::Unsubscribe => QueryUpdate {
+            TableUpdateType::Unsubscribe => ws_v1::QueryUpdate {
                 deletes: rows,
                 inserts: empty,
             },
@@ -230,9 +234,13 @@ pub fn collect_table_update<F: BuildableWebsocketFormat>(
         // We will compress the outer server message,
         // after we release the tx lock.
         // There's no need to compress the inner table update too.
-        let update = F::into_query_update(qu, Compression::None);
+        let update = F::into_query_update(qu, ws_v1::Compression::None);
         (
-            TableUpdate::new(table_id, table_name, SingleQueryUpdate { update, num_rows }),
+            ws_v1::TableUpdate::new(
+                table_id,
+                table_name.clone().into(),
+                ws_v1::SingleQueryUpdate { update, num_rows },
+            ),
             metrics,
         )
     })
@@ -245,7 +253,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
     tx: &(impl Datastore + DeltaStore + Sync),
     update_type: TableUpdateType,
     rlb_pool: &(impl Sync + RowListBuilderSource<F>),
-) -> Result<(DatabaseUpdate<F>, ExecutionMetrics, Vec<QueryMetrics>), DBError> {
+) -> Result<(ws_v1::DatabaseUpdate<F>, ExecutionMetrics, Vec<QueryMetrics>), DBError> {
     plans
         .par_iter()
         .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
@@ -268,7 +276,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         collect_table_update_for_view(
                             &[view_plan],
                             table_id,
-                            (&**table_name).into(),
+                            table_name.clone(),
                             tx,
                             update_type,
                             rlb_pool,
@@ -278,7 +286,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         collect_table_update(
                             &[pipelined_plan],
                             table_id,
-                            (&**table_name).into(),
+                            table_name.clone(),
                             tx,
                             update_type,
                             rlb_pool,
@@ -289,7 +297,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                     collect_table_update(
                         &[pipelined_plan],
                         table_id,
-                        (&**table_name).into(),
+                        table_name.clone(),
                         tx,
                         update_type,
                         rlb_pool,
@@ -300,7 +308,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
 
                 let (ref _table_update, ref metrics) = result;
                 let query_metrics = metrics::get_query_metrics(
-                    table_name,
+                    table_name.clone(),
                     &plan,
                     metrics.rows_scanned as u64,
                     elapsed.as_micros() as u64,
@@ -327,6 +335,6 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                     query_metrics_vec.push(qm);
                 }
             }
-            (DatabaseUpdate { tables }, aggregated_metrics, query_metrics_vec)
+            (ws_v1::DatabaseUpdate { tables }, aggregated_metrics, query_metrics_vec)
         })
 }

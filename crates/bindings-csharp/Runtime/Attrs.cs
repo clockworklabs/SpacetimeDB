@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB
+namespace SpacetimeDB
 {
     namespace Internal
     {
@@ -66,6 +66,8 @@
         /// <para>Defaults to the table only being visible to its owner.</para>
         /// </summary>
         public bool Public { get; init; } = false;
+
+        public bool Event { get; init; } = false;
 
         /// <summary>
         /// If set, the name of the reducer that will be invoked when the scheduled time is reached.

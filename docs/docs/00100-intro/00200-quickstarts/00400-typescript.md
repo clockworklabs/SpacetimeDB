@@ -65,20 +65,21 @@ my-spacetime-app/
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-export const spacetimedb = schema(
-  table(
-    { name: 'person' },
+const spacetimedb = schema({
+  person: table(
+    {},
     {
       name: t.string(),
     }
   )
-);
+});
+export default spacetimedb;
 
-spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
+export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.person.insert({ name });
 });
 
-spacetimedb.reducer('say_hello', (ctx) => {
+export const say_hello = spacetimedb.reducer((ctx) => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }

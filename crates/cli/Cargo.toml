@@ -78,6 +78,7 @@ clap-markdown.workspace = true
 git2.workspace = true
 dialoguer = { workspace = true, features = ["fuzzy-select"] }
 rolldown.workspace = true
+rolldown_common.workspace = true
 rolldown_utils.workspace = true
 xmltree.workspace = true
 quick-xml.workspace = true
@@ -87,9 +88,6 @@ notify.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 fs_extra.workspace = true
-assert_cmd = "2"
-predicates = "3"
-spacetimedb-guard.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }

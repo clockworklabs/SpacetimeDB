@@ -14,6 +14,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_schema::identifier::Identifier;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::time::Instant;
@@ -220,7 +221,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: &str,
+        name: Identifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -237,16 +238,10 @@ impl WasmInstanceEnv {
         (args, errors)
     }
 
-    /// Returns the name of the most recent reducer or procedure to be run in this environment.
-    pub fn funcall_name(&self) -> &str {
-        &self.instance_env.func_name
-    }
-
     /// Returns the name of the most recent reducer or procedure to be run in this environment,
     /// or `None` if no reducer or procedure is actively being invoked.
-    fn log_record_function(&self) -> Option<&str> {
-        let function = self.funcall_name();
-        (!function.is_empty()).then_some(function)
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.instance_env.log_record_function()
     }
 
     /// Returns the start time of the most recent reducer or procedure to be run in this environment.
@@ -1655,18 +1650,27 @@ impl WasmInstanceEnv {
     /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
     /// suspending execution until the request is complete,
     /// then return its response details via a [`BytesSource`] written to `out[0]`
-    /// and its response body via a [`BytesSource`] written to `out[1]`.
+    /// and its response body via another [`BytesSource`] written to `out[1]`.
     ///
     /// `request_ptr[..request_len]` should store a BSATN-serialized [`spacetimedb_lib::http::Request`] object
     /// containing the details of the request to be performed.
     ///
-    /// `body_ptr[..body_len]` should store the body of the request to be performed;
+    /// `body_ptr[..body_len]` should store a byte array, which will be treated as the body of the request.
+    /// `body_ptr` should be non-null and within the bounds of linear memory even when `body_len` is 0.
     ///
-    /// If the request is successful, a [`BytesSource`] is written to `out`
-    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object.
+    /// If the request is successful, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object,
+    /// another [`BytesSource`] containing the bytes of the response body are written to `out[1]`,
+    /// and this function returns 0.
+    ///
     /// "Successful" in this context includes any connection which results in any HTTP status code,
     /// regardless of the specified meaning of that code.
     /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
+    ///
+    /// If the request fails, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded `String` describing the failure,
+    /// and this function returns `HTTP_ERROR`.
+    /// In this case, `out[1]` is not written.
     ///
     /// # Errors
     ///
@@ -1679,7 +1683,7 @@ impl WasmInstanceEnv {
     ///   In this case, `out` is not written.
     /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
     ///   In this case, a [`BytesSource`] is written to `out`
-    ///   containing a BSATN-encoded [`spacetimedb_lib::http::Error`] object.
+    ///   containing a BSATN-encoded [`String`].
     ///
     /// # Traps
     ///
@@ -1688,6 +1692,7 @@ impl WasmInstanceEnv {
     /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
     /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
     pub fn procedure_http_request<'caller>(
         caller: Caller<'caller, Self>,
         (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),

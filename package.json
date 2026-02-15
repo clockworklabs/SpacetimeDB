@@ -1,14 +1,18 @@
 {
   "private": true,
   "packageManager": "pnpm@9.7.0",
-  "engines": { "node": ">=18.0.0", "pnpm": ">=9.0.0" },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  },
   "type": "module",
   "scripts": {
-    "format": "pnpm --filter ./crates/bindings-typescript run format && pnpm --filter ./docs run format && pnpm --filter ./crates/bindings-typescript/test-app run format && pnpm -r --filter './templates/**' run format",
-    "lint": "pnpm --filter ./crates/bindings-typescript run lint && pnpm --filter ./docs run lint && pnpm --filter ./crates/bindings-typescript/test-app run lint && pnpm -r --filter './templates/**' run lint",
-    "build": "pnpm --filter ./crates/bindings-typescript run build && pnpm --filter ./docs run build && pnpm --filter ./crates/bindings-typescript/test-app run build && pnpm -r --filter './templates/**' run build",
-    "test": "pnpm --filter ./crates/bindings-typescript run test && pnpm --filter ./docs run test && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run test && pnpm --filter ./crates/bindings-typescript/test-app run test",
-    "generate": "pnpm --filter ./crates/bindings-typescript run generate && pnpm --filter ./docs run generate && pnpm --filter ./crates/bindings-typescript/test-app run generate && pnpm -r --filter './templates/**' run generate",
+    "run-all": "pnpm -r -F ./crates/bindings-typescript -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/test-app -F ./docs -F \"./templates/**\" run",
+    "format": "pnpm run-all format && prettier eslint.config.js --write",
+    "lint": "pnpm run-all lint && prettier eslint.config.js --check",
+    "build": "pnpm run-all build",
+    "test": "pnpm run-all test",
+    "generate": "pnpm run-all generate",
     "clean": "pnpm -r exec rimraf dist .tsbuildinfo coverage"
   },
   "devDependencies": {
@@ -17,6 +21,7 @@
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "eslint": "^9.17.0",
+    "eslint-plugin-jsdoc": "^61.5.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^15.14.0",

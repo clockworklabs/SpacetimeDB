@@ -1,3 +1,4 @@
-import "./circles";
-import "./ia_loop";
-import "./synthetic";
+export { spacetimedb as default } from './schema';
+export * from './circles';
+export * from './ia_loop';
+export * from './synthetic';

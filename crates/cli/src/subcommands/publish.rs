@@ -85,6 +85,18 @@ A parent can only be set when a database is created, not when it is updated."
             )
         )
         .arg(
+            Arg::new("organization")
+            .help("Name or identity of an organization for this database")
+            .long("organization")
+            .alias("org")
+            .long_help(
+"The name or identity of an existing organization this database should be created under.
+
+If an organization is given, the organization member's permissions apply to the new database.
+An organization can only be set when a database is created, not when it is updated."
+            )
+        )
+        .arg(
             Arg::new("name|identity")
                 .help("A valid domain or identity for this database")
                 .long_help(
@@ -122,6 +134,27 @@ fn confirm_and_clear(
     Ok(builder)
 }
 
+fn confirm_major_version_upgrade() -> Result<(), anyhow::Error> {
+    println!(
+        "It looks like you're trying to do a major version upgrade from 1.0 to 2.0. We recommend first looking at the upgrade notes before committing to this upgrade: https://spacetimedb.com/docs/upgrade"
+    );
+    println!();
+    println!("WARNING: Once you publish you cannot revert back to version 1.0.");
+    println!();
+
+    let mut input = String::new();
+    print!("Please type 'upgrade' to accept this change: ");
+    let mut stdout = std::io::stdout();
+    std::io::Write::flush(&mut stdout)?;
+    std::io::stdin().read_line(&mut input)?;
+
+    if input.trim() == "upgrade" {
+        return Ok(());
+    }
+
+    anyhow::bail!("Aborting because major version upgrade was not accepted.");
+}
+
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let name_or_identity = args.get_one::<String>("name|identity");
@@ -139,6 +172,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let num_replicas = args.get_one::<u8>("num_replicas");
     let force_break_clients = args.get_flag("break_clients");
     let parent = args.get_one::<String>("parent");
+    let org = args.get_one::<String>("organization");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -226,6 +260,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     if let Some(parent) = parent {
         builder = builder.query(&[("parent", parent)]);
+    }
+    if let Some(org) = org {
+        builder = builder.query(&[("org", org)]);
     }
 
     println!("Publishing module...");
@@ -361,6 +398,14 @@ async fn apply_pre_publish_if_needed(
     )
     .await?
     {
+        let major_version_upgrade = match &pre {
+            PrePublishResult::AutoMigrate(auto) => auto.major_version_upgrade,
+            PrePublishResult::ManualMigrate(manual) => manual.major_version_upgrade,
+        };
+        if major_version_upgrade {
+            confirm_major_version_upgrade()?;
+        }
+
         match pre {
             PrePublishResult::ManualMigrate(manual) => {
                 if clear_database == ClearMode::Never {

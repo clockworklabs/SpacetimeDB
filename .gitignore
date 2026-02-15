@@ -211,6 +211,10 @@ crates/bench/spacetime.svg
 crates/bench/sqlite.svg
 .vs/
 
+# .NET build artifacts
+**/obj/
+**/bin/
+
 # benchmark files
 out.json
 old.json
@@ -221,11 +225,22 @@ new.json
 *.pem
 .ok.sql
 
+# Intermediate file generated when updating the external client SDKs' WS format bindings
+crates/client-api-messages/ws_schema.json
+
 # Test data
 !crates/core/testdata/
 
 # Temporary templates dir for CLI's init command
 /crates/cli/.templates
+
+# C++ build data
+modules/benchmarks-cpp/build/
+modules/module-test-cpp/build/
+modules/sdk-test-cpp/build/
+modules/sdk-test-connect-disconnect-cpp/build/
+modules/sdk-test-procedure-cpp/build/
+modules/sdk-test-view-cpp/build/
 
 # Symlinked output from `nix build`
 result
@@ -238,3 +253,10 @@ venv/
 
 # Windows null device artifact
 nul
+
+[Nn][Uu][Gg][Ee][Tt].[Cc][Oo][Nn][Ff][Ii][Gg]
+[Nn][Uu][Gg][Ee][Tt].[Cc][Oo][Nn][Ff][Ii][Gg].meta
+ 
+# csharp SDK packages
+/sdks/csharp/packages/
+/sdks/csharp/packages.meta

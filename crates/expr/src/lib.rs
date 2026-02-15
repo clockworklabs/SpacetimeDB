@@ -1,5 +1,3 @@
-use std::{collections::HashSet, ops::Deref, str::FromStr};
-
 use crate::statement::Statement;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -12,6 +10,8 @@ use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
+use spacetimedb_data_structures::map::HashCollectionExt as _;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
@@ -21,6 +21,7 @@ use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 use spacetimedb_sql_parser::parser::recursion;
+use std::{ops::Deref, str::FromStr};
 
 pub mod check;
 pub mod errors;
@@ -67,7 +68,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
 
             for ProjectElem(expr, SqlIdent(alias)) in elems {
                 if !names.insert(alias.clone()) {
-                    return Err(DuplicateName(alias.into_string()).into());
+                    return Err(DuplicateName(alias.clone()).into());
                 }
 
                 if let Expr::Field(p) = type_expr(vars, expr.into(), None)? {
@@ -83,7 +84,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
 // These types determine the size of each stack frame during type checking.
 // Changing their sizes will require updating the recursion limit to avoid stack overflows.
 const _: () = assert!(size_of::<TypingResult<Expr>>() == 64);
-const _: () = assert!(size_of::<SqlExpr>() == 40);
+const _: () = assert!(size_of::<SqlExpr>() == 32);
 
 fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, depth: usize) -> TypingResult<Expr> {
     recursion::guard(depth, recursion::MAX_RECURSION_TYP_EXPR, "expr::type_expr")?;
@@ -98,26 +99,19 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
-            let ColumnSchema { col_pos, col_type, .. } = table_type
-                .get_column_by_name(&field)
-                .ok_or_else(|| Unresolved::var(&field))?;
-            Ok(Expr::Field(FieldProject {
-                table,
-                field: col_pos.idx(),
-                ty: col_type.clone(),
-            }))
-        }
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(ty)) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
+        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), expected) => {
+            let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .as_ref()
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
-            if col_type != ty {
-                return Err(UnexpectedType::new(col_type, ty).into());
+
+            if let Some(ty) = expected {
+                if col_type != ty {
+                    return Err(UnexpectedType::new(col_type, ty).into());
+                }
             }
+
             Ok(Expr::Field(FieldProject {
                 table,
                 field: col_pos.idx(),

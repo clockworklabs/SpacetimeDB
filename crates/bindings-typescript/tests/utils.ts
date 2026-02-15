@@ -1,8 +1,11 @@
-import { AlgebraicType } from '../src/lib/algebraic_type';
 import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
-import { Player, Point, User } from '../test-app/src/module_bindings';
+import PlayerRow from '../test-app/src/module_bindings/player_table';
+import UserRow from '../test-app/src/module_bindings/user_table';
+import Point from '../test-app/src/module_bindings/point_type';
+import RowSizeHint from '../src/sdk/client_api/row_size_hint_type';
+import TableUpdateRows from '../src/sdk/client_api/table_update_rows_type';
 
 export const anIdentity = Identity.fromString(
   '0000000000000000000000000000000000000000000000000000000000000069'
@@ -14,15 +17,15 @@ export const sallyIdentity = Identity.fromString(
   '000000000000000000000000000000000000000000000000000000000006a111'
 );
 
-export function encodePlayer(value: Infer<typeof Player>): Uint8Array {
+export function encodePlayer(value: Infer<typeof PlayerRow>): Uint8Array {
   const writer = new BinaryWriter(1024);
-  Player.serialize(writer, value);
+  PlayerRow.serialize(writer, value);
   return writer.getBuffer();
 }
 
-export function encodeUser(value: Infer<typeof User>): Uint8Array {
+export function encodeUser(value: Infer<typeof UserRow>): Uint8Array {
   const writer = new BinaryWriter(1024);
-  User.serialize(writer, value);
+  UserRow.serialize(writer, value);
   return writer.getBuffer();
 }
 
@@ -31,7 +34,47 @@ export function encodeCreatePlayerArgs(
   location: Infer<typeof Point>
 ): Uint8Array {
   const writer = new BinaryWriter(1024);
-  AlgebraicType.serializeValue(writer, AlgebraicType.String, name);
+  writer.writeString(name);
   Point.serialize(writer, location);
   return writer.getBuffer();
+}
+
+export function makeRowList(rowsData: Uint8Array) {
+  return {
+    sizeHint: RowSizeHint.FixedSize(0),
+    rowsData,
+  };
+}
+
+export function makeQueryRows(table: string, rowsData: Uint8Array) {
+  return {
+    tables: [
+      {
+        table,
+        rows: makeRowList(rowsData),
+      },
+    ],
+  };
+}
+
+export function makeQuerySetUpdate(
+  querySetId: number,
+  tableName: string,
+  inserts: Uint8Array,
+  deletes: Uint8Array = new Uint8Array()
+) {
+  return {
+    querySetId: { id: querySetId },
+    tables: [
+      {
+        tableName,
+        rows: [
+          TableUpdateRows.PersistentTable({
+            inserts: makeRowList(inserts),
+            deletes: makeRowList(deletes),
+          }),
+        ],
+      },
+    ],
+  };
 }

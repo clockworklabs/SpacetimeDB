@@ -100,7 +100,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
             }
         };
         impl #func_name {
-            fn invoke(__ctx: spacetimedb::ProcedureContext, __args: &[u8]) -> spacetimedb::ProcedureResult {
+            fn invoke(__ctx: &mut spacetimedb::ProcedureContext, __args: &[u8]) -> spacetimedb::ProcedureResult {
                 spacetimedb::rt::invoke_procedure(#func_name, __ctx, __args)
             }
         }

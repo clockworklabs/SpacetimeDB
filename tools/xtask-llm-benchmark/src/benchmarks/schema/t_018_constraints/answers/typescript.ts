@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Account = table({
+export const account = table({
   name: 'account',
   indexes: [{ name: 'byName', algorithm: 'btree', columns: ['name'] }],
 }, {
@@ -9,9 +9,10 @@ export const Account = table({
   name: t.string(),
 });
 
-const spacetimedb = schema(Account);
+const spacetimedb = schema({ account });
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.account.insert({ id: 1, email: "a@example.com", name: "Alice" });
     ctx.db.account.insert({ id: 2, email: "b@example.com", name: "Bob" });

@@ -143,7 +143,6 @@
 #include "ModuleBindings/Reducers/InsertVecU8.g.h"
 #include "ModuleBindings/Reducers/InsertVecUnitStruct.g.h"
 #include "ModuleBindings/Reducers/NoOpSucceeds.g.h"
-#include "ModuleBindings/Reducers/SendScheduledMessage.g.h"
 #include "ModuleBindings/Reducers/UpdateIndexedSimpleEnum.g.h"
 #include "ModuleBindings/Reducers/UpdatePkBool.g.h"
 #include "ModuleBindings/Reducers/UpdatePkConnectionId.g.h"
