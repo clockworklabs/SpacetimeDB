@@ -212,8 +212,7 @@ impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
             // and emit accessors for unique columns.
             write!(
                 out,
-                "
-pub struct {delete_callback_id}(__sdk::CallbackId);
+                "pub struct {delete_callback_id}(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
     type Row = {row_type};
