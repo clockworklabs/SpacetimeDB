@@ -43,6 +43,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::panic::AssertUnwindSafe;
@@ -225,6 +226,9 @@ struct JsInstanceEnv {
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
+
+    /// Module definition for view evaluation during procedure commits.
+    module_def: Option<Arc<ModuleDef>>,
 }
 
 impl JsInstanceEnv {
@@ -236,6 +240,7 @@ impl JsInstanceEnv {
             iters: <_>::default(),
             chunk_pool: <_>::default(),
             timing_spans: <_>::default(),
+            module_def: None,
         }
     }
 
@@ -894,6 +899,10 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
             .instance_env
             .take_procedure_tx_offset();
         (result, tx_offset)
+    }
+
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        env_on_isolate_unwrap(self.scope).module_def = Some(module_def);
     }
 }
 

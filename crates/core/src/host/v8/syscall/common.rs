@@ -652,12 +652,184 @@ pub fn procedure_commit_mut_tx(
     scope: &mut PinScope<'_, '_>,
     _args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<()> {
+    use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+    use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+    use spacetimedb_client_api_messages::energy::EnergyQuanta;
+    use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
+    use std::time::Duration;
+
     let env = get_env(scope)?;
 
-    // TODO(#4296): V8 needs equivalent re-entrant view evaluation during procedure commits.
-    // The wasmtime backend evaluates dirty views re-entrantly before committing.
-    // V8 currently skips this step and just commits directly.
-    env.instance_env.commit_mutable_tx()?;
+    // Finish the anonymous tx context.
+    env.instance_env.finish_anon_tx()?;
+
+    // Take the transaction from the slot.
+    let tx = env.instance_env.take_tx().map_err(crate::error::NodesError::from)?;
+
+    // Collect dirty views.
+    let dirty_views: Vec<ViewCallInfo> = tx.view_for_update().cloned().collect();
+
+    let module_def = env.module_def.clone();
+    let replica_ctx = env.instance_env.replica_ctx.clone();
+    let stdb = replica_ctx.relational_db.clone();
+    let database_identity = *env.instance_env.database_identity();
+    let mut tx_slot = env.instance_env.tx.clone();
+
+    // Evaluate dirty views re-entrantly before committing.
+    let tx = if dirty_views.is_empty() || module_def.is_none() {
+        tx
+    } else {
+        let module_def = module_def.as_ref().unwrap();
+
+        // Get hooks for calling view functions.
+        let hooks = super::get_registered_hooks(scope);
+
+        let mut current_tx = tx;
+
+        for view_info in &dirty_views {
+            let is_anonymous = view_info.sender.is_none();
+            let view_def = match module_def.get_view_by_id(view_info.fn_ptr, is_anonymous) {
+                Some(def) => def,
+                None => {
+                    log::error!(
+                        "view with fn_ptr `{}` (anonymous={}) not found in module_def",
+                        view_info.fn_ptr,
+                        is_anonymous
+                    );
+                    continue;
+                }
+            };
+
+            let view_name = view_def.name.clone();
+            let row_type = view_def.product_type_ref;
+
+            // Put the tx back in the slot so the view function can access it.
+            let hooks_ref = &hooks;
+            let (mut returned_tx, call_result) = tx_slot.set(current_tx, || {
+                let Some(hooks) = hooks_ref else {
+                    return Err(anyhow::anyhow!(
+                        "No hooks registered, cannot evaluate view `{view_name}`"
+                    ));
+                };
+
+                // Call the view function re-entrantly.
+                let view_return = if let Some(sender) = &view_info.sender {
+                    super::call_call_view(
+                        scope,
+                        hooks,
+                        crate::host::wasm_common::module_host_actor::ViewOp {
+                            name: &view_name,
+                            view_id: view_info.view_id,
+                            table_id: view_info.table_id,
+                            fn_ptr: view_info.fn_ptr,
+                            sender,
+                            args: &crate::host::ArgsTuple::nullary(),
+                            timestamp: Timestamp::now(),
+                        },
+                    )
+                } else {
+                    super::call_call_view_anon(
+                        scope,
+                        hooks,
+                        crate::host::wasm_common::module_host_actor::AnonymousViewOp {
+                            name: &view_name,
+                            view_id: view_info.view_id,
+                            table_id: view_info.table_id,
+                            fn_ptr: view_info.fn_ptr,
+                            args: &crate::host::ArgsTuple::nullary(),
+                            timestamp: Timestamp::now(),
+                        },
+                    )
+                };
+
+                match view_return {
+                    Ok(data) => Ok(data),
+                    Err(e) => Err(anyhow::anyhow!("view `{view_name}` call failed: {e:?}")),
+                }
+            });
+
+            // Process the view result and materialize rows.
+            match call_result {
+                Ok(view_return_data) => {
+                    if let Err(e) = process_v8_view_result(
+                        view_return_data,
+                        row_type,
+                        view_info,
+                        module_def,
+                        &stdb,
+                        &mut returned_tx,
+                        database_identity,
+                    ) {
+                        log::error!("Error processing view `{view_name}` during procedure commit: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error calling view `{view_name}` during procedure commit: {e:?}");
+                }
+            }
+
+            current_tx = returned_tx;
+        }
+
+        current_tx
+    };
+
+    // Commit the transaction (with view materializations included).
+    let subs = replica_ctx.subscriptions.clone();
+    let event = ModuleEvent {
+        timestamp: Timestamp::now(),
+        caller_identity: stdb.database_identity(),
+        caller_connection_id: None,
+        function_call: ModuleFunctionCall::default(),
+        status: EventStatus::Committed(DatabaseUpdate::default()),
+        reducer_return_value: None,
+        request_id: None,
+        timer: None,
+        energy_quanta_used: EnergyQuanta { quanta: 0 },
+        host_execution_duration: Duration::from_millis(0),
+    };
+    let event = commit_and_broadcast_event(&subs, None, event, tx);
+
+    let env = get_env(scope)?;
+    env.instance_env.procedure_last_tx_offset = Some(event.tx_offset);
+
+    Ok(())
+}
+
+/// Process a view's return data for V8: deserialize rows or execute SQL, then materialize.
+fn process_v8_view_result(
+    view_return_data: crate::host::wasm_common::module_host_actor::ViewReturnData,
+    row_type: spacetimedb_sats::AlgebraicTypeRef,
+    view_info: &spacetimedb_datastore::locking_tx_datastore::ViewCallInfo,
+    module_def: &spacetimedb_schema::def::ModuleDef,
+    stdb: &crate::db::relational_db::RelationalDB,
+    tx: &mut spacetimedb_datastore::locking_tx_datastore::MutTxId,
+    database_identity: Identity,
+) -> anyhow::Result<()> {
+    use crate::host::wasm_common::module_host_actor::{evaluate_view_sql, ViewResult};
+
+    let view_result = ViewResult::from_return_data(view_return_data)?;
+    let typespace = module_def.typespace();
+
+    let row_product_type = typespace
+        .resolve(row_type)
+        .resolve_refs()
+        .map_err(|e| anyhow::anyhow!("Error resolving row type: {e}"))?
+        .into_product()
+        .map_err(|_| anyhow::anyhow!("Row type is not a product type"))?;
+
+    let rows = match view_result {
+        ViewResult::Rows(bytes) => {
+            crate::host::wasm_common::module_host_actor::deserialize_view_rows(row_type, bytes, typespace)
+                .map_err(|e| anyhow::anyhow!(e))?
+        }
+        ViewResult::RawSql(query) => evaluate_view_sql(tx, &query, &row_product_type, view_info, database_identity)?,
+    };
+
+    match &view_info.sender {
+        Some(sender) => stdb.materialize_view(tx, view_info.table_id, *sender, rows)?,
+        None => stdb.materialize_anonymous_view(tx, view_info.table_id, rows)?,
+    };
 
     Ok(())
 }
