@@ -39,6 +39,7 @@ impl OneEnumWithPayloadTableAccess for super::RemoteTables {
 }
 
 pub struct OneEnumWithPayloadInsertCallbackId(__sdk::CallbackId);
+
 pub struct OneEnumWithPayloadDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {

@@ -38,6 +38,7 @@ impl PkUuidTableAccess for super::RemoteTables {
 }
 
 pub struct PkUuidInsertCallbackId(__sdk::CallbackId);
+
 pub struct PkUuidDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
@@ -78,10 +79,6 @@ impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkUuid>("pk_uuid");
-}
 pub struct PkUuidUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkUuidTableHandle<'ctx> {
@@ -97,6 +94,11 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkUuidTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkUuidUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkUuid>("pk_uuid");
 }
 
 #[doc(hidden)]

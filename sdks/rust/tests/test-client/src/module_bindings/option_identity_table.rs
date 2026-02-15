@@ -38,6 +38,7 @@ impl OptionIdentityTableAccess for super::RemoteTables {
 }
 
 pub struct OptionIdentityInsertCallbackId(__sdk::CallbackId);
+
 pub struct OptionIdentityDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OptionIdentityTableHandle<'ctx> {

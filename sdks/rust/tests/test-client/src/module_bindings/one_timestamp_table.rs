@@ -38,6 +38,7 @@ impl OneTimestampTableAccess for super::RemoteTables {
 }
 
 pub struct OneTimestampInsertCallbackId(__sdk::CallbackId);
+
 pub struct OneTimestampDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {

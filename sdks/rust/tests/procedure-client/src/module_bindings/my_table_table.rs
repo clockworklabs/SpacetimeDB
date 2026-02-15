@@ -39,6 +39,7 @@ impl MyTableTableAccess for super::RemoteTables {
 }
 
 pub struct MyTableInsertCallbackId(__sdk::CallbackId);
+
 pub struct MyTableDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {

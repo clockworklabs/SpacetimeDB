@@ -38,6 +38,7 @@ impl UniqueIdentityTableAccess for super::RemoteTables {
 }
 
 pub struct UniqueIdentityInsertCallbackId(__sdk::CallbackId);
+
 pub struct UniqueIdentityDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
@@ -78,23 +79,6 @@ impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueIdentity>("unique_identity");
-    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::v2::TableUpdate,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueIdentity>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueIdentity>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
 /// Access to the `i` unique index on the table `unique_identity`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueIdentityIUnique::find`] method.
@@ -123,6 +107,23 @@ impl<'ctx> UniqueIdentityIUnique<'ctx> {
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<UniqueIdentity> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueIdentity>("unique_identity");
+    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<UniqueIdentity>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueIdentity>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

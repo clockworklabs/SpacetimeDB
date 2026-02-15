@@ -39,6 +39,7 @@ impl OneByteStructTableAccess for super::RemoteTables {
 }
 
 pub struct OneByteStructInsertCallbackId(__sdk::CallbackId);
+
 pub struct OneByteStructDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneByteStructTableHandle<'ctx> {

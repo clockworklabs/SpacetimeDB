@@ -39,6 +39,7 @@ impl OneEveryVecStructTableAccess for super::RemoteTables {
 }
 
 pub struct OneEveryVecStructInsertCallbackId(__sdk::CallbackId);
+
 pub struct OneEveryVecStructDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneEveryVecStructTableHandle<'ctx> {

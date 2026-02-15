@@ -39,6 +39,7 @@ impl ResultSimpleEnumI32TableAccess for super::RemoteTables {
 }
 
 pub struct ResultSimpleEnumI32InsertCallbackId(__sdk::CallbackId);
+
 pub struct ResultSimpleEnumI32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for ResultSimpleEnumI32TableHandle<'ctx> {

@@ -38,6 +38,7 @@ impl IndexedTable2TableAccess for super::RemoteTables {
 }
 
 pub struct IndexedTable2InsertCallbackId(__sdk::CallbackId);
+
 pub struct IndexedTable2DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for IndexedTable2TableHandle<'ctx> {

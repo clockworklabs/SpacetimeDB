@@ -38,6 +38,7 @@ impl PkU8TableAccess for super::RemoteTables {
 }
 
 pub struct PkU8InsertCallbackId(__sdk::CallbackId);
+
 pub struct PkU8DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkU8TableHandle<'ctx> {
@@ -78,11 +79,6 @@ impl<'ctx> __sdk::Table for PkU8TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkU8>("pk_u8");
-    _table.add_unique_constraint::<u8>("n", |row| &row.n);
-}
 pub struct PkU8UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkU8TableHandle<'ctx> {
@@ -98,15 +94,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU8TableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkU8UpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkU8>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkU8>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `n` unique index on the table `pk_u8`,
@@ -137,6 +124,21 @@ impl<'ctx> PkU8NUnique<'ctx> {
     pub fn find(&self, col_val: &u8) -> Option<PkU8> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkU8>("pk_u8");
+    _table.add_unique_constraint::<u8>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkU8>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkU8>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

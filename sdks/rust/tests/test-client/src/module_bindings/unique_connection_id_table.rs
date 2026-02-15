@@ -38,6 +38,7 @@ impl UniqueConnectionIdTableAccess for super::RemoteTables {
 }
 
 pub struct UniqueConnectionIdInsertCallbackId(__sdk::CallbackId);
+
 pub struct UniqueConnectionIdDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {
@@ -78,23 +79,6 @@ impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueConnectionId>("unique_connection_id");
-    _table.add_unique_constraint::<__sdk::ConnectionId>("a", |row| &row.a);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::v2::TableUpdate,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueConnectionId>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueConnectionId>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
 /// Access to the `a` unique index on the table `unique_connection_id`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueConnectionIdAUnique::find`] method.
@@ -123,6 +107,23 @@ impl<'ctx> UniqueConnectionIdAUnique<'ctx> {
     pub fn find(&self, col_val: &__sdk::ConnectionId) -> Option<UniqueConnectionId> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueConnectionId>("unique_connection_id");
+    _table.add_unique_constraint::<__sdk::ConnectionId>("a", |row| &row.a);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<UniqueConnectionId>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueConnectionId>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

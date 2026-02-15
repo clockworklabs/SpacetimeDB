@@ -39,6 +39,7 @@ impl VecSimpleEnumTableAccess for super::RemoteTables {
 }
 
 pub struct VecSimpleEnumInsertCallbackId(__sdk::CallbackId);
+
 pub struct VecSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for VecSimpleEnumTableHandle<'ctx> {

@@ -41,6 +41,7 @@ impl ResultEveryPrimitiveStructStringTableAccess for super::RemoteTables {
 }
 
 pub struct ResultEveryPrimitiveStructStringInsertCallbackId(__sdk::CallbackId);
+
 pub struct ResultEveryPrimitiveStructStringDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for ResultEveryPrimitiveStructStringTableHandle<'ctx> {

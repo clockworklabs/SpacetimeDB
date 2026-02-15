@@ -38,6 +38,7 @@ impl PkI32TableAccess for super::RemoteTables {
 }
 
 pub struct PkI32InsertCallbackId(__sdk::CallbackId);
+
 pub struct PkI32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkI32TableHandle<'ctx> {
@@ -78,11 +79,6 @@ impl<'ctx> __sdk::Table for PkI32TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkI32>("pk_i32");
-    _table.add_unique_constraint::<i32>("n", |row| &row.n);
-}
 pub struct PkI32UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
@@ -98,15 +94,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkI32UpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkI32>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkI32>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `n` unique index on the table `pk_i32`,
@@ -137,6 +124,21 @@ impl<'ctx> PkI32NUnique<'ctx> {
     pub fn find(&self, col_val: &i32) -> Option<PkI32> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkI32>("pk_i32");
+    _table.add_unique_constraint::<i32>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkI32>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkI32>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]
