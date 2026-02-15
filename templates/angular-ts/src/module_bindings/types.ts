@@ -3,11 +3,9 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import {
-  TypeBuilder as __TypeBuilder,
-  t as __t,
-  type AlgebraicTypeType as __AlgebraicTypeType,
-  type Infer as __Infer,
-} from 'spacetimedb';
+import { type Infer as __Infer } from 'spacetimedb';
 
-export default {};
+// Import all non-reducer types
+import Person from './person_type';
+
+export type Person = __Infer<typeof Person>;
