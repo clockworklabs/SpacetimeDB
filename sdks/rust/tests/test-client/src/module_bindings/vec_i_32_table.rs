@@ -38,6 +38,7 @@ impl VecI32TableAccess for super::RemoteTables {
 }
 
 pub struct VecI32InsertCallbackId(__sdk::CallbackId);
+
 pub struct VecI32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for VecI32TableHandle<'ctx> {

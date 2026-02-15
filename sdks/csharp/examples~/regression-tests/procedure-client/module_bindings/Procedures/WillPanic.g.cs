@@ -15,15 +15,16 @@ namespace SpacetimeDB.Types
         public void WillPanic(ProcedureCallback<SpacetimeDB.Unit> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalWillPanic((ctx, result) => {
-            if (result.IsSuccess && result.Value != null)
+            InternalWillPanic((ctx, result) =>
             {
-                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
-            }
-            else
-            {
-                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
-            }
+                if (result.IsSuccess && result.Value != null)
+                {
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
+                }
+                else
+                {
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
+                }
             });
         }
 

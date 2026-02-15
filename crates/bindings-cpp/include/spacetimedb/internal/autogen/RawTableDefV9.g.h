@@ -12,12 +12,12 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
+#include "RawSequenceDefV9.g.h"
+#include "RawIndexDefV9.g.h"
+#include "RawScheduleDefV9.g.h"
 #include "TableAccess.g.h"
 #include "RawConstraintDefV9.g.h"
-#include "RawIndexDefV9.g.h"
 #include "TableType.g.h"
-#include "RawSequenceDefV9.g.h"
-#include "RawScheduleDefV9.g.h"
 
 namespace SpacetimeDB::Internal {
 

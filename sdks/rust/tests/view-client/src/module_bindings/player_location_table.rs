@@ -38,6 +38,7 @@ impl PlayerLocationTableAccess for super::RemoteTables {
 }
 
 pub struct PlayerLocationInsertCallbackId(__sdk::CallbackId);
+
 pub struct PlayerLocationDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PlayerLocationTableHandle<'ctx> {

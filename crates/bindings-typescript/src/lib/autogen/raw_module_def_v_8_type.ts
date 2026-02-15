@@ -8,13 +8,14 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
-import Typespace from './typespace_type';
-import TableDesc from './table_desc_type';
-import ReducerDef from './reducer_def_type';
-import MiscModuleExport from './misc_module_export_type';
+} from "../../lib/type_builders";
+import Typespace from "./typespace_type";
+import TableDesc from "./table_desc_type";
+import ReducerDef from "./reducer_def_type";
+import MiscModuleExport from "./misc_module_export_type";
 
-export default __t.object('RawModuleDefV8', {
+
+export default __t.object("RawModuleDefV8", {
   get typespace() {
     return Typespace;
   },
@@ -28,3 +29,5 @@ export default __t.object('RawModuleDefV8', {
     return __t.array(MiscModuleExport);
   },
 });
+
+

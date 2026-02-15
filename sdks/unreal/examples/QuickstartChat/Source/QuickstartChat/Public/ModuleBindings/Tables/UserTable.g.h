@@ -60,7 +60,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for user table*/
+    /** Update function for User table*/
     FTableAppliedDiff<FUserType> Update(TArray<FWithBsatn<FUserType>> InsertsRef, TArray<FWithBsatn<FUserType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -98,7 +98,7 @@ public:
     FOnUserDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("user");
+    const FString TableName = TEXT("User");
 
     TSharedPtr<UClientCache<FUserType>> Data;
 };

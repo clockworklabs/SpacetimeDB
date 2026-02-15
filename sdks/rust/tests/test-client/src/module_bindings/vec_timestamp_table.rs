@@ -38,6 +38,7 @@ impl VecTimestampTableAccess for super::RemoteTables {
 }
 
 pub struct VecTimestampInsertCallbackId(__sdk::CallbackId);
+
 pub struct VecTimestampDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for VecTimestampTableHandle<'ctx> {

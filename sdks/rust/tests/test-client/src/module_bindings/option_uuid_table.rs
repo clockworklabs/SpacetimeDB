@@ -38,6 +38,7 @@ impl OptionUuidTableAccess for super::RemoteTables {
 }
 
 pub struct OptionUuidInsertCallbackId(__sdk::CallbackId);
+
 pub struct OptionUuidDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OptionUuidTableHandle<'ctx> {

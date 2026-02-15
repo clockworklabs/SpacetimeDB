@@ -38,6 +38,7 @@ impl OneU32TableAccess for super::RemoteTables {
 }
 
 pub struct OneU32InsertCallbackId(__sdk::CallbackId);
+
 pub struct OneU32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneU32TableHandle<'ctx> {

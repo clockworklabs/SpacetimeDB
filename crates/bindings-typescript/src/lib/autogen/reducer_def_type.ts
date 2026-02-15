@@ -8,12 +8,15 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
-import ProductTypeElement from './product_type_element_type';
+} from "../../lib/type_builders";
+import ProductTypeElement from "./product_type_element_type";
 
-export default __t.object('ReducerDef', {
+
+export default __t.object("ReducerDef", {
   name: __t.string(),
   get args() {
     return __t.array(ProductTypeElement);
   },
 });
+
+

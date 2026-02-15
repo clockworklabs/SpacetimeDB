@@ -38,6 +38,7 @@ impl OneBoolTableAccess for super::RemoteTables {
 }
 
 pub struct OneBoolInsertCallbackId(__sdk::CallbackId);
+
 pub struct OneBoolDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OneBoolTableHandle<'ctx> {

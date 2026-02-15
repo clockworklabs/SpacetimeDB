@@ -38,6 +38,7 @@ impl ScheduledTableTableAccess for super::RemoteTables {
 }
 
 pub struct ScheduledTableInsertCallbackId(__sdk::CallbackId);
+
 pub struct ScheduledTableDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for ScheduledTableTableHandle<'ctx> {

@@ -39,6 +39,7 @@ impl IndexedSimpleEnumTableAccess for super::RemoteTables {
 }
 
 pub struct IndexedSimpleEnumInsertCallbackId(__sdk::CallbackId);
+
 pub struct IndexedSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {

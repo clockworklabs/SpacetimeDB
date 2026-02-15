@@ -38,6 +38,7 @@ impl VecStringTableAccess for super::RemoteTables {
 }
 
 pub struct VecStringInsertCallbackId(__sdk::CallbackId);
+
 pub struct VecStringDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for VecStringTableHandle<'ctx> {

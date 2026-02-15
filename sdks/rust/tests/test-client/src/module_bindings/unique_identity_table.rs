@@ -38,6 +38,7 @@ impl UniqueIdentityTableAccess for super::RemoteTables {
 }
 
 pub struct UniqueIdentityInsertCallbackId(__sdk::CallbackId);
+
 pub struct UniqueIdentityDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {

@@ -8,13 +8,14 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
-const RawIndexAlgorithm = __t.enum('RawIndexAlgorithm', {
-  BTree: __t.array(__t.u16()),
+const RawIndexAlgorithm = __t.enum("RawIndexAlgorithm", {BTree: __t.array(__t.u16()),
   Hash: __t.array(__t.u16()),
   Direct: __t.u16(),
 });
 
 export default RawIndexAlgorithm;
+
+

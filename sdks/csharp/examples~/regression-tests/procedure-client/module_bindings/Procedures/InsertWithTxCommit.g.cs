@@ -15,15 +15,16 @@ namespace SpacetimeDB.Types
         public void InsertWithTxCommit(ProcedureCallback<SpacetimeDB.Unit> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalInsertWithTxCommit((ctx, result) => {
-            if (result.IsSuccess && result.Value != null)
+            InternalInsertWithTxCommit((ctx, result) =>
             {
-                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
-            }
-            else
-            {
-                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
-            }
+                if (result.IsSuccess && result.Value != null)
+                {
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
+                }
+                else
+                {
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
+                }
             });
         }
 

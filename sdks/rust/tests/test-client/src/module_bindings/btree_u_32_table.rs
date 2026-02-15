@@ -38,6 +38,7 @@ impl BtreeU32TableAccess for super::RemoteTables {
 }
 
 pub struct BtreeU32InsertCallbackId(__sdk::CallbackId);
+
 pub struct BtreeU32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {

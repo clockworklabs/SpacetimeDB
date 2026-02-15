@@ -38,6 +38,7 @@ impl OptionVecOptionI32TableAccess for super::RemoteTables {
 }
 
 pub struct OptionVecOptionI32InsertCallbackId(__sdk::CallbackId);
+
 pub struct OptionVecOptionI32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for OptionVecOptionI32TableHandle<'ctx> {

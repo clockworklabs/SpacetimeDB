@@ -38,6 +38,7 @@ impl PkI32TableAccess for super::RemoteTables {
 }
 
 pub struct PkI32InsertCallbackId(__sdk::CallbackId);
+
 pub struct PkI32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkI32TableHandle<'ctx> {

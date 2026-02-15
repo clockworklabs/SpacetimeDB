@@ -8,10 +8,12 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
-export default __t.object('RawColumnDefaultValueV9', {
+export default __t.object("RawColumnDefaultValueV9", {
   table: __t.string(),
   colId: __t.u16(),
   value: __t.byteArray(),
 });
+
+

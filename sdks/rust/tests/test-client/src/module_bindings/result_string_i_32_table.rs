@@ -38,6 +38,7 @@ impl ResultStringI32TableAccess for super::RemoteTables {
 }
 
 pub struct ResultStringI32InsertCallbackId(__sdk::CallbackId);
+
 pub struct ResultStringI32DeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for ResultStringI32TableHandle<'ctx> {

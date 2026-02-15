@@ -11,7 +11,8 @@
     "prep": "tsx src/init/init-all.ts",
     "down": "docker compose down || exit 0",
     "test-1": "tsx src/cli.ts test-1",
-    "bench": "tsx src/cli.ts"
+    "bench": "tsx src/cli.ts",
+    "generate": "cargo run -p gen-bindings -- --out-dir module_bindings --project-path spacetimedb && prettier --write module_bindings"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

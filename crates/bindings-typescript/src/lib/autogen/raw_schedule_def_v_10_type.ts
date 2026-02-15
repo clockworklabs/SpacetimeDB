@@ -8,11 +8,13 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
-export default __t.object('RawScheduleDefV10', {
+export default __t.object("RawScheduleDefV10", {
   sourceName: __t.option(__t.string()),
   tableName: __t.string(),
   scheduleAtCol: __t.u16(),
   functionName: __t.string(),
 });
+
+

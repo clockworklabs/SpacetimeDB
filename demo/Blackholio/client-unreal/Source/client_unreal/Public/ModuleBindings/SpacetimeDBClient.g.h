@@ -33,6 +33,7 @@ class USubscriptionHandle;
 /** Forward declaration for tables */
 class UCircleTable;
 class UConfigTable;
+class UConsumeEntityEventTable;
 class UEntityTable;
 class UFoodTable;
 class UPlayerTable;
@@ -714,6 +715,9 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     UConfigTable* Config;
+
+    UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
+    UConsumeEntityEventTable* ConsumeEntityEvent;
 
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     UEntityTable* Entity;

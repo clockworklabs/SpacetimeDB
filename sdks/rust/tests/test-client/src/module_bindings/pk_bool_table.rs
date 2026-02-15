@@ -38,6 +38,7 @@ impl PkBoolTableAccess for super::RemoteTables {
 }
 
 pub struct PkBoolInsertCallbackId(__sdk::CallbackId);
+
 pub struct PkBoolDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {

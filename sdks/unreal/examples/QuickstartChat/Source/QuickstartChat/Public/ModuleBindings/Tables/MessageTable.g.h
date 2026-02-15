@@ -20,7 +20,7 @@ class QUICKSTARTCHAT_API UMessageTable : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for message table*/
+    /** Update function for Message table*/
     FTableAppliedDiff<FMessageType> Update(TArray<FWithBsatn<FMessageType>> InsertsRef, TArray<FWithBsatn<FMessageType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnMessageDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("message");
+    const FString TableName = TEXT("Message");
 
     TSharedPtr<UClientCache<FMessageType>> Data;
 };

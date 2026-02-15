@@ -8,14 +8,14 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
-import RawModuleDefV8 from './raw_module_def_v_8_type';
-import RawModuleDefV9 from './raw_module_def_v_9_type';
-import RawModuleDefV10 from './raw_module_def_v_10_type';
+} from "../../lib/type_builders";
+import RawModuleDefV8 from "./raw_module_def_v_8_type";
+import RawModuleDefV9 from "./raw_module_def_v_9_type";
+import RawModuleDefV10 from "./raw_module_def_v_10_type";
+
 
 // The tagged union or sum type for the algebraic type `RawModuleDef`.
-const RawModuleDef = __t.enum('RawModuleDef', {
-  get V8BackCompat() {
+const RawModuleDef = __t.enum("RawModuleDef", {get V8BackCompat() {
     return RawModuleDefV8;
   },
   get V9() {
@@ -27,3 +27,5 @@ const RawModuleDef = __t.enum('RawModuleDef', {
 });
 
 export default RawModuleDef;
+
+

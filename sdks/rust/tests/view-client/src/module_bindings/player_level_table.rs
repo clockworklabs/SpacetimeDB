@@ -38,6 +38,7 @@ impl PlayerLevelTableAccess for super::RemoteTables {
 }
 
 pub struct PlayerLevelInsertCallbackId(__sdk::CallbackId);
+
 pub struct PlayerLevelDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for PlayerLevelTableHandle<'ctx> {

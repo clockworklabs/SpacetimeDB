@@ -8,39 +8,40 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
-import SumType from './sum_type_type';
-import ProductType from './product_type_type';
+} from "../../lib/type_builders";
+import SumType from "./sum_type_type";
+import ProductType from "./product_type_type";
+
 
 // The tagged union or sum type for the algebraic type `AlgebraicType`.
-const AlgebraicType: __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType> =
-  __t.enum('AlgebraicType', {
-    Ref: __t.u32(),
-    get Sum() {
-      return SumType;
-    },
-    get Product() {
-      return ProductType;
-    },
-    get Array() {
-      return AlgebraicType;
-    },
-    String: __t.unit(),
-    Bool: __t.unit(),
-    I8: __t.unit(),
-    U8: __t.unit(),
-    I16: __t.unit(),
-    U16: __t.unit(),
-    I32: __t.unit(),
-    U32: __t.unit(),
-    I64: __t.unit(),
-    U64: __t.unit(),
-    I128: __t.unit(),
-    U128: __t.unit(),
-    I256: __t.unit(),
-    U256: __t.unit(),
-    F32: __t.unit(),
-    F64: __t.unit(),
-  });
+const AlgebraicType: __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType> = __t.enum("AlgebraicType", {Ref: __t.u32(),
+  get Sum() {
+    return SumType;
+  },
+  get Product() {
+    return ProductType;
+  },
+  get Array() {
+    return AlgebraicType;
+  },
+  String: __t.unit(),
+  Bool: __t.unit(),
+  I8: __t.unit(),
+  U8: __t.unit(),
+  I16: __t.unit(),
+  U16: __t.unit(),
+  I32: __t.unit(),
+  U32: __t.unit(),
+  I64: __t.unit(),
+  U64: __t.unit(),
+  I128: __t.unit(),
+  U128: __t.unit(),
+  I256: __t.unit(),
+  U256: __t.unit(),
+  F32: __t.unit(),
+  F64: __t.unit(),
+});
 
 export default AlgebraicType;
+
+

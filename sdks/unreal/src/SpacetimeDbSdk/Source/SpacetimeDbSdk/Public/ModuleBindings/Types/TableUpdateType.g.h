@@ -4,7 +4,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/CompressableQueryUpdateType.g.h"
+#include "ModuleBindings/Types/TableUpdateRowsType.g.h"
 #include "TableUpdateType.g.generated.h"
 
 USTRUCT(BlueprintType)
@@ -12,21 +12,15 @@ struct SPACETIMEDBSDK_API FTableUpdateType
 {
     GENERATED_BODY()
 
-    // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 TableId = 0;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString TableName;
 
-    // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 NumRows = 0;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    TArray<FCompressableQueryUpdateType> Updates;
+    TArray<FTableUpdateRowsType> Rows;
 
     FORCEINLINE bool operator==(const FTableUpdateType& Other) const
     {
-        return TableId == Other.TableId && TableName == Other.TableName && NumRows == Other.NumRows && Updates == Other.Updates;
+        return TableName == Other.TableName && Rows == Other.Rows;
     }
 
     FORCEINLINE bool operator!=(const FTableUpdateType& Other) const
@@ -43,10 +37,8 @@ struct SPACETIMEDBSDK_API FTableUpdateType
  */
 FORCEINLINE uint32 GetTypeHash(const FTableUpdateType& TableUpdateType)
 {
-    uint32 Hash = GetTypeHash(TableUpdateType.TableId);
-    Hash = HashCombine(Hash, GetTypeHash(TableUpdateType.TableName));
-    Hash = HashCombine(Hash, GetTypeHash(TableUpdateType.NumRows));
-    Hash = HashCombine(Hash, GetTypeHash(TableUpdateType.Updates));
+    uint32 Hash = GetTypeHash(TableUpdateType.TableName);
+    Hash = HashCombine(Hash, GetTypeHash(TableUpdateType.Rows));
     return Hash;
 }
 
@@ -54,5 +46,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FTableUpdateType);
 
-    UE_SPACETIMEDB_STRUCT(FTableUpdateType, TableId, TableName, NumRows, Updates);
+    UE_SPACETIMEDB_STRUCT(FTableUpdateType, TableName, Rows);
 }

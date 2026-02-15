@@ -8,13 +8,14 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
 // The tagged union or sum type for the algebraic type `Lifecycle`.
-const Lifecycle = __t.enum('Lifecycle', {
-  Init: __t.unit(),
+const Lifecycle = __t.enum("Lifecycle", {Init: __t.unit(),
   OnConnect: __t.unit(),
   OnDisconnect: __t.unit(),
 });
 
 export default Lifecycle;
+
+

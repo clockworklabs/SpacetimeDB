@@ -8,12 +8,15 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
-import Lifecycle from './lifecycle_type';
+} from "../../lib/type_builders";
+import Lifecycle from "./lifecycle_type";
 
-export default __t.object('RawLifeCycleReducerDefV10', {
+
+export default __t.object("RawLifeCycleReducerDefV10", {
   get lifecycleSpec() {
     return Lifecycle;
   },
   functionName: __t.string(),
 });
+
+
