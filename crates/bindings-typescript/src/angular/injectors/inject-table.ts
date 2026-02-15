@@ -1,16 +1,33 @@
-import { type Signal, signal, effect } from '@angular/core';
+import {
+  assertInInjectionContext,
+  inject,
+  signal,
+  effect,
+  type Signal,
+} from '@angular/core';
 import type { RowType, UntypedTableDef } from '../../lib/table';
 import type { Prettify } from '../../lib/type_util';
-import { injectSpacetimeDB } from './inject-spacetimedb';
+import { SPACETIMEDB_CONNECTION } from '../connection_state';
 import {
+  type Value,
   type Expr,
   type ColumnsFromRow,
+  eq,
+  and,
+  or,
+  isEq,
+  isAnd,
+  isOr,
   evaluate,
   toString,
+  where,
   classifyMembership,
 } from '../../lib/filter';
 import type { EventContextInterface } from '../../sdk';
 import type { UntypedRemoteModule } from '../../sdk/spacetime_module';
+
+export { eq, and, or, isEq, isAnd, isOr, where };
+export type { Value, Expr };
 
 export type RowTypeDef<TableDef extends UntypedTableDef> = Prettify<
   RowType<TableDef>
@@ -19,7 +36,6 @@ export type RowTypeDef<TableDef extends UntypedTableDef> = Prettify<
 export interface TableRows<TableDef extends UntypedTableDef> {
   rows: readonly RowTypeDef<TableDef>[];
   isLoading: boolean;
-  error?: Error;
 }
 
 export interface InjectTableCallbacks<RowType> {
@@ -36,9 +52,7 @@ export interface InjectTableOptions<TableDef extends UntypedTableDef> {
 /**
  * Angular injection function to subscribe to a table in SpacetimeDB and receive live updates.
  *
- * This function returns a signal containing the table's rows, filtered by an optional `where` clause,
- * and provides a loading state until the initial subscription is applied. It also allows you to specify
- * callbacks for row insertions, deletions, and updates.
+ * Must be called within an injection context (component field initializer or constructor).
  *
  * @template TableDef The table definition type.
  *
@@ -68,9 +82,11 @@ export function injectTable<TableDef extends UntypedTableDef>(
   tableDef: TableDef,
   options?: InjectTableOptions<TableDef>
 ): Signal<TableRows<TableDef>> {
+  assertInInjectionContext(injectTable);
+
   type UseTableRowType = RowType<TableDef>;
 
-  const conn = injectSpacetimeDB();
+  const connState = inject(SPACETIMEDB_CONNECTION);
 
   const tableName = tableDef.name;
   const accessorName = tableDef.accessorName;
@@ -93,11 +109,17 @@ export function injectTable<TableDef extends UntypedTableDef>(
   // in order to keep behavior consistent across frameworks.
 
   const computeSnapshot = (): readonly RowTypeDef<TableDef>[] => {
-    if (!conn.isActive) {
+    const state = connState();
+    if (!state.isActive) {
       return [];
     }
 
-    const table = conn.db[accessorName];
+    const connection = state.getConnection();
+    if (!connection) {
+      return [];
+    }
+
+    const table = connection.db[accessorName];
 
     if (whereClause) {
       return Array.from(table.iter()).filter(row =>
@@ -116,11 +138,17 @@ export function injectTable<TableDef extends UntypedTableDef>(
   };
 
   effect(onCleanup => {
-    if (!conn.isActive) {
+    const state = connState();
+    if (!state.isActive) {
       return;
     }
 
-    const table = conn.db[accessorName];
+    const connection = state.getConnection();
+    if (!connection) {
+      return;
+    }
+
+    const table = connection.db[accessorName];
 
     const onInsert = (
       ctx: EventContextInterface<UntypedRemoteModule>,
@@ -185,18 +213,11 @@ export function injectTable<TableDef extends UntypedTableDef>(
     table.onDelete(onDelete);
     table.onUpdate?.(onUpdate);
 
-    const subscription = conn
+    const subscription = connection
       .subscriptionBuilder()
       .onApplied(() => {
         subscribeApplied = true;
         updateSnapshot();
-      })
-      .onError(err => {
-        tableSignal.set({
-          rows: [],
-          isLoading: false,
-          error: err.event,
-        });
       })
       .subscribe(query);
 

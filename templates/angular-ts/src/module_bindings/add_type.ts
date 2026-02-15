@@ -10,11 +10,8 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.object("Messages", {
-  id: __t.u64(),
-  senderIdentity: __t.identity(),
-  content: __t.string(),
-  timestamp: __t.timestamp(),
+export default __t.object("Add", {
+  name: __t.string(),
 });
 
 

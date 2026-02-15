@@ -10,6 +10,8 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  identity: __t.identity().primaryKey(),
+export default __t.object("Person", {
+  name: __t.string(),
 });
+
+

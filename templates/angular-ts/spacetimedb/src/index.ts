@@ -2,35 +2,32 @@ import { schema, table, t } from 'spacetimedb/server';
 
 export const spacetimedb = schema(
   table(
-    { name: 'onlineUsers', public: true },
+    { name: 'person', public: true },
     {
-      identity: t.identity().primaryKey(),
-    },
-  ),
-  table(
-    { name: 'messages', public: true },
-    {
-      id: t.u64().primaryKey().autoInc(),
-      sender_identity: t.identity(),
-      content: t.string(),
-      timestamp: t.timestamp(),
-    },
-  ),
+      name: t.string(),
+    }
+  )
 );
 
-spacetimedb.clientConnected((ctx) => {
-  ctx.db.onlineUsers.insert({ identity: ctx.sender });
+spacetimedb.init((_ctx) => {
+  // Called when the module is initially published
 });
 
-spacetimedb.clientDisconnected((ctx) => {
-  ctx.db.onlineUsers.identity.delete(ctx.sender);
+spacetimedb.clientConnected((_ctx) => {
+  // Called every time a new client connects
 });
 
-spacetimedb.reducer('send_message', { content: t.string() }, (ctx, { content }) => {
-  ctx.db.messages.insert({
-    id: 0n,
-    sender_identity: ctx.sender,
-    timestamp: ctx.timestamp,
-    content,
-  });
+spacetimedb.clientDisconnected((_ctx) => {
+  // Called every time a client disconnects
+});
+
+spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
+  ctx.db.person.insert({ name });
+});
+
+spacetimedb.reducer('say_hello', (ctx) => {
+  for (const person of ctx.db.person.iter()) {
+    console.info(`Hello, ${person.name}!`);
+  }
+  console.info('Hello, World!');
 });

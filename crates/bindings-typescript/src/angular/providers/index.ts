@@ -1,1 +1,1 @@
-export { provideSpacetimeDB } from './provide-spacetimedb';
+export { provideSpacetimeDB } from './provide-spacetimedb.ts';
