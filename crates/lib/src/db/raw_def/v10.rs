@@ -390,6 +390,7 @@ pub struct RawSequenceDefV10 {
 pub struct RawIndexDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
+    /// TODO: Remove Option, must not be empty.
     pub source_name: Option<RawIdentifier>,
 
     // not to be used in v10

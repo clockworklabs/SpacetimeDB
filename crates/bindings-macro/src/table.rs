@@ -47,6 +47,7 @@ struct ScheduledArg {
 }
 
 struct IndexArg {
+    is_inline: bool,
     accessor: Ident,
     //TODO: add canonical name
     // name: Option<LitStr>,
@@ -55,7 +56,7 @@ struct IndexArg {
 }
 
 impl IndexArg {
-    fn new(accessor: Ident, kind: IndexType) -> Self {
+    fn inline(accessor: Ident, kind: IndexType) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
@@ -63,7 +64,17 @@ impl IndexArg {
             accessor,
             is_unique,
             kind,
+            is_inline: true,
             //  name,
+        }
+    }
+    fn explicit(accessor: Ident, kind: IndexType) -> Self {
+        Self {
+            is_inline: false,
+            accessor,
+            is_unique: false,
+            kind,
+            // name: None,
         }
     }
 }
@@ -206,7 +217,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(accessor, kind))
+        Ok(IndexArg::explicit(accessor, kind))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -266,7 +277,6 @@ impl IndexArg {
     /// Parses an inline `#[index(btree)]`, `#[index(hash)]`, or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
-        let mut accessor: Option<Ident> = None;
         let mut _name: Option<LitStr> = None;
         attr.parse_nested_meta(|meta| {
             match_meta!(match meta {
@@ -286,10 +296,6 @@ impl IndexArg {
                     check_duplicate_msg(&kind, &meta, "index type specified twice")?;
                     kind = Some(IndexType::Direct { column: field.clone() })
                 }
-                sym::accessor => {
-                    check_duplicate(&accessor, &meta)?;
-                    accessor = Some(meta.value()?.parse()?);
-                }
                 sym::name => {
                     check_duplicate(&_name, &meta)?;
                     _name = Some(meta.value()?.parse()?);
@@ -301,8 +307,8 @@ impl IndexArg {
             kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` , `direct`)"))?;
 
         // Default accessor = field name if not provided
-        let accessor = accessor.unwrap_or_else(|| field.clone());
-        Ok(IndexArg::new(accessor, kind))
+        let accessor = field.clone();
+        Ok(IndexArg::inline(accessor, kind))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -345,6 +351,7 @@ impl IndexArg {
             // as it is used in `index_id_from_name` abi.
             index_name: gen_index_name(),
             accessor_name: &self.accessor,
+            using_field_as_accessor: self.is_inline,
             kind,
         })
     }
@@ -402,6 +409,7 @@ impl AccessorType {
 struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
+    using_field_as_accessor: bool,
     is_unique: bool,
     kind: ValidatedIndexType<'a>,
 }
@@ -450,14 +458,16 @@ impl ValidatedIndex<'_> {
                 })
             }
         };
-        let accessor_name = ident_to_litstr(self.accessor_name);
-        let index_name = &self.index_name;
+        let accessor_name = if self.using_field_as_accessor {
+            self.index_name.clone()
+        } else {
+            ident_to_litstr(self.accessor_name).value()
+        };
         // Note: we do not pass the index_name through here.
         // We trust the schema validation logic to reconstruct the name we've stored in `self.name`.
         //TODO(shub): pass generated index name instead of accessor name as source_name
         quote!(spacetimedb::table::IndexDesc {
             source_name: #accessor_name,
-            index_name: #index_name,
             algo: #algo,
         })
     }
@@ -849,6 +859,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let accessor = unique_col.ident.clone();
         let columns = vec![accessor.clone()];
         args.indices.push(IndexArg {
+            is_inline: true,
             accessor,
             //name: None,
             is_unique: true,

@@ -1616,6 +1616,7 @@ mod tests {
             schedule,
             pk,
             false,
+            None,
         )
     }
 

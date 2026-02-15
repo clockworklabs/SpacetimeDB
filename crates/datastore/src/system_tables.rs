@@ -981,6 +981,7 @@ impl From<StColumnRow> for ColumnSchema {
             col_pos: column.col_pos,
             col_name: column.col_name,
             col_type: column.col_type.0,
+            alias: None,
         }
     }
 }
@@ -1148,6 +1149,7 @@ impl From<StIndexRow> for IndexSchema {
             table_id: x.table_id,
             index_name: x.index_name,
             index_algorithm: x.index_algorithm.into(),
+            alias: None,
         }
     }
 }

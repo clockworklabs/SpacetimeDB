@@ -186,6 +186,8 @@ pub trait StateView {
             schedule,
             table_primary_key,
             is_event,
+            //TODO: fetch it from system table
+            None,
         ))
     }
 

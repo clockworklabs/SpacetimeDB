@@ -1,8 +1,14 @@
 // Wrap these tests in a `mod` whose name contains `csharp`
 // so that we can run tests with `--skip csharp` in environments without dotnet installed.
 use serial_test::serial;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
-use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::def::{
+    ColumnDef, ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup as _, ProcedureDef, ReducerDef, ScheduleDef,
+    ScopedTypeName, SequenceDef, TableDef, TypeDef, ViewColumnDef, ViewDef,
+};
+use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 
 fn get_normalized_schema(module_name: &str) -> ModuleDef {
@@ -91,3 +97,213 @@ declare_tests! {
 fn ensure_same_schema_rust_csharp_benchmarks() {
     assert_identical_modules("benchmarks", "C#", "cs");
 }
+
+#[test]
+#[serial]
+fn test_all_schema_names() {
+    let module_def: ModuleDef = get_normalized_schema("module-test-ts");
+
+    // Test Tables
+    let table_names = [
+        "test_d",
+        "person",
+    ];
+    for name in table_names {
+        assert!(
+            TableDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
+            "Table '{}' not found",
+            name
+        );
+    }
+
+    // Test Reducers
+    let reducer_names = [
+        "add",
+        "add_player",
+        "add_private",
+        "assert_caller_identity_is_module_identity",
+        "client_connected",
+        "delete_player",
+        "delete_players_by_name",
+     //   "init",
+        "list_over_age",
+        "log_module_identity",
+        "query_private",
+        "repeating_test",
+        "say_hello",
+        "test",
+        "test_btree_index_args",
+    ];
+    for name in reducer_names {
+        assert!(
+            ReducerDef::lookup(&module_def, &ReducerName::for_test(name)).is_some(),
+            "Reducer '{}' not found",
+            name
+        );
+    }
+
+    // Test Procedures
+    let procedure_names = ["get_my_schema_via_http"];
+    for name in procedure_names {
+        assert!(
+            ProcedureDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
+            "Procedure '{}' not found",
+            name
+        );
+    }
+
+    // Test Views
+    let view_names = ["my_player"];
+    for name in view_names {
+        assert!(
+            ViewDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
+            "View '{}' not found",
+            name
+        );
+    }
+
+    // Test Types
+    //    let type_names = [
+    //        "PkMultiIdentity",
+    //        "PrivateTable",
+    //        "Baz",
+    //        "TestA",
+    //        "TestFoobar",
+    //        "TestE",
+    //        "RemoveTable",
+    //        "Foobar",
+    //        "Player",
+    //        "RepeatingTestArg",
+    //        "Person",
+    //        "Point",
+    //        "TestB",
+    //        "HasSpecialStuff",
+    //        "TestD",
+    //        "Namespace::TestF",
+    //        "Namespace::TestC",
+    //    ];
+    //    for name in type_names {
+    //        assert!(
+    //            TypeDef::lookup(&module_def, &ScopedTypeName::new(name)).is_some(),
+    //            "Type '{}' not found",
+    //            name
+    //        );
+    //    }
+    //
+    // Test Indexes (using lookup via stored_in_table_def)
+    let index_names = [
+        "person_age_idx_btree",
+        "person_id_idx_btree",
+        "test_a_x_idx_btree",
+        "repeating_test_arg_scheduled_id_idx_btree"
+    ];
+    for index_name in index_names {
+        assert!(
+            IndexDef::lookup(&module_def, &RawIdentifier::new(index_name)).is_some(),
+            "Index '{}' not found",
+            index_name
+        );
+    }
+
+    let index_names_and_alias = [
+        ("person_age_idx_btree", "P",)
+    ];
+    // for (index_name, alias) in index_names {
+    //     assert!(
+    //         &IndexDef::lookup(&module_def, &RawIdentifier::new(index_name)).expect("index exists").accessor_name,
+    //         "Index '{}' not found",
+    //         alias
+    //     );
+    // }
+
+    // Test Constraints
+    let constraint_names = [
+        "person_id_key",
+        "player_identity_key",
+        "player_name_key",
+        "player_player_id_key",
+        "logged_out_player_name_key",
+        "logged_out_player_identity_key",
+        "logged_out_player_player_id_key",
+        "pk_multi_identity_id_key",
+        "pk_multi_identity_other_key",
+        "test_e_id_key",
+        "repeating_test_arg_scheduled_id_key",
+    ];
+    for constraint_name in constraint_names {
+        assert!(
+            ConstraintDef::lookup(&module_def, &RawIdentifier::new(constraint_name)).is_some(),
+            "Constraint '{}' not found",
+            constraint_name
+        );
+    }
+
+    // Test Sequences
+    let sequence_names = [
+        "person_id_seq",
+        "player_player_id_seq",
+        "logged_out_player_player_id_seq",
+        "pk_multi_identity_other_seq",
+        "test_e_id_seq",
+        "repeating_test_arg_scheduled_id_seq",
+    ];
+    for sequence_name in sequence_names {
+        assert!(
+            SequenceDef::lookup(&module_def, &RawIdentifier::new(sequence_name)).is_some(),
+            "Sequence '{}' not found",
+            sequence_name
+        );
+    }
+
+    // Test Schedule
+    let schedule_name = "repeating_test_arg_sched";
+    assert!(
+        ScheduleDef::lookup(&module_def, &Identifier::for_test(schedule_name)).is_some(),
+        "Schedule '{}' not found",
+        schedule_name
+    );
+
+    // Test Columns (using composite key: table_name, column_name)
+    let column_names = [
+        ("person", "id"),
+        ("person", "name"),
+        ("person", "age"),
+        ("player", "identity"),
+        ("player", "player_id"),
+        ("player", "name"),
+        ("points", "x"),
+        ("points", "y"),
+    ];
+    for (table_name, col_name) in column_names {
+        assert!(
+            ColumnDef::lookup(
+                &module_def,
+                (&Identifier::for_test(table_name), &Identifier::for_test(col_name))
+            )
+            .is_some(),
+            "Column '{}.{}' not found",
+            table_name,
+            col_name
+        );
+    }
+
+    // Test View Columns
+    let view_column_names = [
+        ("my_player", "identity"),
+        ("my_player", "player_id"),
+        ("my_player", "name"),
+    ];
+    for (view_name, col_name) in view_column_names {
+        assert!(
+            ViewColumnDef::lookup(
+                &module_def,
+                (&Identifier::for_test(view_name), &Identifier::for_test(col_name))
+            )
+            .is_some(),
+            "View column '{}.{}' not found",
+            view_name,
+            col_name
+        );
+    }
+}
+

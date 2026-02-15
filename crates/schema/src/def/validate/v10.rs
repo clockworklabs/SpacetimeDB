@@ -4,8 +4,8 @@ use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
-    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name, CoreValidator,
-    TableValidator, ViewValidator,
+    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name,
+    generate_unique_constraint_name, identifier, CoreValidator, TableValidator, ViewValidator,
 };
 use crate::def::*;
 use crate::error::ValidationError;
@@ -290,6 +290,8 @@ impl<'a> ModuleValidatorV10<'a> {
         let mut table_validator =
             TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
 
+        let table_ident = table_validator.table_ident.clone();
+
         // Validate columns first
         let mut columns: Vec<ColumnDef> = (0..product_type.elements.len())
             .map(|id| table_validator.validate_column_def(id.into()))
@@ -299,7 +301,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|index| {
                 table_validator
-                    .validate_index_def(index.into(), RawModuleDefVersion::V10)
+                    .validate_index_def_v10(index.into())
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -308,7 +310,9 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|constraint| {
                 table_validator
-                    .validate_constraint_def(constraint.into())
+                    .validate_constraint_def(constraint.into(), |_source_name, cols| {
+                        generate_unique_constraint_name(&table_ident, product_type, cols)
+                    })
                     .map(|constraint| (constraint.name.clone(), constraint))
             })
             .collect_all_errors()
@@ -413,6 +417,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_type,
             table_access,
             is_event,
+            accessor_name: identifier(raw_table_name)?,
         })
     }
 
@@ -564,18 +569,17 @@ impl<'a> ModuleValidatorV10<'a> {
 
     fn validate_view_def(&mut self, view_def: RawViewDefV10) -> Result<ViewDef> {
         let RawViewDefV10 {
-            source_name,
+            source_name: accessor_name,
             is_public,
             is_anonymous,
             params,
             return_type,
             index,
         } = view_def;
-        let name = source_name;
 
         let invalid_return_type = || {
             ValidationErrors::from(ValidationError::InvalidViewReturnType {
-                view: name.clone(),
+                view: accessor_name.clone(),
                 ty: return_type.clone().into(),
             })
         };
@@ -599,7 +603,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .and_then(AlgebraicType::as_product)
             .ok_or_else(|| {
                 ValidationErrors::from(ValidationError::InvalidProductTypeRef {
-                    table: name.clone(),
+                    table: accessor_name.clone(),
                     ref_: product_type_ref,
                 })
             })?;
@@ -607,20 +611,20 @@ impl<'a> ModuleValidatorV10<'a> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
-                    view_name: name.clone(),
+                    view_name: accessor_name.clone(),
                     position,
                     arg_name,
                 })?;
 
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
-                view_name: name.clone(),
+                view_name: accessor_name.clone(),
             },
             &return_type,
         );
 
         let mut view_validator = ViewValidator::new(
-            name.clone(),
+            accessor_name.clone(),
             product_type_ref,
             product_type,
             &params,
@@ -628,7 +632,7 @@ impl<'a> ModuleValidatorV10<'a> {
             &mut self.core,
         )?;
 
-        let name_result = view_validator.add_to_global_namespace(name);
+        let name_result = view_validator.add_to_global_namespace(accessor_name);
 
         let n = product_type.elements.len();
         let return_columns = (0..n)
@@ -644,7 +648,8 @@ impl<'a> ModuleValidatorV10<'a> {
             (name_result, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name: self.core.identifier_with_case(name_result)?,
+            name: self.core.identifier_with_case(name_result.clone())?,
+            accessor_name: identifier(name_result)?,
             is_anonymous,
             is_public,
             params,

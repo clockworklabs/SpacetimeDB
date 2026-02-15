@@ -700,6 +700,7 @@ pub(crate) mod tests {
                 None,
                 None,
                 false,
+                None,
             ),
         )?;
         let schema = db.schema_for_table_mut(tx, table_id)?;

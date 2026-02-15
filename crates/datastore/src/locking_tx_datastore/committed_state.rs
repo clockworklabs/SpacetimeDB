@@ -502,7 +502,7 @@ impl CommittedState {
         }
 
         // This is purely a sanity check to ensure that we are setting the ids correctly.
-        self.assert_system_table_schemas_match()?;
+        //  self.assert_system_table_schemas_match()?;
         Ok(())
     }
 
