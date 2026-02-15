@@ -29,6 +29,7 @@ namespace SpacetimeDB.Types
         {
             AddTable(Circle = new(conn));
             AddTable(Config = new(conn));
+            AddTable(ConsumeEntityEvent = new(conn));
             AddTable(Entity = new(conn));
             AddTable(Food = new(conn));
             AddTable(Player = new(conn));
@@ -530,6 +531,7 @@ namespace SpacetimeDB.Types
         {
             new QueryBuilder().From.Circle().ToSql(),
             new QueryBuilder().From.Config().ToSql(),
+            new QueryBuilder().From.ConsumeEntityEvent().ToSql(),
             new QueryBuilder().From.Entity().ToSql(),
             new QueryBuilder().From.Food().ToSql(),
             new QueryBuilder().From.Player().ToSql(),
@@ -541,6 +543,7 @@ namespace SpacetimeDB.Types
     {
         public global::SpacetimeDB.Table<Circle, CircleCols, CircleIxCols> Circle() => new("circle", new CircleCols("circle"), new CircleIxCols("circle"));
         public global::SpacetimeDB.Table<Config, ConfigCols, ConfigIxCols> Config() => new("config", new ConfigCols("config"), new ConfigIxCols("config"));
+        public global::SpacetimeDB.Table<ConsumeEntityEvent, ConsumeEntityEventCols, ConsumeEntityEventIxCols> ConsumeEntityEvent() => new("consume_entity_event", new ConsumeEntityEventCols("consume_entity_event"), new ConsumeEntityEventIxCols("consume_entity_event"));
         public global::SpacetimeDB.Table<Entity, EntityCols, EntityIxCols> Entity() => new("entity", new EntityCols("entity"), new EntityIxCols("entity"));
         public global::SpacetimeDB.Table<Food, FoodCols, FoodIxCols> Food() => new("food", new FoodCols("food"), new FoodIxCols("food"));
         public global::SpacetimeDB.Table<Player, PlayerCols, PlayerIxCols> Player() => new("player", new PlayerCols("player"), new PlayerIxCols("player"));
