@@ -1282,8 +1282,8 @@ pub(crate) async fn extract_schema_with_pools(
         Host::try_init_in_memory_to_check(runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {
-        Ok(info) => info.module_def,
-        Err(info) => info.module_def.clone(),
+        Ok(info) => Arc::try_unwrap(info.module_def).unwrap_or_else(|module_def| (*module_def).clone()),
+        Err(info) => (*info.module_def).clone(),
     };
 
     Ok(module_def)
