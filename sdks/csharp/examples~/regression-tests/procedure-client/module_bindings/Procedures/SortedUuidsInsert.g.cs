@@ -15,15 +15,16 @@ namespace SpacetimeDB.Types
         public void SortedUuidsInsert(ProcedureCallback<SpacetimeDB.Unit> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalSortedUuidsInsert((ctx, result) => {
-            if (result.IsSuccess && result.Value != null)
+            InternalSortedUuidsInsert((ctx, result) =>
             {
-                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
-            }
-            else
-            {
-                callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
-            }
+                if (result.IsSuccess && result.Value != null)
+                {
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
+                }
+                else
+                {
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
+                }
             });
         }
 

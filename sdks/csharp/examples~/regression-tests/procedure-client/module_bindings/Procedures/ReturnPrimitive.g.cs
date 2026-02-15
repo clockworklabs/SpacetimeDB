@@ -15,15 +15,16 @@ namespace SpacetimeDB.Types
         public void ReturnPrimitive(uint lhs, uint rhs, ProcedureCallback<uint> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalReturnPrimitive(lhs, rhs, (ctx, result) => {
-            if (result.IsSuccess && result.Value != null)
+            InternalReturnPrimitive(lhs, rhs, (ctx, result) =>
             {
-                callback(ctx, ProcedureCallbackResult<uint>.Success(result.Value.Value));
-            }
-            else
-            {
-                callback(ctx, ProcedureCallbackResult<uint>.Failure(result.Error!));
-            }
+                if (result.IsSuccess && result.Value != null)
+                {
+                    callback(ctx, ProcedureCallbackResult<uint>.Success(result.Value.Value));
+                }
+                else
+                {
+                    callback(ctx, ProcedureCallbackResult<uint>.Failure(result.Error!));
+                }
             });
         }
 
