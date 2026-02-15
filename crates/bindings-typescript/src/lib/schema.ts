@@ -117,6 +117,7 @@ export function tableToSchema<
       };
     }) as T['idxs'],
     tableDef,
+    ...(tableDef.isEvent ? { isEvent: true } : {}),
   };
 }
 

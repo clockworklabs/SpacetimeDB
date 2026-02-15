@@ -41,3 +41,5 @@ impl __sdk::__query_builder::HasIxCols for OneTimestamp {
         OneTimestampIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for OneTimestamp {}

@@ -19,6 +19,7 @@ pub(crate) struct TableArgs {
     scheduled: Option<ScheduledArg>,
     name: Ident,
     indices: Vec<IndexArg>,
+    event: Option<Span>,
 }
 
 enum TableAccess {
@@ -71,6 +72,7 @@ impl TableArgs {
         let mut scheduled = None;
         let mut name = None;
         let mut indices = Vec::new();
+        let mut event = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
                 sym::public => {
@@ -91,6 +93,10 @@ impl TableArgs {
                     check_duplicate(&scheduled, &meta)?;
                     scheduled = Some(ScheduledArg::parse_meta(meta)?);
                 }
+                sym::event => {
+                    check_duplicate(&event, &meta)?;
+                    event = Some(meta.path.span());
+                }
             });
             Ok(())
         })
@@ -107,6 +113,7 @@ impl TableArgs {
             scheduled,
             name,
             indices,
+            event,
         })
     }
 }
@@ -852,6 +859,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     );
 
     let table_access = args.access.iter().map(|acc| acc.to_value());
+    let is_event = args.event.iter().map(|_| {
+        quote!(
+            const IS_EVENT: bool = true;
+        )
+    });
+    let can_be_lookup_impl = if args.event.is_none() {
+        quote! {
+            impl spacetimedb::query_builder::CanBeLookupTable for #original_struct_ident {}
+        }
+    } else {
+        quote! {}
+    };
     let unique_col_ids = unique_columns.iter().map(|col| col.index);
     let primary_col_id = primary_key_column.clone().into_iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
@@ -977,6 +996,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             const TABLE_NAME: &'static str = #table_name;
             // the default value if not specified is Private
             #(const TABLE_ACCESS: spacetimedb::table::TableAccess = #table_access;)*
+            #(#is_event)*
             const UNIQUE_COLUMNS: &'static [u16] = &[#(#unique_col_ids),*];
             const INDEXES: &'static [spacetimedb::table::IndexDesc<'static>] = &[#(#index_descs),*];
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
@@ -1087,6 +1107,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 }
             }
         }
+
+        #can_be_lookup_impl
 
     };
 

@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void CircleRecombineHandler(ReducerEventContext ctx, SpacetimeDB.Types.CircleRecombineTimer timer);
-        public event CircleRecombineHandler? OnCircleRecombine;
+        public delegate void EmitTestEventHandler(ReducerEventContext ctx, string name, ulong value);
+        public event EmitTestEventHandler? OnEmitTestEvent;
 
-        public void CircleRecombine(SpacetimeDB.Types.CircleRecombineTimer timer)
+        public void EmitTestEvent(string name, ulong value)
         {
-            conn.InternalCallReducer(new Reducer.CircleRecombine(timer));
+            conn.InternalCallReducer(new Reducer.EmitTestEvent(name, value));
         }
 
-        public bool InvokeCircleRecombine(ReducerEventContext ctx, Reducer.CircleRecombine args)
+        public bool InvokeEmitTestEvent(ReducerEventContext ctx, Reducer.EmitTestEvent args)
         {
-            if (OnCircleRecombine == null)
+            if (OnEmitTestEvent == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,9 +34,10 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnCircleRecombine(
+            OnEmitTestEvent(
                 ctx,
-                args.Timer
+                args.Name,
+                args.Value
             );
             return true;
         }
@@ -46,22 +47,28 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class CircleRecombine : Reducer, IReducerArgs
+        public sealed partial class EmitTestEvent : Reducer, IReducerArgs
         {
-            [DataMember(Name = "timer")]
-            public CircleRecombineTimer Timer;
+            [DataMember(Name = "name")]
+            public string Name;
+            [DataMember(Name = "value")]
+            public ulong Value;
 
-            public CircleRecombine(CircleRecombineTimer Timer)
+            public EmitTestEvent(
+                string Name,
+                ulong Value
+            )
             {
-                this.Timer = Timer;
+                this.Name = Name;
+                this.Value = Value;
             }
 
-            public CircleRecombine()
+            public EmitTestEvent()
             {
-                this.Timer = new();
+                this.Name = "";
             }
 
-            string IReducerArgs.ReducerName => "circle_recombine";
+            string IReducerArgs.ReducerName => "EmitTestEvent";
         }
     }
 }

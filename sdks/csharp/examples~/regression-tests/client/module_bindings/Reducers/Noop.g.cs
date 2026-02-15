@@ -12,12 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void ClientDisconnectedHandler(ReducerEventContext ctx);
-        public event ClientDisconnectedHandler? OnClientDisconnected;
+        public delegate void NoopHandler(ReducerEventContext ctx);
+        public event NoopHandler? OnNoop;
 
-        public bool InvokeClientDisconnected(ReducerEventContext ctx, Reducer.ClientDisconnected args)
+        public void Noop()
         {
-            if (OnClientDisconnected == null)
+            conn.InternalCallReducer(new Reducer.Noop());
+        }
+
+        public bool InvokeNoop(ReducerEventContext ctx, Reducer.Noop args)
+        {
+            if (OnNoop == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -29,7 +34,7 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnClientDisconnected(
+            OnNoop(
                 ctx
             );
             return true;
@@ -40,9 +45,9 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class ClientDisconnected : Reducer, IReducerArgs
+        public sealed partial class Noop : Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "ClientDisconnected";
+            string IReducerArgs.ReducerName => "Noop";
         }
     }
 }

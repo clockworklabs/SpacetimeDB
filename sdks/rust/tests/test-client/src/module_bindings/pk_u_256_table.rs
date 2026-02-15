@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkU256>("pk_u256");
-    _table.add_unique_constraint::<__sats::u256>("n", |row| &row.n);
-}
 pub struct PkU256UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
@@ -98,15 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkU256UpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkU256>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkU256>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `n` unique index on the table `pk_u256`,
@@ -137,6 +123,21 @@ impl<'ctx> PkU256NUnique<'ctx> {
     pub fn find(&self, col_val: &__sats::u256) -> Option<PkU256> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkU256>("pk_u256");
+    _table.add_unique_constraint::<__sats::u256>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkU256>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkU256>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

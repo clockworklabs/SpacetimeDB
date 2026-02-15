@@ -510,7 +510,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       return inserts.concat(deletes);
     }
     if (rows.tag === 'EventTable') {
-      // TODO: Decide how event tables should be merged into the cache.
+      // Event table rows are insert-only. The table cache handles skipping
+      // storage for event tables and only firing on_insert callbacks.
       return this.#parseRowList('insert', tableName, rows.value.events);
     }
     return [];

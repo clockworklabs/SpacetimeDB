@@ -109,6 +109,12 @@ pub struct CircleRecombineTimer {
     player_id: i32,
 }
 
+#[spacetimedb::table(name = consume_entity_event, public, event)]
+pub struct ConsumeEntityEvent {
+    consumed_entity_id: i32,
+    consumer_entity_id: i32,
+}
+
 #[spacetimedb::table(name = consume_entity_timer, scheduled(consume_entity))]
 pub struct ConsumeEntityTimer {
     #[primary_key]
@@ -455,6 +461,11 @@ pub fn consume_entity(ctx: &ReducerContext, request: ConsumeEntityTimer) -> Resu
     }
     let consumed_entity = consumed_entity.unwrap();
     let mut consumer_entity = consumer_entity.unwrap();
+
+    ctx.db.consume_entity_event().insert(ConsumeEntityEvent {
+        consumed_entity_id: consumed_entity.entity_id,
+        consumer_entity_id: consumer_entity.entity_id,
+    });
 
     consumer_entity.mass += consumed_entity.mass;
     destroy_entity(ctx, consumed_entity.entity_id)?;
