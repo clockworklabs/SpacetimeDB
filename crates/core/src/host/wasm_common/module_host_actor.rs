@@ -2,7 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
+use crate::energy::{EnergyMonitor, EnergyQuanta, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
@@ -24,6 +24,7 @@ use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
@@ -95,6 +96,10 @@ pub trait WasmInstance {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> impl Future<Output = (ProcedureExecuteResult, Option<TransactionOffset>)>;
+
+    /// After a procedure finishes, take the set of views that need
+    /// re-materialization due to transactions committed during the procedure.
+    fn take_pending_view_updates(&mut self) -> Vec<ViewCallInfo>;
 }
 
 pub struct EnergyStats {
@@ -709,6 +714,12 @@ impl InstanceCommon {
 
         let (result, tx_offset) = inst.call_procedure(op, budget).await;
 
+        // Collect any views that need re-materialization.
+        // During the procedure, `commit_mutable_tx` accumulated dirty views
+        // but couldn't call view functions (we were inside the wasm instance).
+        // Now that the procedure has returned, we can re-materialize them.
+        let pending_views = inst.take_pending_view_updates();
+
         let ProcedureExecuteResult {
             stats:
                 ExecutionStats {
@@ -756,6 +767,13 @@ impl InstanceCommon {
                     })
             }
         };
+
+        // Re-materialize views that were dirtied by the procedure's transactions.
+        // We start a new transaction, run the view functions, and commit+broadcast
+        // so that subscribers to views receive the updates.
+        if !pending_views.is_empty() && !trapped {
+            self.rematerialize_views_for_procedure(pending_views, caller_identity, timestamp, inst);
+        }
 
         (CallProcedureReturn { result, tx_offset }, trapped)
     }
@@ -1360,6 +1378,79 @@ impl InstanceCommon {
         }
 
         (out, trapped)
+    }
+
+    /// Re-materialize views that were dirtied during a procedure's committed transactions.
+    ///
+    /// Procedures commit transactions via syscalls while still inside the wasm instance,
+    /// so view functions can't be called at commit time. Instead, dirty views are accumulated
+    /// and this method is called after the procedure returns to re-materialize them in a
+    /// separate transaction.
+    fn rematerialize_views_for_procedure<I: WasmInstance>(
+        &mut self,
+        pending_views: Vec<ViewCallInfo>,
+        caller_identity: Identity,
+        timestamp: Timestamp,
+        inst: &mut I,
+    ) {
+        let stdb = inst.replica_ctx().relational_db.clone();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+
+        let module_def = &self.info.module_def;
+        let view_calls: Vec<CallViewParams> = pending_views
+            .into_iter()
+            .filter_map(|info| {
+                let view_def = module_def.get_view_by_id(info.fn_ptr, info.sender.is_none())?;
+                Some(CallViewParams {
+                    view_name: view_def.name.clone(),
+                    view_id: info.view_id,
+                    table_id: info.table_id,
+                    fn_ptr: view_def.fn_ptr,
+                    caller: caller_identity,
+                    sender: info.sender,
+                    args: ArgsTuple::nullary(),
+                    row_type: view_def.product_type_ref,
+                    timestamp,
+                })
+            })
+            .collect();
+
+        if view_calls.is_empty() {
+            // All views were removed between commit and now (unlikely but possible).
+            ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
+            return;
+        }
+
+        let (out, _trapped) = self.execute_view_calls(tx, view_calls, inst);
+
+        match out.outcome {
+            ViewOutcome::Success => {
+                // Commit the view updates and broadcast to subscribers.
+                let event = ModuleEvent {
+                    timestamp: Timestamp::now(),
+                    caller_identity: stdb.database_identity(),
+                    caller_connection_id: None,
+                    function_call: ModuleFunctionCall::default(),
+                    status: EventStatus::Committed(DatabaseUpdate::default()),
+                    reducer_return_value: None,
+                    request_id: None,
+                    timer: None,
+                    energy_quanta_used: EnergyQuanta { quanta: 0 },
+                    host_execution_duration: Duration::from_millis(0),
+                };
+                commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
+            }
+            ViewOutcome::BudgetExceeded | ViewOutcome::Failed(_) => {
+                // View re-materialization failed. Roll back to avoid partial updates.
+                // The procedure's data transactions have already been committed,
+                // so only the view backing tables are affected.
+                log::error!(
+                    "failed to re-materialize views after procedure commit: {:?}",
+                    out.outcome
+                );
+                ModuleSubscriptions::rollback_mut_tx(&stdb, out.tx);
+            }
+        }
     }
 
     /// Empty the system tables tracking clients without running any lifecycle reducers.

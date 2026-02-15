@@ -39,7 +39,7 @@ use futures::FutureExt;
 use itertools::Either;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, ViewCallInfo};
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
@@ -890,10 +890,15 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
                 ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
             })
         });
-        let tx_offset = env_on_isolate_unwrap(self.scope)
-            .instance_env
-            .take_procedure_tx_offset();
+        let env = env_on_isolate_unwrap(self.scope);
+        let tx_offset = env.instance_env.take_procedure_tx_offset();
         (result, tx_offset)
+    }
+
+    fn take_pending_view_updates(&mut self) -> Vec<ViewCallInfo> {
+        env_on_isolate_unwrap(self.scope)
+            .instance_env
+            .take_pending_view_updates()
     }
 }
 

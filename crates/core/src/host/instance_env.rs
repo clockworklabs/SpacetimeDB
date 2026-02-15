@@ -17,7 +17,7 @@ use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
@@ -53,6 +53,13 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    /// Views that need re-materialization after a procedure finishes.
+    ///
+    /// Procedures commit transactions via syscalls while still executing inside
+    /// the wasm instance, so we can't call view functions at that point.
+    /// Instead we accumulate dirty views here and re-materialize them
+    /// after the procedure returns control to the host.
+    pending_view_updates: Vec<ViewCallInfo>,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -237,6 +244,7 @@ impl InstanceEnv {
             func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            pending_view_updates: Vec::new(),
         }
     }
 
@@ -739,6 +747,15 @@ impl InstanceEnv {
         let tx = self.take_tx()?;
         let subs = self.replica_ctx.subscriptions.clone();
 
+        // Collect views that need re-materialization due to this transaction's writes.
+        // We can't call view functions right now (we're inside the wasm instance),
+        // so we defer them until after the procedure returns.
+        for view_info in tx.view_for_update() {
+            if !self.pending_view_updates.contains(view_info) {
+                self.pending_view_updates.push(view_info.clone());
+            }
+        }
+
         let event = ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: stdb.database_identity(),
@@ -795,6 +812,12 @@ impl InstanceEnv {
     /// After a procedure has finished, take its known last tx offset, if any.
     pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
         self.procedure_last_tx_offset.take()
+    }
+
+    /// After a procedure has finished, take the accumulated set of views
+    /// that need re-materialization.
+    pub fn take_pending_view_updates(&mut self) -> Vec<ViewCallInfo> {
+        mem::take(&mut self.pending_view_updates)
     }
 
     /// Perform an HTTP request.

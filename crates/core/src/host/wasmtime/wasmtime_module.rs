@@ -16,7 +16,7 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, ViewCallInfo};
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{
@@ -587,6 +587,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let tx_offset = store.data_mut().take_procedure_tx_offset();
 
         (res, tx_offset)
+    }
+
+    fn take_pending_view_updates(&mut self) -> Vec<ViewCallInfo> {
+        self.store.data_mut().take_pending_view_updates()
     }
 }
 

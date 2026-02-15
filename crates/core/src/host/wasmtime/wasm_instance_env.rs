@@ -11,7 +11,7 @@ use crate::host::AbiCall;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, ViewCallInfo};
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use spacetimedb_schema::identifier::Identifier;
@@ -281,6 +281,11 @@ impl WasmInstanceEnv {
     /// After a procedure has finished, take its known last tx offset, if any.
     pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
         self.instance_env.take_procedure_tx_offset()
+    }
+
+    /// After a procedure has finished, take the set of views needing re-materialization.
+    pub fn take_pending_view_updates(&mut self) -> Vec<ViewCallInfo> {
+        self.instance_env.take_pending_view_updates()
     }
 
     /// Record a span with `start`.
