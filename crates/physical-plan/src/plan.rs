@@ -1168,6 +1168,9 @@ impl PhysicalPlan {
     }
 
     /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    ///
+    /// Note, we only care about index joins because this method is only relevant for subscriptions,
+    /// and index joins are the only type of join allowed in subscriptions.
     pub fn reads_from_event_table(&self) -> bool {
         self.any(&|plan| match plan {
             Self::IxJoin(join, _) => join.rhs.is_event,
