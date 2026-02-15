@@ -47,7 +47,6 @@ struct ScheduledArg {
 }
 
 struct IndexArg {
-    is_inline: bool,
     accessor: Ident,
     //TODO: add canonical name
     // name: Option<LitStr>,
@@ -64,13 +63,11 @@ impl IndexArg {
             accessor,
             is_unique,
             kind,
-            is_inline: true,
             //  name,
         }
     }
     fn explicit(accessor: Ident, kind: IndexType) -> Self {
         Self {
-            is_inline: false,
             accessor,
             is_unique: false,
             kind,
@@ -351,7 +348,6 @@ impl IndexArg {
             // as it is used in `index_id_from_name` abi.
             index_name: gen_index_name(),
             accessor_name: &self.accessor,
-            using_field_as_accessor: self.is_inline,
             kind,
         })
     }
@@ -409,7 +405,6 @@ impl AccessorType {
 struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
-    using_field_as_accessor: bool,
     is_unique: bool,
     kind: ValidatedIndexType<'a>,
 }
@@ -458,16 +453,12 @@ impl ValidatedIndex<'_> {
                 })
             }
         };
-        let accessor_name = if self.using_field_as_accessor {
-            self.index_name.clone()
-        } else {
-            ident_to_litstr(self.accessor_name).value()
-        };
+        let source_name = self.index_name.clone();
         // Note: we do not pass the index_name through here.
         // We trust the schema validation logic to reconstruct the name we've stored in `self.name`.
         //TODO(shub): pass generated index name instead of accessor name as source_name
         quote!(spacetimedb::table::IndexDesc {
-            source_name: #accessor_name,
+            source_name: #source_name,
             algo: #algo,
         })
     }
@@ -859,7 +850,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let accessor = unique_col.ident.clone();
         let columns = vec![accessor.clone()];
         args.indices.push(IndexArg {
-            is_inline: true,
             accessor,
             //name: None,
             is_unique: true,
