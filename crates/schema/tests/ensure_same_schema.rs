@@ -5,7 +5,7 @@ use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
 use spacetimedb_schema::def::{
     ColumnDef, ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup as _, ProcedureDef, ReducerDef, ScheduleDef,
-    ScopedTypeName, SequenceDef, TableDef, TypeDef, ViewColumnDef, ViewDef,
+    ScopedTypeName, SequenceDef, TableDef, TypeDef, ViewDef,
 };
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
@@ -117,7 +117,7 @@ fn test_case_converted_names() {
 
         assert!(def.is_some(), "Table '{}' not found", name);
 
-        assert_eq!(&*def.unwrap().accessor_name, &*accessor, "Table '{}' not found", name);
+        assert_eq!(&*def.unwrap().accessor_name, accessor, "Table '{}' not found", name);
     }
 
     // Test Reducers
