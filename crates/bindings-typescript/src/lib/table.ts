@@ -44,26 +44,26 @@ type HasInvalidColumn<Row extends RowObj> =
   // this checks if Row exactly equals RowObj - if it does, we can't
   // do type-system-level checking, so just let it pass
   (<G>() => G extends Row ? 1 : 2) extends <G>() => G extends RowObj ? 1 : 2
-    ? false
-    : {
-          [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
-            ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
-              ? true
-              : false
-            : false;
-        }[keyof Row] extends false
-      ? false
-      : true;
+  ? false
+  : {
+    [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
+    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+    ? true
+    : false
+    : false;
+  }[keyof Row] extends false
+  ? false
+  : true;
 
 /**
  * Extract the names of columns that have invalid metadata.
  */
 type InvalidColumnNames<Row extends RowObj> = {
   [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
-    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
-      ? K & string
-      : never
-    : never;
+  ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+  ? K & string
+  : never
+  : never;
 }[keyof Row];
 
 /**
@@ -90,8 +90,8 @@ export type CoerceColumn<
   Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
 > =
   Col extends TypeBuilder<infer T, infer U>
-    ? ColumnBuilder<T, U, ColumnMetadata<any>>
-    : Col;
+  ? ColumnBuilder<T, U, ColumnMetadata<any>>
+  : Col;
 
 /**
  * Coerces a RowObj where TypeBuilders are replaced with ColumnBuilders
@@ -127,10 +127,10 @@ export type TableIndexes<TableDef extends UntypedTableDef> = {
     K,
     TableDef['columns'][K]['columnMetadata']
   > extends never
-    ? never
-    : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
+  ? never
+  : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
+  [I in TableDef['indexes'][number]as I['accessor'] & {}]: TableIndexFromDef<
     TableDef,
     I
   >;
@@ -143,21 +143,21 @@ type TableIndexFromDef<
   NormalizeIndexColumns<TableDef, I> extends infer Cols extends ReadonlyArray<
     keyof TableDef['columns'] & string
   >
-    ? {
-        name: I['accessor'];
-        unique: AllUnique<TableDef, Cols>;
-        algorithm: Lowercase<I['algorithm']>;
-        columns: Cols;
-      }
-    : never;
+  ? {
+    name: I['accessor'];
+    unique: AllUnique<TableDef, Cols>;
+    algorithm: Lowercase<I['algorithm']>;
+    columns: Cols;
+  }
+  : never;
 
 type NormalizeIndexColumns<
   TableDef extends UntypedTableDef,
   I extends IndexOpts<keyof TableDef['columns'] & string>,
 > =
   IndexColumns<I> extends ReadonlyArray<keyof TableDef['columns'] & string>
-    ? IndexColumns<I>
-    : never;
+  ? IndexColumns<I>
+  : never;
 
 /**
  * Options for configuring a database table.
@@ -175,10 +175,10 @@ export type TableOpts<Row extends RowObj> = {
   scheduled?: () =>
     | ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>
     | ProcedureExport<
-        any,
-        { [k: string]: RowBuilder<RowObj> },
-        ReturnType<typeof t.unit>
-      >;
+      any,
+      { [k: string]: RowBuilder<RowObj> },
+      ReturnType<typeof t.unit>
+    >;
 };
 
 /**
@@ -212,7 +212,7 @@ export type Table<TableDef extends UntypedTableDef> = Prettify<
 
 export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
   ReadonlyTableMethods<TableDef> &
-    ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
+  ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
 >;
 
 export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
@@ -290,10 +290,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // See the JSDoc above for details on how to fix this error.
   ..._: HasInvalidColumn<Row> extends true
     ? [
-        error: ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
-          InvalidColumnNames<Row>
-        >,
-      ]
+      error: ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
+        InvalidColumnNames<Row>
+      >,
+    ]
     : []
 ): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
   const {

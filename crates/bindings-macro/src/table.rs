@@ -169,7 +169,6 @@ impl ScheduledArg {
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let mut accessor = None;
-        let mut _name = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
@@ -177,11 +176,6 @@ impl IndexArg {
                 sym::accessor => {
                     check_duplicate(&accessor, &meta)?;
                     accessor = Some(meta.value()?.parse()?);
-                }
-                sym::name => {
-                    check_duplicate(&_name, &meta)?;
-                    let litstr: LitStr = meta.value()?.parse()?;
-                    _name = Some(litstr);
                 }
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
@@ -266,7 +260,6 @@ impl IndexArg {
     /// Parses an inline `#[index(btree)]`, `#[index(hash)]`, or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
-        let mut _name: Option<LitStr> = None;
         attr.parse_nested_meta(|meta| {
             match_meta!(match meta {
                 sym::btree => {
@@ -284,10 +277,6 @@ impl IndexArg {
                 sym::direct => {
                     check_duplicate_msg(&kind, &meta, "index type specified twice")?;
                     kind = Some(IndexType::Direct { column: field.clone() })
-                }
-                sym::name => {
-                    check_duplicate(&_name, &meta)?;
-                    _name = Some(meta.value()?.parse()?);
                 }
             });
             Ok(())
@@ -1039,9 +1028,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
+            #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#tablehandle_ident;
         }
         impl #table_ident for spacetimedb::Local {
+            #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#tablehandle_ident {
                 &#tablehandle_ident {}
             }
@@ -1051,6 +1042,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let trait_def_view = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #view_trait_ident {
+            #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#viewhandle_ident;
         }
         impl #view_trait_ident for spacetimedb::LocalReadOnly {

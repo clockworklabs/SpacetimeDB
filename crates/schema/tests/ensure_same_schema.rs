@@ -101,7 +101,11 @@ fn ensure_same_schema_rust_csharp_benchmarks() {
 #[test]
 #[serial]
 fn test_all_schema_names() {
-    let module_def: ModuleDef = get_normalized_schema("module-test-ts");
+    let module_def: ModuleDef = get_normalized_schema("module-test");
+
+    println!("Types {:?}", module_def.types().collect::<Vec<_>>());
+
+    println!("Types space {:?}", module_def.typespace());
 
     // Test Tables
     let table_names = ["test_d", "person"];
