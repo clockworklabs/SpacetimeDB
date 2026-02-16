@@ -14,7 +14,7 @@ use http::{HeaderName, HeaderValue, StatusCode};
 
 use hyper::body::Body;
 use spacetimedb::Identity;
-use spacetimedb_client_api_messages::name::DatabaseName;
+use spacetimedb_client_api_messages::name::{parse_domain_name, DomainName};
 
 use crate::routes::identity::IdentityForUrl;
 use crate::{log_and_500, ControlStateReadAccess};
@@ -62,7 +62,7 @@ impl headers::Header for XForwardedFor {
 #[derive(Clone, Debug)]
 pub enum NameOrIdentity {
     Identity(IdentityForUrl),
-    Name(DatabaseName),
+    Name(DomainName),
 }
 
 impl NameOrIdentity {
@@ -73,7 +73,7 @@ impl NameOrIdentity {
         }
     }
 
-    pub fn name(&self) -> Option<&DatabaseName> {
+    pub fn name(&self) -> Option<&DomainName> {
         if let Self::Name(name) = self {
             Some(name)
         } else {
@@ -87,17 +87,17 @@ impl NameOrIdentity {
     /// returned directly.
     ///
     /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Identity`] is
-    /// looked up by that name in the SpacetimeDB DNS and returned.
+    /// looked up by that database name and returned.
     ///
-    /// Errors are returned if the DNS lookup fails.
+    /// Errors are returned if name lookup fails.
     ///
-    /// An `Ok` result is itself a [`Result`], which is `Err(DatabaseName)` if the
+    /// An `Ok` result is itself a [`Result`], which is `Err(DomainName)` if the
     /// given [`NameOrIdentity::Name`] is not registered in the SpacetimeDB DNS,
     /// i.e. no corresponding [`Identity`] exists.
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> anyhow::Result<Result<Identity, &DatabaseName>> {
+    ) -> anyhow::Result<Result<Identity, &DomainName>> {
         Ok(match self {
             Self::Identity(identity) => Ok(Identity::from(*identity)),
             Self::Name(name) => ctx.lookup_database_identity(name.as_ref()).await?.ok_or(name),
@@ -106,12 +106,12 @@ impl NameOrIdentity {
 
     /// A variant of [`Self::try_resolve()`] which maps to a 404 (Not Found)
     /// response if `self` is a [`NameOrIdentity::Name`] for which no
-    /// corresponding [`Identity`] is found in the SpacetimeDB DNS.
+    /// corresponding [`Identity`] is found.
     pub async fn resolve(&self, ctx: &(impl ControlStateReadAccess + ?Sized)) -> axum::response::Result<Identity> {
         self.try_resolve(ctx)
             .await
             .map_err(log_and_500)?
-            .map_err(|name| (StatusCode::NOT_FOUND, format!("`{name}` not found")).into())
+            .map_err(|name| (StatusCode::NOT_FOUND, format!("database name `{name}` not found")).into())
     }
 
     /// If `self` is a [`NameOrIdentity::Name`], looks up the name in the
@@ -131,7 +131,7 @@ impl NameOrIdentity {
         match self {
             Self::Identity(identity) => Ok(Identity::from(*identity)),
             Self::Name(name) => ctx
-                .lookup_namespace_owner(name.as_ref())
+                .lookup_namespace_owner(name.tld().as_str())
                 .await
                 .map_err(log_and_500)?
                 .ok_or_else(|| (StatusCode::NOT_FOUND, format!("`{name}` not found")).into()),
@@ -148,7 +148,7 @@ impl<'de> ::serde::Deserialize<'de> for NameOrIdentity {
         if let Ok(addr) = Identity::from_hex(&s) {
             Ok(NameOrIdentity::Identity(IdentityForUrl::from(addr)))
         } else {
-            let name: DatabaseName = s.try_into().map_err(::serde::de::Error::custom)?;
+            let name: DomainName = parse_domain_name(s).map_err(::serde::de::Error::custom)?;
             Ok(NameOrIdentity::Name(name))
         }
     }

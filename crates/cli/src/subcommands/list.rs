@@ -24,13 +24,19 @@ pub fn cli() -> Command {
 
 #[derive(Deserialize)]
 struct DatabasesResult {
-    pub identities: Vec<IdentityRow>,
+    pub identities: Vec<IdentityOnlyRow>,
 }
 
-#[derive(Tabled, Deserialize)]
+#[derive(Deserialize)]
 #[serde(transparent)]
+struct IdentityOnlyRow {
+    pub db_identity: Identity,
+}
+
+#[derive(Tabled)]
 struct IdentityRow {
     pub db_identity: Identity,
+    pub default_name: String,
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -58,11 +64,26 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .context("unable to retrieve databases for identity")?;
 
     if !result.identities.is_empty() {
-        let mut table = Table::new(result.identities);
+        let mut rows = Vec::with_capacity(result.identities.len());
+        for row in result.identities {
+            let default_name = util::spacetime_reverse_dns(&config, &row.db_identity.to_string(), server)
+                .await
+                .with_context(|| format!("unable to retrieve database names for {}", row.db_identity))?
+                .names
+                .first()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "<unnamed>".to_owned());
+            rows.push(IdentityRow {
+                db_identity: row.db_identity,
+                default_name,
+            });
+        }
+
+        let mut table = Table::new(rows);
         table
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
-        println!("Associated database identities for {identity}:\n");
+        println!("Associated databases for {identity}:\n");
         println!("{table}");
     } else {
         println!("No databases found for {identity}.");

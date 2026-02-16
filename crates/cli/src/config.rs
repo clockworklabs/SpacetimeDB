@@ -12,6 +12,7 @@ use toml_edit::ArrayOfTables;
 const DEFAULT_SERVER_KEY: &str = "default_server";
 const WEB_SESSION_TOKEN_KEY: &str = "web_session_token";
 const SPACETIMEDB_TOKEN_KEY: &str = "spacetimedb_token";
+const ROOT_DATABASE_NAMESPACE_KEY: &str = "root_database_namespace";
 const SERVER_CONFIGS_KEY: &str = "server_configs";
 const NICKNAME_KEY: &str = "nickname";
 const HOST_KEY: &str = "host";
@@ -124,6 +125,7 @@ pub struct RawConfig {
     // TODO: Move these IDs/tokens out of config so we're no longer storing sensitive tokens in a human-edited file.
     web_session_token: Option<String>,
     spacetimedb_token: Option<String>,
+    root_database_namespace: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +175,7 @@ impl RawConfig {
             server_configs: vec![maincloud, local],
             web_session_token: None,
             spacetimedb_token: None,
+            root_database_namespace: None,
         }
     }
 
@@ -448,9 +451,14 @@ Fetch the server's fingerprint with:
         self.spacetimedb_token = Some(token);
     }
 
+    pub fn set_root_database_namespace(&mut self, namespace: Option<String>) {
+        self.root_database_namespace = namespace;
+    }
+
     pub fn clear_login_tokens(&mut self) {
         self.web_session_token = None;
         self.spacetimedb_token = None;
+        self.root_database_namespace = None;
     }
 }
 
@@ -461,6 +469,7 @@ impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
         let default_server = read_opt_str(value, DEFAULT_SERVER_KEY)?;
         let web_session_token = read_opt_str(value, WEB_SESSION_TOKEN_KEY)?;
         let spacetimedb_token = read_opt_str(value, SPACETIMEDB_TOKEN_KEY)?;
+        let root_database_namespace = read_opt_str(value, ROOT_DATABASE_NAMESPACE_KEY)?;
 
         let mut server_configs = Vec::new();
         if let Some(arr) = read_table(value, SERVER_CONFIGS_KEY)? {
@@ -474,6 +483,7 @@ impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
             server_configs,
             web_session_token,
             spacetimedb_token,
+            root_database_namespace,
         })
     }
 }
@@ -654,11 +664,13 @@ impl Config {
             server_configs: old_server_configs,
             web_session_token,
             spacetimedb_token,
+            root_database_namespace,
         } = &self.home;
 
         set_value(DEFAULT_SERVER_KEY, default_server.as_deref());
         set_value(WEB_SESSION_TOKEN_KEY, web_session_token.as_deref());
         set_value(SPACETIMEDB_TOKEN_KEY, spacetimedb_token.as_deref());
+        set_value(ROOT_DATABASE_NAMESPACE_KEY, root_database_namespace.as_deref());
 
         // Short-circuit if there are no servers.
         if old_server_configs.is_empty() {
@@ -808,6 +820,10 @@ Update the server's fingerprint with:
         self.home.set_spacetimedb_token(token);
     }
 
+    pub fn set_root_database_namespace(&mut self, namespace: Option<String>) {
+        self.home.set_root_database_namespace(namespace);
+    }
+
     pub fn clear_login_tokens(&mut self) {
         self.home.clear_login_tokens();
     }
@@ -818,6 +834,13 @@ Update the server's fingerprint with:
 
     pub fn spacetimedb_token(&self) -> Option<&String> {
         self.home.spacetimedb_token.as_ref()
+    }
+
+    pub fn root_database_namespace(&self) -> Option<&str> {
+        self.home
+            .root_database_namespace
+            .as_deref()
+            .and_then(|value| (!value.is_empty()).then_some(value))
     }
 }
 

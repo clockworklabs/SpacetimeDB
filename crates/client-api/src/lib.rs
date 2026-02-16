@@ -265,7 +265,9 @@ pub trait ControlStateReadAccess {
     // DNS
     async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_database_default_name(&self, database_identity: &Identity) -> anyhow::Result<Option<DomainName>>;
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>>;
+    async fn allow_register_tld_on_publish(&self) -> anyhow::Result<bool>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -374,8 +376,16 @@ impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAc
         (**self).reverse_lookup(database_identity).await
     }
 
+    async fn lookup_database_default_name(&self, database_identity: &Identity) -> anyhow::Result<Option<DomainName>> {
+        (**self).lookup_database_default_name(database_identity).await
+    }
+
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
         (**self).lookup_namespace_owner(name).await
+    }
+
+    async fn allow_register_tld_on_publish(&self) -> anyhow::Result<bool> {
+        (**self).allow_register_tld_on_publish().await
     }
 }
 

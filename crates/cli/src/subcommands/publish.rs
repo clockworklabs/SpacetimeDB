@@ -1,16 +1,16 @@
-use anyhow::{ensure, Context};
+use anyhow::Context;
 use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
-use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
-use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
+use spacetimedb_client_api_messages::name::{is_identity, parse_domain_name, PublishResult};
+use spacetimedb_client_api_messages::name::{PrePublishResult, PrettyPrintStyle, PublishOp};
 use std::path::PathBuf;
 use std::{env, fs};
 
 use crate::common_args::ClearMode;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, prepend_root_database_namespace, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -75,10 +75,10 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("parent")
-            .help("Domain or identity of a parent for this database")
+            .help("Database name or identity of a parent for this database")
             .long("parent")
             .long_help(
-"A valid domain or identity of an existing database that should be the parent of this database.
+"A valid database name or identity of an existing database that should be the parent of this database.
 
 If a parent is given, the new database inherits the team permissions from the parent.
 A parent can only be set when a database is created, not when it is updated."
@@ -98,12 +98,12 @@ An organization can only be set when a database is created, not when it is updat
         )
         .arg(
             Arg::new("name|identity")
-                .help("A valid domain or identity for this database")
+                .help("A valid database name or identity for this database")
                 .long_help(
-"A valid domain or identity for this database.
+"A valid database name or identity for this database.
 
-Database names must match the regex `/^[a-z0-9]+(-[a-z0-9]+)*$/`,
-i.e. only lowercase ASCII letters and numbers, separated by dashes."),
+Database names may include a root namespace and child path segments,
+for example: `@user/my-db` or `@user/game/region-1`."),
         )
         .arg(common_args::server()
                 .help("The nickname, domain name or URL of the server to host the database."),
@@ -180,8 +180,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    let (name_or_identity, parent) =
-        validate_name_and_parent(name_or_identity.map(String::as_str), parent.map(String::as_str))?;
+    let root_database_namespace = config.root_database_namespace();
+    let (name_or_identity, parent) = normalize_name_and_parent(
+        name_or_identity.map(String::as_str),
+        parent.map(String::as_str),
+        root_database_namespace,
+    )?;
 
     if !path_to_project.exists() {
         return Err(anyhow::anyhow!(
@@ -224,7 +228,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let client = reqwest::Client::new();
     // If a name was given, ensure to percent-encode it.
     // We also use PUT with a name or identity, and POST otherwise.
-    let mut builder = if let Some(name_or_identity) = name_or_identity {
+    let mut builder = if let Some(name_or_identity) = name_or_identity.as_deref() {
         let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
@@ -293,6 +297,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             };
             if let Some(domain) = domain {
                 println!("{op} database with name: {domain}, identity: {database_identity}");
+                println!("Connection database name: {domain}");
             } else {
                 println!("{op} database with identity: {database_identity}");
             }
@@ -304,13 +309,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
             let token = config.spacetimedb_token().unwrap();
             let identity = decode_identity(token)?;
-            //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
-            // we should perhaps generate fun names like 'green-fire-dragon' instead
-            let suggested_tld: String = identity.chars().take(12).collect();
+            let suggested_namespace = config
+                .root_database_namespace()
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("@{}", identity.chars().take(12).collect::<String>()));
             return Err(anyhow::anyhow!(
-                "The database {name} is not registered to the identity you provided.\n\
-                We suggest you push to either a domain owned by you, or a new domain like:\n\
-                \tspacetime publish {suggested_tld}\n",
+                "The database name {name} is not registered to the identity you provided.\n\
+                Publish under a root namespace that you own, for example:\n\
+                \tspacetime publish {suggested_namespace}/my-database\n",
             ));
         }
     }
@@ -318,11 +324,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-fn validate_name_or_identity(name_or_identity: &str) -> Result<(), DatabaseNameError> {
+fn validate_name_or_identity(name_or_identity: &str) -> anyhow::Result<()> {
     if is_identity(name_or_identity) {
         Ok(())
     } else {
-        parse_database_name(name_or_identity).map(drop)
+        parse_domain_name(name_or_identity)
+            .map(drop)
+            .map_err(anyhow::Error::from)
     }
 }
 
@@ -330,33 +338,39 @@ fn invalid_parent_name(name: &str) -> String {
     format!("invalid parent database name `{name}`")
 }
 
-fn validate_name_and_parent<'a>(
-    name: Option<&'a str>,
-    parent: Option<&'a str>,
-) -> anyhow::Result<(Option<&'a str>, Option<&'a str>)> {
-    if let Some(parent) = parent.as_ref() {
-        validate_name_or_identity(parent).with_context(|| invalid_parent_name(parent))?;
+fn normalize_name_and_parent(
+    name: Option<&str>,
+    parent: Option<&str>,
+    root_database_namespace: Option<&str>,
+) -> anyhow::Result<(Option<String>, Option<String>)> {
+    let mut name = name.map(str::to_owned);
+    let mut parent = parent.map(str::to_owned);
+
+    if let Some(parent_name) = parent.as_deref() {
+        validate_name_or_identity(parent_name).with_context(|| invalid_parent_name(parent_name))?;
     }
 
-    match name {
-        Some(name) => match name.split_once('/') {
-            Some((parent_alt, child)) => {
-                ensure!(
-                    parent.is_none() || parent.is_some_and(|parent| parent == parent_alt),
-                    "cannot specify both --parent and <parent>/<child>"
-                );
-                validate_name_or_identity(parent_alt).with_context(|| invalid_parent_name(parent_alt))?;
-                validate_name_or_identity(child)?;
-
-                Ok((Some(child), Some(parent_alt)))
-            }
-            None => {
-                validate_name_or_identity(name)?;
-                Ok((Some(name), parent))
-            }
-        },
-        None => Ok((None, parent)),
+    if parent.is_some()
+        && name
+            .as_deref()
+            .is_some_and(|raw_name| !is_identity(raw_name) && raw_name.contains('/'))
+    {
+        anyhow::bail!("child database name cannot contain `/` when --parent is set");
     }
+
+    if let Some(parent_name) = parent.as_mut() {
+        *parent_name = prepend_root_database_namespace(parent_name, root_database_namespace);
+        validate_name_or_identity(parent_name).with_context(|| invalid_parent_name(parent_name))?;
+    }
+
+    if let Some(name_or_identity) = name.as_mut() {
+        if parent.is_none() {
+            *name_or_identity = prepend_root_database_namespace(name_or_identity, root_database_namespace);
+        }
+        validate_name_or_identity(name_or_identity)?;
+    }
+
+    Ok((name, parent))
 }
 
 /// Determine the pretty print style based on the NO_COLOR environment variable.
@@ -487,47 +501,56 @@ mod tests {
 
     #[test]
     fn validate_none_arguments_returns_none_values() {
-        assert_matches!(validate_name_and_parent(None, None), Ok((None, None)));
-        assert_matches!(validate_name_and_parent(Some("foo"), None), Ok((Some(_), None)));
-        assert_matches!(validate_name_and_parent(None, Some("foo")), Ok((None, Some(_))));
+        assert_matches!(normalize_name_and_parent(None, None, None), Ok((None, None)));
+        assert_matches!(normalize_name_and_parent(Some("foo"), None, None), Ok((Some(_), None)));
+        assert_matches!(normalize_name_and_parent(None, Some("foo"), None), Ok((None, Some(_))));
     }
 
     #[test]
     fn validate_valid_arguments_returns_arguments() {
         let name = "child";
         let parent = "parent";
-        let result = (Some(name), Some(parent));
+        let result = (Some(name.to_owned()), Some(parent.to_owned()));
         assert_matches!(
-            validate_name_and_parent(Some(name), Some(parent)),
+            normalize_name_and_parent(Some(name), Some(parent), None),
             Ok(val) if val == result
         );
     }
 
     #[test]
-    fn validate_parent_and_path_name_returns_error_unless_parent_equal() {
+    fn validate_path_name_is_rejected_when_parent_is_set() {
         assert_matches!(
-            validate_name_and_parent(Some("parent/child"), Some("parent")),
-            Ok((Some("child"), Some("parent")))
+            normalize_name_and_parent(Some("parent/child"), Some("parent"), None),
+            Err(_)
         );
-        assert_matches!(validate_name_and_parent(Some("parent/child"), Some("cousin")), Err(_));
+        assert_matches!(
+            normalize_name_and_parent(Some("parent/child"), Some("cousin"), None),
+            Err(_)
+        );
     }
 
     #[test]
-    fn validate_more_than_two_path_segments_are_an_error() {
-        assert_matches!(validate_name_and_parent(Some("proc/net/tcp"), None), Err(_));
-        assert_matches!(validate_name_and_parent(Some("proc//net"), None), Err(_));
+    fn validate_more_than_two_path_segments_are_supported() {
+        assert_matches!(
+            normalize_name_and_parent(Some("proc/net/tcp"), None, None),
+            Ok((Some(name), None)) if name == "proc/net/tcp"
+        );
+        assert_matches!(normalize_name_and_parent(Some("proc//net"), None, None), Err(_));
     }
 
     #[test]
     fn validate_trailing_slash_is_an_error() {
-        assert_matches!(validate_name_and_parent(Some("foo//"), None), Err(_));
-        assert_matches!(validate_name_and_parent(Some("foo/bar/"), None), Err(_));
+        assert_matches!(normalize_name_and_parent(Some("foo//"), None, None), Err(_));
+        assert_matches!(normalize_name_and_parent(Some("foo/bar/"), None, None), Err(_));
     }
 
     #[test]
-    fn validate_parent_cant_have_slash() {
-        assert_matches!(validate_name_and_parent(Some("child"), Some("par/ent")), Err(_));
-        assert_matches!(validate_name_and_parent(Some("child"), Some("parent/")), Err(_));
+    fn validate_parent_can_have_path_segments() {
+        assert_matches!(
+            normalize_name_and_parent(Some("child"), Some("par/ent"), None),
+            Ok((Some(name), Some(parent))) if name == "child" && parent == "par/ent"
+        );
+        assert_matches!(normalize_name_and_parent(Some("child"), Some("parent/"), None), Err(_));
     }
 
     #[test]
@@ -536,8 +559,37 @@ mod tests {
         let child = Identity::ONE.to_string();
 
         assert_matches!(
-            validate_name_and_parent(Some(&child), Some(&parent)),
-            Ok(res) if res == (Some(&child), Some(&parent))
+            normalize_name_and_parent(Some(&child), Some(&parent), None),
+            Ok((Some(name), Some(parent_name))) if name == child && parent_name == parent
+        );
+    }
+
+    #[test]
+    fn prepend_root_namespace_to_unqualified_name_and_parent() {
+        assert_matches!(
+            normalize_name_and_parent(Some("my-db"), None, Some("@alice")),
+            Ok((Some(name), None)) if name == "@alice/my-db"
+        );
+        assert_matches!(
+            normalize_name_and_parent(Some("child"), Some("parent/leaf"), Some("@alice")),
+            Ok((Some(name), Some(parent))) if name == "child" && parent == "@alice/parent/leaf"
+        );
+        assert_matches!(
+            normalize_name_and_parent(Some("parent/leaf/child"), None, Some("@alice")),
+            Ok((Some(name), None)) if name == "@alice/parent/leaf/child"
+        );
+    }
+
+    #[test]
+    fn dont_prepend_root_namespace_when_already_qualified_or_identity() {
+        let identity = Identity::ZERO.to_string();
+        assert_matches!(
+            normalize_name_and_parent(Some("@bob/my-db"), None, Some("@alice")),
+            Ok((Some(name), None)) if name == "@bob/my-db"
+        );
+        assert_matches!(
+            normalize_name_and_parent(Some(&identity), None, Some("@alice")),
+            Ok((Some(name), None)) if name == identity
         );
     }
 }

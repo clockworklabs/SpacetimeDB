@@ -86,7 +86,7 @@ pub enum PublishResult {
         /// In other words, this echoes back a domain name if one was given. If
         /// the database name given was in fact a database identity, this will be
         /// `None`.
-        domain: Option<DatabaseName>,
+        domain: Option<DomainName>,
         /// The identity of the published database.
         ///
         /// Always set, regardless of whether publish resolved a domain name first
@@ -103,7 +103,7 @@ pub enum PublishResult {
     /// If you were trying to insert this database name, but the tld `clockworklabs` is
     /// owned by an identity other than the identity that you provided, then you will receive
     /// this error.
-    PermissionDenied { name: DatabaseName },
+    PermissionDenied { name: DomainName },
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
@@ -589,7 +589,7 @@ mod serde_impls {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetNamesResponse {
-    pub names: Vec<DatabaseName>,
+    pub names: Vec<DomainName>,
 }
 
 /// Returns whether a hex string is a valid identity.

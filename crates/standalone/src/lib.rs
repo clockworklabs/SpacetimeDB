@@ -24,7 +24,7 @@ use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
 use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{
-    DatabaseName, DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
+    parse_domain_name, DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
 };
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
@@ -250,9 +250,21 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
     }
 
+    async fn lookup_database_default_name(&self, database_identity: &Identity) -> anyhow::Result<Option<DomainName>> {
+        Ok(self
+            .control_db
+            .spacetime_reverse_dns(database_identity)?
+            .into_iter()
+            .next())
+    }
+
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
-        let name: DatabaseName = name.parse()?;
-        Ok(self.control_db.spacetime_lookup_tld(Tld::from(name))?)
+        let domain = parse_domain_name(name)?;
+        Ok(self.control_db.spacetime_lookup_tld(domain.tld())?)
+    }
+
+    async fn allow_register_tld_on_publish(&self) -> anyhow::Result<bool> {
+        Ok(true)
     }
 }
 

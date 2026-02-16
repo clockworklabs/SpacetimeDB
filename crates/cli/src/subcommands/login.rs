@@ -1,4 +1,4 @@
-use crate::util::decode_identity;
+use crate::util::{decode_identity, decode_root_database_namespace};
 use crate::Config;
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
@@ -64,6 +64,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
+        config.set_root_database_namespace(Some(String::new()));
         config.save();
         return Ok(());
     }
@@ -138,6 +139,18 @@ pub async fn spacetimedb_login_force(
         spacetimedb_login(host, &session_token).await?
     };
     config.set_spacetimedb_token(token.clone());
+    let root_database_namespace = if direct_login {
+        Some(String::new())
+    } else {
+        match decode_root_database_namespace(&token) {
+            Ok(namespace) => Some(namespace.unwrap_or_default()),
+            Err(err) => {
+                eprintln!("WARNING: failed to extract root database namespace from token: {err}");
+                Some(String::new())
+            }
+        }
+    };
+    config.set_root_database_namespace(root_database_namespace);
     config.save();
 
     Ok(token)

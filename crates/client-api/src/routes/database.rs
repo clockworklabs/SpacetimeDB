@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::num::NonZeroU8;
-use std::str::FromStr;
 use std::time::Duration;
 use std::{env, io};
 
@@ -20,6 +19,7 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
+use bytestring::ByteString;
 use futures::TryStreamExt;
 use http::StatusCode;
 use log::{info, warn};
@@ -34,7 +34,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
+    self, parse_domain_name, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
@@ -81,6 +81,11 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
 pub struct CallParams {
     name_or_identity: NameOrIdentity,
     reducer: String,
+}
+
+#[derive(Deserialize)]
+pub struct CallTailParams {
+    name_or_identity_and_reducer: String,
 }
 
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
@@ -135,6 +140,56 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }): Path<CallParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
+) -> axum::response::Result<impl IntoResponse> {
+    call_inner(worker_ctx, auth, name_or_identity, reducer, content_type, body).await
+}
+
+/// Call a reducer/procedure where the path uses the form:
+/// `/database/call/*name_or_identity_and_reducer`.
+pub async fn call_with_tail<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Path(CallTailParams {
+        name_or_identity_and_reducer,
+    }): Path<CallTailParams>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    ByteStringBody(body): ByteStringBody,
+) -> axum::response::Result<impl IntoResponse> {
+    let Some((raw_name_or_identity, reducer)) = name_or_identity_and_reducer.rsplit_once('/') else {
+        return Err((StatusCode::BAD_REQUEST, "missing reducer name in route").into());
+    };
+    if reducer.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "missing reducer name in route").into());
+    }
+
+    let name_or_identity =
+        parse_name_or_identity(raw_name_or_identity).map_err(|(status, msg)| ErrorResponse::from((status, msg)))?;
+    call_inner(
+        worker_ctx,
+        auth,
+        name_or_identity,
+        reducer.to_string(),
+        content_type,
+        body,
+    )
+    .await
+}
+
+fn parse_name_or_identity(raw: &str) -> Result<NameOrIdentity, (StatusCode, String)> {
+    if let Ok(identity) = Identity::from_hex(raw) {
+        return Ok(NameOrIdentity::Identity(identity.into()));
+    }
+    let name = parse_domain_name(raw).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    Ok(NameOrIdentity::Name(name))
+}
+
+async fn call_inner<S: ControlStateDelegate + NodeDelegate>(
+    worker_ctx: S,
+    auth: SpacetimeAuth,
+    name_or_identity: NameOrIdentity,
+    reducer: String,
+    content_type: headers::ContentType,
+    body: ByteString,
 ) -> axum::response::Result<impl IntoResponse> {
     assert_content_type_json(content_type)?;
 
@@ -568,17 +623,85 @@ pub async fn get_names<S: ControlStateDelegate>(
     Path(ReverseDNSParams { name_or_identity }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let database_identity = name_or_identity.resolve(&ctx).await?;
-
-    let names = ctx
-        .reverse_lookup(&database_identity)
+    let mut names = ctx.reverse_lookup(&database_identity).await.map_err(log_and_500)?;
+    if let Some(default_name) = ctx
+        .lookup_database_default_name(&database_identity)
         .await
         .map_err(log_and_500)?
-        .into_iter()
-        .filter_map(|x| String::from(x).try_into().ok())
-        .collect();
+    {
+        if let Some(ix) = names.iter().position(|name| name == &default_name) {
+            let default = names.remove(ix);
+            names.insert(0, default);
+        } else {
+            names.insert(0, default_name);
+        }
+    }
 
     let response = name::GetNamesResponse { names };
     Ok(axum::Json(response))
+}
+
+#[derive(Deserialize)]
+pub struct DefaultNameParams {
+    name_or_identity: NameOrIdentity,
+}
+
+pub async fn get_default_name<S: ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(DefaultNameParams { name_or_identity }): Path<DefaultNameParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(default_name) = ctx
+        .lookup_database_default_name(&database_identity)
+        .await
+        .map_err(log_and_500)?
+    else {
+        return Err((StatusCode::NOT_FOUND, "database does not have a default name").into());
+    };
+
+    Ok(axum::Json(default_name))
+}
+
+pub async fn set_default_name<S: ControlStateDelegate + Authorization>(
+    State(ctx): State<S>,
+    Path(DefaultNameParams { name_or_identity }): Path<DefaultNameParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    name: String,
+) -> axum::response::Result<impl IntoResponse> {
+    let requested_name = parse_domain_name(name).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    validate_database_name_path(&ctx, &requested_name).await?;
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+
+    let database = ctx
+        .get_database_by_identity(&database_identity)
+        .await
+        .map_err(log_and_500)?
+        .ok_or(NO_SUCH_DATABASE)?;
+
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::RenameDatabase)
+        .await?;
+
+    let mut names = ctx.reverse_lookup(&database_identity).await.map_err(log_and_500)?;
+    if !names.iter().any(|existing| existing == &requested_name) {
+        names.push(requested_name.clone());
+    }
+    names.retain(|existing| existing != &requested_name);
+    names.insert(0, requested_name);
+
+    let response = ctx
+        .replace_dns_records(&database_identity, &database.owner_identity, &names)
+        .await
+        .map_err(log_and_500)?;
+    let status = match response {
+        name::SetDomainsResult::Success => StatusCode::OK,
+        name::SetDomainsResult::PermissionDenied { .. }
+        | name::SetDomainsResult::PermissionDeniedOnAny { .. }
+        | name::SetDomainsResult::NotYourDatabase { .. } => StatusCode::UNAUTHORIZED,
+        name::SetDomainsResult::DatabaseNotFound => StatusCode::NOT_FOUND,
+        name::SetDomainsResult::OtherError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    Ok((status, axum::Json(response)))
 }
 
 #[derive(Deserialize)]
@@ -657,7 +780,7 @@ pub struct PublishDatabaseQueryParams {
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
-    Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
+    Path(PublishDatabaseParams { mut name_or_identity }): Path<PublishDatabaseParams>,
     Query(PublishDatabaseQueryParams {
         clear,
         num_replicas,
@@ -706,6 +829,56 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 .await;
             }
         }
+    }
+
+    let mut parent = parent;
+
+    if let Some(NameOrIdentity::Name(child_name)) = name_or_identity.clone() {
+        if let Some(parent_noi) = parent.clone() {
+            if child_name.sub_domain().is_some() {
+                return Err(bad_request(
+                    "child database name cannot contain `/` when `parent` is set".into(),
+                ));
+            }
+            let full_parent_name = match parent_noi {
+                NameOrIdentity::Name(parent_name) => Some(parent_name),
+                NameOrIdentity::Identity(parent_identity) => {
+                    let parent_identity = Identity::from(parent_identity);
+                    let default_name = ctx
+                        .lookup_database_default_name(&parent_identity)
+                        .await
+                        .map_err(log_and_500)?;
+                    let Some(default_name) = default_name else {
+                        return Err(bad_request(
+                            format!(
+                                "Can't publish a named child \"{}\" of unnamed database {}",
+                                child_name, parent_identity
+                            )
+                            .into(),
+                        ));
+                    };
+                    Some(default_name)
+                }
+            };
+            let Some(full_parent_name) = full_parent_name else {
+                unreachable!("all parent variants are handled above");
+            };
+            let full_child_name = parse_domain_name(format!("{full_parent_name}/{child_name}"))
+                .map_err(|err| bad_request(err.to_string().into()))?;
+            name_or_identity = Some(NameOrIdentity::Name(full_child_name));
+        }
+    }
+
+    if parent.is_none() {
+        if let Some(NameOrIdentity::Name(name)) = name_or_identity.as_ref() {
+            if let Some(parent_name) = infer_parent_name(name)? {
+                parent = Some(NameOrIdentity::Name(parent_name));
+            }
+        }
+    }
+
+    if let Some(NameOrIdentity::Name(name)) = name_or_identity.as_ref() {
+        validate_database_name_path(&ctx, name).await?;
     }
 
     let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
@@ -801,7 +974,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     }
 }
 
-/// Try to resolve `name_or_identity` to an [Identity] and [DatabaseName].
+/// Try to resolve `name_or_identity` to an [Identity] and [DomainName].
 ///
 /// - If the database exists and has a name registered for it, return that.
 /// - If the database does not exist, but `name_or_identity` is a name,
@@ -813,7 +986,7 @@ async fn get_or_create_identity_and_name<'a>(
     ctx: &(impl ControlStateDelegate + NodeDelegate),
     auth: &SpacetimeAuth,
     name_or_identity: Option<&'a NameOrIdentity>,
-) -> axum::response::Result<(Identity, Option<&'a DatabaseName>)> {
+) -> axum::response::Result<(Identity, Option<&'a DomainName>)> {
     match name_or_identity {
         Some(noi) => match noi.try_resolve(ctx).await.map_err(log_and_500)? {
             Ok(resolved) => Ok((resolved, noi.name())),
@@ -840,34 +1013,107 @@ async fn create_name(
     ctx: &(impl NodeDelegate + ControlStateDelegate),
     auth: &SpacetimeAuth,
     database_identity: &Identity,
-    name: &DatabaseName,
+    name: &DomainName,
 ) -> axum::response::Result<()> {
-    let tld: name::Tld = name.clone().into();
-    let tld = match ctx
-        .register_tld(&auth.claims.identity, tld)
-        .await
-        .map_err(log_and_500)?
-    {
-        name::RegisterTldResult::Success { domain } | name::RegisterTldResult::AlreadyRegistered { domain } => domain,
-        name::RegisterTldResult::Unauthorized { .. } => {
+    validate_database_name_path(ctx, name).await?;
+
+    let tld: name::Tld = name.to_tld();
+    let namespace_owner = ctx.lookup_namespace_owner(tld.as_str()).await.map_err(log_and_500)?;
+    match namespace_owner {
+        Some(owner) if owner != auth.claims.identity => {
             return Err((
                 StatusCode::UNAUTHORIZED,
                 axum::Json(PublishResult::PermissionDenied { name: name.clone() }),
             )
                 .into())
         }
+        Some(_) => {}
+        None => {
+            if !ctx.allow_register_tld_on_publish().await.map_err(log_and_500)? {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    format!(
+                        "{} does not own root namespace `{}`. You should publish under a root namespace that you own.",
+                        auth.claims.identity, tld
+                    ),
+                )
+                    .into());
+            }
+            match ctx
+                .register_tld(&auth.claims.identity, tld.clone())
+                .await
+                .map_err(log_and_500)?
+            {
+                name::RegisterTldResult::Success { .. } | name::RegisterTldResult::AlreadyRegistered { .. } => {}
+                name::RegisterTldResult::Unauthorized { .. } => {
+                    return Err((
+                        StatusCode::UNAUTHORIZED,
+                        axum::Json(PublishResult::PermissionDenied { name: name.clone() }),
+                    )
+                        .into())
+                }
+            };
+        }
     };
+
     let res = ctx
-        .create_dns_record(&auth.claims.identity, &tld.into(), database_identity)
+        .create_dns_record(&auth.claims.identity, name, database_identity)
         .await
         .map_err(log_and_500)?;
     match res {
         name::InsertDomainResult::Success { .. } => Ok(()),
         name::InsertDomainResult::TldNotRegistered { .. } | name::InsertDomainResult::PermissionDenied { .. } => {
-            Err(log_and_500("impossible: we just registered the tld"))
+            Err((StatusCode::FORBIDDEN, "permission denied to set database name").into())
         }
         name::InsertDomainResult::OtherError(e) => Err(log_and_500(e)),
     }
+}
+
+async fn validate_database_name_path(
+    ctx: &(impl ControlStateDelegate + ?Sized),
+    name: &DomainName,
+) -> axum::response::Result<()> {
+    let Some(sub_domain) = name.sub_domain() else {
+        return Ok(());
+    };
+
+    let mut parts = sub_domain.split('/').collect::<Vec<_>>();
+    if parts.len() <= 1 {
+        return Ok(());
+    }
+
+    // The last path segment is the database name itself; all preceding
+    // segments must already exist.
+    parts.pop();
+    let mut current = name.tld().to_string();
+    for part in parts {
+        current.push('/');
+        current.push_str(part);
+        if ctx
+            .lookup_database_identity(&current)
+            .await
+            .map_err(log_and_500)?
+            .is_none()
+        {
+            return Err(bad_request(format!("Parent database {current} not found").into()));
+        }
+    }
+
+    Ok(())
+}
+
+fn infer_parent_name(name: &DomainName) -> axum::response::Result<Option<DomainName>> {
+    let Some(sub_domain) = name.sub_domain() else {
+        return Ok(None);
+    };
+    let mut parts = sub_domain.split('/').collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return Ok(None);
+    }
+    parts.pop();
+    let parent = parse_domain_name(format!("{}/{}", name.tld(), parts.join("/")))
+        .map_err(|err| bad_request(err.to_string().into()))?;
+    Ok(Some(parent))
 }
 
 fn schema_migration_policy(
@@ -1029,11 +1275,12 @@ pub async fn add_name<S: ControlStateDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     name: String,
 ) -> axum::response::Result<impl IntoResponse> {
-    let name = DatabaseName::try_from(name).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    let name = parse_domain_name(name).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    validate_database_name_path(&ctx, &name).await?;
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
     let response = ctx
-        .create_dns_record(&auth.claims.identity, &name.into(), &database_identity)
+        .create_dns_record(&auth.claims.identity, &name, &database_identity)
         .await
         // TODO: better error code handling
         .map_err(log_and_500)?;
@@ -1062,9 +1309,12 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
     let validated_names = names
         .0
         .into_iter()
-        .map(|s| DatabaseName::from_str(&s).map(DomainName::from).map_err(|e| (s, e)))
+        .map(|s| parse_domain_name(s.as_str()).map_err(|e| (s, e)))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|(input, e)| (StatusCode::BAD_REQUEST, format!("Error parsing `{input}`: {e}")))?;
+    for name in &validated_names {
+        validate_database_name_path(&ctx, name).await?;
+    }
 
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
@@ -1093,7 +1343,10 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_database_identity(name.as_str()).await.unwrap().is_some() {
+        if let Some(existing_identity) = ctx.lookup_database_identity(name.as_str()).await.map_err(log_and_500)? {
+            if existing_identity == database_identity {
+                continue;
+            }
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(
@@ -1163,12 +1416,18 @@ pub struct DatabaseRoutes<S> {
     pub names_post: MethodRouter<S>,
     /// PUT: /database/:name_or_identity/names
     pub names_put: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/default-name
+    pub default_name_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/default-name
+    pub default_name_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/identity
     pub identity_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/subscribe
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
     pub call_reducer_procedure_post: MethodRouter<S>,
+    /// POST: /database/call/*name_or_identity_and_reducer
+    pub call_reducer_procedure_post_tail: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
@@ -1197,9 +1456,12 @@ where
             names_get: get(get_names::<S>),
             names_post: post(add_name::<S>),
             names_put: put(set_names::<S>),
+            default_name_get: get(get_default_name::<S>),
+            default_name_post: post(set_default_name::<S>),
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_procedure_post: post(call::<S>),
+            call_reducer_procedure_post_tail: post(call_with_tail::<S>),
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
@@ -1215,6 +1477,21 @@ where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     pub fn into_router(self, ctx: S) -> axum::Router<S> {
+        let identity_get_tail = self.identity_get.clone();
+        let subscribe_get_tail = self.subscribe_get.clone();
+        let call_tail = self.call_reducer_procedure_post_tail;
+        let schema_get_tail = self.schema_get.clone();
+        let logs_get_tail = self.logs_get.clone();
+        let sql_post_tail = self.sql_post.clone();
+        let names_get_tail = self.names_get.clone();
+        let names_post_tail = self.names_post.clone();
+        let names_put_tail = self.names_put.clone();
+        let default_name_get_tail = self.default_name_get.clone();
+        let default_name_post_tail = self.default_name_post.clone();
+        let pre_publish_tail = self.pre_publish.clone();
+        let reset_tail = self.db_reset.clone();
+        let timestamp_tail = self.timestamp_get.clone();
+
         let db_router = axum::Router::<S>::new()
             .route("/", self.db_put)
             .route("/", self.db_get)
@@ -1222,6 +1499,8 @@ where
             .route("/names", self.names_get)
             .route("/names", self.names_post)
             .route("/names", self.names_put)
+            .route("/default-name", self.default_name_get)
+            .route("/default-name", self.default_name_post)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_procedure_post)
@@ -1234,6 +1513,20 @@ where
 
         axum::Router::new()
             .route("/", self.root_post)
+            .route("/identity/*name_or_identity", identity_get_tail)
+            .route("/subscribe/*name_or_identity", subscribe_get_tail)
+            .route("/call/*name_or_identity_and_reducer", call_tail)
+            .route("/schema/*name_or_identity", schema_get_tail)
+            .route("/logs/*name_or_identity", logs_get_tail)
+            .route("/sql/*name_or_identity", sql_post_tail)
+            .route("/names/*name_or_identity", names_get_tail)
+            .route("/names/*name_or_identity", names_post_tail)
+            .route("/names/*name_or_identity", names_put_tail)
+            .route("/default-name/*name_or_identity", default_name_get_tail)
+            .route("/default-name/*name_or_identity", default_name_post_tail)
+            .route("/pre_publish/*name_or_identity", pre_publish_tail)
+            .route("/reset/*name_or_identity", reset_tail)
+            .route("/unstable/timestamp/*name_or_identity", timestamp_tail)
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }

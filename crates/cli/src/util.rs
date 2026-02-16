@@ -2,7 +2,7 @@ use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
 use spacetimedb_auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
-use spacetimedb_client_api_messages::name::GetNamesResponse;
+use spacetimedb_client_api_messages::name::{is_identity, GetNamesResponse};
 use spacetimedb_lib::Identity;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -113,7 +113,7 @@ pub async fn spacetime_dns(
     server: Option<&str>,
 ) -> Result<Option<Identity>, anyhow::Error> {
     let client = reqwest::Client::new();
-    let url = format!("{}/v1/database/{}/identity", config.get_host_url(server)?, domain);
+    let url = format!("{}/v1/database/identity/{}", config.get_host_url(server)?, domain);
     let Some(res) = client.get(url).send().await?.found() else {
         return Ok(None);
     };
@@ -137,7 +137,7 @@ pub async fn spacetime_reverse_dns(
     server: Option<&str>,
 ) -> Result<GetNamesResponse, anyhow::Error> {
     let client = reqwest::Client::new();
-    let url = format!("{}/v1/database/{}/names", config.get_host_url(server)?, identity);
+    let url = format!("{}/v1/database/names/{}", config.get_host_url(server)?, identity);
     client.get(url).send().await?.json_or_error().await
 }
 
@@ -286,6 +286,11 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
+    let claims_data = decode_claims(token)?;
+    Ok(claims_data.identity.to_string())
+}
+
+fn decode_claims(token: &str) -> anyhow::Result<SpacetimeIdentityClaims> {
     // Here, we manually extract and decode the claims from the json web token.
     // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
@@ -297,9 +302,70 @@ pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     let decoded_string = String::from_utf8(decoded_bytes)?;
 
     let claims_data: IncomingClaims = serde_json::from_str(decoded_string.as_str())?;
-    let claims_data: SpacetimeIdentityClaims = claims_data.try_into()?;
+    claims_data.try_into()
+}
 
-    Ok(claims_data.identity.to_string())
+pub fn decode_root_database_namespace(token: &str) -> anyhow::Result<Option<String>> {
+    let claims = decode_claims(token)?;
+    let Some(extra) = claims.extra else {
+        return Ok(None);
+    };
+
+    let find_extra_claim = |keys: &[&str]| {
+        keys.iter().find_map(|key| {
+            extra
+                .iter()
+                .find_map(|(claim_key, value)| (claim_key.as_ref() == *key).then_some(value))
+                .and_then(serde_json::Value::as_str)
+        })
+    };
+
+    let root = find_extra_claim(&["root_database_namespace", "rootDatabaseNamespace", "root_namespace"])
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    if root.is_some() {
+        return Ok(root);
+    }
+
+    let username = find_extra_claim(&["username", "user_name", "preferred_username", "login"])
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    Ok(username.map(|username| {
+        if username.starts_with('@') {
+            username.to_owned()
+        } else {
+            format!("@{username}")
+        }
+    }))
+}
+
+pub fn prepend_root_database_namespace(name: &str, root_namespace: Option<&str>) -> String {
+    if is_identity(name) {
+        return name.to_owned();
+    }
+
+    let Some(root_namespace) = root_namespace else {
+        return name.to_owned();
+    };
+    let root_namespace = root_namespace.trim().trim_end_matches('/');
+    if root_namespace.is_empty() {
+        return name.to_owned();
+    }
+
+    if name == root_namespace
+        || name
+            .strip_prefix(root_namespace)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    {
+        return name.to_owned();
+    }
+
+    if name.split('/').next().is_some_and(|first| first.starts_with('@')) {
+        return name.to_owned();
+    }
+
+    format!("{root_namespace}/{name}")
 }
 
 pub async fn get_login_token_or_log_in(

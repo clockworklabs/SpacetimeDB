@@ -27,7 +27,7 @@ use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
 use spacetimedb_client_api::{Authorization, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
-use spacetimedb_client_api_messages::name::DatabaseName;
+use spacetimedb_client_api_messages::name::parse_domain_name;
 use spacetimedb_lib::sats::satn::{PsqlClient, TypedSerializer};
 use spacetimedb_lib::sats::{satn, Serialize, Typespace};
 use spacetimedb_lib::version::spacetimedb_lib_version;
@@ -154,7 +154,9 @@ where
     async fn exe_sql(&self, query: String) -> PgWireResult<Vec<Response>> {
         let params = self.cached.lock().await.clone().unwrap();
         let db = SqlParams {
-            name_or_identity: database::NameOrIdentity::Name(DatabaseName(params.database.clone())),
+            name_or_identity: database::NameOrIdentity::Name(
+                parse_domain_name(params.database.as_str()).map_err(|e| PgError::Sql(e.to_string()))?,
+            ),
         };
 
         let sql = match response(
@@ -252,7 +254,9 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     log::info!("PG: Connecting to database: {database}");
                 }
 
-                let name = database::NameOrIdentity::Name(DatabaseName(database.clone()));
+                let name = database::NameOrIdentity::Name(
+                    parse_domain_name(database.as_str()).map_err(|e| PgError::Sql(e.to_string()))?,
+                );
                 match response(name.resolve(&self.ctx).await, &database).await {
                     Ok(identity) => identity,
                     Err(PgError::Pg(PgWireError::UserError(err))) => {
