@@ -32,6 +32,7 @@ import { toPascalCase } from './util';
 import BinaryWriter from './binary_writer';
 import type { ProcedureExport, ReducerExport, t } from '../server';
 import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
+import ExplicitNameEntry from './autogen/explicit_name_entry_type';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -321,7 +322,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
-  const indexes: Infer<typeof RawIndexDefV10>[] = [];
+  const indexes: (Infer<typeof RawIndexDefV10> & { canonicalName?: string })[] =
+    [];
   const constraints: Infer<typeof RawConstraintDefV10>[] = [];
   const sequences: Infer<typeof RawSequenceDefV10>[] = [];
 
@@ -427,6 +429,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       sourceName: undefined,
       accessorName: indexOpts.accessor,
       algorithm,
+      canonicalName: indexOpts.name,
     });
   }
 
@@ -469,7 +472,15 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
             : index.algorithm.value;
 
         const colS = cols.map(i => colNameList[i]).join('_');
-        index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
+        const sourceName =
+          (index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`);
+
+        const { canonicalName } = index;
+        if (canonicalName !== undefined) {
+          ctx.moduleDef.explicitNames.entries.push(
+            ExplicitNameEntry.Index({ sourceName, canonicalName })
+          );
+        }
       }
 
       return {
