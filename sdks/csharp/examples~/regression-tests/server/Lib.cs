@@ -36,13 +36,13 @@ public partial struct DbVector2
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "my_table", Public = true)]
+    [SpacetimeDB.Table(Accessor = "my_table", Public = true)]
     public partial struct MyTable
     {
         public ReturnStruct Field;
     }
 
-    [SpacetimeDB.Table(Name = "where_test", Public = true)]
+    [SpacetimeDB.Table(Accessor = "where_test", Public = true)]
     public partial struct WhereTest
     {
         [SpacetimeDB.PrimaryKey]
@@ -54,7 +54,7 @@ public static partial class Module
         public string Name;
     }
 
-    [SpacetimeDB.Table(Name = "example_data", Public = true)]
+    [SpacetimeDB.Table(Accessor = "example_data", Public = true)]
     public partial struct ExampleData
     {
         [SpacetimeDB.PrimaryKey]
@@ -64,13 +64,13 @@ public static partial class Module
         public uint Indexed;
     }
 
-    [SpacetimeDB.Table(Name = "my_log", Public = true)]
+    [SpacetimeDB.Table(Accessor = "my_log", Public = true)]
     public partial struct MyLog
     {
         public Result<MyTable, string> msg;
     }
 
-    [SpacetimeDB.Table(Name = "player", Public = true)]
+    [SpacetimeDB.Table(Accessor = "player", Public = true)]
     public partial struct Player
     {
         [SpacetimeDB.PrimaryKey]
@@ -83,7 +83,7 @@ public static partial class Module
         public string Name;
     }
 
-    [SpacetimeDB.Table(Name = "account", Public = true)]
+    [SpacetimeDB.Table(Accessor = "account", Public = true)]
     public partial class Account
     {
         [SpacetimeDB.PrimaryKey]
@@ -96,7 +96,7 @@ public static partial class Module
         public string Name = "";
     }
 
-    [SpacetimeDB.Table(Name = "player_level", Public = true)]
+    [SpacetimeDB.Table(Accessor = "player_level", Public = true)]
     public partial struct PlayerLevel
     {
         [SpacetimeDB.Unique]
@@ -115,7 +115,7 @@ public static partial class Module
         public ulong Level;
     }
 
-    [SpacetimeDB.Table(Name = "user", Public = true)]
+    [SpacetimeDB.Table(Accessor = "user", Public = true)]
     public partial struct User
     {
         [SpacetimeDB.PrimaryKey]
@@ -131,8 +131,8 @@ public static partial class Module
         public byte Age;
     }
 
-    [SpacetimeDB.Table(Name = "score", Public = true)]
-    [SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+    [SpacetimeDB.Table(Accessor = "score", Public = true)]
+    [SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
     public partial struct Score
     {
         public uint PlayerId;
@@ -140,7 +140,7 @@ public static partial class Module
         public long Points;
     }
 
-    [SpacetimeDB.Table(Name = "nullable_vec", Public = true)]
+    [SpacetimeDB.Table(Accessor = "nullable_vec", Public = true)]
     public partial struct NullableVec
     {
         [SpacetimeDB.PrimaryKey]
@@ -149,7 +149,7 @@ public static partial class Module
         public DbVector2? Pos;
     }
 
-    [SpacetimeDB.Table(Name = "null_string_nonnullable", Public = true)]
+    [SpacetimeDB.Table(Accessor = "null_string_nonnullable", Public = true)]
     public partial struct NullStringNonNullable
     {
         [SpacetimeDB.PrimaryKey]
@@ -159,7 +159,7 @@ public static partial class Module
         public string Name;
     }
 
-    [SpacetimeDB.Table(Name = "null_string_nullable", Public = true)]
+    [SpacetimeDB.Table(Accessor = "null_string_nullable", Public = true)]
     public partial struct NullStringNullable
     {
         [SpacetimeDB.PrimaryKey]
@@ -170,26 +170,26 @@ public static partial class Module
     }
 
     // At-most-one row: return T?
-    [SpacetimeDB.View(Name = "my_player", Public = true)]
+    [SpacetimeDB.View(Accessor = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
         return ctx.Db.player.Identity.Find(ctx.Sender);
     }
 
-    [SpacetimeDB.View(Name = "my_account", Public = true)]
+    [SpacetimeDB.View(Accessor = "my_account", Public = true)]
     public static Account? MyAccount(ViewContext ctx)
     {
         return ctx.Db.account.Identity.Find(ctx.Sender) as Account;
     }
 
-    [SpacetimeDB.View(Name = "my_account_missing", Public = true)]
+    [SpacetimeDB.View(Accessor = "my_account_missing", Public = true)]
     public static Account? MyAccountMissing(ViewContext ctx)
     {
         return null;
     }
 
     // Multiple rows: return a list
-    [SpacetimeDB.View(Name = "players_at_level_one", Public = true)]
+    [SpacetimeDB.View(Accessor = "players_at_level_one", Public = true)]
     public static List<PlayerAndLevel> PlayersAtLevelOne(AnonymousViewContext ctx)
     {
         var rows = new List<PlayerAndLevel>();
@@ -210,7 +210,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "Admins", Public = true)]
+    [SpacetimeDB.View(Accessor = "Admins", Public = true)]
     public static List<User> Admins(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
@@ -221,7 +221,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "users_named_alice", Public = true)]
+    [SpacetimeDB.View(Accessor = "users_named_alice", Public = true)]
     public static List<User> UsersNamedAlice(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
@@ -232,7 +232,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "users_age_18_65", Public = true)]
+    [SpacetimeDB.View(Accessor = "users_age_18_65", Public = true)]
     public static List<User> UsersAge1865(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
@@ -243,7 +243,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "users_age_18_plus", Public = true)]
+    [SpacetimeDB.View(Accessor = "users_age_18_plus", Public = true)]
     public static List<User> UsersAge18Plus(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
@@ -254,7 +254,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "users_age_under_18", Public = true)]
+    [SpacetimeDB.View(Accessor = "users_age_under_18", Public = true)]
     public static List<User> UsersAgeUnder18(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
@@ -265,7 +265,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "scores_player_123", Public = true)]
+    [SpacetimeDB.View(Accessor = "scores_player_123", Public = true)]
     public static List<Score> ScoresPlayer123(AnonymousViewContext ctx)
     {
         var rows = new List<Score>();
@@ -276,7 +276,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "scores_player_123_range", Public = true)]
+    [SpacetimeDB.View(Accessor = "scores_player_123_range", Public = true)]
     public static List<Score> ScoresPlayer123Range(AnonymousViewContext ctx)
     {
         var rows = new List<Score>();
@@ -289,7 +289,7 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "scores_player_123_level5", Public = true)]
+    [SpacetimeDB.View(Accessor = "scores_player_123_level5", Public = true)]
     public static List<Score> ScoresPlayer123Level5(AnonymousViewContext ctx)
     {
         var rows = new List<Score>();
@@ -300,25 +300,25 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "where_test_view", Public = true)]
+    [SpacetimeDB.View(Accessor = "where_test_view", Public = true)]
     public static WhereTest? WhereTestView(ViewContext ctx)
     {
         return ctx.Db.where_test.Id.Find(2);
     }
 
-    [SpacetimeDB.View(Name = "where_test_query", Public = true)]
+    [SpacetimeDB.View(Accessor = "where_test_query", Public = true)]
     public static Query<WhereTest> WhereTestQuery(ViewContext ctx)
     {
         return ctx.From.where_test().Where(cols => cols.Id.Eq(SqlLit.Int(2u))).Build();
     }
 
-    [SpacetimeDB.View(Name = "find_where_test", Public = true)]
+    [SpacetimeDB.View(Accessor = "find_where_test", Public = true)]
     public static WhereTest? FindWhereTest(AnonymousViewContext ctx)
     {
         return ctx.Db.where_test.Id.Find(3);
     }
 
-    [SpacetimeDB.View(Name = "nullable_vec_view", Public = true)]
+    [SpacetimeDB.View(Accessor = "nullable_vec_view", Public = true)]
     public static List<NullableVec> NullableVecView(AnonymousViewContext ctx)
     {
         var rows = new List<NullableVec>();
@@ -684,7 +684,7 @@ public static partial class Module
         });
     }
 
-    [SpacetimeDB.Table(Name = "retry_log", Public = true)]
+    [SpacetimeDB.Table(Accessor = "retry_log", Public = true)]
     public partial class RetryLog
     {
         [SpacetimeDB.PrimaryKey]
@@ -692,7 +692,7 @@ public static partial class Module
         public uint Attempts;
     }
 
-    [SpacetimeDB.Table(Name = "test_event", Public = true, Event = true)]
+    [SpacetimeDB.Table(Accessor = "test_event", Public = true, Event = true)]
     public partial struct TestEvent
     {
         public string Name;
