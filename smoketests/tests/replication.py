@@ -96,11 +96,13 @@ where replication_state.database_id={database_id} \
             try:
                  current_leader_node = self.get_leader_info()['node_id']
                  if current_leader_node != previous_leader_node:
+                    print(f"Leader changed from {previous_leader_node} to {current_leader_node}")
                     return current_leader_node
             except Exception:
                  print("No current leader")
 
             time.sleep(delay)
+        print('leader change timeout')
         return None
 
     def ensure_leader_health(self, id):
