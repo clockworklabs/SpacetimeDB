@@ -343,7 +343,7 @@ impl MutTxId {
     }
 
     /// Returns the views whose read sets overlaps with this transaction's write set
-    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+    pub fn views_for_refresh(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
         // Return early if there are no views.
         // This is profitable as the method is also called for reducers.
         if self.committed_state_write_lock.has_no_views_for_table_scans() {

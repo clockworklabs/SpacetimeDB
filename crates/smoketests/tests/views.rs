@@ -402,3 +402,37 @@ fn test_where_expr_view() {
  2        | "BOB"   | 20"#,
     );
 }
+
+#[test]
+fn test_procedure_triggers_subscription_updates() {
+    let test = Smoketest::builder().precompiled_module("views-subscribe").build();
+    let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
+    test.call("insert_player_proc", &["Alice"]).unwrap();
+    let events = sub.collect().unwrap();
+
+    let projection: Vec<serde_json::Value> = events
+        .into_iter()
+        .map(|event| {
+            let deletes = event["my_player"]["deletes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+            let inserts = event["my_player"]["inserts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
+        })
+        .collect();
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"my_player": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
+    );
+}
