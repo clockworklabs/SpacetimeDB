@@ -49,22 +49,21 @@ struct ScheduledArg {
 
 struct IndexArg {
     accessor: Ident,
-    //TODO: add canonical name
-    // name: Option<LitStr>,
+    canonical_name: Option<LitStr>,
     is_unique: bool,
     kind: IndexType,
 }
 
 impl IndexArg {
-    fn new(accessor: Ident, kind: IndexType) -> Self {
+    fn new(accessor: Ident, kind: IndexType, canonical_name: Option<LitStr>) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
         Self {
+            canonical_name,
             accessor,
             is_unique,
             kind,
-            //  name,
         }
     }
 }
@@ -176,6 +175,7 @@ impl ScheduledArg {
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let mut accessor = None;
+        let mut canonical_name = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
@@ -184,6 +184,11 @@ impl IndexArg {
                     check_duplicate(&accessor, &meta)?;
                     accessor = Some(meta.value()?.parse()?);
                 }
+                sym::name => {
+                    check_duplicate(&canonical_name, &meta)?;
+                    canonical_name = Some(meta.value()?.parse()?);
+                }
+
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_btree(meta)?);
@@ -207,7 +212,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(accessor, kind))
+        Ok(IndexArg::new(accessor, kind, canonical_name))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -293,7 +298,7 @@ impl IndexArg {
 
         // Default accessor = field name if not provided
         let accessor = field.clone();
-        Ok(IndexArg::new(accessor, kind))
+        Ok(IndexArg::new(accessor, kind, None))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -337,6 +342,7 @@ impl IndexArg {
             index_name: gen_index_name(),
             accessor_name: &self.accessor,
             kind,
+            canonical_name: self.canonical_name.as_ref().map(|s| s.value()),
         })
     }
 }
@@ -395,6 +401,7 @@ struct ValidatedIndex<'a> {
     accessor_name: &'a Ident,
     is_unique: bool,
     kind: ValidatedIndexType<'a>,
+    canonical_name: Option<String>,
 }
 
 enum ValidatedIndexType<'a> {
@@ -842,6 +849,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             //name: None,
             is_unique: true,
             kind: IndexType::BTree { columns },
+            canonical_name: None,
         })
     }
 
@@ -1033,7 +1041,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
-    let explicit_names_impl = generate_explicit_names_impl(&table_name, &tablehandle_ident, &explicit_table_name);
+    let explicit_names_impl =
+        generate_explicit_names_impl(&table_name, &tablehandle_ident, &explicit_table_name, &indices);
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
 
@@ -1226,6 +1235,7 @@ fn generate_explicit_names_impl(
     table_name: &str,
     tablehandle_ident: &Ident,
     explicit_table_name: &Option<String>,
+    indexes: &[ValidatedIndex],
 ) -> TokenStream {
     let mut explicit_names_body = Vec::new();
 
@@ -1238,6 +1248,19 @@ fn generate_explicit_names_impl(
             );
         });
     };
+
+    // Index names
+    for index in indexes {
+        if let Some(canonical_name) = &index.canonical_name {
+            let index_name = &index.index_name;
+            explicit_names_body.push(quote! {
+                names.insert_index(
+                    #index_name,
+                    #canonical_name,
+                );
+            });
+        }
+    }
 
     quote! {
 

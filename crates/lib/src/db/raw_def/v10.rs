@@ -176,6 +176,13 @@ impl ExplicitNames {
         }));
     }
 
+    pub fn insert_index(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.insert(ExplicitNameEntry::Index(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
     pub fn merge(&mut self, other: ExplicitNames) {
         self.entries.extend(other.entries);
     }
