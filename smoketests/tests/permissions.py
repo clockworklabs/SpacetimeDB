@@ -54,11 +54,11 @@ class Permissions(Smoketest):
         self.new_identity()
 
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--delete-data", "--yes")
+            self.spacetime("publish", self.database_identity, "--module-path", self.project_path, "--delete-data", "--yes")
 
         # Check that this holds without `--delete-data`, too.
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--yes")
+            self.spacetime("publish", self.database_identity, "--module-path", self.project_path, "--yes")
 
     def test_replace_names(self):
         """Test that you can't replace names of a database you don't own"""

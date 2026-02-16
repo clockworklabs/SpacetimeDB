@@ -245,6 +245,12 @@ impl<Row> TableUpdate<Row> {
     pub(crate) fn is_empty(&self) -> bool {
         self.inserts.is_empty() && self.deletes.is_empty()
     }
+
+    /// For event tables: convert inserts directly to a `TableAppliedDiff`
+    /// without touching the client cache. Each insert fires `on_insert` callbacks.
+    pub fn into_event_diff(&self) -> crate::client_cache::TableAppliedDiff<'_, Row> {
+        crate::client_cache::TableAppliedDiff::from_event_inserts(&self.inserts)
+    }
 }
 
 impl<Row: DeserializeOwned + Debug> TableUpdate<Row> {
@@ -254,7 +260,9 @@ impl<Row: DeserializeOwned + Debug> TableUpdate<Row> {
         let mut deletes = Vec::new();
         for update in raw_updates.rows {
             match update {
-                ws::v2::TableUpdateRows::EventTable(_) => todo!("Event tables"),
+                ws::v2::TableUpdateRows::EventTable(update) => {
+                    Self::parse_from_row_list(&mut inserts, &update.events)?;
+                }
                 ws::v2::TableUpdateRows::PersistentTable(update) => {
                     Self::parse_from_row_list(&mut deletes, &update.deletes)?;
                     Self::parse_from_row_list(&mut inserts, &update.inserts)?;

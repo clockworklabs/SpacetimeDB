@@ -7,7 +7,7 @@
     "dev": "bun --watch src/main.ts",
     "start": "bun src/main.ts",
     "build": "bun build src/main.ts --outdir dist",
-    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
   },
   "dependencies": {
     "spacetimedb": "workspace:*"

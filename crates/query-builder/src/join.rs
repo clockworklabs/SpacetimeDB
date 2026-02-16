@@ -2,7 +2,7 @@ use crate::TableNameStr;
 
 use super::{
     expr::{format_expr, BoolExpr},
-    table::{ColumnRef, HasCols, HasIxCols, Table},
+    table::{CanBeLookupTable, ColumnRef, HasCols, HasIxCols, Table},
     Query, RawQuery,
 };
 use std::marker::PhantomData;
@@ -66,7 +66,7 @@ pub struct RightSemiJoin<R, L> {
 }
 
 impl<L: HasIxCols> Table<L> {
-    pub fn left_semijoin<R: HasIxCols, V>(
+    pub fn left_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
@@ -80,7 +80,7 @@ impl<L: HasIxCols> Table<L> {
         }
     }
 
-    pub fn right_semijoin<R: HasIxCols, V>(
+    pub fn right_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
@@ -97,7 +97,7 @@ impl<L: HasIxCols> Table<L> {
 }
 
 impl<L: HasIxCols> super::FromWhere<L> {
-    pub fn left_semijoin<R: HasIxCols, V>(
+    pub fn left_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
@@ -111,7 +111,7 @@ impl<L: HasIxCols> super::FromWhere<L> {
         }
     }
 
-    pub fn right_semijoin<R: HasIxCols, V>(
+    pub fn right_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,

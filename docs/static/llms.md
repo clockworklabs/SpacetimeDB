@@ -147,11 +147,11 @@ Getting started with SpacetimeDB involves a few key steps:
       ```bash
       # Example: Build a module located in the current directory (.)
       # Mount current dir to /module inside container, set working dir to /module
-      docker run --rm -v "$(pwd):/module" -w /module clockworklabs/spacetime build --project-path .
+      docker run --rm -v "$(pwd):/module" -w /module clockworklabs/spacetime build --module-path .
 
       # Example: Publish the module after building
       # Assumes a local server is running (or use --host for Maincloud/other)
-      docker run --rm -v "$(pwd):/module" -w /module --network host clockworklabs/spacetime publish --project-path . my-database-name
+      docker run --rm -v "$(pwd):/module" -w /module --network host clockworklabs/spacetime publish --module-path . my-database-name
       # Note: `--network host` is often needed to connect to a local server from the container.
       ```
 
@@ -182,14 +182,14 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
 4.  **Build Module:** Compile your module code into WebAssembly using the CLI:
     ```bash
     # Run from the directory containing your module folder
-    spacetime build --project-path my_server_module
+    spacetime build --module-path my_server_module
     ```
     :::note C# Build Prerequisite (.NET SDK)
     Building a **C# module** (on any platform: Windows, macOS, Linux) requires the .NET SDK to be installed. If the build fails with an error mentioning `dotnet workload list` or `No .NET SDKs were found`, you need to install the SDK first. Download and install the **.NET 8 SDK** specifically from the official Microsoft website: [https://dotnet.microsoft.com/download](https://dotnet.microsoft.com/download). Newer versions (like .NET 9) are not currently supported for building SpacetimeDB modules, although they can be installed alongside .NET 8 without conflicting.
     :::
 5.  **Publish Module:** Deploy your compiled module to a SpacetimeDB instance (either a local one started with `spacetime start` or the managed Maincloud). Publishing creates or updates a database associated with your module.
     - Providing a `[name|identity]` for the database is **optional**. If omitted, a nameless database will be created and assigned a unique `Identity` automatically. If providing a _name_, it must match the regex `^[a-z0-9]+(-[a-z0-9]+)*$`.
-    - By default (`--project-path`), it builds the module before publishing. Use `--bin-path <wasm_file>` to publish a pre-compiled WASM instead.
+    - By default (`--module-path`), it builds the module before publishing. Use `--bin-path <wasm_file>` to publish a pre-compiled WASM instead.
     - Use `-s, --server <server>` to specify the target instance (e.g., `maincloud.spacetimedb.com` or the nickname `maincloud`). If omitted, it targets a local instance or uses your configured default (check with `spacetime server list`).
     - Use `-c, --delete-data` when updating an existing database identity to destroy all existing data first.
 
@@ -199,7 +199,7 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
 
     ```bash
     # Build and publish from source to 'my-database-name' on the default server
-    spacetime publish --project-path my_server_module my-database-name
+    spacetime publish --module-path my_server_module my-database-name
 
     # Example: Publish a pre-compiled wasm to Maincloud using its nickname, clearing existing data
     spacetime publish --bin-path ./my_module/target/wasm32-wasi/debug/my_module.wasm -s maincloud -c my-cloud-db-identity
@@ -219,9 +219,9 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
     This command inspects your compiled module's schema (tables, types, reducers) and generates corresponding code (classes, structs, functions) for your target client language. This allows you to interact with your SpacetimeDB module in a type-safe way on the client.
     ```bash
     # For Rust client (output to src/module_bindings)
-    spacetime generate --lang rust --out-dir path/to/client/src/module_bindings --project-path my_server_module
+    spacetime generate --lang rust --out-dir path/to/client/src/module_bindings --module-path my_server_module
     # For C# client (output to module_bindings directory)
-    spacetime generate --lang csharp --out-dir path/to/client/module_bindings --project-path my_server_module
+    spacetime generate --lang csharp --out-dir path/to/client/module_bindings --module-path my_server_module
     ```
 8.  **Develop Client:** Create your client application (e.g., Rust binary, C# console app, Unity game). Use the generated bindings and the appropriate client SDK to:
     - Connect to the database (`my-database-name`).
@@ -1041,7 +1041,7 @@ Client code relies on generated bindings specific to your server module. Use the
 mkdir -p src/module_bindings
 spacetime generate --lang rust \
     --out-dir src/module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Then, declare the generated module in your `main.rs` or `lib.rs`:
@@ -1941,7 +1941,7 @@ Client code relies on generated bindings specific to your server module. Use the
 mkdir -p module_bindings # Or your preferred output location
 spacetime generate --lang csharp \
     --out-dir module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Include the generated `.cs` files in your C# project or Unity Assets folder.
@@ -2492,10 +2492,10 @@ Publish to SpacetimeDB:
 
 ```bash
 # Local development (from the project root, spacetimedb/ is the module directory)
-spacetime publish --server local --project-path spacetimedb my_module
+spacetime publish --server local --module-path spacetimedb my_module
 
 # Or to SpacetimeDB cloud
-spacetime publish --server maincloud --project-path spacetimedb my_module
+spacetime publish --server maincloud --module-path spacetimedb my_module
 ```
 
 ### Client SDK (TypeScript)
@@ -2525,7 +2525,7 @@ Generate the module-specific bindings using the `spacetime generate` command:
 mkdir -p src/module_bindings
 spacetime generate --lang typescript \
     --out-dir src/module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Import the necessary generated types and SDK components:

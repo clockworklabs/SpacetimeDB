@@ -81,7 +81,7 @@ Each SpacetimeDB client depends on some bindings specific to your module. Create
 mkdir -p client/src/module_bindings
 spacetime generate --lang typescript \
     --out-dir client/src/module_bindings \
-    --project-path PATH-TO-MODULE-DIRECTORY
+    --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 Import the `module_bindings` in your client's _main_ file:

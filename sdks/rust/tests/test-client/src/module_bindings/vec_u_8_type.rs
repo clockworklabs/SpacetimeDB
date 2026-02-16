@@ -41,3 +41,5 @@ impl __sdk::__query_builder::HasIxCols for VecU8 {
         VecU8IxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for VecU8 {}

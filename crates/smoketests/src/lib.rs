@@ -169,6 +169,33 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Rewrites `spacetimedb` dependency in `<module_dir>/Cargo.toml` to use local workspace bindings.
+pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
+    let cargo_toml_path = module_dir.join("Cargo.toml");
+    let cargo_toml = fs::read_to_string(&cargo_toml_path)
+        .with_context(|| format!("Failed to read {}", cargo_toml_path.display()))?;
+
+    let bindings_path = workspace_root().join("crates/bindings");
+    let bindings_path_str = bindings_path.display().to_string().replace('\\', "/");
+    let replacement = format!(r#"spacetimedb = {{ path = "{bindings_path_str}", features = ["unstable"] }}"#);
+
+    let patched = cargo_toml
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("spacetimedb = ") {
+                replacement.as_str()
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    fs::write(&cargo_toml_path, format!("{patched}\n"))
+        .with_context(|| format!("Failed to write {}", cargo_toml_path.display()))?;
+    Ok(())
+}
+
 /// Returns the shared target directory for smoketest module builds.
 ///
 /// All tests share this directory to cache compiled dependencies. The warmup step
@@ -766,7 +793,7 @@ log = "0.4"
         let cli_path = ensure_binaries_built();
 
         let mut cmd = Command::new(&cli_path);
-        cmd.args(["build", "--project-path", project_path])
+        cmd.args(["build", "--module-path", project_path])
             .current_dir(self.project_dir.path())
             .env("CARGO_TARGET_DIR", shared_target_dir());
 
@@ -842,7 +869,7 @@ log = "0.4"
 
             let mut build_cmd = Command::new(&cli_path);
             build_cmd
-                .args(["build", "--project-path", &project_path])
+                .args(["build", "--module-path", &project_path])
                 .current_dir(self.project_dir.path())
                 .env("CARGO_TARGET_DIR", &target_dir);
 
