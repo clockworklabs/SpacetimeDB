@@ -12,10 +12,10 @@ use crate::host::module_host::{
     ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance,
     ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
-use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams, Scheduler};
 use crate::host::{
-    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, FunctionArgs, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult,
+    ReducerId, ReducerOutcome, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -493,6 +493,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 pub struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
+    scheduler: Scheduler,
     allocated_memory: usize,
     metric_wasm_memory_bytes: IntGauge,
     vm_metrics: AllVmMetrics,
@@ -507,6 +508,7 @@ impl InstanceCommon {
             info: module.info(),
             vm_metrics,
             energy_monitor: module.energy_monitor(),
+            scheduler: module.scheduler().clone(),
             // Will be updated on the first reducer call.
             allocated_memory: 0,
             metric_wasm_memory_bytes: WORKER_METRICS
@@ -517,6 +519,10 @@ impl InstanceCommon {
 
     pub(crate) fn info(&self) -> Arc<ModuleInfo> {
         self.info.clone()
+    }
+
+    pub(crate) fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -726,6 +732,15 @@ impl InstanceCommon {
         }
 
         let trapped = call_result.is_err();
+
+        if trapped {
+            if let Some(handler) = procedure_def.on_abort.as_ref() {
+                self.scheduler().volatile_nonatomic_schedule_immediate(
+                    handler.to_string(),
+                    FunctionArgs::Bsatn(args.get_bsatn().clone()),
+                );
+            }
+        }
 
         let result = match call_result {
             Err(err) => {
