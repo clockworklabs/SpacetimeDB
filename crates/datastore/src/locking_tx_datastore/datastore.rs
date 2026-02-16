@@ -1485,6 +1485,7 @@ mod tests {
                 col_pos: value.pos.into(),
                 col_name: Identifier::for_test(value.name),
                 col_type: value.ty,
+                alias: None,
             }
         }
     }
@@ -2108,6 +2109,7 @@ mod tests {
                 table_id,
                 index_name: "Foo_id_idx_btree".into(),
                 index_algorithm: BTreeAlgorithm::from(0).into(),
+                alias: None,
             },
             true,
         )?;
@@ -2349,6 +2351,7 @@ mod tests {
             table_id,
             index_name: "Foo_age_idx_btree".into(),
             index_algorithm: BTreeAlgorithm::from(2).into(),
+            alias: None,
         };
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
         // But the `Table` crate allows it for now.

@@ -1,6 +1,6 @@
 use crate::sats;
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, match_meta};
 use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
@@ -55,7 +55,7 @@ struct IndexArg {
 }
 
 impl IndexArg {
-    fn inline(accessor: Ident, kind: IndexType) -> Self {
+    fn new(accessor: Ident, kind: IndexType) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
@@ -64,14 +64,6 @@ impl IndexArg {
             is_unique,
             kind,
             //  name,
-        }
-    }
-    fn explicit(accessor: Ident, kind: IndexType) -> Self {
-        Self {
-            accessor,
-            is_unique: false,
-            kind,
-            // name: None,
         }
     }
 }
@@ -214,7 +206,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::explicit(accessor, kind))
+        Ok(IndexArg::new(accessor, kind))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -305,7 +297,7 @@ impl IndexArg {
 
         // Default accessor = field name if not provided
         let accessor = field.clone();
-        Ok(IndexArg::inline(accessor, kind))
+        Ok(IndexArg::new(accessor, kind))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {

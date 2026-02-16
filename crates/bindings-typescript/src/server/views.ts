@@ -163,15 +163,15 @@ export function registerView<
     returnType,
   });
 
-  if (opts.name != null)  {
-  ctx.moduleDef.explicitNames.entries.push({
-    tag: "Function",
-    value: {
-      sourceName: exportName,
-      canonicalName: opts.name
-    }
-  })
-}
+  if (opts.name != null) {
+    ctx.moduleDef.explicitNames.entries.push({
+      tag: 'Function',
+      value: {
+        sourceName: exportName,
+        canonicalName: opts.name,
+      },
+    });
+  }
 
   // If it is an option, we wrap the function to make the return look like an array.
   if (returnType.tag == 'Sum') {

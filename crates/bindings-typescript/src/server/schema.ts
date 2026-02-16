@@ -541,14 +541,14 @@ export function schema<const H extends Record<string, UntypedTableSchema>>(
         });
       }
       if (table.tableName) {
-          ctx.moduleDef.explicitNames.entries.push ({
-            tag: "Table",
-            value: {
-              sourceName: accName,
-              canonicalName: table.tableName,
-            }
-          })
-        }
+        ctx.moduleDef.explicitNames.entries.push({
+          tag: 'Table',
+          value: {
+            sourceName: accName,
+            canonicalName: table.tableName,
+          },
+        });
+      }
     }
     return { tables: tableSchemas } as TablesToSchema<H>;
   });

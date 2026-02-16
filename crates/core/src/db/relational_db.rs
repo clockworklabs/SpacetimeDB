@@ -1257,8 +1257,6 @@ impl RelationalDB {
             .map(|s| s.as_str())
             .unwrap_or(table_name);
 
-        println!("replaced table name {table_name} with {new_table}");
-
         Ok(self.inner.table_id_from_name_mut_tx(tx, new_table)?)
     }
 
@@ -1269,8 +1267,6 @@ impl RelationalDB {
             .get(table_name)
             .map(|s| s.as_str())
             .unwrap_or(table_name);
-
-        println!("replaced table name {table_name} with {new_table}");
 
         Ok(self.inner.table_id_from_name_tx(tx, new_table)?)
     }
@@ -1302,8 +1298,6 @@ impl RelationalDB {
             .get(index_name)
             .map(|s| s.as_str())
             .unwrap_or(index_name);
-
-        println!("replaced index name {index_name} with {new_index_name}");
 
         Ok(self.inner.index_id_from_name_mut_tx(tx, new_index_name)?)
     }

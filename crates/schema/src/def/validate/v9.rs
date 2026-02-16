@@ -402,7 +402,7 @@ impl ModuleValidatorV9<'_> {
 
         // Procedures share the "function namespace" with reducers.
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
-        let name = self.core.resolve_identifier_with_case(name);
+        let name = identifier(name);
 
         let (name, params_for_generate, return_type_for_generate) =
             (name, params_for_generate, return_type_for_generate).combine_errors()?;
@@ -497,7 +497,6 @@ impl ModuleValidatorV9<'_> {
         // we may want to support calling views in the same context as reducers in the future (e.g. `spacetime call`).
         // Hence we validate uniqueness among reducer, procedure, and view names in a later pass.
         // See `check_function_names_are_unique`.
-
         let name = view_in_progress.add_to_global_namespace(name).and_then(identifier);
 
         let n = product_type.elements.len();
@@ -653,7 +652,7 @@ impl CoreValidator<'_> {
     // policy.
     pub(crate) fn typespace_case_conversion(case_policy: CaseConversionPolicy, typespace: &mut Typespace) {
         let case_policy_for_enum_variants = if matches!(case_policy, CaseConversionPolicy::SnakeCase) {
-            CaseConversionPolicy::PascalCase
+            CaseConversionPolicy::CamelCase
         } else {
             case_policy
         };
@@ -669,6 +668,9 @@ impl CoreValidator<'_> {
         case_policy: CaseConversionPolicy,
         case_policy_for_enum_variants: CaseConversionPolicy,
     ) {
+        if ty.is_special() {
+            return;
+        }
         match ty {
             AlgebraicType::Product(product) => {
                 for element in &mut product.elements.iter_mut() {
@@ -806,11 +808,15 @@ impl CoreValidator<'_> {
             name: unscoped_name,
             scope,
         } = name;
-        let unscoped_name = identifier(unscoped_name);
-        let scope = Vec::from(scope)
-            .into_iter()
-            .map(|s| self.resolve_type_with_case(s))
-            .collect_all_errors();
+
+        // If scoped was set explicitly do not convert case
+        let unscoped_name = if scope.is_empty() {
+            self.resolve_type_with_case(unscoped_name)
+        } else {
+            identifier(unscoped_name.clone())
+        };
+        let scope = Vec::from(scope).into_iter().map(identifier).collect_all_errors();
+
         let name = (unscoped_name, scope)
             .combine_errors()
             .and_then(|(unscoped_name, scope)| {
@@ -897,9 +903,9 @@ impl CoreValidator<'_> {
             }
             .into()
         });
-        let table_name = self.resolve_identifier_with_case(table_name)?;
-        let name_res = self.add_to_global_namespace(name.clone().into(), table_name);
-        let function_name = self.resolve_identifier_with_case(function_name);
+        let table_name = self.resolve_table_ident(table_name)?;
+        let name_res = self.add_to_global_namespace(name.clone(), table_name);
+        let function_name = self.resolve_function_ident(function_name);
 
         let (_, (at_column, id_column), function_name) = (name_res, at_id, function_name).combine_errors()?;
 
@@ -1011,7 +1017,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         product_type: &'a ProductType,
         module_validator: &'a mut CoreValidator<'b>,
     ) -> Result<Self> {
-        let table_ident = module_validator.resolve_identifier_with_case(raw_name.clone())?;
+        let table_ident = module_validator.resolve_table_ident(raw_name.clone())?;
         Ok(Self {
             raw_name,
             product_type_ref,
@@ -1198,7 +1204,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         //source_name will be used as alias, hence we need to add it to the global namespace as
         //well.
         let source_name = source_name.expect("source_name should be provided in V10, accessor_names inside module");
-        self.add_to_global_namespace(source_name.clone());
+        let source_name = self.add_to_global_namespace(source_name.clone())?;
 
         let name = if self.module_validator.explicit_names.indexes.get(&source_name).is_some() {
             self.module_validator.resolve_index_ident(source_name.clone())?
@@ -1240,19 +1246,14 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             RawIndexAlgorithm::Direct { column } => self.validate_col_id(name, column).and_then(|column| {
                 let field = &self.product_type.elements[column.idx()];
                 let ty = &field.algebraic_type;
-
                 let is_bad_type = match ty {
                     AlgebraicType::U8 | AlgebraicType::U16 | AlgebraicType::U32 | AlgebraicType::U64 => false,
-
                     AlgebraicType::Ref(r) => self.module_validator.typespace[*r]
                         .as_sum()
                         .is_none_or(|s| !s.is_simple_enum()),
-
                     AlgebraicType::Sum(sum) if sum.is_simple_enum() => false,
-
                     _ => true,
                 };
-
                 if is_bad_type {
                     return Err(ValidationError::DirectIndexOnBadType {
                         index: name.clone(),
@@ -1473,21 +1474,6 @@ pub fn convert(identifier: RawIdentifier, policy: CaseConversionPolicy) -> Strin
         CaseConversionPolicy::PascalCase => identifier.to_case(Case::Pascal),
         CaseConversionPolicy::None | _ => identifier,
     }
-}
-
-pub fn convert_to_pasal(identifier: RawIdentifier, policy: CaseConversionPolicy) -> Result<Identifier> {
-    let identifier = identifier.to_string();
-
-    let name = match policy {
-        CaseConversionPolicy::None => identifier,
-        CaseConversionPolicy::SnakeCase => identifier.to_case(Case::Snake),
-        CaseConversionPolicy::CamelCase => identifier.to_case(Case::Camel),
-        CaseConversionPolicy::PascalCase => identifier.to_case(Case::Pascal),
-        _ => identifier,
-    };
-
-    Identifier::new(RawIdentifier::new(LeanString::from_utf8(name.as_bytes()).unwrap()))
-        .map_err(|error| ValidationError::IdentifierError { error }.into())
 }
 
 /// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure

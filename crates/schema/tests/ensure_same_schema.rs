@@ -104,10 +104,7 @@ fn test_all_schema_names() {
     let module_def: ModuleDef = get_normalized_schema("module-test-ts");
 
     // Test Tables
-    let table_names = [
-        "test_d",
-        "person",
-    ];
+    let table_names = ["test_d", "person"];
     for name in table_names {
         assert!(
             TableDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
@@ -125,7 +122,7 @@ fn test_all_schema_names() {
         "client_connected",
         "delete_player",
         "delete_players_by_name",
-     //   "init",
+        //   "init",
         "list_over_age",
         "log_module_identity",
         "query_private",
@@ -195,7 +192,7 @@ fn test_all_schema_names() {
         "person_age_idx_btree",
         "person_id_idx_btree",
         "test_a_x_idx_btree",
-        "repeating_test_arg_scheduled_id_idx_btree"
+        "repeating_test_arg_scheduled_id_idx_btree",
     ];
     for index_name in index_names {
         assert!(
@@ -205,9 +202,7 @@ fn test_all_schema_names() {
         );
     }
 
-    let index_names_and_alias = [
-        ("person_age_idx_btree", "P",)
-    ];
+    let index_names_and_alias = [("person_age_idx_btree", "P")];
     // for (index_name, alias) in index_names {
     //     assert!(
     //         &IndexDef::lookup(&module_def, &RawIdentifier::new(index_name)).expect("index exists").accessor_name,
@@ -306,4 +301,3 @@ fn test_all_schema_names() {
         );
     }
 }
-

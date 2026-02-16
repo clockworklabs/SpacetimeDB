@@ -458,17 +458,17 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         row.typeName = toPascalCase(tableName);
       }
 
-          // Build index source names using accName
-    for (const index of indexes) {
-      const cols =
-        index.algorithm.tag === 'Direct'
-          ? [index.algorithm.value]
-          : index.algorithm.value;
+      // Build index source names using accName
+      for (const index of indexes) {
+        const cols =
+          index.algorithm.tag === 'Direct'
+            ? [index.algorithm.value]
+            : index.algorithm.value;
 
-      const colS = cols.map(i => colNameList[i]).join('_');
-      index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
-    }
-    
+        const colS = cols.map(i => colNameList[i]).join('_');
+        index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
+      }
+
       return {
         sourceName: accName,
         productTypeRef: ctx.registerTypesRecursively(row).ref,

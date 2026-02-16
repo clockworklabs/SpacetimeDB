@@ -345,7 +345,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|index| {
                 table_validator
-                    .validate_index_def_v10(index.into())
+                    .validate_index_def_v10(index)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -403,7 +403,11 @@ impl<'a> ModuleValidatorV10<'a> {
             if table_type != TableType::System && name.starts_with("st_") {
                 Err(ValidationError::TableNameReserved { table: name }.into())
             } else {
-                let name = table_validator.add_to_global_namespace(name.as_raw().clone())?;
+                let mut name = name.as_raw().clone();
+                if name != raw_table_name {
+                    name = table_validator.add_to_global_namespace(name)?;
+                }
+
                 Ok(name)
             }
         };
@@ -524,7 +528,7 @@ impl<'a> ModuleValidatorV10<'a> {
         tables: &HashMap<Identifier, TableDef>,
     ) -> Result<(ScheduleDef, Identifier)> {
         let RawScheduleDefV10 {
-            source_name,
+            source_name: _,
             table_name,
             schedule_at_col,
             function_name,
@@ -671,7 +675,7 @@ impl<'a> ModuleValidatorV10<'a> {
             &return_type,
         );
 
-        let name_result = self.core.resolve_function_ident(accessor_name.clone());
+        let name = self.core.resolve_function_ident(accessor_name.clone())?;
 
         let mut view_validator = ViewValidator::new(
             accessor_name.clone(),
@@ -682,7 +686,7 @@ impl<'a> ModuleValidatorV10<'a> {
             &mut self.core,
         )?;
 
-        let name_result = view_validator.add_to_global_namespace(name_result?.as_raw().clone());
+        let _ = view_validator.add_to_global_namespace(name.as_raw().clone())?;
 
         let n = product_type.elements.len();
         let return_columns = (0..n)
@@ -694,11 +698,11 @@ impl<'a> ModuleValidatorV10<'a> {
             .map(|id| view_validator.validate_param_column_def(id.into()))
             .collect_all_errors();
 
-        let (name_result, return_type_for_generate, return_columns, param_columns) =
-            (name_result, return_type_for_generate, return_columns, param_columns).combine_errors()?;
+        let (return_type_for_generate, return_columns, param_columns) =
+            (return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name: self.core.resolve_function_ident(name_result.clone())?,
+            name,
             accessor_name: identifier(accessor_name)?,
             is_anonymous,
             is_public,
@@ -935,16 +939,19 @@ mod tests {
                     name: "Apples_count_idx_direct".into(),
                     codegen_name: Some(expect_identifier("Apples_count_idx_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
+                    accessor_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
                     codegen_name: Some(expect_identifier("Apples_name_count_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
+                    accessor_name: "Apples_name_count_idx_btree".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
                     codegen_name: Some(expect_identifier("Apples_type_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
+                    accessor_name: "Apples_type_idx_btree".into(),
                 }
             ]
         );
