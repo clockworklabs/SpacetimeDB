@@ -109,7 +109,7 @@ pub struct CircleRecombineTimer {
     player_id: i32,
 }
 
-#[spacetimedb::table(name = consume_entity_event, public, event)]
+#[spacetimedb::table(accessor = consume_entity_event, public, event)]
 pub struct ConsumeEntityEvent {
     consumed_entity_id: i32,
     consumer_entity_id: i32,
