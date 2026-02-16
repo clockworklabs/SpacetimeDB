@@ -7,17 +7,17 @@ const person = table(
     // name: 'person',
     indexes: [
       {
-        name: 'id_name_idx',
+        accessor: 'id_name_idx',
         algorithm: 'btree',
         columns: ['id', 'name'] as const,
       },
       {
-        name: 'id_name2_idx',
+        accessor: 'id_name2_idx',
         algorithm: 'btree',
         columns: ['id', 'name2'] as const,
       },
       {
-        name: 'name_idx',
+        accessor: 'name_idx',
         algorithm: 'btree',
         columns: ['name'] as const,
       },

@@ -130,7 +130,7 @@ export type TableIndexes<TableDef extends UntypedTableDef> = {
     ? never
     : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
+  [I in TableDef['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
     TableDef,
     I
   >;
@@ -144,7 +144,7 @@ type TableIndexFromDef<
     keyof TableDef['columns'] & string
   >
     ? {
-        name: I['name'];
+        name: I['accessor'];
         unique: AllUnique<TableDef, Cols>;
         algorithm: Lowercase<I['algorithm']>;
         columns: Cols;
