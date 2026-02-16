@@ -89,7 +89,7 @@ export function tableToSchema<
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   return {
-    sourceName: schema.tableName ?? accName,
+    sourceName: accName,
     accessorName: toCamelCase(accName),
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
@@ -186,6 +186,12 @@ export class ModuleContext {
       module.rowLevelSecurity && {
         tag: 'RowLevelSecurity',
         value: module.rowLevelSecurity,
+      }
+    );
+    push(
+      module.explicitNames && {
+        tag: 'ExplicitNames',
+        value: module.explicitNames,
       }
     );
     return { sections };
