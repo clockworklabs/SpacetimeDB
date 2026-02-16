@@ -3633,9 +3633,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
-version = "0.2.177"
+version = "0.2.182"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
+checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
 
 [[package]]
 name = "libgit2-sys"
@@ -8024,10 +8024,12 @@ dependencies = [
  "anyhow",
  "fs2",
  "hex",
+ "libc",
  "rand 0.9.2",
  "tempdir",
  "thiserror 1.0.69",
  "tokio",
+ "windows-sys 0.59.0",
  "zstd-framed",
 ]
 

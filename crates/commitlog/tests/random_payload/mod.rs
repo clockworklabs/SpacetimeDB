@@ -97,7 +97,7 @@ fn compression() {
 
     // try to generate commitlogs that will be amenable to compression -
     // random data doesn't compress well, so try and have there be repetition
-    let payloads = (0..4).map(|_| gen_payload()).cycle().take(1024).collect::<Vec<_>>();
+    let payloads = (0..4).map(|_| gen_payload()).cycle().take(1500).collect::<Vec<_>>();
     for payload in &payloads {
         clog.append_maybe_flush(*payload).unwrap();
     }

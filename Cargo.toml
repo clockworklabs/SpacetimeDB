@@ -227,6 +227,7 @@ jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
 lazy_static = "1.4.0"
 lean_string = "0.5.1"
 log = "0.4.17"
+libc = "0.2.182"
 memchr = "2"
 mimalloc = "0.1.39"
 names = "0.14"
@@ -381,6 +382,7 @@ features = [
   "broadcast",
   "ondemand",
 ]
+
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
