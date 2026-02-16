@@ -791,7 +791,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       if (result.tag === 'Ok' || result.tag === 'OkEmpty') {
         resolve();
       } else {
-        reject(result.value);
+        if (result.tag === 'Err') {
+          /// Interpret the user-returned error as a string.
+          const reader = new BinaryReader(result.value);
+          const errorString = reader.readString();
+          reject(errorString);
+        } else {
+          reject(result.value);
+        }
       }
     });
     return promise;

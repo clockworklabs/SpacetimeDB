@@ -1,7 +1,7 @@
 import { DbConnection } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ConnectionId, Timestamp, type Infer } from '../src';
+import { BinaryWriter, ConnectionId, Timestamp, type Infer } from '../src';
 import ServerMessage from '../src/sdk/client_api/server_message_type';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
@@ -85,6 +85,20 @@ function makeReducerResult(
           querySets: [reducerQuerySetUpdate],
         },
       },
+    },
+  });
+}
+
+function makeReducerErrorResult(requestId: number, error: string) {
+  const errorWriter = new BinaryWriter(64);
+  errorWriter.writeString(error);
+  const errorPayload = errorWriter.getBuffer();
+  return ServerMessage.ReducerResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    result: {
+      tag: 'Err',
+      value: errorPayload,
     },
   });
 }
@@ -210,6 +224,47 @@ describe('DbConnection', () => {
     await rowCallbackPromise.promise;
     await reducerPromise;
     expect(reducerResolved).toBeTruthy();
+  });
+
+  test('reducer error rejects and does not fire row callbacks', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    let insertCalled = false;
+    client.db.player.onInsert(() => {
+      insertCalled = true;
+    });
+
+    const reducerPromise = client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 1, y: 2 },
+    });
+
+    await Promise.resolve();
+    const requestId = getLastCallReducerRequestId(wsAdapter);
+    wsAdapter.sendToClient(makeReducerErrorResult(requestId, 'test error'));
+
+    await expect(reducerPromise).rejects.toBe('test error');
+    expect(insertCalled).toBeFalsy();
   });
 
   /*
