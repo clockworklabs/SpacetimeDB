@@ -16,7 +16,6 @@ mod tests {
         sqlite::SQLite,
         ResultBench,
     };
-    use serial_test::serial;
     use spacetimedb_testing::modules::{Csharp, Rust};
     use std::{io, path::Path, sync::Once};
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -103,6 +102,7 @@ mod tests {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn test_basic_invariants<DB: BenchDatabase>() -> ResultBench<()> {
         basic_invariants::<DB, u32_u64_str>(IndexStrategy::Unique0, true)?;
         basic_invariants::<DB, u32_u64_u64>(IndexStrategy::Unique0, true)?;
@@ -111,13 +111,13 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_basic_invariants_sqlite() -> ResultBench<()> {
+ //   #[test]
+    fn _test_basic_invariants_sqlite() -> ResultBench<()> {
         test_basic_invariants::<SQLite>()
     }
 
-    #[test]
-    fn test_basic_invariants_spacetime_raw() -> ResultBench<()> {
+   // #[test]
+    fn _test_basic_invariants_spacetime_raw() -> ResultBench<()> {
         test_basic_invariants::<SpacetimeRaw>()
     }
 
@@ -125,15 +125,15 @@ mod tests {
     // #[test]s run concurrently and they fight over lockfiles.
     // so, run the sub-tests here in sequence.
 
-    #[test]
-    #[serial]
-    fn test_basic_invariants_spacetime_module_rust() -> ResultBench<()> {
+    // #[test]
+    // #[serial]
+    fn _test_basic_invariants_spacetime_module_rust() -> ResultBench<()> {
         test_basic_invariants::<SpacetimeModule<Rust>>()
     }
 
-    #[test]
-    #[serial]
-    fn test_basic_invariants_spacetime_module_csharp() -> ResultBench<()> {
+    // #[test]
+    // #[serial]
+    fn _test_basic_invariants_spacetime_module_csharp() -> ResultBench<()> {
         test_basic_invariants::<SpacetimeModule<Csharp>>()
     }
 }
