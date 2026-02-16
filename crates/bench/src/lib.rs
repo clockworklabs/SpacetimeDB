@@ -111,12 +111,12 @@ mod tests {
         Ok(())
     }
 
- //   #[test]
+    //   #[test]
     fn _test_basic_invariants_sqlite() -> ResultBench<()> {
         test_basic_invariants::<SQLite>()
     }
 
-   // #[test]
+    // #[test]
     fn _test_basic_invariants_spacetime_raw() -> ResultBench<()> {
         test_basic_invariants::<SpacetimeRaw>()
     }
