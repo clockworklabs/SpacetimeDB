@@ -155,6 +155,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     number,
     (result: ReducerResultMessage['result']) => void
   >();
+  #reducerCallInfo = new Map<number, { name: string; args: object }>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
   #rowDeserializers: Record<string, Deserializer<any>>;
   #reducerArgsSerializers: Record<
@@ -314,7 +315,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const writer = new BinaryWriter(1024);
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
-        return this.callReducer(reducerName, argsBuffer);
+        return this.callReducer(reducerName, argsBuffer, params);
       };
     }
 
@@ -594,13 +595,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       this.#mergeTableUpdates(all_updates),
       eventContext
     );
-    const callbacks = this.#applyTableUpdates(
-      this.#mergeTableUpdates(all_updates),
-      eventContext
-    );
-    for (const callback of callbacks) {
-      callback.cb();
-    }
   }
 
   async #processMessage(data: Uint8Array): Promise<void> {
@@ -703,9 +697,21 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const { requestId, result } = serverMessage.value;
 
         if (result.tag === 'Ok') {
-          // TODO: Fix this context.
-          const event: Event<never> = { tag: 'UnknownTransaction' };
-          const eventContext = this.#makeEventContext(event);
+          const reducerInfo = this.#reducerCallInfo.get(requestId);
+          const event: Event<any> = reducerInfo
+            ? {
+                tag: 'Reducer',
+                value: {
+                  timestamp: serverMessage.value.timestamp,
+                  outcome: result,
+                  reducer: {
+                    name: reducerInfo.name,
+                    args: reducerInfo.args,
+                  },
+                },
+              }
+            : { tag: 'UnknownTransaction' };
+          const eventContext = this.#makeEventContext(event as any);
 
           const callbacks = this.#applyTransactionUpdates(
             eventContext,
@@ -715,6 +721,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             callback.cb();
           }
         }
+        this.#reducerCallInfo.delete(requestId);
         const cb = this.#reducerCallbacks.get(requestId);
         this.#reducerCallbacks.delete(requestId);
         cb?.(result);
@@ -760,7 +767,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * @param reducerName The name of the reducer to call
    * @param argsSerializer The arguments to pass to the reducer
    */
-  callReducer(reducerName: string, argsBuffer: Uint8Array): Promise<void> {
+  callReducer(
+    reducerName: string,
+    argsBuffer: Uint8Array,
+    reducerArgs?: object
+  ): Promise<void> {
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
@@ -770,6 +781,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       flags: 0,
     });
     this.#sendMessage(message);
+    if (reducerArgs) {
+      this.#reducerCallInfo.set(requestId, {
+        name: reducerName,
+        args: reducerArgs,
+      });
+    }
     this.#reducerCallbacks.set(requestId, result => {
       if (result.tag === 'Ok' || result.tag === 'OkEmpty') {
         resolve();
@@ -795,7 +812,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const writer = new BinaryWriter(1024);
     this.#reducerArgsSerializers[reducerName].serialize(writer, params);
     const argsBuffer = writer.getBuffer();
-    return this.callReducer(reducerName, argsBuffer);
+    return this.callReducer(reducerName, argsBuffer, params);
   }
 
   /**

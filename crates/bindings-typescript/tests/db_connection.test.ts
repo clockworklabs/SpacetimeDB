@@ -172,8 +172,16 @@ describe('DbConnection', () => {
     let reducerResolved = false;
 
     const rowCallbackPromise = new Deferred<void>();
-    client.db.player.onInsert(() => {
+    client.db.player.onInsert(ctx => {
       expect(reducerResolved).toBeFalsy();
+      expect(ctx.event.tag).toEqual('Reducer');
+      if (ctx.event.tag === 'Reducer') {
+        expect(ctx.event.value.reducer.name).toEqual('create_player');
+        expect(ctx.event.value.reducer.args).toEqual({
+          name: 'A Player',
+          location: { x: 1, y: 2 },
+        });
+      }
       rowCallbackPromise.resolve();
     });
 
@@ -201,6 +209,7 @@ describe('DbConnection', () => {
 
     await rowCallbackPromise.promise;
     await reducerPromise;
+    expect(reducerResolved).toBeTruthy();
   });
 
   /*
