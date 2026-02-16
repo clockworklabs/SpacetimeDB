@@ -82,6 +82,12 @@ pub const ST_VIEW_SUB_ID: TableId = TableId(15);
 pub const ST_VIEW_ARG_ID: TableId = TableId(16);
 /// The static ID of the table that tracks which tables are event tables
 pub const ST_EVENT_TABLE_ID: TableId = TableId(17);
+/// The static ID of the table that maps canonical table names to accessor names
+pub const ST_TABLE_ACCESSOR_ID: TableId = TableId(18);
+/// The static ID of the table that maps canonical index names to accessor names
+pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
+/// The static ID of the table that maps canonical column names to accessor names
+pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
 
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
@@ -100,6 +106,9 @@ pub(crate) const ST_VIEW_COLUMN_NAME: &str = "st_view_column";
 pub(crate) const ST_VIEW_SUB_NAME: &str = "st_view_sub";
 pub(crate) const ST_VIEW_ARG_NAME: &str = "st_view_arg";
 pub(crate) const ST_EVENT_TABLE_NAME: &str = "st_event_table";
+pub(crate) const ST_TABLE_ACCESSOR_NAME: &str = "st_table_accessor";
+pub(crate) const ST_INDEX_ACCESSOR_NAME: &str = "st_index_accessor";
+pub(crate) const ST_COLUMN_ACCESSOR_NAME: &str = "st_column_accessor";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
@@ -173,6 +182,7 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StEventTableRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
+        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID => false,
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -194,7 +204,7 @@ pub enum SystemTable {
     st_row_level_security,
 }
 
-pub fn system_tables() -> [TableSchema; 17] {
+pub fn system_tables() -> [TableSchema; 20] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -214,6 +224,9 @@ pub fn system_tables() -> [TableSchema; 17] {
         st_view_sub_schema(),
         st_view_arg_schema(),
         st_event_table_schema(),
+        st_table_accessor_schema(),
+        st_index_accessor_schema(),
+        st_column_accessor_schema(),
     ]
 }
 
@@ -259,6 +272,9 @@ pub(crate) const ST_VIEW_COLUMN_IDX: usize = 13;
 pub(crate) const ST_VIEW_SUB_IDX: usize = 14;
 pub(crate) const ST_VIEW_ARG_IDX: usize = 15;
 pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
+pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
+pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
+pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -415,6 +431,22 @@ st_fields_enum!(enum StScheduledFields {
 
 st_fields_enum!(enum StEventTableFields {
     "table_id", TableId = 0,
+});
+
+st_fields_enum!(enum StTableAccessorFields {
+    "table_name", TableName = 0,
+    "accessor_name", AccessorName = 1,
+});
+
+st_fields_enum!(enum StIndexAccessorFields {
+    "index_name", IndexName = 0,
+    "accessor_name", AccessorName = 1,
+});
+
+st_fields_enum!(enum StColumnAccessorFields {
+    "table_name", TableName = 0,
+    "col_name", ColName = 1,
+    "accessor_name", AccessorName = 2,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -591,6 +623,50 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(StEventTableFields::TableId)
         .with_index_no_accessor_name(btree(StEventTableFields::TableId));
 
+    let st_table_accessor_type = builder.add_type::<StTableAccessorRow>();
+    builder
+        .build_table(
+            ST_TABLE_ACCESSOR_NAME,
+            *st_table_accessor_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(StTableAccessorFields::TableName)
+        .with_index_no_accessor_name(btree(StTableAccessorFields::TableName))
+        .with_unique_constraint(StTableAccessorFields::AccessorName)
+        .with_index_no_accessor_name(btree(StTableAccessorFields::AccessorName));
+
+    let st_index_accessor_type = builder.add_type::<StIndexAccessorRow>();
+    builder
+        .build_table(
+            ST_INDEX_ACCESSOR_NAME,
+            *st_index_accessor_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(StIndexAccessorFields::IndexName)
+        .with_index_no_accessor_name(btree(StIndexAccessorFields::IndexName))
+        .with_unique_constraint(StIndexAccessorFields::AccessorName)
+        .with_index_no_accessor_name(btree(StIndexAccessorFields::AccessorName));
+
+    let st_column_accessor_type = builder.add_type::<StColumnAccessorRow>();
+    let st_column_accessor_table_col_cols = [
+        StColumnAccessorFields::TableName.col_id(),
+        StColumnAccessorFields::ColName.col_id(),
+    ];
+    let st_column_accessor_table_alias_cols = [
+        StColumnAccessorFields::TableName.col_id(),
+        StColumnAccessorFields::AccessorName.col_id(),
+    ];
+    builder
+        .build_table(
+            ST_COLUMN_ACCESSOR_NAME,
+            *st_column_accessor_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(st_column_accessor_table_col_cols)
+        .with_index_no_accessor_name(btree(st_column_accessor_table_col_cols))
+        .with_unique_constraint(st_column_accessor_table_alias_cols)
+        .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
+
     let result = builder
         .finish()
         .try_into()
@@ -613,6 +689,9 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StViewSubFields>(&result, ST_VIEW_SUB_NAME);
     validate_system_table::<StViewArgFields>(&result, ST_VIEW_ARG_NAME);
     validate_system_table::<StEventTableFields>(&result, ST_EVENT_TABLE_NAME);
+    validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
+    validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
+    validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
 
     result
 }
@@ -655,6 +734,12 @@ lazy_static::lazy_static! {
         m.insert("st_view_arg_id_key", ConstraintId(17));
         m.insert("st_view_arg_bytes_key", ConstraintId(18));
         m.insert("st_event_table_table_id_key", ConstraintId(19));
+        m.insert("st_table_accessor_table_name_key", ConstraintId(20));
+        m.insert("st_table_accessor_accessor_name_key", ConstraintId(21));
+        m.insert("st_index_accessor_index_name_key", ConstraintId(22));
+        m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
+        m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
+        m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
         m
     };
 }
@@ -687,6 +772,12 @@ lazy_static::lazy_static! {
         m.insert("st_view_arg_id_idx_btree", IndexId(21));
         m.insert("st_view_arg_bytes_idx_btree", IndexId(22));
         m.insert("st_event_table_table_id_idx_btree", IndexId(23));
+        m.insert("st_table_accessor_table_name_idx_btree", IndexId(24));
+        m.insert("st_table_accessor_accessor_name_idx_btree", IndexId(25));
+        m.insert("st_index_accessor_index_name_idx_btree", IndexId(26));
+        m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
+        m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
+        m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
         m
     };
 }
@@ -714,6 +805,15 @@ fn st_schema(name: &str, id: TableId) -> TableSchema {
         (),
         id,
     );
+    // Accessor aliases are not persisted for system tables in `st_*` metadata rows yet.
+    // Keep canonical system schemas alias-free so raw reconstruction and cached schemas agree.
+    result.alias = None;
+    for column in &mut result.columns {
+        column.alias = None;
+    }
+    for index in &mut result.indexes {
+        index.alias = None;
+    }
     // The result we get will have sentinel ids filled in the constraints, indexes, and sequences.
     // We replace them here with stable values in the reserved range.
     for index in &mut result.indexes {
@@ -827,6 +927,18 @@ fn st_event_table_schema() -> TableSchema {
     st_schema(ST_EVENT_TABLE_NAME, ST_EVENT_TABLE_ID)
 }
 
+fn st_table_accessor_schema() -> TableSchema {
+    st_schema(ST_TABLE_ACCESSOR_NAME, ST_TABLE_ACCESSOR_ID)
+}
+
+fn st_index_accessor_schema() -> TableSchema {
+    st_schema(ST_INDEX_ACCESSOR_NAME, ST_INDEX_ACCESSOR_ID)
+}
+
+fn st_column_accessor_schema() -> TableSchema {
+    st_schema(ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ACCESSOR_ID)
+}
+
 /// If `table_id` refers to a known system table, return its schema.
 ///
 /// Used when restoring from a snapshot; system tables are reinstantiated with this schema,
@@ -852,6 +964,9 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_VIEW_SUB_ID => Some(st_view_sub_schema()),
         ST_VIEW_ARG_ID => Some(st_view_arg_schema()),
         ST_EVENT_TABLE_ID => Some(st_event_table_schema()),
+        ST_TABLE_ACCESSOR_ID => Some(st_table_accessor_schema()),
+        ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
+        ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
         _ => None,
     }
 }
@@ -1693,6 +1808,70 @@ impl TryFrom<RowRef<'_>> for StEventTableRow {
 
 impl From<StEventTableRow> for ProductValue {
     fn from(x: StEventTableRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+/// System Table [ST_TABLE_ACCESSOR_NAME]
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StTableAccessorRow {
+    pub table_name: TableName,
+    pub accessor_name: Identifier,
+}
+
+impl TryFrom<RowRef<'_>> for StTableAccessorRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StTableAccessorRow> for ProductValue {
+    fn from(x: StTableAccessorRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+/// System Table [ST_INDEX_ACCESSOR_NAME]
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StIndexAccessorRow {
+    pub index_name: RawIdentifier,
+    pub accessor_name: RawIdentifier,
+}
+
+impl TryFrom<RowRef<'_>> for StIndexAccessorRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StIndexAccessorRow> for ProductValue {
+    fn from(x: StIndexAccessorRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+/// System Table [ST_COLUMN_ACCESSOR_NAME]
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StColumnAccessorRow {
+    pub table_name: TableName,
+    pub col_name: Identifier,
+    pub accessor_name: Identifier,
+}
+
+impl TryFrom<RowRef<'_>> for StColumnAccessorRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StColumnAccessorRow> for ProductValue {
+    fn from(x: StColumnAccessorRow) -> Self {
         to_product_value(&x)
     }
 }

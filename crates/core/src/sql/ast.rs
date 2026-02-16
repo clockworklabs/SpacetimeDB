@@ -492,8 +492,7 @@ impl<T> Deref for SchemaViewer<'_, T> {
 
 impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
     fn table_id(&self, name: &str) -> Option<TableId> {
-        self
-            .tx
+        self.tx
             .table_id_from_name_or_alias(name)
             .ok()
             .flatten()
