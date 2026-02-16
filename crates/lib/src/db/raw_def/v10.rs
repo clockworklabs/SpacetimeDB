@@ -179,6 +179,10 @@ impl ExplicitNames {
     pub fn merge(&mut self, other: ExplicitNames) {
         self.entries.extend(other.entries);
     }
+
+    pub fn into_entries(self) -> Vec<ExplicitNameEntry> {
+        self.entries
+    }
 }
 
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
@@ -593,6 +597,13 @@ impl RawModuleDefV10 {
                 _ => None,
             })
             .unwrap_or_default()
+    }
+
+    pub fn explicit_names(&self) -> Option<&ExplicitNames> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::ExplicitNames(names) => Some(names),
+            _ => None,
+        })
     }
 }
 

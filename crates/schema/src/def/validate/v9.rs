@@ -1,3 +1,4 @@
+use crate::def::validate::v10::ExplicitNamesLookup;
 use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
 use crate::type_for_generate::{ClientCodegenError, ProductTypeDef, TypespaceForGenerateBuilder};
@@ -5,7 +6,7 @@ use crate::{def::validate::Result, error::TypeLocation};
 use convert_case::{Case, Casing};
 use lean_string::LeanString;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
-use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::db::raw_def::v10::{
     reducer_default_err_return_type, reducer_default_ok_return_type, CaseConversionPolicy,
@@ -37,6 +38,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
             lifecycle_reducers: Default::default(),
             typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
             case_policy: CaseConversionPolicy::None,
+            explicit_names: ExplicitNamesLookup::default(),
         },
     };
 
@@ -400,7 +402,7 @@ impl ModuleValidatorV9<'_> {
 
         // Procedures share the "function namespace" with reducers.
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
-        let name = self.core.identifier_with_case(name);
+        let name = self.core.resolve_identifier_with_case(name);
 
         let (name, params_for_generate, return_type_for_generate) =
             (name, params_for_generate, return_type_for_generate).combine_errors()?;
@@ -535,7 +537,7 @@ impl ModuleValidatorV9<'_> {
         tables: &HashMap<Identifier, TableDef>,
         cdv: &RawColumnDefaultValueV9,
     ) -> Result<AlgebraicValue> {
-        let table_name = self.core.identifier_with_case(cdv.table.clone())?;
+        let table_name = self.core.resolve_identifier_with_case(cdv.table.clone())?;
 
         // Extract the table. We cannot make progress otherwise.
         let table = tables.get(&table_name).ok_or_else(|| ValidationError::TableNotFound {
@@ -593,26 +595,8 @@ pub(crate) struct CoreValidator<'a> {
     pub(crate) lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 
     pub(crate) case_policy: CaseConversionPolicy,
-}
-pub(crate) fn identifier_with_case(case_policy: CaseConversionPolicy, raw: RawIdentifier) -> Result<Identifier> {
-    let ident = convert(raw, case_policy);
 
-    Identifier::new(RawIdentifier::new(LeanString::from_utf8(ident.as_bytes()).unwrap()))
-        .map_err(|error| ValidationError::IdentifierError { error }.into())
-}
-
-/// Convert a raw identifier to a canonical type name.
-///
-/// IMPORTANT: For all policies except `None`, type names are converted to PascalCase,
-/// unless explicitly specified by the user.
-pub(crate) fn type_identifier_with_case(case_policy: CaseConversionPolicy, raw: RawIdentifier) -> Result<Identifier> {
-    let mut ident = raw.to_string();
-    if !matches!(case_policy, CaseConversionPolicy::None) {
-        ident = ident.to_case(Case::Pascal);
-    }
-
-    Identifier::new(RawIdentifier::new(LeanString::from_utf8(ident.as_bytes()).unwrap()))
-        .map_err(|error| ValidationError::IdentifierError { error }.into())
+    pub(crate) explicit_names: ExplicitNamesLookup,
 }
 
 pub(crate) fn identifier(raw: RawIdentifier) -> Result<Identifier> {
@@ -621,17 +605,48 @@ pub(crate) fn identifier(raw: RawIdentifier) -> Result<Identifier> {
 }
 
 impl CoreValidator<'_> {
+    fn resolve_identifier(
+        &self,
+        source: RawIdentifier,
+        lookup: &HashMap<RawIdentifier, RawIdentifier>,
+    ) -> Result<Identifier> {
+        if let Some(canonical_name) = lookup.get(&source) {
+            Identifier::new(canonical_name.clone()).map_err(|error| ValidationError::IdentifierError { error }.into())
+        } else {
+            self.resolve_identifier_with_case(source)
+        }
+    }
+
+    pub(crate) fn resolve_table_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.tables)
+    }
+
+    pub(crate) fn resolve_function_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.functions)
+    }
+
+    pub(crate) fn resolve_index_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.indexes)
+    }
+
     /// Apply case conversion to an identifier.
-    pub(crate) fn identifier_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
-        identifier_with_case(self.case_policy, raw)
+    pub(crate) fn resolve_identifier_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
+        let ident = convert(raw, self.case_policy);
+
+        Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
     }
 
     /// Convert a raw identifier to a canonical type name.
     ///
     /// IMPORTANT: For all policies except `None`, type names are converted to PascalCase,
     /// unless explicitly specified by the user.
-    pub(crate) fn type_identifier_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
-        type_identifier_with_case(self.case_policy, raw)
+    pub(crate) fn resolve_type_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
+        let mut ident = raw.to_string();
+        if !matches!(self.case_policy, CaseConversionPolicy::None) {
+            ident = ident.to_case(Case::Pascal);
+        }
+
+        Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
     }
 
     // Recursive function to change typenames in the typespace according to the case conversion
@@ -644,21 +659,52 @@ impl CoreValidator<'_> {
         };
 
         for ty in &mut typespace.types {
-            if let AlgebraicType::Product(product) = ty {
-                for element in &mut product.elements {
+            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants);
+        }
+    }
+
+    // Recursively convert names in an AlgebraicType
+    fn convert_algebraic_type(
+        ty: &mut AlgebraicType,
+        case_policy: CaseConversionPolicy,
+        case_policy_for_enum_variants: CaseConversionPolicy,
+    ) {
+        match ty {
+            AlgebraicType::Product(product) => {
+                for element in &mut product.elements.iter_mut() {
+                    // Convert the element name if it exists
                     if let Some(name) = element.name() {
                         let new_name = convert(name.clone(), case_policy);
-                        element.name = Some(RawIdentifier::new(LeanString::from_utf8(new_name.as_bytes()).unwrap()));
+                        element.name = Some(new_name.into());
                     }
-                }
-            } else if let AlgebraicType::Sum(sum) = ty {
-                for variant in &mut sum.variants {
-                    if let Some(name) = variant.name() {
-                        let new_name = convert(name.clone(), case_policy_for_enum_variants);
-                        variant.name = Some(RawIdentifier::new(LeanString::from_utf8(new_name.as_bytes()).unwrap()));
-                    }
+                    // Recursively convert the element's type
+                    Self::convert_algebraic_type(
+                        &mut element.algebraic_type,
+                        case_policy,
+                        case_policy_for_enum_variants,
+                    );
                 }
             }
+            AlgebraicType::Sum(sum) => {
+                for variant in &mut sum.variants.iter_mut() {
+                    // Convert the variant name if it exists
+                    if let Some(name) = variant.name() {
+                        let new_name = convert(name.clone(), case_policy_for_enum_variants);
+                        variant.name = Some(new_name.into())
+                    }
+                    // Recursively convert the variant's type
+                    Self::convert_algebraic_type(
+                        &mut variant.algebraic_type,
+                        case_policy,
+                        case_policy_for_enum_variants,
+                    );
+                }
+            }
+            AlgebraicType::Array(array) => {
+                // Arrays contain a base type that might need conversion
+                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants);
+            }
+            _ => {}
         }
     }
 
@@ -683,7 +729,7 @@ impl CoreValidator<'_> {
                         }
                         .into()
                     })
-                    .and_then(|s| self.identifier_with_case(s));
+                    .and_then(|s| self.resolve_identifier_with_case(s));
                 let ty_use = self.validate_for_type_use(location, &param.algebraic_type);
                 (param_name, ty_use).combine_errors()
             })
@@ -760,10 +806,10 @@ impl CoreValidator<'_> {
             name: unscoped_name,
             scope,
         } = name;
-        let unscoped_name = self.type_identifier_with_case(unscoped_name);
+        let unscoped_name = identifier(unscoped_name);
         let scope = Vec::from(scope)
             .into_iter()
-            .map(|s| self.type_identifier_with_case(s))
+            .map(|s| self.resolve_type_with_case(s))
             .collect_all_errors();
         let name = (unscoped_name, scope)
             .combine_errors()
@@ -824,7 +870,7 @@ impl CoreValidator<'_> {
     pub(crate) fn validate_schedule_def(
         &mut self,
         table_name: RawIdentifier,
-        name: Identifier,
+        name: RawIdentifier,
         function_name: RawIdentifier,
         product_type: &ProductType,
         schedule_at_col: ColId,
@@ -851,14 +897,14 @@ impl CoreValidator<'_> {
             }
             .into()
         });
-        let table_name = self.identifier_with_case(table_name)?;
+        let table_name = self.resolve_identifier_with_case(table_name)?;
         let name_res = self.add_to_global_namespace(name.clone().into(), table_name);
-        let function_name = self.identifier_with_case(function_name);
+        let function_name = self.resolve_identifier_with_case(function_name);
 
         let (_, (at_column, id_column), function_name) = (name_res, at_id, function_name).combine_errors()?;
 
         Ok(ScheduleDef {
-            name,
+            name: Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error })?,
             at_column,
             id_column,
             function_name,
@@ -910,7 +956,7 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
             .get(col_id.idx())
             .expect("enumerate is generating an out-of-range index...");
 
-        let name: Result<Identifier> = self.inner.module_validator.identifier_with_case(
+        let name: Result<Identifier> = self.inner.module_validator.resolve_identifier_with_case(
             column
                 .name()
                 .cloned()
@@ -926,7 +972,7 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         let view_name = self
             .inner
             .module_validator
-            .identifier_with_case(self.inner.raw_name.clone());
+            .resolve_identifier_with_case(self.inner.raw_name.clone());
 
         let (name, view_name) = (name, view_name).combine_errors()?;
 
@@ -950,7 +996,7 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
 
 /// A partially validated table.
 pub(crate) struct TableValidator<'a, 'b> {
-    module_validator: &'a mut CoreValidator<'b>,
+    pub(crate) module_validator: &'a mut CoreValidator<'b>,
     raw_name: RawIdentifier,
     product_type_ref: AlgebraicTypeRef,
     product_type: &'a ProductType,
@@ -965,7 +1011,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         product_type: &'a ProductType,
         module_validator: &'a mut CoreValidator<'b>,
     ) -> Result<Self> {
-        let table_ident = module_validator.identifier_with_case(raw_name.clone())?;
+        let table_ident = module_validator.resolve_identifier_with_case(raw_name.clone())?;
         Ok(Self {
             raw_name,
             product_type_ref,
@@ -1004,7 +1050,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
         Ok(ColumnDef {
             accessor_name: identifier(accessor_name.clone())?,
-            name: self.module_validator.identifier_with_case(accessor_name)?,
+            name: self.module_validator.resolve_identifier_with_case(accessor_name)?,
             ty: column.algebraic_type.clone(),
             ty_for_generate,
             col_id,
@@ -1130,7 +1176,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
         // In V9, accessor_name is used for codegen
         let codegen_name = accessor_name
-            .map(|s| self.module_validator.identifier_with_case(s))
+            .map(|s| self.module_validator.resolve_identifier_with_case(s))
             .transpose()?;
 
         Ok(IndexDef {
@@ -1149,22 +1195,32 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             ..
         } = index;
 
-        //TODO: Explicit name can override this
-        let name = generate_index_name(&self.table_ident, self.product_type, &algorithm_raw);
-        let name = self.add_to_global_namespace(name)?;
-
+        //source_name will be used as alias, hence we need to add it to the global namespace as
+        //well.
         let source_name = source_name.expect("source_name should be provided in V10, accessor_names inside module");
-        let source_name = if name != source_name {
-            self.add_to_global_namespace(source_name.clone())
+        self.add_to_global_namespace(source_name.clone());
+
+        let name = if self.module_validator.explicit_names.indexes.get(&source_name).is_some() {
+            self.module_validator.resolve_index_ident(source_name.clone())?
         } else {
-            Ok(source_name.clone())
+            identifier(generate_index_name(
+                &self.table_ident,
+                self.product_type,
+                &algorithm_raw,
+            ))?
+        };
+
+        let name = if *name.as_raw() != source_name {
+            self.add_to_global_namespace(name.as_raw().clone())?
+        } else {
+            name.as_raw().clone()
         };
 
         let algorithm = self.validate_algorithm(&name, algorithm_raw.clone())?;
 
         Ok(IndexDef {
             name: name.clone(),
-            accessor_name: source_name?,
+            accessor_name: source_name,
             codegen_name: Some(identifier(name)?),
             algorithm,
         })
@@ -1257,9 +1313,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             name,
         } = schedule;
 
-        let name = self
-            .module_validator
-            .identifier_with_case(name.unwrap_or_else(|| generate_schedule_name(&self.raw_name.clone())))?;
+        let name = name.unwrap_or_else(|| generate_schedule_name(&self.table_ident.clone()));
 
         self.module_validator.validate_schedule_def(
             self.raw_name.clone(),
@@ -1361,6 +1415,8 @@ fn concat_column_names(table_type: &ProductType, selected: &ColList) -> String {
 }
 
 /// All indexes have this name format.
+///
+/// Generated name should not go through case conversion.
 pub fn generate_index_name(
     table_name: &Identifier,
     table_type: &ProductType,
@@ -1377,17 +1433,23 @@ pub fn generate_index_name(
 }
 
 /// All sequences have this name format.
+///
+/// Generated name should not go through case conversion.
 pub fn generate_sequence_name(table_name: &Identifier, table_type: &ProductType, column: ColId) -> RawIdentifier {
     let column_name = column_name(table_type, column);
     RawIdentifier::new(format!("{table_name}_{column_name}_seq"))
 }
 
 /// All schedules have this name format.
-pub fn generate_schedule_name(table_name: &RawIdentifier) -> RawIdentifier {
+///
+/// Generated name should not go through case conversion.
+pub fn generate_schedule_name(table_name: &Identifier) -> RawIdentifier {
     RawIdentifier::new(format!("{table_name}_sched"))
 }
 
 /// All unique constraints have this name format.
+///
+/// Generated name should not go through case conversion.
 pub fn generate_unique_constraint_name(
     table_name: &Identifier,
     product_type: &ProductType,
@@ -1551,7 +1613,7 @@ fn process_column_default_value(
     // Validate the default value
     let validated_value = validator.validate_column_default_value(tables, cdv)?;
 
-    let table_name = validator.core.identifier_with_case(cdv.table.clone())?;
+    let table_name = validator.core.resolve_identifier_with_case(cdv.table.clone())?;
     let table = tables
         .get_mut(&table_name)
         .ok_or_else(|| ValidationError::TableNotFound {

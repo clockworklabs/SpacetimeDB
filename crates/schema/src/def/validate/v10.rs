@@ -1,3 +1,4 @@
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::de::DeserializeSeed as _;
@@ -12,12 +13,54 @@ use crate::error::ValidationError;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
 
+#[derive(Default)]
+pub struct ExplicitNamesLookup {
+    pub tables: HashMap<RawIdentifier, RawIdentifier>,
+    pub functions: HashMap<RawIdentifier, RawIdentifier>,
+    pub indexes: HashMap<RawIdentifier, RawIdentifier>,
+}
+
+impl ExplicitNamesLookup {
+    fn new(ex: ExplicitNames) -> Self {
+        let mut tables = HashMap::default();
+        let mut functions = HashMap::default();
+        let mut indexes = HashMap::default();
+
+        for entry in ex.into_entries() {
+            match entry {
+                ExplicitNameEntry::Table(m) => {
+                    tables.insert(m.source_name, m.canonical_name);
+                }
+                ExplicitNameEntry::Function(m) => {
+                    functions.insert(m.source_name, m.canonical_name);
+                }
+                ExplicitNameEntry::Index(m) => {
+                    indexes.insert(m.source_name, m.canonical_name);
+                }
+                _ => {}
+            }
+        }
+
+        ExplicitNamesLookup {
+            tables,
+            functions,
+            indexes,
+        }
+    }
+}
+
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
     let case_policy = def.case_conversion_policy();
+    let explicit_names = def
+        .explicit_names()
+        .cloned()
+        .map(ExplicitNamesLookup::new)
+        .unwrap_or_default();
+
     CoreValidator::typespace_case_conversion(case_policy, &mut typespace);
 
     let mut validator = ModuleValidatorV10 {
@@ -28,6 +71,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
             lifecycle_reducers: Default::default(),
             typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
             case_policy,
+            explicit_names,
         },
     };
 
@@ -130,7 +174,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                     let function_name = ReducerName::new(
                         validator
                             .core
-                            .identifier_with_case(lifecycle_def.function_name.clone())?,
+                            .resolve_function_ident(lifecycle_def.function_name.clone())?,
                     );
 
                     let (pos, _) = reducers_vec
@@ -349,16 +393,20 @@ impl<'a> ModuleValidatorV10<'a> {
             })
             .collect_all_errors();
 
-        let name = table_validator
-            .add_to_global_namespace(raw_table_name.clone())
-            .and_then(|name| {
-                let name = self.core.identifier_with_case(name)?;
-                if table_type != TableType::System && name.starts_with("st_") {
-                    Err(ValidationError::TableNameReserved { table: name }.into())
-                } else {
-                    Ok(name)
-                }
-            });
+        // `raw_table_name` should also go in global namespace as it will be used as alias
+        let raw_table_name = table_validator.add_to_global_namespace(raw_table_name.clone())?;
+
+        let name = {
+            let name = table_validator
+                .module_validator
+                .resolve_table_ident(raw_table_name.clone())?;
+            if table_type != TableType::System && name.starts_with("st_") {
+                Err(ValidationError::TableNameReserved { table: name }.into())
+            } else {
+                let name = table_validator.add_to_global_namespace(name.as_raw().clone())?;
+                Ok(name)
+            }
+        };
 
         // Validate default values inline and attach them to columns
         let validated_defaults: Result<HashMap<ColId, AlgebraicValue>> = default_values
@@ -406,7 +454,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .combine_errors()?;
 
         Ok(TableDef {
-            name,
+            name: identifier(name)?,
             product_type_ref,
             primary_key,
             columns,
@@ -438,7 +486,7 @@ impl<'a> ModuleValidatorV10<'a> {
                     arg_name,
                 });
 
-        let name_result = self.core.identifier_with_case(source_name.clone());
+        let name_result = self.core.resolve_function_ident(source_name.clone());
 
         let return_res: Result<_> = (ok_return_type.is_unit() && err_return_type.is_string())
             .then_some((ok_return_type.clone(), err_return_type.clone()))
@@ -482,7 +530,7 @@ impl<'a> ModuleValidatorV10<'a> {
             function_name,
         } = schedule;
 
-        let table_ident = self.core.identifier_with_case(table_name.clone())?;
+        let table_ident = self.core.resolve_table_ident(table_name.clone())?;
 
         // Look up the table to validate the schedule
         let table = tables.get(&table_ident).ok_or_else(|| ValidationError::TableNotFound {
@@ -499,11 +547,11 @@ impl<'a> ModuleValidatorV10<'a> {
                 ref_: table.product_type_ref,
             })?;
 
-        let source_name = source_name.unwrap_or_else(|| generate_schedule_name(&table_name));
+        let source_name = generate_schedule_name(&table_ident);
         self.core
             .validate_schedule_def(
                 table_name.clone(),
-                self.core.identifier_with_case(source_name)?,
+                source_name,
                 function_name,
                 product_type,
                 schedule_at_col,
@@ -549,7 +597,7 @@ impl<'a> ModuleValidatorV10<'a> {
             &return_type,
         );
 
-        let name_result = self.core.identifier_with_case(source_name);
+        let name_result = self.core.resolve_function_ident(source_name);
 
         let (name_result, params_for_generate, return_type_for_generate) =
             (name_result, params_for_generate, return_type_for_generate).combine_errors()?;
@@ -623,6 +671,8 @@ impl<'a> ModuleValidatorV10<'a> {
             &return_type,
         );
 
+        let name_result = self.core.resolve_function_ident(accessor_name.clone());
+
         let mut view_validator = ViewValidator::new(
             accessor_name.clone(),
             product_type_ref,
@@ -632,7 +682,7 @@ impl<'a> ModuleValidatorV10<'a> {
             &mut self.core,
         )?;
 
-        let name_result = view_validator.add_to_global_namespace(accessor_name);
+        let name_result = view_validator.add_to_global_namespace(name_result?.as_raw().clone());
 
         let n = product_type.elements.len();
         let return_columns = (0..n)
@@ -648,8 +698,8 @@ impl<'a> ModuleValidatorV10<'a> {
             (name_result, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name: self.core.identifier_with_case(name_result.clone())?,
-            accessor_name: identifier(name_result)?,
+            name: self.core.resolve_function_ident(name_result.clone())?,
+            accessor_name: identifier(accessor_name)?,
             is_anonymous,
             is_public,
             params,

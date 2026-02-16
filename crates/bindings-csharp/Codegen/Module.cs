@@ -390,7 +390,7 @@ record TableIndex
     public string GenerateIndexDef() =>
         $$"""
             new(
-                SourceName: null,
+                SourceName: "{{Table + StandardNameSuffix}}",
                 AccessorName: "{{AccessorName}}",
                 Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{string.Join(
                     ", ",
