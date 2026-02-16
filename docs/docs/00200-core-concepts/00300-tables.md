@@ -125,7 +125,7 @@ The first argument defines table options, and the second defines columns.
 Use the `[SpacetimeDB.Table]` attribute on a `partial struct` or `partial class`:
 
 ```csharp
-[SpacetimeDB.Table(Name = "Person", Public = true)]
+[SpacetimeDB.Table(Accessor = "Person", Public = true)]
 public partial struct Person
 {
     [SpacetimeDB.PrimaryKey]
@@ -220,7 +220,7 @@ The accessor name **exactly matches** the `Name` attribute value:
 
 ```csharp
 // Table definition
-[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player { /* columns */ }
 
 // Accessor matches Name exactly
@@ -315,10 +315,10 @@ const privateTable = table({ name: 'secret', public: false }, { /* ... */ });
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User { /* ... */ }
 
-[SpacetimeDB.Table(Name = "Secret", Public = false)]
+[SpacetimeDB.Table(Accessor = "Secret", Public = false)]
 public partial struct Secret { /* ... */ }
 ```
 
@@ -389,8 +389,8 @@ const LoggedOutPlayer = table({ name: 'LoggedOutPlayer' }, playerColumns);
 Apply multiple `[Table]` attributes to the same struct:
 
 ```csharp
-[SpacetimeDB.Table(Name = "Player", Public = true)]
-[SpacetimeDB.Table(Name = "LoggedOutPlayer")]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "LoggedOutPlayer")]
 public partial struct Player
 {
     [PrimaryKey]

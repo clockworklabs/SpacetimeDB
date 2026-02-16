@@ -58,7 +58,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "UserAvatar", Public = true)]
+    [SpacetimeDB.Table(Accessor = "UserAvatar", Public = true)]
     public partial struct UserAvatar
     {
         [SpacetimeDB.PrimaryKey]
@@ -227,7 +227,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -445,7 +445,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -764,7 +764,7 @@ using SpacetimeDB;
 
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "Image", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Image", Public = true)]
     public partial struct Image
     {
         [SpacetimeDB.PrimaryKey]

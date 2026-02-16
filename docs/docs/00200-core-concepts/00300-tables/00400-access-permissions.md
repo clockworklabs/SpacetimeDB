@@ -44,7 +44,7 @@ const player = table(
 
 ```csharp
 // Private table (default) - only accessible from server-side code
-[SpacetimeDB.Table(Name = "InternalConfig")]
+[SpacetimeDB.Table(Accessor = "InternalConfig")]
 public partial struct InternalConfig
 {
     [SpacetimeDB.PrimaryKey]
@@ -53,7 +53,7 @@ public partial struct InternalConfig
 }
 
 // Public table - clients can subscribe and query
-[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -461,7 +461,7 @@ using SpacetimeDB;
 public partial class Module 
 {
     // Private table containing all messages
-    [SpacetimeDB.Table(Name = "Message")]  // Private by default
+    [SpacetimeDB.Table(Accessor = "Message")]  // Private by default
     public partial struct Message
     {
         [SpacetimeDB.PrimaryKey]
@@ -613,7 +613,7 @@ using SpacetimeDB;
 public partial class Module
 {
     // Private table with sensitive data
-    [SpacetimeDB.Table(Name = "UserAccount")]  // Private by default
+    [SpacetimeDB.Table(Accessor = "UserAccount")]  // Private by default
     public partial struct UserAccount
     {
         [SpacetimeDB.PrimaryKey]
@@ -810,7 +810,7 @@ using SpacetimeDB;
 public partial class Module
 {
     // Private table with all employee data
-    [SpacetimeDB.Table(Name = "Employee")]
+    [SpacetimeDB.Table(Accessor = "Employee")]
     public partial struct Employee
     {
         [SpacetimeDB.PrimaryKey]

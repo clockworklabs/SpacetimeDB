@@ -35,7 +35,7 @@ Use the `.primaryKey()` method on a column builder to mark it as the primary key
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -118,7 +118,7 @@ const inventory = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Inventory", Public = true)]
+[SpacetimeDB.Table(Accessor = "Inventory", Public = true)]
 [SpacetimeDB.Index.BTree(Name = "by_user_item", Columns = new[] { nameof(UserId), nameof(ItemId) })]
 public partial struct Inventory
 {
@@ -304,7 +304,7 @@ Use the `.unique()` method on a column builder.
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
