@@ -155,15 +155,17 @@ public partial struct TestIndexIssues
     },
     {/*
 
-[SpacetimeDB.Table(Accessor = "TestScheduleWithoutPrimaryKey",
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithoutPrimaryKey",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = nameof(ScheduleAtCorrectType)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )]
 ^
-[SpacetimeDB.Table(Accessor = "TestScheduleWithWrongPrimaryKeyType",
+[SpacetimeDB.Table(
 */
       Message: TestScheduleWithoutPrimaryKey is a scheduled table but doesn't have a primary key of type `ulong`.,
       Severity: Error,
@@ -178,8 +180,10 @@ public partial struct TestIndexIssues
     },
     {/*
 )]
-[SpacetimeDB.Table(Accessor = "TestScheduleWithWrongPrimaryKeyType",
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithWrongPrimaryKeyType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = nameof(ScheduleAtCorrectType)
@@ -203,7 +207,7 @@ public partial struct TestIndexIssues
 )]
 [SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-[SpacetimeDB.Table(Accessor = "TestScheduleWithWrongScheduleAtType",
+[SpacetimeDB.Table(
 */
       Message: Could not find the specified column ScheduledAt in TestScheduleIssues.,
       Severity: Error,
@@ -218,15 +222,17 @@ public partial struct TestIndexIssues
     },
     {/*
 [SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
-[SpacetimeDB.Table(Accessor = "TestScheduleWithWrongScheduleAtType",
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithWrongScheduleAtType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = nameof(ScheduleAtWrongType)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )]
 ^
-[SpacetimeDB.Table(Accessor = "TestScheduleWithMissingScheduleAtField",
+[SpacetimeDB.Table(
 */
       Message: TestScheduleWithWrongScheduleAtType is a scheduled table but doesn't have a primary key of type `ulong`.,
       Severity: Error,
@@ -241,8 +247,10 @@ public partial struct TestIndexIssues
     },
     {/*
 )]
-[SpacetimeDB.Table(Accessor = "TestScheduleWithMissingScheduleAtField",
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithMissingScheduleAtField",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = "MissingField"
