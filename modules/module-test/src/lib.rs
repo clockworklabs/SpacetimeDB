@@ -503,8 +503,8 @@ fn with_tx(ctx: &mut ProcedureContext) {
 /// Hit SpacetimeDB's schema HTTP route and return its result as a string.
 ///
 /// This is a silly thing to do, but an effective test of the procedure HTTP API.
-#[spacetimedb::procedure(name = "get_my_test_via_http")]
-fn getMyTestViaHttp(ctx: &mut ProcedureContext) -> String {
+#[spacetimedb::procedure(name = "get_my_schema_via_http")]
+fn getMySchemaViaHttp(ctx: &mut ProcedureContext) -> String {
     let module_identity = ctx.identity();
     match ctx.http.get(format!(
         "http://localhost:3000/v1/database/{module_identity}/schema?version=9"

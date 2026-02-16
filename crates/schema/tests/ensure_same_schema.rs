@@ -131,7 +131,7 @@ fn test_case_converted_names() {
     }
 
     // Test Procedures
-    let procedure_names = ["get_my_test_via_http"];
+    let procedure_names = ["get_my_schema_via_http"];
     for name in procedure_names {
         assert!(
             ProcedureDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),

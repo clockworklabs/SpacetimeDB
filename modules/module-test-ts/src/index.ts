@@ -464,7 +464,7 @@ export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
 // Hit SpacetimeDB's schema HTTP route and return its result as a string.
 //
 // This is a silly thing to do, but an effective test of the procedure HTTP API.
-export const getMyTestViaHttp = spacetimedb.procedure(t.string(), ctx => {
+export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   const module_identity = ctx.identity;
   try {
     const response = ctx.http.fetch(
