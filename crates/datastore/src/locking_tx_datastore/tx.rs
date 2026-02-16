@@ -77,7 +77,7 @@ impl Datastore for TxId {
         index_id: IndexId,
         point: &AlgebraicValue,
     ) -> anyhow::Result<Self::PointIndexIter<'a>> {
-        self.with_index(table_id, index_id, |i| i.seek_point(point))
+        self.with_index(table_id, index_id, |i| i.seek_point_via_algebraic_value(point))
     }
 }
 

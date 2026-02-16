@@ -1,6 +1,7 @@
+use super::unique_btree_index::UniquePointIter;
 use super::{Index, KeySize};
-use crate::table_index::uniquemap::UniqueMapPointIter;
 use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
+use core::borrow::Borrow;
 use core::hash::Hash;
 use spacetimedb_data_structures::map::hash_map::Entry;
 use spacetimedb_sats::memory_usage::MemoryUsage;
@@ -46,7 +47,7 @@ impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
     fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
         match self.map.entry(key) {
             Entry::Vacant(e) => {
-                self.num_key_bytes.add_to_key_bytes::<Self>(e.key());
+                self.num_key_bytes.add_to_key_bytes(e.key());
                 e.insert(ptr);
                 Ok(())
             }
@@ -54,12 +55,8 @@ impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
         }
     }
 
-    fn delete(&mut self, key: &Self::Key, _: RowPointer) -> bool {
-        let ret = self.map.remove(key).is_some();
-        if ret {
-            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
-        }
-        ret
+    fn delete(&mut self, key: &Self::Key, ptr: RowPointer) -> bool {
+        self.delete(key, ptr)
     }
 
     fn clear(&mut self) {
@@ -87,12 +84,36 @@ impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
     }
 
     type PointIter<'a>
-        = UniqueMapPointIter<'a>
+        = UniquePointIter
     where
         Self: 'a;
 
     fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
-        let iter = self.map.get(point).into_iter();
-        UniqueMapPointIter { iter }
+        self.seek_point(point)
+    }
+}
+
+impl<K: KeySize + Eq + Hash> UniqueHashIndex<K> {
+    /// See [`Index::delete`].
+    /// This version has relaxed bounds.
+    pub fn delete<Q>(&mut self, key: &Q, _: RowPointer) -> bool
+    where
+        Q: ?Sized + KeySize + Hash + Eq,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        let ret = self.map.remove(key).is_some();
+        if ret {
+            self.num_key_bytes.sub_from_key_bytes(key);
+        }
+        ret
+    }
+
+    /// See [`Index::seek_point`].
+    /// This version has relaxed bounds.
+    pub fn seek_point<Q: ?Sized + Eq + Hash>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
+    where
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        UniquePointIter::new(self.map.get(point).copied())
     }
 }

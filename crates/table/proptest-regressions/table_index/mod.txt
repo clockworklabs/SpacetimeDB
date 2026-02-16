@@ -6,3 +6,6 @@
 # everyone who runs the test benefits from these saved cases.
 cc 3276d3db4a1a70d78db9a6a01eaa3bba810a2317e9c67e4d5d8d93cbba472c99 # shrinks to ((ty, cols, pv), is_unique) = ((ProductType {None: Bool}, [ColId(0)], ProductValue { elements: [Bool(false)] }), false)
 cc bc80b80ac2390452c0a152d2c6e2abc29ce146642f3cd0fe136ffe6173cf4c8c # shrinks to (ty, cols, pv) = (ProductType {None: I64}, [ColId(0)], ProductValue { elements: [I64(0)] }), kind = Direct
+cc 4cb325be8b24c9efa5b1f20b9504d044d9dd110eb9e99355de4ca42f9cfc20b4 # shrinks to (ty, cols, pv) = (ProductType {None: Sum(SumType {"variant_0": Product(ProductType {})})}, [ColId(0)], ProductValue { elements: [Sum(SumValue { tag: 0, value: Product(ProductValue { elements: [] }) })] }), is_unique = false
+cc a166a3c619c7cae3938f4e0cfb4e7a96cddfbb7943efd0b74e8cbb99d7a1e6a8 # shrinks to (ty, cols, pv) = (ProductType {None: U8}, [ColId(0)], ProductValue { elements: [U8(0)] }), kind = Direct
+cc 05390c104810e7086fa5d3f3cac7f491a377ae6ba64431661fd94662e28d1fca # shrinks to (ty, cols, pv) = (ProductType {None: Sum(SumType {"variant_0": Product(ProductType {})})}, [ColId(0)], ProductValue { elements: [Sum(SumValue { tag: 0, value: Product(ProductValue { elements: [] }) })] }), kind = Direct
