@@ -10,7 +10,7 @@ use enum_map::EnumMap;
 use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
-use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
@@ -112,8 +112,17 @@ pub struct RelationalDB {
     /// A map from workload types to their cached prometheus counters.
     workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 
+    //TODO: move this mapping to system tables.
+    accessor_name_mapping: std::sync::RwLock<AccessorNameMapping>,
+
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+}
+
+#[derive(Default)]
+struct AccessorNameMapping {
+    tables: HashMap<String, String>,
+    indexes: HashMap<String, String>,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -171,6 +180,7 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            accessor_name_mapping: <_>::default(),
         }
     }
 
@@ -1094,6 +1104,27 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
 }
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
+        //TODO: remove this code when system tables introduced.
+        let mut accessor_mapping = self.accessor_name_mapping.write().unwrap();
+        if let Some(alias) = schema.alias.clone() {
+            accessor_mapping
+                .tables
+                .insert(alias.to_string(), schema.table_name.to_string());
+        }
+
+        let indexe_alias = schema
+            .indexes
+            .iter()
+            .filter_map(|idx| {
+                idx.alias
+                    .clone()
+                    .map(|alias| (alias.to_string(), idx.index_name.to_string()))
+            })
+            .collect::<Vec<_>>();
+        for (alias, index_name) in indexe_alias {
+            accessor_mapping.indexes.insert(alias, index_name.to_string());
+        }
+
         Ok(self.inner.create_table_mut_tx(tx, schema)?)
     }
 
@@ -1219,11 +1250,25 @@ impl RelationalDB {
     }
 
     pub fn table_id_from_name_mut(&self, tx: &MutTx, table_name: &str) -> Result<Option<TableId>, DBError> {
-        Ok(self.inner.table_id_from_name_mut_tx(tx, table_name)?)
+        let accessor_map = self.accessor_name_mapping.read().unwrap();
+        let new_table = accessor_map
+            .tables
+            .get(table_name)
+            .map(|s| s.as_str())
+            .unwrap_or(table_name);
+
+        Ok(self.inner.table_id_from_name_mut_tx(tx, new_table)?)
     }
 
     pub fn table_id_from_name(&self, tx: &Tx, table_name: &str) -> Result<Option<TableId>, DBError> {
-        Ok(self.inner.table_id_from_name_tx(tx, table_name)?)
+        let accessor_map = self.accessor_name_mapping.read().unwrap();
+        let new_table = accessor_map
+            .tables
+            .get(table_name)
+            .map(|s| s.as_str())
+            .unwrap_or(table_name);
+
+        Ok(self.inner.table_id_from_name_tx(tx, new_table)?)
     }
 
     pub fn table_id_exists(&self, tx: &Tx, table_id: &TableId) -> bool {
@@ -1247,7 +1292,14 @@ impl RelationalDB {
     }
 
     pub fn index_id_from_name_mut(&self, tx: &MutTx, index_name: &str) -> Result<Option<IndexId>, DBError> {
-        Ok(self.inner.index_id_from_name_mut_tx(tx, index_name)?)
+        let accessor_map = self.accessor_name_mapping.read().unwrap();
+        let new_index_name = accessor_map
+            .indexes
+            .get(index_name)
+            .map(|s| s.as_str())
+            .unwrap_or(index_name);
+
+        Ok(self.inner.index_id_from_name_mut_tx(tx, new_index_name)?)
     }
 
     pub fn table_row_count_mut(&self, tx: &MutTx, table_id: TableId) -> Option<u64> {

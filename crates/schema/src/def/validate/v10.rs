@@ -395,7 +395,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .combine_errors()?;
 
         Ok(TableDef {
-            name,
+            name: name.clone(),
             product_type_ref,
             primary_key,
             columns,
@@ -406,6 +406,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_type,
             table_access,
             is_event,
+            accessor_name: name,
         })
     }
 
@@ -637,7 +638,7 @@ impl<'a> ModuleValidatorV10<'a> {
             (name_result, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name: name_result,
+            name: name_result.clone(),
             is_anonymous,
             is_public,
             params,
@@ -651,6 +652,7 @@ impl<'a> ModuleValidatorV10<'a> {
             product_type_ref,
             return_columns,
             param_columns,
+            accessor_name: name_result,
         })
     }
 }
@@ -870,16 +872,19 @@ mod tests {
                     name: "Apples_count_idx_direct".into(),
                     codegen_name: Some(expect_identifier("Apples_count_idx_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
+                    accessor_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
                     codegen_name: Some(expect_identifier("Apples_name_count_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
+                    accessor_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
                     codegen_name: Some(expect_identifier("Apples_type_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
+                    accessor_name: "Apples_count_idx_direct".into(),
                 }
             ]
         );
