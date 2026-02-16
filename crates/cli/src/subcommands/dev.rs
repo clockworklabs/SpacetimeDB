@@ -875,13 +875,9 @@ async fn generate_build_and_publish(
             db_name.to_string(),
             "--module-path".to_string(),
             module_path_str.to_string(),
+            "--yes".to_string(),
             format!("--delete-data={}", clear_flag),
         ];
-
-        // Forward --yes flag only when explicitly set
-        if yes {
-            publish_args.push("--yes".to_string());
-        }
 
         // Forward per-target server from config if set, or CLI server override
         if let Some(srv) = server {
