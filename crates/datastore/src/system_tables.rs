@@ -202,6 +202,7 @@ pub enum SystemTable {
     st_index,
     st_constraint,
     st_row_level_security,
+    st_table_accessor,
 }
 
 pub fn system_tables() -> [TableSchema; 20] {

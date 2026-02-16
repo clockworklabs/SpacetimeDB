@@ -5,9 +5,10 @@ use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
     StConstraintFields, StConstraintRow, StEventTableFields, StIndexFields, StIndexRow, StScheduledFields,
-    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields,
-    StViewRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID,
-    ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
+    StTableRow, StViewFields, StViewParamFields, StViewRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID,
+    ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID,
+    ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -43,9 +44,15 @@ pub trait StateView {
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
-    /// TODO: Resolve accessor aliases from `st_table_accessor`
+    /// Looks up a table id by the table's canonical name or its accessor/alias name.
     fn table_id_from_name_or_alias(&self, table_name_or_alias: &str) -> Result<Option<TableId>> {
-        self.table_id_from_name(table_name_or_alias)
+        if let Some(table_id) = self.table_id_from_name(table_name_or_alias)? {
+            return Ok(Some(table_id));
+        }
+        let Some(row) = self.find_st_table_accessor_row(table_name_or_alias)? else {
+            return Ok(None);
+        };
+        self.table_id_from_name(&row.table_name)
     }
 
     /// Returns the number of rows in the table identified by `table_id`.
@@ -86,6 +93,18 @@ pub trait StateView {
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         StTableRow::try_from(row_ref)
+    }
+
+    /// Look up an `st_table_accessor` row by its accessor name
+    fn find_st_table_accessor_row(&self, accessor_name: &str) -> Result<Option<StTableAccessorRow>> {
+        self.iter_by_col_eq(
+            ST_TABLE_ACCESSOR_ID,
+            StTableAccessorFields::AccessorName,
+            &accessor_name.into(),
+        )?
+        .next()
+        .map(StTableAccessorRow::try_from)
+        .transpose()
     }
 
     /// Reads the schema information for the specified `table_id` directly from the database.
