@@ -492,9 +492,9 @@ impl<T> Deref for SchemaViewer<'_, T> {
 
 impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
     fn table_id(&self, name: &str) -> Option<TableId> {
-        // Get the schema from the in-memory state instead of fetching from the database for speed
-        self.tx
-            .table_id_from_name(name)
+        self
+            .tx
+            .table_id_from_name_or_alias(name)
             .ok()
             .flatten()
             .and_then(|table_id| self.schema_for_table(table_id))

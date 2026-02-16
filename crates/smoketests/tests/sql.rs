@@ -63,3 +63,22 @@ fn test_sql_format() {
  (bool_opt = (some = true), bool_result = (ok = false), action = (Active = ()))"#,
     );
 }
+
+#[test]
+fn test_sql_resolves_accessor_and_canonical_names() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.assert_sql(
+        "SELECT * FROM accessor_table",
+        r#" id | value
+----+-------
+ 1  | 7"#,
+    );
+
+    test.assert_sql(
+        "SELECT * FROM canonical_table",
+        r#" id | value
+----+-------
+ 1  | 7"#,
+    );
+}

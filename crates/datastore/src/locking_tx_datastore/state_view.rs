@@ -43,6 +43,11 @@ pub trait StateView {
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
+    /// TODO: Resolve accessor aliases from `st_table_accessor`
+    fn table_id_from_name_or_alias(&self, table_name_or_alias: &str) -> Result<Option<TableId>> {
+        self.table_id_from_name(table_name_or_alias)
+    }
+
     /// Returns the number of rows in the table identified by `table_id`.
     fn table_row_count(&self, table_id: TableId) -> Option<u64>;
 
