@@ -63,12 +63,16 @@ npm run build
 <script src="dist/bindings.iife.js"></script>
 
 <script>
+  const HOST = 'ws://localhost:3000';
+  const DB_NAME = 'my-spacetime-app';
+  const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
   const conn = DbConnection.builder()
-    .withUri('ws://localhost:3000')
-    .withDatabaseName('my-spacetime-app')
-    .withToken(localStorage.getItem('auth_token'))
+    .withUri(HOST)
+    .withDatabaseName(DB_NAME)
+    .withToken(localStorage.getItem(TOKEN_KEY))
     .onConnect((conn, identity, token) => {
-      localStorage.setItem('auth_token', token);
+      localStorage.setItem(TOKEN_KEY, token);
       console.log('Connected:', identity.toHexString());
 
       // Subscribe to tables

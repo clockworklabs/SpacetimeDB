@@ -1,6 +1,6 @@
 use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     identity: Identity,
@@ -8,7 +8,7 @@ pub struct PlayerState {
     name: String,
 }
 
-#[spacetimedb::view(name = my_player, public)]
+#[spacetimedb::view(accessor = my_player, public)]
 pub fn my_player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().identity().find(ctx.sender())
 }

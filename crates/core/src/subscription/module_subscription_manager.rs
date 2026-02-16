@@ -142,6 +142,11 @@ impl Plan {
     pub fn sql(&self) -> &str {
         &self.sql
     }
+
+    /// Does this plan return rows from an event table?
+    pub fn returns_event_table(&self) -> bool {
+        self.plans.iter().any(|p| p.returns_event_table())
+    }
 }
 
 /// For each client, we hold a handle for sending messages, and we track the queries they are subscribed to.
@@ -1405,22 +1410,31 @@ impl SubscriptionManager {
             updates: &UpdatesRelValue<'_>,
             metrics: &mut ExecutionMetrics,
             rlb_pool: &impl RowListBuilderSource<ws_v1::BsatnFormat>,
+            is_event_table: bool,
         ) -> TableUpdateRows {
-            let (deletes, nr_del) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
-                rlb_pool.take_row_list_builder(),
-                updates.deletes.iter(),
-            );
             let (inserts, nr_ins) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
                 rlb_pool.take_row_list_builder(),
                 updates.inserts.iter(),
             );
-            // TODO: Fix metrics. We only encode once, then we clone for other clients, so this isn't the place
-            // to report the metrics.
-            let _num_rows = nr_del + nr_ins;
-            let num_bytes = deletes.num_bytes() + inserts.num_bytes();
-            metrics.bytes_scanned += num_bytes;
-            metrics.bytes_sent_to_clients += num_bytes;
-            TableUpdateRows::PersistentTable(ws_v2::PersistentTableRows { inserts, deletes })
+            if is_event_table {
+                // Event tables only have inserts (events); no deletes.
+                debug_assert!(updates.deletes.is_empty(), "event tables should not produce deletes");
+                metrics.bytes_scanned += inserts.num_bytes();
+                metrics.bytes_sent_to_clients += inserts.num_bytes();
+                TableUpdateRows::EventTable(ws_v2::EventTableRows { events: inserts })
+            } else {
+                let (deletes, nr_del) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
+                    rlb_pool.take_row_list_builder(),
+                    updates.deletes.iter(),
+                );
+                // TODO: Fix metrics. We only encode once, then we clone for other clients, so this isn't the place
+                // to report the metrics.
+                let _num_rows = nr_del + nr_ins;
+                let num_bytes = deletes.num_bytes() + inserts.num_bytes();
+                metrics.bytes_scanned += num_bytes;
+                metrics.bytes_sent_to_clients += num_bytes;
+                TableUpdateRows::PersistentTable(ws_v2::PersistentTableRows { inserts, deletes })
+            }
         }
 
         let FoldState { updates, errs, metrics } = tables
@@ -1468,7 +1482,12 @@ impl SubscriptionManager {
                     }
                     Ok(None) => {}
                     Ok(Some(delta_updates)) => {
-                        let rows = encode_v2_rows(&delta_updates, &mut acc.metrics, bsatn_rlb_pool);
+                        let rows = encode_v2_rows(
+                            &delta_updates,
+                            &mut acc.metrics,
+                            bsatn_rlb_pool,
+                            plan.returns_event_table(),
+                        );
                         for &(client_id, query_set_id) in qstate.v2_subscriptions.iter() {
                             acc.updates.push(V2ClientUpdate {
                                 id: client_id,

@@ -1,6 +1,6 @@
 use spacetimedb::{log, Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[unique]
     id: i32,
@@ -75,7 +75,7 @@ pub fn find_person_by_nick_read_only(ctx: &ReducerContext, nick: String) {
     }
 }
 
-#[spacetimedb::table(name = nonunique_person)]
+#[spacetimedb::table(accessor = nonunique_person)]
 pub struct NonuniquePerson {
     #[index(btree)]
     id: i32,
@@ -118,7 +118,7 @@ pub fn find_nonunique_non_humans(ctx: &ReducerContext) {
 }
 
 // Ensure that [Identity] is filterable and a legal unique column.
-#[spacetimedb::table(name = identified_person)]
+#[spacetimedb::table(accessor = identified_person)]
 struct IdentifiedPerson {
     #[unique]
     identity: Identity,
@@ -147,7 +147,7 @@ fn find_identified_person(ctx: &ReducerContext, id_number: u64) {
 }
 
 // Ensure that indices on non-unique columns behave as we expect.
-#[spacetimedb::table(name = indexed_person)]
+#[spacetimedb::table(accessor = indexed_person)]
 struct IndexedPerson {
     #[unique]
     id: i32,

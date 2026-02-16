@@ -221,6 +221,22 @@ impl clap::ValueEnum for ModuleLanguage {
     }
 }
 
+/// Try to find a SpacetimeDB module directory, checking in order:
+/// 1. `{project_dir}/spacetimedb/` subdirectory
+/// 2. `{project_dir}` itself
+///
+/// Returns the first path that contains a recognizable SpacetimeDB module, or `None`.
+pub fn find_module_path(project_dir: &Path) -> Option<PathBuf> {
+    let spacetimedb_subdir = project_dir.join("spacetimedb");
+    if spacetimedb_subdir.is_dir() && detect_module_language(&spacetimedb_subdir).is_ok() {
+        return Some(spacetimedb_subdir);
+    }
+    if project_dir.is_dir() && detect_module_language(project_dir).is_ok() {
+        return Some(project_dir.to_path_buf());
+    }
+    None
+}
+
 pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLanguage> {
     // TODO: Possible add a config file durlng spacetime init with the language
     // check for Cargo.toml

@@ -1,4 +1,4 @@
-use crate::{bsatn, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
+use crate::{bsatn, rt::ExplicitNames, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
 use core::borrow::Borrow;
 use core::convert::Infallible;
 use core::fmt;
@@ -17,7 +17,7 @@ pub use spacetimedb_primitives::{ColId, IndexId};
 ///
 /// To get a `TableHandle`
 // TODO: should we rename this `TableHandle`? Documenting this, I think that's much clearer.
-pub trait Table: TableInternal {
+pub trait Table: TableInternal + ExplicitNames {
     /// The type of rows stored in this table.
     type Row: SpacetimeType + Serialize + DeserializeOwned + Sized + 'static;
 
@@ -128,6 +128,7 @@ pub trait TableInternal: Sized {
     const PRIMARY_KEY: Option<u16> = None;
     const SEQUENCES: &'static [u16];
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
+    const IS_EVENT: bool = false;
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
@@ -138,7 +139,7 @@ pub trait TableInternal: Sized {
 /// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
-    pub accessor_name: &'a str,
+    pub source_name: &'a str,
     pub algo: IndexAlgo<'a>,
 }
 
@@ -291,7 +292,7 @@ pub trait PrimaryKey {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, UniqueColumn, ReducerContext, DbContext};
 ///
-/// #[table(name = user)]
+/// #[table(accessor = user)]
 /// struct User {
 ///     #[primary_key]
 ///     id: u32,
@@ -497,8 +498,8 @@ pub trait IndexIsPointed: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user,
-///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+/// #[table(accessor = user,
+///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
 /// struct User {
 ///     id: u32,
 ///     name: String,
@@ -518,7 +519,7 @@ pub trait IndexIsPointed: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user)]
+/// #[table(accessor = user)]
 /// struct User {
 ///     id: u32,
 ///     username: String,
@@ -552,8 +553,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, PointIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -594,8 +595,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, PointIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -737,8 +738,8 @@ pub trait IndexIsRanged: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user,
-///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+/// #[table(accessor = user,
+///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
 /// struct User {
 ///     id: u32,
 ///     name: String,
@@ -758,7 +759,7 @@ pub trait IndexIsRanged: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user)]
+/// #[table(accessor = user)]
 /// struct User {
 ///     id: u32,
 ///     username: String,
@@ -794,8 +795,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, RangedIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -876,8 +877,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, RangedIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,

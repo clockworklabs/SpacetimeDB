@@ -231,13 +231,17 @@ Register callbacks to observe connection state changes:
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
+const HOST = "https://maincloud.spacetimedb.com";
+const DB_NAME = "my_database";
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
 const conn = DbConnection.builder()
-    .withUri("https://maincloud.spacetimedb.com")
-    .withDatabaseName("my_database")
+    .withUri(HOST)
+    .withDatabaseName(DB_NAME)
     .onConnect((conn, identity, token) => {
         console.log(`Connected! Identity: ${identity.toHexString()}`);
-        // Save token for reconnection
-        localStorage.setItem('auth_token', token);
+        // Save token for reconnection — keyed per server/database
+        localStorage.setItem(TOKEN_KEY, token);
     })
     .onConnectError((_ctx, error) => {
         console.error(`Connection failed:`, error);

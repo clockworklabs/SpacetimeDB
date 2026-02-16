@@ -3,7 +3,7 @@ use spacetimedb_smoketests::Smoketest;
 const MODULE_CODE_SIMPLE: &str = r#"
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
 }
@@ -24,7 +24,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 const MODULE_CODE_UPDATED_INCOMPATIBLE: &str = r#"
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
     age: u128,
@@ -62,7 +62,7 @@ const MODULE_CODE_INIT: &str = r#"
 use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
 use PersonKind::*;
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
     kind: PersonKind,
@@ -82,7 +82,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     }
 }
 
-#[spacetimedb::table(name = point_mass)]
+#[spacetimedb::table(accessor = point_mass)]
 pub struct PointMass {
     mass: f64,
     position: Vector2,
@@ -94,7 +94,7 @@ pub struct Vector2 {
     y: f64,
 }
 
-#[spacetimedb::table(name = person_info)]
+#[spacetimedb::table(accessor = person_info)]
 pub struct PersonInfo {
     #[primary_key]
     id: u64,
@@ -118,7 +118,7 @@ const MODULE_CODE_UPDATED: &str = r#"
 use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
 use PersonKind::*;
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
     kind: PersonKind,
@@ -138,7 +138,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     }
 }
 
-#[spacetimedb::table(name = point_mass)]
+#[spacetimedb::table(accessor = point_mass)]
 pub struct PointMass {
     mass: f64,
     position: Vector2,
@@ -150,7 +150,7 @@ pub struct Vector2 {
     y: f64,
 }
 
-#[spacetimedb::table(name = person_info)]
+#[spacetimedb::table(accessor = person_info)]
 pub struct PersonInfo {
     #[primary_key]
     #[auto_inc]
@@ -178,7 +178,7 @@ fn kind_to_string(kind: PersonKind) -> &'static str {
     }
 }
 
-#[spacetimedb::table(name = book, public)]
+#[spacetimedb::table(accessor = book, public)]
 pub struct Book {
     isbn: String,
 }
@@ -278,7 +278,7 @@ const MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED: &str = r#"
 use spacetimedb::{log, ReducerContext, Table};
 
 #[derive(Debug)]
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[index(btree)]
     name: String,
@@ -310,7 +310,7 @@ const MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED_AGAIN: &str = r#"
 use spacetimedb::{log, ReducerContext, Table};
 
 #[derive(Debug)]
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
     age: u16,

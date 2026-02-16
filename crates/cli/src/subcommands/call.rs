@@ -2,7 +2,7 @@ use crate::api::ClientApi;
 use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
-use crate::spacetime_config::{SpacetimeConfig, SpacetimeLocalConfig};
+use crate::spacetime_config::find_and_load_with_env;
 use crate::util::UNSTABLE_WARNING;
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
@@ -24,7 +24,7 @@ pub fn cli() -> clap::Command {
         ))
         .arg(
             Arg::new("database")
-                .help("The database name or identity to use to invoke the call. If not provided, will use database from spacetime.json/spacetime.local.json"),
+                .help("The database name or identity to use to invoke the call. If not provided, uses the database from spacetime.json"),
         )
         .arg(
             Arg::new("function_name")
@@ -52,6 +52,20 @@ async fn parse_req_with_database(
         auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
         database_identity: database_identity(&config, database_name, server).await?,
         database: database_name.to_string(),
+    })
+}
+
+/// Try to get the database name from spacetime.json config.
+fn database_from_config() -> Option<String> {
+    let loaded = find_and_load_with_env(None).ok()??;
+    let targets = loaded.config.collect_all_targets_with_inheritance();
+    // Use the first target's database field
+    targets.into_iter().next().and_then(|target| {
+        target
+            .fields
+            .get("database")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     })
 }
 
@@ -89,27 +103,13 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     // Get database name from args or config
     let database_name = if let Some(db) = args.get_one::<String>("database") {
         db.clone()
+    } else if let Some(db) = database_from_config() {
+        db
     } else {
-        // Try to load config and get database name
-        let current_dir = std::env::current_dir()?;
-        if let Some(project_root) = SpacetimeConfig::find_project_root(&current_dir) {
-            let spacetime_config = SpacetimeConfig::load(&project_root)?;
-            let spacetime_local_config = SpacetimeLocalConfig::load(&project_root)?;
-
-            if let Some(config) = &spacetime_config {
-                if let Some(db_name) = config.get_database(spacetime_local_config.as_ref()) {
-                    db_name.to_string()
-                } else {
-                    anyhow::bail!(
-                        "No database specified and no database found in spacetime.json or spacetime.local.json"
-                    )
-                }
-            } else {
-                anyhow::bail!("No database specified and no spacetime.json found in current directory or parents")
-            }
-        } else {
-            anyhow::bail!("No database specified and no spacetime project found in current directory or parents")
-        }
+        anyhow::bail!(
+            "No database specified. Provide a database name as a positional argument, \
+             or create a spacetime.json with a \"database\" field."
+        )
     };
 
     let conn = parse_req_with_database(config, args, &database_name).await?;

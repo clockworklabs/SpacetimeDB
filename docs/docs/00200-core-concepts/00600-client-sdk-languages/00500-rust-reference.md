@@ -43,7 +43,7 @@ Each SpacetimeDB client depends on some bindings specific to your module. Create
 mkdir -p src/module_bindings
 spacetime generate --lang rust \
     --out-dir src/module_bindings \
-    --project-path PATH-TO-MODULE-DIRECTORY
+    --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.

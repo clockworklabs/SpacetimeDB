@@ -14,6 +14,8 @@ import {
 const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
   None: __t.unit(),
   SnakeCase: __t.unit(),
+  CamelCase: __t.unit(),
+  PascalCase: __t.unit(),
 });
 
 export default CaseConversionPolicy;

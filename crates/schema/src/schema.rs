@@ -773,10 +773,10 @@ impl TableSchema {
     ///     b: u32,
     /// }
     ///
-    /// #[view(name = my_view, public)]
+    /// #[view(accessor = my_view, public)]
     /// fn my_view(ctx: &ViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     ///
-    /// #[view(name = my_anonymous_view, public)]
+    /// #[view(accessor = my_anonymous_view, public)]
     /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     /// ```
     ///

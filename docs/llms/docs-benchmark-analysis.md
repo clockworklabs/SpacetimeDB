@@ -19,7 +19,7 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
    ```rust
    use spacetimedb::{table, reducer, ReducerContext, Table, ScheduleAt};
 
-   #[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
+   #[table(accessor = tick_timer, schedule(reducer = tick, column = scheduled_at))]
    pub struct TickTimer {
        #[primary_key]
        #[auto_inc]
@@ -47,7 +47,7 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
    use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
    use std::time::Duration;
 
-   #[table(name = tick_timer, scheduled(tick))]
+   #[table(accessor = tick_timer, scheduled(tick))]
    pub struct TickTimer {
        #[primary_key]
        #[auto_inc]
@@ -96,7 +96,7 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
        height: i32,
    }
 
-   #[table(name = result)]
+   #[table(accessor = result)]
    pub struct ResultRow {
        #[primary_key]
        id: i32,
@@ -122,7 +122,7 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
        pub height: i32,
    }
 
-   #[table(name = result)]
+   #[table(accessor = result)]
    pub struct ResultRow {
        #[primary_key]
        pub id: i32,

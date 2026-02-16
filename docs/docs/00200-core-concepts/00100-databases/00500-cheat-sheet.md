@@ -138,7 +138,7 @@ public enum Status
 use spacetimedb::{table, SpacetimeType};
 
 // Basic table
-#[table(name = player, public)]
+#[table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -150,7 +150,7 @@ pub struct Player {
 }
 
 // Multi-column index
-#[table(name = score, index(name = idx, btree(columns = [player_id, level])))]
+#[table(accessor = score, index(name = idx, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u64,
     level: u32,
@@ -428,7 +428,7 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[table(name = reminder, scheduled(send_reminder))]
+#[table(accessor = reminder, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
@@ -634,20 +634,20 @@ public static IQuery<Player> BottomPlayers(ViewContext ctx)
 use spacetimedb::{view, Query, ViewContext};
 
 // Return single row
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
 
-// Return potentially multiple rows
-#[view(name = top_players, public)]
+// Return multiple rows
+#[view(accessor = top_players, public)]
 fn top_players(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().score().filter(1000).collect()
 }
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-#[view(name = bottom_players, public)]
+#[view(accessor = bottom_players, public)]
 fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|p| p.score.lt(1000))
 }

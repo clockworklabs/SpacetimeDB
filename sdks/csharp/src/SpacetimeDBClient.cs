@@ -500,7 +500,7 @@ namespace SpacetimeDB
                         var reducerStatus = reducerResult.Result switch
                         {
                             ReducerOutcome.Ok => Committed,
-                            ReducerOutcome.Okmpty => Committed,
+                            ReducerOutcome.OkEmpty => Committed,
                             ReducerOutcome.Err(var err) => new Status.Failed(DecodeReducerError(err)),
                             ReducerOutcome.InternalError(var err) => new Status.Failed(err),
                             _ => new Status.Failed("Unknown reducer result"),

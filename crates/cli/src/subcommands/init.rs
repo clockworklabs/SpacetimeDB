@@ -1,4 +1,3 @@
-use crate::spacetime_config::{SpacetimeConfig, SpacetimeLocalConfig};
 use crate::Config;
 use crate::{detect::find_executable, util::UNSTABLE_WARNING};
 use anyhow::anyhow;
@@ -11,11 +10,12 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::{fmt, fs};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
+use crate::spacetime_config::PackageManager;
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 mod embedded {
@@ -346,26 +346,6 @@ fn run_pm(pm: PackageManager, args: &[&str], cwd: &Path) -> std::io::Result<std:
         .status()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PackageManager {
-    Npm,
-    Pnpm,
-    Yarn,
-    Bun,
-}
-
-impl fmt::Display for PackageManager {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            PackageManager::Npm => "npm",
-            PackageManager::Pnpm => "pnpm",
-            PackageManager::Yarn => "yarn",
-            PackageManager::Bun => "bun",
-        };
-        write!(f, "{s}")
-    }
-}
-
 pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageManager>> {
     println!(
         "\n{}",
@@ -491,6 +471,16 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
+    // Determine package manager for TypeScript projects
+    let uses_typescript = template_config.server_lang == Some(ServerLanguage::TypeScript)
+        || template_config.client_lang == Some(ClientLanguage::TypeScript);
+
+    let package_manager = if uses_typescript && is_interactive {
+        prompt_for_typescript_package_manager()?
+    } else {
+        None
+    };
+
     if template_config.server_lang == Some(ServerLanguage::TypeScript)
         && template_config.client_lang == Some(ClientLanguage::TypeScript)
     {
@@ -498,34 +488,28 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
         // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
-        let client_dir = template_config.project_path;
+        let client_dir = &template_config.project_path;
         let server_dir = client_dir.join("spacetimedb");
-        install_typescript_dependencies(&server_dir, pm)?;
-        install_typescript_dependencies(&client_dir, pm)?;
+        install_typescript_dependencies(&server_dir, package_manager)?;
+        install_typescript_dependencies(client_dir, package_manager)?;
     } else if template_config.client_lang == Some(ClientLanguage::TypeScript) {
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
-        let client_dir = template_config.project_path;
-        install_typescript_dependencies(&client_dir, pm)?;
+        let client_dir = &template_config.project_path;
+        install_typescript_dependencies(client_dir, package_manager)?;
     } else if template_config.server_lang == Some(ServerLanguage::TypeScript) {
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
         // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         let server_dir = template_config.project_path.join("spacetimedb");
-        install_typescript_dependencies(&server_dir, pm)?;
+        install_typescript_dependencies(&server_dir, package_manager)?;
+    }
+
+    // Configure client dev command if a client is present
+    if !is_server_only {
+        let client_lang_str = template_config.client_lang.as_ref().map(|l| l.as_str());
+        if let Some(path) = crate::spacetime_config::setup_for_project(&project_path, client_lang_str, package_manager)?
+        {
+            println!("{} Created {}", "✓".green(), path.display());
+        }
     }
 
     Ok(project_path)
@@ -1142,9 +1126,6 @@ pub async fn init_from_template(
         TemplateType::Empty => init_empty(config, project_path)?,
     }
 
-    // Create spacetime.json config file
-    create_spacetime_config(config, project_path, is_server_only)?;
-
     // Install AI assistant rules for multiple editors/tools
     install_ai_rules(config, project_path)?;
 
@@ -1308,46 +1289,6 @@ fn init_empty_cpp_server(server_dir: &Path, _project_name: &str) -> anyhow::Resu
     init_cpp_project(server_dir)
 }
 
-fn create_spacetime_config(config: &TemplateConfig, project_path: &Path, _is_server_only: bool) -> anyhow::Result<()> {
-    // Don't create config if it already exists (from template)
-    if project_path.join("spacetime.json").exists() {
-        return Ok(());
-    }
-
-    // Determine run command based on client language
-    let run_command = match (config.client_lang, config.server_lang) {
-        (Some(ClientLanguage::TypeScript), _) => "npm run dev",
-        (Some(ClientLanguage::Rust), _) => "cargo run",
-        (Some(ClientLanguage::Csharp), _) => "dotnet run",
-        (None, Some(ServerLanguage::TypeScript)) => "npm run dev",
-        (None, Some(ServerLanguage::Rust)) => "cargo run",
-        (None, Some(ServerLanguage::Csharp)) => "dotnet run",
-        _ => "npm run dev",
-    };
-
-    // Determine language for config
-    let lang = config.client_lang.or_else(|| {
-        config.server_lang.map(|server_lang| match server_lang {
-            ServerLanguage::Rust => ClientLanguage::Rust,
-            ServerLanguage::Csharp => ClientLanguage::Csharp,
-            ServerLanguage::TypeScript => ClientLanguage::TypeScript,
-            ServerLanguage::Cpp => ClientLanguage::Rust, // Default to Rust for C++
-        })
-    });
-
-    // Create spacetime.json
-    let spacetime_config =
-        SpacetimeConfig::new_with_dev_run(run_command.to_string(), lang.map(|l| l.as_str().to_string()));
-    spacetime_config.save(project_path)?;
-
-    // Create spacetime.local.json with database name
-    let local_config = SpacetimeLocalConfig::new_with_database(config.project_name.clone());
-    local_config.save(project_path)?;
-
-    println!("✅ Created spacetime.json and spacetime.local.json");
-    Ok(())
-}
-
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
     println!();
     println!("{}", "Next steps:".bold());
@@ -1364,41 +1305,41 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
     match (config.template_type, config.server_lang, config.client_lang) {
         (TemplateType::Builtin, Some(ServerLanguage::Rust), Some(ClientLanguage::Rust)) => {
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             println!("  cargo run");
         }
         (TemplateType::Builtin, Some(ServerLanguage::TypeScript), Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb");
             println!("  npm run dev");
         }
         (TemplateType::Builtin, Some(ServerLanguage::Csharp), Some(ClientLanguage::Csharp)) => {
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang csharp --out-dir module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb");
         }
         (TemplateType::Empty, _, Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");
             if config.server_lang.is_some() {
                 println!(
-                    "  spacetime publish --project-path spacetimedb {}{}",
+                    "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
                 println!(
-                    "  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+                    "  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
                 );
             }
             println!("  npm run dev");
@@ -1406,11 +1347,11 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
         (TemplateType::Empty, _, Some(ClientLanguage::Rust)) => {
             if config.server_lang.is_some() {
                 println!(
-                    "  spacetime publish --project-path spacetimedb {}{}",
+                    "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
-                println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+                println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             }
             println!("  cargo run");
         }
