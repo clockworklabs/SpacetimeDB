@@ -363,27 +363,24 @@ pub async fn exec_ex(
             return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
         }
 
-        // Get output directory (either out_dir or uproject_dir)
+        // Get output directory: explicit out_dir/uproject_dir, or language-appropriate default
         let out_dir = command_config
             .get_one::<PathBuf>("out_dir")?
             .or_else(|| command_config.get_one::<PathBuf>("uproject_dir").ok().flatten())
-            .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
+            .unwrap_or_else(|| {
+                let default = match lang {
+                    Language::TypeScript => "src/module_bindings",
+                    Language::Rust => "src/module_bindings",
+                    Language::Csharp => "module_bindings",
+                    Language::UnrealCpp => "Source/Generated",
+                };
+                project_path.join(default)
+            });
 
         // Validate language-specific requirements
         match lang {
             Language::Rust | Language::Csharp | Language::TypeScript => {
-                // These languages require out_dir (not uproject_dir)
-                if command_config.get_one::<PathBuf>("out_dir")?.is_none() {
-                    return Err(anyhow::anyhow!(
-                        "--out-dir is required for --lang {}",
-                        match lang {
-                            Language::Rust => "rust",
-                            Language::Csharp => "csharp",
-                            Language::TypeScript => "typescript",
-                            _ => unreachable!(),
-                        }
-                    ));
-                }
+                // These languages use out_dir (validated above with default fallback)
             }
             Language::UnrealCpp => {
                 // UnrealCpp requires uproject_dir and module_name

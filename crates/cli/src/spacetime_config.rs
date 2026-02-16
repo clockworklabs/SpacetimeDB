@@ -847,14 +847,27 @@ impl SpacetimeConfig {
     }
 }
 
-/// Find the config directory by walking up from start_dir looking for spacetime.json.
+/// Find the config directory by walking up from start_dir looking for spacetime.json
+/// or spacetime.*.json files (e.g. spacetime.dev.json, spacetime.local.json).
 fn find_config_dir(start_dir: PathBuf) -> Option<PathBuf> {
     let mut current_dir = start_dir;
     loop {
-        let config_path = current_dir.join("spacetime.json");
-        if config_path.exists() {
+        // Check for spacetime.json
+        if current_dir.join("spacetime.json").exists() {
             return Some(current_dir);
         }
+
+        // Check for spacetime.*.json (e.g. spacetime.dev.json, spacetime.local.json)
+        if let Ok(entries) = std::fs::read_dir(&current_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("spacetime.") && name_str.ends_with(".json") {
+                    return Some(current_dir);
+                }
+            }
+        }
+
         if !current_dir.pop() {
             break;
         }
