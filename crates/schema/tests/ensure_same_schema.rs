@@ -100,7 +100,7 @@ fn ensure_same_schema_rust_csharp_benchmarks() {
 
 #[test]
 #[serial]
-fn test_all_schema_names() {
+fn test_case_converted_names() {
     let module_def: ModuleDef = get_normalized_schema("module-test");
 
     // println!("Types {:?}", module_def.types().collect::<Vec<_>>());
@@ -110,9 +110,10 @@ fn test_all_schema_names() {
     // Test Tables
     let table_names = [
         // Accessor is CamelCase in modules.
-        "test_a_table", 
+        "test_a_table",
         // Uses explicit canonical name
-        "Person"];
+        "Person",
+    ];
     for name in table_names {
         assert!(
             TableDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
@@ -122,8 +123,7 @@ fn test_all_schema_names() {
     }
 
     // Test Reducers
-    let reducer_names = [
-    ];
+    let reducer_names = [];
     for name in reducer_names {
         assert!(
             ReducerDef::lookup(&module_def, &ReducerName::for_test(name)).is_some(),
@@ -204,9 +204,7 @@ fn test_all_schema_names() {
     // }
 
     // Test Constraints
-    let constraint_names = [
-        "Person_id_key",
-    ];
+    let constraint_names = ["Person_id_key"];
     for constraint_name in constraint_names {
         assert!(
             ConstraintDef::lookup(&module_def, &RawIdentifier::new(constraint_name)).is_some(),
@@ -216,9 +214,7 @@ fn test_all_schema_names() {
     }
 
     // Test Sequences
-    let sequence_names = [
-        "Person_id_seq",
-    ];
+    let sequence_names = ["Person_id_seq"];
     for sequence_name in sequence_names {
         assert!(
             SequenceDef::lookup(&module_def, &RawIdentifier::new(sequence_name)).is_some(),
@@ -236,9 +232,7 @@ fn test_all_schema_names() {
     );
 
     // Test Columns (using composite key: table_name, column_name)
-    let column_names = [
-        ("Person", "id"),
-    ];
+    let column_names = [("Person", "id")];
     for (table_name, col_name) in column_names {
         assert!(
             ColumnDef::lookup(
@@ -269,5 +263,4 @@ fn test_all_schema_names() {
     //         view_name,
     //         col_name
     //     );
-    
 }

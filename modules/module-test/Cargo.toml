@@ -9,6 +9,10 @@ license-file = "LICENSE"
 test-add-column = []
 test-remove-table = []
 
+
+[lints.rust]
+non_snake_case = "allow"
+
 [lib]
 crate-type = ["cdylib"]
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
