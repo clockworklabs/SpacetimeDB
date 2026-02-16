@@ -324,7 +324,7 @@ impl ModuleValidatorV9<'_> {
             table_type,
             table_access,
             is_event: false, // V9 does not support event tables
-            accessor_name: identifier(raw_table_name)?,
+            accessor_name: name,
         })
     }
 
