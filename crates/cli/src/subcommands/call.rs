@@ -2,6 +2,7 @@ use crate::api::ClientApi;
 use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
+use crate::spacetime_config::{SpacetimeConfig, SpacetimeLocalConfig};
 use crate::util::UNSTABLE_WARNING;
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
@@ -13,7 +14,8 @@ use spacetimedb_lib::{Identity, ProductTypeElement};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef};
 use std::fmt::Write;
 
-use super::sql::parse_req;
+use crate::api::Connection;
+use crate::util::{database_identity, get_auth_header};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
@@ -22,8 +24,7 @@ pub fn cli() -> clap::Command {
         ))
         .arg(
             Arg::new("database")
-                .required(true)
-                .help("The database name or identity to use to invoke the call"),
+                .help("The database name or identity to use to invoke the call. If not provided, will use database from spacetime.json/spacetime.local.json"),
         )
         .arg(
             Arg::new("function_name")
@@ -35,6 +36,23 @@ pub fn cli() -> clap::Command {
         .arg(common_args::anonymous())
         .arg(common_args::yes())
         .after_help("Run `spacetime help call` for more detailed information.\n")
+}
+
+async fn parse_req_with_database(
+    mut config: Config,
+    args: &ArgMatches,
+    database_name: &str,
+) -> anyhow::Result<Connection> {
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
+    let anon_identity = args.get_flag("anon_identity");
+
+    Ok(Connection {
+        host: config.get_host_url(server)?,
+        auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
+        database_identity: database_identity(&config, database_name, server).await?,
+        database: database_name.to_string(),
+    })
 }
 
 enum CallDef<'a> {
@@ -68,7 +86,33 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let reducer_procedure_name = args.get_one::<String>("function_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
 
-    let conn = parse_req(config, args).await?;
+    // Get database name from args or config
+    let database_name = if let Some(db) = args.get_one::<String>("database") {
+        db.clone()
+    } else {
+        // Try to load config and get database name
+        let current_dir = std::env::current_dir()?;
+        if let Some(project_root) = SpacetimeConfig::find_project_root(&current_dir) {
+            let spacetime_config = SpacetimeConfig::load(&project_root)?;
+            let spacetime_local_config = SpacetimeLocalConfig::load(&project_root)?;
+
+            if let Some(config) = &spacetime_config {
+                if let Some(db_name) = config.get_database(spacetime_local_config.as_ref()) {
+                    db_name.to_string()
+                } else {
+                    anyhow::bail!(
+                        "No database specified and no database found in spacetime.json or spacetime.local.json"
+                    )
+                }
+            } else {
+                anyhow::bail!("No database specified and no spacetime.json found in current directory or parents")
+            }
+        } else {
+            anyhow::bail!("No database specified and no spacetime project found in current directory or parents")
+        }
+    };
+
+    let conn = parse_req_with_database(config, args, &database_name).await?;
     let api = ClientApi::new(conn);
 
     let database_identity = api.con.database_identity;

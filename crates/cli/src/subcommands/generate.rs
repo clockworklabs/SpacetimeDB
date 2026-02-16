@@ -16,6 +16,7 @@ use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::spacetime_config::get_default_out_dir;
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
@@ -72,10 +73,7 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("out-dir")
                 .short('o')
-                .help("The system path (absolute or relative) to the generate output directory")
-                .required_if_eq("lang", "rust")
-                .required_if_eq("lang", "csharp")
-                .required_if_eq("lang", "typescript"),
+                .help("The system path (absolute or relative) to the generate output directory. If not specified, will use language-appropriate default."),
         )
         .arg(
             Arg::new("uproject_dir")
@@ -120,6 +118,11 @@ pub fn cli() -> clap::Command {
                 .help("Include private tables and functions in generated code (types are always included)."),
         )
         .arg(common_args::yes())
+        .arg(
+            Arg::new("env")
+                .long("env")
+                .help("Environment for configuration (defaults to 'dev')"),
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
         .group(
             clap::ArgGroup::new("output_dir")
@@ -153,10 +156,17 @@ pub async fn exec_ex(
         return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
     }
 
-    let out_dir = args
+    // Determine output directory
+    let out_dir = if let Some(dir) = args
         .get_one::<PathBuf>("out_dir")
         .or_else(|| args.get_one::<PathBuf>("uproject_dir"))
-        .unwrap();
+    {
+        dir.clone()
+    } else {
+        // If no out-dir specified, try to use default based on language
+        let default_out_dir = get_default_out_dir(&lang);
+        project_path.join(default_out_dir)
+    };
 
     let module: ModuleDef = if let Some(mut json_module) = json_module {
         let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = json_module.next() {
@@ -192,7 +202,7 @@ pub async fn exec_ex(
         options.visibility = CodegenVisibility::IncludePrivate;
     }
 
-    fs::create_dir_all(out_dir)?;
+    fs::create_dir_all(&out_dir)?;
 
     let mut paths = BTreeSet::new();
 
@@ -206,7 +216,7 @@ pub async fn exec_ex(
         Language::UnrealCpp => {
             unreal_cpp_lang = UnrealCpp {
                 module_name: module_name.as_ref().unwrap(),
-                uproject_dir: out_dir,
+                uproject_dir: &out_dir,
             };
             &unreal_cpp_lang as &dyn Lang
         }
@@ -277,7 +287,7 @@ pub async fn exec_ex(
         }
     }
 
-    if let Err(err) = lang.format_files(out_dir, paths) {
+    if let Err(err) = lang.format_files(&out_dir, paths) {
         // If we couldn't format the files, print a warning but don't fail the entire
         // task as the output should still be usable, just less pretty.
         eprintln!("Could not format generated files: {err}");

@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
 use crate::config::Config;
+use crate::spacetime_config::{SpacetimeConfig, SpacetimeLocalConfig};
 use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
@@ -18,8 +19,7 @@ pub fn cli() -> clap::Command {
         .about(format!("Runs a SQL query on the database. {UNSTABLE_WARNING}"))
         .arg(
             Arg::new("database")
-                .required(true)
-                .help("The name or identity of the database you would like to query"),
+                .help("The name or identity of the database you would like to query. If not provided, will use database from spacetime.json/spacetime.local.json"),
         )
         .arg(
             Arg::new("query")
@@ -44,13 +44,38 @@ pub fn cli() -> clap::Command {
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
-    let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
+
+    // Get database name from args or config
+    let database_name_or_identity = if let Some(db) = args.get_one::<String>("database") {
+        db.clone()
+    } else {
+        // Try to load config and get database name
+        let current_dir = std::env::current_dir()?;
+        if let Some(project_root) = SpacetimeConfig::find_project_root(&current_dir) {
+            let spacetime_config = SpacetimeConfig::load(&project_root)?;
+            let spacetime_local_config = SpacetimeLocalConfig::load(&project_root)?;
+
+            if let Some(config) = &spacetime_config {
+                if let Some(db_name) = config.get_database(spacetime_local_config.as_ref()) {
+                    db_name.to_string()
+                } else {
+                    anyhow::bail!(
+                        "No database specified and no database found in spacetime.json or spacetime.local.json"
+                    )
+                }
+            } else {
+                anyhow::bail!("No database specified and no spacetime.json found in current directory or parents")
+            }
+        } else {
+            anyhow::bail!("No database specified and no spacetime project found in current directory or parents")
+        }
+    };
 
     Ok(Connection {
         host: config.get_host_url(server)?,
         auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
-        database_identity: database_identity(&config, database_name_or_identity, server).await?,
+        database_identity: database_identity(&config, &database_name_or_identity, server).await?,
         database: database_name_or_identity.to_string(),
     })
 }

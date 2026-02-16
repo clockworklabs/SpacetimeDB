@@ -1,3 +1,4 @@
+use crate::spacetime_config::{SpacetimeConfig, SpacetimeLocalConfig};
 use crate::Config;
 use crate::{detect::find_executable, util::UNSTABLE_WARNING};
 use anyhow::anyhow;
@@ -1141,6 +1142,9 @@ pub async fn init_from_template(
         TemplateType::Empty => init_empty(config, project_path)?,
     }
 
+    // Create spacetime.json config file
+    create_spacetime_config(config, project_path, is_server_only)?;
+
     // Install AI assistant rules for multiple editors/tools
     install_ai_rules(config, project_path)?;
 
@@ -1302,6 +1306,46 @@ fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow
 
 fn init_empty_cpp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
     init_cpp_project(server_dir)
+}
+
+fn create_spacetime_config(config: &TemplateConfig, project_path: &Path, _is_server_only: bool) -> anyhow::Result<()> {
+    // Don't create config if it already exists (from template)
+    if project_path.join("spacetime.json").exists() {
+        return Ok(());
+    }
+
+    // Determine run command based on client language
+    let run_command = match (config.client_lang, config.server_lang) {
+        (Some(ClientLanguage::TypeScript), _) => "npm run dev",
+        (Some(ClientLanguage::Rust), _) => "cargo run",
+        (Some(ClientLanguage::Csharp), _) => "dotnet run",
+        (None, Some(ServerLanguage::TypeScript)) => "npm run dev",
+        (None, Some(ServerLanguage::Rust)) => "cargo run",
+        (None, Some(ServerLanguage::Csharp)) => "dotnet run",
+        _ => "npm run dev",
+    };
+
+    // Determine language for config
+    let lang = config.client_lang.or_else(|| {
+        config.server_lang.map(|server_lang| match server_lang {
+            ServerLanguage::Rust => ClientLanguage::Rust,
+            ServerLanguage::Csharp => ClientLanguage::Csharp,
+            ServerLanguage::TypeScript => ClientLanguage::TypeScript,
+            ServerLanguage::Cpp => ClientLanguage::Rust, // Default to Rust for C++
+        })
+    });
+
+    // Create spacetime.json
+    let spacetime_config =
+        SpacetimeConfig::new_with_dev_run(run_command.to_string(), lang.map(|l| l.as_str().to_string()));
+    spacetime_config.save(project_path)?;
+
+    // Create spacetime.local.json with database name
+    let local_config = SpacetimeLocalConfig::new_with_database(config.project_name.clone());
+    local_config.save(project_path)?;
+
+    println!("✅ Created spacetime.json and spacetime.local.json");
+    Ok(())
 }
 
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {

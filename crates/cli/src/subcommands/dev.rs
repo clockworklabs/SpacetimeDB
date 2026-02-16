@@ -1,6 +1,7 @@
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
+use crate::spacetime_config::{discover_project_language, get_default_out_dir, SpacetimeConfig, SpacetimeLocalConfig};
 use crate::subcommands::init;
 use crate::util::{
     add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
@@ -86,6 +87,12 @@ pub fn cli() -> Command {
                 .value_name("TEMPLATE")
                 .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
         )
+        .arg(
+            Arg::new("env")
+                .long("env")
+                .value_name("ENV")
+                .help("Environment for configuration (defaults to 'dev')"),
+        )
 }
 
 #[derive(Deserialize)]
@@ -109,6 +116,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .copied()
         .unwrap_or(ClearMode::OnConflict);
     let force = args.get_flag("force");
+    let env_arg = args.get_one::<String>("env");
+
+    // Try to find project root for config files
+    let project_root = SpacetimeConfig::find_project_root(project_path).unwrap_or_else(|| project_path.clone());
+
+    // Load spacetime config files
+    let mut spacetime_config = SpacetimeConfig::load(&project_root)?.unwrap_or_default();
+    let mut spacetime_local_config = SpacetimeLocalConfig::load(&project_root)?;
 
     // If you don't specify a server, we default to your default server
     // If you don't have one of those, we default to "maincloud"
@@ -132,8 +147,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     let mut spacetimedb_dir = project_dir.join(spacetimedb_project_path);
 
-    // Check if we are in a SpacetimeDB project directory
-    if !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir() {
+    // Check if we are in a SpacetimeDB project directory or if spacetime config exists
+    let needs_init = !spacetimedb_dir.exists() && spacetime_config.dev.is_none();
+
+    if needs_init {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
             .with_prompt("Would you like to initialize a new project?")
@@ -171,6 +188,28 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             "{}",
             "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
         );
+    }
+
+    // Handle case where dev config exists but no module path is specified
+    if spacetime_config.dev.is_some() && spacetime_config.dev.as_ref().unwrap().module_path.is_none() {
+        if !spacetimedb_dir.exists() {
+            println!("{}", "SpacetimeDB module directory not found.".yellow());
+            let module_path = dialoguer::Input::<String>::new()
+                .with_prompt("Enter the path to your SpacetimeDB module directory")
+                .default("spacetimedb".to_string())
+                .interact()?;
+
+            spacetimedb_dir = project_dir.join(&module_path);
+            if !spacetimedb_dir.exists() {
+                anyhow::bail!("Module directory does not exist: {}", spacetimedb_dir.display());
+            }
+
+            // Save the module path to config
+            if let Some(dev) = &mut spacetime_config.dev {
+                dev.module_path = Some(module_path);
+            }
+            spacetime_config.save(&project_root)?;
+        }
     }
 
     if !module_bindings_dir.exists() {
@@ -213,7 +252,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     let use_local = resolved_server == "local";
 
-    // Check positional argument first, then deprecated --database flag
+    // Get database name - prefer command line arg, then config file, then prompt/generate
     let database_name = if let Some(name) = args
         .get_one::<String>("database")
         .or_else(|| args.get_one::<String>("database-flag"))
@@ -226,11 +265,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             );
         }
         name.clone()
+    } else if let Some(config_db) = spacetime_config.get_database(spacetime_local_config.as_ref()) {
+        config_db.to_string()
     } else {
         println!("\n{}", "Found existing SpacetimeDB project.".green());
         println!("Now we need to select a database to publish to.\n");
 
-        if use_local {
+        let db_name = if use_local {
             generate_database_name()
         } else {
             // If not logged in before, but login was successful just now, this will have the token
@@ -247,8 +288,40 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             } else {
                 select_database(&config, resolved_server, &token).await?
             }
+        };
+
+        // Save database name to local config
+        if spacetime_local_config.is_none() {
+            spacetime_local_config = Some(SpacetimeLocalConfig::new_with_database(db_name.clone()));
+            spacetime_local_config.as_ref().unwrap().save(&project_root)?;
+        } else if let Some(local) = &mut spacetime_local_config {
+            local.database = Some(db_name.clone());
+            local.save(&project_root)?;
         }
+
+        db_name
     };
+
+    // Create or update spacetime.json if needed
+    let needs_config_update = spacetime_config.dev.is_none();
+    if needs_config_update {
+        // Try to detect language
+        let detected_lang = discover_project_language(&project_dir)?;
+        spacetime_config = SpacetimeConfig::new_with_dev_run(
+            "npm run dev".to_string(), // Default run command
+            detected_lang.map(|l| match l {
+                Language::Rust => "rust".to_string(),
+                Language::Csharp => "csharp".to_string(),
+                Language::TypeScript => "typescript".to_string(),
+                Language::UnrealCpp => "unrealcpp".to_string(),
+            }),
+        );
+
+        // Set environment from arg or default to "dev"
+        spacetime_config.env = Some(env_arg.cloned().unwrap_or_else(|| "dev".to_string()));
+
+        spacetime_config.save(&project_root)?;
+    }
 
     if args.get_one::<String>("database").is_none() && args.get_one::<String>("database-flag").is_none() {
         println!("\n{} {}", "Selected database:".green().bold(), database_name.cyan());
@@ -268,6 +341,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     println!("{}", "Press Ctrl+C to stop".dimmed());
     println!();
 
+    // Get environment for forwarding
+    let env = env_arg
+        .cloned()
+        .or_else(|| {
+            spacetime_config
+                .get_env(spacetime_local_config.as_ref())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "dev".to_string());
+
     generate_build_and_publish(
         &config,
         &project_dir,
@@ -278,6 +361,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         resolved_server,
         clear_database,
         force,
+        &env,
+        &spacetime_config,
+        spacetime_local_config.as_ref(),
     )
     .await?;
 
@@ -328,6 +414,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 resolved_server,
                 clear_database,
                 force,
+                &env,
+                &spacetime_config,
+                spacetime_local_config.as_ref(),
             )
             .await
             {
@@ -397,14 +486,51 @@ async fn generate_build_and_publish(
     server: &str,
     clear_database: ClearMode,
     yes: bool,
+    env: &str,
+    spacetime_config: &SpacetimeConfig,
+    _spacetime_local_config: Option<&SpacetimeLocalConfig>,
 ) -> Result<(), anyhow::Error> {
     let module_language = detect_module_language(spacetimedb_dir)?;
-    let client_language = client_language.unwrap_or(match module_language {
-        crate::util::ModuleLanguage::Rust => &Language::Rust,
-        crate::util::ModuleLanguage::Csharp => &Language::Csharp,
-        crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
-        crate::util::ModuleLanguage::Cpp => &Language::Rust,
-    });
+
+    // Determine client language - use arg, then config, then detection
+    let client_language = if let Some(lang) = client_language {
+        lang
+    } else if let Some(lang_str) = &spacetime_config.lang {
+        match lang_str.as_str() {
+            "rust" => &Language::Rust,
+            "csharp" => &Language::Csharp,
+            "typescript" => &Language::TypeScript,
+            "unrealcpp" => &Language::UnrealCpp,
+            _ => {
+                // Fall back to detection if config has invalid language
+                &match module_language {
+                    crate::util::ModuleLanguage::Rust => Language::Rust,
+                    crate::util::ModuleLanguage::Csharp => Language::Csharp,
+                    crate::util::ModuleLanguage::Javascript => Language::TypeScript,
+                    crate::util::ModuleLanguage::Cpp => Language::Rust,
+                }
+            }
+        }
+    } else {
+        &match module_language {
+            crate::util::ModuleLanguage::Rust => Language::Rust,
+            crate::util::ModuleLanguage::Csharp => Language::Csharp,
+            crate::util::ModuleLanguage::Javascript => Language::TypeScript,
+            crate::util::ModuleLanguage::Cpp => Language::Rust,
+        }
+    };
+
+    // Determine output directory - use config if available, otherwise use module_bindings_dir
+    let out_dir = if let Some(dev) = &spacetime_config.dev {
+        if let Some(configured_out_dir) = &dev.out_dir {
+            project_dir.join(configured_out_dir)
+        } else {
+            module_bindings_dir.to_path_buf()
+        }
+    } else {
+        // Use default for language if no config
+        project_dir.join(get_default_out_dir(client_language))
+    };
     let client_language_str = match client_language {
         Language::Rust => "rust",
         Language::Csharp => "csharp",
@@ -437,7 +563,9 @@ async fn generate_build_and_publish(
         "--project-path",
         spacetimedb_dir.to_str().unwrap(),
         "--out-dir",
-        module_bindings_dir.to_str().unwrap(),
+        out_dir.to_str().unwrap(),
+        "--env",
+        env,
     ];
     if yes {
         generate_argv.push("--yes");
@@ -459,9 +587,14 @@ async fn generate_build_and_publish(
         database_name.to_string(),
         "--project-path".to_string(),
         project_path_str.to_string(),
-        "--yes".to_string(),
         format!("--delete-data={}", clear_flag),
     ];
+
+    // Forward --yes flag
+    if yes {
+        publish_args.push("--yes".to_string());
+    }
+
     publish_args.extend_from_slice(&["--server".to_string(), server.to_string()]);
 
     let publish_cmd = publish::cli();
