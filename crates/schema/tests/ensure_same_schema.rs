@@ -103,27 +103,25 @@ fn ensure_same_schema_rust_csharp_benchmarks() {
 fn test_case_converted_names() {
     let module_def: ModuleDef = get_normalized_schema("module-test");
 
-    // println!("Types {:?}", module_def.types().collect::<Vec<_>>());
+    //  println!("Types {:?}", module_def.lookup::<TableDef>::(Identifier::for_test("person")).unwrap().columns().collect::<Vec<_>>());
 
     // println!("Types space {:?}", module_def.typespace());
 
     // Test Tables
     let table_names = [
-        // Accessor is CamelCase in modules.
-        "test_a_table",
-        // Uses explicit canonical name
-        "Person",
+        // canonical name, accessor name
+        ("test_a", "TestATable"),
     ];
-    for name in table_names {
-        assert!(
-            TableDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
-            "Table '{}' not found",
-            name
-        );
+    for (name, accessor) in table_names {
+        let def = TableDef::lookup(&module_def, &Identifier::for_test(name));
+
+        assert!(def.is_some(), "Table '{}' not found", name);
+
+        assert_eq!(&*def.unwrap().accessor_name, &*accessor, "Table '{}' not found", name);
     }
 
     // Test Reducers
-    let reducer_names = [];
+    let reducer_names = ["list_over_age", "repeating_test"];
     for name in reducer_names {
         assert!(
             ReducerDef::lookup(&module_def, &ReducerName::for_test(name)).is_some(),
@@ -133,7 +131,7 @@ fn test_case_converted_names() {
     }
 
     // Test Procedures
-    let procedure_names = ["get_my_schema_via_http"];
+    let procedure_names = ["get_my_test_via_http"];
     for name in procedure_names {
         assert!(
             ProcedureDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
@@ -142,49 +140,34 @@ fn test_case_converted_names() {
         );
     }
 
-    // Test Views
-    // let view_names = ["my_player"];
-    // for name in view_names {
-    //     assert!(
-    //         ViewDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
-    //         "View '{}' not found",
-    //         name
-    //     );
-    // }
+    //  Test Views
+    let view_names = ["my_player"];
+    for name in view_names {
+        assert!(
+            ViewDef::lookup(&module_def, &Identifier::for_test(name)).is_some(),
+            "View '{}' not found",
+            name
+        );
+    }
 
     // Test Types
-    //    let type_names = [
-    //        "PkMultiIdentity",
-    //        "PrivateTable",
-    //        "Baz",
-    //        "TestA",
-    //        "TestFoobar",
-    //        "TestE",
-    //        "RemoveTable",
-    //        "Foobar",
-    //        "Player",
-    //        "RepeatingTestArg",
-    //        "Person",
-    //        "Point",
-    //        "TestB",
-    //        "HasSpecialStuff",
-    //        "TestD",
-    //        "Namespace::TestF",
-    //        "Namespace::TestC",
-    //    ];
-    //    for name in type_names {
-    //        assert!(
-    //            TypeDef::lookup(&module_def, &ScopedTypeName::new(name)).is_some(),
-    //            "Type '{}' not found",
-    //            name
-    //        );
-    //    }
-    //
+    let type_names = [
+        // types are Pascal case
+        "TestB", "Person",
+    ];
+    for name in type_names {
+        assert!(
+            TypeDef::lookup(&module_def, &ScopedTypeName::new([].into(), Identifier::for_test(name))).is_some(),
+            "Type '{}' not found",
+            name
+        );
+    }
+
     // Test Indexes (using lookup via stored_in_table_def)
     let index_names = [
-        "Person_age_idx_btree",
-        "Person_id_idx_btree",
-        "test_a_table_x_idx_btree",
+        // index name should be generated from canonical name
+        "test_a_x_idx_btree",
+        "person_id_idx_btree",
     ];
     for index_name in index_names {
         assert!(
@@ -194,17 +177,8 @@ fn test_case_converted_names() {
         );
     }
 
-    let index_names_and_alias = [("person_age_idx_btree", "P")];
-    // for (index_name, alias) in index_names {
-    //     assert!(
-    //         &IndexDef::lookup(&module_def, &RawIdentifier::new(index_name)).expect("index exists").accessor_name,
-    //         "Index '{}' not found",
-    //         alias
-    //     );
-    // }
-
     // Test Constraints
-    let constraint_names = ["Person_id_key"];
+    let constraint_names = ["person_id_key"];
     for constraint_name in constraint_names {
         assert!(
             ConstraintDef::lookup(&module_def, &RawIdentifier::new(constraint_name)).is_some(),
@@ -214,7 +188,7 @@ fn test_case_converted_names() {
     }
 
     // Test Sequences
-    let sequence_names = ["Person_id_seq"];
+    let sequence_names = ["person_id_seq"];
     for sequence_name in sequence_names {
         assert!(
             SequenceDef::lookup(&module_def, &RawIdentifier::new(sequence_name)).is_some(),
@@ -232,7 +206,8 @@ fn test_case_converted_names() {
     );
 
     // Test Columns (using composite key: table_name, column_name)
-    let column_names = [("Person", "id")];
+    // Id has bigger case in accessor
+    let column_names = [("person", "id")];
     for (table_name, col_name) in column_names {
         assert!(
             ColumnDef::lookup(
@@ -245,22 +220,4 @@ fn test_case_converted_names() {
             col_name
         );
     }
-
-    // Test View Columns
-    // let view_column_names = [
-    //     ("my_player", "identity"),
-    //     ("my_player", "player_id"),
-    //     ("my_player", "name"),
-    // ];
-    // for (view_name, col_name) in view_column_names {
-    //     assert!(
-    //         ViewColumnDef::lookup(
-    //             &module_def,
-    //             (&Identifier::for_test(view_name), &Identifier::for_test(col_name))
-    //         )
-    //         .is_some(),
-    //         "View column '{}.{}' not found",
-    //         view_name,
-    //         col_name
-    //     );
 }

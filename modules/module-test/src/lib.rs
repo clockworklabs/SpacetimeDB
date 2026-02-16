@@ -27,7 +27,7 @@ pub struct Person {
 }
 
 #[cfg(not(feature = "test-add-column"))]
-#[spacetimedb::table(accessor = person, name="Person", public, index(accessor = age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = person, public, index(accessor = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -42,7 +42,7 @@ pub struct RemoveTable {
     pub id: u32,
 }
 
-#[spacetimedb::table(accessor = TestATable, index(accessor = foo, btree(columns = [x])))]
+#[spacetimedb::table(accessor = TestATable, name="test_a", index(accessor = foo, btree(columns = [x])))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
@@ -50,7 +50,8 @@ pub struct TestA {
 }
 
 #[derive(SpacetimeType)]
-pub struct TestB {
+#[allow(non_camel_case_types)]
+pub struct Test_b {
     foo: String,
 }
 
@@ -204,7 +205,7 @@ impl Foo<'_> {
 // VIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[spacetimedb::view(accessor = myOwnPlayer, public)]
+#[spacetimedb::view(accessor = myPlayer, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
@@ -253,7 +254,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
-pub fn list_over_age(ctx: &ReducerContext, age: u8) {
+pub fn listOverAge(ctx: &ReducerContext, age: u8) {
     for person in ctx.db.person().age().filter(age..) {
         log::info!("{} has age {} >= {}", person.name, person.age, age);
     }
@@ -265,7 +266,7 @@ fn log_module_identity(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
-pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
+pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: Test_b, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender());
     log::info!("timestamp: {:?}", ctx.timestamp);
@@ -502,8 +503,8 @@ fn with_tx(ctx: &mut ProcedureContext) {
 /// Hit SpacetimeDB's schema HTTP route and return its result as a string.
 ///
 /// This is a silly thing to do, but an effective test of the procedure HTTP API.
-#[spacetimedb::procedure]
-fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
+#[spacetimedb::procedure(name = "get_my_test_via_http")]
+fn getMyTestViaHttp(ctx: &mut ProcedureContext) -> String {
     let module_identity = ctx.identity();
     match ctx.http.get(format!(
         "http://localhost:3000/v1/database/{module_identity}/schema?version=9"

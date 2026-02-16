@@ -22,7 +22,7 @@ type TestAlias = TestA;
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Rust: #[derive(SpacetimeType)] pub struct TestB { foo: String }
-const testB = t.object('TestB', {
+const testB = t.object('testB', {
   foo: t.string(),
 });
 type TestB = Infer<typeof testB>;
@@ -151,7 +151,6 @@ const spacetimedb = schema({
   // person (public) with btree index on age
   person: table(
     {
-      name: 'Person',
       public: true,
       indexes: [{ name: 'age', algorithm: 'btree', columns: ['age'] }],
     },
@@ -161,6 +160,7 @@ const spacetimedb = schema({
   // test_a with index foo on x
   testATable: table(
     {
+      name: "test_a",
       indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
     },
     testA
@@ -207,7 +207,7 @@ const spacetimedb = schema({
   repeatingTestArg: table(
     {
       name: 'repeating_test_arg',
-      scheduled: (): any => repeating_test,
+      scheduled: (): any => repeatingTest
     },
     repeatingTestArg
   ),
@@ -229,8 +229,8 @@ export default spacetimedb;
 // VIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const my_player = spacetimedb.view(
-  { name: 'my_player', public: true },
+export const myPlayer = spacetimedb.view(
+  { public: true },
   playerLikeRow.optional(),
   // FIXME: this should not be necessary; change `OptionBuilder` to accept `null|undefined` for `none`
   ctx => ctx.db.player.identity.find(ctx.sender) ?? undefined
@@ -250,7 +250,7 @@ export const init = spacetimedb.init(ctx => {
 });
 
 // repeating_test
-export const repeating_test = spacetimedb.reducer(
+export const repeatingTest = spacetimedb.reducer(
   { arg: repeatingTestArg },
   (ctx, { arg }) => {
     const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
@@ -275,7 +275,7 @@ export const say_hello = spacetimedb.reducer(ctx => {
 });
 
 // list_over_age(age)
-export const list_over_age = spacetimedb.reducer(
+export const listOverAge = spacetimedb.reducer(
   { age: t.u8() },
   (ctx, { age }) => {
     // Prefer an index-based scan if exposed by bindings; otherwise iterate.
@@ -464,7 +464,7 @@ export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
 // Hit SpacetimeDB's schema HTTP route and return its result as a string.
 //
 // This is a silly thing to do, but an effective test of the procedure HTTP API.
-export const get_my_schema_via_http = spacetimedb.procedure(t.string(), ctx => {
+export const getMyTestViaHttp = spacetimedb.procedure(t.string(), ctx => {
   const module_identity = ctx.identity;
   try {
     const response = ctx.http.fetch(
