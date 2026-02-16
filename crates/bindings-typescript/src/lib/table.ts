@@ -117,6 +117,7 @@ export type UntypedTableDef = {
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
   tableDef: Infer<typeof RawTableDefV10>;
+  isEvent?: boolean;
 };
 
 /**
@@ -179,6 +180,7 @@ export type TableOpts<Row extends RowObj> = {
       { [k: string]: RowBuilder<RowObj> },
       ReturnType<typeof t.unit>
     >;
+  event?: boolean;
 };
 
 /**
@@ -301,6 +303,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     public: isPublic = false,
     indexes: userIndexes = [],
     scheduled,
+    event: isEvent = false,
   } = opts;
 
   // 1. column catalogue + helpers
@@ -479,7 +482,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         tableType: { tag: 'User' },
         tableAccess: { tag: isPublic ? 'Public' : 'Private' },
         defaultValues,
-        isEvent: false,
+        isEvent,
       };
     },
     idxs: {} as OptsIndices<Opts>,

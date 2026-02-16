@@ -128,6 +128,7 @@ pub trait TableInternal: Sized {
     const PRIMARY_KEY: Option<u16> = None;
     const SEQUENCES: &'static [u16];
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
+    const IS_EVENT: bool = false;
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;

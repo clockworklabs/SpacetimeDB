@@ -16,6 +16,8 @@ const string DBNAME = "btree-repro";
 const string THROW_ERROR_MESSAGE = "this is an error";
 const uint UPDATED_WHERE_TEST_VALUE = 42;
 const string UPDATED_WHERE_TEST_NAME = "this_name_was_updated";
+const string EXPECTED_TEST_EVENT_NAME = "hello";
+const ulong EXPECTED_TEST_EVENT_VALUE = 42;
 
 DbConnection ConnectToDB()
 {
@@ -51,6 +53,7 @@ DbConnection ConnectToDB()
 uint waiting = 0;
 var applied = false;
 SubscriptionHandle? handle = null;
+uint testEventInsertCount = 0;
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
 {
@@ -72,6 +75,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.NullStringNonnullable().Build())
         .AddQuery(qb => qb.From.NullStringNullable().Build())
         .AddQuery(qb => qb.From.MyLog().Build())
+        .AddQuery(qb => qb.From.TestEvent().Build())
         .AddQuery(qb => qb.From.Admins().Build())
         .AddQuery(qb => qb.From.NullableVecView().Build())
         .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)).Build())
@@ -225,6 +229,58 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 
         ValidateWhereSubscription(ctx, UPDATED_WHERE_TEST_NAME);
         ValidateWhereTestViews(ctx, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
+    };
+
+    conn.Db.TestEvent.OnInsert += (EventContext ctx, TestEvent row) =>
+    {
+        Log.Info($"Got TestEvent.OnInsert callback: {row.Name} / {row.Value}");
+        testEventInsertCount++;
+        Debug.Assert(
+            row.Name == EXPECTED_TEST_EVENT_NAME,
+            $"Expected TestEvent.Name == {EXPECTED_TEST_EVENT_NAME}, got {row.Name}"
+        );
+        Debug.Assert(
+            row.Value == EXPECTED_TEST_EVENT_VALUE,
+            $"Expected TestEvent.Value == {EXPECTED_TEST_EVENT_VALUE}, got {row.Value}"
+        );
+        Debug.Assert(
+            ctx.Db.TestEvent.Count == 0,
+            $"Event table should not persist rows. Count was {ctx.Db.TestEvent.Count}"
+        );
+        Debug.Assert(
+            !ctx.Db.TestEvent.Iter().Any(),
+            "Event table iterator should be empty after event delivery"
+        );
+    };
+
+    conn.Reducers.OnEmitTestEvent += (ReducerEventContext ctx, string name, ulong value) =>
+    {
+        Log.Info("Got EmitTestEvent callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"EmitTestEvent should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(name == EXPECTED_TEST_EVENT_NAME, $"Expected name={EXPECTED_TEST_EVENT_NAME}, got {name}");
+        Debug.Assert(value == EXPECTED_TEST_EVENT_VALUE, $"Expected value={EXPECTED_TEST_EVENT_VALUE}, got {value}");
+    };
+
+    conn.Reducers.OnNoop += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got Noop callback");
+        waiting--;
+        Debug.Assert(
+            testEventInsertCount == 1,
+            $"Expected exactly one TestEvent insert callback after noop, got {testEventInsertCount}"
+        );
+        Debug.Assert(
+            ctx.Db.TestEvent.Count == 0,
+            $"Event table should still be empty after noop. Count was {ctx.Db.TestEvent.Count}"
+        );
+        Debug.Assert(
+            !ctx.Db.TestEvent.Iter().Any(),
+            "Event table iterator should remain empty after noop"
+        );
     };
 }
 
@@ -647,6 +703,14 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling InsertNullStringIntoNullable");
     waiting++;
     context.Reducers.InsertNullStringIntoNullable();
+
+    Log.Debug("Calling EmitTestEvent");
+    waiting++;
+    context.Reducers.EmitTestEvent(EXPECTED_TEST_EVENT_NAME, EXPECTED_TEST_EVENT_VALUE);
+
+    Log.Debug("Calling Noop after EmitTestEvent");
+    waiting++;
+    context.Reducers.Noop();
 
     // Procedures tests
     Log.Debug("Calling ReadMySchemaViaHttp");

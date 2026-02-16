@@ -51,3 +51,5 @@ impl __sdk::__query_builder::HasIxCols for User {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for User {}

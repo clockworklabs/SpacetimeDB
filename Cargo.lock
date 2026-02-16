@@ -2079,6 +2079,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-table-client"
+version = "2.0.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3509,6 +3519,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25376d12b2f6ae53f986f86e2a808a56af03d72284ae24fc35a2e290d09ee3c3"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "json5"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96b0db21af676c1ce64250b5f40f3ce2cf27e4e47cb91ed91eb6fe9350b430c1"
+dependencies = [
+ "pest",
+ "pest_derive",
+ "serde",
 ]
 
 [[package]]
@@ -5123,6 +5144,49 @@ version = "0.1.0"
 dependencies = [
  "log",
  "spacetimedb 2.0.0",
+]
+
+[[package]]
+name = "pest"
+version = "2.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c9eb05c21a464ea704b53158d358a31e6425db2f63a1a7312268b05fe2b75f7"
+dependencies = [
+ "memchr",
+ "ucd-trie",
+]
+
+[[package]]
+name = "pest_derive"
+version = "2.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68f9dbced329c441fa79d80472764b1a2c7e57123553b8519b36663a2fb234ed"
+dependencies = [
+ "pest",
+ "pest_generator",
+]
+
+[[package]]
+name = "pest_generator"
+version = "2.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bb96d5051a78f44f43c8f712d8e810adb0ebf923fc9ed2655a7f66f63ba8ee5"
+dependencies = [
+ "pest",
+ "pest_meta",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.107",
+]
+
+[[package]]
+name = "pest_meta"
+version = "2.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "602113b5b5e8621770cfd490cfd90b9f84ab29bd2b0e49ad83eb6d186cef2365"
+dependencies = [
+ "pest",
+ "sha2",
 ]
 
 [[package]]
@@ -6871,6 +6935,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "sdk-test-event-table-module"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb 2.0.0",
+]
+
+[[package]]
 name = "sdk-test-module"
 version = "0.1.0"
 dependencies = [
@@ -7531,10 +7602,12 @@ dependencies = [
  "fs_extra",
  "futures",
  "git2",
+ "glob",
  "http 1.3.1",
  "indicatif",
  "is-terminal",
  "itertools 0.12.1",
+ "json5",
  "mimalloc",
  "names",
  "notify",
@@ -9747,6 +9820,12 @@ dependencies = [
  "log",
  "spacetimedb 2.0.0",
 ]
+
+[[package]]
+name = "ucd-trie"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
 
 [[package]]
 name = "unarray"

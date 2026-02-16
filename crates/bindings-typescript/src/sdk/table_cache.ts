@@ -261,6 +261,23 @@ export class TableCacheImpl<
     ctx: EventContextInterface<RemoteModule>
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
+
+    // Event tables: fire on_insert callbacks but don't store rows in the cache.
+    if (this.tableDef.isEvent) {
+      for (const op of operations) {
+        if (op.type === 'insert') {
+          pendingCallbacks.push({
+            type: 'insert',
+            table: this.tableDef.sourceName,
+            cb: () => {
+              this.emitter.emit('insert', ctx, op.row);
+            },
+          });
+        }
+      }
+      return pendingCallbacks;
+    }
+
     // TODO: performance
     const hasPrimaryKey = Object.values(this.tableDef.columns).some(
       col => col.columnMetadata.isPrimaryKey === true
