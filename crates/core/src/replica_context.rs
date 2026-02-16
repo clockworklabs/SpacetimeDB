@@ -18,7 +18,6 @@ pub struct ReplicaContext {
     pub replica_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
-    pub relational_db: Arc<RelationalDB>,
 }
 
 impl ReplicaContext {
@@ -26,7 +25,7 @@ impl ReplicaContext {
     ///
     /// An in-memory database will return `Ok(0)`.
     pub fn durability_size_on_disk(&self) -> io::Result<SizeOnDisk> {
-        self.relational_db.size_on_disk()
+        self.relational_db().size_on_disk()
     }
 
     /// The size of the log file.
@@ -66,13 +65,18 @@ impl ReplicaContext {
 
     /// The size in bytes of all of the in-memory data of the database.
     pub fn mem_usage(&self) -> usize {
-        self.relational_db.size_in_memory()
+        self.relational_db().size_in_memory()
     }
 
     /// Update data size stats.
     pub fn update_gauges(&self) {
-        self.relational_db.update_data_size_metrics();
+        self.relational_db().update_data_size_metrics();
         self.subscriptions.update_gauges();
+    }
+
+    /// Returns a reference to the relational database.
+    pub fn relational_db(&self) -> &Arc<RelationalDB> {
+        self.subscriptions.relational_db()
     }
 }
 

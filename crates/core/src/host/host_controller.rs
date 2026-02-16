@@ -375,7 +375,7 @@ impl HostController {
             on_panic();
         });
 
-        let db = module.replica_ctx().relational_db.clone();
+        let db = module.relational_db().clone();
         let result = module.on_module_thread_async("using_database", move || f(db)).await?;
         Ok(result)
     }
@@ -541,9 +541,8 @@ impl HostController {
 
             info!("replica={replica_id} database={database_identity} exiting module");
             module.exit().await;
-            let db = &module.replica_ctx().relational_db;
             info!("replica={replica_id} database={database_identity} exiting database");
-            db.shutdown().await;
+            module.relational_db().shutdown().await;
             info!("replica={replica_id} database={database_identity} module host exited");
         })
         .await;
@@ -672,8 +671,7 @@ async fn make_replica_ctx(
         send_worker_queue.clone(),
     )));
     let downgraded = Arc::downgrade(&subscriptions);
-    let subscriptions =
-        ModuleSubscriptions::new(relational_db.clone(), subscriptions, send_worker_queue, bsatn_rlb_pool);
+    let subscriptions = ModuleSubscriptions::new(relational_db, subscriptions, send_worker_queue, bsatn_rlb_pool);
 
     // If an error occurs when evaluating a subscription,
     // we mark each client that was affected,
@@ -694,7 +692,6 @@ async fn make_replica_ctx(
         replica_id,
         logger,
         subscriptions,
-        relational_db,
     })
 }
 
@@ -777,10 +774,10 @@ async fn launch_module(
     let db_identity = database.database_identity;
     let host_type = database.host_type;
 
-    let replica_ctx = make_replica_ctx(module_logs, database, replica_id, relational_db, bsatn_rlb_pool)
+    let replica_ctx = make_replica_ctx(module_logs, database, replica_id, relational_db.clone(), bsatn_rlb_pool)
         .await
         .map(Arc::new)?;
-    let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
+    let (scheduler, scheduler_starter) = Scheduler::open(relational_db);
     let (program, module_host) = make_module_host(
         runtimes.clone(),
         host_type,
@@ -998,7 +995,7 @@ impl Host {
 
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
-        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db.clone());
+        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone());
 
         let module = watch::Sender::new(module_host);
 
@@ -1088,7 +1085,7 @@ impl Host {
         core: AllocatedJobCore,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
-        let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
+        let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
 
         let (program, module) = make_module_host(
             runtimes,
@@ -1106,7 +1103,7 @@ impl Host {
         let old_module_info = self.module.borrow().info.clone();
 
         let update_result =
-            update_module(&replica_ctx.relational_db, &module, program, old_module_info, policy).await?;
+            update_module(replica_ctx.relational_db(), &module, program, old_module_info, policy).await?;
 
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
@@ -1124,7 +1121,7 @@ impl Host {
                 let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
 
                 // Disconnect all clients connected to the old module.
-                let connected_clients = replica_ctx.relational_db.connected_clients()?;
+                let connected_clients = replica_ctx.relational_db().connected_clients()?;
                 for (identity, connection_id) in connected_clients {
                     let client_actor_id = ClientActorId {
                         identity,
