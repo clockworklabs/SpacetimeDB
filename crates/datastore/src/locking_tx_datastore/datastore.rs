@@ -3832,4 +3832,111 @@ mod tests {
         );
         Ok(())
     }
+
+    /// Inserting a duplicate primary key within the same transaction should fail for event tables.
+    #[test]
+    fn test_event_table_primary_key_enforced_within_tx() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        schema.is_event = true;
+        schema.primary_key = Some(0.into()); // PK on column 0 (id)
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let row1 = u32_str_u32(1, "Alice", 30);
+        insert(&datastore, &mut tx, table_id, &row1)?;
+
+        // Duplicate PK in same TX should error (unique constraint on col 0).
+        let row2 = u32_str_u32(1, "Bob", 25);
+        let result = insert(&datastore, &mut tx, table_id, &row2);
+        assert!(result.is_err(), "duplicate PK in same TX should be rejected");
+        Ok(())
+    }
+
+    /// Inserting a duplicate unique column value within the same transaction should fail for event tables.
+    #[test]
+    fn test_event_table_unique_constraint_within_tx() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let row1 = u32_str_u32(1, "Alice", 30);
+        insert(&datastore, &mut tx, table_id, &row1)?;
+
+        // Duplicate unique name in same TX should error (unique constraint on col 1).
+        let row2 = u32_str_u32(2, "Alice", 25);
+        let result = insert(&datastore, &mut tx, table_id, &row2);
+        assert!(result.is_err(), "duplicate unique column in same TX should be rejected");
+        Ok(())
+    }
+
+    /// Btree index lookups should work within a transaction for event tables.
+    /// We verify this indirectly: if the index works, an update via that index succeeds.
+    #[test]
+    fn test_event_table_index_lookup_within_tx() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let row1 = u32_str_u32(1, "Alice", 30);
+        let row2 = u32_str_u32(2, "Bob", 25);
+        insert(&datastore, &mut tx, table_id, &row1)?;
+        insert(&datastore, &mut tx, table_id, &row2)?;
+
+        // Update via the btree index on column 0 (id) — this exercises index lookup.
+        let idx = extract_index_id(&datastore, &tx, &basic_indices()[0])?;
+        let row1_updated = u32_str_u32(1, "Alice", 31);
+        update(&datastore, &mut tx, table_id, idx, &row1_updated)?;
+
+        // Verify both rows are visible in the tx.
+        let rows = all_rows(&datastore, &tx, table_id);
+        assert_eq!(rows.len(), 2, "should have 2 rows after insert+update");
+        assert!(rows.contains(&row1_updated), "updated row should be present");
+        assert!(rows.contains(&row2), "other row should be present");
+        Ok(())
+    }
+
+    /// Auto-increment should generate distinct values within a single transaction for event tables.
+    #[test]
+    fn test_event_table_auto_inc_within_tx() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // Insert with id=0 to trigger auto_inc on column 0.
+        let row1 = u32_str_u32(0, "Alice", 30);
+        let (gen1, _) = insert(&datastore, &mut tx, table_id, &row1)?;
+        let row2 = u32_str_u32(0, "Bob", 25);
+        let (gen2, _) = insert(&datastore, &mut tx, table_id, &row2)?;
+
+        // Both auto-incremented ids should be distinct.
+        assert_ne!(gen1, gen2, "auto_inc should produce distinct values within the same TX");
+        Ok(())
+    }
+
+    /// Constraints on event tables should reset across transactions (no committed state carryover).
+    #[test]
+    fn test_event_table_constraints_reset_across_txs() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        // TX1: insert row with id=1.
+        let mut tx1 = begin_mut_tx(&datastore);
+        let row = u32_str_u32(1, "Alice", 30);
+        insert(&datastore, &mut tx1, table_id, &row)?;
+        commit(&datastore, tx1)?;
+
+        // TX2: insert row with same id=1 — should succeed because event tables
+        // don't carry committed state.
+        let mut tx2 = begin_mut_tx(&datastore);
+        let row = u32_str_u32(1, "Bob", 25);
+        let result = insert(&datastore, &mut tx2, table_id, &row);
+        assert!(
+            result.is_ok(),
+            "same PK in a new TX should succeed for event tables (no committed state)"
+        );
+        Ok(())
+    }
 }

@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void SetNullableVec(uint id, bool hasPos, int x, int y)
         {
-            conn.InternalCallReducer(new Reducer.SetNullableVec(id, hasPos, x, y), this.SetCallReducerFlags.SetNullableVecFlags);
+            conn.InternalCallReducer(new Reducer.SetNullableVec(id, hasPos, x, y));
         }
 
         public bool InvokeSetNullableVec(ReducerEventContext ctx, Reducer.SetNullableVec args)
@@ -79,11 +79,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "SetNullableVec";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SetNullableVecFlags;
-        public void SetNullableVec(CallReducerFlags flags) => SetNullableVecFlags = flags;
     }
 }

@@ -25,7 +25,7 @@ use spacetimedb_schema::type_for_generate::{
 const INDENT: &str = "    ";
 
 const REDUCER_EVENTS: &str = r#"
-    public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SetReducerFlags, SubscriptionBuilder, RemoteProcedures> {
+    public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SubscriptionBuilder, RemoteProcedures> {
         public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError;
     }
 
@@ -51,14 +51,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -131,14 +123,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -217,14 +201,6 @@ const REDUCER_EVENTS: &str = r#"
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
         /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
-        /// <summary>
         /// Access to procedures defined by the module.
         ///
         /// The returned <c>RemoteProcedures</c> will have a method to invoke each procedure defined by the module,
@@ -292,14 +268,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -371,14 +339,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -520,25 +480,11 @@ const REDUCER_EVENTS: &str = r#"
         /// or vice versa, may misbehave in any number of ways,
         /// including dropping subscriptions, corrupting the client cache, or panicking.
         /// </summary>
-        public void SubscribeToAllTables()
-        {
-            // Make sure we use the legacy handle constructor here, even though there's only 1 query.
-            // We drop the error handler, since it can't be called for legacy subscriptions.
-            new SubscriptionHandle(
-                conn,
-                Applied,
-                new string[] { "SELECT * FROM *" }
-            );
-        }
+        public SubscriptionHandle SubscribeToAllTables() =>
+            new(conn, Applied, Error, QueryBuilder.AllTablesSqlQueries());
     }
 
     public sealed class SubscriptionHandle : SubscriptionHandleBase<SubscriptionEventContext, ErrorContext> {
-        /// <summary>
-        /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
-        /// </summary>
-        public SubscriptionHandle(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls) : base(conn, onApplied, querySqls)
-        { }
-
         /// <summary>
         /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
         /// </summary>
@@ -575,9 +521,14 @@ impl Lang for Csharp<'_> {
             let csharp_table_class_name = csharp_table_name.clone() + "Handle";
             let table_type = type_ref_name(module, table.product_type_ref);
 
+            let base_class = if table.is_event {
+                "RemoteEventTableHandle"
+            } else {
+                "RemoteTableHandle"
+            };
             writeln!(
                 output,
-                "public sealed class {csharp_table_class_name} : RemoteTableHandle<EventContext, {table_type}>"
+                "public sealed class {csharp_table_class_name} : {base_class}<EventContext, {table_type}>"
             );
             indented_block(output, |output| {
                 writeln!(
@@ -830,7 +781,7 @@ impl Lang for Csharp<'_> {
                 indented_block(output, |output| {
                     writeln!(
                         output,
-                        "conn.InternalCallReducer(new Reducer.{func_name_pascal_case}({func_args}), this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
+                        "conn.InternalCallReducer(new Reducer.{func_name_pascal_case}({func_args}));"
                     );
                 });
                 writeln!(output);
@@ -889,16 +840,6 @@ impl Lang for Csharp<'_> {
                 },
             );
         });
-
-        if is_reducer_invokable(reducer) {
-            writeln!(output);
-            writeln!(output, "public sealed partial class SetReducerFlags");
-            indented_block(&mut output, |output| {
-                let func_name_pascal_case = reducer.name.deref().to_case(Case::Pascal);
-                writeln!(output, "internal CallReducerFlags {func_name_pascal_case}Flags;");
-                writeln!(output, "public void {func_name_pascal_case}(CallReducerFlags flags) => {func_name_pascal_case}Flags = flags;");
-            });
-        }
 
         OutputFile {
             filename: format!("Reducers/{}.g.cs", reducer.name.deref().to_case(Case::Pascal)),
@@ -1023,11 +964,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
-            writeln!(
-                output,
-                "internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;"
-            );
-            writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
+            writeln!(output, "internal RemoteReducers(DbConnection conn) : base(conn) {{ }}");
             writeln!(
                 output,
                 "internal event Action<ReducerEventContext, Exception>? InternalOnUnhandledReducerError;"
@@ -1059,13 +996,20 @@ impl Lang for Csharp<'_> {
         });
         writeln!(output);
 
-        writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
-
         writeln!(output, "{REDUCER_EVENTS}");
 
         writeln!(output, "public sealed class QueryBuilder");
         indented_block(&mut output, |output| {
             writeln!(output, "public From From {{ get; }} = new();");
+            writeln!(output);
+            writeln!(output, "internal static string[] AllTablesSqlQueries() => new string[]");
+            indented_block(output, |output| {
+                for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
+                    let method_name = table_name.deref().to_case(Case::Pascal);
+                    writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
+                }
+            });
+            writeln!(output, ";");
         });
         writeln!(output);
 
@@ -1158,42 +1102,14 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output: &mut CodeIndenter<String>| {
             writeln!(output, "public override RemoteTables Db {{ get; }}");
             writeln!(output, "public readonly RemoteReducers Reducers;");
-            writeln!(output, "public readonly SetReducerFlags SetReducerFlags = new();");
             writeln!(output, "public readonly RemoteProcedures Procedures;");
             writeln!(output);
 
             writeln!(output, "public DbConnection()");
             indented_block(output, |output| {
                 writeln!(output, "Db = new(this);");
-                writeln!(output, "Reducers = new(this, SetReducerFlags);");
+                writeln!(output, "Reducers = new(this);");
                 writeln!(output, "Procedures = new(this);");
-            });
-            writeln!(output);
-
-            writeln!(output, "protected override Reducer ToReducer(TransactionUpdate update)");
-            indented_block(output, |output| {
-                writeln!(output, "var encodedArgs = update.ReducerCall.Args;");
-                writeln!(output, "return update.ReducerCall.ReducerName switch {{");
-                {
-                    indent_scope!(output);
-                    for reducer in iter_reducers(module, options.visibility) {
-                        let reducer_str_name = &reducer.name;
-                        let reducer_name = reducer.name.deref().to_case(Case::Pascal);
-                        writeln!(
-                            output,
-                            "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
-                        );
-                    }
-                    writeln!(
-                        output,
-                        r#""" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),"#
-                    );
-                    writeln!(
-                        output,
-                        r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
-                    );
-                }
-                writeln!(output, "}};");
             });
             writeln!(output);
 

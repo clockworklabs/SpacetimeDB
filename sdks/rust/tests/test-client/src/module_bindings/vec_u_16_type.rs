@@ -41,3 +41,5 @@ impl __sdk::__query_builder::HasIxCols for VecU16 {
         VecU16IxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for VecU16 {}

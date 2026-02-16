@@ -78,21 +78,6 @@ impl<'ctx> __sdk::Table for UniqueU16TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
-    _table.add_unique_constraint::<u16>("n", |row| &row.n);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueU16>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueU16>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
 /// Access to the `n` unique index on the table `unique_u16`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU16NUnique::find`] method.
@@ -121,6 +106,21 @@ impl<'ctx> UniqueU16NUnique<'ctx> {
     pub fn find(&self, col_val: &u16) -> Option<UniqueU16> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
+    _table.add_unique_constraint::<u16>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueU16>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueU16>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

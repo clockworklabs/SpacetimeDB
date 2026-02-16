@@ -164,6 +164,13 @@ jobs:
           }
           cargo ci smoketests -- --test-threads=1 --no-capture test_all_templates
 
+      - name: Check for changes
+        run: |
+          tools/check-diff.sh crates/smoketests || {
+              echo 'Error: There is a diff in the smoketests directory.'
+              exit 1
+          }
+
   smoketests-python:
     needs: [lints]
     name: Smoketests (Python Legacy) (${{matrix.name}})

@@ -83,6 +83,98 @@ pub enum RawModuleDefV10Section {
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
 
     RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
+
+    /// Case conversion policy for identifiers in this module.
+    CaseConversionPolicy(CaseConversionPolicy),
+
+    /// Names provided explicitly by the user that do not follow from the case conversion policy.
+    ExplicitNames(ExplicitNames),
+}
+
+#[derive(Debug, Clone, Copy, Default, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[sats(crate = crate)]
+#[non_exhaustive]
+pub enum CaseConversionPolicy {
+    /// No conversion - names used verbatim as canonical names
+    None,
+    /// Convert to snake_case (SpacetimeDB default)
+    #[default]
+    SnakeCase,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub struct NameMapping {
+    /// The original name as defined or generated inside module.
+    ///
+    /// Generated as:
+    /// - Tables: value from `#[spacetimedb::table(accessor = ...)]`.
+    /// - Reducers/Procedures/Views: function name
+    /// - Indexes: `{table_name}_{column_names}_idx_{algorithm}`
+    ///
+    /// During validation, this may be replaced by `canonical_name`
+    /// if an explicit or policy-based name is applied.
+    pub source_name: RawIdentifier,
+
+    /// The canonical identifier used in system tables and client code generation.
+    ///
+    /// Set via:
+    /// - `#[spacetimedb::table(name = "...")]` for tables
+    /// - `#[spacetimedb::reducer(name = "...")]` for reducers
+    /// - `#[name("...")]` for other entities
+    ///
+    /// If not explicitly provided, this defaults to `source_name`
+    /// after validation. No particular format should be assumed.
+    pub canonical_name: RawIdentifier,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub enum ExplicitNameEntry {
+    Table(NameMapping),
+    Function(NameMapping),
+    Index(NameMapping),
+}
+
+#[derive(Debug, Default, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub struct ExplicitNames {
+    /// Explicit name mappings defined in the module.
+    ///
+    /// These override policy-based or auto-generated names
+    /// during schema validation.
+    entries: Vec<ExplicitNameEntry>,
+}
+
+impl ExplicitNames {
+    fn insert(&mut self, entry: ExplicitNameEntry) {
+        self.entries.push(entry);
+    }
+
+    pub fn insert_table(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.insert(ExplicitNameEntry::Table(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn insert_function(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.insert(ExplicitNameEntry::Function(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn merge(&mut self, other: ExplicitNames) {
+        self.entries.extend(other.entries);
+    }
 }
 
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
