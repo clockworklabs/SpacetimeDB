@@ -446,20 +446,24 @@ public partial struct TestIndexIssues
     public int SelfIndexingColumn;
 }
 
-[SpacetimeDB.Table(Accessor = "TestScheduleWithoutPrimaryKey",
+[SpacetimeDB.Table(
+    Accessor = "TestScheduleWithoutPrimaryKey",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = nameof(ScheduleAtCorrectType)
 )]
-[SpacetimeDB.Table(Accessor = "TestScheduleWithWrongPrimaryKeyType",
+[SpacetimeDB.Table(
+    Accessor = "TestScheduleWithWrongPrimaryKeyType",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = nameof(ScheduleAtCorrectType)
 )]
 [SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
-[SpacetimeDB.Table(Accessor = "TestScheduleWithWrongScheduleAtType",
+[SpacetimeDB.Table(
+    Accessor = "TestScheduleWithWrongScheduleAtType",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = nameof(ScheduleAtWrongType)
 )]
-[SpacetimeDB.Table(Accessor = "TestScheduleWithMissingScheduleAtField",
+[SpacetimeDB.Table(
+    Accessor = "TestScheduleWithMissingScheduleAtField",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = "MissingField"
 )]
