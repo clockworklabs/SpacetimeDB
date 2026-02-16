@@ -238,12 +238,12 @@ tables.person.where(row => row.name.eq('Alice'))
 ### Rust Server (Views)
 
 ```rust
-#[spacetimedb::view(name = online_users, public)]
+#[spacetimedb::view(accessor = online_users, public)]
 fn online_users(ctx: &ViewContext) -> Query<User> {
     ctx.from.user().r#where(|c| c.online.eq(true))
 }
 
-#[spacetimedb::view(name = player_mods, public)]
+#[spacetimedb::view(accessor = player_mods, public)]
 fn player_mods(ctx: &AnonymousViewContext) -> Query<PlayerState> {
     ctx.from
         .player_state()

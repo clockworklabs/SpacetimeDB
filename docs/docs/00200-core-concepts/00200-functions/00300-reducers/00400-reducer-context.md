@@ -68,7 +68,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, reducer, ReducerContext};
 
-#[table(name = user)]
+#[table(accessor = user)]
 pub struct User {
     #[primary_key]
     #[auto_inc]
@@ -186,7 +186,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, Identity};
 
-#[table(name = player)]
+#[table(accessor = player)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
@@ -331,7 +331,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, ScheduleAt};
 
-#[table(name = scheduled_task, scheduled(send_reminder))]
+#[table(accessor = scheduled_task, scheduled(send_reminder))]
 pub struct ScheduledTask {
     #[primary_key]
     #[auto_inc]

@@ -1,6 +1,6 @@
 use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
 
-#[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer, at = sched_at))]
+#[spacetimedb::table(accessor = scheduled_table, public, scheduled(my_reducer, at = sched_at))]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]

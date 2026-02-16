@@ -1,6 +1,6 @@
 use spacetimedb::{Query, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: u8,
@@ -8,7 +8,7 @@ pub struct User {
     online: bool,
 }
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     identity: u8,
@@ -50,12 +50,12 @@ fn init(ctx: &ReducerContext) {
     });
 }
 
-#[spacetimedb::view(name = online_users, public)]
+#[spacetimedb::view(accessor = online_users, public)]
 fn online_users(ctx: &ViewContext) -> impl Query<User> {
     ctx.from.user().r#where(|c| c.online.eq(true))
 }
 
-#[spacetimedb::view(name = online_users_age, public)]
+#[spacetimedb::view(accessor = online_users_age, public)]
 fn online_users_age(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from
         .user()
@@ -63,7 +63,7 @@ fn online_users_age(ctx: &ViewContext) -> impl Query<Person> {
         .right_semijoin(ctx.from.person(), |u, p| u.identity.eq(p.identity))
 }
 
-#[spacetimedb::view(name = offline_user_20_years_old, public)]
+#[spacetimedb::view(accessor = offline_user_20_years_old, public)]
 fn offline_user_in_twienties(ctx: &ViewContext) -> impl Query<User> {
     ctx.from
         .person()
@@ -72,19 +72,19 @@ fn offline_user_in_twienties(ctx: &ViewContext) -> impl Query<User> {
         .filter(|u| u.online.eq(false))
 }
 
-#[spacetimedb::view(name = users_whos_age_is_known, public)]
+#[spacetimedb::view(accessor = users_whos_age_is_known, public)]
 fn users_whos_age_is_known(ctx: &ViewContext) -> impl Query<User> {
     ctx.from
         .user()
         .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
 }
 
-#[spacetimedb::view(name = users_who_are_above_20_and_below_30, public)]
+#[spacetimedb::view(accessor = users_who_are_above_20_and_below_30, public)]
 fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from.person().r#where(|p| p.age.gt(20).and(p.age.lt(30)))
 }
 
-#[spacetimedb::view(name = users_who_are_above_eq_20_and_below_eq_30, public)]
+#[spacetimedb::view(accessor = users_who_are_above_eq_20_and_below_eq_30, public)]
 fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from.person().r#where(|p| p.age.gte(20).and(p.age.lte(30)))
 }

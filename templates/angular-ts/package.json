@@ -1,0 +1,29 @@
+{
+  "name": "@clockworklabs/angular-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "ng serve",
+    "build": "ng build",
+    "generate": "pnpm --dir spacetimedb install --ignore-workspace && cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path spacetimedb && prettier --write src/module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud"
+  },
+  "dependencies": {
+    "@angular/common": "^21.1.1",
+    "@angular/compiler": "^21.1.1",
+    "@angular/core": "^21.1.1",
+    "@angular/platform-browser": "^21.1.1",
+    "rxjs": "~7.8.0",
+    "spacetimedb": "workspace:*",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.1.1",
+    "@angular/cli": "^21.1.1",
+    "@angular/compiler-cli": "^21.1.0",
+    "typescript": "~5.9.2"
+  }
+}

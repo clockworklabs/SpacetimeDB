@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "Procedures/GetMySchemaViaHttp.g.cs" = '''
@@ -296,7 +297,7 @@ namespace SpacetimeDB
 
         public void Add(string name, byte age)
         {
-            conn.InternalCallReducer(new Reducer.Add(name, age), this.SetCallReducerFlags.AddFlags);
+            conn.InternalCallReducer(new Reducer.Add(name, age));
         }
 
         public bool InvokeAdd(ReducerEventContext ctx, Reducer.Add args)
@@ -350,12 +351,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "add";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags AddFlags;
-        public void Add(CallReducerFlags flags) => AddFlags = flags;
-    }
 }
 '''
 "Reducers/AddPlayer.g.cs" = '''
@@ -378,7 +373,7 @@ namespace SpacetimeDB
 
         public void AddPlayer(string name)
         {
-            conn.InternalCallReducer(new Reducer.AddPlayer(name), this.SetCallReducerFlags.AddPlayerFlags);
+            conn.InternalCallReducer(new Reducer.AddPlayer(name));
         }
 
         public bool InvokeAddPlayer(ReducerEventContext ctx, Reducer.AddPlayer args)
@@ -425,12 +420,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "add_player";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags AddPlayerFlags;
-        public void AddPlayer(CallReducerFlags flags) => AddPlayerFlags = flags;
-    }
 }
 '''
 "Reducers/AddPrivate.g.cs" = '''
@@ -453,7 +442,7 @@ namespace SpacetimeDB
 
         public void AddPrivate(string name)
         {
-            conn.InternalCallReducer(new Reducer.AddPrivate(name), this.SetCallReducerFlags.AddPrivateFlags);
+            conn.InternalCallReducer(new Reducer.AddPrivate(name));
         }
 
         public bool InvokeAddPrivate(ReducerEventContext ctx, Reducer.AddPrivate args)
@@ -500,12 +489,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "add_private";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags AddPrivateFlags;
-        public void AddPrivate(CallReducerFlags flags) => AddPrivateFlags = flags;
-    }
 }
 '''
 "Reducers/AssertCallerIdentityIsModuleIdentity.g.cs" = '''
@@ -528,7 +511,7 @@ namespace SpacetimeDB
 
         public void AssertCallerIdentityIsModuleIdentity()
         {
-            conn.InternalCallReducer(new Reducer.AssertCallerIdentityIsModuleIdentity(), this.SetCallReducerFlags.AssertCallerIdentityIsModuleIdentityFlags);
+            conn.InternalCallReducer(new Reducer.AssertCallerIdentityIsModuleIdentity());
         }
 
         public bool InvokeAssertCallerIdentityIsModuleIdentity(ReducerEventContext ctx, Reducer.AssertCallerIdentityIsModuleIdentity args)
@@ -561,12 +544,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "assert_caller_identity_is_module_identity";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags AssertCallerIdentityIsModuleIdentityFlags;
-        public void AssertCallerIdentityIsModuleIdentity(CallReducerFlags flags) => AssertCallerIdentityIsModuleIdentityFlags = flags;
-    }
 }
 '''
 "Reducers/DeletePlayer.g.cs" = '''
@@ -589,7 +566,7 @@ namespace SpacetimeDB
 
         public void DeletePlayer(ulong id)
         {
-            conn.InternalCallReducer(new Reducer.DeletePlayer(id), this.SetCallReducerFlags.DeletePlayerFlags);
+            conn.InternalCallReducer(new Reducer.DeletePlayer(id));
         }
 
         public bool InvokeDeletePlayer(ReducerEventContext ctx, Reducer.DeletePlayer args)
@@ -635,12 +612,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "delete_player";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags DeletePlayerFlags;
-        public void DeletePlayer(CallReducerFlags flags) => DeletePlayerFlags = flags;
-    }
 }
 '''
 "Reducers/DeletePlayersByName.g.cs" = '''
@@ -663,7 +634,7 @@ namespace SpacetimeDB
 
         public void DeletePlayersByName(string name)
         {
-            conn.InternalCallReducer(new Reducer.DeletePlayersByName(name), this.SetCallReducerFlags.DeletePlayersByNameFlags);
+            conn.InternalCallReducer(new Reducer.DeletePlayersByName(name));
         }
 
         public bool InvokeDeletePlayersByName(ReducerEventContext ctx, Reducer.DeletePlayersByName args)
@@ -710,12 +681,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "delete_players_by_name";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags DeletePlayersByNameFlags;
-        public void DeletePlayersByName(CallReducerFlags flags) => DeletePlayersByNameFlags = flags;
-    }
 }
 '''
 "Reducers/ListOverAge.g.cs" = '''
@@ -738,7 +703,7 @@ namespace SpacetimeDB
 
         public void ListOverAge(byte age)
         {
-            conn.InternalCallReducer(new Reducer.ListOverAge(age), this.SetCallReducerFlags.ListOverAgeFlags);
+            conn.InternalCallReducer(new Reducer.ListOverAge(age));
         }
 
         public bool InvokeListOverAge(ReducerEventContext ctx, Reducer.ListOverAge args)
@@ -784,12 +749,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "list_over_age";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags ListOverAgeFlags;
-        public void ListOverAge(CallReducerFlags flags) => ListOverAgeFlags = flags;
-    }
 }
 '''
 "Reducers/LogModuleIdentity.g.cs" = '''
@@ -812,7 +771,7 @@ namespace SpacetimeDB
 
         public void LogModuleIdentity()
         {
-            conn.InternalCallReducer(new Reducer.LogModuleIdentity(), this.SetCallReducerFlags.LogModuleIdentityFlags);
+            conn.InternalCallReducer(new Reducer.LogModuleIdentity());
         }
 
         public bool InvokeLogModuleIdentity(ReducerEventContext ctx, Reducer.LogModuleIdentity args)
@@ -845,12 +804,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "log_module_identity";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags LogModuleIdentityFlags;
-        public void LogModuleIdentity(CallReducerFlags flags) => LogModuleIdentityFlags = flags;
-    }
 }
 '''
 "Reducers/QueryPrivate.g.cs" = '''
@@ -873,7 +826,7 @@ namespace SpacetimeDB
 
         public void QueryPrivate()
         {
-            conn.InternalCallReducer(new Reducer.QueryPrivate(), this.SetCallReducerFlags.QueryPrivateFlags);
+            conn.InternalCallReducer(new Reducer.QueryPrivate());
         }
 
         public bool InvokeQueryPrivate(ReducerEventContext ctx, Reducer.QueryPrivate args)
@@ -906,12 +859,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "query_private";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags QueryPrivateFlags;
-        public void QueryPrivate(CallReducerFlags flags) => QueryPrivateFlags = flags;
-    }
 }
 '''
 "Reducers/SayHello.g.cs" = '''
@@ -934,7 +881,7 @@ namespace SpacetimeDB
 
         public void SayHello()
         {
-            conn.InternalCallReducer(new Reducer.SayHello(), this.SetCallReducerFlags.SayHelloFlags);
+            conn.InternalCallReducer(new Reducer.SayHello());
         }
 
         public bool InvokeSayHello(ReducerEventContext ctx, Reducer.SayHello args)
@@ -967,12 +914,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "say_hello";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SayHelloFlags;
-        public void SayHello(CallReducerFlags flags) => SayHelloFlags = flags;
-    }
 }
 '''
 "Reducers/Test.g.cs" = '''
@@ -995,7 +936,7 @@ namespace SpacetimeDB
 
         public void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.NamespaceTestC arg3, SpacetimeDB.NamespaceTestF arg4)
         {
-            conn.InternalCallReducer(new Reducer.Test(arg, arg2, arg3, arg4), this.SetCallReducerFlags.TestFlags);
+            conn.InternalCallReducer(new Reducer.Test(arg, arg2, arg3, arg4));
         }
 
         public bool InvokeTest(ReducerEventContext ctx, Reducer.Test args)
@@ -1061,12 +1002,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "test";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags TestFlags;
-        public void Test(CallReducerFlags flags) => TestFlags = flags;
-    }
 }
 '''
 "Reducers/TestBtreeIndexArgs.g.cs" = '''
@@ -1089,7 +1024,7 @@ namespace SpacetimeDB
 
         public void TestBtreeIndexArgs()
         {
-            conn.InternalCallReducer(new Reducer.TestBtreeIndexArgs(), this.SetCallReducerFlags.TestBtreeIndexArgsFlags);
+            conn.InternalCallReducer(new Reducer.TestBtreeIndexArgs());
         }
 
         public bool InvokeTestBtreeIndexArgs(ReducerEventContext ctx, Reducer.TestBtreeIndexArgs args)
@@ -1122,12 +1057,6 @@ namespace SpacetimeDB
             string IReducerArgs.ReducerName => "test_btree_index_args";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags TestBtreeIndexArgsFlags;
-        public void TestBtreeIndexArgs(CallReducerFlags flags) => TestBtreeIndexArgsFlags = flags;
-    }
 }
 '''
 "SpacetimeDBClient.g.cs" = '''
@@ -1147,8 +1076,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;
-        internal readonly SetReducerFlags SetCallReducerFlags;
+        internal RemoteReducers(DbConnection conn) : base(conn) { }
         internal event Action<ReducerEventContext, Exception>? InternalOnUnhandledReducerError;
     }
 
@@ -1170,9 +1098,8 @@ namespace SpacetimeDB
         }
     }
 
-    public sealed partial class SetReducerFlags { }
 
-        public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SetReducerFlags, SubscriptionBuilder, RemoteProcedures> {
+        public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SubscriptionBuilder, RemoteProcedures> {
             public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError;
         }
 
@@ -1198,14 +1125,6 @@ namespace SpacetimeDB
             /// plus methods for adding and removing callbacks on each of those reducers.
             /// </summary>
             public RemoteReducers Reducers => conn.Reducers;
-            /// <summary>
-            /// Access to setters for per-reducer flags.
-            ///
-            /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-            /// for each reducer defined by the module,
-            /// which call-flags for the reducer can be set.
-            /// </summary>
-            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
             /// <summary>
             /// Access to procedures defined by the module.
             ///
@@ -1278,14 +1197,6 @@ namespace SpacetimeDB
             /// plus methods for adding and removing callbacks on each of those reducers.
             /// </summary>
             public RemoteReducers Reducers => conn.Reducers;
-            /// <summary>
-            /// Access to setters for per-reducer flags.
-            ///
-            /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-            /// for each reducer defined by the module,
-            /// which call-flags for the reducer can be set.
-            /// </summary>
-            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
             /// <summary>
             /// Access to procedures defined by the module.
             ///
@@ -1364,14 +1275,6 @@ namespace SpacetimeDB
             /// </summary>
             public RemoteReducers Reducers => conn.Reducers;
             /// <summary>
-            /// Access to setters for per-reducer flags.
-            ///
-            /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-            /// for each reducer defined by the module,
-            /// which call-flags for the reducer can be set.
-            /// </summary>
-            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
-            /// <summary>
             /// Access to procedures defined by the module.
             ///
             /// The returned <c>RemoteProcedures</c> will have a method to invoke each procedure defined by the module,
@@ -1439,14 +1342,6 @@ namespace SpacetimeDB
             /// plus methods for adding and removing callbacks on each of those reducers.
             /// </summary>
             public RemoteReducers Reducers => conn.Reducers;
-            /// <summary>
-            /// Access to setters for per-reducer flags.
-            ///
-            /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-            /// for each reducer defined by the module,
-            /// which call-flags for the reducer can be set.
-            /// </summary>
-            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
             /// <summary>
             /// Access to procedures defined by the module.
             ///
@@ -1518,14 +1413,6 @@ namespace SpacetimeDB
             /// plus methods for adding and removing callbacks on each of those reducers.
             /// </summary>
             public RemoteReducers Reducers => conn.Reducers;
-            /// <summary>
-            /// Access to setters for per-reducer flags.
-            ///
-            /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-            /// for each reducer defined by the module,
-            /// which call-flags for the reducer can be set.
-            /// </summary>
-            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
             /// <summary>
             /// Access to procedures defined by the module.
             ///
@@ -1667,25 +1554,11 @@ namespace SpacetimeDB
             /// or vice versa, may misbehave in any number of ways,
             /// including dropping subscriptions, corrupting the client cache, or panicking.
             /// </summary>
-            public void SubscribeToAllTables()
-            {
-                // Make sure we use the legacy handle constructor here, even though there's only 1 query.
-                // We drop the error handler, since it can't be called for legacy subscriptions.
-                new SubscriptionHandle(
-                    conn,
-                    Applied,
-                    new string[] { "SELECT * FROM *" }
-                );
-            }
+            public SubscriptionHandle SubscribeToAllTables() =>
+                new(conn, Applied, Error, QueryBuilder.AllTablesSqlQueries());
         }
 
         public sealed class SubscriptionHandle : SubscriptionHandleBase<SubscriptionEventContext, ErrorContext> {
-            /// <summary>
-            /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
-            /// </summary>
-            public SubscriptionHandle(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls) : base(conn, onApplied, querySqls)
-            { }
-
             /// <summary>
             /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
             /// </summary>
@@ -1701,6 +1574,17 @@ namespace SpacetimeDB
     public sealed class QueryBuilder
     {
         public From From { get; } = new();
+
+        internal static string[] AllTablesSqlQueries() => new string[]
+        {
+            new QueryBuilder().From.LoggedOutPlayer().ToSql(),
+            new QueryBuilder().From.MyPlayer().ToSql(),
+            new QueryBuilder().From.Person().ToSql(),
+            new QueryBuilder().From.Player().ToSql(),
+            new QueryBuilder().From.TestD().ToSql(),
+            new QueryBuilder().From.TestF().ToSql(),
+        }
+        ;
     }
 
     public sealed class From
@@ -1763,35 +1647,13 @@ namespace SpacetimeDB
     {
         public override RemoteTables Db { get; }
         public readonly RemoteReducers Reducers;
-        public readonly SetReducerFlags SetReducerFlags = new();
         public readonly RemoteProcedures Procedures;
 
         public DbConnection()
         {
             Db = new(this);
-            Reducers = new(this, SetReducerFlags);
+            Reducers = new(this);
             Procedures = new(this);
-        }
-
-        protected override Reducer ToReducer(TransactionUpdate update)
-        {
-            var encodedArgs = update.ReducerCall.Args;
-            return update.ReducerCall.ReducerName switch {
-                "add" => BSATNHelpers.Decode<Reducer.Add>(encodedArgs),
-                "add_player" => BSATNHelpers.Decode<Reducer.AddPlayer>(encodedArgs),
-                "add_private" => BSATNHelpers.Decode<Reducer.AddPrivate>(encodedArgs),
-                "assert_caller_identity_is_module_identity" => BSATNHelpers.Decode<Reducer.AssertCallerIdentityIsModuleIdentity>(encodedArgs),
-                "delete_player" => BSATNHelpers.Decode<Reducer.DeletePlayer>(encodedArgs),
-                "delete_players_by_name" => BSATNHelpers.Decode<Reducer.DeletePlayersByName>(encodedArgs),
-                "list_over_age" => BSATNHelpers.Decode<Reducer.ListOverAge>(encodedArgs),
-                "log_module_identity" => BSATNHelpers.Decode<Reducer.LogModuleIdentity>(encodedArgs),
-                "query_private" => BSATNHelpers.Decode<Reducer.QueryPrivate>(encodedArgs),
-                "say_hello" => BSATNHelpers.Decode<Reducer.SayHello>(encodedArgs),
-                "test" => BSATNHelpers.Decode<Reducer.Test>(encodedArgs),
-                "test_btree_index_args" => BSATNHelpers.Decode<Reducer.TestBtreeIndexArgs>(encodedArgs),
-                "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
-                var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
-            };
         }
 
         protected override IEventContext ToEventContext(Event<Reducer> Event) =>
@@ -1858,38 +1720,38 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "logged_out_player";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class LoggedOutPlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public IdentityUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public LoggedOutPlayerIdentityIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly LoggedOutPlayerIdentityIdxBtreeUniqueIndex LoggedOutPlayerIdentityIdxBtree;
 
-            public sealed class NameUniqueIndex : UniqueIndexBase<string>
+            public sealed class LoggedOutPlayerNameIdxBtreeUniqueIndex : UniqueIndexBase<string>
             {
                 protected override string GetKey(Player row) => row.Name;
 
-                public NameUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public LoggedOutPlayerNameIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly NameUniqueIndex Name;
+            public readonly LoggedOutPlayerNameIdxBtreeUniqueIndex LoggedOutPlayerNameIdxBtree;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Player row) => row.PlayerId;
 
-                public PlayerIdUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdUniqueIndex PlayerId;
+            public readonly LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex LoggedOutPlayerPlayerIdIdxBtree;
 
             internal LoggedOutPlayerHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
-                Name = new(this);
-                PlayerId = new(this);
+                LoggedOutPlayerIdentityIdxBtree = new(this);
+                LoggedOutPlayerNameIdxBtree = new(this);
+                LoggedOutPlayerPlayerIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;
@@ -1998,28 +1860,28 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "person";
 
-            public sealed class AgeIndex : BTreeIndexBase<byte>
+            public sealed class PersonAgeIdxBtreeIndex : BTreeIndexBase<byte>
             {
                 protected override byte GetKey(Person row) => row.Age;
 
-                public AgeIndex(PersonHandle table) : base(table) { }
+                public PersonAgeIdxBtreeIndex(PersonHandle table) : base(table) { }
             }
 
-            public readonly AgeIndex Age;
+            public readonly PersonAgeIdxBtreeIndex PersonAgeIdxBtree;
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class PersonIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(Person row) => row.Id;
 
-                public IdUniqueIndex(PersonHandle table) : base(table) { }
+                public PersonIdIdxBtreeUniqueIndex(PersonHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly PersonIdIdxBtreeUniqueIndex PersonIdIdxBtree;
 
             internal PersonHandle(DbConnection conn) : base(conn)
             {
-                Age = new(this);
-                Id = new(this);
+                PersonAgeIdxBtree = new(this);
+                PersonIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Person row) => row.Id;
@@ -2075,38 +1937,38 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "player";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class PlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerIdentityIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly PlayerIdentityIdxBtreeUniqueIndex PlayerIdentityIdxBtree;
 
-            public sealed class NameUniqueIndex : UniqueIndexBase<string>
+            public sealed class PlayerNameIdxBtreeUniqueIndex : UniqueIndexBase<string>
             {
                 protected override string GetKey(Player row) => row.Name;
 
-                public NameUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerNameIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly NameUniqueIndex Name;
+            public readonly PlayerNameIdxBtreeUniqueIndex PlayerNameIdxBtree;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class PlayerPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Player row) => row.PlayerId;
 
-                public PlayerIdUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerPlayerIdIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdUniqueIndex PlayerId;
+            public readonly PlayerPlayerIdIdxBtreeUniqueIndex PlayerPlayerIdIdxBtree;
 
             internal PlayerHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
-                Name = new(this);
-                PlayerId = new(this);
+                PlayerIdentityIdxBtree = new(this);
+                PlayerNameIdxBtree = new(this);
+                PlayerPlayerIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;

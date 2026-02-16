@@ -67,7 +67,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     let module_def = extract_schema(program_bytes.into(), host_type.into()).await?;
 
-    let raw_def = RawModuleDef::V9(module_def.into());
+    let raw_def = RawModuleDef::V10(module_def.into());
 
     serde_json::to_writer(std::io::stdout().lock(), &sats::serde::SerdeWrapper(raw_def))?;
 

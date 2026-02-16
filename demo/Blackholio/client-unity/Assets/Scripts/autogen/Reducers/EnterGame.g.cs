@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void EnterGame(string name)
         {
-            conn.InternalCallReducer(new Reducer.EnterGame(name), this.SetCallReducerFlags.EnterGameFlags);
+            conn.InternalCallReducer(new Reducer.EnterGame(name));
         }
 
         public bool InvokeEnterGame(ReducerEventContext ctx, Reducer.EnterGame args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "enter_game";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags EnterGameFlags;
-        public void EnterGame(CallReducerFlags flags) => EnterGameFlags = flags;
     }
 }
