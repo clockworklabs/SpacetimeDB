@@ -3,7 +3,7 @@ import type { ProductType } from './algebraic_type';
 import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
-import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
+import type { ColumnBuilder, RowBuilder } from './type_builders';
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
@@ -33,9 +33,7 @@ export type TableSchema<
   tableDef(
     ctx: ModuleContext,
     accName: string
-  ): Infer<typeof RawTableDefV10> & {
-    schedule?: Infer<typeof RawScheduleDefV10>;
-  };
+  ): RawTableDefV10 & { schedule?: RawScheduleDefV10 };
 
   /**
    * The indexes defined on the table.

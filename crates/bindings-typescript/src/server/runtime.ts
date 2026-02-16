@@ -34,7 +34,6 @@ import {
 } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import type { Infer } from '../lib/type_builders';
 import { hasOwn, toCamelCase } from '../lib/util';
 import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
@@ -420,8 +419,8 @@ const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
 
 function makeTableView(
-  typespace: Infer<typeof Typespace>,
-  table: Infer<typeof RawTableDefV10>
+  typespace: Typespace,
+  table: RawTableDefV10
 ): Table<any> {
   const table_id = sys.table_id_from_name(table.sourceName);
   const rowType = typespace.types[table.productTypeRef];

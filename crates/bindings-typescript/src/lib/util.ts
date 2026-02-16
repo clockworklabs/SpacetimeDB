@@ -129,13 +129,10 @@ export function toSnakeCase<T extends string>(str: T): SnakeCase<T> {
 
 import type { AlgebraicType } from './algebraic_type';
 import type { Typespace } from './autogen/types';
-import type { ColumnBuilder, Infer, TypeBuilder } from './type_builders';
+import type { ColumnBuilder, TypeBuilder } from './type_builders';
 import type { ParamsObj } from './reducers';
 
-export function bsatnBaseSize(
-  typespace: Infer<typeof Typespace>,
-  ty: AlgebraicType
-): number {
+export function bsatnBaseSize(typespace: Typespace, ty: AlgebraicType): number {
   const assumedArrayLength = 4;
   while (ty.tag === 'Ref') ty = typespace.types[ty.value];
   if (ty.tag === 'Product') {

@@ -1,7 +1,7 @@
 import type { ProductType } from './algebraic_type';
 import type { RawReducerDefV9 } from './autogen/types';
 import type { ParamsObj } from './reducers';
-import type { Infer, RowBuilder, RowObj } from './type_builders';
+import type { RowBuilder, RowObj } from './type_builders';
 import type { CamelCase } from './type_util';
 
 /**
@@ -34,5 +34,5 @@ export type ReducerSchema<
   /**
    * The {@link RawReducerDefV9} of the configured reducer.
    */
-  readonly reducerDef: Infer<typeof RawReducerDefV9>;
+  readonly reducerDef: RawReducerDefV9;
 };

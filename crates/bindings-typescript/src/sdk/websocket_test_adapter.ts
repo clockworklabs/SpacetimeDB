@@ -1,4 +1,4 @@
-import { BinaryWriter, type Infer } from '../';
+import { BinaryWriter } from '../';
 import { ServerMessage } from './client_api/types';
 
 class WebsocketTestAdapter {
@@ -28,7 +28,7 @@ class WebsocketTestAdapter {
     this.onopen();
   }
 
-  sendToClient(message: Infer<typeof ServerMessage>): void {
+  sendToClient(message: ServerMessage): void {
     const writer = new BinaryWriter(1024);
     ServerMessage.serialize(writer, message);
     const rawBytes = writer.getBuffer();

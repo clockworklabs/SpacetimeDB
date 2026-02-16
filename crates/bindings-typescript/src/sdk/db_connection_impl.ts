@@ -23,13 +23,7 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type {
-  Deserializer,
-  Identity,
-  Infer,
-  InferTypeOfRow,
-  Serializer,
-} from '../';
+import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
@@ -419,7 +413,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #parseRowList(
     type: 'insert' | 'delete',
     tableName: string,
-    rowList: Infer<typeof BsatnRowList>
+    rowList: BsatnRowList
   ): Operation[] {
     const buffer = rowList.rowsData;
     const reader = new BinaryReader(buffer);
@@ -481,7 +475,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   }
 
   #queryRowsToTableUpdates(
-    rows: Infer<typeof QueryRows>,
+    rows: QueryRows,
     opType: 'insert' | 'delete'
   ): CacheTableUpdate<UntypedTableDef>[] {
     const updates: CacheTableUpdate<UntypedTableDef>[] = [];
@@ -496,7 +490,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   #tableUpdateRowsToOperations(
     tableName: string,
-    rows: Infer<typeof TableUpdateRows>
+    rows: TableUpdateRows
   ): Operation[] {
     if (rows.tag === 'PersistentTable') {
       const inserts = this.#parseRowList(
@@ -520,7 +514,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   }
 
   #querySetUpdateToTableUpdates(
-    querySetUpdate: Infer<typeof QuerySetUpdate>
+    querySetUpdate: QuerySetUpdate
   ): CacheTableUpdate<UntypedTableDef>[] {
     const updates: CacheTableUpdate<UntypedTableDef>[] = [];
     for (const tableUpdate of querySetUpdate.tables) {
@@ -538,7 +532,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
-  #sendMessage(message: Infer<typeof ClientMessage>): void {
+  #sendMessage(message: ClientMessage): void {
     this.wsPromise.then(wsResolved => {
       if (wsResolved) {
         const writer = new BinaryWriter(1024);
