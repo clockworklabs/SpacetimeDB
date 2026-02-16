@@ -89,6 +89,12 @@
       "import": "./dist/svelte/index.mjs",
       "require": "./dist/svelte/index.cjs",
       "default": "./dist/svelte/index.mjs"
+    },
+    "./angular": {
+      "types": "./dist/angular/index.d.ts",
+      "import": "./dist/angular/index.mjs",
+      "require": "./dist/angular/index.cjs",
+      "default": "./dist/angular/index.mjs"
     }
   },
   "size-limit": [
@@ -183,7 +189,8 @@
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
     "svelte": "^4.0.0 || ^5.0.0",
     "undici": "^6.19.2",
-    "vue": "^3.3.0"
+    "vue": "^3.3.0",
+    "@angular/core": ">=17.0.0"
   },
   "peerDependenciesMeta": {
     "@tanstack/react-query": {
@@ -199,6 +206,9 @@
       "optional": true
     },
     "vue": {
+      "optional": true
+    },
+    "@angular/core": {
       "optional": true
     }
   },
@@ -224,6 +234,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.18.2",
     "vite": "^7.1.5",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@angular/core": "^21.1.0",
+    "@angular/compiler": "^21.1.0"
   }
 }
