@@ -1320,16 +1320,16 @@ Table and Type definitions in C# should use the `partial` keyword (e.g., `public
 
 Database tables store the application's persistent state. They are defined using C# classes or structs marked with the `[Table]` attribute.
 
-- **Core Attribute:** `[Table(Name = "my_table_name", ...)]` marks a class or struct as a database table definition. The specified string `Name` is how the table will be referenced in SQL queries and generated APIs.
+- **Core Attribute:** `[Table(Accessor = "my_table_name", ...)]` marks a class or struct as a database table definition. The specified string `Accessor` is how the table will be referenced in SQL queries and generated APIs.
 - **Partial Modifier:** Use the `partial` keyword (e.g., `public partial class MyTable`) to allow SpacetimeDB's source generators to add necessary methods and logic to your definition.
 - **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, set `Public = true` within the attribute: `[Table(..., Public = true)]`. This is a common source of errors if forgotten.
 - **Primary Keys:** Designate a single **public field** as the primary key using `[PrimaryKey]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
 - **Auto-Increment:** Mark an integer-typed primary key **public field** with `[AutoInc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
 - **Unique Constraints:** Enforce uniqueness on non-primary key **public fields** using `[Unique]`. Attempts to insert or update rows violating this constraint will fail (throw an exception).
-- **Indexes:** Create B-tree indexes for faster lookups on specific **public fields** or combinations of fields. Use `[Index.BTree]` on a single field for a simple index, or define indexes at the class/struct level using `[Index.BTree(Name = "MyIndexName", Columns = new[] { nameof(ColA), nameof(ColB) })]`.
+- **Indexes:** Create B-tree indexes for faster lookups on specific **public fields** or combinations of fields. Use `[Index.BTree]` on a single field for a simple index, or define indexes at the class/struct level using `[Index.BTree(Accessor = "MyIndexName", Columns = new[] { nameof(ColA), nameof(ColB) })]`.
 - **Nullable Fields:** Use standard C# nullable reference types (`string?`) or nullable value types (`int?`, `Timestamp?`) for fields that can hold null values.
 - **Instances vs. Database:** Remember that table class/struct instances (e.g., `var player = new PlayerState { ... };`) are just data objects. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.Db.player_state.Insert(...)`).
-- **Case Sensitivity:** Table names specified via `Name = "..."` are case-sensitive and must be matched exactly in SQL queries.
+- **Case Sensitivity:** Table names specified via `Accessor = "..."` are case-sensitive and must be matched exactly in SQL queries.
 - **Pitfalls:**
   - SpacetimeDB attributes (`[PrimaryKey]`, `[AutoInc]`, `[Unique]`, `[Index.BTree]`) **must** be applied to **public fields**, not properties (`{ get; set; }`). Using properties can cause build errors or runtime issues.
   - Avoid manually inserting values into `[AutoInc]` fields that are also `[Unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
@@ -1344,8 +1344,8 @@ using System; // For Nullable types if needed
 // Assume Position, PlayerStatus, ItemType are defined as types
 
 // Example Table Definition
-[Table(Name = "player_state", Public = true)]
-[Index.BTree(Name = "idx_level", Columns = new[] { nameof(Level) })] // Table-level index
+[Table(Accessor = "player_state", Public = true)]
+[Index.BTree(Accessor = "idx_level", Columns = new[] { nameof(Level) })] // Table-level index
 public partial class PlayerState
 {
     [PrimaryKey]
@@ -1359,7 +1359,7 @@ public partial class PlayerState
     public Timestamp? LastLogin; // Public field, nullable struct
 }
 
-[Table(Name = "inventory_item", Public = true)]
+[Table(Accessor = "inventory_item", Public = true)]
 public partial class InventoryItem
 {
     [PrimaryKey]
@@ -1372,7 +1372,7 @@ public partial class InventoryItem
 }
 
 // Example of a private table
-[Table(Name = "internal_game_data")] // Public = false is default
+[Table(Accessor = "internal_game_data")] // Public = false is default
 public partial class InternalGameData
 {
     [PrimaryKey]
@@ -1399,13 +1399,13 @@ public partial class CharacterInfo
 }
 
 // Define derived classes, each with its own table attribute
-[Table(Name = "active_characters")]
+[Table(Accessor = "active_characters")]
 public partial class ActiveCharacter : CharacterInfo {
     // Can add specific public fields if needed
     public bool IsOnline;
 }
 
-[Table(Name = "deleted_characters")]
+[Table(Accessor = "deleted_characters")]
 public partial class DeletedCharacter : CharacterInfo {
     // Can add specific public fields if needed
     public Timestamp DeletionTime;
@@ -1423,8 +1423,8 @@ using SpacetimeDB;
 // Define the core data structure once
 // Apply multiple [Table] attributes to map it to different tables
 [Type] // Mark as a type if used elsewhere (e.g., reducer args)
-[Table(Name = "logged_in_players", Public = true)]
-[Table(Name = "players_in_lobby", Public = true)]
+[Table(Accessor = "logged_in_players", Public = true)]
+[Table(Accessor = "players_in_lobby", Public = true)]
 public partial class PlayerSessionData
 {
     [PrimaryKey]
@@ -1466,11 +1466,11 @@ using System.Linq; // Used in more complex examples later
 public static partial class Module
 {
     // Assume PlayerState and InventoryItem tables are defined as previously
-    [Table(Name = "player_state", Public = true)] public partial class PlayerState {
+    [Table(Accessor = "player_state", Public = true)] public partial class PlayerState {
         [PrimaryKey] public Identity PlayerId;
         [Unique] public string Name = "";
         public uint Health; public ushort Level; /* ... other fields */ }
-    [Table(Name = "inventory_item", Public = true)] public partial class InventoryItem {
+    [Table(Accessor = "inventory_item", Public = true)] public partial class InventoryItem {
         [PrimaryKey] #[AutoInc] public ulong ItemId;
         public Identity OwnerId; /* ... other fields */ }
 
@@ -1583,7 +1583,7 @@ using System;
 
 public static partial class Module
 {
-    [Table(Name = "unique_items")]
+    [Table(Accessor = "unique_items")]
     public partial class UniqueItem {
         [PrimaryKey] public string ItemName;
         public int Value;
@@ -1649,7 +1649,7 @@ In addition to lifecycle annotations, reducers can be scheduled. This allows cal
 
 The scheduling information for a reducer is stored in a table. This table links to the reducer function and has specific mandatory fields:
 
-1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Name = ..., Scheduled = nameof(YourReducerName), ScheduledAt = nameof(YourScheduleAtColumnName))]`.
+1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Accessor = ..., Scheduled = nameof(YourReducerName), ScheduledAt = nameof(YourScheduleAtColumnName))]`.
     - The `Scheduled` parameter links this table to the static reducer method `YourReducerName`.
     - The `ScheduledAt` parameter specifies the name of the field within this table that holds the scheduling information. This field **must** be of type `SpacetimeDB.ScheduleAt`.
     - The table **must** also have a primary key field (often `[AutoInc] ulong Id`).
@@ -1672,7 +1672,7 @@ public static partial class Module
 {
     // 1. Define the table with scheduling information, linking to `SendMessage` reducer.
     // Specifies that the `ScheduledAt` field holds the schedule info.
-    [Table(Name = "send_message_schedule", Scheduled = nameof(SendMessage), ScheduledAt = nameof(ScheduledAt))]
+    [Table(Accessor = "send_message_schedule", Scheduled = nameof(SendMessage), ScheduledAt = nameof(ScheduledAt))]
     public partial struct SendMessageSchedule
     {
         // Mandatory fields:
@@ -1824,7 +1824,7 @@ public static partial class Module
 
     // View that returns the caller's player (user-specific)
     // Returns T? for at-most-one row
-    [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyPlayer", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
         return ctx.Db.Player.Identity.Find(ctx.Sender);
@@ -1832,7 +1832,7 @@ public static partial class Module
 
     // View that returns all players at a specific level (same for all callers)
     // Returns List<T> for multiple rows
-    [SpacetimeDB.View(Name = "PlayersForLevel", Public = true)]
+    [SpacetimeDB.View(Accessor = "PlayersForLevel", Public = true)]
     public static List<PlayerAndLevel> PlayersForLevel(AnonymousViewContext ctx)
     {
         var rows = new List<PlayerAndLevel>();
@@ -1883,7 +1883,7 @@ The query builder provides a fluent API for constructing type-safe SQL queries:
 ```csharp
 // This view can scan the whole table efficiently because
 // Query<T> results are computed incrementally
-[SpacetimeDB.View(Name = "MyMessages", Public = true)]
+[SpacetimeDB.View(Accessor = "MyMessages", Public = true)]
 public static Query<Message> MyMessages(ViewContext ctx)
 {
     return ctx.Db.Message

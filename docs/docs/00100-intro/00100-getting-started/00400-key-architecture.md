@@ -508,7 +508,7 @@ export const my_player = spacetimedb.view(
 A view can be written in C# like so:
 
 ```csharp
-[SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+[SpacetimeDB.View(Accessor = "MyPlayer", Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
     return ctx.Db.Player.Identity.Find(ctx.Sender) as Player;

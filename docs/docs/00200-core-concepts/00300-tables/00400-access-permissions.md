@@ -365,7 +365,7 @@ export const findUsersByName = spacetimedb.view(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.View(Name = "FindUsersByName", Public = true)]
+[SpacetimeDB.View(Accessor = "FindUsersByName", Public = true)]
 public static List<User> FindUsersByName(ViewContext ctx)
 {
     // Can read and filter
@@ -476,7 +476,7 @@ public partial class Module
     }
 
     // Public view that only returns messages the caller can see
-    [SpacetimeDB.View(Name = "MyMessages", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyMessages", Public = true)]
     public static List<Message> MyMessages(ViewContext ctx)
     {
         // Look up messages by index where caller is sender or recipient
@@ -638,7 +638,7 @@ public partial class Module
     }
 
     // Public view that returns the caller's profile without sensitive data
-    [SpacetimeDB.View(Name = "MyProfile", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyProfile", Public = true)]
     public static PublicUserProfile? MyProfile(ViewContext ctx)
     {
         // Look up the caller's account by their identity (unique index)
@@ -833,7 +833,7 @@ public partial class Module
     }
 
     // View that returns colleagues in the caller's department, without salary info
-    [SpacetimeDB.View(Name = "MyColleagues", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyColleagues", Public = true)]
     public static List<Colleague> MyColleagues(ViewContext ctx)
     {
         // Find the caller's employee record by identity (unique index)

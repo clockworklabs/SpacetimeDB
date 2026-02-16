@@ -119,7 +119,7 @@ const inventory = table(
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "Inventory", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "by_user_item", Columns = new[] { nameof(UserId), nameof(ItemId) })]
+[SpacetimeDB.Index.BTree(Accessor = "by_user_item", Columns = new[] { nameof(UserId), nameof(ItemId) })]
 public partial struct Inventory
 {
     [SpacetimeDB.PrimaryKey]

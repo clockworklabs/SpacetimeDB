@@ -150,10 +150,10 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 ### 13. Index Attribute Ambiguity
 ```csharp
 // ❌ WRONG — ambiguous with System.Index
-[Index.BTree(Name = "idx", Columns = new[] { "Col" })]
+[Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
 
 // ✅ CORRECT — fully qualify
-[SpacetimeDB.Index.BTree(Name = "idx", Columns = new[] { "Col" })]
+[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
 ```
 
 ---
@@ -223,7 +223,7 @@ public partial struct Task
 
 // Multi-column index (use fully-qualified attribute!)
 [SpacetimeDB.Table(Accessor = "score", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
+[SpacetimeDB.Index.BTree(Accessor = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
 public partial struct Score
 {
     [SpacetimeDB.PrimaryKey]
