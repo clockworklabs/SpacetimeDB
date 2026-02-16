@@ -151,7 +151,7 @@ const spacetimedb = schema({
   // person (public) with btree index on age
   person: table(
     {
-      name: 'person',
+      name: 'Person',
       public: true,
       indexes: [{ name: 'age', algorithm: 'btree', columns: ['age'] }],
     },
@@ -159,9 +159,8 @@ const spacetimedb = schema({
   ),
 
   // test_a with index foo on x
-  testA: table(
+  testATable: table(
     {
-      name: 'test_a',
       indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
     },
     testA
@@ -313,28 +312,28 @@ export const test = spacetimedb.reducer(
 
     // Insert test_a rows
     for (let i = 0; i < 1000; i++) {
-      ctx.db.testA.insert({
+      ctx.db.testATable.insert({
         x: (i >>> 0) + arg.x,
         y: (i >>> 0) + arg.y,
         z: 'Yo',
       });
     }
 
-    const rowCountBefore = ctx.db.testA.count();
+    const rowCountBefore = ctx.db.testATable.count();
     console.info(`Row count before delete: ${rowCountBefore}`);
 
     // Delete rows by the indexed column `x` in [5,10)
     let numDeleted = 0;
     for (let x = 5; x < 10; x++) {
       // Prefer index deletion if available; fallback to filter+delete
-      for (const row of ctx.db.testA.iter()) {
+      for (const row of ctx.db.testATable.iter()) {
         if (row.x === x) {
-          if (ctx.db.testA.delete(row)) numDeleted++;
+          if (ctx.db.testATable.delete(row)) numDeleted++;
         }
       }
     }
 
-    const rowCountAfter = ctx.db.testA.count();
+    const rowCountAfter = ctx.db.testATable.count();
     if (Number(rowCountBefore) !== Number(rowCountAfter) + numDeleted) {
       console.error(
         `Started with ${rowCountBefore} rows, deleted ${numDeleted}, and wound up with ${rowCountAfter} rows... huh?`
@@ -351,7 +350,7 @@ export const test = spacetimedb.reducer(
 
     console.info(`Row count after delete: ${rowCountAfter}`);
 
-    const otherRowCount = ctx.db.testA.count();
+    const otherRowCount = ctx.db.testATable.count();
     console.info(`Row count filtered by condition: ${otherRowCount}`);
 
     console.info('MultiColumn');

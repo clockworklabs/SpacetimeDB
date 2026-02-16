@@ -27,7 +27,7 @@ pub struct Person {
 }
 
 #[cfg(not(feature = "test-add-column"))]
-#[spacetimedb::table(accessor = person, public, index(accessor = age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = person, name="Person", public, index(accessor = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -42,7 +42,7 @@ pub struct RemoveTable {
     pub id: u32,
 }
 
-#[spacetimedb::table(accessor = test_a, index(accessor = foo, btree(columns = [x])))]
+#[spacetimedb::table(accessor = TestATable, index(accessor = foo, btree(columns = [x])))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
@@ -204,7 +204,7 @@ impl Foo<'_> {
 // VIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[spacetimedb::view(accessor = my_player, public)]
+#[spacetimedb::view(accessor = myOwnPlayer, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
@@ -281,23 +281,23 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
         TestF::Baz(string) => log::info!("{string}"),
     }
     for i in 0..1000 {
-        ctx.db.test_a().insert(TestA {
+        ctx.db.TestATable().insert(TestA {
             x: i + arg.x,
             y: i + arg.y,
             z: "Yo".to_owned(),
         });
     }
 
-    let row_count_before_delete = ctx.db.test_a().count();
+    let row_count_before_delete = ctx.db.TestATable().count();
 
     log::info!("Row count before delete: {row_count_before_delete:?}");
 
     let mut num_deleted = 0;
     for row in 5..10u32 {
-        num_deleted += ctx.db.test_a().foo().delete(row);
+        num_deleted += ctx.db.TestATable().foo().delete(row);
     }
 
-    let row_count_after_delete = ctx.db.test_a().count();
+    let row_count_after_delete = ctx.db.TestATable().count();
 
     if row_count_before_delete != row_count_after_delete + num_deleted {
         log::error!(
@@ -317,7 +317,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
     let other_row_count = ctx
         .db
-        .test_a()
+        .TestATable()
         // .iter()
         // .filter(|row| row.x >= 0 && row.x <= u32::MAX)
         .count();

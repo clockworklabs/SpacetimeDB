@@ -387,10 +387,10 @@ record TableIndex
     public static bool CanParse(AttributeData data) =>
         data.AttributeClass?.ToString() == BTreeAttrName;
 
-    public string GenerateIndexDef() =>
+    public string GenerateIndexDef(TableAccessor tableAccessor) =>
         $$"""
             new(
-                SourceName: "{{Table + StandardNameSuffix}}",
+                SourceName: "{{StandardIndexName(tableAccessor)}}",
                 AccessorName: "{{AccessorName}}",
                 Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{string.Join(
                     ", ",
@@ -744,7 +744,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             GetConstraints(v, ColumnAttrs.Unique)
                             .Select(c => c.ToIndex())
                             .Concat(GetIndexes(v))
-                            .Select(b => b.GenerateIndexDef())
+                            .Select(b => b.GenerateIndexDef(v))
                         )}}}
                     ],
                     Constraints: {{{GenConstraintList(v, ColumnAttrs.Unique, $"{iTable}.MakeUniqueConstraint")}}},

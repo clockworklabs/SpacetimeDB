@@ -10,7 +10,7 @@ using TestAlias = TestA;
 // TABLE DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-[Table(Name = "person", Public = true)]
+[Table(Name = "Person", Public = true)]
 public partial struct Person
 {
     [PrimaryKey]
@@ -22,7 +22,7 @@ public partial struct Person
     public byte age;
 }
 
-[Table(Name = "test_a")]
+[Table(Name = "TestATable")]
 public partial struct TestA
 {
     // The index on column "x" is given the name "foo".
@@ -244,13 +244,13 @@ static partial class Module
     [Reducer]
     public static void add(ReducerContext ctx, string name, byte age)
     {
-        ctx.Db.person.Insert(new Person { id = 0, name = name, age = age });
+        ctx.Db.Person.Insert(new Person { id = 0, name = name, age = age });
     }
 
     [Reducer]
     public static void say_hello(ReducerContext ctx)
     {
-        foreach (var person in ctx.Db.person.Iter())
+        foreach (var person in ctx.Db.Person.Iter())
         {
             Log.Info($"Hello, {person.name}!");
         }
@@ -261,7 +261,7 @@ static partial class Module
     public static void list_over_age(ReducerContext ctx, byte age)
     {
         // In C# we assume the BTree index filter accepts a tuple representing a range.
-        foreach (var person in ctx.Db.person.age.Filter((age, byte.MaxValue)))
+        foreach (var person in ctx.Db.Person.age.Filter((age, byte.MaxValue)))
         {
             Log.Info($"{person.name} has age {person.age} >= {age}");
         }
@@ -310,7 +310,7 @@ static partial class Module
         // Insert 1000 rows into the test_a table.
         for (uint i = 0; i < 1000; i++)
         {
-            ctx.Db.test_a.Insert(new TestA
+            ctx.Db.TestATable.Insert(new TestA
             {
                 x = i + arg.x,
                 y = i + arg.y,
@@ -318,17 +318,17 @@ static partial class Module
             });
         }
 
-        var rowCountBeforeDelete = ctx.Db.test_a.Count;
+        var rowCountBeforeDelete = ctx.Db.TestATable.Count;
         Log.Info($"Row count before delete: {rowCountBeforeDelete}");
 
         ulong numDeleted = 0;
         // Delete rows using the "foo" index (from 5 up to, but not including, 10).
         for (uint row = 5; row < 10; row++)
         {
-            numDeleted += ctx.Db.test_a.foo.Delete(row);
+            numDeleted += ctx.Db.TestATable.foo.Delete(row);
         }
 
-        var rowCountAfterDelete = ctx.Db.test_a.Count;
+        var rowCountAfterDelete = ctx.Db.TestATable.Count;
 
         if (rowCountBeforeDelete != rowCountAfterDelete + numDeleted)
         {
@@ -353,8 +353,8 @@ static partial class Module
 
         Log.Info($"Row count after delete: {rowCountAfterDelete}");
 
-        // Here we simply count the rows in test_a again (this could be replaced with a filtered count).
-        var otherRowCount = ctx.Db.test_a.Count;
+        // Here we simply count the rows in TestATable again (this could be replaced with a filtered count).
+        var otherRowCount = ctx.Db.TestATable.Count;
         Log.Info($"Row count filtered by condition: {otherRowCount}");
 
         Log.Info("MultiColumn");
