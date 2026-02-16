@@ -533,7 +533,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
                 OsString::from("publish"),
                 OsString::from("--server"),
                 OsString::from(&new_url),
-                OsString::from("--project-path"),
+                OsString::from("--module-path"),
                 repo.join("templates/chat-console-rs/spacetimedb").into_os_string(),
                 OsString::from("--yes"),
                 OsString::from(&db_name),
