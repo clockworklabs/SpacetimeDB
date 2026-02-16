@@ -355,7 +355,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       }
       indexes.push({
         sourceName: undefined, // Unnamed indexes will be assigned a globally unique name
-        accessorName: name, // The name of this column will be used as the accessor name
+        accessorName: name,
         algorithm,
       });
     }

@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "score";
 
-            public sealed class ByPlayerAndLevelIndex : BTreeIndexBase<(uint PlayerId, uint Level)>
+            public sealed class ScorePlayerIdLevelIdxBtreeIndex : BTreeIndexBase<(uint PlayerId, uint Level)>
             {
                 protected override (uint PlayerId, uint Level) GetKey(Score row) => (row.PlayerId, row.Level);
 
-                public ByPlayerAndLevelIndex(ScoreHandle table) : base(table) { }
+                public ScorePlayerIdLevelIdxBtreeIndex(ScoreHandle table) : base(table) { }
             }
 
-            public readonly ByPlayerAndLevelIndex ByPlayerAndLevel;
+            public readonly ScorePlayerIdLevelIdxBtreeIndex ScorePlayerIdLevelIdxBtree;
 
             internal ScoreHandle(DbConnection conn) : base(conn)
             {
-                ByPlayerAndLevel = new(this);
+                ScorePlayerIdLevelIdxBtree = new(this);
             }
         }
 

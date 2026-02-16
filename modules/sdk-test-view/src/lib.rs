@@ -2,7 +2,7 @@ use spacetimedb::{
     reducer, table, view, AnonymousViewContext, Identity, ReducerContext, SpacetimeType, Table, ViewContext,
 };
 
-#[table(name = player, public)]
+#[table(accessor = player, public)]
 struct Player {
     #[primary_key]
     #[auto_inc]
@@ -11,7 +11,7 @@ struct Player {
     identity: Identity,
 }
 
-#[table(name = player_level, public)]
+#[table(accessor = player_level, public)]
 struct PlayerLevel {
     #[unique]
     entity_id: u64,
@@ -19,7 +19,7 @@ struct PlayerLevel {
     level: u64,
 }
 
-#[table(name = player_location)]
+#[table(accessor = player_location)]
 pub struct PlayerLocation {
     #[unique]
     pub entity_id: u64,
@@ -81,12 +81,12 @@ pub fn move_player(ctx: &ReducerContext, dx: i32, dy: i32) {
     }
 }
 
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
 
-#[view(name = my_player_and_level, public)]
+#[view(accessor = my_player_and_level, public)]
 fn my_player_and_level(ctx: &ViewContext) -> Option<PlayerAndLevel> {
     ctx.db
         .player()
@@ -105,7 +105,7 @@ fn my_player_and_level(ctx: &ViewContext) -> Option<PlayerAndLevel> {
         })
 }
 
-#[view(name = players_at_level_0, public)]
+#[view(accessor = players_at_level_0, public)]
 fn players_at_level_0(ctx: &AnonymousViewContext) -> Vec<Player> {
     ctx.db
         .player_level()
@@ -115,7 +115,7 @@ fn players_at_level_0(ctx: &AnonymousViewContext) -> Vec<Player> {
         .collect()
 }
 
-#[view(name = nearby_players, public)]
+#[view(accessor = nearby_players, public)]
 pub fn nearby_players(ctx: &ViewContext) -> Vec<PlayerLocation> {
     ctx.db
         .player()

@@ -18,11 +18,11 @@ void UPlayerTable::PostInitialize()
     PlayerTable->AddUniqueConstraint<int32>("player_id", [](const FPlayerType& Row) -> const int32& {
         return Row.PlayerId; });
 
-    Identity = NewObject<UPlayerIdentityUniqueIndex>(this);
-    Identity->SetCache(PlayerTable);
+    PlayerIdentityIdxBtree = NewObject<UPlayerPlayerIdentityIdxBtreeUniqueIndex>(this);
+    PlayerIdentityIdxBtree->SetCache(PlayerTable);
 
-    PlayerId = NewObject<UPlayerPlayerIdUniqueIndex>(this);
-    PlayerId->SetCache(PlayerTable);
+    PlayerPlayerIdIdxBtree = NewObject<UPlayerPlayerPlayerIdIdxBtreeUniqueIndex>(this);
+    PlayerPlayerIdIdxBtree->SetCache(PlayerTable);
 
     /***/
 }

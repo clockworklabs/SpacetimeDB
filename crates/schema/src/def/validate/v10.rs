@@ -292,7 +292,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|index| {
                 table_validator
-                    .validate_index_def(index.into())
+                    .validate_index_def(index.into(), RawModuleDefVersion::V10)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -868,17 +868,17 @@ mod tests {
             [
                 &IndexDef {
                     name: "Apples_count_idx_direct".into(),
-                    accessor_name: Some(expect_identifier("Apples_count_direct")),
+                    codegen_name: Some(expect_identifier("Apples_count_idx_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
-                    accessor_name: Some(expect_identifier("apples_id")),
+                    codegen_name: Some(expect_identifier("Apples_name_count_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
-                    accessor_name: Some(expect_identifier("Apples_type_btree")),
+                    codegen_name: Some(expect_identifier("Apples_type_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
                 }
             ]
@@ -1464,12 +1464,10 @@ mod tests {
         let mut raw_def = builder.finish();
         let tables = raw_def.tables_mut_for_tests();
         tables[0].constraints[0].source_name = Some("wacky.constraint()".into());
-        tables[0].indexes[0].source_name = Some("wacky.index()".into());
         tables[0].sequences[0].source_name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
         assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
-        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
         assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
     }
 

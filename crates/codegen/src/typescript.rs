@@ -717,7 +717,7 @@ fn write_table_opts<'a>(
         // no actual way for the user to set the actual index name.
         // I think we should standardize: name and accessorName as the way to set
         // the name and accessor name of an index across all SDKs.
-        if let Some(accessor_name) = &index_def.accessor_name {
+        if let Some(accessor_name) = &index_def.codegen_name {
             writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
         } else {
             writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);

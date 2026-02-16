@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "null_string_nonnullable";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class NullStringNonnullableIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(NullStringNonNullable row) => row.Id;
 
-                public IdUniqueIndex(NullStringNonnullableHandle table) : base(table) { }
+                public NullStringNonnullableIdIdxBtreeUniqueIndex(NullStringNonnullableHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly NullStringNonnullableIdIdxBtreeUniqueIndex NullStringNonnullableIdIdxBtree;
 
             internal NullStringNonnullableHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
+                NullStringNonnullableIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(NullStringNonNullable row) => row.Id;

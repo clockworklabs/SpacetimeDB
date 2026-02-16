@@ -546,7 +546,7 @@ impl Lang for Csharp<'_> {
                 let mut index_names = Vec::new();
 
                 for idx in iter_indexes(table) {
-                    let Some(accessor_name) = idx.accessor_name.as_ref() else {
+                    let Some(accessor_name) = idx.codegen_name.as_ref() else {
                         // If there is no accessor name, we shouldn't generate a client-side index accessor.
                         continue;
                     };

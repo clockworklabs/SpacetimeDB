@@ -13,19 +13,19 @@
 #include "ConfigTable.g.generated.h"
 
 UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UConfigIdUniqueIndex : public UObject
+class CLIENT_UNREAL_API UConfigConfigIdIdxBtreeUniqueIndex : public UObject
 {
     GENERATED_BODY()
 
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FConfigType, int32, FTableCache<FConfigType>> IdIndexHelper;
+    FUniqueIndexHelper<FConfigType, int32, FTableCache<FConfigType>> ConfigIdIdxBtreeIndexHelper;
 
 public:
-    UConfigIdUniqueIndex()
+    UConfigConfigIdIdxBtreeUniqueIndex()
         // Initialize the helper with the specific unique index name
-        : IdIndexHelper("id") {
+        : ConfigIdIdxBtreeIndexHelper("id") {
     }
 
     /**
@@ -37,14 +37,14 @@ public:
     FConfigType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
-        return IdIndexHelper.FindUniqueIndex(Key);
+        return ConfigIdIdxBtreeIndexHelper.FindUniqueIndex(Key);
     }
 
     // A public setter to provide the cache to the helper after construction
     // This is a common pattern when the cache might be created or provided by another system.
     void SetCache(TSharedPtr<const FTableCache<FConfigType>> InConfigCache)
     {
-        IdIndexHelper.Cache = InConfigCache;
+        ConfigIdIdxBtreeIndexHelper.Cache = InConfigCache;
     }
 };
 /***/
@@ -56,7 +56,7 @@ class CLIENT_UNREAL_API UConfigTable : public URemoteTable
 
 public:
     UPROPERTY(BlueprintReadOnly)
-    UConfigIdUniqueIndex* Id;
+    UConfigConfigIdIdxBtreeUniqueIndex* ConfigIdIdxBtree;
 
     void PostInitialize();
 

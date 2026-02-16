@@ -380,7 +380,7 @@ public static List<User> FindUsersByName(ViewContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::view(name = find_users_by_name, public)]
+#[spacetimedb::view(accessor = find_users_by_name, public)]
 fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
     // Can read and filter
     ctx.db.user().name().filter("Alice").collect()
@@ -510,7 +510,7 @@ pub struct Message {
 }
 
 // Public view that only returns messages the caller can see
-#[spacetimedb::view(name = my_messages, public)]
+#[spacetimedb::view(accessor = my_messages, public)]
 fn my_messages(ctx: &ViewContext) -> Vec<Message> {
     // Look up messages by index where caller is sender or recipient
     let sent: Vec<_> = ctx.db.message().sender().filter(&ctx.sender()).collect();
@@ -687,7 +687,7 @@ pub struct PublicUserProfile {
 }
 
 // Public view that returns the caller's profile without sensitive data
-#[spacetimedb::view(name = my_profile, public)]
+#[spacetimedb::view(accessor = my_profile, public)]
 fn my_profile(ctx: &ViewContext) -> Option<PublicUserProfile> {
     // Look up the caller's account by their identity (unique index)
     let user = ctx.db.user_account().identity().find(&ctx.sender())?;
@@ -884,7 +884,7 @@ pub struct Colleague {
 }
 
 // View that returns colleagues in the caller's department, without salary info
-#[spacetimedb::view(name = my_colleagues, public)]
+#[spacetimedb::view(accessor = my_colleagues, public)]
 fn my_colleagues(ctx: &ViewContext) -> Vec<Colleague> {
     // Find the caller's employee record by identity (unique index)
     let Some(me) = ctx.db.employee().identity().find(&ctx.sender()) else {
