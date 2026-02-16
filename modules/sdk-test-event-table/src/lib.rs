@@ -1,6 +1,6 @@
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = test_event, public, event)]
+#[spacetimedb::table(accessor = test_event, public, event)]
 pub struct TestEvent {
     pub name: String,
     pub value: u64,
