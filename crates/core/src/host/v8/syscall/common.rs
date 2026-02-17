@@ -662,14 +662,10 @@ pub fn procedure_commit_mut_tx(
     };
 
     let hooks = get_registered_hooks(scope).ok_or_else(|| {
-        SysCallError::Exception(
-            TypeError("module hooks are unavailable while committing a procedure transaction").throw(scope),
-        )
+        TypeError("module hooks are unavailable while committing a procedure transaction").throw(scope)
     })?;
     let module_def = get_env(scope)?.module_def().ok_or_else(|| {
-        SysCallError::Exception(
-            TypeError("module definition is unavailable while committing a procedure transaction").throw(scope),
-        )
+        TypeError("module definition is unavailable while committing a procedure transaction").throw(scope)
     })?;
     let tx = refresh_views(scope, tx, &hooks, &module_def)?;
     get_env(scope)?.instance_env.commit_procedure_tx(tx)?;
@@ -701,13 +697,11 @@ fn refresh_views(
             let view_def = module_def
                 .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
                 .ok_or_else(|| {
-                    SysCallError::Exception(
-                        TypeError(format!(
-                            "view with fn_ptr `{}` not found while refreshing procedure transaction",
-                            view_call.fn_ptr
-                        ))
-                        .throw(scope),
-                    )
+                    TypeError(format!(
+                        "view with fn_ptr `{}` not found while refreshing procedure transaction",
+                        view_call.fn_ptr
+                    ))
+                    .throw(scope)
                 })?;
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
@@ -721,33 +715,27 @@ fn refresh_views(
                 .resolve(view_def.product_type_ref)
                 .resolve_refs()
                 .map_err(|err| {
-                    SysCallError::Exception(
-                        TypeError(format!(
-                            "failed resolving row type for refreshed view `{}`: {err}",
-                            view_def.name
-                        ))
-                        .throw(scope),
-                    )
+                    TypeError(format!(
+                        "failed resolving row type for refreshed view `{}`: {err}",
+                        view_def.name
+                    ))
+                    .throw(scope)
                 })?
                 .into_product()
                 .map_err(|_| {
-                    SysCallError::Exception(
-                        TypeError(format!(
-                            "failed resolving row product type for refreshed view `{}`",
-                            view_def.name
-                        ))
-                        .throw(scope),
-                    )
+                    TypeError(format!(
+                        "failed resolving row product type for refreshed view `{}`",
+                        view_def.name
+                    ))
+                    .throw(scope)
                 })?;
 
             let rows = match ViewResult::from_return_data(return_data).map_err(|err| {
-                SysCallError::Exception(
-                    TypeError(format!(
-                        "failed parsing result for refreshed view `{}`: {err}",
-                        view_def.name
-                    ))
-                    .throw(scope),
-                )
+                TypeError(format!(
+                    "failed parsing result for refreshed view `{}`: {err}",
+                    view_def.name
+                ))
+                .throw(scope)
             })? {
                 ViewResult::Rows(bytes) => {
                     deserialize_view_rows(view_def.product_type_ref, bytes, typespace).map_err(NodesError::from)?
@@ -760,13 +748,11 @@ fn refresh_views(
                     database_identity,
                 )
                 .map_err(|err| {
-                    SysCallError::Exception(
-                        TypeError(format!(
-                            "failed running query for refreshed view `{}`: {err}",
-                            view_def.name
-                        ))
-                        .throw(scope),
-                    )
+                    TypeError(format!(
+                        "failed running query for refreshed view `{}`: {err}",
+                        view_def.name
+                    ))
+                    .throw(scope)
                 })?,
             };
 
@@ -852,13 +838,12 @@ fn call_view(
     get_env(scope)?.instance_env.swap_func_type(prev_func_type);
 
     result.map_err(|err| match err {
-        ErrorOrException::Err(err) => SysCallError::Exception(
-            TypeError(format!(
-                "failed executing refreshed view `{}` during procedure commit: {err}",
-                view_name
-            ))
-            .throw(scope),
-        ),
-        ErrorOrException::Exception(exc) => SysCallError::Exception(exc),
+        ErrorOrException::Err(err) => TypeError(format!(
+            "failed executing refreshed view `{}` during procedure commit: {err}",
+            view_name
+        ))
+        .throw(scope)
+        .into(),
+        ErrorOrException::Exception(exc) => exc.into(),
     })
 }
