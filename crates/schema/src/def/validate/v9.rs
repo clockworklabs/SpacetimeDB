@@ -1615,7 +1615,7 @@ mod tests {
                     name: "Apples_count_idx_direct".into(),
                     codegen_name: Some(expect_identifier("Apples_count_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
-                    accessor_name: "Apples_name_count_idx_btree".into(),
+                    accessor_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
@@ -1627,7 +1627,7 @@ mod tests {
                     name: "Apples_type_idx_btree".into(),
                     codegen_name: Some(expect_identifier("Apples_type_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
-                    accessor_name: "Apples_name_count_idx_btree".into(),
+                    accessor_name: "Apples_type_idx_btree".into(),
                 }
             ]
         );

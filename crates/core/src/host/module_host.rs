@@ -219,7 +219,7 @@ pub struct ModuleInfo {
     /// The definition of the module.
     /// Loaded by loading the module's program from the system tables, extracting its definition,
     /// and validating.
-    pub module_def: ModuleDef,
+    pub module_def: Arc<ModuleDef>,
     /// The identity of the module.
     pub owner_identity: Identity,
     /// The identity of the database.
@@ -292,7 +292,7 @@ impl ModuleInfo {
     ) -> Arc<Self> {
         let metrics = ModuleMetrics::new(&database_identity);
         Arc::new(ModuleInfo {
-            module_def,
+            module_def: Arc::new(module_def),
             owner_identity,
             database_identity,
             module_hash,
@@ -1936,7 +1936,7 @@ impl ModuleHost {
             table_id,
             fn_ptr,
             sender,
-        } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
+        } in out.tx.views_for_refresh().cloned().collect::<Vec<_>>()
         {
             let view_def = module_def
                 .get_view_by_id(fn_ptr, sender.is_none())

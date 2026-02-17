@@ -307,7 +307,7 @@ export default spacetimedb;
 In `spacetimedb/Lib.cs`, add the definition of the tables to the `Module` class:
 
 ```csharp server
-[Table(Name = "User", Public = true)]
+[Table(Accessor = "User", Public = true)]
 public partial class User
 {
     [PrimaryKey]
@@ -316,7 +316,7 @@ public partial class User
     public bool Online;
 }
 
-[Table(Name = "Message", Public = true)]
+[Table(Accessor = "Message", Public = true)]
 public partial class Message
 {
     public Identity Sender;
@@ -1366,8 +1366,12 @@ Now that we've imported the `DbConnection` type, we can use it to connect our ap
 Replace the body of the `main.tsx` file with the following, just below your imports:
 
 ```tsx
+const HOST = 'ws://localhost:3000';
+const DB_NAME = 'quickstart-chat';
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
 const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
-  localStorage.setItem('auth_token', token);
+  localStorage.setItem(TOKEN_KEY, token);
   console.log(
     'Connected to SpacetimeDB with identity:',
     identity.toHexString()
@@ -1386,9 +1390,9 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 };
 
 const connectionBuilder = DbConnection.builder()
-  .withUri('ws://localhost:3000')
-  .withDatabaseName('quickstart-chat')
-  .withToken(localStorage.getItem('auth_token') || undefined)
+  .withUri(HOST)
+  .withDatabaseName(DB_NAME)
+  .withToken(localStorage.getItem(TOKEN_KEY) || undefined)
   .onConnect(onConnect)
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);

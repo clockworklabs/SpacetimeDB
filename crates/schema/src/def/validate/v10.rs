@@ -878,13 +878,13 @@ mod tests {
                     name: "Apples_name_count_idx_btree".into(),
                     codegen_name: Some(expect_identifier("Apples_name_count_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
-                    accessor_name: "Apples_count_idx_direct".into(),
+                    accessor_name: "Apples_name_count_idx_btree".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
                     codegen_name: Some(expect_identifier("Apples_type_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
-                    accessor_name: "Apples_count_idx_direct".into(),
+                    accessor_name: "Apples_type_idx_btree".into(),
                 }
             ]
         );
