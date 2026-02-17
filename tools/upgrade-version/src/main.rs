@@ -370,6 +370,7 @@ fn main() -> anyhow::Result<()> {
         // TODO(26-02-17 jlarabie): Keep C++ pinned to 1.12.x for the 2.0 release train.
         // Re-enable this codepath when C++ 2.0 is ready and we're intentionally
         // moving the C++ SDK/template versions forward.
+        eprintln!("Warning: Not bumping C++ version. See inline comment for details.");
         return Ok(());
 
         #[allow(unreachable_code)]
