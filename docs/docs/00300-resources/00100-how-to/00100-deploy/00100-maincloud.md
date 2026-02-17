@@ -106,7 +106,8 @@ There are two ways to navigate to your database:
 
 The database dashboard gives you access to:
 
-- **Database info**: View your database identity, name, and current status.
+- **Overview**: View your database identity, name, status (Running or Paused), table and reducer counts, and energy usage. The overview also shows stats for the past 24 hours including CCU, rows per table, and transactions.
+- **Usage breakdown**: See this month's energy consumption broken down by bytes scanned, bytes written, index seeks, CPU instructions, bandwidth, and table storage.
 - **Logs**: View your module's log output in real time.
 - **SQL console**: Run ad-hoc SQL queries against your database.
 - **SpacetimeAuth**: Enable and configure the built-in authentication provider (see [SpacetimeAuth](/spacetimeauth)).
@@ -115,12 +116,22 @@ The database dashboard gives you access to:
 
 Maincloud databases have two states:
 
-- **Running**: The database is actively serving requests. Any client connection, reducer call, or dashboard visit will keep it in this state.
-- **Suspended**: After a period of inactivity (no client connections, no reducer calls), Maincloud automatically suspends the database to save resources. This is not the same as deleting it; all data is preserved.
+- **Running** (green dot on dashboard): The database is actively serving requests. Any client connection, reducer call, or dashboard visit will keep it in this state.
+- **Paused** (pause icon on dashboard): The database is suspended. All data is preserved, but the database is not serving requests and does not consume energy.
 
-A suspended database resumes automatically when it receives a connection or request. The first request after suspension may take a moment while the database wakes up and replays its commit log. Subsequent requests are served at normal speed.
+### Automatic suspension
 
-There is currently no manual way to pause or resume a database from the dashboard or CLI. Suspension and resumption are handled automatically by Maincloud.
+After a period of inactivity (no client connections, no reducer calls), Maincloud automatically pauses the database to save resources. A paused database resumes automatically when it receives a connection or request. The first request after resumption may take a moment while the database wakes up and replays its commit log. Subsequent requests are served at normal speed.
+
+### Manual pause and resume
+
+You can manually pause and resume your database from the web dashboard:
+
+1. Navigate to your database on [spacetimedb.com](https://spacetimedb.com).
+2. In the left sidebar, check the **Status** field to see if your database is Running or Paused.
+3. Click **Pause Database** to suspend the database, or **Start Database** to resume it.
+
+Pausing a database stops all energy usage for that database. This is useful if you want to keep your data but are not actively using the database.
 
 ## Deleting a Database
 
