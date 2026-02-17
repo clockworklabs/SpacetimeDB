@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
-use crate::spacetime_config::PackageManager;
+use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 mod embedded {
@@ -471,6 +471,10 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, &template_config.project_name)? {
+        println!("{} Created {}", "✓".green(), path.display());
+    }
+
     // Determine package manager for TypeScript projects
     let uses_typescript = template_config.server_lang == Some(ServerLanguage::TypeScript)
         || template_config.client_lang == Some(ClientLanguage::TypeScript);
@@ -513,6 +517,58 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     }
 
     Ok(project_path)
+}
+
+fn create_default_spacetime_config_if_missing(
+    project_path: &Path,
+    project_name: &str,
+) -> anyhow::Result<Option<PathBuf>> {
+    let config_path = project_path.join(CONFIG_FILENAME);
+    if config_path.exists() {
+        return Ok(None);
+    }
+
+    let mut config = SpacetimeConfig::default();
+    config
+        .additional_fields
+        .insert("database".to_string(), json!(project_name));
+    config
+        .additional_fields
+        .insert("server".to_string(), json!("maincloud"));
+
+    if project_path.join("spacetimedb").is_dir() {
+        config
+            .additional_fields
+            .insert("module-path".to_string(), json!("./spacetimedb"));
+    }
+
+    Ok(Some(config.save_to_dir(project_path)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_default_spacetime_config_if_missing_creates_expected_config() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
+
+        let created = create_default_spacetime_config_if_missing(project_path, "my-app")
+            .unwrap()
+            .expect("expected config to be created");
+        assert_eq!(created, project_path.join("spacetime.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.get("database").and_then(|v| v.as_str()), Some("my-app"));
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("maincloud"));
+        assert_eq!(
+            parsed.get("module-path").and_then(|v| v.as_str()),
+            Some("./spacetimedb")
+        );
+    }
 }
 
 async fn get_template_config_non_interactive(

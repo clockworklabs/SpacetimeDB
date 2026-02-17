@@ -958,6 +958,10 @@ pub fn setup_for_project(
     client_lang: Option<&str>,
     package_manager: Option<PackageManager>,
 ) -> anyhow::Result<Option<PathBuf>> {
+    if project_path.join(CONFIG_FILENAME).exists() {
+        return Ok(None);
+    }
+
     if let Some(lang) = client_lang {
         let config = SpacetimeConfig::for_client_lang(lang, package_manager);
         return Ok(Some(config.save_to_dir(project_path)?));
