@@ -92,7 +92,7 @@ def build_template_target():
 
         BuildModule.setUpClass()
         env = { **os.environ, "CARGO_TARGET_DIR": str(TEMPLATE_TARGET_DIR) }
-        spacetime("build", "--project-path", BuildModule.project_path, env=env)
+        spacetime("build", "--module-path", BuildModule.project_path, env=env)
         BuildModule.tearDownClass()
         BuildModule.doClassCleanups()
 
@@ -241,7 +241,7 @@ class Smoketest(unittest.TestCase):
             "publish",
             *[domain] if domain is not None else [],
             *["-c"] if clear and domain is not None else [],
-            "--project-path", self.project_path,
+            "--module-path", self.project_path,
             # This is required if -c is provided, but is also required for SpacetimeDBPrivate's tests,
             # because the server address is `node` which doesn't look like `localhost` or `127.0.0.1`
             # and so the publish step prompts for confirmation.

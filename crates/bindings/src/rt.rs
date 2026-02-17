@@ -4,7 +4,7 @@ use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemi
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
-use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+use spacetimedb_lib::db::raw_def::v10::{ExplicitNames as RawExplicitNames, RawModuleDefV10Builder};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
@@ -141,7 +141,7 @@ pub trait AnonymousView<'de, A: Args<'de>, T: ViewReturn> {
 }
 
 /// A trait for types that can *describe* a callable function such as a reducer or view.
-pub trait FnInfo {
+pub trait FnInfo: ExplicitNames {
     /// The type of function to invoke.
     type Invoke;
 
@@ -740,13 +740,14 @@ pub fn register_table<T: Table>() {
             .inner
             .build_table(T::TABLE_NAME, product_type_ref)
             .with_type(TableType::User)
-            .with_access(T::TABLE_ACCESS);
+            .with_access(T::TABLE_ACCESS)
+            .with_event(T::IS_EVENT);
 
         for &col in T::UNIQUE_COLUMNS {
             table = table.with_unique_constraint(col);
         }
         for index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.accessor_name);
+            table = table.with_index(index.algo.into(), index.source_name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
             table = table.with_primary_key(primary_key);
@@ -759,6 +760,8 @@ pub fn register_table<T: Table>() {
         }
 
         table.finish();
+
+        module.inner.add_explicit_names(T::explicit_names());
     })
 }
 
@@ -786,6 +789,8 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
             module.inner.add_reducer(I::NAME, params);
         }
         module.reducers.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -801,6 +806,8 @@ where
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
         module.inner.add_procedure(I::NAME, params, ret_ty);
         module.procedures.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -818,6 +825,8 @@ where
             .inner
             .add_view(I::NAME, module.views.len(), true, false, params, return_type);
         module.views.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -835,6 +844,8 @@ where
             .inner
             .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
         module.views_anon.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -1296,4 +1307,10 @@ pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesS
     read_bytes_source_into(source, &mut buf);
     bsatn::from_slice::<T>(&buf)
         .unwrap_or_else(|err| panic!("Failed to BSATN-deserialize `{}`: {err:#?}", std::any::type_name::<T>()))
+}
+
+pub trait ExplicitNames {
+    fn explicit_names() -> RawExplicitNames {
+        RawExplicitNames::default()
+    }
 }

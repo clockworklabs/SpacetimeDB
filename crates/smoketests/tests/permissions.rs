@@ -71,7 +71,7 @@ fn test_publish() {
         &identity,
         "--server",
         &test.server_url,
-        "--project-path",
+        "--module-path",
         project_path.to_str().unwrap(),
         "--delete-data",
         "--yes",
@@ -87,7 +87,7 @@ fn test_publish() {
         &identity,
         "--server",
         &test.server_url,
-        "--project-path",
+        "--module-path",
         project_path.to_str().unwrap(),
         "--yes",
     ]);

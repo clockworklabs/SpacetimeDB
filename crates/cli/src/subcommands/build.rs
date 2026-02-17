@@ -1,3 +1,4 @@
+use crate::util::find_module_path;
 use crate::Config;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
@@ -8,12 +9,11 @@ pub fn cli() -> clap::Command {
     clap::Command::new("build")
         .about("Builds a spacetime module.")
         .arg(
-            Arg::new("project_path")
-                .long("project-path")
+            Arg::new("module_path")
+                .long("module-path")
                 .short('p')
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
-                .help("The system path (absolute or relative) to the project you would like to build")
+                .help("The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.")
         )
         .arg(
             Arg::new("lint_dir")
@@ -42,7 +42,15 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {
-    let project_path = args.get_one::<PathBuf>("project_path").unwrap();
+    let project_path = match args.get_one::<PathBuf>("module_path").cloned() {
+        Some(path) => path,
+        None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
+                 Use --module-path to specify the module location."
+            )
+        })?,
+    };
     let features = args.get_one::<OsString>("features");
     let lint_dir = args.get_one::<OsString>("lint_dir").unwrap();
     let lint_dir = if lint_dir.is_empty() {
@@ -67,7 +75,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
         ));
     }
 
-    let result = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug, features)?;
+    let result = crate::tasks::build(&project_path, lint_dir.as_deref(), build_debug, features)?;
     println!("Build finished successfully.");
 
     Ok(result)
@@ -80,7 +88,7 @@ pub async fn exec_with_argstring(
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
     // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
     // If we don't include this, the args will be misinterpreted (e.g. as commands).
-    let arg_string = format!("build {} --project-path {}", arg_string, project_path.display());
+    let arg_string = format!("build {} --module-path {}", arg_string, project_path.display());
     let arg_matches = cli().get_matches_from(arg_string.split_whitespace());
     exec(config.clone(), &arg_matches).await
 }

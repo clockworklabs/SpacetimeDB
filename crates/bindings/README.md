@@ -60,7 +60,7 @@ Declaring tables and reducers is straightforward:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
-#[table(name = player)]
+#[table(accessor = player)]
 pub struct Player {
     id: u32,
     name: String
@@ -225,7 +225,7 @@ However:
 
 ## Tables
 
-Tables are declared using the [`#[table(name = table_name)]` macro](macro@crate::table).
+Tables are declared using the [`#[table(accessor = table_name)]` macro](macro@crate::table).
 
 This macro is applied to a Rust struct with named fields. All of the fields of the table must implement [`SpacetimeType`].
 
@@ -236,7 +236,7 @@ The resulting type is used to store rows of the table. It is normal struct type.
 use spacetimedb::{table, reducer, ReducerContext, Table, UniqueColumn};
 
 /// A `Person` is a row of the table `person`.
-#[table(name = person, public)]
+#[table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -312,20 +312,20 @@ Tables' [constraints](#unique-and-primary-key-columns) and [indexes](#indexes) g
 
 By default, tables are considered **private**. This means that they are only readable by the database owner and by reducers. Reducers run inside the database, so clients cannot see private tables at all.
 
-Using the [`#[table(name = table_name, public)]`](macro@crate::table) flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
+Using the [`#[table(accessor = table_name, public)]`](macro@crate::table) flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
 
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
 // The `enemies` table can be read by all connected clients.
-#[table(name = enemy, public)]
+#[table(accessor = enemy, public)]
 pub struct Enemy {
     /* ... */
 }
 
 // The `loot_items` table is invisible to clients, but not to reducers.
-#[table(name = loot_item)]
+#[table(accessor = loot_item)]
 pub struct LootItem {
     /* ... */
 }
@@ -347,7 +347,7 @@ use spacetimedb::table;
 type SSN = String;
 type Email = String;
 
-#[table(name = citizen)]
+#[table(accessor = citizen)]
 pub struct Citizen {
     #[primary_key]
     id: u64,
@@ -402,7 +402,7 @@ When inserting into a table with an `#[auto_inc]` column, if the annotated colum
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
-#[table(name = example)]
+#[table(accessor = example)]
 struct Example {
     #[auto_inc]
     field: u32
@@ -433,7 +433,7 @@ When you republish a module with a new column that has a default value, existing
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
-#[table(name = player)]
+#[table(accessor = player)]
 struct Player {
     id: u64,
     name: String,
@@ -464,7 +464,7 @@ For example:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
-#[table(name = paper, index(name = url_and_country, btree(columns = [url, country])))]
+#[table(accessor = paper, index(name = url_and_country, btree(columns = [url, country])))]
 struct Paper {
     url: String,
     country: String,
@@ -488,7 +488,7 @@ For example:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
-#[table(name = paper)]
+#[table(accessor = paper)]
 struct Paper {
     url: String,
     country: String,
@@ -579,7 +579,7 @@ Views can return either `Option<T>` or `Vec<T>` where `T` can be a table type or
 use spacetimedb::{table, view, ViewContext, AnonymousViewContext, SpacetimeType};
 use spacetimedb_lib::Identity;
 
-#[table(name = player)]
+#[table(accessor = player)]
 struct Player {
     #[primary_key]
     #[auto_inc]
@@ -589,7 +589,7 @@ struct Player {
     name: String,
 }
 
-#[table(name = player_level)]
+#[table(accessor = player_level)]
 struct PlayerLevel {
     #[unique]
     player_id: u64,
@@ -606,13 +606,13 @@ struct PlayerAndLevel {
 }
 
 // At-most-one row: return Option<T>
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
 
 // Multiple rows: return Vec<T>
-#[view(name = players_for_level, public)]
+#[view(accessor = players_for_level, public)]
 fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
     ctx.db
         .player_level()

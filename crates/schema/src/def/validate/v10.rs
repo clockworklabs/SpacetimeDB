@@ -292,7 +292,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .into_iter()
             .map(|index| {
                 table_validator
-                    .validate_index_def(index.into())
+                    .validate_index_def(index.into(), RawModuleDefVersion::V10)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -395,7 +395,7 @@ impl<'a> ModuleValidatorV10<'a> {
             .combine_errors()?;
 
         Ok(TableDef {
-            name,
+            name: name.clone(),
             product_type_ref,
             primary_key,
             columns,
@@ -406,6 +406,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_type,
             table_access,
             is_event,
+            accessor_name: name,
         })
     }
 
@@ -637,7 +638,7 @@ impl<'a> ModuleValidatorV10<'a> {
             (name_result, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name: name_result,
+            name: name_result.clone(),
             is_anonymous,
             is_public,
             params,
@@ -651,6 +652,7 @@ impl<'a> ModuleValidatorV10<'a> {
             product_type_ref,
             return_columns,
             param_columns,
+            accessor_name: name_result,
         })
     }
 }
@@ -868,18 +870,21 @@ mod tests {
             [
                 &IndexDef {
                     name: "Apples_count_idx_direct".into(),
-                    accessor_name: Some(expect_identifier("Apples_count_direct")),
+                    codegen_name: Some(expect_identifier("Apples_count_idx_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
+                    accessor_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
-                    accessor_name: Some(expect_identifier("apples_id")),
+                    codegen_name: Some(expect_identifier("Apples_name_count_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
+                    accessor_name: "Apples_name_count_idx_btree".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
-                    accessor_name: Some(expect_identifier("Apples_type_btree")),
+                    codegen_name: Some(expect_identifier("Apples_type_idx_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
+                    accessor_name: "Apples_type_idx_btree".into(),
                 }
             ]
         );
@@ -1464,12 +1469,10 @@ mod tests {
         let mut raw_def = builder.finish();
         let tables = raw_def.tables_mut_for_tests();
         tables[0].constraints[0].source_name = Some("wacky.constraint()".into());
-        tables[0].indexes[0].source_name = Some("wacky.index()".into());
         tables[0].sequences[0].source_name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
         assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
-        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
         assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
     }
 

@@ -69,13 +69,13 @@ spacetime start
 
 ```bash
 cd backend/spacetimedb
-spacetime publish chat-app --project-path .
+spacetime publish chat-app --module-path .
 ```
 
 ### 3. Generate Client Bindings
 
 ```bash
-spacetime generate --lang typescript --out-dir ../../client/src --project-path .
+spacetime generate --lang typescript --out-dir ../../client/src --module-path .
 ```
 
 ### 4. Install Client Dependencies

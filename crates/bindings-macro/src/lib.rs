@@ -39,6 +39,7 @@ mod sym {
         };
     }
 
+    symbol!(accessor);
     symbol!(at);
     symbol!(auto_inc);
     symbol!(btree);
@@ -61,6 +62,7 @@ mod sym {
     symbol!(unique);
     symbol!(update);
     symbol!(default);
+    symbol!(event);
 
     symbol!(u8);
     symbol!(i8);

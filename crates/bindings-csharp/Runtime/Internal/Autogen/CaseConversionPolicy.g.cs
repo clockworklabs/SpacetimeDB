@@ -12,5 +12,7 @@ namespace SpacetimeDB.Internal
     {
         None,
         SnakeCase,
+        CamelCase,
+        PascalCase,
     }
 }

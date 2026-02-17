@@ -109,6 +109,8 @@ mod tests {
             }
         }
     }
+    impl CanBeLookupTable for User {}
+    impl CanBeLookupTable for Other {}
     fn norm(s: &str) -> String {
         s.split_whitespace().collect::<Vec<_>>().join(" ")
     }

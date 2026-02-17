@@ -1,6 +1,6 @@
 use crate::sats;
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, match_meta};
 use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
@@ -12,13 +12,16 @@ use syn::parse::Parse;
 use syn::parse::Parser as _;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::LitStr;
 use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
     access: Option<TableAccess>,
+    name: Option<LitStr>,
     scheduled: Option<ScheduledArg>,
-    name: Ident,
+    accessor: Ident,
     indices: Vec<IndexArg>,
+    event: Option<Span>,
 }
 
 enum TableAccess {
@@ -45,17 +48,24 @@ struct ScheduledArg {
 }
 
 struct IndexArg {
-    name: Ident,
+    accessor: Ident,
+    //TODO: add canonical name
+    // name: Option<LitStr>,
     is_unique: bool,
     kind: IndexType,
 }
 
 impl IndexArg {
-    fn new(name: Ident, kind: IndexType) -> Self {
+    fn new(accessor: Ident, kind: IndexType) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
-        Self { name, is_unique, kind }
+        Self {
+            accessor,
+            is_unique,
+            kind,
+            //  name,
+        }
     }
 }
 
@@ -69,8 +79,10 @@ impl TableArgs {
     pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
+        let mut accessor = None;
         let mut name = None;
         let mut indices = Vec::new();
+        let mut event = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
                 sym::public => {
@@ -80,6 +92,11 @@ impl TableArgs {
                 sym::private => {
                     check_duplicate_msg(&access, &meta, "already specified access level")?;
                     access = Some(TableAccess::Private(meta.path.span()));
+                }
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
+                    let value = meta.value()?;
+                    accessor = Some(value.parse()?);
                 }
                 sym::name => {
                     check_duplicate(&name, &meta)?;
@@ -91,22 +108,28 @@ impl TableArgs {
                     check_duplicate(&scheduled, &meta)?;
                     scheduled = Some(ScheduledArg::parse_meta(meta)?);
                 }
+                sym::event => {
+                    check_duplicate(&event, &meta)?;
+                    event = Some(meta.path.span());
+                }
             });
             Ok(())
         })
         .parse2(input)?;
-        let name = name.ok_or_else(|| {
+        let accessor = accessor.ok_or_else(|| {
             let table = struct_ident.to_string().to_snake_case();
             syn::Error::new(
                 Span::call_site(),
-                format_args!("must specify table name, e.g. `#[spacetimedb::table(name = {table})]"),
+                format_args!("must specify table name, e.g. `#[spacetimedb::table(accessor = {table})]"),
             )
         })?;
         Ok(TableArgs {
             access,
             scheduled,
-            name,
+            accessor,
             indices,
+            name,
+            event,
         })
     }
 }
@@ -152,14 +175,14 @@ impl ScheduledArg {
 
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
-        let mut name = None;
+        let mut accessor = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
             match_meta!(match meta {
-                sym::name => {
-                    check_duplicate(&name, &meta)?;
-                    name = Some(meta.value()?.parse()?);
+                sym::accessor => {
+                    check_duplicate(&accessor, &meta)?;
+                    accessor = Some(meta.value()?.parse()?);
                 }
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
@@ -176,7 +199,7 @@ impl IndexArg {
             });
             Ok(())
         })?;
-        let name = name.ok_or_else(|| meta.error("missing index name, e.g. name = my_index"))?;
+        let accessor = accessor.ok_or_else(|| meta.error("missing index accessor, e.g. `accessor = my_index`"))?;
         let kind = algo.ok_or_else(|| {
             meta.error(
                 "missing index algorithm, e.g., `btree(columns = [col1, col2])`, \
@@ -184,7 +207,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(name, kind))
+        Ok(IndexArg::new(accessor, kind))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -265,10 +288,12 @@ impl IndexArg {
             });
             Ok(())
         })?;
-        let kind = kind
-            .ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `direct`)"))?;
-        let name = field.clone();
-        Ok(IndexArg::new(name, kind))
+        let kind =
+            kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` , `direct`)"))?;
+
+        // Default accessor = field name if not provided
+        let accessor = field.clone();
+        Ok(IndexArg::new(accessor, kind))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -295,18 +320,22 @@ impl IndexArg {
                 (ValidatedIndexType::Direct { col }, "direct")
             }
         };
-        // See crates/schema/src/validate/v9.rs for the format of index names.
-        // It's slightly unnerving that we just trust that component to generate this format correctly,
-        // but what can you do.
-        let cols = kind.columns();
-        let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
-        let cols = cols.join("_");
-        let index_name = format!("{table_name}_{cols}_idx_{kind_str}");
+        let gen_index_name = || {
+            // See crates/schema/src/validate/v9.rs for the format of index names.
+            // It's slightly unnerving that we just trust that component to generate this format correctly,
+            // but what can you do.
+            let cols = kind.columns();
+            let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
+            let cols = cols.join("_");
+            format!("{table_name}_{cols}_idx_{kind_str}")
+        };
 
         Ok(ValidatedIndex {
             is_unique: self.is_unique,
-            index_name,
-            accessor_name: &self.name,
+            // This must be the canonical name (name used internally in database),
+            // as it is used in `index_id_from_name` abi.
+            index_name: gen_index_name(),
+            accessor_name: &self.accessor,
             kind,
         })
     }
@@ -412,11 +441,12 @@ impl ValidatedIndex<'_> {
                 })
             }
         };
-        let accessor_name = ident_to_litstr(self.accessor_name);
+        let source_name = self.index_name.clone();
         // Note: we do not pass the index_name through here.
         // We trust the schema validation logic to reconstruct the name we've stored in `self.name`.
+        //TODO(shub): pass generated index name instead of accessor name as source_name
         quote!(spacetimedb::table::IndexDesc {
-            accessor_name: #accessor_name,
+            source_name: #source_name,
             algo: #algo,
         })
     }
@@ -680,7 +710,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
-    let table_ident = &args.name;
+    let table_ident = &args.accessor;
+    let explicit_table_name = args.name.as_ref().map(|s| s.value());
     let view_trait_ident = format_ident!("{}__view", table_ident);
     let query_trait_ident = format_ident!("{}__query", table_ident);
     let query_cols_struct = format_ident!("{}Cols", original_struct_ident);
@@ -804,10 +835,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
         // as it's the safest choice of index for the general case,
         // even if isn't optimal in specific cases.
-        let name = unique_col.ident.clone();
-        let columns = vec![name.clone()];
+        let accessor = unique_col.ident.clone();
+        let columns = vec![accessor.clone()];
         args.indices.push(IndexArg {
-            name,
+            accessor,
+            //name: None,
             is_unique: true,
             kind: IndexType::BTree { columns },
         })
@@ -852,6 +884,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     );
 
     let table_access = args.access.iter().map(|acc| acc.to_value());
+    let is_event = args.event.iter().map(|_| {
+        quote!(
+            const IS_EVENT: bool = true;
+        )
+    });
+    let can_be_lookup_impl = if args.event.is_none() {
+        quote! {
+            impl spacetimedb::query_builder::CanBeLookupTable for #original_struct_ident {}
+        }
+    } else {
+        quote! {}
+    };
     let unique_col_ids = unique_columns.iter().map(|col| col.index);
     let primary_col_id = primary_key_column.clone().into_iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
@@ -977,6 +1021,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             const TABLE_NAME: &'static str = #table_name;
             // the default value if not specified is Private
             #(const TABLE_ACCESS: spacetimedb::table::TableAccess = #table_access;)*
+            #(#is_event)*
             const UNIQUE_COLUMNS: &'static [u16] = &[#(#unique_col_ids),*];
             const INDEXES: &'static [spacetimedb::table::IndexDesc<'static>] = &[#(#index_descs),*];
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
@@ -987,6 +1032,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #default_fn
         }
     };
+
+    let explicit_names_impl = generate_explicit_names_impl(&table_name, &tablehandle_ident, &explicit_table_name);
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
 
@@ -1001,9 +1048,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
+            #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#tablehandle_ident;
         }
         impl #table_ident for spacetimedb::Local {
+            #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#tablehandle_ident {
                 &#tablehandle_ident {}
             }
@@ -1013,6 +1062,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let trait_def_view = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #view_trait_ident {
+            #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#viewhandle_ident;
         }
         impl #view_trait_ident for spacetimedb::LocalReadOnly {
@@ -1088,6 +1138,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
         }
 
+        #can_be_lookup_impl
+
     };
 
     let table_query_handle_def = quote! {
@@ -1147,6 +1199,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
             #tabletype_impl
 
+            #explicit_names_impl
+
             #[allow(non_camel_case_types)]
             mod __indices {
                 #[allow(unused)]
@@ -1166,4 +1220,33 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     }
 
     Ok(emission)
+}
+
+fn generate_explicit_names_impl(
+    table_name: &str,
+    tablehandle_ident: &Ident,
+    explicit_table_name: &Option<String>,
+) -> TokenStream {
+    let mut explicit_names_body = Vec::new();
+
+    // Table name
+    if let Some(explicit_table_name) = explicit_table_name {
+        explicit_names_body.push(quote! {
+            names.insert_table(
+                #table_name,
+                #explicit_table_name,
+            );
+        });
+    };
+
+    quote! {
+
+        impl spacetimedb::rt::ExplicitNames for #tablehandle_ident {
+            fn explicit_names() -> spacetimedb::spacetimedb_lib::ExplicitNames {
+                let mut names = spacetimedb::spacetimedb_lib::ExplicitNames::default();
+                #(#explicit_names_body)*
+                names
+            }
+        }
+    }
 }

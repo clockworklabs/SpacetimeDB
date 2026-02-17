@@ -535,7 +535,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>> {
-        tx.table_id_from_name(table_name)
+        tx.table_id_from_name_or_alias(table_name)
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
@@ -556,7 +556,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
-        tx.index_id_from_name(index_name)
+        tx.index_id_from_name_or_alias(index_name)
     }
 
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128> {
@@ -1280,13 +1280,14 @@ mod tests {
         system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
         StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
         StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields,
-        ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID,
-        ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME,
-        ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+        ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
+        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID,
+        ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID,
-        ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID,
-        ST_VIEW_SUB_NAME,
+        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
+        ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
+        ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1312,6 +1313,7 @@ mod tests {
         columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema,
         SequenceSchema,
     };
+    use spacetimedb_schema::table_name::TableName;
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
@@ -1485,6 +1487,7 @@ mod tests {
                 col_pos: value.pos.into(),
                 col_name: Identifier::for_test(value.name),
                 col_type: value.ty,
+                alias: None,
             }
         }
     }
@@ -1616,6 +1619,7 @@ mod tests {
             schedule,
             pk,
             false,
+            None,
         )
     }
 
@@ -1749,6 +1753,9 @@ mod tests {
             TableRow { id: ST_VIEW_SUB_ID.into(), name: ST_VIEW_SUB_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_VIEW_ARG_ID.into(), name: ST_VIEW_ARG_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StViewArgFields::Id.into()) },
             TableRow { id: ST_EVENT_TABLE_ID.into(), name: ST_EVENT_TABLE_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StEventTableFields::TableId.into()) },
+            TableRow { id: ST_TABLE_ACCESSOR_ID.into(), name: ST_TABLE_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
 
         ]));
         #[rustfmt::skip]
@@ -1836,6 +1843,16 @@ mod tests {
             ColRow { table: ST_VIEW_ARG_ID.into(), pos: 1, name: "bytes", ty: AlgebraicType::bytes() },
 
             ColRow { table: ST_EVENT_TABLE_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+
+            ColRow { table: ST_TABLE_ACCESSOR_ID.into(), pos: 0, name: "table_name", ty: AlgebraicType::String },
+            ColRow { table: ST_TABLE_ACCESSOR_ID.into(), pos: 1, name: "accessor_name", ty: AlgebraicType::String },
+
+            ColRow { table: ST_INDEX_ACCESSOR_ID.into(), pos: 0, name: "index_name", ty: AlgebraicType::String },
+            ColRow { table: ST_INDEX_ACCESSOR_ID.into(), pos: 1, name: "accessor_name", ty: AlgebraicType::String },
+
+            ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 0, name: "table_name", ty: AlgebraicType::String },
+            ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 1, name: "col_name", ty: AlgebraicType::String },
+            ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1862,6 +1879,12 @@ mod tests {
             IndexRow { id: 21, table: ST_VIEW_ARG_ID.into(), col: col(0), name: "st_view_arg_id_idx_btree", },
             IndexRow { id: 22, table: ST_VIEW_ARG_ID.into(), col: col(1), name: "st_view_arg_bytes_idx_btree", },
             IndexRow { id: 23, table: ST_EVENT_TABLE_ID.into(), col: col(0), name: "st_event_table_table_id_idx_btree", },
+            IndexRow { id: 24, table: ST_TABLE_ACCESSOR_ID.into(), col: col(0), name: "st_table_accessor_table_name_idx_btree", },
+            IndexRow { id: 25, table: ST_TABLE_ACCESSOR_ID.into(), col: col(1), name: "st_table_accessor_accessor_name_idx_btree", },
+            IndexRow { id: 26, table: ST_INDEX_ACCESSOR_ID.into(), col: col(0), name: "st_index_accessor_index_name_idx_btree", },
+            IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
+            IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
+            IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1901,6 +1924,12 @@ mod tests {
             ConstraintRow { constraint_id: 17, table_id: ST_VIEW_ARG_ID.into(), unique_columns: col(0), constraint_name: "st_view_arg_id_key", },
             ConstraintRow { constraint_id: 18, table_id: ST_VIEW_ARG_ID.into(), unique_columns: col(1), constraint_name: "st_view_arg_bytes_key", },
             ConstraintRow { constraint_id: 19, table_id: ST_EVENT_TABLE_ID.into(), unique_columns: col(0), constraint_name: "st_event_table_table_id_key", },
+            ConstraintRow { constraint_id: 20, table_id: ST_TABLE_ACCESSOR_ID.into(), unique_columns: col(0), constraint_name: "st_table_accessor_table_name_key", },
+            ConstraintRow { constraint_id: 21, table_id: ST_TABLE_ACCESSOR_ID.into(), unique_columns: col(1), constraint_name: "st_table_accessor_accessor_name_key", },
+            ConstraintRow { constraint_id: 22, table_id: ST_INDEX_ACCESSOR_ID.into(), unique_columns: col(0), constraint_name: "st_index_accessor_index_name_key", },
+            ConstraintRow { constraint_id: 23, table_id: ST_INDEX_ACCESSOR_ID.into(), unique_columns: col(1), constraint_name: "st_index_accessor_accessor_name_key", },
+            ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
+            ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2107,6 +2136,7 @@ mod tests {
                 table_id,
                 index_name: "Foo_id_idx_btree".into(),
                 index_algorithm: BTreeAlgorithm::from(0).into(),
+                alias: None,
             },
             true,
         )?;
@@ -2327,6 +2357,12 @@ mod tests {
             IndexRow { id: 21, table: ST_VIEW_ARG_ID.into(), col: col(0), name: "st_view_arg_id_idx_btree", },
             IndexRow { id: 22, table: ST_VIEW_ARG_ID.into(), col: col(1), name: "st_view_arg_bytes_idx_btree", },
             IndexRow { id: 23, table: ST_EVENT_TABLE_ID.into(), col: col(0), name: "st_event_table_table_id_idx_btree", },
+            IndexRow { id: 24, table: ST_TABLE_ACCESSOR_ID.into(), col: col(0), name: "st_table_accessor_table_name_idx_btree", },
+            IndexRow { id: 25, table: ST_TABLE_ACCESSOR_ID.into(), col: col(1), name: "st_table_accessor_accessor_name_idx_btree", },
+            IndexRow { id: 26, table: ST_INDEX_ACCESSOR_ID.into(), col: col(0), name: "st_index_accessor_index_name_idx_btree", },
+            IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
+            IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
+            IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -2348,6 +2384,7 @@ mod tests {
             table_id,
             index_name: "Foo_age_idx_btree".into(),
             index_algorithm: BTreeAlgorithm::from(2).into(),
+            alias: None,
         };
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
         // But the `Table` crate allows it for now.
@@ -3829,6 +3866,113 @@ mod tests {
             all_rows(&datastore, &tx, table_id).len(),
             0,
             "replay_insert should be a no-op for event tables"
+        );
+        Ok(())
+    }
+
+    /// Inserting a duplicate primary key within the same transaction should fail for event tables.
+    #[test]
+    fn test_event_table_primary_key_enforced_within_tx() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        schema.is_event = true;
+        schema.primary_key = Some(0.into()); // PK on column 0 (id)
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let row1 = u32_str_u32(1, "Alice", 30);
+        insert(&datastore, &mut tx, table_id, &row1)?;
+
+        // Duplicate PK in same TX should error (unique constraint on col 0).
+        let row2 = u32_str_u32(1, "Bob", 25);
+        let result = insert(&datastore, &mut tx, table_id, &row2);
+        assert!(result.is_err(), "duplicate PK in same TX should be rejected");
+        Ok(())
+    }
+
+    /// Inserting a duplicate unique column value within the same transaction should fail for event tables.
+    #[test]
+    fn test_event_table_unique_constraint_within_tx() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let row1 = u32_str_u32(1, "Alice", 30);
+        insert(&datastore, &mut tx, table_id, &row1)?;
+
+        // Duplicate unique name in same TX should error (unique constraint on col 1).
+        let row2 = u32_str_u32(2, "Alice", 25);
+        let result = insert(&datastore, &mut tx, table_id, &row2);
+        assert!(result.is_err(), "duplicate unique column in same TX should be rejected");
+        Ok(())
+    }
+
+    /// Btree index lookups should work within a transaction for event tables.
+    /// We verify this indirectly: if the index works, an update via that index succeeds.
+    #[test]
+    fn test_event_table_index_lookup_within_tx() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let row1 = u32_str_u32(1, "Alice", 30);
+        let row2 = u32_str_u32(2, "Bob", 25);
+        insert(&datastore, &mut tx, table_id, &row1)?;
+        insert(&datastore, &mut tx, table_id, &row2)?;
+
+        // Update via the btree index on column 0 (id) — this exercises index lookup.
+        let idx = extract_index_id(&datastore, &tx, &basic_indices()[0])?;
+        let row1_updated = u32_str_u32(1, "Alice", 31);
+        update(&datastore, &mut tx, table_id, idx, &row1_updated)?;
+
+        // Verify both rows are visible in the tx.
+        let rows = all_rows(&datastore, &tx, table_id);
+        assert_eq!(rows.len(), 2, "should have 2 rows after insert+update");
+        assert!(rows.contains(&row1_updated), "updated row should be present");
+        assert!(rows.contains(&row2), "other row should be present");
+        Ok(())
+    }
+
+    /// Auto-increment should generate distinct values within a single transaction for event tables.
+    #[test]
+    fn test_event_table_auto_inc_within_tx() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // Insert with id=0 to trigger auto_inc on column 0.
+        let row1 = u32_str_u32(0, "Alice", 30);
+        let (gen1, _) = insert(&datastore, &mut tx, table_id, &row1)?;
+        let row2 = u32_str_u32(0, "Bob", 25);
+        let (gen2, _) = insert(&datastore, &mut tx, table_id, &row2)?;
+
+        // Both auto-incremented ids should be distinct.
+        assert_ne!(gen1, gen2, "auto_inc should produce distinct values within the same TX");
+        Ok(())
+    }
+
+    /// Constraints on event tables should reset across transactions (no committed state carryover).
+    #[test]
+    fn test_event_table_constraints_reset_across_txs() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        // TX1: insert row with id=1.
+        let mut tx1 = begin_mut_tx(&datastore);
+        let row = u32_str_u32(1, "Alice", 30);
+        insert(&datastore, &mut tx1, table_id, &row)?;
+        commit(&datastore, tx1)?;
+
+        // TX2: insert row with same id=1 — should succeed because event tables
+        // don't carry committed state.
+        let mut tx2 = begin_mut_tx(&datastore);
+        let row = u32_str_u32(1, "Bob", 25);
+        let result = insert(&datastore, &mut tx2, table_id, &row);
+        assert!(
+            result.is_ok(),
+            "same PK in a new TX should succeed for event tables (no committed state)"
         );
         Ok(())
     }

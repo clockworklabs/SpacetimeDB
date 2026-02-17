@@ -65,7 +65,7 @@ impl Lang for UnrealCpp<'_> {
         let mut multi_key_indexes = Vec::new();
 
         for idx in iter_indexes(table) {
-            let Some(accessor_name) = idx.accessor_name.as_ref() else {
+            let Some(accessor_name) = idx.codegen_name.as_ref() else {
                 continue;
             };
 
@@ -1061,7 +1061,7 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str, s
     let mut multi_key_indexes = Vec::new();
 
     for idx in iter_indexes(table) {
-        let Some(accessor_name) = idx.accessor_name.as_ref() else {
+        let Some(accessor_name) = idx.codegen_name.as_ref() else {
             continue;
         };
         // Whatever the index algorithm on the host,

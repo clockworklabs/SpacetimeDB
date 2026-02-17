@@ -260,6 +260,7 @@ impl Lang for TypeScript {
                 &table.name,
                 iter_indexes(table),
                 iter_constraints(table),
+                table.is_event,
             );
             out.dedent(1);
             writeln!(out, "}}, {}Row),", table_name_pascalcase);
@@ -269,7 +270,7 @@ impl Lang for TypeScript {
             let view_name_pascalcase = view.name.deref().to_case(Case::Pascal);
             writeln!(out, "{}: __table({{", view.name);
             out.indent(1);
-            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty());
+            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
@@ -688,6 +689,7 @@ fn write_table_opts<'a>(
     name: &Identifier,
     indexes: impl Iterator<Item = &'a IndexDef>,
     constraints: impl Iterator<Item = &'a ConstraintDef>,
+    is_event: bool,
 ) {
     let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
     writeln!(out, "name: '{}',", name.deref());
@@ -715,7 +717,7 @@ fn write_table_opts<'a>(
         // no actual way for the user to set the actual index name.
         // I think we should standardize: name and accessorName as the way to set
         // the name and accessor name of an index across all SDKs.
-        if let Some(accessor_name) = &index_def.accessor_name {
+        if let Some(accessor_name) = &index_def.codegen_name {
             writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
         } else {
             writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
@@ -754,6 +756,9 @@ fn write_table_opts<'a>(
     }
     out.dedent(1);
     writeln!(out, "],");
+    if is_event {
+        writeln!(out, "event: true,");
+    }
 }
 
 /// e.g.
