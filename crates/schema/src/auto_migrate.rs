@@ -2362,7 +2362,7 @@ mod tests {
         });
         let new = create_v10_module_def(|builder| {
             builder
-                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
                 .with_event(true)
                 .finish();
         });
@@ -2370,14 +2370,14 @@ mod tests {
         let result = ponder_auto_migrate(&old, &new);
         expect_error_matching!(
             result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "Events"
+            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
         );
 
         // event → non-event (reverse direction)
         let result = ponder_auto_migrate(&new, &old);
         expect_error_matching!(
             result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "Events"
+            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
         );
     }
 

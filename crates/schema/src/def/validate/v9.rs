@@ -208,7 +208,7 @@ impl ModuleValidatorV9<'_> {
         let table_ident = table_in_progress.table_ident.clone();
 
         let columns = (0..product_type.elements.len())
-            .map(|id| table_in_progress.validate_column_def(id.into()))
+            .map(|id| table_in_progress.validate_column_def(id.into(), product_type))
             .collect_all_errors();
 
         let indexes = indexes
@@ -501,7 +501,7 @@ impl ModuleValidatorV9<'_> {
 
         let n = product_type.elements.len();
         let return_columns = (0..n)
-            .map(|id| view_in_progress.validate_view_column_def(id.into()))
+            .map(|id| view_in_progress.validate_view_column_def(id.into(), product_type))
             .collect_all_errors();
 
         let n = params.elements.len();
@@ -809,13 +809,11 @@ impl CoreValidator<'_> {
             scope,
         } = name;
 
-        // If scoped was set explicitly do not convert case
-        let unscoped_name = if scope.is_empty() {
-            self.resolve_type_with_case(unscoped_name)
-        } else {
-            identifier(unscoped_name.clone())
-        };
-        let scope = Vec::from(scope).into_iter().map(identifier).collect_all_errors();
+        let unscoped_name = self.resolve_type_with_case(unscoped_name);
+        let scope = Vec::from(scope)
+            .into_iter()
+            .map(|t| self.resolve_type_with_case(t))
+            .collect();
 
         let name = (unscoped_name, scope)
             .combine_errors()
@@ -991,8 +989,14 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         })
     }
 
-    pub(crate) fn validate_view_column_def(&mut self, col_id: ColId) -> Result<ViewColumnDef> {
-        self.inner.validate_column_def(col_id).map(ViewColumnDef::from)
+    pub(crate) fn validate_view_column_def(
+        &mut self,
+        col_id: ColId,
+        product_type: &'a ProductType,
+    ) -> Result<ViewColumnDef> {
+        self.inner
+            .validate_column_def(col_id, product_type)
+            .map(ViewColumnDef::from)
     }
 
     pub(crate) fn add_to_global_namespace(&mut self, name: RawIdentifier) -> Result<RawIdentifier> {
@@ -1031,9 +1035,8 @@ impl<'a, 'b> TableValidator<'a, 'b> {
     ///
     /// Note that this accepts a `ProductTypeElement` rather than a `ColumnDef`,
     /// because all information about columns is stored in the `Typespace` in ABI version 9.
-    pub(crate) fn validate_column_def(&mut self, col_id: ColId) -> Result<ColumnDef> {
-        let column = &self
-            .product_type
+    pub(crate) fn validate_column_def(&mut self, col_id: ColId, product_type: &'a ProductType) -> Result<ColumnDef> {
+        let column = product_type
             .elements
             .get(col_id.idx())
             .expect("enumerate is generating an out-of-range index...");

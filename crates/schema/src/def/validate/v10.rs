@@ -61,6 +61,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
 
+    let typespace_with_accessor_names = typespace.clone();
     CoreValidator::typespace_case_conversion(case_policy, &mut typespace);
 
     let mut validator = ModuleValidatorV10 {
@@ -116,7 +117,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .flatten()
         .map(|view| {
             validator
-                .validate_view_def(view)
+                .validate_view_def(view, &typespace_with_accessor_names)
                 .map(|view_def| (view_def.name.clone(), view_def))
         })
         .collect_all_errors();
@@ -128,7 +129,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .flatten()
         .map(|table| {
             validator
-                .validate_table_def(table)
+                .validate_table_def(table, &typespace_with_accessor_names)
                 .map(|table_def| (table_def.name.clone(), table_def))
         })
         .collect_all_errors();
@@ -305,7 +306,7 @@ struct ModuleValidatorV10<'a> {
 }
 
 impl<'a> ModuleValidatorV10<'a> {
-    fn validate_table_def(&mut self, table: RawTableDefV10) -> Result<TableDef> {
+    fn validate_table_def(&mut self, table: RawTableDefV10, typespace_with_accessor: &Typespace) -> Result<TableDef> {
         let RawTableDefV10 {
             source_name: raw_table_name,
             product_type_ref,
@@ -338,7 +339,19 @@ impl<'a> ModuleValidatorV10<'a> {
 
         // Validate columns first
         let mut columns: Vec<ColumnDef> = (0..product_type.elements.len())
-            .map(|id| table_validator.validate_column_def(id.into()))
+            .map(|id| {
+                let product_type_for_column: &ProductType = typespace_with_accessor
+                    .get(product_type_ref)
+                    .and_then(AlgebraicType::as_product)
+                    .ok_or_else(|| {
+                        ValidationErrors::from(ValidationError::InvalidProductTypeRef {
+                            table: raw_table_name.clone(),
+                            ref_: product_type_ref,
+                        })
+                    })?;
+
+                table_validator.validate_column_def(id.into(), product_type_for_column)
+            })
             .collect_all_errors()?;
 
         let indexes = indexes
@@ -619,7 +632,7 @@ impl<'a> ModuleValidatorV10<'a> {
         })
     }
 
-    fn validate_view_def(&mut self, view_def: RawViewDefV10) -> Result<ViewDef> {
+    fn validate_view_def(&mut self, view_def: RawViewDefV10, typespace_with_accessor: &Typespace) -> Result<ViewDef> {
         let RawViewDefV10 {
             source_name: accessor_name,
             is_public,
@@ -690,7 +703,18 @@ impl<'a> ModuleValidatorV10<'a> {
 
         let n = product_type.elements.len();
         let return_columns = (0..n)
-            .map(|id| view_validator.validate_view_column_def(id.into()))
+            .map(|id| {
+                let product_type = typespace_with_accessor
+                    .get(product_type_ref)
+                    .and_then(AlgebraicType::as_product)
+                    .ok_or_else(|| {
+                        ValidationErrors::from(ValidationError::InvalidProductTypeRef {
+                            table: accessor_name.clone(),
+                            ref_: product_type_ref,
+                        })
+                    })?;
+                view_validator.validate_view_column_def(id.into(), product_type)
+            })
             .collect_all_errors();
 
         let n = params.elements.len();
@@ -777,8 +801,8 @@ mod tests {
     };
     use crate::def::{validate::Result, ModuleDef};
     use crate::def::{
-        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, FunctionVisibility,
-        IndexAlgorithm, IndexDef, SequenceDef, UniqueConstraintData,
+        BTreeAlgorithm, ConstraintData, DirectAlgorithm, FunctionKind, FunctionVisibility, IndexAlgorithm, IndexDef,
+        UniqueConstraintData,
     };
     use crate::error::*;
     use crate::identifier::Identifier;
@@ -801,7 +825,7 @@ mod tests {
 
         let product_type = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::String)]);
         let product_type_ref = builder.add_algebraic_type(
-            ["scope1".into(), "scope2".into()],
+            ["Scope1".into(), "Scope2".into()],
             "ReferencedProduct",
             product_type.clone(),
             false,
@@ -910,7 +934,11 @@ mod tests {
         assert_eq!(apples_def.columns[3].name, expect_identifier("type"));
         assert_eq!(apples_def.columns[3].ty, sum_type_ref.into());
         assert_eq!(apples_def.columns[3].default_value, Some(red_delicious));
-        assert_eq!(expect_resolve(&def.typespace, &apples_def.columns[3].ty), sum_type);
+        let expected_sum_type = AlgebraicType::simple_enum(["gala", "grannySmith", "redDelicious"].into_iter());
+        assert_eq!(
+            expect_resolve(&def.typespace, &apples_def.columns[3].ty),
+            expected_sum_type
+        );
 
         assert_eq!(apples_def.primary_key, None);
 
@@ -936,22 +964,28 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 &IndexDef {
-                    name: "Apples_count_idx_direct".into(),
-                    codegen_name: Some(expect_identifier("Apples_count_idx_direct")),
-                    algorithm: DirectAlgorithm { column: 2.into() }.into(),
-                    accessor_name: "Apples_count_idx_direct".into(),
+                    name: "apples_apple_name_count_fresh_idx_btree".into(),
+                    accessor_name: "apples_id".into(),
+                    codegen_name: Some(expect_identifier("apples_apple_name_count_fresh_idx_btree")),
+                    algorithm: BTreeAlgorithm {
+                        columns: [ColId(1), ColId(2)].into(),
+                    }
+                    .into(),
                 },
                 &IndexDef {
-                    name: "Apples_name_count_idx_btree".into(),
-                    codegen_name: Some(expect_identifier("Apples_name_count_idx_btree")),
-                    algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
-                    accessor_name: "Apples_name_count_idx_btree".into(),
+                    name: "apples_count_fresh_idx_direct".into(),
+                    accessor_name: "Apples_count_direct".into(),
+                    codegen_name: Some(expect_identifier("apples_count_fresh_idx_direct")),
+                    algorithm: DirectAlgorithm { column: ColId(2) }.into()
                 },
                 &IndexDef {
-                    name: "Apples_type_idx_btree".into(),
-                    codegen_name: Some(expect_identifier("Apples_type_idx_btree")),
-                    algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
-                    accessor_name: "Apples_type_idx_btree".into(),
+                    name: "apples_type_idx_btree".into(),
+                    accessor_name: "Apples_type_btree".into(),
+                    codegen_name: Some(expect_identifier("apples_type_idx_btree")),
+                    algorithm: BTreeAlgorithm {
+                        columns: [ColId(3)].into()
+                    }
+                    .into()
                 }
             ]
         );
@@ -1011,7 +1045,7 @@ mod tests {
         assert_eq!(delivery_def.primary_key, Some(ColId(2)));
 
         assert_eq!(def.typespace.get(product_type_ref), Some(&product_type));
-        assert_eq!(def.typespace.get(sum_type_ref), Some(&sum_type));
+        assert_eq!(def.typespace.get(sum_type_ref), Some(&expected_sum_type));
 
         check_product_type(&def, apples_def);
         check_product_type(&def, bananas_def);
@@ -1142,15 +1176,15 @@ mod tests {
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
-                false,
+                true,
             )
-            .with_index(btree([0, 55]), "bananas_a_b")
+            .with_index(btree([0, 55]), "Bananas_a_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "Bananas_b_col_55_idx_btree" &&
+            &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
         });
     }
@@ -1162,7 +1196,7 @@ mod tests {
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
-                false,
+                true,
             )
             .with_unique_constraint(ColId(55))
             .finish();
@@ -1170,7 +1204,7 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "Bananas_col_55_key" &&
+            &def[..] == "bananas_col_55_key" &&
             column == &55.into()
         });
     }
@@ -1221,14 +1255,14 @@ mod tests {
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
-                false,
+                true,
             )
             .with_index(btree([0, 0]), "bananas_b_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
-            &def[..] == "Bananas_b_b_idx_btree" && columns == &ColList::from_iter([0, 0])
+            &def[..] == "bananas_b_b_idx_btree" && columns == &ColList::from_iter([0, 0])
         });
     }
 
@@ -1238,18 +1272,18 @@ mod tests {
         builder
             .build_table_with_new_type(
                 "Bananas",
-                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
-                false,
+                ProductType::from([("a", AlgebraicType::U16), ("b", AlgebraicType::U64)]),
+                true,
             )
+            .with_unique_constraint(ColList::from_iter([1, 1]))
             .with_unique_constraint(ColList::from_iter([1, 1]))
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
-            &def[..] == "Bananas_a_a_key" && columns == &ColList::from_iter([1, 1])
+            &def[..] == "bananas_b_b_key" && columns == &ColList::from_iter([1, 1])
         });
     }
-
     #[test]
     fn recursive_ref() {
         let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
@@ -1319,8 +1353,8 @@ mod tests {
         builder
             .build_table_with_new_type(
                 "Bananas",
-                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
-                false,
+                ProductType::from([("a", AlgebraicType::U16), ("b", AlgebraicType::U64)]),
+                true,
             )
             .with_unique_constraint(1)
             .finish();
@@ -1329,7 +1363,7 @@ mod tests {
         expect_error_matching!(
             result,
             ValidationError::UniqueConstraintWithoutIndex { constraint, columns } => {
-                &**constraint == "Bananas_a_key" && *columns == ColSet::from(1)
+                &**constraint == "bananas_b_key" && *columns == ColSet::from(1)
             }
         );
     }
@@ -1348,7 +1382,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DirectIndexOnBadType { index, .. } => {
-            &index[..] == "Bananas_b_idx_direct"
+            &index[..] == "bananas_b_idx_direct"
         });
     }
 
@@ -1503,47 +1537,6 @@ mod tests {
     }
 
     #[test]
-    fn wacky_names() {
-        let mut builder = RawModuleDefV10Builder::new();
-
-        let schedule_at_type = builder.add_type::<ScheduleAt>();
-
-        let deliveries_product_type = builder
-            .build_table_with_new_type(
-                "Deliveries",
-                ProductType::from([
-                    ("id", AlgebraicType::U64),
-                    ("scheduled_at", schedule_at_type.clone()),
-                    ("scheduled_id", AlgebraicType::U64),
-                ]),
-                true,
-            )
-            .with_auto_inc_primary_key(2)
-            .with_index(direct(2), "scheduled_id_index")
-            .with_index(btree([0, 2]), "nice_index_name")
-            .with_type(TableType::System)
-            .finish();
-
-        builder.add_schedule("Deliveries", 1, "check_deliveries");
-        builder.add_reducer(
-            "check_deliveries",
-            ProductType::from([("a", deliveries_product_type.into())]),
-        );
-
-        // Our builder methods ignore the possibility of setting names at the moment.
-        // But, it could be done in the future for some reason.
-        // Check if it works.
-        let mut raw_def = builder.finish();
-        let tables = raw_def.tables_mut_for_tests();
-        tables[0].constraints[0].source_name = Some("wacky.constraint()".into());
-        tables[0].sequences[0].source_name = Some("wacky.sequence()".into());
-
-        let def: ModuleDef = raw_def.try_into().unwrap();
-        assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
-        assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
-    }
-
-    #[test]
     fn duplicate_reducer_names() {
         let mut builder = RawModuleDefV10Builder::new();
 
@@ -1583,5 +1576,506 @@ mod tests {
         expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
             &name[..] == "foo"
         });
+    }
+
+    fn make_case_conversion_builder() -> (RawModuleDefV10Builder, AlgebraicTypeRef) {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        // Sum type: PascalCase variants → camelCase after conversion.
+        let color_sum = AlgebraicType::simple_enum(["RedApple", "GreenApple", "YellowApple"].into_iter());
+        let color_ref = builder.add_algebraic_type([], "FruitColor", color_sum, true);
+
+        // Product type with scope: scope segments stay unchanged, unscoped name → PascalCase.
+        builder.add_algebraic_type(
+            ["myLib".into(), "utils".into()],
+            "metaInfo",
+            AlgebraicType::product([("kind", AlgebraicType::U8)]),
+            false,
+        );
+
+        // Table 1: "FruitBasket"
+        //   [0] BasketId     PascalCase → "basket_id"
+        //   [1] fruitName    camelCase  → "fruit_name"
+        //   [2] ItemCount    PascalCase → "item_count"
+        //   [3] color_label  snake_case → "color_label"
+        builder
+            .build_table_with_new_type(
+                "FruitBasket",
+                ProductType::from([
+                    ("BasketId", AlgebraicType::U64),
+                    ("fruitName", AlgebraicType::String),
+                    ("ItemCount", AlgebraicType::U32),
+                    ("color_label", color_ref.into()),
+                ]),
+                true,
+            )
+            .with_index(btree([0, 1]), "RawBasketLookup")
+            .with_index(direct(2), "RawCountDirect")
+            .with_unique_constraint(ColId(2))
+            .with_column_sequence(0)
+            .finish();
+
+        // Table 2: "deliveryRecord"
+        //   [0] recordId    camelCase  → "record_id"
+        //   [1] ScheduledAt PascalCase → "scheduled_at"
+        //   [2] SeqId       PascalCase → "seq_id"
+        let schedule_at_type = builder.add_type::<spacetimedb_lib::ScheduleAt>();
+
+        let builder_type_ref = builder
+            .build_table_with_new_type(
+                "deliveryRecord",
+                ProductType::from([
+                    ("recordId", AlgebraicType::U64),
+                    ("ScheduledAt", schedule_at_type),
+                    ("SeqId", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(2)
+            .with_index(btree(2), "SeqIdIndex")
+            .with_type(TableType::System)
+            .finish();
+
+        builder.add_reducer("doDelivery", ProductType::from([("a", builder_type_ref.into())]));
+        builder.add_reducer("ProcessItem", ProductType::from([("b", AlgebraicType::U32)]));
+        builder.add_schedule("deliveryRecord", 1, "doDelivery");
+
+        (builder, color_ref)
+    }
+
+    /// Exhaustive test for case-conversion under the default [`CaseConversionPolicy::SnakeCase`].
+    ///
+    /// Rules under verification:
+    ///
+    /// | Entity          | Source style     | Canonical style           | Notes                          |
+    /// |-----------------|------------------|---------------------------|--------------------------------|
+    /// | Table name      | any              | snake_case                | raw name preserved as accessor |
+    /// | Column name     | any              | snake_case                | raw name preserved as accessor |
+    /// | Reducer name    | any              | snake_case                | —                              |
+    /// | Type name       | any (unscoped)   | PascalCase                | scope segments unchanged       |
+    /// | Enum variant    | any              | camelCase                 | —                              |
+    /// | Index name      | autogenerated    | `{tbl}_{cols}_idx_{algo}` | uses canonical table+col names |
+    /// | Index accessor  | raw source_name  | **unchanged**             | no conversion applied          |
+    /// | Constraint name | autogenerated    | `{tbl}_{cols}_key`        | uses canonical table+col names |
+    /// | Sequence name   | autogenerated    | `{tbl}_{col}_seq`         | uses canonical table+col names |
+    /// | Schedule name   | autogenerated    | `{tbl}_sched`             | uses canonical table name      |
+    #[test]
+    fn test_case_conversion_snake_case_policy() {
+        use crate::def::*;
+        use crate::identifier::Identifier;
+        use itertools::Itertools;
+        use spacetimedb_lib::db::raw_def::v10::CaseConversionPolicy;
+        use spacetimedb_sats::AlgebraicType;
+
+        let id = |s: &str| Identifier::for_test(s);
+
+        let (builder, color_ref) = make_case_conversion_builder();
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+
+        // Sanity: policy is SnakeCase by default.
+        assert_eq!(CaseConversionPolicy::default(), CaseConversionPolicy::SnakeCase);
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // TABLE NAMES
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        assert_eq!(def.tables.len(), 2);
+
+        // "FruitBasket" → canonical "fruit_basket"
+        let fruit_basket = id("fruit_basket");
+        assert!(def.tables.contains_key(&fruit_basket), "table 'fruit_basket' not found");
+        let fb = &def.tables[&fruit_basket];
+        assert_eq!(fb.name, fruit_basket, "table canonical name");
+        assert_eq!(
+            &*fb.accessor_name, "FruitBasket",
+            "table accessor_name must preserve raw source"
+        );
+
+        // "deliveryRecord" → canonical "delivery_record"
+        let delivery_record = id("delivery_record");
+        assert!(
+            def.tables.contains_key(&delivery_record),
+            "table 'delivery_record' not found"
+        );
+        let dr = &def.tables[&delivery_record];
+        assert_eq!(dr.name, delivery_record, "table canonical name");
+        assert_eq!(
+            &*dr.accessor_name, "deliveryRecord",
+            "table accessor_name must preserve raw source"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // COLUMN NAMES — FruitBasket
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        assert_eq!(fb.columns.len(), 4);
+
+        // [0] "BasketId" (PascalCase) → "basket_id"
+        assert_eq!(fb.columns[0].name, id("basket_id"), "col 0 canonical");
+        assert_eq!(&*fb.columns[0].accessor_name, "BasketId", "col 0 accessor");
+        assert_eq!(fb.columns[0].ty, AlgebraicType::U64);
+
+        // [1] "fruitName" (camelCase) → "fruit_name"
+        assert_eq!(fb.columns[1].name, id("fruit_name"), "col 1 canonical");
+        assert_eq!(&*fb.columns[1].accessor_name, "fruitName", "col 1 accessor");
+        assert_eq!(fb.columns[1].ty, AlgebraicType::String);
+
+        // [2] "ItemCount" (PascalCase) → "item_count"
+        assert_eq!(fb.columns[2].name, id("item_count"), "col 2 canonical");
+        assert_eq!(&*fb.columns[2].accessor_name, "ItemCount", "col 2 accessor");
+        assert_eq!(fb.columns[2].ty, AlgebraicType::U32);
+
+        // [3] "color_label" (already snake) → "color_label"
+        assert_eq!(fb.columns[3].name, id("color_label"), "col 3 canonical");
+        assert_eq!(&*fb.columns[3].accessor_name, "color_label", "col 3 accessor");
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // COLUMN NAMES — deliveryRecord
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        assert_eq!(dr.columns.len(), 3);
+
+        // [0] "recordId" (camelCase) → "record_id"
+        assert_eq!(dr.columns[0].name, id("record_id"), "dr col 0 canonical");
+        assert_eq!(&*dr.columns[0].accessor_name, "recordId", "dr col 0 accessor");
+
+        // [1] "ScheduledAt" (PascalCase) → "scheduled_at"
+        assert_eq!(dr.columns[1].name, id("scheduled_at"), "dr col 1 canonical");
+        assert_eq!(&*dr.columns[1].accessor_name, "ScheduledAt", "dr col 1 accessor");
+
+        // [2] "SeqId" (PascalCase) → "seq_id"
+        assert_eq!(dr.columns[2].name, id("seq_id"), "dr col 2 canonical");
+        assert_eq!(&*dr.columns[2].accessor_name, "SeqId", "dr col 2 accessor");
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // REDUCER NAMES
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // "doDelivery" (camelCase) → "do_delivery"
+        let do_delivery = id("do_delivery");
+        assert!(
+            def.reducers.contains_key(&do_delivery),
+            "reducer 'do_delivery' not found"
+        );
+        assert_eq!(def.reducers[&do_delivery].name.as_identifier(), &do_delivery);
+
+        // "ProcessItem" (PascalCase) → "process_item"
+        let process_item = id("process_item");
+        assert!(
+            def.reducers.contains_key(&process_item),
+            "reducer 'process_item' not found"
+        );
+        assert_eq!(def.reducers[&process_item].name.as_identifier(), &process_item);
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // TYPE NAMES — PascalCase; scoped names keep their scope segments unchanged
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // "FruitColor" (already Pascal) → "FruitColor"
+        assert!(
+            def.types.contains_key(&expect_type_name("FruitColor")),
+            "type 'FruitColor' not found"
+        );
+
+        // "metaInfo" (lower-camel unscoped) → "MetaInfo"; scope "myLib","utils" → unchanged
+        assert!(
+            def.types.contains_key(&expect_type_name("MyLib::Utils::MetaInfo")),
+            "type 'myLib::utils::MetaInfo' not found"
+        );
+
+        // Anonymous table types keep the raw source name as-is.
+        assert!(def.types.contains_key(&expect_type_name("FruitBasket")));
+        assert!(
+            def.types.contains_key(&expect_type_name("deliveryRecord"))
+                || def.types.contains_key(&expect_type_name("DeliveryRecord")),
+            "anonymous type for deliveryRecord not found"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // ENUM VARIANT NAMES — camelCase
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // "RedApple" → "redApple", "GreenApple" → "greenApple", "YellowApple" → "yellowApple"
+        let expected_color_sum = AlgebraicType::simple_enum(["redApple", "greenApple", "yellowApple"].into_iter());
+        assert_eq!(
+            def.typespace.get(color_ref),
+            Some(&expected_color_sum),
+            "enum variants should be camelCase"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // INDEX NAMES — autogenerated from canonical table + canonical column names
+        // ═══════════════════════════════════════════════════════════════════════════
+        //
+        // "FruitBasket" → "fruit_basket"; cols [0]="basket_id" [1]="fruit_name" [2]="item_count"
+        //   btree([0,1]) → "fruit_basket_basket_id_fruit_name_idx_btree"
+        //   direct(2)    → "fruit_basket_item_count_idx_direct"
+        //
+        // accessor_name = raw source_name passed to with_index(), never converted.
+
+        assert_eq!(fb.indexes.len(), 2);
+
+        let fb_indexes = fb.indexes.values().sorted_by_key(|i| &i.name).collect::<Vec<_>>();
+
+        // btree([0,1]) sorts first alphabetically
+        assert_eq!(
+            fb_indexes[0].name,
+            "fruit_basket_basket_id_fruit_name_idx_btree".into(),
+            "btree index name uses canonical table and col names"
+        );
+        assert_eq!(
+            &*fb_indexes[0].accessor_name, "RawBasketLookup",
+            "btree index accessor_name is the raw source_name, never converted"
+        );
+        assert_eq!(
+            fb_indexes[0].codegen_name,
+            Some(id("fruit_basket_basket_id_fruit_name_idx_btree")),
+            "codegen_name == autogenerated name in V10"
+        );
+
+        // direct(2) sorts second
+        assert_eq!(
+            fb_indexes[1].name,
+            "fruit_basket_item_count_idx_direct".into(),
+            "direct index name uses canonical table and col names"
+        );
+        assert_eq!(
+            &*fb_indexes[1].accessor_name, "RawCountDirect",
+            "direct index accessor_name is the raw source_name, never converted"
+        );
+        assert_eq!(
+            fb_indexes[1].codegen_name,
+            Some(id("fruit_basket_item_count_idx_direct")),
+        );
+
+        // deliveryRecord btree on col [2] "SeqId" → "seq_id"
+        assert_eq!(dr.indexes.len(), 1);
+        let dr_index = dr.indexes.values().next().unwrap();
+        assert_eq!(
+            dr_index.name,
+            "delivery_record_seq_id_idx_btree".into(),
+            "dr index name uses canonical table and col names"
+        );
+        assert_eq!(
+            &*dr_index.accessor_name, "SeqIdIndex",
+            "dr index accessor_name is the raw source_name, never converted"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CONSTRAINT NAMES — autogenerated from canonical table + canonical col name
+        // ═══════════════════════════════════════════════════════════════════════════
+        //
+        // unique on FruitBasket col [2] "ItemCount" → "item_count"
+        //   → "fruit_basket_item_count_key"
+
+        assert_eq!(fb.constraints.len(), 1);
+        let (constraint_key, constraint) = fb.constraints.iter().next().unwrap();
+        assert_eq!(
+            &**constraint_key, "fruit_basket_item_count_key",
+            "constraint name uses canonical table and col names"
+        );
+        assert_eq!(
+            constraint.data,
+            ConstraintData::Unique(UniqueConstraintData {
+                columns: ColId(2).into()
+            }),
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // SEQUENCE NAMES — autogenerated from canonical table + canonical col name
+        // ═══════════════════════════════════════════════════════════════════════════
+        //
+        // sequence on FruitBasket col [0] "BasketId" → "basket_id"
+        //   → "fruit_basket_basket_id_seq"
+
+        assert_eq!(fb.sequences.len(), 1);
+        let (seq_key, _seq) = fb.sequences.iter().next().unwrap();
+        assert_eq!(
+            &**seq_key, "fruit_basket_basket_id_seq",
+            "sequence name uses canonical table and col names"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // SCHEDULE NAMES — autogenerated from canonical table name
+        // ═══════════════════════════════════════════════════════════════════════════
+        //
+        // "deliveryRecord" → "delivery_record" → "delivery_record_sched"
+
+        let schedule = dr.schedule.as_ref().expect("deliveryRecord should have a schedule");
+        assert_eq!(
+            &*schedule.name, "delivery_record_sched",
+            "schedule name uses canonical table name"
+        );
+        assert_eq!(
+            schedule.function_name, do_delivery,
+            "schedule function_name is the canonical reducer name"
+        );
+        assert_eq!(schedule.at_column, 1.into());
+        assert_eq!(schedule.function_kind, FunctionKind::Reducer);
+    }
+
+    /// Tests that explicit name overrides bypass case-conversion policy,
+    /// using the same schema as [`test_case_conversion_snake_case_policy`].
+    ///
+    /// Three overrides are applied on top of that schema:
+    ///
+    /// | Source name         | Kind     | Explicit canonical |
+    /// |---------------------|----------|--------------------|
+    /// | `"FruitBasket"`     | table    | `"FB"`             |
+    /// | `"doDelivery"`      | function | `"Deliver"`        |
+    /// | `"RawBasketLookup"` | index    | `"fb_lookuP"`      |
+    ///
+    /// Everything else is left to the default `SnakeCase` policy,
+    /// proving overrides are scoped only to what was explicitly mapped.
+    #[test]
+    fn test_explicit_name_overrides() {
+        use crate::def::*;
+        use spacetimedb_lib::db::raw_def::v10::ExplicitNames;
+
+        let id = |s: &str| Identifier::for_test(s);
+
+        let (mut builder, _color_ref) = make_case_conversion_builder();
+
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_table("FruitBasket", "FB"); // bypasses → "fruit_basket"
+        explicit.insert_function("doDelivery", "Deliver"); // bypasses → "do_delivery"
+        explicit.insert_index("RawBasketLookup", "fb_lookuP"); // bypasses autogenerated name
+        builder.add_explicit_names(explicit);
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // TABLE — explicit "FB" replaces policy-derived "fruit_basket"
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        assert_eq!(def.tables.len(), 2);
+
+        let fb_ident = id("FB");
+        assert!(def.tables.contains_key(&fb_ident), "table 'FB' not found");
+        assert!(
+            !def.tables.contains_key(&id("fruit_basket")),
+            "'fruit_basket' must not exist when overridden"
+        );
+
+        let fb = &def.tables[&fb_ident];
+        assert_eq!(fb.name, fb_ident, "canonical name is the explicit value");
+        assert_eq!(&*fb.accessor_name, "FruitBasket", "accessor_name preserves raw source");
+
+        // Non-overridden table still follows SnakeCase.
+        let delivery_record = id("delivery_record");
+        assert!(def.tables.contains_key(&delivery_record));
+        let dr = &def.tables[&delivery_record];
+        assert_eq!(&*dr.accessor_name, "deliveryRecord");
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // COLUMNS — no explicit override; SnakeCase still applies
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        assert_eq!(fb.columns[0].name, id("basket_id"), "col 0: SnakeCase unchanged");
+        assert_eq!(fb.columns[1].name, id("fruit_name"), "col 1: SnakeCase unchanged");
+        assert_eq!(fb.columns[2].name, id("item_count"), "col 2: SnakeCase unchanged");
+        assert_eq!(fb.columns[3].name, id("color_label"), "col 3: SnakeCase unchanged");
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // INDEXES — one explicitly overridden, one not
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        assert_eq!(fb.indexes.len(), 2);
+
+        // "RawBasketLookup" → explicit "fb_lookuP"
+        let idx_explicit = fb
+            .indexes
+            .values()
+            .find(|i| &*i.accessor_name == "RawBasketLookup")
+            .expect("index with accessor 'RawBasketLookup' not found");
+        assert_eq!(
+            idx_explicit.name,
+            "fb_lookuP".into(),
+            "explicit index name used verbatim"
+        );
+        assert_eq!(
+            idx_explicit.codegen_name,
+            Some(id("fb_lookuP")),
+            "codegen_name matches explicit"
+        );
+        assert_eq!(
+            &*idx_explicit.accessor_name, "RawBasketLookup",
+            "accessor_name preserves raw source"
+        );
+
+        // "RawCountDirect" — no override; autogenerated from canonical table "FB" + col "item_count"
+        let idx_auto = fb
+            .indexes
+            .values()
+            .find(|i| &*i.accessor_name == "RawCountDirect")
+            .expect("index with accessor 'RawCountDirect' not found");
+        assert_eq!(
+            idx_auto.name,
+            "FB_item_count_idx_direct".into(),
+            "non-overridden index autogenerated from explicit canonical table name"
+        );
+        assert_eq!(idx_auto.codegen_name, Some(id("FB_item_count_idx_direct")));
+        assert_eq!(&*idx_auto.accessor_name, "RawCountDirect");
+
+        // Non-overridden index on deliveryRecord still uses policy-derived table name.
+        let dr_index = dr.indexes.values().next().unwrap();
+        assert_eq!(dr_index.name, "delivery_record_seq_id_idx_btree".into());
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // AUTOGENERATED NAMES — all derived from explicit canonical table name "FB"
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // constraint: col [2] "ItemCount" → "item_count" under table "FB"
+        //   → "FB_item_count_key"  (not "fruit_basket_item_count_key")
+        assert_eq!(fb.constraints.len(), 1);
+        let (constraint_key, constraint) = fb.constraints.iter().next().unwrap();
+        assert_eq!(
+            &**constraint_key, "FB_item_count_key",
+            "constraint autogenerated from explicit canonical table name"
+        );
+        assert_eq!(
+            constraint.data,
+            ConstraintData::Unique(UniqueConstraintData {
+                columns: ColId(2).into()
+            }),
+        );
+
+        // sequence: col [0] "BasketId" → "basket_id" under table "FB"
+        //   → "FB_basket_id_seq"  (not "fruit_basket_basket_id_seq")
+        assert_eq!(fb.sequences.len(), 1);
+        let (seq_key, _) = fb.sequences.iter().next().unwrap();
+        assert_eq!(
+            &**seq_key, "FB_basket_id_seq",
+            "sequence autogenerated from explicit canonical table name"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // REDUCER — explicit "Deliver" replaces policy-derived "do_delivery"
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        let deliver_ident = id("Deliver");
+        assert!(def.reducers.contains_key(&deliver_ident), "reducer 'Deliver' not found");
+        assert!(
+            !def.reducers.contains_key(&id("do_delivery")),
+            "'do_delivery' must not exist when overridden"
+        );
+        assert_eq!(def.reducers[&deliver_ident].name.as_identifier(), &deliver_ident);
+
+        // Non-overridden reducer still follows SnakeCase.
+        assert!(def.reducers.contains_key(&id("process_item")));
+        assert!(!def.reducers.contains_key(&id("ProcessItem")));
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // SCHEDULE — function_name resolves to the explicit canonical reducer name
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        let schedule = dr.schedule.as_ref().expect("deliveryRecord should have a schedule");
+        assert_eq!(&*schedule.name, "delivery_record_sched");
+        assert_eq!(
+            schedule.function_name, deliver_ident,
+            "schedule function_name uses the explicit canonical reducer name"
+        );
+        assert_eq!(schedule.at_column, 1.into());
+        assert_eq!(schedule.function_kind, FunctionKind::Reducer);
     }
 }
