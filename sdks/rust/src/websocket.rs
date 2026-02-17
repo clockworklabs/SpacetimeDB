@@ -358,7 +358,7 @@ impl WsConnection {
         };
 
         let uri = make_uri(host, db_name, connection_id, params, token.as_deref())?;
-        let sock = tokio_tungstenite_wasm::connect_with_protocols(&uri.to_string(), &[BIN_PROTOCOL])
+        let sock = tokio_tungstenite_wasm::connect_with_protocols(&uri.to_string(), &[ws::v2::BIN_PROTOCOL])
             .await
             .map_err(|source| WsError::Tungstenite {
                 uri,
@@ -537,8 +537,8 @@ impl WsConnection {
     pub(crate) fn spawn_message_loop(
         self,
     ) -> (
-        mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
-        mpsc::UnboundedSender<ClientMessage<Bytes>>,
+        mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+        mpsc::UnboundedSender<ws::v2::ClientMessage>,
     ) {
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
         let websocket_received_msg_size = CLIENT_METRICS
@@ -549,14 +549,14 @@ impl WsConnection {
             websocket_received_msg_size.observe(msg_size as f64);
         };
 
-        let (outgoing_tx, outgoing_rx) = mpsc::unbounded::<ClientMessage<Bytes>>();
-        let (incoming_tx, incoming_rx) = mpsc::unbounded::<ServerMessage<BsatnFormat>>();
+        let (outgoing_send, outgoing_recv) = mpsc::unbounded::<ws::v2::ClientMessage>();
+        let (incoming_send, incoming_recv) = mpsc::unbounded::<ws::v2::ServerMessage>();
 
         let (mut ws_writer, ws_reader) = self.sock.split();
 
         wasm_bindgen_futures::spawn_local(async move {
             let mut incoming = ws_reader.fuse();
-            let mut outgoing = outgoing_rx.fuse();
+            let mut outgoing = outgoing_recv.fuse();
 
             loop {
                 futures::select! {
@@ -571,7 +571,7 @@ impl WsConnection {
                             record_metrics(bytes.len());
                             // parse + forward into `incoming_tx`
                             match Self::parse_response(&bytes) {
-                                Ok(msg) => if let Err(_e) = incoming_tx.unbounded_send(msg) {
+                                Ok(msg) => if let Err(_e) = incoming_send.unbounded_send(msg) {
                                     gloo_console::warn!("Incoming receiver dropped.");
                                     break;
                                 },
@@ -625,6 +625,6 @@ impl WsConnection {
             }
         });
 
-        (incoming_rx, outgoing_tx)
+        (incoming_recv, outgoing_send)
     }
 }
