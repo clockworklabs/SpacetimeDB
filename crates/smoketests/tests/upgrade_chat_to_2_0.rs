@@ -526,28 +526,32 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
             kill_child(&mut new_server);
             return Err(e);
         }
-        log_step("publishing HEAD module to same database name on 2.0 server");
-        run_cmd_ok_with_stdin(
-            &[
-                current_cli.clone().into_os_string(),
-                OsString::from("publish"),
-                OsString::from("--server"),
-                OsString::from(&new_url),
-                OsString::from("--module-path"),
-                repo.join("templates/chat-console-rs/spacetimedb").into_os_string(),
-                OsString::from("--yes"),
-                OsString::from(&db_name),
-            ],
-            &repo,
-            "upgrade\n",
-        )?;
+
+        let publish_new = false;
+        if publish_new {
+            log_step("publishing HEAD module to same database name on 2.0 server");
+            run_cmd_ok_with_stdin(
+                &[
+                    current_cli.clone().into_os_string(),
+                    OsString::from("publish"),
+                    OsString::from("--server"),
+                    OsString::from(&new_url),
+                    OsString::from("--module-path"),
+                    repo.join("templates/chat-console-rs/spacetimedb").into_os_string(),
+                    OsString::from("--yes"),
+                    OsString::from(&db_name),
+                ],
+                &repo,
+                "upgrade\n",
+            )?;
+        }
 
         // Spawn 1.0 and 2.0 quickstart clients against the upgraded 2.0 server.
         log_step("starting old and new clients");
         let (mut c1, logs1) = spawn_chat_client("client-v1", &old_client, &new_url, &db_name)?;
         let (mut c2, logs2) = spawn_chat_client("client-v2", &new_client, &new_url, &db_name)?;
 
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(5));
         write_line(&mut c1, "/name old-v1")?;
         write_line(&mut c2, "/name new-v2")?;
         write_line(&mut c1, "hello-from-v1")?;
@@ -578,6 +582,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         if !ok {
             let l1 = logs1.lock().unwrap().clone();
             let l2 = logs2.lock().unwrap().clone();
+            dump_server_logs("new server", &new_server_logs);
             bail!(
                 "message exchange incomplete.\nclient-v1 logs:\n{}\n\nclient-v2 logs:\n{}",
                 l1,

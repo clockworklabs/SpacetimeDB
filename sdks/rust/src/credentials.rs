@@ -137,6 +137,7 @@ impl File {
     /// ```
     pub fn load(self) -> Result<Option<String>, CredentialFileError> {
         let path = self.path()?;
+        println!("Loading credentials from {path:?}");
 
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,

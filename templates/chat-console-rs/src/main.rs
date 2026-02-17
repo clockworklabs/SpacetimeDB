@@ -34,7 +34,11 @@ fn connect_to_db() -> DbConnection {
 
     // The module name we chose when we published our module.
     let db_name: String = env::var("SPACETIMEDB_DB_NAME").unwrap_or("quickstart-chat".to_string());
+    println!("Conneting to {host}/{db_name}");
 
+    let creds_store = creds_store();
+    let token = creds_store.load().expect("Error loading credentials");
+    println!("Loaded token: {token:?}");
     DbConnection::builder()
         // Register our `on_connect` callback, which will save our auth token.
         .on_connect(on_connected)
@@ -45,7 +49,7 @@ fn connect_to_db() -> DbConnection {
         // If the user has previously connected, we'll have saved a token in the `on_connect` callback.
         // In that case, we'll load it and pass it to `with_token`,
         // so we can re-authenticate as the same `Identity`.
-        .with_token(creds_store().load().expect("Error loading credentials"))
+        .with_token(token)
         // Set the database name we chose when we called `spacetime publish`.
         .with_database_name(db_name)
         // Set the URI of the SpacetimeDB host that's running our database.
@@ -58,7 +62,7 @@ fn connect_to_db() -> DbConnection {
 // ### Save credentials
 
 fn creds_store() -> credentials::File {
-    credentials::File::new("quickstart-chat")
+    credentials::File::new("quickstart-chat-new")
 }
 
 /// Our `on_connect` callback: save our credentials to a file.
