@@ -53,7 +53,7 @@ To connect your client application to a module running on Maincloud, use `https:
 ```ts
 DbConnection.builder()
   .withUri("https://maincloud.spacetimedb.com")
-  .withModuleName("my-module")
+  .withDatabaseName("my-module")
   .build();
 ```
 
@@ -63,7 +63,7 @@ DbConnection.builder()
 ```csharp
 DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
-    .WithModuleName("my-module")
+    .WithDatabaseName("my-module")
     .Build();
 ```
 
@@ -73,7 +73,7 @@ DbConnection.Builder()
 ```rust
 DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
-    .with_module_name("my-module")
+    .with_database_name("my-module")
     .build()
     .expect("Failed to connect");
 ```
@@ -84,7 +84,7 @@ DbConnection::builder()
 ```cpp
 auto conn = DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
-    .with_module_name("my-module")
+    .with_database_name("my-module")
     .build();
 ```
 
@@ -99,7 +99,7 @@ After publishing, you can manage your database through the web dashboard at [spa
 
 There are two ways to navigate to your database:
 
-1. **Direct URL**: Go to `https://spacetimedb.com/my-module` (replacing `my-module` with your database name).
+1. **Direct URL**: Go to `https://spacetimedb.com/my-database` or `https://spacetimedb.com/@my-username/my-database` (replacing `my-database` with your database name).
 2. **Profile page**: Click your profile picture in the top-right corner of [spacetimedb.com](https://spacetimedb.com) and select "My profile". All of your published databases are listed there. You can also navigate directly to `https://spacetimedb.com/@your-username`.
 
 ### Dashboard features
@@ -119,9 +119,11 @@ Maincloud databases have two states:
 - **Running** (green dot on dashboard): The database is actively serving requests. Any client connection, reducer call, or dashboard visit will keep it in this state.
 - **Paused** (pause icon on dashboard): The database is suspended. All data is preserved, but the database is not serving requests and does not consume energy.
 
-### Automatic suspension
+### Automatic suspension (Free tier)
 
-After a period of inactivity (no client connections, no reducer calls), Maincloud automatically pauses the database to save resources. A paused database resumes automatically when it receives a connection or request. The first request after resumption may take a moment while the database wakes up and replays its commit log. Subsequent requests are served at normal speed.
+On the Free tier, Maincloud automatically pauses databases after a period of inactivity (no client connections, no reducer calls). A paused database resumes automatically when it receives a connection or request. Startup time is typically less than one second.
+
+On the Pro and Team tiers, databases are never automatically suspended as long as you have pay-as-you-go enabled or have not exceeded your self-set spending limit. If you want to ensure your database is always available, upgrade to the [Pro or Team tier](https://spacetimedb.com/pricing).
 
 ### Manual pause and resume
 
@@ -138,7 +140,7 @@ Pausing a database stops all energy usage for that database. This is useful if y
 To permanently delete a database and all its data:
 
 ```bash
-spacetime delete my-module --server maincloud
+spacetime delete my-database --server maincloud
 ```
 
 This action cannot be undone.
