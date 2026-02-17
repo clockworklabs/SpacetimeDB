@@ -87,7 +87,7 @@ fn compression() {
     let clog = Commitlog::open(
         CommitLogDir::from_path_unchecked(root.path()),
         Options {
-            max_segment_size: 8 * 1024,
+            max_segment_size: 16 * 1024,
             max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
@@ -111,7 +111,12 @@ fn compression() {
     clog.compress_segments(segments_to_compress).unwrap();
 
     let compressed_size = clog.size_on_disk().unwrap();
-    assert!(compressed_size.total_bytes < uncompressed_size.total_bytes);
+    assert!(
+        compressed_size.total_bytes < uncompressed_size.total_bytes,
+        "expected total size to be smaller after compression: uncompressed={:?} compressed={:?}",
+        uncompressed_size,
+        compressed_size
+    );
 
     assert!(clog
         .transactions(&payload::ArrayDecoder)
