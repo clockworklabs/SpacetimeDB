@@ -152,7 +152,7 @@ const spacetimedb = schema({
   person: table(
     {
       public: true,
-      indexes: [{ name: 'age', algorithm: 'btree', columns: ['age'] }],
+      indexes: [{ algorithm: 'btree', columns: ['age'] }],
     },
     personRow
   ),
@@ -161,26 +161,26 @@ const spacetimedb = schema({
   testATable: table(
     {
       name: "test_a",
-      indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
+      indexes: [{ algorithm: 'btree', columns: ['x'] }],
     },
     testA
   ),
 
   // test_d (public) with default(Some(DEFAULT_TEST_C)) option field
-  testD: table({ name: 'test_d', public: true }, testDRow),
+  testD: table({ public: true }, testDRow),
 
   // test_e, default private, with primary key id auto_inc and btree index on name
   testE: table(
     {
       name: 'test_e',
       public: false,
-      indexes: [{ name: 'name', algorithm: 'btree', columns: ['name'] }],
+      indexes: [{ algorithm: 'btree', columns: ['name'] }],
     },
     testERow
   ),
 
   // test_f (public) with Foobar field
-  testF: table({ name: 'test_f', public: true }, testFRow),
+  testF: table({ public: true }, testFRow),
 
   // private_table (explicit private)
   privateTable: table(
