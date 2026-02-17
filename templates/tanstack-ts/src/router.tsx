@@ -11,6 +11,7 @@ import { DbConnection, ErrorContext } from './module_bindings';
 
 const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
 const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'tanstack-ts';
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
 const spacetimeDBQueryClient = new SpacetimeDBQueryClient();
 
@@ -29,7 +30,7 @@ spacetimeDBQueryClient.connect(queryClient);
 
 const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('auth_token', token);
+    localStorage.setItem(TOKEN_KEY, token);
   }
   console.log(
     'Connected to SpacetimeDB with identity:',
@@ -48,10 +49,10 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 
 const connectionBuilder = DbConnection.builder()
   .withUri(HOST)
-  .withModuleName(DB_NAME)
+  .withDatabaseName(DB_NAME)
   .withToken(
     typeof localStorage !== 'undefined'
-      ? (localStorage.getItem('auth_token') ?? undefined)
+      ? (localStorage.getItem(TOKEN_KEY) ?? undefined)
       : undefined
   )
   .onConnect(onConnect)

@@ -11,7 +11,7 @@ public static partial class circles
         public float y = y;
     }
 
-    [SpacetimeDB.Table(Name = "entity")]
+    [SpacetimeDB.Table(Accessor = "entity")]
     public partial struct Entity(uint id, float x, float y, uint mass)
     {
         [AutoInc]
@@ -21,7 +21,7 @@ public static partial class circles
         public uint mass = mass;
     }
 
-    [SpacetimeDB.Table(Name = "circle")]
+    [SpacetimeDB.Table(Accessor = "circle")]
     public partial struct Circle(uint entity_id, uint player_id, float x, float y, float magnitude)
     {
         [PrimaryKey]
@@ -34,7 +34,7 @@ public static partial class circles
         public Timestamp last_split_time = (Timestamp)DateTimeOffset.UtcNow;
     }
 
-    [SpacetimeDB.Table(Name = "food")]
+    [SpacetimeDB.Table(Accessor = "food")]
     public partial struct Food(uint entity_id)
     {
         [PrimaryKey]

@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "nullable_vec";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class NullableVecIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(NullableVec row) => row.Id;
 
-                public IdUniqueIndex(NullableVecHandle table) : base(table) { }
+                public NullableVecIdIdxBtreeUniqueIndex(NullableVecHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly NullableVecIdIdxBtreeUniqueIndex NullableVecIdIdxBtree;
 
             internal NullableVecHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
+                NullableVecIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(NullableVec row) => row.Id;

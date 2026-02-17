@@ -103,7 +103,7 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .as_ref()
-                .get_column_by_name(&field)
+                .get_column_by_name_or_alias(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
 
             if let Some(ty) = expected {

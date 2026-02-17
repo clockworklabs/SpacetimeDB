@@ -1,5 +1,8 @@
 use crate::db::raw_def::v9::RawModuleDefV9Builder;
 use crate::db::raw_def::RawTableDefV8;
+
+#[doc(hidden)]
+pub use crate::db::raw_def::v10::ExplicitNames;
 use anyhow::Context;
 use sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::raw_identifier::RawIdentifier;

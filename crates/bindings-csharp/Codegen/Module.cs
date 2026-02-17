@@ -221,7 +221,7 @@ record TableAccessor
     {
         var attr = data.ParseAs<TableAttribute>();
 
-        Name = attr.Name ?? table.ShortName;
+        Name = attr.Accessor ?? table.ShortName;
         IsPublic = attr.Public;
         IsEvent = attr.Event;
         if (
@@ -318,7 +318,7 @@ record TableIndex
     /// Used internally by other constructors that parse attributes.
     /// </summary>
     private TableIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
-        : this(attr.Name, columns, attr.Table, TableIndexType.BTree) { }
+        : this(attr.Accessor, columns, attr.Table, TableIndexType.BTree) { }
 
     /// <summary>
     /// Creates an index from a table declaration and attribute data.
@@ -1068,7 +1068,7 @@ record ViewDeclaration
         var isAnonymousContext = firstParamType?.Name == "AnonymousViewContext";
         var hasArguments = method.Parameters.Length > 1;
 
-        if (string.IsNullOrEmpty(attr.Name))
+        if (string.IsNullOrEmpty(attr.Accessor))
         {
             diag.Report(ErrorDescriptor.ViewMustHaveName, methodSyntax);
         }
@@ -1082,7 +1082,7 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewArgsUnsupported, methodSyntax);
         }
 
-        Name = attr.Name ?? method.Name;
+        Name = attr.Accessor ?? method.Name;
         FullName = SymbolToName(method);
         IsPublic = attr.Public;
         IsAnonymous = isAnonymousContext;

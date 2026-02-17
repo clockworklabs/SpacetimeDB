@@ -1,4 +1,4 @@
-#[spacetimedb::table(name = t, public)]
+#[spacetimedb::table(accessor = t, public)]
 pub struct T {
     name: String,
 }
