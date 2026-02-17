@@ -887,8 +887,8 @@ fn overlay_json(base: &mut serde_json::Value, overlay: serde_json::Value) {
 ///
 /// Loading order (each overlays the previous via top-level key replacement):
 /// 1. `spacetime.json` (required)
-/// 2. `spacetime.<env>.json` (if env specified and file exists)
-/// 3. `spacetime.local.json` (if exists)
+/// 2. `spacetime.local.json` (if exists)
+/// 3. `spacetime.<env>.json` (if env specified and file exists)
 /// 4. `spacetime.<env>.local.json` (if env specified and file exists)
 pub fn find_and_load_with_env(env: Option<&str>) -> anyhow::Result<Option<LoadedConfig>> {
     find_and_load_with_env_from(env, std::env::current_dir()?)
@@ -908,6 +908,13 @@ pub fn find_and_load_with_env_from(env: Option<&str>, start_dir: PathBuf) -> any
     let mut loaded_files = vec![base_path];
     let mut has_dev_file = false;
 
+    // Overlay local file
+    let local_path = config_dir.join("spacetime.local.json");
+    if let Some(local_value) = load_json_value(&local_path)? {
+        overlay_json(&mut merged, local_value);
+        loaded_files.push(local_path);
+    }
+
     // Overlay environment-specific file
     if let Some(env_name) = env {
         let env_path = config_dir.join(format!("spacetime.{env_name}.json"));
@@ -918,13 +925,6 @@ pub fn find_and_load_with_env_from(env: Option<&str>, start_dir: PathBuf) -> any
                 has_dev_file = true;
             }
         }
-    }
-
-    // Overlay local file
-    let local_path = config_dir.join("spacetime.local.json");
-    if let Some(local_value) = load_json_value(&local_path)? {
-        overlay_json(&mut merged, local_value);
-        loaded_files.push(local_path);
     }
 
     // Overlay environment-specific local file
@@ -2595,7 +2595,7 @@ mod tests {
 
     #[test]
     fn test_multi_level_env_layering_staging() {
-        // Full overlay order: base → staging → local → staging.local
+        // Full overlay order: base → local → staging → staging.local
         use std::fs;
         use tempfile::TempDir;
 
@@ -2609,14 +2609,14 @@ mod tests {
         )
         .unwrap();
 
-        // Staging env overlay
+        // Staging env overlay (applies after local)
         fs::write(
             root.join("spacetime.staging.json"),
             r#"{ "server": "staging-server", "database": "staging-db" }"#,
         )
         .unwrap();
 
-        // Local overlay (applies after env)
+        // Local overlay (applies before env)
         fs::write(
             root.join("spacetime.local.json"),
             r#"{ "database": "local-override-db" }"#,
@@ -2634,7 +2634,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // database: base-db → staging-db → local-override-db → staging-local-db
+        // database: base-db → local-override-db → staging-db → staging-local-db
         assert_eq!(
             result.config.additional_fields.get("database").and_then(|v| v.as_str()),
             Some("staging-local-db")
@@ -2655,6 +2655,14 @@ mod tests {
         );
         // 4 files loaded
         assert_eq!(result.loaded_files.len(), 4);
+        assert_eq!(
+            result.loaded_files[1].file_name().and_then(|s| s.to_str()),
+            Some("spacetime.local.json")
+        );
+        assert_eq!(
+            result.loaded_files[2].file_name().and_then(|s| s.to_str()),
+            Some("spacetime.staging.json")
+        );
     }
 
     #[test]

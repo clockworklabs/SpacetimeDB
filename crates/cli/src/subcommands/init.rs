@@ -12,6 +12,7 @@ use serde_json::json;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
@@ -471,7 +472,7 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
-    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, &template_config.project_name)? {
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path)? {
         println!("{} Created {}", "✓".green(), path.display());
     }
 
@@ -516,22 +517,20 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         }
     }
 
+    if let Some(path) = create_local_spacetime_config_if_missing(&project_path, &template_config.project_name)? {
+        println!("{} Created {}", "✓".green(), path.display());
+    }
+
     Ok(project_path)
 }
 
-fn create_default_spacetime_config_if_missing(
-    project_path: &Path,
-    project_name: &str,
-) -> anyhow::Result<Option<PathBuf>> {
+fn create_default_spacetime_config_if_missing(project_path: &Path) -> anyhow::Result<Option<PathBuf>> {
     let config_path = project_path.join(CONFIG_FILENAME);
     if config_path.exists() {
         return Ok(None);
     }
 
     let mut config = SpacetimeConfig::default();
-    config
-        .additional_fields
-        .insert("database".to_string(), json!(project_name));
     config
         .additional_fields
         .insert("server".to_string(), json!("maincloud"));
@@ -545,6 +544,41 @@ fn create_default_spacetime_config_if_missing(
     Ok(Some(config.save_to_dir(project_path)?))
 }
 
+fn create_local_spacetime_config_if_missing(
+    project_path: &Path,
+    project_name: &str,
+) -> anyhow::Result<Option<PathBuf>> {
+    let main_config_path = project_path.join(CONFIG_FILENAME);
+    if !main_config_path.exists() {
+        return Ok(None);
+    }
+
+    let local_config_path = project_path.join("spacetime.local.json");
+    if local_config_path.exists() {
+        return Ok(None);
+    }
+
+    let random_suffix = random_suffix();
+    let local_database = format!("{project_name}-{random_suffix:06}");
+
+    let mut local_config = SpacetimeConfig::default();
+    local_config
+        .additional_fields
+        .insert("database".to_string(), json!(local_database));
+    local_config.save(&local_config_path)?;
+
+    Ok(Some(local_config_path))
+}
+
+fn random_suffix() -> u32 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let pid = std::process::id() as u64;
+    ((now ^ (pid << 16)) % 1_000_000) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,19 +589,50 @@ mod tests {
         let project_path = temp.path();
         std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
 
-        let created = create_default_spacetime_config_if_missing(project_path, "my-app")
+        let created = create_default_spacetime_config_if_missing(project_path)
             .unwrap()
             .expect("expected config to be created");
         assert_eq!(created, project_path.join("spacetime.json"));
 
         let content = std::fs::read_to_string(&created).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed.get("database").and_then(|v| v.as_str()), Some("my-app"));
+        assert!(parsed.get("database").is_none());
         assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("maincloud"));
         assert_eq!(
             parsed.get("module-path").and_then(|v| v.as_str()),
             Some("./spacetimedb")
         );
+    }
+
+    #[test]
+    fn test_create_local_spacetime_config_if_missing_creates_database_override() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
+
+        let created = create_local_spacetime_config_if_missing(project_path, "my-app")
+            .unwrap()
+            .expect("expected local config to be created");
+        assert_eq!(created, project_path.join("spacetime.local.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let db = parsed
+            .get("database")
+            .and_then(|v| v.as_str())
+            .expect("database should be present");
+
+        assert!(
+            db.starts_with("my-app-"),
+            "expected database to start with `my-app-`, got: {db}"
+        );
+        let suffix = &db["my-app-".len()..];
+        assert_eq!(suffix.len(), 6);
+        assert!(suffix.chars().all(|c| c.is_ascii_digit()));
+
+        let obj = parsed.as_object().expect("local config should be a JSON object");
+        assert_eq!(obj.len(), 1, "local config should only contain database");
     }
 }
 

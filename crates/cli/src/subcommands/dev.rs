@@ -2,7 +2,7 @@ use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
 use crate::spacetime_config::{
-    detect_client_command, find_and_load_with_env_from, CommandConfig, CommandSchema, SpacetimeConfig,
+    detect_client_command, find_and_load_with_env_from, CommandConfig, CommandSchema, SpacetimeConfig, CONFIG_FILENAME,
 };
 use crate::subcommands::init;
 use crate::util::{
@@ -326,6 +326,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let use_local = resolved_server == "local";
 
+    if !no_config {
+        if let Some(path) = create_default_spacetime_config_if_missing(&project_dir)? {
+            println!("{} Created {}", "✓".green(), path.display());
+        }
+    }
+
     // If we don't have any publish configs by now, we need to ask the user about the
     // database they want to use. This should only happen if no configs are available
     // in the config file and no database name has been passed through the CLI
@@ -364,6 +370,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         config_map.insert("server".to_string(), json!(resolved_server));
 
         publish_configs = vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?];
+    }
+
+    if !no_config {
+        if let Some(first_db_name) = publish_configs
+            .first()
+            .and_then(|cfg| cfg.get_config_value("database"))
+            .and_then(|v| v.as_str())
+        {
+            if let Some(path) = create_local_spacetime_config_if_missing(&project_dir, first_db_name)? {
+                println!("{} Created {}", "✓".green(), path.display());
+            }
+        }
     }
 
     if !module_bindings_dir.exists() {
@@ -1173,12 +1191,22 @@ fn extract_watch_dirs(
 /// Detect client command and save to config (updating existing config if present)
 fn detect_and_save_client_command(project_dir: &Path, existing_config: Option<SpacetimeConfig>) -> Option<String> {
     if let Some((detected_cmd, _detected_pm)) = detect_client_command(project_dir) {
-        // Update existing config or create new one
+        // Update provided config, config on disk, or create new one.
         let config_to_save = if let Some(mut config) = existing_config {
             config.dev = Some(crate::spacetime_config::DevConfig {
                 run: Some(detected_cmd.clone()),
             });
             config
+        } else if project_dir.join(CONFIG_FILENAME).exists() {
+            match SpacetimeConfig::load(&project_dir.join(CONFIG_FILENAME)) {
+                Ok(mut config) => {
+                    config.dev = Some(crate::spacetime_config::DevConfig {
+                        run: Some(detected_cmd.clone()),
+                    });
+                    config
+                }
+                Err(_) => SpacetimeConfig::with_run_command(&detected_cmd),
+            }
         } else {
             SpacetimeConfig::with_run_command(&detected_cmd)
         };
@@ -1194,6 +1222,49 @@ fn detect_and_save_client_command(project_dir: &Path, existing_config: Option<Sp
     } else {
         None
     }
+}
+
+fn create_default_spacetime_config_if_missing(project_dir: &Path) -> anyhow::Result<Option<PathBuf>> {
+    let config_path = project_dir.join(CONFIG_FILENAME);
+    if config_path.exists() {
+        return Ok(None);
+    }
+
+    let mut config = SpacetimeConfig::default();
+    config
+        .additional_fields
+        .insert("server".to_string(), json!("maincloud"));
+
+    if project_dir.join("spacetimedb").is_dir() {
+        config
+            .additional_fields
+            .insert("module-path".to_string(), json!("./spacetimedb"));
+    }
+
+    Ok(Some(config.save_to_dir(project_dir)?))
+}
+
+fn create_local_spacetime_config_if_missing(
+    project_dir: &Path,
+    database_name: &str,
+) -> anyhow::Result<Option<PathBuf>> {
+    let main_config_path = project_dir.join(CONFIG_FILENAME);
+    if !main_config_path.exists() {
+        return Ok(None);
+    }
+
+    let local_config_path = project_dir.join("spacetime.local.json");
+    if local_config_path.exists() {
+        return Ok(None);
+    }
+
+    let mut local_config = SpacetimeConfig::default();
+    local_config
+        .additional_fields
+        .insert("database".to_string(), json!(database_name));
+    local_config.save(&local_config_path)?;
+
+    Ok(Some(local_config_path))
 }
 
 /// Start the client development server as a child process.
@@ -1454,5 +1525,92 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["dev", "--env", "staging"]);
 
         assert_eq!(matches.get_one::<String>("env").map(|s| s.as_str()), Some("staging"));
+    }
+
+    #[test]
+    fn test_create_default_spacetime_config_if_missing_creates_expected_config() {
+        let temp = TempDir::new().unwrap();
+        let project_path = temp.path();
+        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
+
+        let created = create_default_spacetime_config_if_missing(project_path)
+            .unwrap()
+            .expect("expected config to be created");
+        assert_eq!(created, project_path.join("spacetime.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed.get("database").is_none());
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("maincloud"));
+        assert_eq!(
+            parsed.get("module-path").and_then(|v| v.as_str()),
+            Some("./spacetimedb")
+        );
+    }
+
+    #[test]
+    fn test_create_local_spacetime_config_if_missing_creates_database_override() {
+        let temp = TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
+
+        let created = create_local_spacetime_config_if_missing(project_path, "my-app-123456")
+            .unwrap()
+            .expect("expected local config to be created");
+        assert_eq!(created, project_path.join("spacetime.local.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let db = parsed
+            .get("database")
+            .and_then(|v| v.as_str())
+            .expect("database should be present");
+
+        assert_eq!(db, "my-app-123456");
+
+        let obj = parsed.as_object().expect("local config should be a JSON object");
+        assert_eq!(obj.len(), 1, "local config should only contain database");
+    }
+
+    #[test]
+    fn test_detect_and_save_merges_into_existing_file_when_no_existing_config_passed() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("spacetime.json");
+        fs::write(
+            &config_path,
+            r#"{
+                "server": "maincloud",
+                "module-path": "./spacetimedb"
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("package.json"),
+            r#"{
+                "name": "test",
+                "scripts": {
+                    "dev": "vite"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let detected = detect_and_save_client_command(temp.path(), None);
+        assert!(detected.is_some());
+
+        let reloaded = SpacetimeConfig::load(&config_path).unwrap();
+        assert_eq!(
+            reloaded.additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("maincloud")
+        );
+        assert_eq!(
+            reloaded.additional_fields.get("module-path").and_then(|v| v.as_str()),
+            Some("./spacetimedb")
+        );
+        assert_eq!(
+            reloaded.dev.as_ref().and_then(|d| d.run.as_deref()),
+            Some("npm run dev")
+        );
     }
 }
