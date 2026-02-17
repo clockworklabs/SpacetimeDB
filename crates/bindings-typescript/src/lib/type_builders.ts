@@ -1284,14 +1284,14 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
     SetField<DefaultMetadata, 'defaultValue', any>
   > {
     return new ArrayColumnBuilder(
-      this.element,
+      this,
       set(defaultMetadata, { defaultValue: value })
     );
   }
   name<const Name extends string>(
     name: Name
   ): ArrayColumnBuilder<Element, SetField<DefaultMetadata, 'name', Name>> {
-    return new ArrayColumnBuilder(this.element, set(defaultMetadata, { name }));
+    return new ArrayColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
