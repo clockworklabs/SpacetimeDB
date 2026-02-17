@@ -1313,6 +1313,7 @@ mod tests {
         columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema,
         SequenceSchema,
     };
+    use spacetimedb_schema::table_name::TableName;
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.

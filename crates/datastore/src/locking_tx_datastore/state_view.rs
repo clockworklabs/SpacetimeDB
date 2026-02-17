@@ -120,7 +120,7 @@ pub trait StateView {
             // before `migrate_system_tables` creates newer system tables.
             // We therefore treat a missing `st_column_accessor` as "no aliases yet".
             //
-            // Note this is different behavior from `find_st_table_accessor_row1`,
+            // Note this is different behavior from `find_st_table_accessor_row`,
             // because that utility is used for name resolution **after** startup,
             // where missing accessor tables should be surfaced as real errors.
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(None),
@@ -227,6 +227,22 @@ pub trait StateView {
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => false,
             Err(e) => return Err(e),
         };
+        // During restore from snapshots produced before `st_table_accessor` existed,
+        // this system table is missing until `migrate_system_tables` runs.
+        // Handle that here so schema reconstruction can proceed during restore.
+        let table_alias = match self.iter_by_col_eq(
+            ST_TABLE_ACCESSOR_ID,
+            StTableAccessorFields::TableName,
+            &table_name.as_ref().into(),
+        ) {
+            Ok(mut iter) => iter
+                .next()
+                .map(StTableAccessorRow::try_from)
+                .transpose()?
+                .map(|row| row.accessor_name),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => None,
+            Err(e) => return Err(e),
+        };
         Ok(TableSchema::new(
             table_id,
             table_name,
@@ -240,8 +256,7 @@ pub trait StateView {
             schedule,
             table_primary_key,
             is_event,
-            //TODO: fetch it from system table
-            None,
+            table_alias,
         ))
     }
 
