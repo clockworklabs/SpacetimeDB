@@ -11,7 +11,7 @@ mod hooks;
 mod v1;
 mod v2;
 
-pub(super) use self::hooks::{get_registered_hooks, HookFunctions, ModuleHookKey};
+pub(super) use self::hooks::{get_registered_hooks, set_registered_hooks, HookFunctions, ModuleHookKey};
 
 /// The return type of a module -> host syscall.
 pub(super) type FnRet<'scope> = ExcResult<Local<'scope, v8::Value>>;
