@@ -28,7 +28,7 @@ pub struct Rust;
 
 impl Lang for Rust {
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let type_name = collect_case(Case::Pascal, typ.name.name_segments());
+        let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
 
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
@@ -96,7 +96,7 @@ impl __sdk::InModule for {type_name} {{
         }
 
         vec![OutputFile {
-            filename: type_module_name(&typ.name) + ".rs",
+            filename: type_module_name(&typ.accessor_name) + ".rs",
             code: output.into_inner(),
         }]
     }
@@ -1131,7 +1131,7 @@ fn procedure_function_with_callback_name(procedure: &ProcedureDef) -> String {
 /// Iterate over all of the Rust `mod`s for types, reducers, views, and tables in the `module`.
 fn iter_module_names(module: &ModuleDef, visibility: CodegenVisibility) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
-        iter_types(module).map(|ty| type_module_name(&ty.name)),
+        iter_types(module).map(|ty| type_module_name(&ty.accessor_name)),
         iter_reducers(module, visibility).map(|r| reducer_module_name(&r.name)),
         iter_tables(module, visibility).map(|tbl| table_module_name(&tbl.name)),
         iter_views(module).map(|view| table_module_name(&view.name)),
@@ -1149,8 +1149,8 @@ fn print_module_decls(module: &ModuleDef, visibility: CodegenVisibility, out: &m
 /// Print appropriate reexports for all the files that will be generated for `items`.
 fn print_module_reexports(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
     for ty in iter_types(module) {
-        let mod_name = type_module_name(&ty.name);
-        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        let mod_name = type_module_name(&ty.accessor_name);
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};")
     }
     for (table_name, _) in iter_table_names_and_types(module, visibility) {
