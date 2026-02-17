@@ -43,6 +43,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::panic::AssertUnwindSafe;
@@ -852,6 +853,8 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     fn tx_slot(&self) -> TxSlot {
         self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
     }
+
+    fn set_module_def(&mut self, _: Arc<ModuleDef>) {}
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
         common_call(self.scope, budget, op, |scope, op| {

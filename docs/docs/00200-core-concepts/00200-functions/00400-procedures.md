@@ -181,7 +181,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "MyTable")]
+    [SpacetimeDB.Table(Accessor = "MyTable")]
     public partial struct MyTable
     {
         public uint A;
@@ -471,7 +471,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Player")]
+    [SpacetimeDB.Table(Accessor = "Player")]
     public partial struct Player
     {
         public Identity Id;
@@ -1256,7 +1256,7 @@ using System.Text.Json;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "AiMessage", Public = true)]
+    [SpacetimeDB.Table(Accessor = "AiMessage", Public = true)]
     public partial struct AiMessage
     {
         public Identity User;

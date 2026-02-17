@@ -170,7 +170,7 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
    public static partial class Module
    {
-       [SpacetimeDB.Table(Name = "Primitive", Public = true)]
+       [SpacetimeDB.Table(Accessor = "Primitive", Public = true)]
        public partial struct Primitive
        {
            [SpacetimeDB.PrimaryKey]
@@ -206,7 +206,7 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
    public static partial class Module
    {
-       [Table(Name = "Primitive")]
+       [Table(Accessor = "Primitive")]
        public partial struct Primitive
        {
            [PrimaryKey] public int Id;

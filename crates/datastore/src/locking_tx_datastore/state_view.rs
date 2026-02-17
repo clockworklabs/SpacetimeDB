@@ -5,11 +5,11 @@ use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
     StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
-    StIndexFields, StIndexRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
-    StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewRow,
-    SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID,
-    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID,
-    ST_VIEW_PARAM_ID,
+    StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
+    StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
+    StViewFields, StViewParamFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+    ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -105,6 +105,18 @@ pub trait StateView {
         )?
         .next()
         .map(StTableAccessorRow::try_from)
+        .transpose()
+    }
+
+    /// Look up an `st_index_accessor` row by its accessor name
+    fn find_st_index_accessor_row(&self, accessor_name: &str) -> Result<Option<StIndexAccessorRow>> {
+        self.iter_by_col_eq(
+            ST_INDEX_ACCESSOR_ID,
+            StIndexAccessorFields::AccessorName,
+            &accessor_name.into(),
+        )?
+        .next()
+        .map(StIndexAccessorRow::try_from)
         .transpose()
     }
 

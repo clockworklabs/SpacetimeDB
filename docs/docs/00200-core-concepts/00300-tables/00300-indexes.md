@@ -117,7 +117,7 @@ const user = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -195,8 +195,8 @@ const user = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "idx_age", Columns = new[] { "Age" })]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "idx_age", Columns = new[] { "Age" })]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -264,8 +264,8 @@ const score = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Score", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Table(Accessor = "Score", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public uint PlayerId;
