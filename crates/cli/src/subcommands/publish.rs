@@ -15,7 +15,7 @@ use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
     SpacetimeConfig,
 };
-use crate::util::{add_auth_header_opt, find_module_path, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -368,15 +368,7 @@ async fn execute_publish_configs<'a>(
         } else {
             Some(match command_config.get_one::<PathBuf>("module_path")? {
                 Some(path) => path,
-                None if using_config => {
-                    anyhow::bail!("module-path must be specified for each publish target when using spacetime.json");
-                }
-                None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
-                         Use --module-path to specify the module location."
-                    )
-                })?,
+                None => default_publish_module_path(&std::env::current_dir()?),
             })
         };
 
@@ -555,6 +547,15 @@ async fn execute_publish_configs<'a>(
     }
 
     Ok(())
+}
+
+fn default_publish_module_path(current_dir: &std::path::Path) -> PathBuf {
+    let spacetimedb_dir = current_dir.join("spacetimedb");
+    if spacetimedb_dir.is_dir() {
+        spacetimedb_dir
+    } else {
+        current_dir.to_path_buf()
+    }
 }
 
 fn validate_name_or_identity(name_or_identity: &str) -> Result<(), DatabaseNameError> {
@@ -882,6 +883,26 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("No database target matches"));
+    }
+
+    #[test]
+    fn test_default_publish_module_path_prefers_spacetimedb_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cwd = temp.path().to_path_buf();
+        let spacetimedb_dir = cwd.join("spacetimedb");
+        std::fs::create_dir_all(&spacetimedb_dir).unwrap();
+
+        let resolved = default_publish_module_path(&cwd);
+        assert_eq!(resolved, spacetimedb_dir);
+    }
+
+    #[test]
+    fn test_default_publish_module_path_falls_back_to_current_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cwd = temp.path().to_path_buf();
+
+        let resolved = default_publish_module_path(&cwd);
+        assert_eq!(resolved, cwd);
     }
 
     #[test]
