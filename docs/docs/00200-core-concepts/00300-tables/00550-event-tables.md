@@ -28,6 +28,11 @@ const damageEvent = table({
   damage: t.u32(),
   source: t.string(),
 });
+
+const spacetimedb = schema({
+  damageEvent,
+});
+export default spacetimedb;
 ```
 
 </TabItem>
@@ -47,7 +52,7 @@ public partial struct DamageEvent
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = damage_event, public, event)]
+#[spacetimedb::table(accessor = damage_event, public, event)]
 pub struct DamageEvent {
     pub entity_id: Identity,
     pub damage: u32,
