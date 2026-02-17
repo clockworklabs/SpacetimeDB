@@ -269,7 +269,7 @@ impl<'a> CowAV<'a> {
     }
 }
 
-/// A key into a [`TypedIndex`], the borrowed version.
+/// A key into a [`TypedIndex`].
 #[derive(enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum TypedIndexKey<'a> {
     Bool(bool),
@@ -1412,6 +1412,7 @@ impl TypedIndex {
     }
 }
 
+/// A key into a [`TableIndex`].
 pub struct IndexKey<'a> {
     key: TypedIndexKey<'a>,
 }
@@ -1573,12 +1574,6 @@ impl TableIndex {
     }
 
     /// Returns an iterator that yields all the `RowPointer`s for the given `key`.
-    pub fn seek_point_via_algebraic_value(&self, value: &AlgebraicValue) -> TableIndexPointIter<'_> {
-        let key = self.key_from_algebraic_value(value);
-        self.seek_point(&key)
-    }
-
-    /// Returns an iterator that yields all the `RowPointer`s for the given `key`.
     #[inline]
     pub fn seek_point(&self, key: &IndexKey<'_>) -> TableIndexPointIter<'_> {
         let iter = self.idx.seek_point(&key.key);
@@ -1589,12 +1584,12 @@ impl TableIndex {
     /// that yields all the `RowPointer`s,
     /// that fall within the specified `range`,
     /// if the index is [`RangedIndex`].
-    pub fn seek_range(
+    pub fn seek_range<'a>(
         &self,
-        range: &impl RangeBounds<AlgebraicValue>,
+        range: &impl RangeBounds<IndexKey<'a>>,
     ) -> IndexSeekRangeResult<TableIndexRangeIter<'_>> {
-        let start = range.start_bound().map(|v| self.key_from_algebraic_value(v).key);
-        let end = range.end_bound().map(|v| self.key_from_algebraic_value(v).key);
+        let start = range.start_bound().map(|v| &v.key);
+        let end = range.end_bound().map(|v| &v.key);
         let range = (start, end);
         let iter = self.idx.seek_range(&range)?;
         Ok(TableIndexRangeIter { iter })
@@ -1846,6 +1841,15 @@ mod test {
         generate_primitive_algebraic_type().prop_flat_map(|ty| (Just(ty.clone()), generate_algebraic_value(ty)))
     }
 
+    fn seek_range<'a>(
+        index: &'a TableIndex,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> IndexSeekRangeResult<TableIndexRangeIter<'a>> {
+        let start = range.start_bound().map(|v| index.key_from_algebraic_value(v));
+        let end = range.end_bound().map(|v| index.key_from_algebraic_value(v));
+        index.seek_range(&(start, end))
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig { max_shrink_iters: 0x10000000, ..Default::default() })]
 
@@ -1854,7 +1858,7 @@ mod test {
             let index = TableIndex::new(&ty, cols.clone(), IndexKind::Hash, is_unique).unwrap();
 
             let key = pv.project(&cols).unwrap();
-            assert_eq!(index.seek_range(&(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
+            assert_eq!(seek_range(&index, &(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
         }
 
         #[test]
@@ -1993,7 +1997,7 @@ mod test {
             assert_eq!(index.num_key_bytes() as usize, 3 * size_of::<u64>());
 
             fn test_seek(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
-                check_seek(index.seek_range(&range).unwrap().collect(), val_to_ptr, expect)
+                check_seek(seek_range(index, &range).unwrap().collect(), val_to_ptr, expect)
             }
 
             fn check_seek(mut ptrs_in_index: Vec<RowPointer>, val_to_ptr: &HashMap<u64, RowPointer>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
@@ -2010,7 +2014,7 @@ mod test {
             // Test point ranges.
             for x in range.clone() {
                 test_seek(&index, &val_to_ptr, V(x), [x])?;
-                check_seek(index.seek_point_via_algebraic_value(&V(x)).collect(), &val_to_ptr, [x])?;
+                check_seek(index.seek_point(&index.key_from_algebraic_value(&V(x))).collect(), &val_to_ptr, [x])?;
             }
 
             // Test `..` (`RangeFull`).
@@ -2085,15 +2089,15 @@ mod test {
             assert_eq!(index.num_rows(), 1);
 
             // Seek the empty ranges.
-            let rows = index.seek_range(&(&succ..&val)).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &(&succ..&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(&succ..=&val)).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &(&succ..=&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
         }
     }

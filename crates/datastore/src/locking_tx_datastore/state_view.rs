@@ -413,6 +413,20 @@ pub enum ScanOrIndex<S, I> {
     Index(I),
 }
 
+impl<R, I, Idx> ScanOrIndex<ApplyFilter<RangeOnColumn<R>, I>, Idx> {
+    /// Returns a scan that applies a `RangeOnColumn` filter to `iter`.
+    pub(super) fn scan_range(cols: ColList, range: R, iter: I) -> Self {
+        Self::Scan(ApplyFilter::new(RangeOnColumn { cols, range }, iter))
+    }
+}
+
+impl<'r, I, Idx> ScanOrIndex<ApplyFilter<EqOnColumn<'r>, I>, Idx> {
+    /// Returns a scan that applies a `EqOnColumn` filter to `iter`.
+    pub(super) fn scan_eq(cols: ColList, val: &'r AlgebraicValue, iter: I) -> Self {
+        Self::Scan(ApplyFilter::new(EqOnColumn { cols, val }, iter))
+    }
+}
+
 impl<'a, S, I> Iterator for ScanOrIndex<S, I>
 where
     S: Iterator<Item = RowRef<'a>>,

@@ -12,7 +12,7 @@ use crate::{
     execution_context::ExecutionContext,
     locking_tx_datastore::{
         mut_tx::ViewReadSets,
-        state_view::{iter_st_column_for_table, ApplyFilter, EqOnColumn, RangeOnColumn, ScanOrIndex},
+        state_view::{iter_st_column_for_table, ScanOrIndex},
         IterByColRangeTx,
     },
     system_tables::{
@@ -50,8 +50,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
-    table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
-    table_index::IndexSeekRangeResult,
+    table::{InsertError, RowRef, Table, TableAndIndex, TableScanIter},
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -219,12 +218,12 @@ impl StateView for CommittedState {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        match self.index_seek_range(table_id, &cols, &range) {
+        let iter = self
+            .get_index_by_cols(table_id, &cols)
+            .map(|i| i.seek_range_via_algebraic_value(&range));
+        match iter {
             Some(Ok(iter)) => Ok(ScanOrIndex::Index(iter)),
-            None | Some(Err(_)) => Ok(ScanOrIndex::Scan(ApplyFilter::new(
-                RangeOnColumn { cols, range },
-                self.iter(table_id)?,
-            ))),
+            None | Some(Err(_)) => Ok(ScanOrIndex::scan_range(cols, range, self.iter(table_id)?)),
         }
     }
 
@@ -235,12 +234,12 @@ impl StateView for CommittedState {
         val: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
         let cols = cols.into();
-        match self.index_seek_point(table_id, &cols, val) {
+        let iter = self
+            .get_index_by_cols(table_id, &cols)
+            .map(|i| i.seek_point_via_algebraic_value(val));
+        match iter {
             Some(iter) => Ok(ScanOrIndex::Index(iter)),
-            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
-                EqOnColumn { cols, val },
-                self.iter(table_id)?,
-            ))),
+            None => Ok(ScanOrIndex::scan_eq(cols, val, self.iter(table_id)?)),
         }
     }
 
@@ -949,48 +948,11 @@ impl CommittedState {
         Some(self.get_table(table_id)?.scan_rows(&self.blob_store))
     }
 
-    /// When there's an index on `cols`,
-    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
-    /// that match the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`
-    /// when `range` is a point.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_range<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
+    /// Returns an index for `table_id` on `cols`, if any.
+    pub(super) fn get_index_by_cols(&self, table_id: TableId, cols: &ColList) -> Option<TableAndIndex<'_>> {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_range(range))
-    }
-
-    /// When there's an index on `cols`,
-    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
-    /// that equal `value` in the indexed column.
-    ///
-    /// Matching is defined by `Eq for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_point<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        value: &AlgebraicValue,
-    ) -> Option<IndexScanPointIter<'a>> {
-        self.tables
-            .get(&table_id)?
-            .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| {
-                let key = i.index().key_from_algebraic_value(value);
-                i.seek_point(&key)
-            })
     }
 
     /// Returns the table associated with the given `index_id`, if any.

@@ -798,11 +798,10 @@ fn insert_num_same<R: IndexedRow>(
 }
 
 fn clear_all_same<R: IndexedRow>(tbl: &mut Table, index_id: IndexId, val_same: u64) {
-    let ptrs = tbl
-        .get_index_by_id(index_id)
-        .unwrap()
-        .seek_point_via_algebraic_value(&R::column_value_from_u64(val_same))
-        .collect::<Vec<_>>();
+    let index = tbl.get_index_by_id(index_id).unwrap();
+    let key = R::column_value_from_u64(val_same);
+    let key = index.key_from_algebraic_value(&key);
+    let ptrs = index.seek_point(&key).collect::<Vec<_>>();
     for ptr in ptrs {
         tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
     }
@@ -919,7 +918,7 @@ fn index_seek(c: &mut Criterion) {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
                         let (row, none) = time(&mut elapsed, || {
-                            let mut iter = index.seek_range(&col_to_seek).unwrap();
+                            let mut iter = index.seek_point_via_algebraic_value(&col_to_seek);
                             (iter.next(), iter.next())
                         });
                         assert!(
