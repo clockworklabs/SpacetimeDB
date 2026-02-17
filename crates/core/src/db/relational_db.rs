@@ -10,7 +10,7 @@ use enum_map::EnumMap;
 use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
-use spacetimedb_data_structures::map::{HashMap, HashSet};
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};

@@ -392,14 +392,6 @@ impl ModuleDef {
             panic!("expected ModuleDef to contain {:?}, but it does not", def.key());
         }
     }
-
-    pub fn table_accessors(&self) -> impl Iterator<Item = (&Identifier, &Identifier)> {
-        self.tables().map(|table| (&table.accessor_name, &table.name))
-    }
-
-    pub fn index_accessors(&self) -> impl Iterator<Item = (&RawIdentifier, &RawIdentifier)> {
-        self.indexes().map(|index| (&index.accessor_name, &index.name))
-    }
 }
 
 impl TryFrom<RawModuleDef> for ModuleDef {
