@@ -102,15 +102,10 @@ fn ensure_same_schema_rust_csharp_benchmarks() {
 #[serial]
 fn test_case_converted_names() {
     let module_def: ModuleDef = get_normalized_schema("module-test");
-
-    //  println!("Types {:?}", module_def.lookup::<TableDef>::(Identifier::for_test("person")).unwrap().columns().collect::<Vec<_>>());
-
-    // println!("Types space {:?}", module_def.typespace());
-
     // Test Tables
     let table_names = [
-        // canonical name, accessor name
-        ("test_a", "TestATable"),
+        // (canonical name, accessor name)
+        ("test_a", "testATable"),
     ];
     for (name, accessor) in table_names {
         let def = TableDef::lookup(&module_def, &Identifier::for_test(name));
@@ -120,7 +115,7 @@ fn test_case_converted_names() {
         assert_eq!(&*def.unwrap().accessor_name, accessor, "Table '{}' not found", name);
     }
 
-    // Test Reducers
+    // Test Reducers // (listOverAge, )
     let reducer_names = ["list_over_age", "repeating_test"];
     for name in reducer_names {
         assert!(

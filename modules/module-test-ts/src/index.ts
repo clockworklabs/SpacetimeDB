@@ -194,7 +194,7 @@ const spacetimedb = schema({
       name: 'points',
       public: false,
       indexes: [
-        { name: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
+        { algorithm: 'btree', columns: ['x', 'y'] },
       ],
     },
     pointsRow

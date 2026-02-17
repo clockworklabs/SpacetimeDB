@@ -13,6 +13,8 @@ use crate::error::ValidationError;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
 
+// Utitility struct to look up canonical names for tables, functions, and indexes based on the
+// explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
 pub struct ExplicitNamesLookup {
     pub tables: HashMap<RawIdentifier, RawIdentifier>,
@@ -61,7 +63,9 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
 
+    // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
+    // Apply case conversion to `typespace`.
     CoreValidator::typespace_case_conversion(case_policy, &mut typespace);
 
     let mut validator = ModuleValidatorV10 {

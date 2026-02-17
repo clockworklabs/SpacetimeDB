@@ -42,7 +42,7 @@ pub struct RemoveTable {
     pub id: u32,
 }
 
-#[spacetimedb::table(accessor = TestATable, name="test_a", index(accessor = foo, btree(columns = [x])))]
+#[spacetimedb::table(accessor = testATable, name="test_a", index(accessor = foo, btree(columns = [x])))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
@@ -282,23 +282,23 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: Test_b, arg3: TestC, arg
         TestF::Baz(string) => log::info!("{string}"),
     }
     for i in 0..1000 {
-        ctx.db.TestATable().insert(TestA {
+        ctx.db.testATable().insert(TestA {
             x: i + arg.x,
             y: i + arg.y,
             z: "Yo".to_owned(),
         });
     }
 
-    let row_count_before_delete = ctx.db.TestATable().count();
+    let row_count_before_delete = ctx.db.testATable().count();
 
     log::info!("Row count before delete: {row_count_before_delete:?}");
 
     let mut num_deleted = 0;
     for row in 5..10u32 {
-        num_deleted += ctx.db.TestATable().foo().delete(row);
+        num_deleted += ctx.db.testATable().foo().delete(row);
     }
 
-    let row_count_after_delete = ctx.db.TestATable().count();
+    let row_count_after_delete = ctx.db.testATable().count();
 
     if row_count_before_delete != row_count_after_delete + num_deleted {
         log::error!(
@@ -318,7 +318,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: Test_b, arg3: TestC, arg
 
     let other_row_count = ctx
         .db
-        .TestATable()
+        .testATable()
         // .iter()
         // .filter(|row| row.x >= 0 && row.x <= u32::MAX)
         .count();

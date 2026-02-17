@@ -12,7 +12,6 @@ impl ReducerName {
         Self(id)
     }
 
-    // #[cfg(any(test, feature = "test"))]
     pub fn for_test(name: &str) -> Self {
         Self(Identifier::for_test(name))
     }

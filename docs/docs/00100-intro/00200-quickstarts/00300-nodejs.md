@@ -72,7 +72,7 @@ import { schema, table, t } from 'spacetimedb/server';
 
 export const spacetimedb = schema(
   table(
-    { name: 'person', public: true },
+    { public: true },
     {
       name: t.string(),
     }
