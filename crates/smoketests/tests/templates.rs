@@ -410,6 +410,13 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
     setup_csharp_nuget(project_path)?;
 
     let server_path = project_path.join("spacetimedb");
+    // Copy nuget.config into the server directory so `spacetime publish` (which runs
+    // `dotnet publish` from the server dir) can find the local package sources.
+    let root_nuget = project_path.join("nuget.config");
+    let server_nuget = server_path.join("nuget.config");
+    if root_nuget.exists() && !server_nuget.exists() {
+        fs::copy(&root_nuget, &server_nuget).context("Failed to copy nuget.config to server dir")?;
+    }
     let domain = format!("test-{}-{}", template.id, random_string());
     test.spacetime(&[
         "publish",
