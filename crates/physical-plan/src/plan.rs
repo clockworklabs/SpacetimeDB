@@ -1506,6 +1506,7 @@ mod tests {
                     col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
+                    alias: None,
                 })
                 .collect(),
             indexes
@@ -1518,6 +1519,7 @@ mod tests {
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
+                    alias: None,
                 })
                 .collect(),
             unique
@@ -1538,6 +1540,7 @@ mod tests {
             None,
             primary_key.map(ColId::from),
             false,
+            None,
         )))
     }
 
