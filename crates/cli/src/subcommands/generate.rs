@@ -309,12 +309,7 @@ fn prepare_generate_run_configs<'a>(
                 let detected = detect_default_language(&project_path)?;
                 println!(
                     "Detected client language '{}' from module '{}'. If this is not correct, pass --lang or add a generate target in spacetime.json.",
-                    match detected {
-                        Language::Rust => "rust",
-                        Language::Csharp => "csharp",
-                        Language::TypeScript => "typescript",
-                        Language::UnrealCpp => "unrealcpp",
-                    },
+                    language_cli_name(detected),
                     project_path.display()
                 );
                 detected
@@ -392,12 +387,46 @@ fn detect_default_language(module_path: &Path) -> anyhow::Result<Language> {
     })
 }
 
-fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
+fn language_cli_name(lang: Language) -> &'static str {
+    match lang {
+        Language::Rust => "rust",
+        Language::Csharp => "csharp",
+        Language::TypeScript => "typescript",
+        Language::UnrealCpp => "unrealcpp",
+    }
+}
+
+pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
     match lang {
         Language::Rust | Language::TypeScript => Some(PathBuf::from("src/module_bindings")),
         Language::Csharp => Some(PathBuf::from("module_bindings")),
         Language::UnrealCpp => None,
     }
+}
+
+pub fn resolve_language(module_path: &Path, requested: Option<Language>) -> anyhow::Result<Language> {
+    match requested {
+        Some(lang) => Ok(lang),
+        None => detect_default_language(module_path),
+    }
+}
+
+pub fn build_generate_entry(
+    module_path: Option<&Path>,
+    language: Option<Language>,
+    out_dir: Option<&Path>,
+) -> HashMap<String, serde_json::Value> {
+    let mut entry = HashMap::new();
+    if let Some(lang) = language {
+        entry.insert("language".to_string(), serde_json::json!(language_cli_name(lang)));
+    }
+    if let Some(path) = module_path {
+        entry.insert("module-path".to_string(), serde_json::json!(path));
+    }
+    if let Some(path) = out_dir {
+        entry.insert("out-dir".to_string(), serde_json::json!(path));
+    }
+    entry
 }
 
 pub async fn run_prepared_generate_configs(

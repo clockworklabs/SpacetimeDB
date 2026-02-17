@@ -6,8 +6,8 @@ use crate::spacetime_config::{
 };
 use crate::subcommands::init;
 use crate::util::{
-    add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
-    spacetime_reverse_dns, ResponseExt,
+    add_auth_header_opt, database_identity, get_auth_header, get_login_token_or_log_in, spacetime_reverse_dns,
+    ResponseExt,
 };
 use crate::{common_args, generate};
 use crate::{publish, tasks};
@@ -762,22 +762,10 @@ async fn generate_build_and_publish(
             generate::exec_from_entries(generate_configs.to_vec(), crate::generate::extract_descriptions, yes).await?;
         }
     } else {
-        let module_language = detect_module_language(spacetimedb_dir)?;
-        let client_language = client_language.unwrap_or(match module_language {
-            crate::util::ModuleLanguage::Rust => &Language::Rust,
-            crate::util::ModuleLanguage::Csharp => &Language::Csharp,
-            crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
-            crate::util::ModuleLanguage::Cpp => &Language::Rust,
-        });
-        let client_language_str = match client_language {
-            Language::Rust => "rust",
-            Language::Csharp => "csharp",
-            Language::TypeScript => "typescript",
-            Language::UnrealCpp => "unrealcpp",
-        };
+        let resolved_client_language = generate::resolve_language(spacetimedb_dir, client_language.copied())?;
 
         // For TypeScript client, update .env.local with first database name
-        if client_language == &Language::TypeScript {
+        if resolved_client_language == Language::TypeScript {
             let first_config = publish_configs.first().expect("publish_configs cannot be empty");
             let first_db_name = first_config
                 .get_config_value("database")
@@ -798,10 +786,11 @@ async fn generate_build_and_publish(
         }
 
         println!("{}", "Generating module bindings...".cyan());
-        let mut generate_entry = HashMap::new();
-        generate_entry.insert("language".to_string(), json!(client_language_str));
-        generate_entry.insert("module-path".to_string(), json!(spacetimedb_dir));
-        generate_entry.insert("out-dir".to_string(), json!(module_bindings_dir));
+        let generate_entry = generate::build_generate_entry(
+            Some(spacetimedb_dir),
+            Some(resolved_client_language),
+            Some(module_bindings_dir),
+        );
         generate::exec_from_entries(vec![generate_entry], crate::generate::extract_descriptions, yes).await?;
     }
 
