@@ -30,7 +30,7 @@ If you previously published a database without logging in first, your CLI identi
 After creating your module (see [Getting Started](/)), publish it to Maincloud:
 
 ```bash
-spacetime publish my-module --server maincloud
+spacetime publish my-database --server maincloud
 ```
 
 SpacetimeDB compiles your module, uploads it, runs your `init` reducer (if defined), and outputs the database identity. Save this identity for administrative tasks.
@@ -40,7 +40,7 @@ To update an existing module, run the same command. SpacetimeDB hot-swaps the mo
 To clear all data and start fresh:
 
 ```bash
-spacetime publish my-module --server maincloud --delete-data
+spacetime publish my-database --server maincloud --delete-data
 ```
 
 ## Connecting Clients to Maincloud
@@ -53,7 +53,7 @@ To connect your client application to a module running on Maincloud, use `https:
 ```ts
 DbConnection.builder()
   .withUri("https://maincloud.spacetimedb.com")
-  .withDatabaseName("my-module")
+  .withDatabaseName("my-database")
   .build();
 ```
 
@@ -63,7 +63,7 @@ DbConnection.builder()
 ```csharp
 DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
-    .WithDatabaseName("my-module")
+    .WithDatabaseName("my-database")
     .Build();
 ```
 
@@ -73,7 +73,7 @@ DbConnection.Builder()
 ```rust
 DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
-    .with_database_name("my-module")
+    .with_database_name("my-database")
     .build()
     .expect("Failed to connect");
 ```
@@ -84,7 +84,7 @@ DbConnection::builder()
 ```cpp
 auto conn = DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
-    .with_database_name("my-module")
+    .with_database_name("my-database")
     .build();
 ```
 
