@@ -340,7 +340,7 @@ fn test_rust_template(test: &Smoketest, template: &Template, project_path: &Path
         "--server",
         &test.server_url,
         "--yes",
-        "--project-path",
+        "--module-path",
         server_path.to_str().unwrap(),
         &domain,
     ])
@@ -380,7 +380,7 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
         "--server",
         &test.server_url,
         "--yes",
-        "--project-path",
+        "--module-path",
         server_path.to_str().unwrap(),
         &domain,
     ])
@@ -416,7 +416,7 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
         "--server",
         &test.server_url,
         "--yes",
-        "--project-path",
+        "--module-path",
         server_path.to_str().unwrap(),
         &domain,
     ])
