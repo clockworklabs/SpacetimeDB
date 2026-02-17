@@ -521,10 +521,16 @@ async fn execute_publish_configs<'a>(
                     PublishOp::Created => "Created new",
                     PublishOp::Updated => "Updated",
                 };
-                if let Some(domain) = domain {
+                if let Some(ref domain) = domain {
                     println!("{op} database with name: {domain}, identity: {database_identity}");
                 } else {
                     println!("{op} database with identity: {database_identity}");
+                }
+
+                if is_maincloud_host(&database_host) {
+                    if let Some(domain) = domain.as_ref() {
+                        println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
+                    }
                 }
             }
             PublishResult::PermissionDenied { name } => {
@@ -556,6 +562,16 @@ fn default_publish_module_path(current_dir: &std::path::Path) -> PathBuf {
     } else {
         current_dir.to_path_buf()
     }
+}
+
+fn is_maincloud_host(database_host: &str) -> bool {
+    Url::parse(database_host)
+        .ok()
+        .and_then(|url| {
+            url.host_str()
+                .map(|h| h.eq_ignore_ascii_case("maincloud.spacetimedb.com"))
+        })
+        .unwrap_or(false)
 }
 
 fn validate_name_or_identity(name_or_identity: &str) -> Result<(), DatabaseNameError> {
@@ -903,6 +919,17 @@ mod tests {
 
         let resolved = default_publish_module_path(&cwd);
         assert_eq!(resolved, cwd);
+    }
+
+    #[test]
+    fn test_is_maincloud_host_true_for_maincloud_url() {
+        assert!(is_maincloud_host("https://maincloud.spacetimedb.com"));
+    }
+
+    #[test]
+    fn test_is_maincloud_host_false_for_non_maincloud_url() {
+        assert!(!is_maincloud_host("http://localhost:3000"));
+        assert!(!is_maincloud_host("https://testnet.spacetimedb.com"));
     }
 
     #[test]
