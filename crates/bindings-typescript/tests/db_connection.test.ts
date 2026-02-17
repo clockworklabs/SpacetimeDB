@@ -16,8 +16,8 @@ import {
 class Deferred<T> {
   #isResolved: boolean = false;
   #isRejected: boolean = false;
-  #resolve: (value: T | PromiseLike<T>) => void = () => {};
-  #reject: (reason?: any) => void = () => {};
+  #resolve: (value: T | PromiseLike<T>) => void = () => { };
+  #reject: (reason?: any) => void = () => { };
   promise: Promise<T>;
 
   constructor() {
@@ -54,7 +54,7 @@ class Deferred<T> {
   }
 }
 
-beforeEach(() => {});
+beforeEach(() => { });
 
 describe('DbConnection', () => {
   test('call onConnectError callback after websocket connection failed to be established', async () => {
@@ -356,7 +356,7 @@ describe('DbConnection', () => {
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
-      .onConnect(() => {})
+      .onConnect(() => { })
       .build();
 
     await client['wsPromise'];
@@ -469,9 +469,9 @@ describe('DbConnection', () => {
     wsAdapter.sendToClient(transactionUpdate);
     await gotAllInserts.promise;
 
-    // const foundUser = client.db.user.identity.find(sallyIdentity);
-    // expect(foundUser).not.toBeUndefined();
-    // expect(foundUser!.username).toEqual('sally');
-    // expect(client.db.user.count()).toEqual(2n);
+    const foundUser = client.db.user.identity.find(sallyIdentity);
+    expect(foundUser).not.toBeUndefined();
+    expect(foundUser!.username).toEqual('sally');
+    expect(client.db.user.count()).toEqual(2n);
   });
 });
