@@ -1,5 +1,7 @@
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, Uuid};
+use spacetimedb::{
+    ConnectionId, Identity, Query, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, Uuid, ViewContext,
+};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(accessor = t_ints)]
@@ -135,4 +137,9 @@ pub fn init(ctx: &ReducerContext) {
         id: 1,
         accessor_value: 7,
     });
+}
+
+#[spacetimedb::view(accessor = accessor_filtered, name = "canonical_filtered", public)]
+fn accessor_filtered(ctx: &ViewContext) -> impl Query<AccessorRow> {
+    ctx.from.accessor_table().r#where(|r| r.accessor_value.eq(7))
 }
