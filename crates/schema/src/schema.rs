@@ -1434,7 +1434,7 @@ impl Schema for IndexSchema {
             table_id: parent_id,
             index_name: def.name.clone(),
             index_algorithm,
-            alias: Some(def.accessor_name.clone()),
+            alias: Some(def.source_name.clone()),
         }
     }
 
