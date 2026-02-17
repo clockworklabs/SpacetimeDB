@@ -225,20 +225,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         );
     }
 
-    // Fetch the database name if it was passed through a CLI arg
-    let database_name_from_cli: Option<String> = args
-        .get_one::<String>("database")
-        .or_else(|| args.get_one::<String>("database-flag"))
-        .map(|name| {
-            if args.get_one::<String>("database-flag").is_some() {
-                println!(
-                    "{} {}",
-                    "Warning:".yellow().bold(),
-                    "--database flag is deprecated. Use positional argument instead: spacetime dev <database>".dimmed()
-                );
-            }
-            name.clone()
-        });
+    let template = args.get_one::<String>("template");
+    let missing_project_dir = !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir();
+    let (database_name_from_cli, init_project_name_from_cli, used_deprecated_database_flag) =
+        resolve_database_name_inputs(args, template.is_some(), missing_project_dir);
+    if used_deprecated_database_flag {
+        println!(
+            "{} {}",
+            "Warning:".yellow().bold(),
+            "--database flag is deprecated. Use positional argument instead: spacetime dev <database>".dimmed()
+        );
+    }
 
     // Build publish configs. It is easier to work with one type of data,
     // so if we don't have publish configs from the config file, we build a single
@@ -284,10 +281,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if resolved_server == "local" {
                 init_argv.push("--local");
             }
-            let template = args.get_one::<String>("template");
             if let Some(template_str) = template {
                 init_argv.push("--template");
                 init_argv.push(template_str);
+            }
+            if let Some(project_name) = init_project_name_from_cli.as_deref() {
+                init_argv.push(project_name);
             }
             let init_args = init::cli().get_matches_from(init_argv);
             let created_project_path = init::exec(config.clone(), &init_args).await?;
@@ -305,7 +304,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
-    } else if args.get_one::<String>("template").is_some() {
+    } else if template.is_some() {
         println!(
             "{}",
             "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
@@ -641,6 +640,37 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             }
         }
     }
+}
+
+fn resolve_database_name_inputs(
+    args: &ArgMatches,
+    template_requested: bool,
+    missing_project_dir: bool,
+) -> (Option<String>, Option<String>, bool) {
+    let positional_database_name = args.get_one::<String>("database").cloned();
+    let database_name_from_flag = args.get_one::<String>("database-flag").cloned();
+    let used_deprecated_database_flag = database_name_from_flag.is_some();
+
+    // When initializing from a template in a non-project directory, interpret the positional
+    // argument as the project name/path for `spacetime init`.
+    let init_project_name_from_cli = if template_requested && missing_project_dir {
+        positional_database_name.clone()
+    } else {
+        None
+    };
+
+    // In that init flow, don't pre-populate publish configs from the positional arg.
+    let database_name_from_cli = if init_project_name_from_cli.is_some() {
+        database_name_from_flag
+    } else {
+        positional_database_name.or(database_name_from_flag)
+    };
+
+    (
+        database_name_from_cli,
+        init_project_name_from_cli,
+        used_deprecated_database_flag,
+    )
 }
 
 fn determine_publish_configs<'a>(
@@ -1513,5 +1543,20 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["dev", "--env", "staging"]);
 
         assert_eq!(matches.get_one::<String>("env").map(|s| s.as_str()), Some("staging"));
+    }
+
+    #[test]
+    fn test_template_positional_name_used_for_init_not_database() {
+        let cmd = cli();
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["dev", "--template", "react-ts", "my-db-name"]);
+
+        let (database_name_from_cli, init_project_name_from_cli, used_deprecated_database_flag) =
+            resolve_database_name_inputs(&matches, true, true);
+
+        assert_eq!(database_name_from_cli, None);
+        assert_eq!(init_project_name_from_cli, Some("my-db-name".to_string()));
+        assert!(!used_deprecated_database_flag);
     }
 }
