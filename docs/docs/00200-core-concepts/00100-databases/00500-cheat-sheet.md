@@ -115,7 +115,7 @@ public partial struct Player
 
 // Multi-column index
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Name = "idx", Columns = ["PlayerId", "Level"])]
+[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = ["PlayerId", "Level"])]
 public partial struct Score
 {
     public ulong PlayerId;

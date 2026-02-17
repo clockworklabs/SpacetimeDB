@@ -6,7 +6,7 @@ public static partial class synthetic
 {
     // ---------- schemas ----------
 
-    [SpacetimeDB.Table(Name = "unique_0_u32_u64_str")]
+    [SpacetimeDB.Table(Accessor = "unique_0_u32_u64_str")]
     public partial struct unique_0_u32_u64_str_t
     {
         [PrimaryKey]
@@ -15,7 +15,7 @@ public static partial class synthetic
         public string name;
     }
 
-    [SpacetimeDB.Table(Name = "no_index_u32_u64_str")]
+    [SpacetimeDB.Table(Accessor = "no_index_u32_u64_str")]
     public partial struct no_index_u32_u64_str_t
     {
         public uint id;
@@ -23,7 +23,7 @@ public static partial class synthetic
         public string name;
     }
 
-    [SpacetimeDB.Table(Name = "btree_each_column_u32_u64_str")]
+    [SpacetimeDB.Table(Accessor = "btree_each_column_u32_u64_str")]
     public partial struct btree_each_column_u32_u64_str_t
     {
         [SpacetimeDB.Index.BTree]
@@ -36,7 +36,7 @@ public static partial class synthetic
         public string name;
     }
 
-    [SpacetimeDB.Table(Name = "unique_0_u32_u64_u64")]
+    [SpacetimeDB.Table(Accessor = "unique_0_u32_u64_u64")]
     public partial struct unique_0_u32_u64_u64_t
     {
         [PrimaryKey]
@@ -45,7 +45,7 @@ public static partial class synthetic
         public ulong y;
     }
 
-    [SpacetimeDB.Table(Name = "no_index_u32_u64_u64")]
+    [SpacetimeDB.Table(Accessor = "no_index_u32_u64_u64")]
     public partial struct no_index_u32_u64_u64_t
     {
         public uint id;
@@ -53,7 +53,7 @@ public static partial class synthetic
         public ulong y;
     }
 
-    [SpacetimeDB.Table(Name = "btree_each_column_u32_u64_u64")]
+    [SpacetimeDB.Table(Accessor = "btree_each_column_u32_u64_u64")]
     public partial struct btree_each_column_u32_u64_u64_t
     {
         [SpacetimeDB.Index.BTree]
