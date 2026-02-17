@@ -2111,6 +2111,21 @@ impl<'a> TableAndIndex<'a> {
         }
     }
 
+    /// Returns an iterator yielding all rows in this index that fall within `range`,
+    /// if the index is compatible with range seeks.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    pub fn seek_range<'b>(
+        &self,
+        range: &impl RangeBounds<IndexKey<'b>>,
+    ) -> Result<IndexScanRangeIter<'a>, IndexCannotSeekRange> {
+        Ok(IndexScanRangeIter {
+            table: self.table,
+            blob_store: self.blob_store,
+            btree_index_iter: self.index.seek_range(range)?,
+        })
+    }
+
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
     /// Matching is defined by `Eq for AlgebraicValue`.
@@ -2123,14 +2138,18 @@ impl<'a> TableAndIndex<'a> {
     /// if the index is compatible with range seeks.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn seek_range(
+    pub fn seek_range_via_algebraic_value(
         &self,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Result<IndexScanRangeIter<'a>, IndexCannotSeekRange> {
+        let start = range.start_bound().map(|v| self.index.key_from_algebraic_value(v));
+        let end = range.end_bound().map(|v| self.index.key_from_algebraic_value(v));
+        let btree_index_iter = self.index.seek_range(&(start, end))?;
+
         Ok(IndexScanRangeIter {
             table: self.table,
             blob_store: self.blob_store,
-            btree_index_iter: self.index.seek_range(range)?,
+            btree_index_iter,
         })
     }
 }

@@ -1,17 +1,16 @@
 use super::{delete_table::DeleteTable, sequence::Sequence};
-use core::ops::RangeBounds;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::{memory_usage::MemoryUsage, AlgebraicValue};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     pointer_map::PointerMap,
     static_assert_size,
-    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableAndIndex},
-    table_index::{IndexSeekRangeResult, TableIndex},
+    table::{RowRef, Table, TableAndIndex},
+    table_index::TableIndex,
 };
 use std::collections::{btree_map, BTreeMap};
 use thin_vec::ThinVec;
@@ -168,45 +167,11 @@ impl TxState {
         (ins_count, del_count)
     }
 
-    /// When there's an index on `cols`,
-    /// returns an iterator over the `TableIndex` that yields all the [`RowRef`]s
-    /// that match the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`
-    /// when `range` is a point.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_range_by_cols<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
+    /// Returns an index for `table_id` on `cols`, if any.
+    pub(super) fn get_index_by_cols(&self, table_id: TableId, cols: &ColList) -> Option<TableAndIndex<'_>> {
         self.insert_tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_range(range))
-    }
-
-    /// When there's an index on `cols`,
-    /// returns an iterator over the `TableIndex` that yields all the [`RowRef`]s
-    /// that match the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Eq for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_point_by_cols<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        point: &AlgebraicValue,
-    ) -> Option<IndexScanPointIter<'a>> {
-        self.insert_tables
-            .get(&table_id)?
-            .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_point_via_algebraic_value(point))
     }
 
     /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.
