@@ -5,6 +5,7 @@ use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
 use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{env, fs};
 
@@ -320,6 +321,38 @@ pub async fn exec_with_options(
         )
     };
 
+    let clear_database = args
+        .get_one::<ClearMode>("clear-database")
+        .copied()
+        .unwrap_or(ClearMode::Never);
+    let force = args.get_flag("force");
+
+    execute_publish_configs(&mut config, publish_configs, using_config, clear_database, force).await
+}
+
+pub async fn exec_from_entry(
+    mut config: Config,
+    entry: HashMap<String, serde_json::Value>,
+    clear_database: ClearMode,
+    force: bool,
+) -> Result<(), anyhow::Error> {
+    let cmd = cli();
+    let schema = build_publish_schema(&cmd)?;
+    let matches = cmd.get_matches_from(vec!["publish"]);
+
+    let command_config = CommandConfig::new(&schema, entry, &matches)?;
+    command_config.validate()?;
+
+    execute_publish_configs(&mut config, vec![command_config], true, clear_database, force).await
+}
+
+async fn execute_publish_configs<'a>(
+    config: &mut Config,
+    publish_configs: Vec<CommandConfig<'a>>,
+    using_config: bool,
+    clear_database: ClearMode,
+    force: bool,
+) -> Result<(), anyhow::Error> {
     // Execute publish for each config
     for command_config in publish_configs {
         // Get values using command_config.get_one() which merges CLI + config
@@ -327,11 +360,6 @@ pub async fn exec_with_options(
         let server = server_opt.as_deref();
         let name_or_identity_opt = command_config.get_one::<String>("database")?;
         let name_or_identity = name_or_identity_opt.as_deref();
-        let clear_database = args
-            .get_one::<ClearMode>("clear-database")
-            .copied()
-            .unwrap_or(ClearMode::Never);
-        let force = args.get_flag("force");
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
@@ -381,7 +409,7 @@ pub async fn exec_with_options(
         // we want to use the default identity
         // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
         //  easily create a new identity with an email
-        let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
+        let auth_header = get_auth_header(config, anon_identity, server, !force).await?;
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 

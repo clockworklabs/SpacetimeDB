@@ -801,12 +801,6 @@ async fn generate_build_and_publish(
 
     println!("{}", "Publishing...".cyan());
 
-    let clear_flag = match clear_database {
-        ClearMode::Always => "always",
-        ClearMode::Never => "never",
-        ClearMode::OnConflict => "on-conflict",
-    };
-
     // Loop through all publish configs
     for config_entry in publish_configs {
         let db_name = config_entry
@@ -827,26 +821,21 @@ async fn generate_build_and_publish(
             println!("{} {}...", "Publishing to".cyan(), db_name.cyan().bold());
         }
 
-        let mut publish_args = vec![
-            "publish".to_string(),
-            db_name.to_string(),
-            "--module-path".to_string(),
-            module_path_str.to_string(),
-            "--yes".to_string(),
-            format!("--delete-data={}", clear_flag),
-        ];
+        let mut publish_entry = HashMap::new();
+        publish_entry.insert("database".to_string(), json!(db_name));
+        publish_entry.insert("module-path".to_string(), json!(module_path_str));
 
         // Forward per-target server from config if set, or CLI server override
         if let Some(srv) = server {
-            publish_args.extend_from_slice(&["--server".to_string(), srv.to_string()]);
+            publish_entry.insert("server".to_string(), json!(srv));
         } else if let Some(srv) = config_entry.get_config_value("server").and_then(|v| v.as_str()) {
-            publish_args.extend_from_slice(&["--server".to_string(), srv.to_string()]);
+            publish_entry.insert("server".to_string(), json!(srv));
         }
 
         // Forward per-target build options if set
         if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str()) {
             if !build_opts.is_empty() {
-                publish_args.extend_from_slice(&["--build-options".to_string(), build_opts.to_string()]);
+                publish_entry.insert("build-options".to_string(), json!(build_opts));
             }
         }
 
@@ -856,15 +845,10 @@ async fn generate_build_and_publish(
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            publish_args.push("--break-clients".to_string());
+            publish_entry.insert("break-clients".to_string(), json!(true));
         }
 
-        let publish_cmd = publish::cli();
-        let publish_matches = publish_cmd
-            .try_get_matches_from(publish_args)
-            .context("Failed to create publish arguments")?;
-
-        publish::exec_with_options(config.clone(), &publish_matches, true, None).await?;
+        publish::exec_from_entry(config.clone(), publish_entry, clear_database, yes).await?;
     }
 
     println!("{}", "Published successfully!".green().bold());
