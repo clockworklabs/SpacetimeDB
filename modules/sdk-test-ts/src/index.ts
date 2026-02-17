@@ -119,7 +119,7 @@ function tbl<const Name extends string, Row extends RowObj>(
   },
   row: Row
 ): TableWithReducers<Name, ReturnType<typeof table<Row, { name: Name }>>> {
-  const t = table({ name, public: true }, row);
+  const t = table({ public: true }, row);
   return {
     table: t,
     reducers(spacetimedb) {
@@ -906,7 +906,6 @@ const IndexedTable = table(
 
 const IndexedTable2 = table(
   {
-    name: 'indexed_table_2',
     indexes: [
       {
         name: 'player_id_snazz_index',
@@ -922,7 +921,7 @@ const IndexedTable2 = table(
 );
 
 const BTreeU32 = table(
-  { name: 'btree_u32', public: true },
+  { public: true },
   t.row('BTreeU32', {
     n: t.u32().index('btree'),
     data: t.i32(),
