@@ -64,8 +64,8 @@ fn test_sql_format() {
     );
 }
 
-// #[test]
-fn _test_sql_resolves_accessor_and_canonical_names_for_table() {
+#[test]
+fn test_sql_resolves_accessor_and_canonical_names_for_table() {
     let test = Smoketest::builder().precompiled_module("sql-format").build();
 
     test.assert_sql(
@@ -83,8 +83,8 @@ fn _test_sql_resolves_accessor_and_canonical_names_for_table() {
     );
 }
 
-// #[test]
-fn _test_sql_resolves_accessor_and_canonical_names_for_view() {
+#[test]
+fn test_sql_resolves_accessor_and_canonical_names_for_view() {
     let test = Smoketest::builder().precompiled_module("sql-format").build();
 
     test.assert_sql(
@@ -102,8 +102,8 @@ fn _test_sql_resolves_accessor_and_canonical_names_for_view() {
     );
 }
 
-// #[test]
-fn _test_sql_resolves_accessor_and_canonical_names_for_column() {
+#[test]
+fn test_sql_resolves_accessor_and_canonical_names_for_column() {
     let test = Smoketest::builder().precompiled_module("sql-format").build();
 
     test.assert_sql(
@@ -121,8 +121,8 @@ fn _test_sql_resolves_accessor_and_canonical_names_for_column() {
     );
 }
 
-// #[test]
-fn _test_query_builder_resolves_accessor_and_canonical_names() {
+#[test]
+fn test_query_builder_resolves_accessor_and_canonical_names() {
     let test = Smoketest::builder().precompiled_module("sql-format").build();
 
     test.assert_sql(

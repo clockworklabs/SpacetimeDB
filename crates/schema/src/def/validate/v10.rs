@@ -1217,7 +1217,7 @@ mod tests {
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
-                false,
+                true,
             )
             .with_column_sequence(55)
             .finish();
@@ -1225,7 +1225,7 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "Bananas_col_55_seq" &&
+            &def[..] == "bananas_col_55_seq" &&
             column == &55.into()
         });
 
@@ -1235,14 +1235,14 @@ mod tests {
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::String)]),
-                false,
+                true,
             )
             .with_column_sequence(1)
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::InvalidSequenceColumnType { sequence, column, column_type } => {
-            &sequence[..] == "Bananas_a_seq" &&
+            &sequence[..] == "bananas_a_seq" &&
             column == &RawColumnName::new("Bananas", "a") &&
             column_type.0 == AlgebraicType::String
         });
