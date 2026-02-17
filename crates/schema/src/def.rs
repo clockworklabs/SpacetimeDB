@@ -1010,7 +1010,7 @@ impl From<DirectAlgorithm> for IndexAlgorithm {
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ColumnDef {
-    /// The name of the column as stored in
+    /// The name of the column.
     /// Unique within the containing `TableDef`, but
     /// NOT within the containing `ModuleDef`.
     pub name: Identifier,
