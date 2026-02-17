@@ -1,6 +1,5 @@
 ---
 source: crates/codegen/tests/codegen.rs
-assertion_line: 37
 expression: outfiles
 ---
 "Procedures/GetMySchemaViaHttp.g.cs" = '''
@@ -972,11 +971,11 @@ namespace SpacetimeDB
         {
             [DataMember(Name = "arg")]
             public TestA Arg;
-            [DataMember(Name = "arg2")]
+            [DataMember(Name = "arg_2")]
             public TestB Arg2;
-            [DataMember(Name = "arg3")]
+            [DataMember(Name = "arg_3")]
             public NamespaceTestC Arg3;
-            [DataMember(Name = "arg4")]
+            [DataMember(Name = "arg_4")]
             public NamespaceTestF Arg4;
 
             public Test(

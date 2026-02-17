@@ -1383,6 +1383,7 @@ fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumT
                 write!(output, ",");
             }
             writeln!(output);
+            let variant_name = variant_name.deref().to_case(Case::Pascal);
             write!(output, "{} {variant_name}", ty_fmt(module, variant_ty));
         }
         // If we have fewer than 2 variants, we need to add some dummy variants to make the tuple work.
@@ -1412,6 +1413,7 @@ fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDe
     writeln!(output, "public enum {enum_type_name}");
     indented_block(&mut output, |output| {
         for variant in &*enum_type.variants {
+            let variant = variant.deref().to_case(Case::Pascal);
             writeln!(output, "{variant},");
         }
     });
