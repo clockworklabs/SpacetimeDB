@@ -404,7 +404,6 @@ pub async fn exec_with_options(
             (path.clone(), "Js")
         } else {
             build::exec_with_argstring(
-                config.clone(),
                 path_to_project
                     .as_ref()
                     .expect("path_to_project must exist when publishing from source"),

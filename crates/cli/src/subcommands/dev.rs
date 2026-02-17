@@ -759,19 +759,7 @@ async fn generate_build_and_publish(
             );
         } else {
             println!("{}", "Generating module bindings from spacetime.json...".cyan());
-            let mut generate_argv = vec!["generate"];
-            if yes {
-                generate_argv.push("--yes");
-            }
-            let generate_args = generate::cli().get_matches_from(generate_argv);
-            generate::exec_ex(
-                config.clone(),
-                &generate_args,
-                crate::generate::extract_descriptions,
-                true,
-                None,
-            )
-            .await?;
+            generate::exec_from_entries(generate_configs.to_vec(), crate::generate::extract_descriptions, yes).await?;
         }
     } else {
         let module_language = detect_module_language(spacetimedb_dir)?;
@@ -810,31 +798,11 @@ async fn generate_build_and_publish(
         }
 
         println!("{}", "Generating module bindings...".cyan());
-        let spacetimedb_dir_str = spacetimedb_dir.to_str().context("non-UTF-8 path in spacetimedb_dir")?;
-        let module_bindings_dir_str = module_bindings_dir
-            .to_str()
-            .context("non-UTF-8 path in module_bindings_dir")?;
-        let mut generate_argv = vec![
-            "generate",
-            "--lang",
-            client_language_str,
-            "--module-path",
-            spacetimedb_dir_str,
-            "--out-dir",
-            module_bindings_dir_str,
-        ];
-        if yes {
-            generate_argv.push("--yes");
-        }
-        let generate_args = generate::cli().get_matches_from(generate_argv);
-        generate::exec_ex(
-            config.clone(),
-            &generate_args,
-            crate::generate::extract_descriptions,
-            true,
-            None,
-        )
-        .await?;
+        let mut generate_entry = HashMap::new();
+        generate_entry.insert("language".to_string(), json!(client_language_str));
+        generate_entry.insert("module-path".to_string(), json!(spacetimedb_dir));
+        generate_entry.insert("out-dir".to_string(), json!(module_bindings_dir));
+        generate::exec_from_entries(vec![generate_entry], crate::generate::extract_descriptions, yes).await?;
     }
 
     if skip_publish {
