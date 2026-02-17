@@ -767,6 +767,8 @@ impl CommittedState {
     ///
     /// The `row_ptr` is a pointer to `row`.
     fn st_column_changed(&mut self, table_id: TableId) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
         // We're replaying and we don't have unique constraints yet.
         // Due to replay handling all inserts first and deletes after,
         // when processing `st_column` insert/deletes,
@@ -777,7 +779,15 @@ impl CommittedState {
         // so filter only the non-ignored columns.
         let mut columns = iter_st_column_for_table(self, &table_id.into())?
             .filter(|row_ref| !self.replay_columns_to_ignore.contains(&row_ref.pointer()))
-            .map(|row_ref| StColumnRow::try_from(row_ref).map(Into::into))
+            .map(|row_ref| {
+                let row = StColumnRow::try_from(row_ref)?;
+                let mut column_schema = ColumnSchema::from(row);
+                let alias = self
+                    .find_st_column_accessor_row(table_name.as_ref(), &column_schema.col_name)?
+                    .map(|row| row.accessor_name);
+                column_schema.alias = alias;
+                Ok(column_schema)
+            })
             .collect::<Result<Vec<_>>>()?;
 
         // Columns in `st_column` are not in general sorted by their `col_pos`,

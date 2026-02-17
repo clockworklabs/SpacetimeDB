@@ -70,15 +70,34 @@ fn test_sql_resolves_accessor_and_canonical_names() {
 
     test.assert_sql(
         "SELECT * FROM accessor_table",
-        r#" id | value
-----+-------
+        r#" id | accessor_value
+----+----------------
  1  | 7"#,
     );
 
     test.assert_sql(
         "SELECT * FROM canonical_table",
-        r#" id | value
-----+-------
+        r#" id | accessor_value
+----+----------------
  1  | 7"#,
+    );
+}
+
+#[test]
+fn test_sql_resolves_column_accessor_and_canonical_names() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.assert_sql(
+        "SELECT accessor_value FROM accessor_table",
+        r#" accessor_value
+----------------
+ 7"#,
+    );
+
+    test.assert_sql(
+        "SELECT canonical_value FROM accessor_table",
+        r#" canonical_value
+----------------
+ 7"#,
     );
 }

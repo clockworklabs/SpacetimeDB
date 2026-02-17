@@ -125,10 +125,14 @@ pub fn test(ctx: &ReducerContext) {
 pub struct AccessorRow {
     #[primary_key]
     id: u32,
-    value: u32,
+    #[sats(name = "canonical_value")]
+    accessor_value: u32,
 }
 
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
-    ctx.db.accessor_table().insert(AccessorRow { id: 1, value: 7 });
+    ctx.db.accessor_table().insert(AccessorRow {
+        id: 1,
+        accessor_value: 7,
+    });
 }
