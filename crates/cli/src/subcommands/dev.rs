@@ -225,10 +225,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         );
     }
 
+    // Fetch the database name if it was passed through a CLI arg
+    let database_name_from_cli: Option<String> = args
+        .get_one::<String>("database")
+        .or_else(|| args.get_one::<String>("database-flag"))
+        .cloned();
+    let used_deprecated_database_flag = args.get_one::<String>("database-flag").is_some();
     let template = args.get_one::<String>("template");
-    let missing_project_dir = !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir();
-    let (database_name_from_cli, init_project_name_from_cli, used_deprecated_database_flag) =
-        resolve_database_name_inputs(args, template.is_some(), missing_project_dir);
     if used_deprecated_database_flag {
         println!(
             "{} {}",
@@ -267,9 +270,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         resolved_server,
     )?;
 
-    // Check if we are in a SpacetimeDB project directory, but only if we don't have any
-    // publish_configs that would specify desired modules
-    if publish_configs.is_empty() && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
+    if let Some(config) = publish_configs.first() {
+        // If publish config specifies module_path, prefer it before checking if a local
+        // project exists so the init decision uses the actual module directory.
+        if let Some(path) = config
+            .get_one::<PathBuf>("module_path")
+            .context("failed to read module_path from config")?
+        {
+            spacetimedb_dir = path;
+        }
+    }
+
+    let missing_project_dir = !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir();
+
+    // Initialize when the resolved module directory does not exist.
+    if missing_project_dir {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
             .with_prompt("Would you like to initialize a new project?")
@@ -284,9 +299,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if let Some(template_str) = template {
                 init_argv.push("--template");
                 init_argv.push(template_str);
-            }
-            if let Some(project_name) = init_project_name_from_cli.as_deref() {
-                init_argv.push(project_name);
             }
             let init_args = init::cli().get_matches_from(init_argv);
             let created_project_path = init::exec(config.clone(), &init_args).await?;
@@ -304,23 +316,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
-    } else if template.is_some() {
+    } else if template.is_some() && !missing_project_dir {
         println!(
             "{}",
             "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
         );
-    }
-
-    if let Some(config) = publish_configs.first() {
-        // if we have publish configs and we're past spacetimedb_dir manipulation,
-        // we should set spacetimedb_dir to the path of the first config as this will be
-        // later used for next steps
-        if let Some(path) = config
-            .get_one::<PathBuf>("module_path")
-            .context("failed to read module_path from config")?
-        {
-            spacetimedb_dir = path;
-        }
     }
 
     let use_local = resolved_server == "local";
@@ -640,37 +640,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             }
         }
     }
-}
-
-fn resolve_database_name_inputs(
-    args: &ArgMatches,
-    template_requested: bool,
-    missing_project_dir: bool,
-) -> (Option<String>, Option<String>, bool) {
-    let positional_database_name = args.get_one::<String>("database").cloned();
-    let database_name_from_flag = args.get_one::<String>("database-flag").cloned();
-    let used_deprecated_database_flag = database_name_from_flag.is_some();
-
-    // When initializing from a template in a non-project directory, interpret the positional
-    // argument as the project name/path for `spacetime init`.
-    let init_project_name_from_cli = if template_requested && missing_project_dir {
-        positional_database_name.clone()
-    } else {
-        None
-    };
-
-    // In that init flow, don't pre-populate publish configs from the positional arg.
-    let database_name_from_cli = if init_project_name_from_cli.is_some() {
-        database_name_from_flag
-    } else {
-        positional_database_name.or(database_name_from_flag)
-    };
-
-    (
-        database_name_from_cli,
-        init_project_name_from_cli,
-        used_deprecated_database_flag,
-    )
 }
 
 fn determine_publish_configs<'a>(
@@ -1546,17 +1515,16 @@ mod tests {
     }
 
     #[test]
-    fn test_template_positional_name_used_for_init_not_database() {
+    fn test_template_positional_name_is_database_name() {
         let cmd = cli();
         let matches = cmd
             .clone()
             .get_matches_from(vec!["dev", "--template", "react-ts", "my-db-name"]);
+        let database_name_from_cli: Option<String> = matches
+            .get_one::<String>("database")
+            .or_else(|| matches.get_one::<String>("database-flag"))
+            .cloned();
 
-        let (database_name_from_cli, init_project_name_from_cli, used_deprecated_database_flag) =
-            resolve_database_name_inputs(&matches, true, true);
-
-        assert_eq!(database_name_from_cli, None);
-        assert_eq!(init_project_name_from_cli, Some("my-db-name".to_string()));
-        assert!(!used_deprecated_database_flag);
+        assert_eq!(database_name_from_cli, Some("my-db-name".to_string()));
     }
 }
