@@ -110,7 +110,7 @@ The database dashboard gives you access to:
 - **Usage breakdown**: See this month's energy consumption broken down by bytes scanned, bytes written, index seeks, CPU instructions, bandwidth, and table storage.
 - **Logs**: View your module's log output in real time.
 - **SQL console**: Run ad-hoc SQL queries against your database.
-- **SpacetimeAuth**: Enable and configure the built-in authentication provider (see [SpacetimeAuth](/spacetimeauth)).
+- **SpacetimeAuth**: Enable and configure the built-in authentication provider (see [SpacetimeAuth](/core-concepts/authentication/spacetimeauth)).
 
 ## Database Lifecycle
 
@@ -148,6 +148,6 @@ This action cannot be undone.
 ## Next Steps
 
 - **Explore the dashboard**: Visit [spacetimedb.com](https://spacetimedb.com) to view your database, check logs, and run queries.
-- **Set up authentication**: Enable [SpacetimeAuth](/spacetimeauth) or connect a third-party [OIDC provider](/authentication) to authenticate your users.
-- **Connect a client**: Follow a [quickstart guide](/quickstart) to build a client that connects to your Maincloud database.
+- **Set up authentication**: Enable [SpacetimeAuth](/core-concepts/authentication/spacetimeauth) or connect a third-party [OIDC provider](/core-concepts/authentication) to authenticate your users.
+- **Connect a client**: Follow a [quickstart guide](/quickstarts/react) to build a client that connects to your Maincloud database.
 - **Monitor your usage**: Check your energy consumption and plan limits on the [pricing page](https://spacetimedb.com/pricing).
