@@ -3,11 +3,13 @@ use super::{committed_state::CommittedState, datastore::Result, tx_state::TxStat
 use crate::error::{DatastoreError, TableError};
 use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
-    ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StConstraintFields, StConstraintRow, StEventTableFields, StIndexFields, StIndexRow, StScheduledFields,
-    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields,
-    StViewRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID,
-    ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
+    StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
+    StIndexFields, StIndexRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
+    StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewRow,
+    SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID,
+    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID,
+    ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -41,6 +43,17 @@ pub trait StateView {
         let name = &<Box<str>>::from(table_name).into();
         let row = self.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableName, name)?.next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
+    }
+
+    /// Looks up a table id by the table's canonical name or its accessor/alias name.
+    fn table_id_from_name_or_alias(&self, table_name_or_alias: &str) -> Result<Option<TableId>> {
+        if let Some(table_id) = self.table_id_from_name(table_name_or_alias)? {
+            return Ok(Some(table_id));
+        }
+        let Some(row) = self.find_st_table_accessor_row(table_name_or_alias)? else {
+            return Ok(None);
+        };
+        self.table_id_from_name(&row.table_name)
     }
 
     /// Returns the number of rows in the table identified by `table_id`.
@@ -83,6 +96,39 @@ pub trait StateView {
         StTableRow::try_from(row_ref)
     }
 
+    /// Look up an `st_table_accessor` row by its accessor name
+    fn find_st_table_accessor_row(&self, accessor_name: &str) -> Result<Option<StTableAccessorRow>> {
+        self.iter_by_col_eq(
+            ST_TABLE_ACCESSOR_ID,
+            StTableAccessorFields::AccessorName,
+            &accessor_name.into(),
+        )?
+        .next()
+        .map(StTableAccessorRow::try_from)
+        .transpose()
+    }
+
+    /// Look up an `st_column_accessor` row by its canonical table and column names
+    fn find_st_column_accessor_row(&self, table_name: &str, col_name: &str) -> Result<Option<StColumnAccessorRow>> {
+        let row = match self.iter_by_col_eq(
+            ST_COLUMN_ACCESSOR_ID,
+            [StColumnAccessorFields::TableName, StColumnAccessorFields::ColName],
+            &AlgebraicValue::product([table_name.into(), col_name.into()]),
+        ) {
+            Ok(mut iter) => iter.next().map(StColumnAccessorRow::try_from).transpose(),
+            // `schema_for_table_raw` is called while restoring snapshots,
+            // before `migrate_system_tables` creates newer system tables.
+            // We therefore treat a missing `st_column_accessor` as "no aliases yet".
+            //
+            // Note this is different behavior from `find_st_table_accessor_row`,
+            // because that utility is used for name resolution **after** startup,
+            // where missing accessor tables should be surfaced as real errors.
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(None),
+            Err(e) => Err(e),
+        };
+        row
+    }
+
     /// Reads the schema information for the specified `table_id` directly from the database.
     fn schema_for_table_raw(&self, table_id: TableId) -> Result<TableSchema> {
         // Look up the table_name for the table in question.
@@ -95,7 +141,15 @@ pub trait StateView {
 
         // Look up the columns for the table in question.
         let mut columns: Vec<ColumnSchema> = iter_st_column_for_table(self, &table_id.into())?
-            .map(|row| Ok(StColumnRow::try_from(row)?.into()))
+            .map(|row_ref| {
+                let row = StColumnRow::try_from(row_ref)?;
+                let mut column_schema = ColumnSchema::from(row);
+                let alias = self
+                    .find_st_column_accessor_row(table_name.as_ref(), &column_schema.col_name)?
+                    .map(|row| row.accessor_name);
+                column_schema.alias = alias;
+                Ok(column_schema)
+            })
             .collect::<Result<Vec<_>>>()?;
         columns.sort_by_key(|col| col.col_pos);
 
@@ -173,6 +227,22 @@ pub trait StateView {
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => false,
             Err(e) => return Err(e),
         };
+        // During restore from snapshots produced before `st_table_accessor` existed,
+        // this system table is missing until `migrate_system_tables` runs.
+        // Handle that here so schema reconstruction can proceed during restore.
+        let table_alias = match self.iter_by_col_eq(
+            ST_TABLE_ACCESSOR_ID,
+            StTableAccessorFields::TableName,
+            &table_name.as_ref().into(),
+        ) {
+            Ok(mut iter) => iter
+                .next()
+                .map(StTableAccessorRow::try_from)
+                .transpose()?
+                .map(|row| row.accessor_name),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => None,
+            Err(e) => return Err(e),
+        };
         Ok(TableSchema::new(
             table_id,
             table_name,
@@ -186,8 +256,7 @@ pub trait StateView {
             schedule,
             table_primary_key,
             is_event,
-            //TODO: fetch it from system table
-            None,
+            table_alias,
         ))
     }
 

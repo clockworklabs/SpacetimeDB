@@ -141,6 +141,14 @@ impl TableOrViewSchema {
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
         self.public_columns().iter().find(|x| &*x.col_name == col_name)
     }
+
+    /// Check if the `col_name` exists on this [`TableOrViewSchema`], prioritizing alias over canonical name.
+    pub fn get_column_by_name_or_alias(&self, col_name: &str) -> Option<&ColumnSchema> {
+        self.public_columns()
+            .iter()
+            .find(|col| col.alias.as_deref().is_some_and(|alias| alias == col_name))
+            .or_else(|| self.get_column_by_name(col_name))
+    }
 }
 
 /// A data structure representing the schema of a database table.
@@ -432,6 +440,14 @@ impl TableSchema {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 
+    /// Check if the `col_name` exists on this [TableSchema], prioritizing alias over canonical name.
+    pub fn get_column_by_name_or_alias(&self, col_name: &str) -> Option<&ColumnSchema> {
+        self.columns
+            .iter()
+            .find(|col| col.alias.as_deref().is_some_and(|alias| alias == col_name))
+            .or_else(|| self.get_column_by_name(col_name))
+    }
+
     /// Check if the `col_name` exist on this [TableSchema]
     ///
     /// Warning: It ignores the `table_name`
@@ -440,6 +456,22 @@ impl TableSchema {
             .iter()
             .position(|x| &*x.col_name == col_name)
             .map(|x| x.into())
+    }
+
+    /// Check if the `col_name` exists on this [TableSchema], prioritizing alias over canonical name.
+    ///
+    /// Warning: It ignores the `table_name`.
+    pub fn get_column_id_by_name_or_alias(&self, col_name: &str) -> Option<ColId> {
+        self.columns
+            .iter()
+            .position(|col| col.alias.as_deref().is_some_and(|alias| alias == col_name))
+            .or_else(|| self.get_column_id_by_name(col_name).map(|id| id.idx()))
+            .map(Into::into)
+    }
+
+    /// Check whether `name` matches table alias or canonical table name.
+    pub fn matches_name_or_alias(&self, name: &str) -> bool {
+        self.alias.as_deref().is_some_and(|alias| alias == name) || self.table_name.as_ref() == name
     }
 
     /// Retrieve the column ids for this index id
@@ -1123,8 +1155,7 @@ impl ColumnSchema {
             col_pos: def.col_id,
             col_name: def.name.clone(),
             col_type,
-            //TODO: unsure if this is correct.
-            alias: None,
+            alias: Some(def.accessor_name.clone()),
         }
     }
 }
@@ -1150,8 +1181,7 @@ impl Schema for ColumnSchema {
             col_pos,
             col_name: def.name.clone(),
             col_type,
-            //TODO: use accessor name
-            alias: None,
+            alias: Some(def.accessor_name.clone()),
         }
     }
 
