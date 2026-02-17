@@ -14,6 +14,7 @@ use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
 use futures::stream::{self, StreamExt};
 use futures::{AsyncBufReadExt, TryStreamExt};
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use indicatif::{ProgressBar, ProgressStyle};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
@@ -287,6 +288,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let db_identity = database_identity(&config, &database_name, Some(resolved_server)).await?;
     let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), Some(resolved_server)).await?;
 
+    let gitignore = build_gitignore_matcher(&project_dir, &spacetimedb_dir);
+
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
         move |res: Result<Event, notify::Error>| {
@@ -295,15 +298,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                     event.kind,
                     notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_)
                 ) {
-                    let _ = tx.send(());
+                    if event.paths.iter().any(|p| !should_ignore_path(p, &gitignore)) {
+                        let _ = tx.send(());
+                    }
                 }
             }
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
     )?;
 
-    let src_dir = spacetimedb_dir.join("src");
-    watcher.watch(&src_dir, RecursiveMode::Recursive)?;
+    watcher.watch(&spacetimedb_dir, RecursiveMode::Recursive)?;
 
     println!("{}", "Watching for file changes...".dimmed());
 
@@ -746,6 +750,100 @@ fn format_log_record<W: WriteColor>(out: &mut W, record: &LogRecord<'_>) -> Resu
     }
     writeln!(out, "{}", record.message)?;
     Ok(())
+}
+
+/// Directory names that should always be ignored by the file watcher,
+/// regardless of `.gitignore` rules.
+const ALWAYS_IGNORE_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",   // VCS
+    "target", // Rust
+    "bin",
+    "obj", // .NET/C#
+    "node_modules",
+    "dist",
+    ".next", // JS/TS
+    ".nuxt",
+    ".output", // Nuxt
+    "__pycache__",
+    ".venv",
+    "venv", // Python
+    ".vs",
+    ".idea", // IDE
+];
+
+/// Returns `true` if the given path should always trigger a rebuild,
+/// even if it would otherwise be gitignored.
+fn is_always_watched(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    name == ".env.local" || (name.starts_with("spacetime.") && name.ends_with(".local.json"))
+}
+
+/// Build a gitignore matcher that loads rules from:
+/// - the global gitignore (via `gitconfig_excludes_path`)
+/// - `project_dir/.gitignore` (if different from `spacetimedb_dir`)
+/// - `spacetimedb_dir/.gitignore`
+fn build_gitignore_matcher(project_dir: &Path, spacetimedb_dir: &Path) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(spacetimedb_dir);
+
+    // Global gitignore
+    if let Some(global) = ignore::gitignore::gitconfig_excludes_path() {
+        let _ = builder.add(global);
+    }
+
+    // Project-level .gitignore (if the project root differs from the module dir)
+    let project_gitignore = project_dir.join(".gitignore");
+    let spacetimedb_gitignore = spacetimedb_dir.join(".gitignore");
+    if project_dir != spacetimedb_dir && project_gitignore.exists() {
+        let _ = builder.add(&project_gitignore);
+    }
+
+    // Module-level .gitignore
+    if spacetimedb_gitignore.exists() {
+        let _ = builder.add(&spacetimedb_gitignore);
+    }
+
+    match builder.build() {
+        Ok(gi) => gi,
+        Err(e) => {
+            eprintln!(
+                "{} Failed to parse .gitignore rules: {}. Falling back to no gitignore filtering.",
+                "Warning:".yellow().bold(),
+                e
+            );
+            Gitignore::empty()
+        }
+    }
+}
+
+/// Determines whether a path should be ignored by the file watcher.
+///
+/// Layered filtering:
+/// 1. If any path component is in `ALWAYS_IGNORE_DIRS` → ignore
+/// 2. If the filename matches always-watch patterns → don't ignore
+/// 3. Otherwise, consult the gitignore matcher
+fn should_ignore_path(path: &Path, gitignore: &Gitignore) -> bool {
+    // Layer 1: always-ignore directories
+    for component in path.components() {
+        if let std::path::Component::Normal(c) = component {
+            if let Some(s) = c.to_str() {
+                if ALWAYS_IGNORE_DIRS.contains(&s) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Layer 2 exception: always-watch files
+    if is_always_watched(path) {
+        return false;
+    }
+
+    // Layer 3: gitignore rules
+    gitignore.matched(path, path.is_dir()).is_ignore()
 }
 
 fn generate_database_name() -> String {
