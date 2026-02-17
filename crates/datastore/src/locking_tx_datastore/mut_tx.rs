@@ -1397,6 +1397,17 @@ impl MutTxId {
         Ok(row.map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
 
+    /// Looks up a index id by the index's canonical name or its accessor/alias name.
+    pub fn index_id_from_name_or_alias(&self, index_name_or_alias: &str) -> Result<Option<IndexId>> {
+        if let Some(index_id) = self.index_id_from_name(index_name_or_alias)? {
+            return Ok(Some(index_id));
+        }
+        let Some(row) = self.find_st_index_accessor_row(index_name_or_alias)? else {
+            return Ok(None);
+        };
+        self.index_id_from_name(&row.index_name)
+    }
+
     /// Returns an iterator yielding rows by performing a point index scan
     /// on the index identified by `index_id`.
     pub fn index_scan_point<'a>(
