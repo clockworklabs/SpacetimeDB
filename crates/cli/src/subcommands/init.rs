@@ -121,6 +121,33 @@ pub struct TemplateConfig {
     pub use_local: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct InitOptions {
+    pub project_path: Option<PathBuf>,
+    pub project_name: Option<String>,
+    pub project_name_default: Option<String>,
+    pub server_only: bool,
+    pub lang: Option<String>,
+    pub template: Option<String>,
+    pub local: bool,
+    pub non_interactive: bool,
+}
+
+impl InitOptions {
+    pub fn from_args(args: &ArgMatches) -> Self {
+        Self {
+            project_path: args.get_one::<PathBuf>("project-path").cloned(),
+            project_name: args.get_one::<String>("project-name").cloned(),
+            project_name_default: None,
+            server_only: args.get_flag("server-only"),
+            lang: args.get_one::<String>("lang").cloned(),
+            template: args.get_one::<String>("template").cloned(),
+            local: args.get_flag("local"),
+            non_interactive: args.get_flag("non-interactive"),
+        }
+    }
+}
+
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
         .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
@@ -198,8 +225,8 @@ fn slugify(name: &str) -> String {
     name.to_case(Case::Kebab)
 }
 
-async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Result<String> {
-    if let Some(name) = args.get_one::<String>("project-name") {
+async fn get_project_name(options: &InitOptions, is_interactive: bool) -> anyhow::Result<String> {
+    if let Some(name) = &options.project_name {
         if is_interactive {
             println!("{} {}", "Project name:".bold(), name);
         }
@@ -210,10 +237,15 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
         anyhow::bail!("PROJECT_NAME is required in non-interactive mode");
     }
 
+    let default_project_name = options
+        .project_name_default
+        .clone()
+        .unwrap_or_else(|| "my-spacetime-app".to_string());
+
     let theme = ColorfulTheme::default();
     let name = Input::with_theme(&theme)
         .with_prompt("Project name")
-        .default("my-spacetime-app".to_string())
+        .default(default_project_name)
         .validate_with(|input: &String| -> Result<(), String> {
             if input.trim().is_empty() {
                 return Err("Project name cannot be empty".to_string());
@@ -228,12 +260,12 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
 }
 
 async fn get_project_path(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: &str,
     is_interactive: bool,
     is_server_only: bool,
 ) -> anyhow::Result<PathBuf> {
-    if let Some(path) = args.get_one::<PathBuf>("project-path") {
+    if let Some(path) = &options.project_path {
         if is_interactive {
             println!("{} {}", "Project path:".bold(), path.display());
         }
@@ -442,8 +474,10 @@ pub fn install_typescript_dependencies(
     Ok(())
 }
 
-pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<PathBuf> {
-    let use_local = if args.get_flag("local") {
+pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> anyhow::Result<PathBuf> {
+    let is_interactive = !options.non_interactive;
+
+    let use_local = if options.local {
         true
     } else if is_interactive {
         !check_and_prompt_login(config).await?
@@ -452,15 +486,15 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         config.spacetimedb_token().is_none()
     };
 
-    let is_server_only = args.get_flag("server-only");
+    let is_server_only = options.server_only;
 
-    let project_name = get_project_name(args, is_interactive).await?;
-    let project_path = get_project_path(args, &project_name, is_interactive, is_server_only).await?;
+    let project_name = get_project_name(options, is_interactive).await?;
+    let project_path = get_project_path(options, &project_name, is_interactive, is_server_only).await?;
 
     let mut template_config = if is_interactive {
-        get_template_config_interactive(args, project_name, project_path.clone()).await?
+        get_template_config_interactive(options, project_name, project_path.clone()).await?
     } else {
-        get_template_config_non_interactive(args, project_name, project_path.clone()).await?
+        get_template_config_non_interactive(options, project_name, project_path.clone()).await?
     };
 
     template_config.use_local = use_local;
@@ -637,19 +671,19 @@ mod tests {
 }
 
 async fn get_template_config_non_interactive(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: String,
     project_path: PathBuf,
 ) -> anyhow::Result<TemplateConfig> {
     // Check if template is provided
-    if let Some(template_str) = args.get_one::<String>("template") {
+    if let Some(template_str) = options.template.as_ref() {
         // Check if it's a builtin template
         let (_, templates) = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
     // No template - require at least one language option
-    let server_lang_str = args.get_one::<String>("lang").cloned();
+    let server_lang_str = options.lang.clone();
 
     if server_lang_str.is_none() {
         anyhow::bail!("Either --template or --lang must be provided in non-interactive mode");
@@ -699,21 +733,21 @@ pub fn ensure_empty_directory(_project_name: &str, project_path: &Path, is_serve
 }
 
 async fn get_template_config_interactive(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: String,
     project_path: PathBuf,
 ) -> anyhow::Result<TemplateConfig> {
     let theme = ColorfulTheme::default();
 
     // Check if template is provided
-    if let Some(template_str) = args.get_one::<String>("template") {
+    if let Some(template_str) = options.template.as_ref() {
         println!("{} {}", "Template:".bold(), template_str);
 
         let (_, templates) = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
-    let server_lang_arg = args.get_one::<String>("lang");
+    let server_lang_arg = options.lang.as_ref();
     if server_lang_arg.is_some() {
         let server_lang = parse_server_lang(&server_lang_arg.cloned())?;
         if let Some(lang_str) = server_lang_arg {
@@ -1578,10 +1612,11 @@ fn check_for_git() -> bool {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
     println!("{UNSTABLE_WARNING}\n");
 
-    let is_interactive = !args.get_flag("non-interactive");
-    let template = args.get_one::<String>("template");
-    let server_lang = args.get_one::<String>("lang");
-    let project_name_arg = args.get_one::<String>("project-name");
+    let options = InitOptions::from_args(args);
+    let is_interactive = !options.non_interactive;
+    let template = options.template.as_ref();
+    let server_lang = options.lang.as_ref();
+    let project_name_arg = options.project_name.as_ref();
 
     // Validate that template and lang options are not used together
     if template.is_some() && server_lang.is_some() {
@@ -1598,7 +1633,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
         }
     }
 
-    exec_init(&mut config, args, is_interactive).await
+    exec_with_options(&mut config, &options).await
 }
 
 pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {

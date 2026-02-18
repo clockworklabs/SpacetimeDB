@@ -293,6 +293,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             }
             name.clone()
         });
+    let database_name_from_cli_for_init = database_name_from_cli.clone();
 
     // Build publish configs. It is easier to work with one type of data,
     // so if we don't have publish configs from the config file, we build a single
@@ -334,17 +335,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .interact()?;
 
         if should_init {
-            let mut init_argv = vec!["init"];
-            if resolved_server == "local" {
-                init_argv.push("--local");
-            }
-            let template = args.get_one::<String>("template");
-            if let Some(template_str) = template {
-                init_argv.push("--template");
-                init_argv.push(template_str);
-            }
-            let init_args = init::cli().get_matches_from(init_argv);
-            let created_project_path = init::exec(config.clone(), &init_args).await?;
+            let init_options = init::InitOptions {
+                local: resolved_server == "local",
+                template: args.get_one::<String>("template").cloned(),
+                project_name_default: database_name_from_cli_for_init.clone(),
+                ..Default::default()
+            };
+            let created_project_path = init::exec_with_options(&mut config, &init_options).await?;
 
             let canonical_created_path = created_project_path
                 .canonicalize()
