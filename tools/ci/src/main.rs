@@ -396,6 +396,7 @@ fn main() -> Result<()> {
 
         Some(CiCmd::WasmBindings) => {
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+            // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
             cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
