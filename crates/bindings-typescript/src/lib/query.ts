@@ -3,6 +3,7 @@ import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
 import type { UntypedSchemaDef } from './schema';
 import type { UntypedTableSchema } from './table_schema';
+import { Timestamp } from './timestamp';
 import type {
   ColumnBuilder,
   ColumnMetadata,
@@ -615,6 +616,7 @@ type LiteralValue =
   | bigint
   | boolean
   | Identity
+  | Timestamp
   | ConnectionId;
 
 type ValueLike = LiteralValue | ColumnExpr<any, any> | LiteralExpr<any>;
@@ -788,6 +790,9 @@ function literalValueToSql(value: unknown): string {
     // We use this hex string syntax.
     return `0x${value.toHexString()}`;
   }
+  if (value instanceof Timestamp) {
+    return `'${value.toISOString()}'`;
+  }
   switch (typeof value) {
     case 'number':
     case 'bigint':
@@ -853,9 +858,20 @@ function resolveValue(
   row: Record<string, any>
 ): any {
   if (isLiteralExpr(expr)) {
-    return expr.value;
+    return toComparableValue(expr.value);
   }
-  return row[expr.column];
+  return toComparableValue(row[expr.column]);
+}
+
+// Exported for tests.
+export function toComparableValue(value: any): any {
+  if (value instanceof Identity || value instanceof ConnectionId) {
+    return value.toHexString();
+  }
+  if (value instanceof Timestamp) {
+    return value.microsSinceUnixEpoch;
+  }
+  return value;
 }
 
 /**
