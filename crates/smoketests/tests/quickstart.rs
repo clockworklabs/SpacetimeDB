@@ -4,7 +4,10 @@
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
-use spacetimedb_smoketests::{pnpm_path, require_dotnet, require_emscripten, require_pnpm, workspace_root, Smoketest};
+use spacetimedb_smoketests::{
+    build_typescript_sdk, pnpm, require_dotnet, require_emscripten, require_pnpm, run_cmd, run_cmd_with_stdin,
+    workspace_root, Smoketest,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -24,41 +27,6 @@ fn append_to_file(path: &Path, content: &str) -> Result<()> {
     let mut file = fs::OpenOptions::new().append(true).open(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
-}
-
-/// Run a command and return stdout as a string.
-fn run_cmd(args: &[&str], cwd: &Path, input: Option<&str>) -> Result<String> {
-    let mut cmd = Command::new(args[0]);
-    cmd.args(&args[1..])
-        .current_dir(cwd)
-        .stderr(Stdio::piped())
-        .stdout(Stdio::piped());
-
-    if input.is_some() {
-        cmd.stdin(Stdio::piped());
-    }
-
-    let mut child = cmd.spawn().context(format!("Failed to spawn {:?}", args))?;
-
-    if let Some(input_str) = input {
-        use std::io::Write;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(input_str.as_bytes())?;
-        }
-    }
-
-    let output = child.wait_with_output()?;
-
-    if !output.status.success() {
-        bail!(
-            "Command {:?} failed:\nstdout: {}\nstderr: {}",
-            args,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Parse code blocks from quickstart markdown documentation.
@@ -118,30 +86,6 @@ fn parse_quickstart(doc_content: &str, language: &str, module_name: &str, server
     // Join blocks and replace module name
     let result = blocks.join("\n").replace("quickstart-chat", module_name);
     result + &end
-}
-
-/// Run pnpm command.
-fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
-    let pnpm_path = match pnpm_path()
-        .expect("Could not locate pnpm")
-        .into_os_string()
-        .into_string()
-    {
-        Ok(s) => s,
-        Err(os_string) => anyhow::bail!("Could not convert to string: {os_string:?}"),
-    };
-    let mut full_args = vec![pnpm_path.as_ref()];
-    full_args.extend(args);
-    run_cmd(&full_args, cwd, None)
-}
-
-/// Build the TypeScript SDK.
-fn build_typescript_sdk() -> Result<()> {
-    let workspace = workspace_root();
-    let ts_bindings = workspace.join("crates/bindings-typescript");
-    pnpm(&["install"], &ts_bindings)?;
-    pnpm(&["build"], &ts_bindings)?;
-    Ok(())
 }
 
 fn nuget_config_path(project_dir: &Path) -> PathBuf {
@@ -613,7 +557,6 @@ log = "0.4"
                 run_cmd(
                     &["cargo", "new", "--bin", "--name", "quickstart_chat_client", "client"],
                     parent,
-                    None,
                 )?;
             }
             "csharp" => {
@@ -628,7 +571,6 @@ log = "0.4"
                         client_path.to_str().unwrap(),
                     ],
                     client_path.parent().unwrap(),
-                    None,
                 )?;
             }
             _ => {}
@@ -677,11 +619,7 @@ log = "0.4"
                     "bin~/Release",
                 )?;
 
-                run_cmd(
-                    &["dotnet", "add", "package", "SpacetimeDB.ClientSDK"],
-                    client_path,
-                    None,
-                )?;
+                run_cmd(&["dotnet", "add", "package", "SpacetimeDB.ClientSDK"], client_path)?;
             }
             _ => {}
         }
@@ -690,7 +628,7 @@ log = "0.4"
 
     /// Run the client with input and check output.
     fn check(&self, input: &str, client_path: &Path, contains: &str) -> Result<()> {
-        let output = run_cmd(self.config.run_cmd, client_path, Some(input))?;
+        let output = run_cmd_with_stdin(self.config.run_cmd, client_path, input)?;
         eprintln!("Output for {} client:\n{}", self.config.lang, output);
 
         if !output.contains(contains) {
@@ -744,7 +682,7 @@ log = "0.4"
         self.sdk_setup(&client_path)?;
 
         // Build the client
-        run_cmd(self.config.build_cmd, &client_path, None)?;
+        run_cmd(self.config.build_cmd, &client_path)?;
 
         // Generate bindings (local operation)
         let bindings_path = client_path.join(self.config.module_bindings);

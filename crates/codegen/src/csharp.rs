@@ -730,7 +730,7 @@ impl Lang for Csharp<'_> {
     }
 
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let name = collect_case(Case::Pascal, typ.name.name_segments());
+        let name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
         let filename = format!("Types/{name}.g.cs");
         let code = match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::Sum(sum) => autogen_csharp_sum(module, name.clone(), sum, self.namespace),

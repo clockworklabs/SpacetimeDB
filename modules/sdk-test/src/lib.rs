@@ -257,7 +257,7 @@ macro_rules! define_tables {
     // Define a table.
     (@one $name:ident { $($ops:tt)* } $($(#[$attr:meta])* $field_name:ident $ty:ty),* $(,)*) => {
         paste::paste! {
-            #[spacetimedb::table(name = [<$name:snake>], public)]
+            #[spacetimedb::table(accessor = [<$name:snake>], public)]
             pub struct $name {
                 $($(#[$attr])* pub $field_name : $ty,)*
             }
@@ -810,7 +810,7 @@ fn no_op_succeeds(_ctx: &ReducerContext) {}
 #[spacetimedb::client_visibility_filter]
 const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
 
-#[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
+#[spacetimedb::table(accessor = scheduled_table, scheduled(send_scheduled_message), public)]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
@@ -826,19 +826,19 @@ fn send_scheduled_message(_ctx: &ReducerContext, arg: ScheduledTable) {
     let _ = arg.scheduled_id;
 }
 
-#[spacetimedb::table(name = indexed_table)]
+#[spacetimedb::table(accessor = indexed_table)]
 struct IndexedTable {
     #[index(btree)]
     player_id: u32,
 }
 
-#[spacetimedb::table(name = indexed_table_2, index(name=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
+#[spacetimedb::table(accessor = indexed_table_2, index(accessor=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
 struct IndexedTable2 {
     player_id: u32,
     player_snazz: f32,
 }
 
-#[spacetimedb::table(name = btree_u32, public)]
+#[spacetimedb::table(accessor = btree_u32, public)]
 struct BTreeU32 {
     #[index(btree)]
     n: u32,
@@ -848,7 +848,7 @@ struct BTreeU32 {
 #[spacetimedb::client_visibility_filter]
 const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM users WHERE identity = :sender");
 
-#[spacetimedb::table(name = users, public)]
+#[spacetimedb::table(accessor = users, public)]
 struct Users {
     #[primary_key]
     identity: Identity,
@@ -861,7 +861,7 @@ fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow
     Ok(())
 }
 
-#[spacetimedb::table(name = indexed_simple_enum, public)]
+#[spacetimedb::table(accessor = indexed_simple_enum, public)]
 struct IndexedSimpleEnum {
     #[index(btree)]
     n: SimpleEnum,

@@ -12,18 +12,22 @@ use super::super::{
     util::make_uint8array,
     JsInstanceEnv,
 };
-use super::HookFunctions;
+use super::{call_call_view, call_call_view_anon, get_registered_hooks, HookFunctions};
+use crate::database_logger::{LogLevel, Record};
+use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::{RowIterIdx, TimingSpan, TimingSpanIdx};
-use crate::{
-    database_logger::{LogLevel, Record},
-    host::wasm_common::module_host_actor::ProcedureOp,
+use crate::host::wasm_common::module_host_actor::{
+    deserialize_view_rows, run_query_for_view, AnonymousViewOp, ProcedureOp, ViewOp, ViewResult, ViewReturnData,
 };
+use crate::host::wasm_common::{RowIterIdx, TimingSpan, TimingSpanIdx};
 use anyhow::Context;
 use bytes::Bytes;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId};
 use spacetimedb_sats::bsatn;
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::Identifier;
 use v8::{FunctionCallbackArguments, Isolate, Local, PinScope, Value};
 
 /// Calls the `__call_procedure__` function `fun`.
@@ -652,9 +656,194 @@ pub fn procedure_commit_mut_tx(
     scope: &mut PinScope<'_, '_>,
     _args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<()> {
-    let env = get_env(scope)?;
+    let tx = {
+        let env = get_env(scope)?;
+        env.instance_env.take_mutable_tx_for_commit()?
+    };
 
-    env.instance_env.commit_mutable_tx()?;
+    let hooks = get_registered_hooks(scope).ok_or_else(|| {
+        TypeError("module hooks are unavailable while committing a procedure transaction").throw(scope)
+    })?;
+    let module_def = get_env(scope)?.module_def().ok_or_else(|| {
+        TypeError("module definition is unavailable while committing a procedure transaction").throw(scope)
+    })?;
+    let tx = refresh_views(scope, tx, &hooks, &module_def)?;
+    get_env(scope)?.instance_env.commit_procedure_tx(tx)?;
 
     Ok(())
+}
+
+/// Refresh all views made stale by a procedure `tx`.
+///
+/// This runs each pending view call in the same mutable transaction and writes the refreshed rows
+/// into the corresponding backing view tables. If any step fails (missing metadata, view execution,
+/// row decoding, SQL execution, or materialization), this method rolls back `tx` and returns an error.
+///
+/// On success, it returns the same transaction handle so the caller can commit it.
+fn refresh_views(
+    scope: &mut PinScope<'_, '_>,
+    tx: MutTxId,
+    hooks: &HookFunctions<'_>,
+    module_def: &ModuleDef,
+) -> SysCallResult<MutTxId> {
+    let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
+    let stdb = get_env(scope)?.instance_env.relational_db().clone();
+    let database_identity = *get_env(scope)?.instance_env.database_identity();
+    let mut tx_slot = get_env(scope)?.instance_env.tx.clone();
+    let mut tx = Some(tx);
+
+    for view_call in views_for_refresh {
+        let res: SysCallResult<()> = (|| {
+            let view_def = module_def
+                .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
+                .ok_or_else(|| {
+                    TypeError(format!(
+                        "view with fn_ptr `{}` not found while refreshing procedure transaction",
+                        view_call.fn_ptr
+                    ))
+                    .throw(scope)
+                })?;
+
+            let current_tx = tx.take().expect("procedure tx missing during view refresh");
+            let (next_tx, call_result) =
+                tx_slot.set(current_tx, || call_view(scope, hooks, &view_call, &view_def.name));
+            tx = Some(next_tx);
+            let return_data = call_result?;
+
+            let typespace = module_def.typespace();
+            let row_product_type = typespace
+                .resolve(view_def.product_type_ref)
+                .resolve_refs()
+                .map_err(|err| {
+                    TypeError(format!(
+                        "failed resolving row type for refreshed view `{}`: {err}",
+                        view_def.name
+                    ))
+                    .throw(scope)
+                })?
+                .into_product()
+                .map_err(|_| {
+                    TypeError(format!(
+                        "failed resolving row product type for refreshed view `{}`",
+                        view_def.name
+                    ))
+                    .throw(scope)
+                })?;
+
+            let rows = match ViewResult::from_return_data(return_data).map_err(|err| {
+                TypeError(format!(
+                    "failed parsing result for refreshed view `{}`: {err}",
+                    view_def.name
+                ))
+                .throw(scope)
+            })? {
+                ViewResult::Rows(bytes) => {
+                    deserialize_view_rows(view_def.product_type_ref, bytes, typespace).map_err(NodesError::from)?
+                }
+                ViewResult::RawSql(query) => run_query_for_view(
+                    tx.as_mut().expect("procedure tx missing while running view query"),
+                    &query,
+                    &row_product_type,
+                    &view_call,
+                    database_identity,
+                )
+                .map_err(|err| {
+                    TypeError(format!(
+                        "failed running query for refreshed view `{}`: {err}",
+                        view_def.name
+                    ))
+                    .throw(scope)
+                })?,
+            };
+
+            match view_call.sender {
+                Some(sender) => stdb
+                    .materialize_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing authenticated view"),
+                        view_call.table_id,
+                        sender,
+                        rows,
+                    )
+                    .map_err(NodesError::from)?,
+                None => stdb
+                    .materialize_anonymous_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing anonymous view"),
+                        view_call.table_id,
+                        rows,
+                    )
+                    .map_err(NodesError::from)?,
+            }
+
+            Ok(())
+        })();
+
+        if let Err(err) = res {
+            let tx = tx.expect("procedure tx missing while rolling back failed view refresh");
+            get_env(scope)?.instance_env.rollback_procedure_tx(tx);
+            return Err(err);
+        }
+    }
+
+    Ok(tx.expect("procedure tx missing after refreshing views"))
+}
+
+/// Execute a view and return its payload.
+///
+/// This helper is used by [`refresh_views`] while a procedure transaction is being committed.
+/// It temporarily sets the active function type to the target view for dependency tracking,
+/// invokes the applicable JS hook, restores the previous function type, and returns [`ViewReturnData`].
+fn call_view(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    view_call: &ViewCallInfo,
+    view_name: &Identifier,
+) -> SysCallResult<ViewReturnData> {
+    let prev_func_type = get_env(scope)?
+        .instance_env
+        .swap_func_type(FuncCallType::View(view_call.clone()));
+
+    let result = {
+        let args = crate::host::ArgsTuple::nullary();
+        match view_call.sender {
+            Some(sender) => call_call_view(
+                scope,
+                hooks,
+                ViewOp {
+                    name: view_name,
+                    view_id: view_call.view_id,
+                    table_id: view_call.table_id,
+                    fn_ptr: view_call.fn_ptr,
+                    args: &args,
+                    sender: &sender,
+                    timestamp: Timestamp::now(),
+                },
+            ),
+            None => call_call_view_anon(
+                scope,
+                hooks,
+                AnonymousViewOp {
+                    name: view_name,
+                    view_id: view_call.view_id,
+                    table_id: view_call.table_id,
+                    fn_ptr: view_call.fn_ptr,
+                    args: &args,
+                    timestamp: Timestamp::now(),
+                },
+            ),
+        }
+    };
+
+    get_env(scope)?.instance_env.swap_func_type(prev_func_type);
+
+    result.map_err(|err| match err {
+        ErrorOrException::Err(err) => TypeError(format!(
+            "failed executing refreshed view `{}` during procedure commit: {err}",
+            view_name
+        ))
+        .throw(scope)
+        .into(),
+        ErrorOrException::Exception(exc) => exc.into(),
+    })
 }

@@ -27,15 +27,15 @@ const SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC: f32 = 2.0;
 const ALLOWED_SPLIT_CIRCLE_OVERLAP_PCT: f32 = 0.9;
 const SELF_COLLISION_SPEED: f32 = 0.05; //1 == instantly separate circles. less means separation takes time
 
-#[spacetimedb::table(name = config, public)]
+#[spacetimedb::table(accessor = config, public)]
 pub struct Config {
     #[primary_key]
     pub id: i32,
     pub world_size: i64,
 }
 
-#[spacetimedb::table(name = entity, public)]
-#[spacetimedb::table(name = logged_out_entity)]
+#[spacetimedb::table(accessor = entity, public)]
+#[spacetimedb::table(accessor = logged_out_entity)]
 #[derive(Debug, Clone)]
 pub struct Entity {
     #[auto_inc]
@@ -45,8 +45,8 @@ pub struct Entity {
     pub mass: i32,
 }
 
-#[spacetimedb::table(name = circle, public)]
-#[spacetimedb::table(name = logged_out_circle)]
+#[spacetimedb::table(accessor = circle, public)]
+#[spacetimedb::table(accessor = logged_out_circle)]
 #[derive(Debug, Clone)]
 pub struct Circle {
     #[primary_key]
@@ -58,8 +58,8 @@ pub struct Circle {
     pub last_split_time: Timestamp,
 }
 
-#[spacetimedb::table(name = player, public)]
-#[spacetimedb::table(name = logged_out_player)]
+#[spacetimedb::table(accessor = player, public)]
+#[spacetimedb::table(accessor = logged_out_player)]
 #[derive(Debug, Clone)]
 pub struct Player {
     #[primary_key]
@@ -70,13 +70,13 @@ pub struct Player {
     name: String,
 }
 
-#[spacetimedb::table(name = food, public)]
+#[spacetimedb::table(accessor = food, public)]
 pub struct Food {
     #[primary_key]
     pub entity_id: i32,
 }
 
-#[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
+#[spacetimedb::table(accessor = move_all_players_timer, scheduled(move_all_players))]
 pub struct MoveAllPlayersTimer {
     #[primary_key]
     #[auto_inc]
@@ -84,7 +84,7 @@ pub struct MoveAllPlayersTimer {
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
-#[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
+#[spacetimedb::table(accessor = spawn_food_timer, scheduled(spawn_food))]
 pub struct SpawnFoodTimer {
     #[primary_key]
     #[auto_inc]
@@ -92,7 +92,7 @@ pub struct SpawnFoodTimer {
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
-#[spacetimedb::table(name = circle_decay_timer, scheduled(circle_decay))]
+#[spacetimedb::table(accessor = circle_decay_timer, scheduled(circle_decay))]
 pub struct CircleDecayTimer {
     #[primary_key]
     #[auto_inc]
@@ -100,7 +100,7 @@ pub struct CircleDecayTimer {
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
-#[spacetimedb::table(name = circle_recombine_timer, scheduled(circle_recombine))]
+#[spacetimedb::table(accessor = circle_recombine_timer, scheduled(circle_recombine))]
 pub struct CircleRecombineTimer {
     #[primary_key]
     #[auto_inc]
@@ -109,13 +109,13 @@ pub struct CircleRecombineTimer {
     player_id: i32,
 }
 
-#[spacetimedb::table(name = consume_entity_event, public, event)]
+#[spacetimedb::table(accessor = consume_entity_event, public, event)]
 pub struct ConsumeEntityEvent {
     consumed_entity_id: i32,
     consumer_entity_id: i32,
 }
 
-#[spacetimedb::table(name = consume_entity_timer, scheduled(consume_entity))]
+#[spacetimedb::table(accessor = consume_entity_timer, scheduled(consume_entity))]
 pub struct ConsumeEntityTimer {
     #[primary_key]
     #[auto_inc]

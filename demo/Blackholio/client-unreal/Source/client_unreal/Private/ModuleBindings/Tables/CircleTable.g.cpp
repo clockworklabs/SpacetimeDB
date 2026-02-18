@@ -16,12 +16,12 @@ void UCircleTable::PostInitialize()
     CircleTable->AddUniqueConstraint<int32>("entity_id", [](const FCircleType& Row) -> const int32& {
         return Row.EntityId; });
 
-    EntityId = NewObject<UCircleEntityIdUniqueIndex>(this);
-    EntityId->SetCache(CircleTable);
+    CircleEntityIdIdxBtree = NewObject<UCircleCircleEntityIdIdxBtreeUniqueIndex>(this);
+    CircleEntityIdIdxBtree->SetCache(CircleTable);
 
-    // Register a new multi-key B-Tree index named "player_id" on the CircleTable.
+    // Register a new multi-key B-Tree index named "circle_player_id_idx_btree" on the CircleTable.
     CircleTable->AddMultiKeyBTreeIndex<TTuple<int32>>(
-        TEXT("player_id"),
+        TEXT("circle_player_id_idx_btree"),
         [](const FCircleType& Row)
         {
             // This tuple is stored in the B-Tree index for fast composite key lookups.
@@ -29,8 +29,8 @@ void UCircleTable::PostInitialize()
         }
     );
 
-    PlayerId = NewObject<UCirclePlayerIdIndex>(this);
-    PlayerId->SetCache(CircleTable);
+    CirclePlayerIdIdxBtree = NewObject<UCircleCirclePlayerIdIdxBtreeIndex>(this);
+    CirclePlayerIdIdxBtree->SetCache(CircleTable);
 
     /***/
 }

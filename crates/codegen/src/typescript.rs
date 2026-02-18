@@ -33,7 +33,7 @@ pub struct TypeScript;
 
 impl Lang for TypeScript {
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let type_name = collect_case(Case::Pascal, typ.name.name_segments());
+        let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
 
         let define_type_for_product = |product: &ProductTypeDef| {
             let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -45,7 +45,7 @@ impl Lang for TypeScript {
             define_body_for_product(module, out, &type_name, &product.elements);
             out.newline();
             OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
+                filename: type_module_name(&typ.accessor_name) + ".ts",
                 code: output.into_inner(),
             }
         };
@@ -62,7 +62,7 @@ impl Lang for TypeScript {
             define_body_for_sum(module, out, &type_name, variants);
             out.newline();
             OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
+                filename: type_module_name(&typ.accessor_name) + ".ts",
                 code: output.into_inner(),
             }
         };
@@ -537,17 +537,17 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
     writeln!(out);
     writeln!(out, "// Import all non-reducer types");
     for ty in iter_types(module) {
-        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         if reducer_type_names.contains(&type_name) {
             continue;
         }
-        let type_module_name = type_module_name(&ty.name);
+        let type_module_name = type_module_name(&ty.accessor_name);
         writeln!(out, "import {type_name} from \"../{type_module_name}\";");
     }
 
     writeln!(out);
     for ty in iter_types(module) {
-        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         if reducer_type_names.contains(&type_name) {
             continue;
         }

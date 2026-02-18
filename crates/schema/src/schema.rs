@@ -141,6 +141,14 @@ impl TableOrViewSchema {
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
         self.public_columns().iter().find(|x| &*x.col_name == col_name)
     }
+
+    /// Check if the `col_name` exists on this [`TableOrViewSchema`], prioritizing alias over canonical name.
+    pub fn get_column_by_name_or_alias(&self, col_name: &str) -> Option<&ColumnSchema> {
+        self.public_columns()
+            .iter()
+            .find(|col| col.alias.as_deref().is_some_and(|alias| alias == col_name))
+            .or_else(|| self.get_column_by_name(col_name))
+    }
 }
 
 /// A data structure representing the schema of a database table.
@@ -154,6 +162,8 @@ pub struct TableSchema {
 
     /// The name of the table.
     pub table_name: TableName,
+
+    pub alias: Option<Identifier>,
 
     /// Is this the backing table of a view?
     pub view_info: Option<ViewDefInfo>,
@@ -216,6 +226,7 @@ impl TableSchema {
         schedule: Option<ScheduleSchema>,
         primary_key: Option<ColId>,
         is_event: bool,
+        alias: Option<Identifier>,
     ) -> Self {
         Self {
             row_type: columns_to_row_type(&columns),
@@ -231,6 +242,7 @@ impl TableSchema {
             schedule,
             primary_key,
             is_event,
+            alias,
         }
     }
 
@@ -251,6 +263,7 @@ impl TableSchema {
                     .map(Identifier::new_assume_valid)
                     .unwrap_or_else(|| Identifier::for_test(format!("col{col_pos}"))),
                 col_type: element.algebraic_type.clone(),
+                alias: None,
             })
             .collect();
 
@@ -267,6 +280,7 @@ impl TableSchema {
             None,
             None,
             false,
+            None,
         )
     }
 
@@ -426,6 +440,14 @@ impl TableSchema {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 
+    /// Check if the `col_name` exists on this [TableSchema], prioritizing alias over canonical name.
+    pub fn get_column_by_name_or_alias(&self, col_name: &str) -> Option<&ColumnSchema> {
+        self.columns
+            .iter()
+            .find(|col| col.alias.as_deref().is_some_and(|alias| alias == col_name))
+            .or_else(|| self.get_column_by_name(col_name))
+    }
+
     /// Check if the `col_name` exist on this [TableSchema]
     ///
     /// Warning: It ignores the `table_name`
@@ -434,6 +456,22 @@ impl TableSchema {
             .iter()
             .position(|x| &*x.col_name == col_name)
             .map(|x| x.into())
+    }
+
+    /// Check if the `col_name` exists on this [TableSchema], prioritizing alias over canonical name.
+    ///
+    /// Warning: It ignores the `table_name`.
+    pub fn get_column_id_by_name_or_alias(&self, col_name: &str) -> Option<ColId> {
+        self.columns
+            .iter()
+            .position(|col| col.alias.as_deref().is_some_and(|alias| alias == col_name))
+            .or_else(|| self.get_column_id_by_name(col_name).map(|id| id.idx()))
+            .map(Into::into)
+    }
+
+    /// Check whether `name` matches table alias or canonical table name.
+    pub fn matches_name_or_alias(&self, name: &str) -> bool {
+        self.alias.as_deref().is_some_and(|alias| alias == name) || self.table_name.as_ref() == name
     }
 
     /// Retrieve the column ids for this index id
@@ -760,6 +798,7 @@ impl TableSchema {
             None,
             None,
             false,
+            None,
         )
     }
 
@@ -773,10 +812,10 @@ impl TableSchema {
     ///     b: u32,
     /// }
     ///
-    /// #[view(name = my_view, public)]
+    /// #[view(accessor = my_view, public)]
     /// fn my_view(ctx: &ViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     ///
-    /// #[view(name = my_anonymous_view, public)]
+    /// #[view(accessor = my_anonymous_view, public)]
     /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     /// ```
     ///
@@ -805,6 +844,7 @@ impl TableSchema {
             is_anonymous,
             param_columns,
             return_columns,
+            accessor_name,
             ..
         } = view_def;
 
@@ -822,6 +862,7 @@ impl TableSchema {
                 col_pos: columns.len().into(),
                 col_name: Identifier::new_assume_valid(name.into()),
                 col_type,
+                alias: None,
             });
         };
 
@@ -849,6 +890,7 @@ impl TableSchema {
                 table_id: TableId::SENTINEL,
                 index_name: RawIdentifier::new(index_name),
                 index_algorithm: IndexAlgorithm::BTree(col_list.into()),
+                alias: None,
             }
         };
 
@@ -883,6 +925,7 @@ impl TableSchema {
             None,
             None,
             false,
+            Some(accessor_name.clone()),
         )
     }
 }
@@ -913,6 +956,8 @@ impl Schema for TableSchema {
             table_type,
             table_access,
             is_event,
+            accessor_name,
+            ..
         } = def;
 
         let columns = column_schemas_from_defs(module_def, columns, table_id);
@@ -951,6 +996,7 @@ impl Schema for TableSchema {
             schedule,
             *primary_key,
             *is_event,
+            Some(accessor_name.clone()),
         )
     }
 
@@ -1068,6 +1114,8 @@ pub struct ColumnSchema {
     pub col_pos: ColId,
     /// The name of the column. Unique within the table.
     pub col_name: Identifier,
+
+    pub alias: Option<Identifier>,
     /// The type of the column. This will never contain any `AlgebraicTypeRef`s,
     /// that is, it will be resolved.
     pub col_type: AlgebraicType,
@@ -1080,6 +1128,7 @@ impl spacetimedb_memory_usage::MemoryUsage for ColumnSchema {
             col_pos,
             col_name,
             col_type,
+            ..
         } = self;
         table_id.heap_usage() + col_pos.heap_usage() + col_name.heap_usage() + col_type.heap_usage()
     }
@@ -1093,6 +1142,7 @@ impl ColumnSchema {
             col_pos: pos.into(),
             col_name: Identifier::for_test(name),
             col_type: ty,
+            alias: None,
         }
     }
 
@@ -1105,6 +1155,7 @@ impl ColumnSchema {
             col_pos: def.col_id,
             col_name: def.name.clone(),
             col_type,
+            alias: Some(def.accessor_name.clone()),
         }
     }
 }
@@ -1130,6 +1181,7 @@ impl Schema for ColumnSchema {
             col_pos,
             col_name: def.name.clone(),
             col_type,
+            alias: Some(def.accessor_name.clone()),
         }
     }
 
@@ -1337,6 +1389,8 @@ pub struct IndexSchema {
     /// The name of the index. This should not be assumed to follow any particular format.
     /// Unique within the database.
     pub index_name: RawIdentifier,
+
+    pub alias: Option<RawIdentifier>,
     /// The data for the schema.
     pub index_algorithm: IndexAlgorithm,
 }
@@ -1348,6 +1402,7 @@ impl spacetimedb_memory_usage::MemoryUsage for IndexSchema {
             table_id,
             index_name,
             index_algorithm,
+            alias: _,
         } = self;
         index_id.heap_usage() + table_id.heap_usage() + index_name.heap_usage() + index_algorithm.heap_usage()
     }
@@ -1360,6 +1415,7 @@ impl IndexSchema {
             table_id: TableId::SENTINEL,
             index_name: RawIdentifier::new(name.as_ref()),
             index_algorithm: algo.into(),
+            alias: None,
         }
     }
 }
@@ -1378,6 +1434,7 @@ impl Schema for IndexSchema {
             table_id: parent_id,
             index_name: def.name.clone(),
             index_algorithm,
+            alias: Some(def.source_name.clone()),
         }
     }
 

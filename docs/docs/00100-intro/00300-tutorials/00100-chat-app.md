@@ -37,8 +37,8 @@ SpacetimeDB runs your module inside the database host (not Node.js). There's no 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-- Each table is defined as a Rust struct annotated with `#[table(name = table_name)]`. An instance of the struct represents a row, and each field represents a column.
-- By default, tables are **private**. The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
+- Each table is defined as a Rust struct annotated with `#[table(accessor = table_name)]`. An instance of the struct represents a row, and each field represents a column.
+- By default, tables are **private**. The `#[table(accessor = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
 - A reducer is a function that traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. Reducers may return a `Result<()>`, with an `Err` return aborting the transaction.
 
 </TabItem>
@@ -307,7 +307,7 @@ export default spacetimedb;
 In `spacetimedb/Lib.cs`, add the definition of the tables to the `Module` class:
 
 ```csharp server
-[Table(Name = "User", Public = true)]
+[Table(Accessor = "User", Public = true)]
 public partial class User
 {
     [PrimaryKey]
@@ -316,7 +316,7 @@ public partial class User
     public bool Online;
 }
 
-[Table(Name = "Message", Public = true)]
+[Table(Accessor = "Message", Public = true)]
 public partial class Message
 {
     public Identity Sender;
@@ -331,7 +331,7 @@ public partial class Message
 Add to `spacetimedb/src/lib.rs`:
 
 ```rust server
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: Identity,
@@ -339,7 +339,7 @@ pub struct User {
     online: bool,
 }
 
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,
@@ -1366,8 +1366,12 @@ Now that we've imported the `DbConnection` type, we can use it to connect our ap
 Replace the body of the `main.tsx` file with the following, just below your imports:
 
 ```tsx
+const HOST = 'ws://localhost:3000';
+const DB_NAME = 'quickstart-chat';
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
 const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
-  localStorage.setItem('auth_token', token);
+  localStorage.setItem(TOKEN_KEY, token);
   console.log(
     'Connected to SpacetimeDB with identity:',
     identity.toHexString()
@@ -1386,9 +1390,9 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 };
 
 const connectionBuilder = DbConnection.builder()
-  .withUri('ws://localhost:3000')
-  .withDatabaseName('quickstart-chat')
-  .withToken(localStorage.getItem('auth_token') || undefined)
+  .withUri(HOST)
+  .withDatabaseName(DB_NAME)
+  .withToken(localStorage.getItem(TOKEN_KEY) || undefined)
   .onConnect(onConnect)
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
@@ -1960,7 +1964,7 @@ void Message_OnInsert(EventContext ctx, Message insertedValue)
 
 void PrintMessage(RemoteTables tables, Message message)
 {
-    var sender = tables.User.Identity.Find(message.Sender);
+    var sender = tables.User.UserIdentityIdxBtree.Find(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {

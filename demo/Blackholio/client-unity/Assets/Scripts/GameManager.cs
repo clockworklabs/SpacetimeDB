@@ -109,11 +109,11 @@ public class GameManager : MonoBehaviour
 
         // Once we have the initial subscription sync'd to the client cache
         // Get the world size from the config table and set up the arena
-        var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
+        var worldSize = Conn.Db.Config.ConfigIdIdxBtree.Find(0).WorldSize;
         SetupArena(worldSize);
 
         // Check to see if we already have a player, if we don't we'll need to create one
-        var player = ctx.Db.Player.Identity.Find(LocalIdentity);
+        var player = ctx.Db.Player.PlayerIdentityIdxBtree.Find(LocalIdentity);
         if (string.IsNullOrEmpty(player.Name))
         {
             // The player has to choose a username
@@ -131,7 +131,7 @@ public class GameManager : MonoBehaviour
         else
         {
             // We already have a player
-            if (ctx.Db.Circle.PlayerId.Filter(player.PlayerId).Any())
+            if (ctx.Db.Circle.CirclePlayerIdIdxBtree.Filter(player.PlayerId).Any())
             {
                 // We already have at least one circle, we should just be able to start
                 // playing immediately.
@@ -236,7 +236,7 @@ public class GameManager : MonoBehaviour
     {
         if (!Players.TryGetValue(playerId, out var playerController))
         {
-            var player = Conn.Db.Player.PlayerId.Find(playerId);
+            var player = Conn.Db.Player.PlayerPlayerIdIdxBtree.Find(playerId);
             playerController = PrefabManager.SpawnPlayer(player);
             Players.Add(playerId, playerController);
         }

@@ -202,8 +202,8 @@ public static partial class Timers
     }
 }
 
-[SpacetimeDB.Table(Name = "MultiTable1", Public = true)]
-[SpacetimeDB.Table(Name = "MultiTable2")]
+[SpacetimeDB.Table(Accessor = "MultiTable1", Public = true)]
+[SpacetimeDB.Table(Accessor = "MultiTable2")]
 public partial struct MultiTableRow
 {
     [SpacetimeDB.Index.BTree(Table = "MultiTable1")]
@@ -226,7 +226,7 @@ public partial struct MultiTableRow
 }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Name = "Location", Columns = ["X", "Y", "Z"])]
+[SpacetimeDB.Index.BTree(Accessor = "Location", Columns = ["X", "Y", "Z"])]
 partial struct BTreeMultiColumn
 {
     public uint X;
@@ -235,7 +235,7 @@ partial struct BTreeMultiColumn
 }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Name = "Location", Columns = ["X", "Y"])]
+[SpacetimeDB.Index.BTree(Accessor = "Location", Columns = ["X", "Y"])]
 partial struct BTreeViews
 {
     [SpacetimeDB.PrimaryKey]
@@ -274,19 +274,19 @@ public class Module
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ALL_PUBLIC_TABLES = new Filter.Sql("SELECT * FROM PublicTable");
 
-    [SpacetimeDB.View(Name = "public_table_view", Public = true)]
+    [SpacetimeDB.View(Accessor = "public_table_view", Public = true)]
     public static PublicTable? PublicTableByIdentity(ViewContext ctx)
     {
         return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
     }
 
-    [SpacetimeDB.View(Name = "public_table_query", Public = true)]
+    [SpacetimeDB.View(Accessor = "public_table_query", Public = true)]
     public static Query<PublicTable> PublicTableQuery(ViewContext ctx)
     {
         return ctx.From.PublicTable().Where(cols => cols.Id.Eq(0)).Build();
     }
 
-    [SpacetimeDB.View(Name = "find_public_table__by_identity", Public = true)]
+    [SpacetimeDB.View(Accessor = "find_public_table__by_identity", Public = true)]
     public static PublicTable? FindPublicTableByIdentity(AnonymousViewContext ctx)
     {
         return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);

@@ -3,7 +3,7 @@ from .. import Smoketest
 MODULE_HEADER = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = all_u8s, public)]
+#[spacetimedb::table(accessor = all_u8s, public)]
 pub struct AllU8s {
     number: u8,
 }
