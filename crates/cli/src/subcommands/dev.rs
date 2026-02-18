@@ -563,7 +563,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Safety prompt: warn if publishing from spacetime.json (not a dev-specific config)
     if let Some(ref lc) = loaded_config {
-        if !lc.has_dev_file && !force {
+        // Treat local overrides as dev-safe to avoid warning when per-user config is present.
+        // TODO: Should this also accept other env local files (for example: spacetime.staging.local.json)?
+        let has_local_override = lc.loaded_files.iter().any(|p| {
+            p.file_name()
+                .and_then(|s| s.to_str())
+                .map(|name| name == "spacetime.local.json" || name == "spacetime.dev.local.json")
+                .unwrap_or(false)
+        });
+
+        if !lc.has_dev_file && !has_local_override && !force {
             eprintln!(
                 "{} Publishing from spacetime.json (not a dev-specific config).",
                 "Warning:".yellow().bold()
