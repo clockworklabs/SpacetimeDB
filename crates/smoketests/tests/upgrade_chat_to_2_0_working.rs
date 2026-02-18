@@ -299,13 +299,6 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         &repo,
     )?;
 
-    let current_cli = repo.join("target").join("debug").join(exe_name("spacetimedb-cli"));
-    anyhow::ensure!(
-        current_cli.exists(),
-        "current CLI binary missing at {}",
-        current_cli.display()
-    );
-
     // Install a pinned 1.0 release via the system `spacetime` command.
     log_step(&format!(
         "installing and selecting release {} via system spacetime",
@@ -328,45 +321,14 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     // Build 1.0 sources from pinned ref.
 
     let old_result: Result<()> = (|| {
-        run_cmd_ok(
-            &[
-                current_cli.clone().into_os_string(),
-                OsString::from("generate"),
-                OsString::from("--module-path"),
-                OsString::from("spacetimedb/"),
-                OsString::from("--out-dir"),
-                OsString::from("src/module_bindings/"),
-                OsString::from("--lang"),
-                OsString::from("rust"),
-            ],
-            &repo.join("templates/chat-console-rs"),
-        )?;
-
-        log_step("building current quickstart chat client");
-        run_cmd_ok(
-            &[OsString::from("cargo"), OsString::from("build")],
-            &repo.join("templates/chat-console-rs"),
-        )?;
-
         anyhow::ensure!(
             old_client.exists(),
             "old chat client not found at {}",
             old_client.display()
         );
-        let new_client = repo
-            .join("templates/chat-console-rs")
-            .join("target")
-            .join("debug")
-            .join(exe_name("rust-quickstart-chat"));
-        anyhow::ensure!(
-            new_client.exists(),
-            "new chat client not found at {}",
-            new_client.display()
-        );
 
         log_step(&format!("v1 CLI path={}", installed_v1_cli.display()));
         log_step(&format!("old client path={}", old_client.display()));
-        log_step(&format!("new client path={}", new_client.display()));
 
         // Start 1.0 server and publish 1.0 quickstart module.
         let old_port = pick_unused_port()?;
@@ -407,25 +369,6 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
             dump_server_logs("new server", &new_server_logs);
             kill_child(&mut new_server);
             return Err(e);
-        }
-
-        let publish_new = false;
-        if publish_new {
-            log_step("publishing HEAD module to same database name on 2.0 server");
-            run_cmd_ok_with_stdin(
-                &[
-                    current_cli.clone().into_os_string(),
-                    OsString::from("publish"),
-                    OsString::from("--server"),
-                    OsString::from(&new_url),
-                    OsString::from("--module-path"),
-                    repo.join("templates/chat-console-rs/spacetimedb").into_os_string(),
-                    OsString::from("--yes"),
-                    OsString::from(&db_name),
-                ],
-                &repo,
-                "upgrade\n",
-            )?;
         }
 
         // Spawn 1.0 quickstart client against the upgraded 2.0 server.
