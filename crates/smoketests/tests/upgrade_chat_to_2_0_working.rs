@@ -268,7 +268,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     let repo = workspace_root();
     let temp = tempfile::tempdir()?;
     let temp_path = temp.path();
-    let old_worktree_dir = temp_path.join("old");
+    let old_worktree_dir = repo.join("target").join("smoketest-worktrees").join("old");
     let data_dir = temp_path.join("db-data");
     std::fs::create_dir_all(&data_dir)?;
     log_step(&format!("workspace={}", repo.display()));
