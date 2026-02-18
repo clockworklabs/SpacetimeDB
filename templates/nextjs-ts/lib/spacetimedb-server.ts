@@ -1,4 +1,4 @@
-import { DbConnection, Person } from '../src/module_bindings';
+import { DbConnection, Person, tables } from '../src/module_bindings';
 import type { Infer } from 'spacetimedb';
 
 const HOST = process.env.SPACETIMEDB_HOST ?? 'wss://maincloud.spacetimedb.com';
@@ -38,7 +38,7 @@ export async function fetchPeople(): Promise<PersonData[]> {
             conn.disconnect();
             reject(error);
           })
-          .subscribe('SELECT * FROM person');
+          .subscribe(tables.person);
       })
       .onConnectError((_ctx, error) => {
         clearTimeout(timeoutId);
