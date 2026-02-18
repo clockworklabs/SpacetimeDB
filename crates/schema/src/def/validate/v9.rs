@@ -1203,7 +1203,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         let RawIndexDefV10 {
             source_name,
             algorithm: algorithm_raw,
-            ..
+            accessor_name,
         } = index;
 
         //source_name will be used as alias, hence we need to add it to the global namespace as
@@ -1231,7 +1231,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
         Ok(IndexDef {
             name: name.clone(),
-            accessor_name: Some(identifier(source_name.clone())?),
+            accessor_name: accessor_name.map(identifier).transpose()?,
             source_name,
             algorithm,
         })
