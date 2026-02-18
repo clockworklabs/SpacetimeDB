@@ -230,16 +230,37 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 anyhow::bail!("Cannot continue without a module path.");
             }
 
-            let provided_module_path: String = Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Module path")
-                .default("spacetimedb".to_string())
-                .interact_text()?;
-
-            // Save to root `spacetime.json` (not env/local overlays), then reload merged config.
             let config_dir = loaded_config
                 .as_ref()
                 .map(|lc| lc.config_dir.clone())
                 .ok_or_else(|| anyhow::anyhow!("Missing loaded config directory"))?;
+
+            let provided_module_path: String = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Module path")
+                .default("spacetimedb".to_string())
+                .validate_with({
+                    let config_dir = config_dir.clone();
+                    move |input: &String| -> Result<(), String> {
+                        let candidate = PathBuf::from(input);
+                        let resolved = if candidate.is_absolute() {
+                            candidate
+                        } else {
+                            config_dir.join(&candidate)
+                        };
+                        if resolved.exists() {
+                            Ok(())
+                        } else {
+                            Err(format!(
+                                "Path does not exist: {} (resolved to {})",
+                                input,
+                                resolved.display()
+                            ))
+                        }
+                    }
+                })
+                .interact_text()?;
+
+            // Save to root `spacetime.json` (not env/local overlays), then reload merged config.
             let saved_path = save_root_module_path_to_spacetime_json(&config_dir, &provided_module_path)?;
             println!("{} Updated {}", "✓".green(), saved_path.display());
 
