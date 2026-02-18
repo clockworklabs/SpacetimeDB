@@ -18,6 +18,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  smoketests_mod_rs_complete:
+    name: Check smoketests/mod.rs is complete
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Verify crates/smoketests/tests/smoketests/mod.rs lists all entries
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          repo_root = pathlib.Path('.').resolve()
+          directory = repo_root / 'crates/smoketests/tests/smoketests'
+          mod_rs = directory / 'mod.rs'
+
+          if not directory.is_dir():
+            print(f"Error: directory not found: {directory}")
+            sys.exit(1)
+
+          if not mod_rs.is_file():
+            print(f"Error: mod.rs not found: {mod_rs}")
+            sys.exit(1)
+
+          mod_rs_text = mod_rs.read_text(encoding='utf-8', errors='strict')
+
+          expected = set()
+          for child in directory.iterdir():
+            name = child.name
+            if name == 'mod.rs':
+              continue
+            if name.startswith('.'):
+              continue
+
+            if child.is_dir():
+              expected.add(child.name)
+              continue
+
+            if child.is_file() and child.suffix == '.rs':
+              expected.add(child.stem)
+              continue
+
+          missing = []
+          for m in sorted(expected):
+            if f"mod {m};" not in mod_rs_text:
+              missing.append(m)
+
+          if missing:
+            print('Error: crates/smoketests/tests/smoketests/mod.rs is missing these entries:')
+            for m in missing:
+              print(f"- mod {m};")
+            sys.exit(1)
+
+          print('OK: crates/smoketests/tests/smoketests/mod.rs lists all entries.')
+          PY
+
   smoketests:
     needs: [lints]
     name: Smoketests (${{ matrix.name }})
