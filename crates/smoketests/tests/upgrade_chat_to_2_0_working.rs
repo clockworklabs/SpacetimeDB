@@ -14,7 +14,7 @@ use regex::Regex;
 use spacetimedb_smoketests::workspace_root;
 
 mod test_util;
-use test_util::{prepare_pinned_chat_workspace, run_cmd_ok, run_cmd_ok_with_stdin};
+use test_util::{prepare_pinned_chat_workspace, run_cmd_ok};
 
 // NOTE: This test is intentionally manual/local-only and not meant for CI.
 //
@@ -37,11 +37,6 @@ fn exe_name(base: &str) -> String {
     } else {
         base.to_string()
     }
-}
-
-fn pick_unused_port() -> Result<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    Ok(listener.local_addr()?.port())
 }
 
 fn ping_http(server_url: &str) -> Result<bool> {
@@ -70,8 +65,8 @@ fn wait_for_ping(server_url: &str, timeout: Duration) -> Result<()> {
     bail!("timed out waiting for {server_url}/v1/ping")
 }
 
-fn spawn_server(cli_path: &Path, data_dir: &Path, port: u16) -> Result<(Child, Arc<Mutex<String>>)> {
-    let listen = format!("127.0.0.1:{port}");
+fn spawn_server(cli_path: &Path, data_dir: &Path) -> Result<(Child, Arc<Mutex<String>>)> {
+    let listen = format!("127.0.0.1:3000");
     log_step(&format!(
         "starting server via {} on {} using data dir {}",
         cli_path.display(),
@@ -282,23 +277,6 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     let old_module_dir = old_prepared.module_dir;
     let old_publish_path_flag = old_prepared.publish_path_flag;
 
-    // Prepare current binaries (including update helper needed by `version install` from target dir).
-    log_step("building current spacetimedb-cli and spacetimedb-update");
-    run_cmd_ok(
-        &[
-            OsString::from("cargo"),
-            OsString::from("build"),
-            OsString::from("--locked"),
-            OsString::from("-p"),
-            OsString::from("spacetimedb-cli"),
-            OsString::from("-p"),
-            OsString::from("spacetimedb-standalone"),
-            OsString::from("-p"),
-            OsString::from("spacetimedb-update"),
-        ],
-        &repo,
-    )?;
-
     // Install a pinned 1.0 release via the system `spacetime` command.
     log_step(&format!(
         "installing and selecting release {} via system spacetime",
@@ -324,10 +302,9 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     log_step(&format!("old client path={}", old_client.display()));
 
     // Start 1.0 server and publish 1.0 quickstart module.
-    let old_port = pick_unused_port()?;
-    let old_url = format!("http://127.0.0.1:{old_port}");
+    let old_url = format!("http://127.0.0.1:3000");
     log_step("starting old server for initial publish");
-    let (mut old_server, old_server_logs) = spawn_server(&installed_v1_cli, &data_dir, old_port)?;
+    let (mut old_server, old_server_logs) = spawn_server(&installed_v1_cli, &data_dir)?;
     if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
         dump_server_logs("old server", &old_server_logs);
         kill_child(&mut old_server);
@@ -355,7 +332,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
 
     // Start 2.0 server on the same data dir.
     log_step("starting new server on same data dir");
-    let (mut new_server, new_server_logs) = spawn_server(&installed_v1_cli, &data_dir, old_port)?;
+    let (mut new_server, new_server_logs) = spawn_server(&installed_v1_cli, &data_dir)?;
     if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
         dump_server_logs("new server", &new_server_logs);
         kill_child(&mut new_server);
