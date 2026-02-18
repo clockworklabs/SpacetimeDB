@@ -303,7 +303,36 @@ fn prepare_generate_run_configs<'a>(
 
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
-        let lang = match command_config.get_one::<Language>("language")? {
+        let requested_lang = command_config.get_one::<Language>("language")?;
+        let namespace = command_config
+            .get_one::<String>("namespace")?
+            .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
+        let module_name = command_config.get_one::<String>("unreal_module_name")?;
+        let build_options = command_config
+            .get_one::<String>("build_options")?
+            .unwrap_or_else(String::new);
+
+        // Validate Unreal-specific args first to preserve focused errors for this mode.
+        if requested_lang == Some(Language::UnrealCpp) {
+            if command_config.get_one::<PathBuf>("uproject_dir")?.is_none() {
+                return Err(anyhow::anyhow!("--uproject-dir is required for --lang unrealcpp"));
+            }
+            if module_name.is_none() {
+                return Err(anyhow::anyhow!("--unreal-module-name is required for --lang unrealcpp"));
+            }
+        }
+
+        // Validate module source path for source-based generation.
+        if wasm_file.is_none() && js_file.is_none() && !project_path.is_dir() {
+            anyhow::bail!(
+                "Could not find module source at '{}'. \
+                 If this is not correct, pass --module-path or add module-path in spacetime.json. \
+                 You can also pass --bin-path/--js-path to generate without building from source.",
+                project_path.display()
+            );
+        }
+
+        let lang = match requested_lang {
             Some(lang) => lang,
             None => {
                 let detected = detect_default_language(&project_path)?;
@@ -315,31 +344,12 @@ fn prepare_generate_run_configs<'a>(
                 detected
             }
         };
-        let namespace = command_config
-            .get_one::<String>("namespace")?
-            .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
-        let module_name = command_config.get_one::<String>("unreal_module_name")?;
-        let build_options = command_config
-            .get_one::<String>("build_options")?
-            .unwrap_or_else(String::new);
 
         let out_dir = command_config
             .get_one::<PathBuf>("out_dir")?
             .or_else(|| command_config.get_one::<PathBuf>("uproject_dir").ok().flatten())
             .or_else(|| default_out_dir_for_language(lang))
             .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
-
-        match lang {
-            Language::Rust | Language::Csharp | Language::TypeScript => {}
-            Language::UnrealCpp => {
-                if command_config.get_one::<PathBuf>("uproject_dir")?.is_none() {
-                    return Err(anyhow::anyhow!("--uproject-dir is required for --lang unrealcpp"));
-                }
-                if module_name.is_none() {
-                    return Err(anyhow::anyhow!("--unreal-module-name is required for --lang unrealcpp"));
-                }
-            }
-        }
 
         let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
 
@@ -360,15 +370,6 @@ fn prepare_generate_run_configs<'a>(
 }
 
 fn detect_default_language(module_path: &Path) -> anyhow::Result<Language> {
-    if !module_path.is_dir() {
-        anyhow::bail!(
-            "Could not auto-detect client language: module path '{}' does not exist. \
-             If this is not correct, pass --lang or add a generate target in spacetime.json. \
-             You can also pass --module-path to specify the module location.",
-            module_path.display()
-        );
-    }
-
     let module_lang = detect_module_language(module_path).map_err(|err| {
         anyhow::anyhow!(
             "Could not auto-detect client language from module '{}': {}. \
@@ -958,7 +959,9 @@ mod tests {
     fn test_module_path_defaults_to_spacetimedb() {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
-        let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "rust"]);
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["generate", "--lang", "rust", "--bin-path", "dummy.wasm"]);
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
         let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].project_path, PathBuf::from("spacetimedb"));
@@ -969,8 +972,14 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
         let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "typescript"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
         let mut cfg = HashMap::new();
-        cfg.insert("module-path".to_string(), serde_json::json!("./spacetimedb"));
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
         let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].out_dir, PathBuf::from("src/module_bindings"));
@@ -981,8 +990,14 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
         let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "csharp"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
         let mut cfg = HashMap::new();
-        cfg.insert("module-path".to_string(), serde_json::json!("./spacetimedb"));
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
         let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].out_dir, PathBuf::from("module_bindings"));
@@ -1036,8 +1051,8 @@ mod tests {
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
         let err = prepare_generate_run_configs(vec![command_config], false).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("Could not auto-detect client language"));
-        assert!(msg.contains("--lang"));
+        assert!(msg.contains("Could not find module source at 'spacetimedb'"));
+        assert!(msg.contains("--module-path"));
         assert!(msg.contains("spacetime.json"));
     }
 
