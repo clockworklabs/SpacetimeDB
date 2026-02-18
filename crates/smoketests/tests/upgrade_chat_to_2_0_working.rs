@@ -31,14 +31,6 @@ fn log_step(msg: &str) {
     eprintln!("[manual-upgrade] {msg}");
 }
 
-fn exe_name(base: &str) -> String {
-    if cfg!(windows) {
-        format!("{base}.exe")
-    } else {
-        base.to_string()
-    }
-}
-
 fn ping_http(server_url: &str) -> Result<bool> {
     let addr = server_url
         .strip_prefix("http://")
