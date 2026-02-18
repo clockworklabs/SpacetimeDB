@@ -74,7 +74,10 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
             stored_in_table_def: Default::default(),
             type_namespace: Default::default(),
             lifecycle_reducers: Default::default(),
-            typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
+            typespace_for_generate: TypespaceForGenerate::builder(
+                &typespace_with_accessor_names,
+                known_type_definitions,
+            ),
             case_policy,
             explicit_names,
         },
