@@ -42,7 +42,7 @@ pub struct RemoveTable {
     pub id: u32,
 }
 
-#[spacetimedb::table(accessor = testATable, name="test_a", index(accessor = foo, btree(columns = [x])))]
+#[spacetimedb::table(accessor = test_a, index(accessor = foo, btree(columns = [x])))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
@@ -50,8 +50,7 @@ pub struct TestA {
 }
 
 #[derive(SpacetimeType)]
-#[allow(non_camel_case_types)]
-pub struct Test_b {
+pub struct TestB {
     foo: String,
 }
 
@@ -205,7 +204,7 @@ impl Foo<'_> {
 // VIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[spacetimedb::view(accessor = myPlayer, public)]
+#[spacetimedb::view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
@@ -254,7 +253,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
-pub fn listOverAge(ctx: &ReducerContext, age: u8) {
+pub fn list_over_age(ctx: &ReducerContext, age: u8) {
     for person in ctx.db.person().age().filter(age..) {
         log::info!("{} has age {} >= {}", person.name, person.age, age);
     }
@@ -266,7 +265,7 @@ fn log_module_identity(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
-pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: Test_b, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
+pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender());
     log::info!("timestamp: {:?}", ctx.timestamp);
@@ -282,23 +281,23 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: Test_b, arg3: TestC, arg
         TestF::Baz(string) => log::info!("{string}"),
     }
     for i in 0..1000 {
-        ctx.db.testATable().insert(TestA {
+        ctx.db.test_a().insert(TestA {
             x: i + arg.x,
             y: i + arg.y,
             z: "Yo".to_owned(),
         });
     }
 
-    let row_count_before_delete = ctx.db.testATable().count();
+    let row_count_before_delete = ctx.db.test_a().count();
 
     log::info!("Row count before delete: {row_count_before_delete:?}");
 
     let mut num_deleted = 0;
     for row in 5..10u32 {
-        num_deleted += ctx.db.testATable().foo().delete(row);
+        num_deleted += ctx.db.test_a().foo().delete(row);
     }
 
-    let row_count_after_delete = ctx.db.testATable().count();
+    let row_count_after_delete = ctx.db.test_a().count();
 
     if row_count_before_delete != row_count_after_delete + num_deleted {
         log::error!(
@@ -318,7 +317,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: Test_b, arg3: TestC, arg
 
     let other_row_count = ctx
         .db
-        .testATable()
+        .test_a()
         // .iter()
         // .filter(|row| row.x >= 0 && row.x <= u32::MAX)
         .count();
@@ -503,8 +502,8 @@ fn with_tx(ctx: &mut ProcedureContext) {
 /// Hit SpacetimeDB's schema HTTP route and return its result as a string.
 ///
 /// This is a silly thing to do, but an effective test of the procedure HTTP API.
-#[spacetimedb::procedure(name = "get_my_schema_via_http")]
-fn getMySchemaViaHttp(ctx: &mut ProcedureContext) -> String {
+#[spacetimedb::procedure]
+fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
     let module_identity = ctx.identity();
     match ctx.http.get(format!(
         "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
