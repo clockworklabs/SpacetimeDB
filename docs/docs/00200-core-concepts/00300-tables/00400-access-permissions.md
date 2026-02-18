@@ -957,4 +957,4 @@ SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx)
 
 ## Client Access - Read-Only Access
 
-Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](/subscriptions) for details on client-side table access.
+Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](/clients/subscriptions) for details on client-side table access.

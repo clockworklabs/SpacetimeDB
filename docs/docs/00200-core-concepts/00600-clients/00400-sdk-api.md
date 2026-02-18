@@ -1,22 +1,22 @@
 ---
 title: SDK API Overview
-slug: /sdks/api
+slug: /clients/api
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-The SpacetimeDB client SDKs provide a comprehensive API for interacting with your [database](/databases). After [generating client bindings](/sdks/codegen) and [establishing a connection](/sdks/connection), you can query data, invoke server functions, and observe real-time changes.
+The SpacetimeDB client SDKs provide a comprehensive API for interacting with your [database](/databases). After [generating client bindings](/clients/codegen) and [establishing a connection](/clients/connection), you can query data, invoke server functions, and observe real-time changes.
 
-This page describes the core concepts and patterns that apply across all client SDKs. For language-specific details and complete API documentation, see the reference pages for [Rust](/sdks/rust), [C#](/sdks/c-sharp), [TypeScript](/sdks/typescript), or [Unreal Engine](/sdks/unreal).
+This page describes the core concepts and patterns that apply across all client SDKs. For language-specific details and complete API documentation, see the reference pages for [Rust](/clients/rust), [C#](/clients/c-sharp), [TypeScript](/clients/typescript), or [Unreal Engine](/clients/unreal).
 
 ## Prerequisites
 
 Before using the SDK API, you must:
 
-1. [Generate client bindings](/sdks/codegen) using `spacetime generate`
-2. [Create a connection](/sdks/connection) to your database
+1. [Generate client bindings](/clients/codegen) using `spacetime generate`
+2. [Create a connection](/clients/connection) to your database
 
 ## Subscriptions
 
@@ -29,7 +29,7 @@ Typical flow:
 3. Read from the local cache and register callbacks
 4. Unsubscribe when the data is no longer needed
 
-For lifecycle guarantees and semantics, see [Subscriptions](/subscriptions) and [Subscription Semantics](/subscriptions/semantics).
+For lifecycle guarantees and semantics, see [Subscriptions](/clients/subscriptions) and [Subscription Semantics](/clients/subscriptions/semantics).
 
 ### Example
 
@@ -183,11 +183,11 @@ Conn->Db->User->OnDelete.AddDynamic(this, &AMyActor::OnUserDelete);
 
 ## Canonical API References
 
-- [Subscriptions](/subscriptions) - Lifecycle, usage patterns, and semantics
-- [Subscription Semantics](/subscriptions/semantics) - Detailed consistency and ordering behavior
-- [TypeScript Reference](/sdks/typescript#subscribe-to-queries) - `SubscriptionBuilder`, `SubscriptionHandle`, query builder API
-- [C# Reference](/sdks/c-sharp#subscribe-to-queries) - `SubscriptionBuilder`, `SubscriptionHandle`
-- [C# Query Builder API](/sdks/c-sharp#query-builder-api) - Typed subscription query builder
-- [Rust Reference](/sdks/rust#subscribe-to-queries) - `SubscriptionBuilder`, `SubscriptionHandle`
-- [Rust Query Builder API](/sdks/rust#query-builder-api) - Typed subscription query builder
-- [Unreal Reference](/sdks/unreal#subscriptions) - Unreal subscription APIs
+- [Subscriptions](/clients/subscriptions) - Lifecycle, usage patterns, and semantics
+- [Subscription Semantics](/clients/subscriptions/semantics) - Detailed consistency and ordering behavior
+- [TypeScript Reference](/clients/typescript#subscribe-to-queries) - `SubscriptionBuilder`, `SubscriptionHandle`, query builder API
+- [C# Reference](/clients/c-sharp#subscribe-to-queries) - `SubscriptionBuilder`, `SubscriptionHandle`
+- [C# Query Builder API](/clients/c-sharp#query-builder-api) - Typed subscription query builder
+- [Rust Reference](/clients/rust#subscribe-to-queries) - `SubscriptionBuilder`, `SubscriptionHandle`
+- [Rust Query Builder API](/clients/rust#query-builder-api) - Typed subscription query builder
+- [Unreal Reference](/clients/unreal#subscriptions) - Unreal subscription APIs

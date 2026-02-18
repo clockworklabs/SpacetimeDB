@@ -123,4 +123,4 @@ conn.db.person.onDelete((ctx, person) => {
 ## Next steps
 
 - See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](/sdks/typescript) for detailed API docs
+- Read the [TypeScript SDK Reference](/clients/typescript) for detailed API docs

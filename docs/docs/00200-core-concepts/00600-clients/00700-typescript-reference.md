@@ -1,6 +1,6 @@
 ---
 title: TypeScript Reference
-slug: /sdks/typescript
+slug: /clients/typescript
 ---
 
 
@@ -8,9 +8,9 @@ The SpacetimeDB client SDK for TypeScript contains all the tools you need to bui
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/sdks/codegen) - How to generate TypeScript bindings from your module
-- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
-- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](/clients/codegen) - How to generate TypeScript bindings from your module
+- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections
+- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
 
 | Name                                                              | Description                                                                                                                            |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |

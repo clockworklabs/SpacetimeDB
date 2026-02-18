@@ -1,6 +1,6 @@
 ---
-title: Subscription Reference
-slug: /subscriptions
+title: Subscriptions
+slug: /clients/subscriptions
 ---
 
 import Tabs from '@theme/Tabs';
@@ -143,7 +143,7 @@ conn.db().user().on_update(|ctx, old_user, new_user| {
 </Tabs>
 
 :::tip Typed Query Builders
-Type-safe query builders are available in TypeScript, C#, and Rust and are the recommended default. They provide auto-completion and compile-time type checking. For complete API details, see [TypeScript](/sdks/typescript#query-builder-api), [C#](/sdks/c-sharp#query-builder-api), and [Rust](/sdks/rust#query-builder-api) references.
+Type-safe query builders are available in TypeScript, C#, and Rust and are the recommended default. They provide auto-completion and compile-time type checking. For complete API details, see [TypeScript](/clients/typescript#query-builder-api), [C#](/clients/c-sharp#query-builder-api), and [Rust](/clients/rust#query-builder-api) references.
 :::
 
 ## How Subscriptions Work
@@ -191,13 +191,13 @@ Subscribing returns a handle that manages an individual subscription lifecycle.
 
 ### Canonical API References
 
-- [TypeScript subscription API](/sdks/typescript#subscribe-to-queries)
-- [TypeScript query builder API](/sdks/typescript#query-builder-api)
-- [C# subscription API](/sdks/c-sharp#subscribe-to-queries)
-- [C# query builder API](/sdks/c-sharp#query-builder-api)
-- [Rust subscription API](/sdks/rust#subscribe-to-queries)
-- [Rust query builder API](/sdks/rust#query-builder-api)
-- [Unreal subscription API](/sdks/unreal#subscriptions)
+- [TypeScript subscription API](/clients/typescript#subscribe-to-queries)
+- [TypeScript query builder API](/clients/typescript#query-builder-api)
+- [C# subscription API](/clients/c-sharp#subscribe-to-queries)
+- [C# query builder API](/clients/c-sharp#query-builder-api)
+- [Rust subscription API](/clients/rust#subscribe-to-queries)
+- [Rust query builder API](/clients/rust#query-builder-api)
+- [Unreal subscription API](/clients/unreal#subscriptions)
 
 ## Best Practices for Optimizing Server Compute and Reducing Serialization Overhead
 

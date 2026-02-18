@@ -1,7 +1,7 @@
 ---
 title: C# Reference
 toc_max_heading_level: 6
-slug: /sdks/c-sharp
+slug: /clients/c-sharp
 ---
 
 
@@ -9,9 +9,9 @@ The SpacetimeDB client for C# contains all the tools you need to build native cl
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/sdks/codegen) - How to generate C# bindings from your module
-- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections (important: C# requires manual connection advancement!)
-- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](/clients/codegen) - How to generate C# bindings from your module
+- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections (important: C# requires manual connection advancement!)
+- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
 
 | Name                                                              | Description                                                                                             |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |

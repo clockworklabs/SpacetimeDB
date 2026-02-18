@@ -304,7 +304,7 @@ These conventions align with each language's standard style guides and make your
 Tables can be **private** (default) or **public**:
 
 - **Private tables**: Visible only to [reducers](/functions/reducers) and the database owner. Clients cannot access them.
-- **Public tables**: Exposed for client read access through [subscriptions](/subscriptions). Writes still occur only through reducers.
+- **Public tables**: Exposed for client read access through [subscriptions](/clients/subscriptions). Writes still occur only through reducers.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">

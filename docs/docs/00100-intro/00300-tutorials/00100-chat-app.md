@@ -2733,6 +2733,6 @@ User <my-name> connected.
 
 Congratulations! You've built a chat app with SpacetimeDB.
 
-- Check out the [SDK Reference documentation](/sdks) for more advanced usage
+- Check out the [SDK Reference documentation](/clients) for more advanced usage
 - Explore the [Unity Tutorial](/docs/tutorials/unity) or [Unreal Tutorial](/docs/tutorials/unreal) for game development
 - Learn about [Procedures](/functions/procedures) for making external API calls

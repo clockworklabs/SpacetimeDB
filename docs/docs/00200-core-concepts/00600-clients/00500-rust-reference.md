@@ -1,7 +1,7 @@
 ---
 title: Rust Reference
 toc_max_heading_level: 6
-slug: /sdks/rust
+slug: /clients/rust
 ---
 
 
@@ -9,9 +9,9 @@ The SpacetimeDB client SDK for Rust contains all the tools you need to build nat
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/sdks/codegen) - How to generate Rust bindings from your module
-- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
-- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](/clients/codegen) - How to generate Rust bindings from your module
+- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections
+- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
 
 | Name                                                              | Description                                                                                                                            |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
