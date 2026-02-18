@@ -874,11 +874,42 @@ fn load_json_value(path: &Path) -> anyhow::Result<Option<serde_json::Value>> {
     Ok(Some(value))
 }
 
-/// Overlay `overlay` values onto `base` using top-level key replacement (shallow merge).
+fn overlay_children_arrays(base_children: &mut [serde_json::Value], overlay_children: Vec<serde_json::Value>) {
+    let merge_len = std::cmp::min(base_children.len(), overlay_children.len());
+    for (idx, overlay_child) in overlay_children.into_iter().enumerate().take(merge_len) {
+        let base_child = &mut base_children[idx];
+        match overlay_child {
+            serde_json::Value::Object(_) if base_child.is_object() => {
+                // Recursively apply overlay semantics to child objects.
+                overlay_json(base_child, overlay_child);
+            }
+            other => {
+                // For non-object child entries, replace value directly.
+                *base_child = other;
+            }
+        }
+    }
+}
+
+/// Overlay `overlay` values onto `base`.
+/// Most keys use top-level replacement. `children` is merged recursively by index,
+/// up to the lower of base/overlay lengths.
 fn overlay_json(base: &mut serde_json::Value, overlay: serde_json::Value) {
     if let (Some(base_obj), Some(overlay_obj)) = (base.as_object_mut(), overlay.as_object()) {
         for (key, value) in overlay_obj {
-            base_obj.insert(key.clone(), value.clone());
+            let value_owned = value.clone();
+            if key == "children" {
+                match (base_obj.get_mut("children"), value_owned) {
+                    (Some(serde_json::Value::Array(base_children)), serde_json::Value::Array(overlay_children)) => {
+                        overlay_children_arrays(base_children, overlay_children);
+                    }
+                    (_, other) => {
+                        base_obj.insert(key.clone(), other);
+                    }
+                }
+            } else {
+                base_obj.insert(key.clone(), value_owned);
+            }
         }
     }
 }
@@ -2590,6 +2621,157 @@ mod tests {
         assert_eq!(
             result.config.additional_fields.get("server").and_then(|v| v.as_str()),
             Some("local")
+        );
+    }
+
+    #[test]
+    fn test_children_overlay_merges_by_index_with_lower_count() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{
+                "database": "root",
+                "children": [
+                    { "database": "db-a", "server": "base-a" },
+                    { "database": "db-b", "server": "base-b" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("spacetime.local.json"),
+            r#"{
+                "children": [
+                    { "server": "local-a", "module-path": "./a" },
+                    { "server": "local-b", "module-path": "./b" },
+                    { "database": "db-extra", "server": "extra" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
+        let children = result.config.children.as_ref().unwrap();
+        assert_eq!(children.len(), 2, "child count should remain from base config");
+
+        assert_eq!(
+            children[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("db-a")
+        );
+        assert_eq!(
+            children[0].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local-a")
+        );
+        assert_eq!(
+            children[0]
+                .additional_fields
+                .get("module-path")
+                .and_then(|v| v.as_str()),
+            Some("./a")
+        );
+
+        assert_eq!(
+            children[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("db-b")
+        );
+        assert_eq!(
+            children[1].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local-b")
+        );
+        assert_eq!(
+            children[1]
+                .additional_fields
+                .get("module-path")
+                .and_then(|v| v.as_str()),
+            Some("./b")
+        );
+    }
+
+    #[test]
+    fn test_children_overlay_merges_recursively_for_nested_children() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{
+                "database": "root",
+                "children": [
+                    {
+                        "database": "parent-a",
+                        "children": [
+                            { "database": "grand-a1", "server": "base-g1" },
+                            { "database": "grand-a2", "server": "base-g2" }
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("spacetime.local.json"),
+            r#"{
+                "children": [
+                    {
+                        "children": [
+                            { "server": "local-g1", "module-path": "./nested" }
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
+        let children = result.config.children.as_ref().unwrap();
+        let grandchildren = children[0].children.as_ref().unwrap();
+        assert_eq!(grandchildren.len(), 2);
+
+        assert_eq!(
+            grandchildren[0]
+                .additional_fields
+                .get("database")
+                .and_then(|v| v.as_str()),
+            Some("grand-a1")
+        );
+        assert_eq!(
+            grandchildren[0]
+                .additional_fields
+                .get("server")
+                .and_then(|v| v.as_str()),
+            Some("local-g1")
+        );
+        assert_eq!(
+            grandchildren[0]
+                .additional_fields
+                .get("module-path")
+                .and_then(|v| v.as_str()),
+            Some("./nested")
+        );
+
+        assert_eq!(
+            grandchildren[1]
+                .additional_fields
+                .get("database")
+                .and_then(|v| v.as_str()),
+            Some("grand-a2")
+        );
+        assert_eq!(
+            grandchildren[1]
+                .additional_fields
+                .get("server")
+                .and_then(|v| v.as_str()),
+            Some("base-g2")
         );
     }
 
