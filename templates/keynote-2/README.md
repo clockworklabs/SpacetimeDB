@@ -91,7 +91,7 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 **Server Machine (Variant A - PhoenixNAP):**
 
-- s3.c3.medium (8 cores, 32 GB Memory)
+- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory
 
 **Server Machine (Variant B - Google Cloud):**
 
