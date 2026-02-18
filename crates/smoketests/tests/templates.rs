@@ -12,6 +12,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use spacetimedb_smoketests::{pnpm_path, random_string, workspace_root, Smoketest};
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -209,6 +210,38 @@ fn run_dotnet(args: &[&str], cwd: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Clears a package id from the global NuGet package cache to avoid stale
+/// versions with identical semantic version numbers shadowing local packed
+/// packages.
+fn clear_cached_nuget_package(package_id: &str) -> Result<()> {
+    let package_id = package_id.to_lowercase();
+
+    let mut candidate_roots = Vec::new();
+    if let Some(path) = env::var_os("NUGET_PACKAGES") {
+        candidate_roots.push(PathBuf::from(path));
+    }
+    if let Some(home) = env::var_os("HOME") {
+        candidate_roots.push(PathBuf::from(home).join(".nuget").join("packages"));
+    }
+    if let Some(userprofile) = env::var_os("USERPROFILE") {
+        candidate_roots.push(PathBuf::from(userprofile).join(".nuget").join("packages"));
+    }
+
+    for root in candidate_roots {
+        let package_dir = root.join(&package_id);
+        if package_dir.exists() {
+            eprintln!(
+                "[TEMPLATES] Clearing NuGet cache for {} at {:?}",
+                package_id, package_dir
+            );
+            fs::remove_dir_all(&package_dir)
+                .with_context(|| format!("Failed to remove NuGet cache directory {:?}", package_dir))?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Builds the TypeScript SDK (`crates/bindings-typescript`).
 ///
 /// Should be called once before testing any TypeScript templates.
@@ -257,6 +290,19 @@ fn setup_rust_client_sdk(project_path: &Path) -> Result<()> {
 /// from source, and registers them as local NuGet sources.
 fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
     eprintln!("[TEMPLATES] Setting up C# NuGet sources at {:?}", project_path);
+
+    // NuGet can reuse stale packages from global cache even if we add local
+    // package sources below. Remove the relevant package IDs so restore/publish
+    // uses freshly packed local artifacts.
+    for package in &[
+        "SpacetimeDB.Runtime",
+        "SpacetimeDB.BSATN.Runtime",
+        "SpacetimeDB.Codegen",
+        "SpacetimeDB.BSATN.Codegen",
+        "SpacetimeDB.ClientSDK",
+    ] {
+        clear_cached_nuget_package(package)?;
+    }
 
     let nuget_config = project_path.join("nuget.config");
     if !nuget_config.exists() {
