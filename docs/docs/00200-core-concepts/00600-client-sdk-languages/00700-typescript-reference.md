@@ -298,7 +298,7 @@ Gracefully close the `DbConnection`. Throws an error if the connection is alread
 | Name                                                    | Description                                                 |
 | ------------------------------------------------------- | ----------------------------------------------------------- |
 | [`SubscriptionBuilder` type](#type-subscriptionbuilder) | Builder-pattern constructor to register subscribed queries. |
-| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscripion.                               |
+| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscription.                              |
 
 #### Type `SubscriptionBuilder`
 
@@ -322,7 +322,7 @@ interface DbContext {
 }
 ```
 
-Subscribe to queries by calling `ctx.subscription_builder()` and chaining configuration methods, then calling `.subscribe(queries)`.
+Subscribe to queries by calling `ctx.subscriptionBuilder()` and chaining configuration methods, then calling `.subscribe(queries)`.
 
 ##### Callback `onApplied`
 
@@ -448,6 +448,27 @@ import { and, or, not } from './module_bindings';
 tables.user.where(r => and(r.age.gte(18), r.age.lt(65)))
 tables.user.where(r => or(r.online.eq(true), r.name.eq('Admin')))
 tables.user.where(r => not(r.online.eq(true)))
+```
+
+### Semijoins
+
+Semijoins match rows across two tables and return rows from one side:
+
+- `leftSemijoin(...)` returns rows from the left side that match at least one row on the right.
+- `rightSemijoin(...)` returns rows from the right side that match at least one row on the left.
+- The join predicate is built from indexed row expressions and should compare indexed columns.
+- Filters before a semijoin apply to the pre-join source side. Filters after a semijoin apply to the returned side.
+
+```typescript
+const leftSide = tables.player
+  .where(p => p.score.gte(1000))
+  .leftSemijoin(tables.playerLevel, (p, pl) => p.id.eq(pl.playerId))
+  .where(p => p.online.eq(true));
+
+const rightSide = tables.player
+  .where(p => p.score.gte(1000))
+  .rightSemijoin(tables.playerLevel, (p, pl) => p.id.eq(pl.playerId))
+  .where(pl => pl.level.gte(10));
 ```
 
 ### Using query builders with subscriptions
