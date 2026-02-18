@@ -115,7 +115,7 @@ The project's `lib.rs` will contain the following skeleton:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String
 }

@@ -522,7 +522,7 @@ Reducers are designed to be free of side effects. They should only modify tables
 static mut COUNTER: u64 = 0;
 
 // ✅ Store state in a table instead
-#[spacetimedb::table(name = counter)]
+#[spacetimedb::table(accessor = counter)]
 pub struct Counter {
     #[primary_key]
     id: u32,
@@ -626,7 +626,7 @@ public partial class Module
 use spacetimedb::{ScheduleAt, ReducerContext, ProcedureContext, Table};
 use std::time::Duration;
 
-#[spacetimedb::table(name = fetch_schedule, scheduled(fetch_external_data))]
+#[spacetimedb::table(accessor = fetch_schedule, scheduled(fetch_external_data))]
 pub struct FetchSchedule {
     #[primary_key]
     #[auto_inc]

@@ -353,7 +353,7 @@ Database tables store the application's persistent state. They are defined using
   - Avoid manually inserting values into `#[auto_inc]` fields that are also `#[unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
   - Ensure `public` is set if clients need access.
   - Do not manually derive `SpacetimeType`.
-  - Define indexes _within_ the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
+  - Define indexes _within_ the main `#[table(accessor=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires an `accessor`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```rust
 use spacetimedb::{table, Identity, Timestamp, SpacetimeType, Table}; // Added Table import
@@ -891,7 +891,7 @@ Views are defined using the `#[view]` macro and must specify a `name` and `publi
 use spacetimedb::{view, ViewContext, AnonymousViewContext, table, SpacetimeType};
 use spacetimedb_lib::Identity;
 
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -901,7 +901,7 @@ pub struct Player {
     name: String,
 }
 
-#[spacetimedb::table(name = player_level, public)]
+#[spacetimedb::table(accessor = player_level, public)]
 pub struct PlayerLevel {
     #[unique]
     player_id: u64,
@@ -1335,7 +1335,7 @@ Database tables store the application's persistent state. They are defined using
   - Avoid manually inserting values into `[AutoInc]` fields that are also `[Unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
   - Ensure `Public = true` is set if clients need access.
   - Always use the `partial` keyword on table definitions.
-  - Define indexes _within_ the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
+  - Define indexes _within_ the main `#[table(accessor=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires an `accessor`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```csharp
 using SpacetimeDB;

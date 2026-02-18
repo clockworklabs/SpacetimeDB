@@ -51,7 +51,7 @@ Use the `[SpacetimeDB.PrimaryKey]` attribute to mark a field as the primary key.
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     id: u64,
@@ -136,7 +136,7 @@ public partial struct Inventory
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = inventory, public, index(name = inventory_index, btree(columns = [user_id, item_id])))]
+#[spacetimedb::table(accessor = inventory, public, index(name = inventory_index, btree(columns = [user_id, item_id])))]
 pub struct Inventory {
     #[primary_key]
     #[auto_inc]
@@ -256,7 +256,7 @@ Primary keys add indexing overhead. If your table is only accessed by iterating 
 **Auto-incrementing IDs**: Combine `primaryKey()` with `autoInc()` for automatically assigned unique identifiers:
 
 ```rust
-#[spacetimedb::table(name = post, public)]
+#[spacetimedb::table(accessor = post, public)]
 pub struct Post {
     #[primary_key]
     #[auto_inc]
@@ -269,7 +269,7 @@ pub struct Post {
 **Identity as primary key**: Use the caller's identity as the primary key for user-specific data:
 
 ```rust
-#[spacetimedb::table(name = user_profile, public)]
+#[spacetimedb::table(accessor = user_profile, public)]
 pub struct UserProfile {
     #[primary_key]
     identity: Identity,
@@ -324,7 +324,7 @@ Use the `[SpacetimeDB.Unique]` attribute.
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     id: u32,
