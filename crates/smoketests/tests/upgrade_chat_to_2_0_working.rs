@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -13,14 +13,19 @@ use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
 use spacetimedb_smoketests::workspace_root;
 
+mod test_util;
+use test_util::{prepare_pinned_chat_workspace, run_cmd_ok, run_cmd_ok_with_stdin};
+
 // NOTE: This test is intentionally manual/local-only and not meant for CI.
 //
 // It validates a 1.0 -> 2.0 upgrade scenario using quickstart-chat:
-// 1) build 1.0 CLI/server/client/module from this pinned git ref
+// 1) install a 1.0 CLI via `spacetime version install`
+// 2) build 1.0 server/client/module from this pinned git ref
 // 3) start 1.0 server and publish module
 // 4) restart as 2.0 server on the same data dir
 // 5) run both 1.0 and 2.0 quickstart clients, exchange messages, assert both observed
-const V1_GIT_REF: &str = "v1.12.0";
+const V1_GIT_REF: &str = "668e56624e4525a30a85000af6a984bb5ada0372";
+const V1_RELEASE_VERSION: &str = "1.12.0";
 
 fn log_step(msg: &str) {
     eprintln!("[manual-upgrade] {msg}");
@@ -32,88 +37,6 @@ fn exe_name(base: &str) -> String {
     } else {
         base.to_string()
     }
-}
-
-fn run_cmd(args: &[OsString], cwd: &Path) -> Result<Output> {
-    let rendered = args
-        .iter()
-        .map(|s| s.to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join(" ");
-    log_step(&format!("run: (cd {}) {rendered}", cwd.display()));
-    let mut cmd = Command::new(&args[0]);
-    cmd.args(&args[1..]).current_dir(cwd);
-    cmd.output()
-        .with_context(|| format!("failed to execute {:?}", args.iter().collect::<Vec<_>>()))
-}
-
-fn run_cmd_with_stdin(args: &[OsString], cwd: &Path, stdin_input: &str) -> Result<Output> {
-    let rendered = args
-        .iter()
-        .map(|s| s.to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join(" ");
-    log_step(&format!("run (stdin): (cd {}) {rendered}", cwd.display()));
-
-    let mut cmd = Command::new(&args[0]);
-    cmd.args(&args[1..])
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .with_context(|| format!("failed to execute {:?}", args.iter().collect::<Vec<_>>()))?;
-    {
-        let stdin = child.stdin.as_mut().context("missing child stdin")?;
-        stdin.write_all(stdin_input.as_bytes())?;
-    }
-    child
-        .wait_with_output()
-        .with_context(|| format!("failed waiting for {:?}", args.iter().collect::<Vec<_>>()))
-}
-
-fn run_cmd_ok(args: &[OsString], cwd: &Path) -> Result<String> {
-    let out = run_cmd(args, cwd)?;
-    if !out.status.success() {
-        bail!(
-            "command failed: {:?}\nstdout: {}\nstderr: {}",
-            args,
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    if !stdout.trim().is_empty() {
-        log_step(&format!("stdout:\n{}", stdout.trim()));
-    }
-    if !stderr.trim().is_empty() {
-        log_step(&format!("stderr:\n{}", stderr.trim()));
-    }
-    Ok(stdout)
-}
-
-fn run_cmd_ok_with_stdin(args: &[OsString], cwd: &Path, stdin_input: &str) -> Result<String> {
-    let out = run_cmd_with_stdin(args, cwd, stdin_input)?;
-    if !out.status.success() {
-        bail!(
-            "command failed: {:?}\nstdout: {}\nstderr: {}",
-            args,
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    if !stdout.trim().is_empty() {
-        log_step(&format!("stdout:\n{}", stdout.trim()));
-    }
-    if !stderr.trim().is_empty() {
-        log_step(&format!("stderr:\n{}", stderr.trim()));
-    }
-    Ok(stdout)
 }
 
 fn pick_unused_port() -> Result<u16> {
@@ -338,16 +261,26 @@ fn write_line(child: &mut Child, line: &str) -> Result<()> {
 #[ignore = "manual local-only: long-running, networked, and builds historical artifacts"]
 fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     log_step("starting manual upgrade mixed-clients quickstart test");
-    log_step(&format!("pinned old source ref={}", V1_GIT_REF));
+    log_step(&format!(
+        "pinned old source ref={}, old release version={}",
+        V1_GIT_REF, V1_RELEASE_VERSION
+    ));
     let repo = workspace_root();
     let temp = tempfile::tempdir()?;
     let temp_path = temp.path();
-    let old_worktree = temp_path.join("old");
+    let old_worktree_dir = temp_path.join("old");
     let data_dir = temp_path.join("db-data");
     std::fs::create_dir_all(&data_dir)?;
     log_step(&format!("workspace={}", repo.display()));
     log_step(&format!("temp root={}", temp_path.display()));
     log_step(&format!("data dir={}", data_dir.display()));
+
+    let old_prepared = prepare_pinned_chat_workspace(&repo, &old_worktree_dir, V1_GIT_REF)?;
+    let old_worktree = old_prepared.worktree_dir;
+    let old_cli = old_prepared.cli_path;
+    let old_client = old_prepared.client_path;
+    let old_module_dir = old_prepared.module_dir;
+    let old_publish_path_flag = old_prepared.publish_path_flag;
 
     // Prepare current binaries (including update helper needed by `version install` from target dir).
     log_step("building current spacetimedb-cli and spacetimedb-update");
@@ -355,6 +288,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         &[
             OsString::from("cargo"),
             OsString::from("build"),
+            OsString::from("--locked"),
             OsString::from("-p"),
             OsString::from("spacetimedb-cli"),
             OsString::from("-p"),
@@ -372,67 +306,28 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         current_cli.display()
     );
 
-    // Build 1.0 sources from pinned ref.
-    log_step(&format!("creating worktree at ref {}", V1_GIT_REF));
+    // Install a pinned 1.0 release via the system `spacetime` command.
+    log_step(&format!(
+        "installing and selecting release {} via system spacetime",
+        V1_RELEASE_VERSION
+    ));
     run_cmd_ok(
         &[
-            OsString::from("git"),
-            OsString::from("worktree"),
-            OsString::from("add"),
-            old_worktree.clone().into_os_string(),
-            OsString::from(V1_GIT_REF),
+            OsString::from("spacetime"),
+            OsString::from("version"),
+            OsString::from("install"),
+            OsString::from(V1_RELEASE_VERSION),
+            OsString::from("--use"),
+            OsString::from("--yes"),
         ],
         &repo,
     )?;
+    let installed_v1_cli = PathBuf::from("spacetime");
+    log_step("using system 'spacetime' command as v1 CLI");
 
-    let cleanup_worktree = || {
-        let _ = Command::new("git")
-            .args(["worktree", "remove", "--force"])
-            .arg(&old_worktree)
-            .current_dir(&repo)
-            .status();
-    };
+    // Build 1.0 sources from pinned ref.
 
     let old_result: Result<()> = (|| {
-        log_step("building old spacetimedb-cli and spacetimedb-standalone");
-        run_cmd_ok(
-            &[
-                OsString::from("cargo"),
-                OsString::from("build"),
-                OsString::from("-p"),
-                OsString::from("spacetimedb-cli"),
-                OsString::from("-p"),
-                OsString::from("spacetimedb-standalone"),
-            ],
-            &old_worktree,
-        )?;
-        let old_cli = old_worktree
-            .join("target")
-            .join("debug")
-            .join(exe_name("spacetimedb-cli"));
-        anyhow::ensure!(old_cli.exists(), "old CLI binary missing at {}", old_cli.display());
-
-        log_step("running v1 codegen for chat-console-rs (cli generate)");
-        run_cmd_ok(
-            &[
-                old_cli.clone().into_os_string(),
-                OsString::from("generate"),
-                OsString::from("--project-path"),
-                OsString::from("spacetimedb/"),
-                OsString::from("--out-dir"),
-                OsString::from("src/module_bindings/"),
-                OsString::from("--lang"),
-                OsString::from("rust"),
-            ],
-            &old_worktree.join("templates/chat-console-rs"),
-        )?;
-
-        log_step("building old quickstart chat client");
-        run_cmd_ok(
-            &[OsString::from("cargo"), OsString::from("build")],
-            &old_worktree.join("templates/chat-console-rs"),
-        )?;
-
         run_cmd_ok(
             &[
                 current_cli.clone().into_os_string(),
@@ -453,11 +348,6 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
             &repo.join("templates/chat-console-rs"),
         )?;
 
-        let old_client = old_worktree
-            .join("templates/chat-console-rs")
-            .join("target")
-            .join("debug")
-            .join(exe_name("rust-quickstart-chat"));
         anyhow::ensure!(
             old_client.exists(),
             "old chat client not found at {}",
@@ -474,7 +364,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
             new_client.display()
         );
 
-        log_step(&format!("v1 CLI path={}", old_cli.display()));
+        log_step(&format!("v1 CLI path={}", installed_v1_cli.display()));
         log_step(&format!("old client path={}", old_client.display()));
         log_step(&format!("new client path={}", new_client.display()));
 
@@ -482,7 +372,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         let old_port = pick_unused_port()?;
         let old_url = format!("http://127.0.0.1:{old_port}");
         log_step("starting old server for initial publish");
-        let (mut old_server, old_server_logs) = spawn_server(&old_cli, &data_dir, old_port)?;
+        let (mut old_server, old_server_logs) = spawn_server(&installed_v1_cli, &data_dir, old_port)?;
         if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
             dump_server_logs("old server", &old_server_logs);
             kill_child(&mut old_server);
@@ -493,14 +383,12 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         log_step(&format!("publishing old module to db {}", db_name));
         let publish_out = run_cmd_ok(
             &[
-                old_cli.clone().into_os_string(),
+                installed_v1_cli.clone().into_os_string(),
                 OsString::from("publish"),
                 OsString::from("--server"),
                 OsString::from(&old_url),
-                OsString::from("--project-path"),
-                old_worktree
-                    .join("templates/chat-console-rs/spacetimedb")
-                    .into_os_string(),
+                OsString::from(old_publish_path_flag),
+                old_module_dir.into_os_string(),
                 OsString::from("--yes"),
                 OsString::from(&db_name),
             ],
@@ -587,8 +475,6 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         Ok(())
     })();
 
-    log_step("cleaning up temporary git worktree");
-    cleanup_worktree();
     log_step("manual test finished");
     old_result
 }
