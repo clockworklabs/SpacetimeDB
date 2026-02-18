@@ -613,63 +613,6 @@ fn random_suffix() -> u32 {
     ((now ^ (pid << 16)) % 1_000_000) as u32
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_create_default_spacetime_config_if_missing_creates_expected_config() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let project_path = temp.path();
-        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
-
-        let created = create_default_spacetime_config_if_missing(project_path)
-            .unwrap()
-            .expect("expected config to be created");
-        assert_eq!(created, project_path.join("spacetime.json"));
-
-        let content = std::fs::read_to_string(&created).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert!(parsed.get("database").is_none());
-        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("maincloud"));
-        assert_eq!(
-            parsed.get("module-path").and_then(|v| v.as_str()),
-            Some("./spacetimedb")
-        );
-    }
-
-    #[test]
-    fn test_create_local_spacetime_config_if_missing_creates_database_override() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let project_path = temp.path();
-
-        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
-
-        let created = create_local_spacetime_config_if_missing(project_path, "my-app")
-            .unwrap()
-            .expect("expected local config to be created");
-        assert_eq!(created, project_path.join("spacetime.local.json"));
-
-        let content = std::fs::read_to_string(&created).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        let db = parsed
-            .get("database")
-            .and_then(|v| v.as_str())
-            .expect("database should be present");
-
-        assert!(
-            db.starts_with("my-app-"),
-            "expected database to start with `my-app-`, got: {db}"
-        );
-        let suffix = &db["my-app-".len()..];
-        assert_eq!(suffix.len(), 6);
-        assert!(suffix.chars().all(|c| c.is_ascii_digit()));
-
-        let obj = parsed.as_object().expect("local config should be a JSON object");
-        assert_eq!(obj.len(), 1, "local config should only contain database");
-    }
-}
-
 async fn get_template_config_non_interactive(
     options: &InitOptions,
     project_name: String,
@@ -1978,4 +1921,61 @@ fn check_for_emscripten_and_cmake() -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_default_spacetime_config_if_missing_creates_expected_config() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
+
+        let created = create_default_spacetime_config_if_missing(project_path)
+            .unwrap()
+            .expect("expected config to be created");
+        assert_eq!(created, project_path.join("spacetime.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed.get("database").is_none());
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("maincloud"));
+        assert_eq!(
+            parsed.get("module-path").and_then(|v| v.as_str()),
+            Some("./spacetimedb")
+        );
+    }
+
+    #[test]
+    fn test_create_local_spacetime_config_if_missing_creates_database_override() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
+
+        let created = create_local_spacetime_config_if_missing(project_path, "my-app")
+            .unwrap()
+            .expect("expected local config to be created");
+        assert_eq!(created, project_path.join("spacetime.local.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let db = parsed
+            .get("database")
+            .and_then(|v| v.as_str())
+            .expect("database should be present");
+
+        assert!(
+            db.starts_with("my-app-"),
+            "expected database to start with `my-app-`, got: {db}"
+        );
+        let suffix = &db["my-app-".len()..];
+        assert_eq!(suffix.len(), 6);
+        assert!(suffix.chars().all(|c| c.is_ascii_digit()));
+
+        let obj = parsed.as_object().expect("local config should be a JSON object");
+        assert_eq!(obj.len(), 1, "local config should only contain database");
+    }
 }
