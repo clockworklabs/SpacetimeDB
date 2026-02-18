@@ -371,7 +371,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .get_one::<PathBuf>("module_path")
             .context("failed to read module_path from config")?
         {
-            spacetimedb_dir = path;
+            spacetimedb_dir = if path.is_absolute() {
+                path
+            } else {
+                project_dir.join(path)
+            };
         }
     }
 
