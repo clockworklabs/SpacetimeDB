@@ -2046,4 +2046,32 @@ mod tests {
             "number of system sequences exceeds reserved sequence range"
         );
     }
+
+    /// Regression test: StIndexAlgorithm round-trips must preserve the algorithm.
+    /// A bug in #3976 converted Hash -> BTreeAlgorithm on read-back, which caused
+    /// `check_compatible` to fail on any republish of a module with hash indexes
+    /// after a server restart.
+    #[test]
+    fn test_index_algorithm_roundtrip() {
+        use spacetimedb_primitives::col_list;
+
+        let cases = [
+            IndexAlgorithm::BTree(BTreeAlgorithm {
+                columns: col_list![0, 1],
+            }),
+            IndexAlgorithm::Hash(HashAlgorithm {
+                columns: col_list![2, 3],
+            }),
+            IndexAlgorithm::Direct(DirectAlgorithm { column: ColId(0) }),
+        ];
+
+        for original in &cases {
+            let st: StIndexAlgorithm = original.clone().into();
+            let roundtripped: IndexAlgorithm = st.into();
+            assert_eq!(
+                *original, roundtripped,
+                "IndexAlgorithm round-trip failed: {original:?} -> {roundtripped:?}"
+            );
+        }
+    }
 }
