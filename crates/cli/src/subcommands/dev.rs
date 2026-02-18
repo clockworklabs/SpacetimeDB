@@ -502,6 +502,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else if let Some(cmd) = args.get_one::<String>("run") {
         // Explicit CLI flag takes priority
         Some(cmd.clone())
+    } else if no_config {
+        // --no-config means "don't read or write spacetime config files".
+        detect_client_command(&project_dir).map(|(cmd, _)| cmd)
     } else if let Some(sc) = spacetime_config {
         // Reuse already-loaded config instead of loading again
         if let Some(ref lc) = loaded_config {
