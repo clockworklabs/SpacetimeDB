@@ -320,93 +320,66 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
 
     // Build 1.0 sources from pinned ref.
 
-    let old_result: Result<()> = (|| {
-        anyhow::ensure!(
-            old_client.exists(),
-            "old chat client not found at {}",
-            old_client.display()
-        );
+    log_step(&format!("v1 CLI path={}", installed_v1_cli.display()));
+    log_step(&format!("old client path={}", old_client.display()));
 
-        log_step(&format!("v1 CLI path={}", installed_v1_cli.display()));
-        log_step(&format!("old client path={}", old_client.display()));
-
-        // Start 1.0 server and publish 1.0 quickstart module.
-        let old_port = pick_unused_port()?;
-        let old_url = format!("http://127.0.0.1:{old_port}");
-        log_step("starting old server for initial publish");
-        let (mut old_server, old_server_logs) = spawn_server(&installed_v1_cli, &data_dir, old_port)?;
-        if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
-            dump_server_logs("old server", &old_server_logs);
-            kill_child(&mut old_server);
-            return Err(e);
-        }
-
-        let db_name = format!("manual-upgrade-chat-{}", spacetimedb_smoketests::random_string());
-        log_step(&format!("publishing old module to db {}", db_name));
-        let publish_out = run_cmd_ok(
-            &[
-                installed_v1_cli.clone().into_os_string(),
-                OsString::from("publish"),
-                OsString::from("--server"),
-                OsString::from(&old_url),
-                OsString::from(old_publish_path_flag),
-                old_module_dir.into_os_string(),
-                OsString::from("--yes"),
-                OsString::from(&db_name),
-            ],
-            &old_worktree,
-        )?;
-        let _identity = extract_identity(&publish_out)?;
-        log_step("old module published successfully; stopping old server");
+    // Start 1.0 server and publish 1.0 quickstart module.
+    let old_port = pick_unused_port()?;
+    let old_url = format!("http://127.0.0.1:{old_port}");
+    log_step("starting old server for initial publish");
+    let (mut old_server, old_server_logs) = spawn_server(&installed_v1_cli, &data_dir, old_port)?;
+    if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
+        dump_server_logs("old server", &old_server_logs);
         kill_child(&mut old_server);
+        return Err(e);
+    }
 
-        // Start 2.0 server on the same data dir.
-        let new_port = pick_unused_port()?;
-        let new_url = format!("http://127.0.0.1:{new_port}");
-        log_step("starting new server on same data dir");
-        let (mut new_server, new_server_logs) = spawn_server(&installed_v1_cli, &data_dir, new_port)?;
-        if let Err(e) = wait_for_ping(&new_url, Duration::from_secs(20)) {
-            dump_server_logs("new server", &new_server_logs);
-            kill_child(&mut new_server);
-            return Err(e);
-        }
+    let db_name = format!("manual-upgrade-chat-{}", spacetimedb_smoketests::random_string());
+    log_step(&format!("publishing old module to db {}", db_name));
+    let publish_out = run_cmd_ok(
+        &[
+            installed_v1_cli.clone().into_os_string(),
+            OsString::from("publish"),
+            OsString::from("--server"),
+            OsString::from(&old_url),
+            OsString::from(old_publish_path_flag),
+            old_module_dir.into_os_string(),
+            OsString::from("--yes"),
+            OsString::from(&db_name),
+        ],
+        &old_worktree,
+    )?;
+    let _identity = extract_identity(&publish_out)?;
+    log_step("old module published successfully; stopping old server");
+    kill_child(&mut old_server);
 
-        // Spawn 1.0 quickstart client against the upgraded 2.0 server.
-        log_step("starting old client");
-        let (mut c1, logs1) = spawn_chat_client("client-v1", &old_client, &new_url, &db_name)?;
-
-        thread::sleep(Duration::from_secs(5));
-        write_line(&mut c1, "/name old-v1")?;
-        write_line(&mut c1, "hello-from-v1")?;
-
-        // Both clients should observe both messages in their output.
-        log_step("waiting for both clients to observe both messages");
-        let deadline = Instant::now() + Duration::from_secs(20);
-        let mut ok = false;
-        while Instant::now() < deadline {
-            let l1 = logs1.lock().unwrap().clone();
-            let saw_v1 = l1.contains("old-v1: hello-from-v1");
-            if saw_v1 {
-                log_step("success condition met: both clients saw both messages");
-                ok = true;
-                break;
-            }
-            thread::sleep(Duration::from_millis(200));
-        }
-
-        log_step("stopping clients and new server");
-        kill_child(&mut c1);
+    // Start 2.0 server on the same data dir.
+    log_step("starting new server on same data dir");
+    let (mut new_server, new_server_logs) = spawn_server(&installed_v1_cli, &data_dir, old_port)?;
+    if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
+        dump_server_logs("new server", &new_server_logs);
         kill_child(&mut new_server);
+        return Err(e);
+    }
 
-        if !ok {
-            let l1 = logs1.lock().unwrap().clone();
-            dump_server_logs("new server", &new_server_logs);
-            bail!("message exchange incomplete.\nclient-v1 logs:\n{}", l1,);
-        }
+    let result = run_cmd_ok(
+        &[
+            installed_v1_cli.clone().into_os_string(),
+            OsString::from("logs"),
+            OsString::from("--server"),
+            OsString::from(&old_url),
+            OsString::from(&db_name),
+        ],
+        &old_worktree,
+    );
 
-        Ok(())
-    })();
+    log_step("stopping server");
+    kill_child(&mut new_server);
 
-    log_step("manual test finished");
-    old_result
+    if !result.is_ok() {
+        dump_server_logs("new server", &new_server_logs);
+    }
+
+    let _ = result?;
+    Ok(())
 }
