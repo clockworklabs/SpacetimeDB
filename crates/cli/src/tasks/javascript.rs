@@ -1,13 +1,18 @@
 use anyhow::Context;
 use regex::Regex;
-use rolldown::{Bundler, BundlerOptions, Either, SourceMapType};
+use rolldown::{BundleOutput, Bundler, BundlerOptions, Either, SourceMapType};
+use rolldown_error::{BuildDiagnostic, DiagnosableResolveError, DiagnosticOptions, Severity};
 use rolldown_utils::indexmap::FxIndexMap;
 use rolldown_utils::js_regex::HybridRegex;
 use rolldown_utils::pattern_filter::StringOrRegex;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::{Builder, Handle, Runtime};
+
+use crate::ExitWithCode;
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -38,6 +43,33 @@ where
 
 pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
     let cwd = fs::canonicalize(project_path)?;
+
+    let mut tsc_path = cwd.join("node_modules/.bin/tsc");
+    if cfg!(windows) {
+        tsc_path.set_extension(".cmd");
+    }
+    if tsc_path.exists() {
+        let status = std::process::Command::new(tsc_path)
+            .arg("--noEmit")
+            .current_dir(&cwd)
+            .status()
+            .context("Failed to execute tsc")?;
+        if !status.success() {
+            if let Some(code) = status.code() {
+                if let Ok(code) = u8::try_from(code).map(ExitCode::from) {
+                    anyhow::bail!(ExitWithCode(code));
+                }
+            }
+            // For an abnormal exit, show the details of the status.
+            anyhow::bail!("tsc exited with {status}");
+        }
+    } else {
+        eprintln!(
+            "tsc not found in node_modules. Make sure you have the `typescript` package \
+             as a dev-dependency and that your dependencies are installed."
+        )
+    }
+
     let mut bundler = Bundler::new(BundlerOptions {
         input: Some(vec!["./src/index.ts".to_string().into()]),
         cwd: Some(cwd.clone()),
@@ -188,14 +220,43 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         strict_execution_order: None,
     })?;
 
-    let bundle_output = run_blocking(async move { bundler.write().await })?;
+    let bundle_result = run_blocking(async move { bundler.write().await });
 
-    bundle_output.warnings.into_iter().for_each(|w| {
-        eprintln!("Rolldown warning: {w}");
-    });
+    let (mut bundle_result, diagnostics) = match bundle_result {
+        Ok(BundleOutput { warnings, assets }) => (Some(assets), warnings),
+        Err(errors) => (None, errors.into_vec()),
+    };
 
-    let output_chunk = bundle_output
-        .assets
+    let color = std::io::stderr().is_terminal();
+    let diag_options = DiagnosticOptions { cwd };
+    for mut diag in diagnostics {
+        // If an import failed to resolve, force it to be an error.
+        if let Some(err) = diag.downcast_mut::<DiagnosableResolveError>() {
+            err.reason = "Module not found.".into();
+            err.help = Some("You may have forgotten to install dependencies with your package manager.".into());
+            // `BuildDiagnostic` doesn't let us change its severity to error. Instead, we
+            // construct a fresh `BuildDiagnostic` (which will have Severity::Error), then
+            // swap in the real `DiagnosableResolveError`.
+            let mut new_diag = BuildDiagnostic::resolve_error(
+                Default::default(),
+                Default::default(),
+                rolldown_error::DiagnosableArcstr::String(Default::default()),
+                Default::default(),
+                err.diagnostic_kind,
+                Default::default(),
+            );
+            std::mem::swap(new_diag.downcast_mut::<DiagnosableResolveError>().unwrap(), err);
+            diag = new_diag;
+        }
+        // if there are any errors, we want to bail after printing
+        if diag.severity() == Severity::Error {
+            bundle_result = None;
+        }
+        eprintln!("{}", diag.to_diagnostic_with(&diag_options).convert_to_string(color));
+    }
+    let bundle_assets = bundle_result.ok_or(ExitWithCode::FAILURE)?;
+
+    let output_chunk = bundle_assets
         .into_iter()
         .find_map(|chunk| match chunk {
             rolldown_common::Output::Chunk(chunk) if chunk.is_entry && chunk.filename == "bundle.js" => Some(chunk),

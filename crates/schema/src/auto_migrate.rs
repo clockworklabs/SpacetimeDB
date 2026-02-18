@@ -942,11 +942,11 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Id
                     Ok(())
                 }
                 Diff::MaybeChange { old, new } => {
-                    if old.codegen_name != new.codegen_name {
+                    if old.accessor_name != new.accessor_name {
                         Err(AutoMigrateError::ChangeIndexAccessor {
                             index: old.name.clone(),
-                            old_accessor: old.codegen_name.clone(),
-                            new_accessor: new.codegen_name.clone(),
+                            old_accessor: old.accessor_name.clone(),
+                            new_accessor: new.accessor_name.clone(),
                         }
                         .into())
                     } else {

@@ -124,8 +124,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         .into_iter()
         .map(|ty| {
             validator.core.validate_type_def(ty).map(|type_def| {
-                refmap.insert(type_def.ty, type_def.name.clone());
-                (type_def.name.clone(), type_def)
+                refmap.insert(type_def.ty, type_def.accessor_name.clone());
+                (type_def.accessor_name.clone(), type_def)
             })
         })
         .collect_all_errors::<HashMap<_, _>>();
@@ -364,7 +364,8 @@ impl ModuleValidatorV9<'_> {
         let (reducer_name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
         let name = ReducerName::new(reducer_name.clone());
         let def = ReducerDef {
-            name,
+            name: name.clone(),
+            accessor_name: name.clone(),
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -408,7 +409,8 @@ impl ModuleValidatorV9<'_> {
             (name, params_for_generate, return_type_for_generate).combine_errors()?;
 
         Ok(ProcedureDef {
-            name,
+            name: name.clone(),
+            accessor_name: name,
             params,
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -831,7 +833,7 @@ impl CoreValidator<'_> {
         let (name, (ty, custom_ordering)) = (name, ty_custom_ordering).combine_errors()?;
 
         Ok(TypeDef {
-            name,
+            accessor_name: name,
             ty,
             custom_ordering,
         })
@@ -1190,8 +1192,8 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
         Ok(IndexDef {
             name: name.clone(),
-            accessor_name: name.clone(),
-            codegen_name,
+            accessor_name: codegen_name,
+            source_name: name,
             algorithm,
         })
     }
@@ -1229,8 +1231,8 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
         Ok(IndexDef {
             name: name.clone(),
-            accessor_name: source_name,
-            codegen_name: Some(identifier(name)?),
+            accessor_name: Some(identifier(source_name.clone())?),
+            source_name,
             algorithm,
         })
     }
@@ -1797,21 +1799,21 @@ mod tests {
             [
                 &IndexDef {
                     name: "Apples_count_idx_direct".into(),
-                    codegen_name: Some(expect_identifier("Apples_count_direct")),
+                    accessor_name: Some(expect_identifier("Apples_count_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
-                    accessor_name: "Apples_count_idx_direct".into(),
+                    source_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
-                    codegen_name: Some(expect_identifier("apples_id")),
+                    accessor_name: Some(expect_identifier("apples_id")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
-                    accessor_name: "Apples_name_count_idx_btree".into(),
+                    source_name: "Apples_name_count_idx_btree".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
-                    codegen_name: Some(expect_identifier("Apples_type_btree")),
+                    accessor_name: Some(expect_identifier("Apples_type_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
-                    accessor_name: "Apples_type_idx_btree".into(),
+                    source_name: "Apples_type_idx_btree".into(),
                 }
             ]
         );

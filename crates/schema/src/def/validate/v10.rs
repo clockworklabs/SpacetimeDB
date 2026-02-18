@@ -146,8 +146,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .flatten()
         .map(|ty| {
             validator.core.validate_type_def(ty.into()).map(|type_def| {
-                refmap.insert(type_def.ty, type_def.name.clone());
-                (type_def.name.clone(), type_def)
+                refmap.insert(type_def.ty, type_def.accessor_name.clone());
+                (type_def.accessor_name.clone(), type_def)
             })
         })
         .collect_all_errors::<HashMap<_, _>>();
@@ -523,9 +523,11 @@ impl<'a> ModuleValidatorV10<'a> {
         let (name_result, params_for_generate, return_res) =
             (name_result, params_for_generate, return_res).combine_errors()?;
         let (ok_return_type, err_return_type) = return_res;
+        let reducer_name = ReducerName::new(name_result.clone());
 
         Ok(ReducerDef {
-            name: ReducerName::new(name_result.clone()),
+            name: reducer_name.clone(),
+            accessor_name: reducer_name,
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -624,7 +626,8 @@ impl<'a> ModuleValidatorV10<'a> {
             (name_result, params_for_generate, return_type_for_generate).combine_errors()?;
 
         Ok(ProcedureDef {
-            name: name_result,
+            name: name_result.clone(),
+            accessor_name: name_result,
             params,
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
