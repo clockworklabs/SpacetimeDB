@@ -10,7 +10,7 @@ const MODULE_PATH_FLAG_CUTOFF_COMMIT: &str = "4c962b9170c577b6e6c7afeecf05a60635
 pub struct PreparedChatWorkspace {
     pub worktree_dir: PathBuf,
     pub cli_path: PathBuf,
-    pub client_path: PathBuf,
+    pub client_path: Option<PathBuf>,
     pub module_dir: PathBuf,
     pub publish_path_flag: &'static str,
 }
@@ -154,6 +154,7 @@ pub fn prepare_pinned_chat_workspace(
     workspace_dir: &Path,
     worktree_dir: &Path,
     git_ref: &str,
+    build_client: bool,
 ) -> Result<PreparedChatWorkspace> {
     if !worktree_dir.exists() {
         let parent = worktree_dir
@@ -212,31 +213,38 @@ pub fn prepare_pinned_chat_workspace(
     } else {
         "--project-path"
     };
-    let chat_client_dir = worktree_dir.join("templates/chat-console-rs");
-    run_cmd_ok(
-        &[
-            cli_path.clone().into_os_string(),
-            OsString::from("generate"),
-            OsString::from(publish_path_flag),
-            OsString::from("spacetimedb/"),
-            OsString::from("--out-dir"),
-            OsString::from("src/module_bindings/"),
-            OsString::from("--lang"),
-            OsString::from("rust"),
-        ],
-        &chat_client_dir,
-    )?;
-    run_cmd_ok(&[OsString::from("cargo"), OsString::from("build")], &chat_client_dir)?;
 
-    let client_path = chat_client_dir
-        .join("target")
-        .join("debug")
-        .join(exe_name("rust-quickstart-chat"));
-    anyhow::ensure!(
-        client_path.exists(),
-        "pinned chat client not found at {}",
-        client_path.display()
-    );
+    let client_path: Option<PathBuf>;
+    if build_client {
+        let chat_client_dir = worktree_dir.join("templates/chat-console-rs");
+        run_cmd_ok(
+            &[
+                cli_path.clone().into_os_string(),
+                OsString::from("generate"),
+                OsString::from(publish_path_flag),
+                OsString::from("spacetimedb/"),
+                OsString::from("--out-dir"),
+                OsString::from("src/module_bindings/"),
+                OsString::from("--lang"),
+                OsString::from("rust"),
+            ],
+            &chat_client_dir,
+        )?;
+        run_cmd_ok(&[OsString::from("cargo"), OsString::from("build")], &chat_client_dir)?;
+
+        let the_client_path = chat_client_dir
+            .join("target")
+            .join("debug")
+            .join(exe_name("rust-quickstart-chat"));
+        anyhow::ensure!(
+            the_client_path.exists(),
+            "pinned chat client not found at {}",
+            the_client_path.display()
+        );
+        client_path = Some(the_client_path);
+    } else {
+        client_path = None;
+    }
 
     Ok(PreparedChatWorkspace {
         worktree_dir: worktree_dir.to_path_buf(),

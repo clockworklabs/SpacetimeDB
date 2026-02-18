@@ -24,7 +24,7 @@ use test_util::{prepare_pinned_chat_workspace, run_cmd_ok};
 // 3) start 1.0 server and publish module
 // 4) restart as 2.0 server on the same data dir
 // 5) run both 1.0 and 2.0 quickstart clients, exchange messages, assert both observed
-const V1_GIT_REF: &str = "668e56624e4525a30a85000af6a984bb5ada0372";
+const V1_GIT_REF: &str = "4fdb8d923f39ed592931ad4c7e6391ed99b9fe3a";
 const V1_RELEASE_VERSION: &str = "1.12.0";
 
 fn log_step(msg: &str) {
@@ -167,10 +167,9 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     log_step(&format!("temp root={}", temp_path.display()));
     log_step(&format!("data dir={}", data_dir.display()));
 
-    let old_prepared = prepare_pinned_chat_workspace(&repo, &old_worktree_dir, V1_GIT_REF)?;
+    let old_prepared = prepare_pinned_chat_workspace(&repo, &old_worktree_dir, V1_GIT_REF, false)?;
     let old_worktree = old_prepared.worktree_dir;
     let old_cli = old_prepared.cli_path;
-    let old_client = old_prepared.client_path;
     let old_module_dir = old_prepared.module_dir;
     let old_publish_path_flag = old_prepared.publish_path_flag;
 
@@ -196,7 +195,6 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     // Build 1.0 sources from pinned ref.
 
     log_step(&format!("v1 CLI path={}", installed_v1_cli.display()));
-    log_step(&format!("old client path={}", old_client.display()));
 
     // Start 1.0 server and publish 1.0 quickstart module.
     let old_url = format!("http://127.0.0.1:3000");
