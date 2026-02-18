@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -13,6 +13,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
 use spacetimedb_smoketests::workspace_root;
 
+mod pinned_chat_workspace;
+use pinned_chat_workspace::prepare_pinned_chat_workspace;
+
 // NOTE: This test is intentionally manual/local-only and not meant for CI.
 //
 // It validates a kill/restart scenario at a pinned historical version:
@@ -21,7 +24,6 @@ use spacetimedb_smoketests::workspace_root;
 // 3) restart server immediately on the same data dir and same version
 // 4) verify `spacetime logs` succeeds
 const V1_GIT_REF: &str = "v1.12.0";
-const MODULE_PATH_FLAG_CUTOFF_COMMIT: &str = "4c962b9170c577b6e6c7afeecf05a60635fa1536";
 
 fn log_step(msg: &str) {
     eprintln!("[manual-upgrade] {msg}");
@@ -390,120 +392,26 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
     log_step("starting manual kill-after-publish test");
     log_step(&format!("pinned source ref={}", V1_GIT_REF));
     let repo = workspace_root();
-    let stable_worktree_dir = repo
+    let worktree_dir = repo
         .join("target")
         .join("smoketest-worktrees")
         .join("kill-after-publish-v1");
     let temp = tempfile::tempdir()?;
     let temp_path = temp.path();
-    let old_worktree = stable_worktree_dir;
     let data_dir = temp_path.join("db-data");
     std::fs::create_dir_all(&data_dir)?;
     log_step(&format!("workspace={}", repo.display()));
-    log_step(&format!("worktree={}", old_worktree.display()));
     log_step(&format!("data dir={}", data_dir.display()));
 
-    // Build pinned sources from a temporary worktree.
-    if !old_worktree.exists() {
-        let parent = old_worktree
-            .parent()
-            .ok_or_else(|| anyhow!("worktree path has no parent: {}", old_worktree.display()))?;
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create worktree parent {}", parent.display()))?;
-        log_step(&format!("creating worktree at ref {}", V1_GIT_REF));
-        run_cmd_ok(
-            &[
-                OsString::from("git"),
-                OsString::from("worktree"),
-                OsString::from("add"),
-                old_worktree.clone().into_os_string(),
-                OsString::from(V1_GIT_REF),
-            ],
-            &repo,
-        )?;
-    } else {
-        log_step("reusing existing worktree");
-        log_step(&format!("forcing existing worktree to ref {}", V1_GIT_REF));
-
-        run_cmd_ok(
-            &[
-                OsString::from("git"),
-                OsString::from("-C"),
-                old_worktree.clone().into_os_string(),
-                OsString::from("checkout"),
-                OsString::from("--force"),
-                OsString::from(V1_GIT_REF),
-            ],
-            &old_worktree,
-         )?;
-    }
-
-    // Prepare current binaries (including update helper needed by `version install` from target dir).
-    log_step("building current spacetimedb-cli and spacetimedb-update");
-    run_cmd_ok(
-        &[
-            OsString::from("cargo"),
-            OsString::from("build"),
-            OsString::from("-p"),
-            OsString::from("spacetimedb-cli"),
-            OsString::from("-p"),
-            OsString::from("spacetimedb-standalone"),
-            OsString::from("-p"),
-            OsString::from("spacetimedb-update"),
-        ],
-        &old_worktree,
-    )?;
-
-    let old_cli = old_worktree.join("target").join("debug").join(exe_name("spacetimedb-cli"));
-    anyhow::ensure!(
-        old_cli.exists(),
-        "old CLI binary missing at {}",
-        old_cli.display()
-    );
+    let prepared = prepare_pinned_chat_workspace(&repo, &worktree_dir, V1_GIT_REF)?;
+    let old_worktree = prepared.worktree_dir;
+    let old_cli = prepared.cli_path;
+    let old_client = prepared.client_path;
+    let publish_path_flag = prepared.publish_path_flag;
+    let old_module_dir = prepared.module_dir;
+    log_step(&format!("worktree={}", old_worktree.display()));
 
     let old_result: Result<()> = (|| {
-        log_step("running codegen for chat-console-rs (cli generate)");
-        run_cmd_ok(
-            &[
-                old_cli.clone().into_os_string(),
-                OsString::from("generate"),
-                OsString::from("--project-path"),
-                OsString::from("spacetimedb/"),
-                OsString::from("--out-dir"),
-                OsString::from("src/module_bindings/"),
-                OsString::from("--lang"),
-                OsString::from("rust"),
-            ],
-            &old_worktree.join("templates/chat-console-rs"),
-        )?;
-
-        log_step("building quickstart chat client");
-        run_cmd_ok(
-            &[OsString::from("cargo"), OsString::from("build")],
-            &old_worktree.join("templates/chat-console-rs"),
-        )?;
-
-        let old_client = old_worktree
-            .join("templates/chat-console-rs")
-            .join("target")
-            .join("debug")
-            .join(exe_name("rust-quickstart-chat"));
-        anyhow::ensure!(
-            old_client.exists(),
-            "old chat client not found at {}",
-            old_client.display()
-        );
-
-        let publish_path_flag = if ! is_strictly_before_commit(&repo, MODULE_PATH_FLAG_CUTOFF_COMMIT, V1_GIT_REF)? {
-            "--project-path"
-        } else {
-            "--module-path"
-        };
-        log_step(&format!(
-            "using {} for publish path (cutoff {})",
-            publish_path_flag, MODULE_PATH_FLAG_CUTOFF_COMMIT
-        ));
-
         log_step(&format!("old CLI path={}", old_cli.display()));
         log_step(&format!("old client path={}", old_client.display()));
 
@@ -527,9 +435,7 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
                 OsString::from("--server"),
                 OsString::from(&old_url),
                 OsString::from(publish_path_flag),
-                old_worktree
-                    .join("templates/chat-console-rs/spacetimedb")
-                    .into_os_string(),
+                old_module_dir.clone().into_os_string(),
                 OsString::from("--yes"),
                 OsString::from(&db_name),
             ],
