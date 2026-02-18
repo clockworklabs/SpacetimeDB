@@ -230,9 +230,10 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
     let color = std::io::stderr().is_terminal();
     let diag_options = DiagnosticOptions { cwd };
     for mut diag in diagnostics {
-        // if an import failed to resolve, force it to be an error.
+        // If an import failed to resolve, force it to be an error.
         if let Some(err) = diag.downcast_mut::<DiagnosableResolveError>() {
-            err.help = Some("Module not found".into());
+            err.reason = "Module not found.".into();
+            err.help = Some("You may have forgotten to install dependencies with your package manager.".into());
             // `BuildDiagnostic` doesn't let us change its severity to error. Instead, we
             // construct a fresh `BuildDiagnostic` (which will have Severity::Error), then
             // swap in the real `DiagnosableResolveError`.
