@@ -19,7 +19,6 @@ mod energy;
 mod fail_initial_publish;
 mod filtering;
 mod http_egress;
-mod integration;
 mod module_nested_op;
 mod modules;
 mod namespaces;
