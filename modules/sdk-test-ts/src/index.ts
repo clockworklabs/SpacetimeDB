@@ -908,6 +908,7 @@ const IndexedTable2 = table(
   {
     indexes: [
       {
+        accessor: 'player_id_snazz_index',
         algorithm: 'btree',
         columns: ['player_id', 'player_snazz'],
       },

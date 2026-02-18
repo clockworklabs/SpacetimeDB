@@ -152,7 +152,7 @@ const spacetimedb = schema({
   person: table(
     {
       public: true,
-      indexes: [{ algorithm: 'btree', columns: ['age'] }],
+      indexes: [{ accessor: "age", algorithm: 'btree', columns: ['age'] }],
     },
     personRow
   ),
@@ -161,7 +161,7 @@ const spacetimedb = schema({
   testATable: table(
     {
       name: "test_a",
-      indexes: [{ algorithm: 'btree', columns: ['x'] }],
+      indexes: [{ accessor: "foo", algorithm: 'btree', columns: ['x'] }],
     },
     testA
   ),
@@ -174,7 +174,7 @@ const spacetimedb = schema({
     {
       name: 'test_e',
       public: false,
-      indexes: [{ algorithm: 'btree', columns: ['name'] }],
+      indexes: [{ accessor:"name", algorithm: 'btree', columns: ['name'] }],
     },
     testERow
   ),
@@ -194,7 +194,7 @@ const spacetimedb = schema({
       name: 'points',
       public: false,
       indexes: [
-        { algorithm: 'btree', columns: ['x', 'y'] },
+        { accessor: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
       ],
     },
     pointsRow
