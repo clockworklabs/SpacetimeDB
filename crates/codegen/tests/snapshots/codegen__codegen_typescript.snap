@@ -319,7 +319,7 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, TestFRow),
-  myPlayer: __table({
+  my_player: __table({
     name: 'my_player',
     indexes: [
     ],
