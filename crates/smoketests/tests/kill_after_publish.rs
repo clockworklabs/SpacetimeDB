@@ -1,15 +1,16 @@
 #![allow(clippy::disallowed_macros)]
 
 use std::ffi::OsString;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
+use regex::Regex;
 use spacetimedb_smoketests::workspace_root;
 
 // NOTE: This test is intentionally manual/local-only and not meant for CI.
@@ -19,7 +20,7 @@ use spacetimedb_smoketests::workspace_root;
 // 2) start server and publish module
 // 3) restart server immediately on the same data dir and same version
 // 4) verify `spacetime logs` succeeds
-const V1_GIT_REF: &str = "2772036d511ab8ead00c132e484a057b1bdb6bd4";
+const V1_GIT_REF: &str = "v1.12.0";
 const MODULE_PATH_FLAG_CUTOFF_COMMIT: &str = "4c962b9170c577b6e6c7afeecf05a60635fa1536";
 
 fn log_step(msg: &str) {
@@ -47,8 +48,56 @@ fn run_cmd(args: &[OsString], cwd: &Path) -> Result<Output> {
         .with_context(|| format!("failed to execute {:?}", args.iter().collect::<Vec<_>>()))
 }
 
+fn run_cmd_with_stdin(args: &[OsString], cwd: &Path, stdin_input: &str) -> Result<Output> {
+    let rendered = args
+        .iter()
+        .map(|s| s.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    log_step(&format!("run (stdin): (cd {}) {rendered}", cwd.display()));
+
+    let mut cmd = Command::new(&args[0]);
+    cmd.args(&args[1..])
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .with_context(|| format!("failed to execute {:?}", args.iter().collect::<Vec<_>>()))?;
+    {
+        let stdin = child.stdin.as_mut().context("missing child stdin")?;
+        stdin.write_all(stdin_input.as_bytes())?;
+    }
+    child
+        .wait_with_output()
+        .with_context(|| format!("failed waiting for {:?}", args.iter().collect::<Vec<_>>()))
+}
+
 fn run_cmd_ok(args: &[OsString], cwd: &Path) -> Result<String> {
     let out = run_cmd(args, cwd)?;
+    if !out.status.success() {
+        bail!(
+            "command failed: {:?}\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    if !stdout.trim().is_empty() {
+        log_step(&format!("stdout:\n{}", stdout.trim()));
+    }
+    if !stderr.trim().is_empty() {
+        log_step(&format!("stderr:\n{}", stderr.trim()));
+    }
+    Ok(stdout)
+}
+
+fn run_cmd_ok_with_stdin(args: &[OsString], cwd: &Path, stdin_input: &str) -> Result<String> {
+    let out = run_cmd_with_stdin(args, cwd, stdin_input)?;
     if !out.status.success() {
         bail!(
             "command failed: {:?}\nstdout: {}\nstderr: {}",
@@ -232,6 +281,109 @@ fn dump_server_logs(label: &str, logs: &Arc<Mutex<String>>) {
     eprintln!("[manual-upgrade] {label} logs:\n{s}");
 }
 
+fn extract_identity(publish_stdout: &str) -> Result<String> {
+    let re = Regex::new(r"identity: ([0-9a-fA-F]+)")?;
+    let caps = re
+        .captures(publish_stdout)
+        .ok_or_else(|| anyhow!("failed to parse identity from publish output:\n{publish_stdout}"))?;
+    Ok(caps.get(1).unwrap().as_str().to_string())
+}
+
+fn spawn_chat_client(label: &str, bin: &Path, server_url: &str, db_name: &str) -> Result<(Child, Arc<Mutex<String>>)> {
+    log_step(&format!(
+        "starting {label} client {} (server={}, db={})",
+        bin.display(),
+        server_url,
+        db_name
+    ));
+    let mut child = Command::new(bin)
+        .env("SPACETIMEDB_HOST", server_url)
+        .env("SPACETIMEDB_SERVER", server_url)
+        .env("SPACETIMEDB_DB_NAME", db_name)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to spawn chat client {}", bin.display()))?;
+    log_step(&format!("started client pid={}", child.id()));
+
+    let logs = Arc::new(Mutex::new(String::new()));
+
+    if let Some(stdout) = child.stdout.take() {
+        let logs_out = logs.clone();
+        let label = label.to_string();
+        thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                if reader.read_line(&mut line).ok().filter(|n| *n > 0).is_none() {
+                    break;
+                }
+                eprintln!("[{label} recv] {}", line.trim_end());
+                let mut s = logs_out.lock().unwrap();
+                s.push_str(&line);
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let logs_err = logs.clone();
+        let label = label.to_string();
+        thread::spawn(move || {
+            let mut reader = BufReader::new(stderr);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                if reader.read_line(&mut line).ok().filter(|n| *n > 0).is_none() {
+                    break;
+                }
+                eprintln!("[{label} stderr] {}", line.trim_end());
+                let mut s = logs_err.lock().unwrap();
+                s.push_str(&line);
+            }
+        });
+    }
+
+    Ok((child, logs))
+}
+
+fn write_line(child: &mut Child, line: &str) -> Result<()> {
+    log_step(&format!("sending to pid {}: {}", child.id(), line));
+    let stdin = child.stdin.as_mut().context("child stdin missing")?;
+    if let Err(e) = stdin.write_all(line.as_bytes()) {
+        if e.kind() == ErrorKind::BrokenPipe {
+            log_step(&format!(
+                "stdin broken pipe for pid {} while sending {:?}; continuing",
+                child.id(),
+                line
+            ));
+            return Ok(());
+        }
+        return Err(e).context("failed writing line to client stdin");
+    }
+    if let Err(e) = stdin.write_all(b"\n") {
+        if e.kind() == ErrorKind::BrokenPipe {
+            log_step(&format!(
+                "stdin broken pipe for pid {} while sending newline; continuing",
+                child.id()
+            ));
+            return Ok(());
+        }
+        return Err(e).context("failed writing newline to client stdin");
+    }
+    if let Err(e) = stdin.flush() {
+        if e.kind() == ErrorKind::BrokenPipe {
+            log_step(&format!(
+                "stdin broken pipe for pid {} on flush; continuing",
+                child.id()
+            ));
+            return Ok(());
+        }
+        return Err(e).context("failed flushing client stdin");
+    }
+    Ok(())
+}
+
 #[test]
 #[ignore = "manual local-only: long-running, networked, and builds historical artifacts"]
 fn kill_after_publish_logs_after_restart() -> Result<()> {
@@ -249,7 +401,6 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
     std::fs::create_dir_all(&data_dir)?;
     log_step(&format!("workspace={}", repo.display()));
     log_step(&format!("worktree={}", old_worktree.display()));
-    log_step(&format!("temp root={}", temp_path.display()));
     log_step(&format!("data dir={}", data_dir.display()));
 
     // Build pinned sources from a temporary worktree.
@@ -272,30 +423,78 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
         )?;
     } else {
         log_step("reusing existing worktree");
-    }
+        log_step(&format!("forcing existing worktree to ref {}", V1_GIT_REF));
 
-    let old_result: Result<()> = (|| {
-        log_step("building pinned spacetimedb-cli and spacetimedb-standalone");
         run_cmd_ok(
             &[
-                OsString::from("cargo"),
-                OsString::from("build"),
-                OsString::from("-p"),
-                OsString::from("spacetimedb-cli"),
-                OsString::from("-p"),
-                OsString::from("spacetimedb-standalone"),
+                OsString::from("git"),
+                OsString::from("-C"),
+                old_worktree.clone().into_os_string(),
+                OsString::from("checkout"),
+                OsString::from("--force"),
+                OsString::from(V1_GIT_REF),
             ],
             &old_worktree,
+         )?;
+    }
+
+    // Prepare current binaries (including update helper needed by `version install` from target dir).
+    log_step("building current spacetimedb-cli and spacetimedb-update");
+    run_cmd_ok(
+        &[
+            OsString::from("cargo"),
+            OsString::from("build"),
+            OsString::from("-p"),
+            OsString::from("spacetimedb-cli"),
+            OsString::from("-p"),
+            OsString::from("spacetimedb-standalone"),
+            OsString::from("-p"),
+            OsString::from("spacetimedb-update"),
+        ],
+        &old_worktree,
+    )?;
+
+    let old_cli = old_worktree.join("target").join("debug").join(exe_name("spacetimedb-cli"));
+    anyhow::ensure!(
+        old_cli.exists(),
+        "old CLI binary missing at {}",
+        old_cli.display()
+    );
+
+    let old_result: Result<()> = (|| {
+        log_step("running codegen for chat-console-rs (cli generate)");
+        run_cmd_ok(
+            &[
+                old_cli.clone().into_os_string(),
+                OsString::from("generate"),
+                OsString::from("--project-path"),
+                OsString::from("spacetimedb/"),
+                OsString::from("--out-dir"),
+                OsString::from("src/module_bindings/"),
+                OsString::from("--lang"),
+                OsString::from("rust"),
+            ],
+            &old_worktree.join("templates/chat-console-rs"),
         )?;
 
-        let old_cli = old_worktree
+        log_step("building quickstart chat client");
+        run_cmd_ok(
+            &[OsString::from("cargo"), OsString::from("build")],
+            &old_worktree.join("templates/chat-console-rs"),
+        )?;
+
+        let old_client = old_worktree
+            .join("templates/chat-console-rs")
             .join("target")
             .join("debug")
-            .join(exe_name("spacetimedb-cli"));
-        anyhow::ensure!(old_cli.exists(), "pinned CLI binary not found at {}", old_cli.display());
+            .join(exe_name("rust-quickstart-chat"));
+        anyhow::ensure!(
+            old_client.exists(),
+            "old chat client not found at {}",
+            old_client.display()
+        );
 
-        log_step(&format!("pinned CLI path={}", old_cli.display()));
-        let publish_path_flag = if is_strictly_before_commit(&repo, V1_GIT_REF, MODULE_PATH_FLAG_CUTOFF_COMMIT)? {
+        let publish_path_flag = if ! is_strictly_before_commit(&repo, MODULE_PATH_FLAG_CUTOFF_COMMIT, V1_GIT_REF)? {
             "--project-path"
         } else {
             "--module-path"
@@ -305,20 +504,23 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
             publish_path_flag, MODULE_PATH_FLAG_CUTOFF_COMMIT
         ));
 
-        // Start pinned server and publish pinned quickstart module.
+        log_step(&format!("old CLI path={}", old_cli.display()));
+        log_step(&format!("old client path={}", old_client.display()));
+
+        // Start 1.0 server and publish 1.0 quickstart module.
         let old_port = pick_unused_port()?;
         let old_url = format!("http://127.0.0.1:{old_port}");
-        log_step("starting pinned server for initial publish");
+        log_step("starting old server for initial publish");
         let (mut old_server, old_server_logs) = spawn_server(&old_cli, &data_dir, old_port)?;
         if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
-            dump_server_logs("pinned server", &old_server_logs);
+            dump_server_logs("old server", &old_server_logs);
             kill_child(&mut old_server);
             return Err(e);
         }
 
-        let db_name = format!("kill-after-publish-{}", spacetimedb_smoketests::random_string());
-        log_step(&format!("publishing pinned module to db {}", db_name));
-        run_cmd_ok(
+        let db_name = format!("manual-upgrade-chat-{}", spacetimedb_smoketests::random_string());
+        log_step(&format!("publishing old module to db {}", db_name));
+        let publish_out = run_cmd_ok(
             &[
                 old_cli.clone().into_os_string(),
                 OsString::from("publish"),
@@ -333,36 +535,54 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
             ],
             &old_worktree,
         )?;
-        log_step("module published successfully; stopping server");
+        let _identity = extract_identity(&publish_out)?;
+        log_step("old module published successfully; stopping old server");
         kill_child(&mut old_server);
 
-        // Restart pinned server on the same data dir and verify logs command succeeds.
-        let restart_port = pick_unused_port()?;
-        let restart_url = format!("http://127.0.0.1:{restart_port}");
-        log_step("restarting pinned server on same data dir");
-        let (mut restarted_server, restarted_server_logs) = spawn_server(&old_cli, &data_dir, restart_port)?;
-        if let Err(e) = wait_for_ping(&restart_url, Duration::from_secs(20)) {
-            dump_server_logs("restarted server", &restarted_server_logs);
-            kill_child(&mut restarted_server);
+        let new_port = pick_unused_port()?;
+        let new_url = format!("http://127.0.0.1:{new_port}");
+        log_step("starting new server on same data dir");
+        let (mut new_server, new_server_logs) = spawn_server(&old_cli, &data_dir, new_port)?;
+        if let Err(e) = wait_for_ping(&new_url, Duration::from_secs(20)) {
+            dump_server_logs("new server", &new_server_logs);
+            kill_child(&mut new_server);
             return Err(e);
         }
 
-        log_step("running `spacetime logs` against restarted server");
-        run_cmd_ok(
-            &[
-                old_cli.clone().into_os_string(),
-                OsString::from("logs"),
-                OsString::from("--server"),
-                OsString::from(&restart_url),
-                OsString::from("-n"),
-                OsString::from("20"),
-                OsString::from(&db_name),
-            ],
-            &old_worktree,
-        )?;
+        log_step("starting client");
+        let (mut c1, logs1) = spawn_chat_client("client-v1", &old_client, &new_url, &db_name)?;
 
-        log_step("stopping restarted server");
-        kill_child(&mut restarted_server);
+        thread::sleep(Duration::from_secs(5));
+        write_line(&mut c1, "/name old-v1")?;
+        write_line(&mut c1, "hello-from-v1")?;
+
+        // Both clients should observe both messages in their output.
+        log_step("waiting for both clients to observe both messages");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut ok = false;
+        while Instant::now() < deadline {
+            let l1 = logs1.lock().unwrap().clone();
+            let saw_v1 = l1.contains("old-v1: hello-from-v1");
+            if saw_v1 {
+                log_step("success condition met: both clients saw both messages");
+                ok = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+
+        log_step("stopping clients and new server");
+        kill_child(&mut c1);
+        kill_child(&mut new_server);
+
+        if !ok {
+            let l1 = logs1.lock().unwrap().clone();
+            dump_server_logs("new server", &new_server_logs);
+            bail!(
+                "message exchange incomplete.\nclient-v1 logs:\n{}\n",
+                l1,
+            );
+        }
 
         Ok(())
     })();

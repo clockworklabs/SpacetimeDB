@@ -21,8 +21,9 @@ use spacetimedb_smoketests::workspace_root;
 // 3) start 1.0 server and publish module
 // 4) restart as 2.0 server on the same data dir
 // 5) run both 1.0 and 2.0 quickstart clients, exchange messages, assert both observed
-const V1_GIT_REF: &str = "v1.12.0";
+const V1_GIT_REF: &str = "origin/master";
 const V1_RELEASE_VERSION: &str = "1.12.0";
+const MODULE_PATH_FLAG_CUTOFF_COMMIT: &str = "4c962b9170c577b6e6c7afeecf05a60635fa1536";
 
 fn log_step(msg: &str) {
     eprintln!("[manual-upgrade] {msg}");
@@ -116,6 +117,55 @@ fn run_cmd_ok_with_stdin(args: &[OsString], cwd: &Path, stdin_input: &str) -> Re
         log_step(&format!("stderr:\n{}", stderr.trim()));
     }
     Ok(stdout)
+}
+
+fn is_strictly_before_commit(repo: &Path, candidate_ref: &str, boundary_commit: &str) -> Result<bool> {
+    let candidate = run_cmd_ok(
+        &[
+            OsString::from("git"),
+            OsString::from("rev-parse"),
+            OsString::from(candidate_ref),
+        ],
+        repo,
+    )?
+    .trim()
+    .to_string();
+    let boundary = run_cmd_ok(
+        &[
+            OsString::from("git"),
+            OsString::from("rev-parse"),
+            OsString::from(boundary_commit),
+        ],
+        repo,
+    )?
+    .trim()
+    .to_string();
+
+    if candidate == boundary {
+        return Ok(false);
+    }
+
+    let out = run_cmd(
+        &[
+            OsString::from("git"),
+            OsString::from("merge-base"),
+            OsString::from("--is-ancestor"),
+            OsString::from(&candidate),
+            OsString::from(&boundary),
+        ],
+        repo,
+    )?;
+    match out.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => bail!(
+            "failed checking commit ancestry between {} and {}:\nstdout: {}\nstderr: {}",
+            candidate,
+            boundary,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    }
 }
 
 fn pick_unused_port() -> Result<u16> {
@@ -595,6 +645,215 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
 
     log_step("cleaning up temporary git worktree");
     cleanup_worktree();
+    log_step("manual test finished");
+    old_result
+}
+
+#[test]
+#[ignore = "manual local-only: long-running, networked, and builds historical artifacts"]
+fn kill_after_publish_logs_after_restart() -> Result<()> {
+    log_step("starting manual upgrade mixed-clients quickstart test");
+    log_step(&format!(
+        "pinned old source ref={}, old release version={}",
+        V1_GIT_REF, V1_RELEASE_VERSION
+    ));
+    let repo = workspace_root();
+    let stable_worktree_dir = repo
+        .join("target")
+        .join("smoketest-worktrees")
+        .join("kill-after-publish-v1");
+    let old_worktree = stable_worktree_dir;
+    let temp = tempfile::tempdir()?;
+    let temp_path = temp.path();
+    let data_dir = temp_path.join("db-data");
+    std::fs::create_dir_all(&data_dir)?;
+    log_step(&format!("workspace={}", repo.display()));
+    log_step(&format!("temp root={}", temp_path.display()));
+    log_step(&format!("data dir={}", data_dir.display()));
+
+    if !old_worktree.exists() {
+        let parent = old_worktree
+            .parent()
+            .ok_or_else(|| anyhow!("worktree path has no parent: {}", old_worktree.display()))?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create worktree parent {}", parent.display()))?;
+        log_step(&format!("creating worktree at ref {}", V1_GIT_REF));
+        run_cmd_ok(
+            &[
+                OsString::from("git"),
+                OsString::from("worktree"),
+                OsString::from("add"),
+                old_worktree.clone().into_os_string(),
+                OsString::from(V1_GIT_REF),
+            ],
+            &repo,
+        )?;
+    } else {
+        log_step("reusing existing worktree");
+        log_step(&format!("forcing existing worktree to ref {}", V1_GIT_REF));
+
+        run_cmd_ok(
+            &[
+                OsString::from("git"),
+                OsString::from("-C"),
+                old_worktree.clone().into_os_string(),
+                OsString::from("checkout"),
+                OsString::from("--force"),
+                OsString::from(V1_GIT_REF),
+            ],
+            &old_worktree,
+         )?;
+    }
+
+    log_step("building current spacetimedb-cli and spacetimedb-update");
+    run_cmd_ok(
+        &[
+            OsString::from("cargo"),
+            OsString::from("build"),
+            OsString::from("-p"),
+            OsString::from("spacetimedb-cli"),
+            OsString::from("-p"),
+            OsString::from("spacetimedb-standalone"),
+            OsString::from("-p"),
+            OsString::from("spacetimedb-update"),
+        ],
+        &old_worktree,
+    )?;
+
+    let old_cli = old_worktree.join("target").join("debug").join(exe_name("spacetimedb-cli"));
+    anyhow::ensure!(
+        old_cli.exists(),
+        "old CLI binary missing at {}",
+        old_cli.display()
+    );
+
+    let publish_path_flag = if ! is_strictly_before_commit(&repo, MODULE_PATH_FLAG_CUTOFF_COMMIT, V1_GIT_REF)? {
+        "--project-path"
+    } else {
+        "--module-path"
+    };
+    log_step(&format!(
+        "using {} for publish path (cutoff {})",
+        publish_path_flag, MODULE_PATH_FLAG_CUTOFF_COMMIT
+    ));
+
+    let old_result: Result<()> = (|| {
+        log_step("running v1 codegen for chat-console-rs (cli generate)");
+        run_cmd_ok(
+            &[
+                old_cli.clone().into_os_string(),
+                OsString::from("generate"),
+                OsString::from(publish_path_flag),
+                OsString::from("spacetimedb/"),
+                OsString::from("--out-dir"),
+                OsString::from("src/module_bindings/"),
+                OsString::from("--lang"),
+                OsString::from("rust"),
+            ],
+            &old_worktree.join("templates/chat-console-rs"),
+        )?;
+
+        log_step("building old quickstart chat client");
+        run_cmd_ok(
+            &[OsString::from("cargo"), OsString::from("build")],
+            &old_worktree.join("templates/chat-console-rs"),
+        )?;
+
+        let old_client = old_worktree
+            .join("templates/chat-console-rs")
+            .join("target")
+            .join("debug")
+            .join(exe_name("rust-quickstart-chat"));
+        anyhow::ensure!(
+            old_client.exists(),
+            "old chat client not found at {}",
+            old_client.display()
+        );
+
+        log_step(&format!("v1 CLI path={}", old_cli.display()));
+        log_step(&format!("old client path={}", old_client.display()));
+
+        // Start 1.0 server and publish 1.0 quickstart module.
+        let old_port = pick_unused_port()?;
+        let old_url = format!("http://127.0.0.1:{old_port}");
+        log_step("starting old server for initial publish");
+        let (mut old_server, old_server_logs) = spawn_server(&old_cli, &data_dir, old_port)?;
+        if let Err(e) = wait_for_ping(&old_url, Duration::from_secs(20)) {
+            dump_server_logs("old server", &old_server_logs);
+            kill_child(&mut old_server);
+            return Err(e);
+        }
+
+        let db_name = format!("manual-upgrade-chat-{}", spacetimedb_smoketests::random_string());
+        log_step(&format!("publishing old module to db {}", db_name));
+        let publish_out = run_cmd_ok(
+            &[
+                old_cli.clone().into_os_string(),
+                OsString::from("publish"),
+                OsString::from("--server"),
+                OsString::from(&old_url),
+                OsString::from(publish_path_flag),
+                old_worktree
+                    .join("templates/chat-console-rs/spacetimedb")
+                    .into_os_string(),
+                OsString::from("--yes"),
+                OsString::from(&db_name),
+            ],
+            &old_worktree,
+        )?;
+        let _identity = extract_identity(&publish_out)?;
+        log_step("old module published successfully; stopping old server");
+        kill_child(&mut old_server);
+
+        // Start server on the same data dir.
+        let new_port = pick_unused_port()?;
+        let new_url = format!("http://127.0.0.1:{new_port}");
+        log_step("restarting server on same data dir");
+        let (mut new_server, new_server_logs) = spawn_server(&old_cli, &data_dir, new_port)?;
+        if let Err(e) = wait_for_ping(&new_url, Duration::from_secs(20)) {
+            dump_server_logs("restarted server", &new_server_logs);
+            kill_child(&mut new_server);
+            return Err(e);
+        }
+
+        log_step("starting old client");
+        let (mut c1, logs1) = spawn_chat_client("client-v1", &old_client, &new_url, &db_name)?;
+
+        thread::sleep(Duration::from_secs(5));
+        write_line(&mut c1, "/name old-v1")?;
+        write_line(&mut c1, "hello-from-v1")?;
+
+        // Client should observe both messages in their output.
+        log_step("waiting for both clients to observe both messages");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut ok = false;
+        while Instant::now() < deadline {
+            let l1 = logs1.lock().unwrap().clone();
+            let saw_v1 = l1.contains("old-v1: hello-from-v1");
+            if saw_v1 {
+                log_step("success condition met: both clients saw both messages");
+                ok = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+
+        log_step("stopping clients and new server");
+        kill_child(&mut c1);
+        kill_child(&mut new_server);
+
+        if !ok {
+            let l1 = logs1.lock().unwrap().clone();
+            dump_server_logs("new server", &new_server_logs);
+            bail!(
+                "message exchange incomplete.\nclient-v1 logs:\n{}",
+                l1,
+            );
+        }
+
+        Ok(())
+    })();
+
     log_step("manual test finished");
     old_result
 }
