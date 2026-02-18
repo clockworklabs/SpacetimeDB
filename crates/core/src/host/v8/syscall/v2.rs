@@ -21,7 +21,7 @@ use super::common::{
 };
 use super::hooks::get_hook_function;
 use super::hooks::HookFunctions;
-use super::AbiVersion;
+use super::{set_registered_hooks, AbiVersion};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::instrumentation::span;
@@ -392,8 +392,8 @@ pub fn get_hooks_from_default_export<'scope>(
     let call_view_anon = get_hook_function(scope, hooks, str_from_ident!(__call_view_anon__))?;
     let call_procedure = get_hook_function(scope, hooks, str_from_ident!(__call_procedure__))?;
 
-    // Set the hooks.
-    Ok(Some(HookFunctions {
+    // Cache hooks in context slots so syscall-time code can reconstruct them.
+    let hooks = HookFunctions {
         abi: AbiVersion::V2,
         recv: hooks.into(),
         describe_module,
@@ -403,7 +403,9 @@ pub fn get_hooks_from_default_export<'scope>(
         call_view: Some(call_view),
         call_view_anon: Some(call_view_anon),
         call_procedure: Some(call_procedure),
-    }))
+    };
+    set_registered_hooks(scope, &hooks)?;
+    Ok(Some(hooks))
 }
 
 fn hooks_symbol<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, v8::Symbol> {
@@ -435,7 +437,7 @@ pub(super) fn call_call_reducer<'scope>(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     match call_recv_fun(scope, hooks.call_reducer, hooks.recv, args) {
-        Ok(val) if val.is_undefined() => Ok(Ok(())),
+        Ok(val) if val.is_undefined() => Ok(Ok(None)),
         // TODO(reducer-return-values): replace error with deserialization
         Ok(_) => Err(TypeError("Reducer returned a value other than `undefined`").throw(scope)),
         Err(e) => {

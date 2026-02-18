@@ -16,8 +16,8 @@ void UConfigTable::PostInitialize()
     ConfigTable->AddUniqueConstraint<int32>("id", [](const FConfigType& Row) -> const int32& {
         return Row.Id; });
 
-    Id = NewObject<UConfigIdUniqueIndex>(this);
-    Id->SetCache(ConfigTable);
+    ConfigIdIdxBtree = NewObject<UConfigConfigIdIdxBtreeUniqueIndex>(this);
+    ConfigIdIdxBtree->SetCache(ConfigTable);
 
     /***/
 }

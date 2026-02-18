@@ -7,12 +7,19 @@ pub use join::*;
 use spacetimedb_lib::{sats::impl_st, AlgebraicType, SpacetimeType};
 pub use table::*;
 
-pub struct Query<T> {
+/// Trait implemented by all query builder types. Use `impl Query<T>` as a
+/// return type for view functions and helpers.
+pub trait Query<T> {
+    fn into_sql(self) -> String;
+}
+
+/// The concrete SQL query produced by calling `.build()` on a builder.
+pub struct RawQuery<T> {
     pub(crate) sql: String,
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T> Query<T> {
+impl<T> RawQuery<T> {
     pub fn new(sql: String) -> Self {
         Self {
             sql,
@@ -25,7 +32,13 @@ impl<T> Query<T> {
     }
 }
 
-impl_st!([T: SpacetimeType] Query<T>, ts => AlgebraicType::option(T::make_type(ts)));
+impl<T> Query<T> for RawQuery<T> {
+    fn into_sql(self) -> String {
+        self.sql
+    }
+}
+
+impl_st!([T: SpacetimeType] RawQuery<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
 #[cfg(test)]
 mod tests {
@@ -96,6 +109,8 @@ mod tests {
             }
         }
     }
+    impl CanBeLookupTable for User {}
+    impl CanBeLookupTable for Other {}
     fn norm(s: &str) -> String {
         s.split_whitespace().collect::<Vec<_>>().join(" ")
     }
@@ -135,6 +150,22 @@ mod tests {
         let q = users().r#where(|c| c.name.ne("Shub".to_string())).build();
         assert!(q.sql().contains("name"), "Expected a name comparison");
         assert!(q.sql().contains("<>"));
+    }
+
+    #[test]
+    fn test_not_comparison() {
+        let q = users().r#where(|c| c.name.eq("Alice".to_string()).not()).build();
+        let expected = r#"SELECT * FROM "users" WHERE (NOT ("users"."name" = 'Alice'))"#;
+        assert_eq!(norm(q.sql()), norm(expected));
+    }
+
+    #[test]
+    fn test_not_with_and() {
+        let q = users()
+            .r#where(|c| c.name.eq("Alice".to_string()).not().and(c.age.gt(18)))
+            .build();
+        let expected = r#"SELECT * FROM "users" WHERE ((NOT ("users"."name" = 'Alice')) AND ("users"."age" > 18))"#;
+        assert_eq!(norm(q.sql()), norm(expected));
     }
 
     #[test]

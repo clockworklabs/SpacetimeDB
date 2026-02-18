@@ -1,13 +1,13 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Result = table({
+export const result = table({
   name: 'result',
 }, {
   id: t.i32().primaryKey(),
   sum: t.i32(),
 });
 
-const spacetimedb = schema(Result);
+const spacetimedb = schema({ result });
 export default spacetimedb;
 
 function add(a: number, b: number): number {

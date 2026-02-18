@@ -55,7 +55,7 @@ Each SpacetimeDB client depends on some bindings specific to your module. Create
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --project-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang cs --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
@@ -879,7 +879,7 @@ For each unique constraint on a table, its table handle has a property which is 
 Given the following module-side `User` definition:
 
 ```csharp
-[Table(Name = "User", Public = true)]
+[Table(Accessor = "User", Public = true)]
 public partial class User
 {
     [Unique] // Or [PrimaryKey]
@@ -903,13 +903,13 @@ For each btree index defined on a remote table, its corresponding table handle h
 Given the following module-side `Player` definition:
 
 ```csharp
-[Table(Name = "Player", Public = true)]
+[Table(Accessor = "Player", Public = true)]
 public partial class Player
 {
     [PrimaryKey]
     public Identity id;
 
-    [Index.BTree(Name = "Level")]
+    [Index.BTree(Accessor = "Level")]
     public uint level;
     ..
 }

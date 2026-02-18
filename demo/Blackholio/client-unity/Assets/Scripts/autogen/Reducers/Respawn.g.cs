@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void Respawn()
         {
-            conn.InternalCallReducer(new Reducer.Respawn(), this.SetCallReducerFlags.RespawnFlags);
+            conn.InternalCallReducer(new Reducer.Respawn());
         }
 
         public bool InvokeRespawn(ReducerEventContext ctx, Reducer.Respawn args)
@@ -49,11 +49,5 @@ namespace SpacetimeDB.Types
         {
             string IReducerArgs.ReducerName => "respawn";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags RespawnFlags;
-        public void Respawn(CallReducerFlags flags) => RespawnFlags = flags;
     }
 }

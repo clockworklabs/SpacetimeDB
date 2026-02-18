@@ -10,8 +10,7 @@ use bytes::Bytes;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{InvalidUri, Scheme, Uri};
-use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression, BIN_PROTOCOL};
-use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_lib::{bsatn, ConnectionId};
 use thiserror::Error;
 use tokio::task::JoinHandle;
@@ -105,8 +104,7 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme, UriError> {
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct WsParams {
-    pub compression: Compression,
-    pub light: bool,
+    pub compression: ws::common::Compression,
     /// `Some(true)` to enable confirmed reads for the connection,
     /// `Some(false)` to disable them.
     /// `None` to not set the parameter and let the server choose.
@@ -137,11 +135,11 @@ fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, param
 
     // Specify the desired compression for host->client replies.
     match params.compression {
-        Compression::None => path.push_str("?compression=None"),
-        Compression::Gzip => path.push_str("?compression=Gzip"),
+        ws::common::Compression::None => path.push_str("?compression=None"),
+        ws::common::Compression::Gzip => path.push_str("?compression=Gzip"),
         // The host uses the same default as the sdk,
         // but in case this changes, we prefer to be explicit now.
-        Compression::Brotli => path.push_str("?compression=Brotli"),
+        ws::common::Compression::Brotli => path.push_str("?compression=Brotli"),
     };
 
     // Provide the connection ID if the client provided one.
@@ -149,11 +147,6 @@ fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, param
         // If a connection ID is provided, append it to the path.
         path.push_str("&connection_id=");
         path.push_str(&cid.to_hex());
-    }
-
-    // Specify the `light` mode if requested.
-    if params.light {
-        path.push_str("&light=true");
     }
 
     // Enable confirmed reads if requested.
@@ -199,7 +192,7 @@ fn make_request(
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
     req.headers_mut().insert(
         http::header::SEC_WEBSOCKET_PROTOCOL,
-        const { http::HeaderValue::from_static(BIN_PROTOCOL) },
+        const { http::HeaderValue::from_static(ws::v2::BIN_PROTOCOL) },
     );
 }
 
@@ -253,19 +246,19 @@ impl WsConnection {
         })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>, WsError> {
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ws::v2::ServerMessage, WsError> {
         let bytes = &*decompress_server_message(bytes)?;
         bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })
     }
 
-    pub(crate) fn encode_message(msg: ClientMessage<Bytes>) -> WebSocketMessage {
+    pub(crate) fn encode_message(msg: ws::v2::ClientMessage) -> WebSocketMessage {
         WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap().into())
     }
 
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
-        outgoing_messages: mpsc::UnboundedReceiver<ClientMessage<Bytes>>,
+        incoming_messages: mpsc::UnboundedSender<ws::v2::ServerMessage>,
+        outgoing_messages: mpsc::UnboundedReceiver<ws::v2::ClientMessage>,
     ) {
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
         let websocket_received_msg_size = CLIENT_METRICS
@@ -404,8 +397,8 @@ impl WsConnection {
         runtime: &runtime::Handle,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
-        mpsc::UnboundedSender<ClientMessage<Bytes>>,
+        mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+        mpsc::UnboundedSender<ws::v2::ClientMessage>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
         let (incoming_send, incoming_recv) = mpsc::unbounded();

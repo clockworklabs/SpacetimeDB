@@ -52,6 +52,10 @@ npm run build
       Open `index.html` directly in your browser. The app connects to SpacetimeDB and displays data in real-time.
 
       The JavaScript code runs inline in a script tag, using the bundled `DbConnection` class.
+
+      :::tip
+      When using npm imports with a bundler (e.g. React, Vue, Svelte), you can use type-safe [query builders](/sdks/typescript#query-builder-api) instead of raw SQL strings. The IIFE bundle shown here uses raw SQL.
+      :::
     </StepText>
     <StepCode>
 ```html
@@ -59,12 +63,16 @@ npm run build
 <script src="dist/bindings.iife.js"></script>
 
 <script>
+  const HOST = 'ws://localhost:3000';
+  const DB_NAME = 'my-spacetime-app';
+  const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
   const conn = DbConnection.builder()
-    .withUri('ws://localhost:3000')
-    .withDatabaseName('my-spacetime-app')
-    .withToken(localStorage.getItem('auth_token'))
+    .withUri(HOST)
+    .withDatabaseName(DB_NAME)
+    .withToken(localStorage.getItem(TOKEN_KEY))
     .onConnect((conn, identity, token) => {
-      localStorage.setItem('auth_token', token);
+      localStorage.setItem(TOKEN_KEY, token);
       console.log('Connected:', identity.toHexString());
 
       // Subscribe to tables

@@ -458,7 +458,7 @@ impl Lang for Cpp<'_> {
         let mut output = String::new();
         self.write_header_comment(&mut output);
 
-        let name = type_def.name.name();
+        let name = type_def.accessor_name.name();
 
         // Special handling for AlgebraicType due to circular dependencies
         if name.to_string() == "AlgebraicType" {

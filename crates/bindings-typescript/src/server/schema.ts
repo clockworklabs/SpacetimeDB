@@ -8,7 +8,7 @@ import {
 } from '../lib/reducers';
 import {
   ModuleContext,
-  tablesToSchema,
+  tableToSchema,
   type TablesToSchema,
   type UntypedSchemaDef,
 } from '../lib/schema';
@@ -40,6 +40,7 @@ import {
   type ViewReturnTypeBuilder,
   type Views,
 } from './views';
+import type { UntypedTableDef } from '../lib/table';
 
 export class SchemaInner<
   S extends UntypedSchemaDef = UntypedSchemaDef,
@@ -50,8 +51,18 @@ export class SchemaInner<
   procedures: Procedures = [];
   views: Views = [];
   anonViews: AnonViews = [];
+  /**
+   * Maps ReducerExport objects to the name of the reducer.
+   * Used for resolving the reducers of scheduled tables.
+   */
+  functionExports: Map<
+    | ReducerExport<UntypedSchemaDef, any>
+    | ProcedureExport<UntypedSchemaDef, any, any>,
+    string
+  > = new Map();
+  pendingSchedules: PendingSchedule[] = [];
 
-  constructor(getSchemaType: (ctx: ModuleContext) => S) {
+  constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
     this.schemaType = getSchemaType(this);
   }
@@ -64,7 +75,25 @@ export class SchemaInner<
     }
     this.existingFunctions.add(name);
   }
+
+  resolveSchedules() {
+    for (const { reducer, scheduleAtCol, tableName } of this.pendingSchedules) {
+      const functionName = this.functionExports.get(reducer());
+      if (functionName === undefined) {
+        const msg = `Table ${tableName} defines a schedule, but it seems like the associated function was not exported.`;
+        throw new TypeError(msg);
+      }
+      this.moduleDef.schedules.push({
+        sourceName: undefined,
+        tableName,
+        scheduleAtCol,
+        functionName,
+      });
+    }
+  }
 }
+
+type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
 
 /**
  * The Schema class represents the database schema for a SpacetimeDB application.
@@ -83,11 +112,11 @@ export class SchemaInner<
  *
  * @example
  * ```typescript
- * const spacetime = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
- * spacetime.reducer(
+ * const spacetimedb = schema({
+ *   user: table({}, userType),
+ *   post: table({}, postType)
+ * });
+ * spacetimedb.reducer(
  *   'create_user',
  *   {  username: t.string(), email: t.string() },
  *   (ctx, { username, email }) => {
@@ -123,6 +152,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       checkExportContext(moduleExport, registeredSchema);
       moduleExport[registerExport](registeredSchema, name);
     }
+    registeredSchema.resolveSchedules();
     return makeHooks(registeredSchema);
   }
 
@@ -319,7 +349,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     ret: Ret,
     fn: F
   ): ViewExport<F> {
-    return makeViewExport(this.#ctx, opts, {}, ret, fn);
+    return makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -351,7 +381,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     Ret extends ViewReturnTypeBuilder,
     F extends AnonymousViewFn<S, {}, Ret>,
   >(opts: ViewOpts, ret: Ret, fn: F): ViewExport<F> {
-    return makeAnonViewExport(this.#ctx, opts, {}, ret, fn);
+    return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -489,51 +519,29 @@ export type InferSchema<SchemaDef extends Schema<any>> =
  * @returns ColumnBuilder representing the complete database schema
  * @example
  * ```ts
- * const s = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
+ * const spacetimedb = schema({
+ *   user: table({}, userType),
+ *   post: table({}, postType)
+ * });
  * ```
  */
-export function schema<const H extends readonly UntypedTableSchema[]>(
-  ...handles: H
-): Schema<TablesToSchema<H>>;
-
-/**
- * Creates a schema from table definitions (array overload)
- * @param handles - Array of table handles created by table() function
- * @returns ColumnBuilder representing the complete database schema
- */
-export function schema<const H extends readonly UntypedTableSchema[]>(
-  handles: H
-): Schema<TablesToSchema<H>>;
-
-/**
- * Creates a schema from table definitions
- * @param args - Either an array of table handles or a variadic list of table handles
- * @returns ColumnBuilder representing the complete database schema
- * @example
- * ```ts
- * const s = schema(
- *  table({ name: 'user' }, userType),
- *  table({ name: 'post' }, postType)
- * );
- * ```
- */
-export function schema<const H extends readonly UntypedTableSchema[]>(
-  ...args: [H] | H
+export function schema<const H extends Record<string, UntypedTableSchema>>(
+  tables: H
 ): Schema<TablesToSchema<H>> {
-  const handles = (
-    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
-  ) as H;
-
-  const ctx = new SchemaInner(ctx => {
-    const tableDefs = handles.map(h => h.tableDef(ctx));
-    ctx.moduleDef.tables.push(...tableDefs);
-    const schedules = handles.map(h => h.schedule).filter(s => s !== undefined);
-    ctx.moduleDef.schedules.push(...schedules);
-
-    return tablesToSchema(ctx, handles);
+  const ctx = new SchemaInner<TablesToSchema<H>>(ctx => {
+    const tableSchemas: Record<string, UntypedTableDef> = {};
+    for (const [accName, table] of Object.entries(tables)) {
+      const tableDef = table.tableDef(ctx, accName);
+      tableSchemas[accName] = tableToSchema(accName, table, tableDef);
+      ctx.moduleDef.tables.push(tableDef);
+      if (table.schedule) {
+        ctx.pendingSchedules.push({
+          ...table.schedule,
+          tableName: tableDef.sourceName,
+        });
+      }
+    }
+    return { tables: tableSchemas } as TablesToSchema<H>;
   });
 
   return new Schema(ctx);

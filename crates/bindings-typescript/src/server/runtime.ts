@@ -286,9 +286,9 @@ class ModuleHooksImpl implements ModuleHooks {
   get #dbView() {
     return (this.#dbView_ ??= freeze(
       Object.fromEntries(
-        this.#schema.moduleDef.tables.map(table => [
-          toCamelCase(table.sourceName),
-          makeTableView(this.#schema.typespace, table),
+        Object.values(this.#schema.schemaType.tables).map(table => [
+          toCamelCase(table.accessorName),
+          makeTableView(this.#schema.typespace, table.tableDef),
         ])
       )
     ));
@@ -538,6 +538,11 @@ function makeTableView(
       .filter(x => x.data.tag === 'Unique')
       .some(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
 
+    const isPrimaryKey =
+      isUnique &&
+      column_ids.length === table.primaryKey.length &&
+      column_ids.every((id, i) => table.primaryKey[i] === id);
+
     const indexSerializers = column_ids.map(id =>
       AlgebraicType.makeSerializer(
         rowType.value.elements[id].algebraicType,
@@ -574,7 +579,7 @@ function makeTableView(
     let index: Index<any, any>;
     if (isUnique && serializeSinglePoint) {
       // numColumns == 1, unique index
-      index = {
+      const base = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           const buf = LEAF_BUF;
           const point_len = serializeSinglePoint(buf, colVal);
@@ -595,7 +600,9 @@ function makeTableView(
           );
           return num > 0;
         },
-        update: (row: RowType<any>): RowType<any> => {
+      };
+      if (isPrimaryKey) {
+        (base as any).update = (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
           BINARY_WRITER.reset(buf);
           serializeRow(BINARY_WRITER, row);
@@ -607,11 +614,12 @@ function makeTableView(
           );
           integrateGeneratedColumns?.(row, buf.view);
           return row;
-        },
-      } as UniqueIndex<any, any>;
+        };
+      }
+      index = base as UniqueIndex<any, any>;
     } else if (isUnique) {
       // numColumns != 1, unique index
-      index = {
+      const base = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           if (colVal.length !== numColumns) {
             throw new TypeError('wrong number of elements');
@@ -638,7 +646,9 @@ function makeTableView(
           );
           return num > 0;
         },
-        update: (row: RowType<any>): RowType<any> => {
+      };
+      if (isPrimaryKey) {
+        (base as any).update = (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
           BINARY_WRITER.reset(buf);
           serializeRow(BINARY_WRITER, row);
@@ -650,8 +660,9 @@ function makeTableView(
           );
           integrateGeneratedColumns?.(row, buf.view);
           return row;
-        },
-      } as UniqueIndex<any, any>;
+        };
+      }
+      index = base as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
       // numColumns == 1
       const rawIndex = {
@@ -906,86 +917,3 @@ class IteratorHandle implements Disposable {
     }
   }
 }
-
-function fmtLog(...data: any[]) {
-  return data.join(' ');
-}
-
-const console_level_error = 0;
-const console_level_warn = 1;
-const console_level_info = 2;
-const console_level_debug = 3;
-const console_level_trace = 4;
-const _console_level_panic = 101;
-
-const timerMap = new Map<string, u32>();
-
-const console: Console = {
-  // @ts-expect-error we want a blank prototype, but typescript complains
-  __proto__: {},
-  [Symbol.toStringTag]: 'console',
-  assert: (condition = false, ...data: any[]) => {
-    if (!condition) {
-      sys.console_log(console_level_error, fmtLog(...data));
-    }
-  },
-  clear: () => {},
-  debug: (...data: any[]) => {
-    sys.console_log(console_level_debug, fmtLog(...data));
-  },
-  error: (...data: any[]) => {
-    sys.console_log(console_level_error, fmtLog(...data));
-  },
-  info: (...data: any[]) => {
-    sys.console_log(console_level_info, fmtLog(...data));
-  },
-  log: (...data: any[]) => {
-    sys.console_log(console_level_info, fmtLog(...data));
-  },
-  table: (tabularData: any, _properties: any) => {
-    sys.console_log(console_level_info, fmtLog(tabularData));
-  },
-  trace: (...data: any[]) => {
-    sys.console_log(console_level_trace, fmtLog(...data));
-  },
-  warn: (...data: any[]) => {
-    sys.console_log(console_level_warn, fmtLog(...data));
-  },
-  dir: (_item: any, _options: any) => {},
-  dirxml: (..._data: any[]) => {},
-  // Counting
-  count: (_label = 'default') => {},
-  countReset: (_label = 'default') => {},
-  // Grouping
-  group: (..._data: any[]) => {},
-  groupCollapsed: (..._data: any[]) => {},
-  groupEnd: () => {},
-  // Timing
-  time: (label = 'default') => {
-    if (timerMap.has(label)) {
-      sys.console_log(console_level_warn, `Timer '${label}' already exists.`);
-      return;
-    }
-    timerMap.set(label, sys.console_timer_start(label));
-  },
-  timeLog: (label = 'default', ...data: any[]) => {
-    sys.console_log(console_level_info, fmtLog(label, ...data));
-  },
-  timeEnd: (label = 'default') => {
-    const spanId = timerMap.get(label);
-    if (spanId === undefined) {
-      sys.console_log(console_level_warn, `Timer '${label}' does not exist.`);
-      return;
-    }
-    sys.console_timer_end(spanId);
-    timerMap.delete(label);
-  },
-  // Additional console methods to satisfy the Console interface
-  timeStamp: () => {},
-  profile: () => {},
-  profileEnd: () => {},
-};
-
-(console as any).Console = console;
-
-globalThis.console = console;

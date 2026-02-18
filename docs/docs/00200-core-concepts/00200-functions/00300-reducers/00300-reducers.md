@@ -543,7 +543,7 @@ import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
 const fetchSchedule = table(
-  { name: 'fetch_schedule', scheduled: 'fetch_external_data' },
+  { name: 'fetch_schedule', scheduled: (): any => fetch_external_data },
   {
     scheduled_id: t.u64().primaryKey().autoInc(),
     scheduled_at: t.scheduleAt(),
@@ -551,7 +551,7 @@ const fetchSchedule = table(
   }
 );
 
-const spacetimedb = schema(fetchSchedule);
+const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
 // The procedure to be scheduled
@@ -585,7 +585,7 @@ using SpacetimeDB;
 
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
+    [SpacetimeDB.Table(Accessor = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
     public partial struct FetchSchedule
     {
         [SpacetimeDB.PrimaryKey]

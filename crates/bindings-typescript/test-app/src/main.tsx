@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { SpacetimeDBProvider } from '../../src/react';
-import { DbConnection, query } from './module_bindings/index.ts';
+import { DbConnection, tables } from './module_bindings/index.ts';
 
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
@@ -21,7 +21,7 @@ const connectionBuilder = DbConnection.builder()
       identity.toHexString()
     );
 
-    conn.subscriptionBuilder().subscribe(query.player.build());
+    conn.subscriptionBuilder().subscribe(tables.player);
   });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

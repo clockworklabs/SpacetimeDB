@@ -43,6 +43,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::panic::AssertUnwindSafe;
@@ -209,6 +210,7 @@ fn env_on_isolate_unwrap(isolate: &mut Isolate) -> &mut JsInstanceEnv {
 /// The environment of a [`JsInstance`].
 struct JsInstanceEnv {
     instance_env: InstanceEnv,
+    module_def: Option<Arc<ModuleDef>>,
 
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
@@ -232,6 +234,7 @@ impl JsInstanceEnv {
     fn new(instance_env: InstanceEnv) -> Self {
         Self {
             instance_env,
+            module_def: None,
             call_times: CallTimes::new(),
             iters: <_>::default(),
             chunk_pool: <_>::default(),
@@ -271,6 +274,14 @@ impl JsInstanceEnv {
             total_duration,
             wasm_instance_env_call_times,
         }
+    }
+
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        self.module_def = Some(module_def);
+    }
+
+    fn module_def(&self) -> Option<Arc<ModuleDef>> {
+        self.module_def.clone()
     }
 }
 
@@ -601,20 +612,25 @@ async fn spawn_instance_worker(
 
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
-            if result_tx.send(res).is_err() {
-                unreachable!("should have a live receiver");
-            }
+            result_tx.send(res).inspect_err(|_| {
+                // This should never happen as we immediately `.recv` on the
+                // other end of the channel, but sometimes it gets cancelled.
+                log::error!("startup result receiver disconnected");
+            })
         };
         let (hooks, module_common) = match startup_instance_worker(scope, program, module_or_mcc) {
             Err(err) => {
                 // There was some error in module setup.
                 // Return the error and terminate the worker.
-                send_result(Err(err));
+                let _ = send_result(Err(err));
                 return;
             }
             Ok((crf, module_common)) => {
+                env_on_isolate_unwrap(scope).set_module_def(module_common.info().module_def.clone());
                 // Success! Send `module_common` to the spawner.
-                send_result(Ok(module_common.clone()));
+                if send_result(Ok(module_common.clone())).is_err() {
+                    return;
+                }
                 (crf, module_common)
             }
         };
@@ -752,8 +768,7 @@ async fn spawn_instance_worker(
 }
 
 /// The embedder data slot for the `__get_error_constructor__` function.
-/// One greater than the greatest value of [`syscall::ModuleHookKey`].
-const GET_ERROR_CONSTRUCTOR_SLOT: i32 = 5;
+const GET_ERROR_CONSTRUCTOR_SLOT: i32 = syscall::ModuleHookKey::GetErrorConstructor as i32;
 
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
@@ -847,6 +862,10 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
     fn tx_slot(&self) -> TxSlot {
         self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
+    }
+
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        env_on_isolate_unwrap(self.scope).set_module_def(module_def);
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {

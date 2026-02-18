@@ -48,10 +48,10 @@ npm run create -- --lang=typescript --llm=opus-4-5 --backend=spacetime
 3. Create timestamped folder in `staging/<language>/<llm>/<backend>/`
 4. Write backend code (`schema.ts`, reducers, `index.ts`)
 5. Install backend dependencies: `cd <backend-dir> && npm install`
-6. Publish to SpacetimeDB: `spacetime publish <folder-name> --project-path <backend-dir>`
+6. Publish to SpacetimeDB: `spacetime publish <folder-name> --module-path <backend-dir>`
 
 **Phase 2: Bindings**
-7. Generate client bindings: `spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>`
+7. Generate client bindings: `spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend>`
 
 **Phase 3: Client**
 8. Write client code (imports from `./module_bindings` now resolve)

@@ -33,7 +33,7 @@ pub struct TypeScript;
 
 impl Lang for TypeScript {
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let type_name = collect_case(Case::Pascal, typ.name.name_segments());
+        let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
 
         let define_type_for_product = |product: &ProductTypeDef| {
             let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -45,7 +45,7 @@ impl Lang for TypeScript {
             define_body_for_product(module, out, &type_name, &product.elements);
             out.newline();
             OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
+                filename: type_module_name(&typ.accessor_name) + ".ts",
                 code: output.into_inner(),
             }
         };
@@ -62,7 +62,7 @@ impl Lang for TypeScript {
             define_body_for_sum(module, out, &type_name, variants);
             out.newline();
             OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
+                filename: type_module_name(&typ.accessor_name) + ".ts",
                 code: output.into_inner(),
             }
         };
@@ -246,12 +246,12 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
-        writeln!(out, "const tablesSchema = __schema(");
+        writeln!(out, "const tablesSchema = __schema({{");
         out.indent(1);
         for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-            writeln!(out, "__table({{");
+            writeln!(out, "{}: __table({{", table.name);
             out.indent(1);
             write_table_opts(
                 module,
@@ -260,6 +260,7 @@ impl Lang for TypeScript {
                 &table.name,
                 iter_indexes(table),
                 iter_constraints(table),
+                table.is_event,
             );
             out.dedent(1);
             writeln!(out, "}}, {}Row),", table_name_pascalcase);
@@ -267,14 +268,14 @@ impl Lang for TypeScript {
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
             let view_name_pascalcase = view.name.deref().to_case(Case::Pascal);
-            writeln!(out, "__table({{");
+            writeln!(out, "{}: __table({{", view.name);
             out.indent(1);
-            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty());
+            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
         out.dedent(1);
-        writeln!(out, ");");
+        writeln!(out, "}});");
 
         writeln!(out);
         writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
@@ -336,16 +337,10 @@ impl Lang for TypeScript {
         out.dedent(1);
 
         writeln!(out);
-        writeln!(out, "/** The tables available in this remote SpacetimeDB module. */");
+        writeln!(out, "/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */");
         writeln!(
             out,
-            "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
-        );
-        writeln!(out);
-        writeln!(out, "/** A typed query builder for this remote SpacetimeDB module. */");
-        writeln!(
-            out,
-            "export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
+            "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
         );
         writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
@@ -542,17 +537,17 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
     writeln!(out);
     writeln!(out, "// Import all non-reducer types");
     for ty in iter_types(module) {
-        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         if reducer_type_names.contains(&type_name) {
             continue;
         }
-        let type_module_name = type_module_name(&ty.name);
+        let type_module_name = type_module_name(&ty.accessor_name);
         writeln!(out, "import {type_name} from \"../{type_module_name}\";");
     }
 
     writeln!(out);
     for ty in iter_types(module) {
-        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         if reducer_type_names.contains(&type_name) {
             continue;
         }
@@ -694,6 +689,7 @@ fn write_table_opts<'a>(
     name: &Identifier,
     indexes: impl Iterator<Item = &'a IndexDef>,
     constraints: impl Iterator<Item = &'a ConstraintDef>,
+    is_event: bool,
 ) {
     let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
     writeln!(out, "name: '{}',", name.deref());
@@ -760,6 +756,9 @@ fn write_table_opts<'a>(
     }
     out.dedent(1);
     writeln!(out, "],");
+    if is_event {
+        writeln!(out, "event: true,");
+    }
 }
 
 /// e.g.

@@ -36,8 +36,8 @@ help: the trait `SpacetimeType` is not implemented for `Test`
 error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
  --> tests/ui/tables.rs:5:8
   |
-3 | #[spacetimedb::table(name = table)]
-  | ----------------------------------- required by a bound introduced by this call
+3 | #[spacetimedb::table(accessor = table)]
+  | --------------------------------------- required by a bound introduced by this call
 4 | struct Table {
 5 |     x: Test,
   |        ^^^^ unsatisfied trait bound

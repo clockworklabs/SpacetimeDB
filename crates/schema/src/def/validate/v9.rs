@@ -117,8 +117,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         .into_iter()
         .map(|ty| {
             validator.core.validate_type_def(ty).map(|type_def| {
-                refmap.insert(type_def.ty, type_def.name.clone());
-                (type_def.name.clone(), type_def)
+                refmap.insert(type_def.ty, type_def.accessor_name.clone());
+                (type_def.accessor_name.clone(), type_def)
             })
         })
         .collect_all_errors::<HashMap<_, _>>();
@@ -211,7 +211,7 @@ impl ModuleValidatorV9<'_> {
             .into_iter()
             .map(|index| {
                 table_in_progress
-                    .validate_index_def(index)
+                    .validate_index_def(index, RawModuleDefVersion::V9OrEarlier)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -307,7 +307,7 @@ impl ModuleValidatorV9<'_> {
             .combine_errors()?;
 
         Ok(TableDef {
-            name,
+            name: name.clone(),
             product_type_ref,
             primary_key,
             columns,
@@ -317,6 +317,8 @@ impl ModuleValidatorV9<'_> {
             schedule,
             table_type,
             table_access,
+            is_event: false, // V9 does not support event tables
+            accessor_name: name,
         })
     }
 
@@ -356,7 +358,8 @@ impl ModuleValidatorV9<'_> {
         let (reducer_name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
         let name = ReducerName::new(reducer_name.clone());
         let def = ReducerDef {
-            name,
+            name: name.clone(),
+            accessor_name: name.clone(),
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -400,7 +403,8 @@ impl ModuleValidatorV9<'_> {
             (name, params_for_generate, return_type_for_generate).combine_errors()?;
 
         Ok(ProcedureDef {
-            name,
+            name: name.clone(),
+            accessor_name: name,
             params,
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -505,7 +509,7 @@ impl ModuleValidatorV9<'_> {
             (name, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name,
+            name: name.clone(),
             is_anonymous,
             is_public,
             params,
@@ -519,6 +523,7 @@ impl ModuleValidatorV9<'_> {
             product_type_ref,
             return_columns,
             param_columns,
+            accessor_name: name,
         })
     }
 
@@ -702,7 +707,7 @@ impl CoreValidator<'_> {
         let (name, (ty, custom_ordering)) = (name, ty_custom_ordering).combine_errors()?;
 
         Ok(TypeDef {
-            name,
+            accessor_name: name,
             ty,
             custom_ordering,
         })
@@ -936,12 +941,13 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         let (name, ty_for_generate, table_name) = (name, ty_for_generate, table_name).combine_errors()?;
 
         Ok(ColumnDef {
-            name,
+            name: name.clone(),
             ty: column.algebraic_type.clone(),
             ty_for_generate,
             col_id,
             table_name,
             default_value: None, // filled in later
+            accessor_name: name.clone(),
         })
     }
 
@@ -1047,16 +1053,20 @@ impl<'a, 'b> TableValidator<'a, 'b> {
     }
 
     /// Validate an index definition.
-    pub(crate) fn validate_index_def(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
+    pub(crate) fn validate_index_def(
+        &mut self,
+        index: RawIndexDefV9,
+        raw_def_version: RawModuleDefVersion,
+    ) -> Result<IndexDef> {
         let RawIndexDefV9 {
             name,
-            algorithm,
+            algorithm: algorithm_raw,
             accessor_name,
         } = index;
 
-        let name = name.unwrap_or_else(|| generate_index_name(&self.raw_name, self.product_type, &algorithm));
+        let name = name.unwrap_or_else(|| generate_index_name(&self.raw_name, self.product_type, &algorithm_raw));
 
-        let algorithm: Result<IndexAlgorithm> = match algorithm {
+        let algorithm: Result<IndexAlgorithm> = match algorithm_raw.clone() {
             RawIndexAlgorithm::BTree { columns } => self
                 .validate_col_ids(&name, columns)
                 .map(|columns| BTreeAlgorithm { columns }.into()),
@@ -1089,15 +1099,26 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             }),
             algo => unreachable!("unknown algorithm {algo:?}"),
         };
-        let name = self.add_to_global_namespace(name);
-        let accessor_name = accessor_name.map(identifier).transpose();
 
-        let (name, accessor_name, algorithm) = (name, accessor_name, algorithm).combine_errors()?;
+        let codegen_name = match raw_def_version {
+            // In V9, `name` field is used for database internals but `accessor_name` supplied by module is used for client codegen.
+            RawModuleDefVersion::V9OrEarlier => accessor_name.map(identifier).transpose(),
+
+            // In V10, `name` is used both for internal purpose and client codefen.
+            RawModuleDefVersion::V10 => {
+                identifier(generate_index_name(&self.raw_name, self.product_type, &algorithm_raw)).map(Some)
+            }
+        };
+
+        let name = self.add_to_global_namespace(name);
+
+        let (name, accessor_name, algorithm) = (name, codegen_name, algorithm).combine_errors()?;
 
         Ok(IndexDef {
-            name,
+            name: name.clone(),
             algorithm,
             accessor_name,
+            source_name: name,
         })
     }
 
@@ -1596,16 +1617,19 @@ mod tests {
                     name: "Apples_count_idx_direct".into(),
                     accessor_name: Some(expect_identifier("Apples_count_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
+                    source_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
                     accessor_name: Some(expect_identifier("apples_id")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
+                    source_name: "Apples_name_count_idx_btree".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
                     accessor_name: Some(expect_identifier("Apples_type_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
+                    source_name: "Apples_type_idx_btree".into(),
                 }
             ]
         );

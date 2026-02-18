@@ -33,8 +33,6 @@ impl __sdk::InModule for AddPlayerArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct AddPlayerCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `add_player`.
 ///
@@ -44,70 +42,39 @@ pub trait add_player {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_add_player`] callbacks.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`add_player:add_player_then`] to run a callback after the reducer completes.
     fn add_player(&self, name: String,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `add_player`.
+) -> __sdk::Result<()> {
+        self.add_player_then(name,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `add_player` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`AddPlayerCallbackId`] can be passed to [`Self::remove_on_add_player`]
-    /// to cancel the callback.
-    fn on_add_player(&self, callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static) -> AddPlayerCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_add_player`],
-    /// causing it not to run in the future.
-    fn remove_on_add_player(&self, callback: AddPlayerCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn add_player_then(
+        &self,
+        name: String,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl add_player for super::RemoteReducers {
-    fn add_player(&self, name: String,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("add_player", AddPlayerArgs { name,  })
-    }
-    fn on_add_player(
+    fn add_player_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static,
-    ) -> AddPlayerCallbackId {
-        AddPlayerCallbackId(self.imp.on_reducer(
-            "add_player",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::AddPlayer {
-                            name, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, name, )
-            }),
-        ))
-    }
-    fn remove_on_add_player(&self, callback: AddPlayerCallbackId) {
-        self.imp.remove_on_reducer("add_player", callback.0)
-    }
-}
+        name: String,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `add_player`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_add_player {
-    /// Set the call-reducer flags for the reducer `add_player` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn add_player(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_add_player for super::SetReducerFlags {
-    fn add_player(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("add_player", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(AddPlayerArgs { name,  }, callback)
     }
 }
 
@@ -143,8 +110,6 @@ impl __sdk::InModule for AddPrivateArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct AddPrivateCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `add_private`.
 ///
@@ -154,70 +119,39 @@ pub trait add_private {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_add_private`] callbacks.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`add_private:add_private_then`] to run a callback after the reducer completes.
     fn add_private(&self, name: String,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `add_private`.
+) -> __sdk::Result<()> {
+        self.add_private_then(name,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `add_private` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`AddPrivateCallbackId`] can be passed to [`Self::remove_on_add_private`]
-    /// to cancel the callback.
-    fn on_add_private(&self, callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static) -> AddPrivateCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_add_private`],
-    /// causing it not to run in the future.
-    fn remove_on_add_private(&self, callback: AddPrivateCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn add_private_then(
+        &self,
+        name: String,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl add_private for super::RemoteReducers {
-    fn add_private(&self, name: String,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("add_private", AddPrivateArgs { name,  })
-    }
-    fn on_add_private(
+    fn add_private_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static,
-    ) -> AddPrivateCallbackId {
-        AddPrivateCallbackId(self.imp.on_reducer(
-            "add_private",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::AddPrivate {
-                            name, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, name, )
-            }),
-        ))
-    }
-    fn remove_on_add_private(&self, callback: AddPrivateCallbackId) {
-        self.imp.remove_on_reducer("add_private", callback.0)
-    }
-}
+        name: String,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `add_private`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_add_private {
-    /// Set the call-reducer flags for the reducer `add_private` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn add_private(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_add_private for super::SetReducerFlags {
-    fn add_private(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("add_private", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(AddPrivateArgs { name,  }, callback)
     }
 }
 
@@ -255,8 +189,6 @@ impl __sdk::InModule for AddArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct AddCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `add`.
 ///
@@ -266,72 +198,42 @@ pub trait add {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_add`] callbacks.
-    fn add(&self, name: String,
-age: u8,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `add`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`AddCallbackId`] can be passed to [`Self::remove_on_add`]
-    /// to cancel the callback.
-    fn on_add(&self, callback: impl FnMut(&super::ReducerEventContext, &String, &u8, ) + Send + 'static) -> AddCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_add`],
-    /// causing it not to run in the future.
-    fn remove_on_add(&self, callback: AddCallbackId);
-}
-
-impl add for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`add:add_then`] to run a callback after the reducer completes.
     fn add(&self, name: String,
 age: u8,
 ) -> __sdk::Result<()> {
-        self.imp.call_reducer("add", AddArgs { name, age,  })
+        self.add_then(name, age,  |_, _| {})
     }
-    fn on_add(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &u8, ) + Send + 'static,
-    ) -> AddCallbackId {
-        AddCallbackId(self.imp.on_reducer(
-            "add",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::Add {
-                            name, age, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, name, age, )
-            }),
-        ))
-    }
-    fn remove_on_add(&self, callback: AddCallbackId) {
-        self.imp.remove_on_reducer("add", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `add`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_add {
-    /// Set the call-reducer flags for the reducer `add` to `flags`.
+    /// Request that the remote module invoke the reducer `add` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn add(&self, flags: __ws::CallReducerFlags);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn add_then(
+        &self,
+        name: String,
+age: u8,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
-impl set_flags_for_add for super::SetReducerFlags {
-    fn add(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("add", flags);
+impl add for super::RemoteReducers {
+    fn add_then(
+        &self,
+        name: String,
+age: u8,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(AddArgs { name, age,  }, callback)
     }
 }
 
@@ -364,8 +266,6 @@ impl __sdk::InModule for AssertCallerIdentityIsModuleIdentityArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct AssertCallerIdentityIsModuleIdentityCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `assert_caller_identity_is_module_identity`.
 ///
@@ -375,68 +275,36 @@ pub trait assert_caller_identity_is_module_identity {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_assert_caller_identity_is_module_identity`] callbacks.
-    fn assert_caller_identity_is_module_identity(&self, ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `assert_caller_identity_is_module_identity`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`assert_caller_identity_is_module_identity:assert_caller_identity_is_module_identity_then`] to run a callback after the reducer completes.
+    fn assert_caller_identity_is_module_identity(&self, ) -> __sdk::Result<()> {
+        self.assert_caller_identity_is_module_identity_then( |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `assert_caller_identity_is_module_identity` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`AssertCallerIdentityIsModuleIdentityCallbackId`] can be passed to [`Self::remove_on_assert_caller_identity_is_module_identity`]
-    /// to cancel the callback.
-    fn on_assert_caller_identity_is_module_identity(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> AssertCallerIdentityIsModuleIdentityCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_assert_caller_identity_is_module_identity`],
-    /// causing it not to run in the future.
-    fn remove_on_assert_caller_identity_is_module_identity(&self, callback: AssertCallerIdentityIsModuleIdentityCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn assert_caller_identity_is_module_identity_then(
+        &self,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl assert_caller_identity_is_module_identity for super::RemoteReducers {
-    fn assert_caller_identity_is_module_identity(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("assert_caller_identity_is_module_identity", AssertCallerIdentityIsModuleIdentityArgs {  })
-    }
-    fn on_assert_caller_identity_is_module_identity(
+    fn assert_caller_identity_is_module_identity_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
-    ) -> AssertCallerIdentityIsModuleIdentityCallbackId {
-        AssertCallerIdentityIsModuleIdentityCallbackId(self.imp.on_reducer(
-            "assert_caller_identity_is_module_identity",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::AssertCallerIdentityIsModuleIdentity {
-                            
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
-            }),
-        ))
-    }
-    fn remove_on_assert_caller_identity_is_module_identity(&self, callback: AssertCallerIdentityIsModuleIdentityCallbackId) {
-        self.imp.remove_on_reducer("assert_caller_identity_is_module_identity", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `assert_caller_identity_is_module_identity`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_assert_caller_identity_is_module_identity {
-    /// Set the call-reducer flags for the reducer `assert_caller_identity_is_module_identity` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn assert_caller_identity_is_module_identity(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_assert_caller_identity_is_module_identity for super::SetReducerFlags {
-    fn assert_caller_identity_is_module_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("assert_caller_identity_is_module_identity", flags);
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(AssertCallerIdentityIsModuleIdentityArgs {  }, callback)
     }
 }
 
@@ -497,8 +365,6 @@ impl __sdk::InModule for DeletePlayerArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DeletePlayerCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_player`.
 ///
@@ -508,70 +374,39 @@ pub trait delete_player {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_delete_player`] callbacks.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`delete_player:delete_player_then`] to run a callback after the reducer completes.
     fn delete_player(&self, id: u64,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_player`.
+) -> __sdk::Result<()> {
+        self.delete_player_then(id,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `delete_player` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DeletePlayerCallbackId`] can be passed to [`Self::remove_on_delete_player`]
-    /// to cancel the callback.
-    fn on_delete_player(&self, callback: impl FnMut(&super::ReducerEventContext, &u64, ) + Send + 'static) -> DeletePlayerCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_delete_player`],
-    /// causing it not to run in the future.
-    fn remove_on_delete_player(&self, callback: DeletePlayerCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn delete_player_then(
+        &self,
+        id: u64,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl delete_player for super::RemoteReducers {
-    fn delete_player(&self, id: u64,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("delete_player", DeletePlayerArgs { id,  })
-    }
-    fn on_delete_player(
+    fn delete_player_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u64, ) + Send + 'static,
-    ) -> DeletePlayerCallbackId {
-        DeletePlayerCallbackId(self.imp.on_reducer(
-            "delete_player",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::DeletePlayer {
-                            id, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, id, )
-            }),
-        ))
-    }
-    fn remove_on_delete_player(&self, callback: DeletePlayerCallbackId) {
-        self.imp.remove_on_reducer("delete_player", callback.0)
-    }
-}
+        id: u64,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `delete_player`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_delete_player {
-    /// Set the call-reducer flags for the reducer `delete_player` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn delete_player(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_delete_player for super::SetReducerFlags {
-    fn delete_player(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_player", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(DeletePlayerArgs { id,  }, callback)
     }
 }
 
@@ -607,8 +442,6 @@ impl __sdk::InModule for DeletePlayersByNameArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DeletePlayersByNameCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_players_by_name`.
 ///
@@ -618,70 +451,39 @@ pub trait delete_players_by_name {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_delete_players_by_name`] callbacks.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`delete_players_by_name:delete_players_by_name_then`] to run a callback after the reducer completes.
     fn delete_players_by_name(&self, name: String,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_players_by_name`.
+) -> __sdk::Result<()> {
+        self.delete_players_by_name_then(name,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `delete_players_by_name` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`DeletePlayersByNameCallbackId`] can be passed to [`Self::remove_on_delete_players_by_name`]
-    /// to cancel the callback.
-    fn on_delete_players_by_name(&self, callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static) -> DeletePlayersByNameCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_delete_players_by_name`],
-    /// causing it not to run in the future.
-    fn remove_on_delete_players_by_name(&self, callback: DeletePlayersByNameCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn delete_players_by_name_then(
+        &self,
+        name: String,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl delete_players_by_name for super::RemoteReducers {
-    fn delete_players_by_name(&self, name: String,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("delete_players_by_name", DeletePlayersByNameArgs { name,  })
-    }
-    fn on_delete_players_by_name(
+    fn delete_players_by_name_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static,
-    ) -> DeletePlayersByNameCallbackId {
-        DeletePlayersByNameCallbackId(self.imp.on_reducer(
-            "delete_players_by_name",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::DeletePlayersByName {
-                            name, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, name, )
-            }),
-        ))
-    }
-    fn remove_on_delete_players_by_name(&self, callback: DeletePlayersByNameCallbackId) {
-        self.imp.remove_on_reducer("delete_players_by_name", callback.0)
-    }
-}
+        name: String,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `delete_players_by_name`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_delete_players_by_name {
-    /// Set the call-reducer flags for the reducer `delete_players_by_name` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn delete_players_by_name(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_delete_players_by_name for super::SetReducerFlags {
-    fn delete_players_by_name(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_players_by_name", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(DeletePlayersByNameArgs { name,  }, callback)
     }
 }
 
@@ -832,6 +634,8 @@ impl __sdk::__query_builder::HasIxCols for HasSpecialStuff {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for HasSpecialStuff {}
+
 '''
 "list_over_age_reducer.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -864,8 +668,6 @@ impl __sdk::InModule for ListOverAgeArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct ListOverAgeCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `list_over_age`.
 ///
@@ -875,70 +677,39 @@ pub trait list_over_age {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_list_over_age`] callbacks.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`list_over_age:list_over_age_then`] to run a callback after the reducer completes.
     fn list_over_age(&self, age: u8,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `list_over_age`.
+) -> __sdk::Result<()> {
+        self.list_over_age_then(age,  |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `list_over_age` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`ListOverAgeCallbackId`] can be passed to [`Self::remove_on_list_over_age`]
-    /// to cancel the callback.
-    fn on_list_over_age(&self, callback: impl FnMut(&super::ReducerEventContext, &u8, ) + Send + 'static) -> ListOverAgeCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_list_over_age`],
-    /// causing it not to run in the future.
-    fn remove_on_list_over_age(&self, callback: ListOverAgeCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn list_over_age_then(
+        &self,
+        age: u8,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl list_over_age for super::RemoteReducers {
-    fn list_over_age(&self, age: u8,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("list_over_age", ListOverAgeArgs { age,  })
-    }
-    fn on_list_over_age(
+    fn list_over_age_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u8, ) + Send + 'static,
-    ) -> ListOverAgeCallbackId {
-        ListOverAgeCallbackId(self.imp.on_reducer(
-            "list_over_age",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::ListOverAge {
-                            age, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, age, )
-            }),
-        ))
-    }
-    fn remove_on_list_over_age(&self, callback: ListOverAgeCallbackId) {
-        self.imp.remove_on_reducer("list_over_age", callback.0)
-    }
-}
+        age: u8,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `list_over_age`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_list_over_age {
-    /// Set the call-reducer flags for the reducer `list_over_age` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn list_over_age(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_list_over_age for super::SetReducerFlags {
-    fn list_over_age(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("list_over_age", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(ListOverAgeArgs { age,  }, callback)
     }
 }
 
@@ -971,8 +742,6 @@ impl __sdk::InModule for LogModuleIdentityArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct LogModuleIdentityCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `log_module_identity`.
 ///
@@ -982,68 +751,36 @@ pub trait log_module_identity {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_log_module_identity`] callbacks.
-    fn log_module_identity(&self, ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `log_module_identity`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`log_module_identity:log_module_identity_then`] to run a callback after the reducer completes.
+    fn log_module_identity(&self, ) -> __sdk::Result<()> {
+        self.log_module_identity_then( |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `log_module_identity` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`LogModuleIdentityCallbackId`] can be passed to [`Self::remove_on_log_module_identity`]
-    /// to cancel the callback.
-    fn on_log_module_identity(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> LogModuleIdentityCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_log_module_identity`],
-    /// causing it not to run in the future.
-    fn remove_on_log_module_identity(&self, callback: LogModuleIdentityCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn log_module_identity_then(
+        &self,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl log_module_identity for super::RemoteReducers {
-    fn log_module_identity(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("log_module_identity", LogModuleIdentityArgs {  })
-    }
-    fn on_log_module_identity(
+    fn log_module_identity_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
-    ) -> LogModuleIdentityCallbackId {
-        LogModuleIdentityCallbackId(self.imp.on_reducer(
-            "log_module_identity",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::LogModuleIdentity {
-                            
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
-            }),
-        ))
-    }
-    fn remove_on_log_module_identity(&self, callback: LogModuleIdentityCallbackId) {
-        self.imp.remove_on_reducer("log_module_identity", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `log_module_identity`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_log_module_identity {
-    /// Set the call-reducer flags for the reducer `log_module_identity` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn log_module_identity(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_log_module_identity for super::SetReducerFlags {
-    fn log_module_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("log_module_identity", flags);
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(LogModuleIdentityArgs {  }, callback)
     }
 }
 
@@ -1130,14 +867,6 @@ impl<'ctx> __sdk::Table for LoggedOutPlayerTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<Player>("logged_out_player");
-    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-    _table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
-    _table.add_unique_constraint::<String>("name", |row| &row.name);
-}
 pub struct LoggedOutPlayerUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for LoggedOutPlayerTableHandle<'ctx> {
@@ -1153,19 +882,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for LoggedOutPlayerTableHandle<'ctx> {
     fn remove_on_update(&self, callback: LoggedOutPlayerUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Player>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<Player>",
-            "TableUpdate",
-        ).with_cause(e).into()
-    })
 }
 
         /// Access to the `identity` unique index on the table `logged_out_player`,
@@ -1258,6 +974,27 @@ pub(super) fn parse_table_update(
             }
         }
         
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
+    let _table = client_cache.get_or_make_table::<Player>("logged_out_player");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
+    _table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
+    _table.add_unique_constraint::<String>("name", |row| &row.name);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<Player>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Player>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
+}
+
         #[allow(non_camel_case_types)]
         /// Extension trait for query builder access to the table `Player`.
         ///
@@ -1352,18 +1089,18 @@ pub use person_table::*;
 pub use player_table::*;
 pub use test_d_table::*;
 pub use test_f_table::*;
-pub use add_reducer::{add, set_flags_for_add, AddCallbackId};
-pub use add_player_reducer::{add_player, set_flags_for_add_player, AddPlayerCallbackId};
-pub use add_private_reducer::{add_private, set_flags_for_add_private, AddPrivateCallbackId};
-pub use assert_caller_identity_is_module_identity_reducer::{assert_caller_identity_is_module_identity, set_flags_for_assert_caller_identity_is_module_identity, AssertCallerIdentityIsModuleIdentityCallbackId};
-pub use delete_player_reducer::{delete_player, set_flags_for_delete_player, DeletePlayerCallbackId};
-pub use delete_players_by_name_reducer::{delete_players_by_name, set_flags_for_delete_players_by_name, DeletePlayersByNameCallbackId};
-pub use list_over_age_reducer::{list_over_age, set_flags_for_list_over_age, ListOverAgeCallbackId};
-pub use log_module_identity_reducer::{log_module_identity, set_flags_for_log_module_identity, LogModuleIdentityCallbackId};
-pub use query_private_reducer::{query_private, set_flags_for_query_private, QueryPrivateCallbackId};
-pub use say_hello_reducer::{say_hello, set_flags_for_say_hello, SayHelloCallbackId};
-pub use test_reducer::{test, set_flags_for_test, TestCallbackId};
-pub use test_btree_index_args_reducer::{test_btree_index_args, set_flags_for_test_btree_index_args, TestBtreeIndexArgsCallbackId};
+pub use add_reducer::add;
+pub use add_player_reducer::add_player;
+pub use add_private_reducer::add_private;
+pub use assert_caller_identity_is_module_identity_reducer::assert_caller_identity_is_module_identity;
+pub use delete_player_reducer::delete_player;
+pub use delete_players_by_name_reducer::delete_players_by_name;
+pub use list_over_age_reducer::list_over_age;
+pub use log_module_identity_reducer::log_module_identity;
+pub use query_private_reducer::query_private;
+pub use say_hello_reducer::say_hello;
+pub use test_reducer::test;
+pub use test_btree_index_args_reducer::test_btree_index_args;
 pub use get_my_schema_via_http_procedure::get_my_schema_via_http;
 pub use return_value_procedure::return_value;
 pub use sleep_one_second_procedure::sleep_one_second;
@@ -1432,24 +1169,63 @@ impl __sdk::Reducer for Reducer {
             _ => unreachable!(),
 }
 }
-}
-impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
-        type Error = __sdk::Error;
-fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
-        match &value.reducer_name[..] {
-                        "add" => Ok(__sdk::parse_reducer_args::<add_reducer::AddArgs>("add", &value.args)?.into()),
-            "add_player" => Ok(__sdk::parse_reducer_args::<add_player_reducer::AddPlayerArgs>("add_player", &value.args)?.into()),
-            "add_private" => Ok(__sdk::parse_reducer_args::<add_private_reducer::AddPrivateArgs>("add_private", &value.args)?.into()),
-            "assert_caller_identity_is_module_identity" => Ok(__sdk::parse_reducer_args::<assert_caller_identity_is_module_identity_reducer::AssertCallerIdentityIsModuleIdentityArgs>("assert_caller_identity_is_module_identity", &value.args)?.into()),
-            "delete_player" => Ok(__sdk::parse_reducer_args::<delete_player_reducer::DeletePlayerArgs>("delete_player", &value.args)?.into()),
-            "delete_players_by_name" => Ok(__sdk::parse_reducer_args::<delete_players_by_name_reducer::DeletePlayersByNameArgs>("delete_players_by_name", &value.args)?.into()),
-            "list_over_age" => Ok(__sdk::parse_reducer_args::<list_over_age_reducer::ListOverAgeArgs>("list_over_age", &value.args)?.into()),
-            "log_module_identity" => Ok(__sdk::parse_reducer_args::<log_module_identity_reducer::LogModuleIdentityArgs>("log_module_identity", &value.args)?.into()),
-            "query_private" => Ok(__sdk::parse_reducer_args::<query_private_reducer::QueryPrivateArgs>("query_private", &value.args)?.into()),
-            "say_hello" => Ok(__sdk::parse_reducer_args::<say_hello_reducer::SayHelloArgs>("say_hello", &value.args)?.into()),
-            "test" => Ok(__sdk::parse_reducer_args::<test_reducer::TestArgs>("test", &value.args)?.into()),
-            "test_btree_index_args" => Ok(__sdk::parse_reducer_args::<test_btree_index_args_reducer::TestBtreeIndexArgsArgs>("test_btree_index_args", &value.args)?.into()),
-            unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
+    #[allow(clippy::clone_on_copy)]
+fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
+        match self {
+                        Reducer::Add{
+                name,
+                age,
+}             => __sats::bsatn::to_vec(&add_reducer::AddArgs {
+                name: name.clone(),
+                age: age.clone(),
+}),
+            Reducer::AddPlayer{
+                name,
+}             => __sats::bsatn::to_vec(&add_player_reducer::AddPlayerArgs {
+                name: name.clone(),
+}),
+            Reducer::AddPrivate{
+                name,
+}             => __sats::bsatn::to_vec(&add_private_reducer::AddPrivateArgs {
+                name: name.clone(),
+}),
+            Reducer::AssertCallerIdentityIsModuleIdentity => __sats::bsatn::to_vec(&assert_caller_identity_is_module_identity_reducer::AssertCallerIdentityIsModuleIdentityArgs {
+                }),
+Reducer::DeletePlayer{
+                id,
+}             => __sats::bsatn::to_vec(&delete_player_reducer::DeletePlayerArgs {
+                id: id.clone(),
+}),
+            Reducer::DeletePlayersByName{
+                name,
+}             => __sats::bsatn::to_vec(&delete_players_by_name_reducer::DeletePlayersByNameArgs {
+                name: name.clone(),
+}),
+            Reducer::ListOverAge{
+                age,
+}             => __sats::bsatn::to_vec(&list_over_age_reducer::ListOverAgeArgs {
+                age: age.clone(),
+}),
+            Reducer::LogModuleIdentity => __sats::bsatn::to_vec(&log_module_identity_reducer::LogModuleIdentityArgs {
+                }),
+Reducer::QueryPrivate => __sats::bsatn::to_vec(&query_private_reducer::QueryPrivateArgs {
+                }),
+Reducer::SayHello => __sats::bsatn::to_vec(&say_hello_reducer::SayHelloArgs {
+                }),
+Reducer::Test{
+                arg,
+                arg_2,
+                arg_3,
+                arg_4,
+}             => __sats::bsatn::to_vec(&test_reducer::TestArgs {
+                arg: arg.clone(),
+                arg_2: arg_2.clone(),
+                arg_3: arg_3.clone(),
+                arg_4: arg_4.clone(),
+}),
+            Reducer::TestBtreeIndexArgs => __sats::bsatn::to_vec(&test_btree_index_args_reducer::TestBtreeIndexArgsArgs {
+                }),
+_ => unreachable!(),
 }
 }
 }
@@ -1467,11 +1243,11 @@ pub struct DbUpdate {
 }
 
 
-impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
+impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
     type Error = __sdk::Error;
-    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
+    fn try_from(raw: __ws::v2::TransactionUpdate) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
-        for table_update in raw.tables {
+        for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
 
         "logged_out_player" => db_update.logged_out_player.append(logged_out_player_table::parse_table_update(table_update)?),
@@ -1511,6 +1287,32 @@ impl __sdk::DbUpdate for DbUpdate {
 
                     diff
                 }
+fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
+                let mut db_update = DbUpdate::default();
+for table_rows in raw.tables {
+            match &table_rows.table[..] {
+                                "logged_out_player" => db_update.logged_out_player.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "my_player" => db_update.my_player.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "person" => db_update.person.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "player" => db_update.player.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "test_d" => db_update.test_d.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "test_f" => db_update.test_f.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
+}}        Ok(db_update)
+}
+fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
+                let mut db_update = DbUpdate::default();
+for table_rows in raw.tables {
+            match &table_rows.table[..] {
+                                "logged_out_player" => db_update.logged_out_player.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "my_player" => db_update.my_player.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "person" => db_update.person.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "player" => db_update.player.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "test_d" => db_update.test_d.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "test_f" => db_update.test_f.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
+}}        Ok(db_update)
+}
 }
 
 #[derive(Default)]
@@ -1570,20 +1372,6 @@ impl __sdk::InModule for RemoteProcedures {
     type Module = RemoteModule;
 }
 
-#[doc(hidden)]
-/// The `set_reducer_flags` field of [`DbConnection`],
-/// with methods provided by extension traits for each reducer defined by the module.
-/// Each method sets the flags for the reducer with the same name.
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub struct SetReducerFlags {
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}
-
-impl __sdk::InModule for SetReducerFlags {
-    type Module = RemoteModule;
-}
-
 /// The `db` field of [`EventContext`] and [`DbConnection`],
 /// with methods provided by extension traits for each table defined by the module.
 pub struct RemoteTables {
@@ -1616,11 +1404,6 @@ pub struct DbConnection {
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
     #[doc(hidden)]
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
 
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
@@ -1636,7 +1419,6 @@ impl __sdk::DbContext for DbConnection {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
@@ -1646,9 +1428,6 @@ impl __sdk::DbContext for DbConnection {
     }
     fn procedures(&self) -> &Self::Procedures {
         &self.procedures
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -1753,7 +1532,6 @@ impl __sdk::DbConnection for DbConnection {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
             procedures: RemoteProcedures { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             imp,
         }
     }
@@ -1805,13 +1583,11 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 pub trait RemoteDbContext: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
-    SetReducerFlags = SetReducerFlags,
     SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
 > {}
 impl<Ctx: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
-    SetReducerFlags = SetReducerFlags,
     SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
 >> RemoteDbContext for Ctx {}
 
@@ -1823,11 +1599,6 @@ pub struct EventContext {
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
     /// The event which caused these callbacks to run.
@@ -1844,7 +1615,6 @@ impl __sdk::AbstractEventContext for EventContext {
         Self {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             procedures: RemoteProcedures { imp: imp.clone() },
             event,
             imp,
@@ -1860,7 +1630,6 @@ impl __sdk::DbContext for EventContext {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
@@ -1870,9 +1639,6 @@ impl __sdk::DbContext for EventContext {
     }
     fn procedures(&self) -> &Self::Procedures {
         &self.procedures
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -1909,11 +1675,6 @@ pub struct ReducerEventContext {
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
     /// The event which caused these callbacks to run.
@@ -1930,7 +1691,6 @@ impl __sdk::AbstractEventContext for ReducerEventContext {
         Self {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             procedures: RemoteProcedures { imp: imp.clone() },
             event,
             imp,
@@ -1946,7 +1706,6 @@ impl __sdk::DbContext for ReducerEventContext {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
@@ -1956,9 +1715,6 @@ impl __sdk::DbContext for ReducerEventContext {
     }
     fn procedures(&self) -> &Self::Procedures {
         &self.procedures
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -1994,11 +1750,6 @@ pub struct ProcedureEventContext {
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
     imp: __sdk::DbContextImpl<RemoteModule>,
@@ -2014,7 +1765,6 @@ impl __sdk::AbstractEventContext for ProcedureEventContext {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
             procedures: RemoteProcedures { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             imp,
         }
     }
@@ -2028,7 +1778,6 @@ impl __sdk::DbContext for ProcedureEventContext {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
@@ -2038,9 +1787,6 @@ impl __sdk::DbContext for ProcedureEventContext {
     }
     fn procedures(&self) -> &Self::Procedures {
         &self.procedures
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -2076,11 +1822,6 @@ pub struct SubscriptionEventContext {
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
     imp: __sdk::DbContextImpl<RemoteModule>,
@@ -2096,7 +1837,6 @@ impl __sdk::AbstractEventContext for SubscriptionEventContext {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
             procedures: RemoteProcedures { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             imp,
         }
     }
@@ -2110,7 +1850,6 @@ impl __sdk::DbContext for SubscriptionEventContext {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
@@ -2120,9 +1859,6 @@ impl __sdk::DbContext for SubscriptionEventContext {
     }
     fn procedures(&self) -> &Self::Procedures {
         &self.procedures
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -2159,11 +1895,6 @@ pub struct ErrorContext {
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
     /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
     pub procedures: RemoteProcedures,
     /// The event which caused these callbacks to run.
@@ -2180,7 +1911,6 @@ impl __sdk::AbstractEventContext for ErrorContext {
         Self {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             procedures: RemoteProcedures { imp: imp.clone() },
             event,
             imp,
@@ -2196,7 +1926,6 @@ impl __sdk::DbContext for ErrorContext {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type Procedures = RemoteProcedures;
-    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
@@ -2206,9 +1935,6 @@ impl __sdk::DbContext for ErrorContext {
     }
     fn procedures(&self) -> &Self::Procedures {
         &self.procedures
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -2249,7 +1975,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type Reducer = Reducer;
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
-    type SetReducerFlags = SetReducerFlags;
+    type Procedures = RemoteProcedures;
     type DbUpdate = DbUpdate;
     type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
@@ -2263,6 +1989,14 @@ fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         test_d_table::register_table(client_cache);
         test_f_table::register_table(client_cache);
 }
+const ALL_TABLE_NAMES: &'static [&'static str] = &[
+                "logged_out_player",
+        "my_player",
+        "person",
+        "player",
+        "test_d",
+        "test_f",
+];
 }
 '''
 "my_player_table.rs" = '''
@@ -2355,7 +2089,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<Player>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse(
@@ -2524,12 +2258,6 @@ impl<'ctx> __sdk::Table for PersonTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<Person>("person");
-    _table.add_unique_constraint::<u32>("id", |row| &row.id);
-}
 pub struct PersonUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PersonTableHandle<'ctx> {
@@ -2545,19 +2273,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PersonTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PersonUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Person>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<Person>",
-            "TableUpdate",
-        ).with_cause(e).into()
-    })
 }
 
         /// Access to the `id` unique index on the table `person`,
@@ -2590,6 +2305,25 @@ pub(super) fn parse_table_update(
             }
         }
         
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
+    let _table = client_cache.get_or_make_table::<Person>("person");
+    _table.add_unique_constraint::<u32>("id", |row| &row.id);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<Person>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Person>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
+}
+
         #[allow(non_camel_case_types)]
         /// Extension trait for query builder access to the table `Person`.
         ///
@@ -2674,6 +2408,8 @@ impl __sdk::__query_builder::HasIxCols for Person {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for Person {}
+
 '''
 "pk_multi_identity_type.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -2738,6 +2474,8 @@ impl __sdk::__query_builder::HasIxCols for PkMultiIdentity {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for PkMultiIdentity {}
 
 '''
 "player_table.rs" = '''
@@ -2822,14 +2560,6 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<Player>("player");
-    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-    _table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
-    _table.add_unique_constraint::<String>("name", |row| &row.name);
-}
 pub struct PlayerUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
@@ -2845,19 +2575,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PlayerUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Player>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<Player>",
-            "TableUpdate",
-        ).with_cause(e).into()
-    })
 }
 
         /// Access to the `identity` unique index on the table `player`,
@@ -2950,6 +2667,27 @@ pub(super) fn parse_table_update(
             }
         }
         
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
+    let _table = client_cache.get_or_make_table::<Player>("player");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
+    _table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
+    _table.add_unique_constraint::<String>("name", |row| &row.name);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<Player>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Player>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
+}
+
         #[allow(non_camel_case_types)]
         /// Extension trait for query builder access to the table `Player`.
         ///
@@ -3036,6 +2774,8 @@ impl __sdk::__query_builder::HasIxCols for Player {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for Player {}
+
 '''
 "point_type.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -3097,6 +2837,8 @@ impl __sdk::__query_builder::HasIxCols for Point {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for Point {}
+
 '''
 "private_table_type.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -3155,6 +2897,8 @@ impl __sdk::__query_builder::HasIxCols for PrivateTable {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for PrivateTable {}
+
 '''
 "query_private_reducer.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -3184,8 +2928,6 @@ impl __sdk::InModule for QueryPrivateArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct QueryPrivateCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `query_private`.
 ///
@@ -3195,68 +2937,36 @@ pub trait query_private {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_query_private`] callbacks.
-    fn query_private(&self, ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `query_private`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`query_private:query_private_then`] to run a callback after the reducer completes.
+    fn query_private(&self, ) -> __sdk::Result<()> {
+        self.query_private_then( |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `query_private` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`QueryPrivateCallbackId`] can be passed to [`Self::remove_on_query_private`]
-    /// to cancel the callback.
-    fn on_query_private(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> QueryPrivateCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_query_private`],
-    /// causing it not to run in the future.
-    fn remove_on_query_private(&self, callback: QueryPrivateCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn query_private_then(
+        &self,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl query_private for super::RemoteReducers {
-    fn query_private(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("query_private", QueryPrivateArgs {  })
-    }
-    fn on_query_private(
+    fn query_private_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
-    ) -> QueryPrivateCallbackId {
-        QueryPrivateCallbackId(self.imp.on_reducer(
-            "query_private",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::QueryPrivate {
-                            
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
-            }),
-        ))
-    }
-    fn remove_on_query_private(&self, callback: QueryPrivateCallbackId) {
-        self.imp.remove_on_reducer("query_private", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `query_private`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_query_private {
-    /// Set the call-reducer flags for the reducer `query_private` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn query_private(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_query_private for super::SetReducerFlags {
-    fn query_private(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("query_private", flags);
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(QueryPrivateArgs {  }, callback)
     }
 }
 
@@ -3317,6 +3027,8 @@ impl __sdk::__query_builder::HasIxCols for RemoveTable {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for RemoveTable {}
 
 '''
 "repeating_test_arg_type.rs" = '''
@@ -3383,6 +3095,8 @@ impl __sdk::__query_builder::HasIxCols for RepeatingTestArg {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for RepeatingTestArg {}
 
 '''
 "return_value_procedure.rs" = '''
@@ -3472,8 +3186,6 @@ impl __sdk::InModule for SayHelloArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct SayHelloCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `say_hello`.
 ///
@@ -3483,68 +3195,36 @@ pub trait say_hello {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_say_hello`] callbacks.
-    fn say_hello(&self, ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `say_hello`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`say_hello:say_hello_then`] to run a callback after the reducer completes.
+    fn say_hello(&self, ) -> __sdk::Result<()> {
+        self.say_hello_then( |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `say_hello` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`SayHelloCallbackId`] can be passed to [`Self::remove_on_say_hello`]
-    /// to cancel the callback.
-    fn on_say_hello(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> SayHelloCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_say_hello`],
-    /// causing it not to run in the future.
-    fn remove_on_say_hello(&self, callback: SayHelloCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn say_hello_then(
+        &self,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl say_hello for super::RemoteReducers {
-    fn say_hello(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("say_hello", SayHelloArgs {  })
-    }
-    fn on_say_hello(
+    fn say_hello_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
-    ) -> SayHelloCallbackId {
-        SayHelloCallbackId(self.imp.on_reducer(
-            "say_hello",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::SayHello {
-                            
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
-            }),
-        ))
-    }
-    fn remove_on_say_hello(&self, callback: SayHelloCallbackId) {
-        self.imp.remove_on_reducer("say_hello", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `say_hello`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_say_hello {
-    /// Set the call-reducer flags for the reducer `say_hello` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn say_hello(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_say_hello for super::SetReducerFlags {
-    fn say_hello(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("say_hello", flags);
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(SayHelloArgs {  }, callback)
     }
 }
 
@@ -3668,6 +3348,8 @@ impl __sdk::__query_builder::HasIxCols for TestA {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for TestA {}
+
 '''
 "test_b_type.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -3722,8 +3404,6 @@ impl __sdk::InModule for TestBtreeIndexArgsArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct TestBtreeIndexArgsCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `test_btree_index_args`.
 ///
@@ -3733,68 +3413,36 @@ pub trait test_btree_index_args {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_test_btree_index_args`] callbacks.
-    fn test_btree_index_args(&self, ) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `test_btree_index_args`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`test_btree_index_args:test_btree_index_args_then`] to run a callback after the reducer completes.
+    fn test_btree_index_args(&self, ) -> __sdk::Result<()> {
+        self.test_btree_index_args_then( |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `test_btree_index_args` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`TestBtreeIndexArgsCallbackId`] can be passed to [`Self::remove_on_test_btree_index_args`]
-    /// to cancel the callback.
-    fn on_test_btree_index_args(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> TestBtreeIndexArgsCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_test_btree_index_args`],
-    /// causing it not to run in the future.
-    fn remove_on_test_btree_index_args(&self, callback: TestBtreeIndexArgsCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn test_btree_index_args_then(
+        &self,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl test_btree_index_args for super::RemoteReducers {
-    fn test_btree_index_args(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("test_btree_index_args", TestBtreeIndexArgsArgs {  })
-    }
-    fn on_test_btree_index_args(
+    fn test_btree_index_args_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
-    ) -> TestBtreeIndexArgsCallbackId {
-        TestBtreeIndexArgsCallbackId(self.imp.on_reducer(
-            "test_btree_index_args",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::TestBtreeIndexArgs {
-                            
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
-            }),
-        ))
-    }
-    fn remove_on_test_btree_index_args(&self, callback: TestBtreeIndexArgsCallbackId) {
-        self.imp.remove_on_reducer("test_btree_index_args", callback.0)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `test_btree_index_args`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_test_btree_index_args {
-    /// Set the call-reducer flags for the reducer `test_btree_index_args` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn test_btree_index_args(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_test_btree_index_args for super::SetReducerFlags {
-    fn test_btree_index_args(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("test_btree_index_args", flags);
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(TestBtreeIndexArgsArgs {  }, callback)
     }
 }
 
@@ -3890,7 +3538,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<TestD>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse(
@@ -3975,6 +3623,8 @@ impl __sdk::__query_builder::HasIxCols for TestD {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for TestD {}
+
 '''
 "test_e_type.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -4039,6 +3689,8 @@ impl __sdk::__query_builder::HasIxCols for TestE {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for TestE {}
 
 '''
 "test_f_table.rs" = '''
@@ -4132,7 +3784,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<TestFoobar>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse(
@@ -4217,6 +3869,8 @@ impl __sdk::__query_builder::HasIxCols for TestFoobar {
     }
 }
 
+impl __sdk::__query_builder::CanBeLookupTable for TestFoobar {}
+
 '''
 "test_reducer.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -4259,8 +3913,6 @@ impl __sdk::InModule for TestArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct TestCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `test`.
 ///
@@ -4270,76 +3922,48 @@ pub trait test {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_test`] callbacks.
-    fn test(&self, arg: TestA,
-arg_2: TestB,
-arg_3: NamespaceTestC,
-arg_4: NamespaceTestF,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `test`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`TestCallbackId`] can be passed to [`Self::remove_on_test`]
-    /// to cancel the callback.
-    fn on_test(&self, callback: impl FnMut(&super::ReducerEventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static) -> TestCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_test`],
-    /// causing it not to run in the future.
-    fn remove_on_test(&self, callback: TestCallbackId);
-}
-
-impl test for super::RemoteReducers {
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`test:test_then`] to run a callback after the reducer completes.
     fn test(&self, arg: TestA,
 arg_2: TestB,
 arg_3: NamespaceTestC,
 arg_4: NamespaceTestF,
 ) -> __sdk::Result<()> {
-        self.imp.call_reducer("test", TestArgs { arg, arg_2, arg_3, arg_4,  })
+        self.test_then(arg, arg_2, arg_3, arg_4,  |_, _| {})
     }
-    fn on_test(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static,
-    ) -> TestCallbackId {
-        TestCallbackId(self.imp.on_reducer(
-            "test",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::Test {
-                            arg, arg_2, arg_3, arg_4, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, arg, arg_2, arg_3, arg_4, )
-            }),
-        ))
-    }
-    fn remove_on_test(&self, callback: TestCallbackId) {
-        self.imp.remove_on_reducer("test", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `test`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_test {
-    /// Set the call-reducer flags for the reducer `test` to `flags`.
+    /// Request that the remote module invoke the reducer `test` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn test(&self, flags: __ws::CallReducerFlags);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn test_then(
+        &self,
+        arg: TestA,
+arg_2: TestB,
+arg_3: NamespaceTestC,
+arg_4: NamespaceTestF,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
-impl set_flags_for_test for super::SetReducerFlags {
-    fn test(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("test", flags);
+impl test for super::RemoteReducers {
+    fn test_then(
+        &self,
+        arg: TestA,
+arg_2: TestB,
+arg_3: NamespaceTestC,
+arg_4: NamespaceTestF,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(TestArgs { arg, arg_2, arg_3, arg_4,  }, callback)
     }
 }
 

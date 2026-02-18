@@ -682,6 +682,7 @@ pub(crate) mod tests {
                 col_name: Identifier::new(element.name.unwrap()).unwrap(),
                 col_type: element.algebraic_type,
                 col_pos: ColId(i as _),
+                alias: None,
             })
             .collect();
 
@@ -698,6 +699,8 @@ pub(crate) mod tests {
                 StTableType::User,
                 access,
                 None,
+                None,
+                false,
                 None,
             ),
         )?;
@@ -860,6 +863,7 @@ pub(crate) mod tests {
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                 columns: columns.clone(),
             }),
+            alias: None,
         };
         let index_id = with_auto_commit(&db, |tx| db.create_index(tx, index, is_unique))?;
 

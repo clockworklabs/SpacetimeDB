@@ -39,6 +39,7 @@ mod sym {
         };
     }
 
+    symbol!(accessor);
     symbol!(at);
     symbol!(auto_inc);
     symbol!(btree);
@@ -61,6 +62,7 @@ mod sym {
     symbol!(unique);
     symbol!(update);
     symbol!(default);
+    symbol!(event);
 
     symbol!(u8);
     symbol!(i8);
@@ -125,10 +127,19 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
-        let args = view::ViewArgs::parse(args, &original_function.sig.ident)?;
-        view::view_impl(args, original_function)
-    })
+    let item_ts: TokenStream = item.into();
+    let original_function = match syn::parse2::<ItemFn>(item_ts.clone()) {
+        Ok(f) => f,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    let args = match view::ViewArgs::parse(args.into(), &original_function.sig.ident) {
+        Ok(a) => a,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    match view::view_impl(args, &original_function) {
+        Ok(ts) => ts.into(),
+        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    }
 }
 
 /// It turns out to be shockingly difficult to construct an [`Attribute`].

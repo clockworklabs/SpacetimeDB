@@ -4,7 +4,7 @@ use core::ops::Deref;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 
 /// The name of a reducer.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReducerName(pub Identifier);
 
 impl ReducerName {
@@ -12,7 +12,7 @@ impl ReducerName {
         Self(id)
     }
 
-    #[cfg(feature = "test")]
+    #[cfg(any(test, feature = "test"))]
     pub fn for_test(name: &str) -> Self {
         Self(Identifier::for_test(name))
     }

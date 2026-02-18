@@ -65,14 +65,14 @@ my-spacetime-app/
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-const spacetimedb = schema(
-  table(
-    { name: 'person' },
+const spacetimedb = schema({
+  person: table(
+    {},
     {
       name: t.string(),
     }
   )
-);
+});
 export default spacetimedb;
 
 export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {

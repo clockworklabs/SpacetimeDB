@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, Query, ReducerContext, ViewContext};
 
-#[table(name = test)]
+#[table(accessor = test)]
 struct Test {
     #[unique]
     id: u32,
@@ -64,7 +64,7 @@ fn read_only_btree_index_no_delete(ctx: &ReducerContext) {
     read_only.db.test().x().delete(0u32..);
 }
 
-#[table(name = player)]
+#[table(accessor = player)]
 struct Player {
     #[unique]
     identity: Identity,
@@ -73,59 +73,59 @@ struct Player {
 struct NotSpacetimeType {}
 
 /// Private views not allowed; must be `#[view(public, ...)]`
-#[view(name = view_def_no_public)]
+#[view(accessor = view_def_no_public)]
 fn view_def_no_public(_: &ViewContext) -> Vec<Player> {
     vec![]
 }
 
 /// Duplicate `public`
-#[view(name = view_def_dup_public, public, public)]
+#[view(accessor = view_def_dup_public, public, public)]
 fn view_def_dup_public() -> Vec<Player> {
     vec![]
 }
 
 /// Duplicate `name`
-#[view(name = view_def_dup_name, name = view_def_dup_name, public)]
+#[view(accessor = view_def_dup_name, name = view_def_dup_name, public)]
 fn view_def_dup_name() -> Vec<Player> {
     vec![]
 }
 
 /// Unsupported attribute arg
-#[view(name = view_def_unsupported_arg, public, anonymous)]
+#[view(accessor = view_def_unsupported_arg, public, anonymous)]
 fn view_def_unsupported_arg() -> Vec<Player> {
     vec![]
 }
 
 /// A `ViewContext` is required
-#[view(name = view_def_no_context, public)]
+#[view(accessor = view_def_no_context, public)]
 fn view_def_no_context() -> Vec<Player> {
     vec![]
 }
 
 /// A `ViewContext` is required
-#[view(name = view_def_wrong_context, public)]
+#[view(accessor = view_def_wrong_context, public)]
 fn view_def_wrong_context(_: &ReducerContext) -> Vec<Player> {
     vec![]
 }
 
 /// Must pass the `ViewContext` by ref
-#[view(name = view_def_pass_context_by_value, public)]
+#[view(accessor = view_def_pass_context_by_value, public)]
 fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
     vec![]
 }
 
 /// The view context must be the first parameter
-#[view(name = view_def_wrong_context_position, public)]
+#[view(accessor = view_def_wrong_context_position, public)]
 fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
     vec![]
 }
 
 /// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(name = view_def_no_return, public)]
+#[view(accessor = view_def_no_return, public)]
 fn view_def_no_return(_: &ViewContext) {}
 
 /// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(name = view_def_wrong_return, public)]
+#[view(accessor = view_def_wrong_return, public)]
 fn view_def_wrong_return(_: &ViewContext) -> Player {
     Player {
         identity: Identity::ZERO,
@@ -133,19 +133,18 @@ fn view_def_wrong_return(_: &ViewContext) -> Player {
 }
 
 /// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(name = view_def_returns_not_a_spacetime_type, public)]
+#[view(accessor = view_def_returns_not_a_spacetime_type, public)]
 fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
     None
 }
 
 /// Cannot use a view as a scheduled function
-#[view(name = sched_table_view, public)]
+#[view(accessor = sched_table_view, public)]
 fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
     vec![]
 }
 
-
-#[table(name = player_info)]
+#[table(accessor = player_info)]
 struct PlayerInfo {
     #[unique]
     identity: Identity,
@@ -155,21 +154,21 @@ struct PlayerInfo {
 }
 
 /// Comparing incompatible types in `where` condition: Identity != int
-#[view(name = view_bad_where, public)]
-fn view_bad_where(ctx: &ViewContext) -> Query<Player> {
+#[view(accessor = view_bad_where, public)]
+fn view_bad_where(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
 }
 
 /// Comparing incompatible types in `where` condition: u8 != u32
-#[view(name = view_bad_where_int_types, public)]
-fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
+#[view(accessor = view_bad_where_int_types, public)]
+fn view_bad_where_int_types(ctx: &ViewContext) -> impl Query<PlayerInfo> {
     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
 }
 
 /// Joining incompatible types
 /// -- weight is u32, identity is Identity
-#[view(name = view_bad_join, public)]
-fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
+#[view(accessor = view_bad_join, public)]
+fn view_bad_join(ctx: &ViewContext) -> impl Query<PlayerInfo> {
     ctx.from
         .player_info()
         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
@@ -178,8 +177,8 @@ fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
 
 /// Joining non-index columns
 /// -- age is not indexed
-#[view(name = view_join_non_indexed_column, public)]
-fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
+#[view(accessor = view_join_non_indexed_column, public)]
+fn view_join_non_indexed_column(ctx: &ViewContext) -> impl Query<PlayerInfo> {
     ctx.from
         .player()
         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
@@ -188,8 +187,8 @@ fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
 
 /// Right join returns right table's type
 /// -- should be PlayerInfo, not Player
-#[view(name = view_right_join_wrong_return_type, public)]
-fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
+#[view(accessor = view_right_join_wrong_return_type, public)]
+fn view_right_join_wrong_return_type(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from
         .player()
         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
@@ -198,8 +197,8 @@ fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
 
 /// Using non-existent table
 /// -- xyz table does not exist
-#[view(name = view_nonexistent_table, public)]
-fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+#[view(accessor = view_nonexistent_table, public)]
+fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
     ctx.from.xyz().build()
 }
 

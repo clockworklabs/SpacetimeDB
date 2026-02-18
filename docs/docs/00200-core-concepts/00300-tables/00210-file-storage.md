@@ -29,7 +29,7 @@ const userAvatar = table(
   }
 );
 
-const spacetimedb = schema(userAvatar);
+const spacetimedb = schema({ userAvatar });
 export default spacetimedb;
 
 export const upload_avatar = spacetimedb.reducer({
@@ -58,7 +58,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "UserAvatar", Public = true)]
+    [SpacetimeDB.Table(Accessor = "UserAvatar", Public = true)]
     public partial struct UserAvatar
     {
         [SpacetimeDB.PrimaryKey]
@@ -197,7 +197,7 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Called after uploading file to external storage
@@ -227,7 +227,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -387,7 +387,7 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Upload file to S3 and register in database
@@ -445,7 +445,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -764,7 +764,7 @@ using SpacetimeDB;
 
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "Image", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Image", Public = true)]
     public partial struct Image
     {
         [SpacetimeDB.PrimaryKey]

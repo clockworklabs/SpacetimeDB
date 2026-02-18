@@ -129,7 +129,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureCtx.withTx`.
 
 ```typescript
-const MyTable = table(
+const myTable = table(
     { name: "my_table" },
     {
         a: t.u32(),
@@ -137,7 +137,7 @@ const MyTable = table(
     },
 )
 
-const spacetimedb = schema(MyTable);
+const spacetimedb = schema({ myTable });
 export default spacetimedb;
 
 export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
@@ -181,7 +181,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "MyTable")]
+    [SpacetimeDB.Table(Accessor = "MyTable")]
     public partial struct MyTable
     {
         public uint A;
@@ -429,7 +429,7 @@ may return a value, and that value will be returned to the calling procedure.
 Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
 
 ```typescript
-const Player = table(
+const player = table(
     { name: "player" },
     {
         id: t.identity(),
@@ -437,7 +437,7 @@ const Player = table(
     },
 );
 
-const spacetimedb = schema(Player);
+const spacetimedb = schema({ player });
 export default spacetimedb;
 
 export const find_highest_level_player = spacetimedb.procedure(t.unit(), ctx => {
@@ -471,7 +471,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Player")]
+    [SpacetimeDB.Table(Accessor = "Player")]
     public partial struct Player
     {
         public Identity Id;
@@ -1190,7 +1190,7 @@ A common use case for procedures is integrating with external APIs like OpenAI's
 ```typescript
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 
-const AiMessage = table(
+const aiMessage = table(
   { name: 'ai_message', public: true },
   {
     user: t.identity(),
@@ -1200,7 +1200,7 @@ const AiMessage = table(
   }
 );
 
-const spacetimedb = schema(AiMessage);
+const spacetimedb = schema({ aiMessage });
 export default spacetimedb;
 
 export const ask_ai = spacetimedb.procedure(
@@ -1256,7 +1256,7 @@ using System.Text.Json;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "AiMessage", Public = true)]
+    [SpacetimeDB.Table(Accessor = "AiMessage", Public = true)]
     public partial struct AiMessage
     {
         public Identity User;
@@ -1336,7 +1336,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, procedure, ProcedureContext, Identity, Timestamp};
 
-#[table(name = ai_message, public)]
+#[table(accessor = ai_message, public)]
 pub struct AiMessage {
     user: Identity,
     prompt: String,

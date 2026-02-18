@@ -78,23 +78,6 @@ impl<'ctx> __sdk::Table for UniqueStringTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueString>("unique_string");
-    _table.add_unique_constraint::<String>("s", |row| &row.s);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueString>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueString>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
 /// Access to the `s` unique index on the table `unique_string`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueStringSUnique::find`] method.
@@ -123,6 +106,23 @@ impl<'ctx> UniqueStringSUnique<'ctx> {
     pub fn find(&self, col_val: &String) -> Option<UniqueString> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueString>("unique_string");
+    _table.add_unique_constraint::<String>("s", |row| &row.s);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<UniqueString>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueString>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

@@ -43,3 +43,5 @@ impl __sdk::__query_builder::HasIxCols for OptionSimpleEnum {
         OptionSimpleEnumIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for OptionSimpleEnum {}

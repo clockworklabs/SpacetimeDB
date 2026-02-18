@@ -1,10 +1,14 @@
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = t1)]
-pub struct T1 { id: u64 }
+#[spacetimedb::table(accessor = t1)]
+pub struct T1 {
+    id: u64,
+}
 
-#[spacetimedb::table(name = t2)]
-pub struct T2 { id: u64 }
+#[spacetimedb::table(accessor = t2)]
+pub struct T2 {
+    id: u64,
+}
 
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {

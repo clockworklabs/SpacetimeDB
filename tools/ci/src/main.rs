@@ -406,7 +406,7 @@ fn main() -> Result<()> {
                 "spacetimedb-cli",
                 "--",
                 "build",
-                "--project-path",
+                "--module-path",
                 "modules/module-test",
             )
             .run()?;

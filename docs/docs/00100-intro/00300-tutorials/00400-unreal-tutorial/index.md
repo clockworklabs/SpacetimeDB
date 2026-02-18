@@ -6,13 +6,17 @@ slug: /tutorials/unreal
 
 Need help with the tutorial or CLI commands? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-In this tutorial you'll learn how to build a small-scoped massive multiplayer online action game in Unreal, from scratch, using SpacetimeDB. Although, the game we're going to build is small in scope, it'll scale to hundreds of players and will help you get acquainted with all the features and best practices of SpacetimeDB, while building [a fun little game](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio).
+:::important SpacetimeDB 2.0 Coming Soon
+SpacetimeDB `2.0` is coming soon. Until the Unreal SDK is updated for `2.0`, this tutorial is pinned to the `v1.12.0` release track.
+:::
+
+In this tutorial you'll learn how to build a small-scoped massive multiplayer online action game in Unreal, from scratch, using SpacetimeDB. Although, the game we're going to build is small in scope, it'll scale to hundreds of players and will help you get acquainted with all the features and best practices of SpacetimeDB, while building [a fun little game](https://github.com/clockworklabs/SpacetimeDB/tree/v1.12.0/demo/Blackholio).
 
 By the end, you should have a basic understanding of what SpacetimeDB offers for developers making multiplayer games.
 
 The game is inspired by [agar.io](https://agar.io), but SpacetimeDB themed with some fun twists. If you're not familiar [agar.io](https://agar.io), it's a web game in which you and hundreds of other players compete to cultivate mass to become the largest cell in the Petri dish.
 
-Our game, called [Blackhol.io](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio), will be similar but space themed. It should give you a great idea of the types of games you can develop easily with SpacetimeDB.
+Our game, called [Blackhol.io](https://github.com/clockworklabs/SpacetimeDB/tree/v1.12.0/demo/Blackholio), will be similar but space themed. It should give you a great idea of the types of games you can develop easily with SpacetimeDB.
 
 This tutorial assumes that you have a basic understanding of the Unreal Engine, using a command line terminal and programming in C++. We'll give you some CLI commands to execute. If you are using Windows, we recommend using Git Bash or PowerShell. For Mac, we recommend Terminal.
 
@@ -37,4 +41,4 @@ First you'll get started with the core client/server setup. For part 2, you'll b
 
 If you already have a good understanding of the SpacetimeDB client and server, check out our completed tutorial project!
 
-[https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio)
+[https://github.com/clockworklabs/SpacetimeDB/tree/v1.12.0/demo/Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/v1.12.0/demo/Blackholio)

@@ -95,8 +95,29 @@ After completing setup, `spacetime dev`:
 - Builds and publishes your module to the database
 - Watches your source files for changes
 - Automatically rebuilds and republishes when you save changes
+- **Runs your client development server** (if configured)
 
 Your database will be available at `https://maincloud.spacetimedb.com`.
+
+### Client Development Server
+
+`spacetime dev` can automatically run your client's development server alongside the SpacetimeDB module. This is configured via the `spacetime.json` file in your project root:
+
+```json
+{
+  "dev": {
+    "run": "npm run dev"
+  }
+}
+```
+
+The client command can be:
+- Auto-detected from your project (package.json, Cargo.toml, .csproj)
+- Configured in `spacetime.json`
+- Overridden via CLI flag: `spacetime dev --run "yarn dev"`
+- Disabled with: `spacetime dev --server-only`
+
+When you run `spacetime init` with a client template, a default client command is automatically configured in `spacetime.json` based on your project type.
 
 ### Project Structure
 
@@ -116,6 +137,7 @@ my-project/
 │   └── module_bindings/    # Generated client bindings
 ├── package.json
 ├── tsconfig.json
+├── spacetime.json          # SpacetimeDB configuration
 └── README.md
 ```
 
@@ -130,6 +152,7 @@ my-project/
 ├── module_bindings/        # Generated client bindings
 ├── client.csproj
 ├── Program.cs
+├── spacetime.json          # SpacetimeDB configuration
 └── README.md
 ```
 
@@ -145,6 +168,7 @@ my-project/
 ├── src/                    # Client code
 │   └── module_bindings/    # Generated client bindings
 ├── Cargo.toml
+├── spacetime.json          # SpacetimeDB configuration
 ├── .gitignore
 └── README.md
 ```
