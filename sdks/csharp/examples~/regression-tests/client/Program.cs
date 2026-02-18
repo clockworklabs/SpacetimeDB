@@ -98,7 +98,12 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.ScoresPlayer123().Build())
         .AddQuery(qb => qb.From.ScoresPlayer123Range().Build())
         .AddQuery(qb => qb.From.ScoresPlayer123Level5().Build())
-        .AddQuery(qb => qb.From.User().Build())
+        .AddQuery(qb =>
+            qb.From.User()
+                .Where(c => c.Age.Gte((byte)18).And(c.Age.Lt((byte)65)))
+                .Where(c => c.IsAdmin.Eq(true).Or(c.Name.Eq("Charlie")))
+                .Build()
+        )
         .AddQuery(qb => qb.From.Score().Build())
         .AddQuery(qb => qb.From.WhereTestView().Build())
         .AddQuery(qb => qb.From.FindWhereTest().Build())
@@ -414,6 +419,26 @@ void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
     Debug.Assert(
         player123Level5.Count == 1 && player123Level5[0].Points == 5_000,
         "Expected a single level-5 score worth 5,000 points for player 123"
+    );
+
+    Log.Debug("Checking advanced typed query builder predicates...");
+    Debug.Assert(conn.Db.User != null, "conn.Db.User should not be null");
+    var advancedUsers = conn.Db.User.Iter().ToList();
+    Debug.Assert(
+        advancedUsers.Count == 2,
+        $"Expected 2 rows from advanced user predicate, got {advancedUsers.Count}"
+    );
+    Debug.Assert(
+        advancedUsers.All(u => u.Age >= 18 && u.Age < 65),
+        "Advanced predicate rows should have 18 <= age < 65"
+    );
+    Debug.Assert(
+        advancedUsers.All(u => u.IsAdmin || u.Name == "Charlie"),
+        "Advanced predicate rows should satisfy admin || name == Charlie"
+    );
+    Debug.Assert(
+        advancedUsers.Select(u => u.Name).OrderBy(n => n).SequenceEqual(new[] { "Alice", "Charlie" }),
+        "Expected Alice and Charlie from advanced predicate"
     );
 }
 
