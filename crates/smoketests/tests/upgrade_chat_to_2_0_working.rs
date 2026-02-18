@@ -58,23 +58,13 @@ fn wait_for_ping(server_url: &str, timeout: Duration) -> Result<()> {
 }
 
 fn spawn_server(cli_path: &Path, data_dir: &Path) -> Result<(Child, Arc<Mutex<String>>)> {
-    let listen = format!("127.0.0.1:3000");
     log_step(&format!(
-        "starting server via {} on {} using data dir {}",
+        "starting server via {} using data dir {}",
         cli_path.display(),
-        listen,
         data_dir.display()
     ));
     let mut child = Command::new(cli_path)
-        .args([
-            "start",
-            "--jwt-key-dir",
-            &data_dir.display().to_string(),
-            "--data-dir",
-            &data_dir.display().to_string(),
-            "--listen-addr",
-            &listen,
-        ])
+        .args(["start"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -206,7 +196,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         return Err(e);
     }
 
-    let db_name = format!("manual-upgrade-chat-{}", spacetimedb_smoketests::random_string());
+    let db_name = "quickstart-chat";
     log_step(&format!("publishing old module to db {}", db_name));
     let publish_out = run_cmd_ok(
         &[
@@ -216,7 +206,6 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
             OsString::from(&old_url),
             OsString::from(old_publish_path_flag),
             old_module_dir.into_os_string(),
-            OsString::from("--yes"),
             OsString::from(&db_name),
         ],
         &old_worktree,
