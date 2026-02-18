@@ -1,6 +1,5 @@
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
-use clap::ArgMatches;
 use reqwest::{RequestBuilder, Url};
 use spacetimedb_auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::GetNamesResponse;
@@ -25,23 +24,6 @@ pub async fn database_identity(
     spacetime_dns(config, name_or_identity, server)
         .await?
         .with_context(|| format!("failed to find database `{name_or_identity}`."))
-}
-
-/// Resolve database name/identity from CLI arg, with fallback to layered config.
-pub fn get_database_from_args_or_config(args: &ArgMatches, arg_name: &str) -> anyhow::Result<String> {
-    if let Some(database) = args.get_one::<String>(arg_name) {
-        return Ok(database.clone());
-    }
-
-    if let Some(loaded) = crate::spacetime_config::find_and_load_with_env(None)? {
-        if let Some(database) = loaded.config.additional_fields.get("database").and_then(|v| v.as_str()) {
-            return Ok(database.to_string());
-        }
-    }
-
-    anyhow::bail!(
-        "Database name or identity not provided. Pass it as a positional argument or set `database` in the config file."
-    )
 }
 
 pub(crate) trait ResponseExt: Sized {
@@ -373,69 +355,4 @@ pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
         .join(bin_name)
         .with_extension(std::env::consts::EXE_EXTENSION);
     Ok(bin_path)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::{Arg, Command};
-    use std::sync::{Mutex, OnceLock};
-    use tempfile::TempDir;
-
-    fn cwd_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
-    }
-
-    #[test]
-    fn test_get_database_from_args_or_config_prefers_cli_arg() {
-        let _guard = cwd_lock();
-        let cmd = Command::new("test").arg(Arg::new("database"));
-        let matches = cmd.get_matches_from(vec!["test", "cli-db"]);
-
-        let db = get_database_from_args_or_config(&matches, "database").unwrap();
-        assert_eq!(db, "cli-db");
-    }
-
-    #[test]
-    fn test_get_database_from_args_or_config_uses_config_database() {
-        let _guard = cwd_lock();
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("spacetime.json"), r#"{ "server": "maincloud" }"#).unwrap();
-        std::fs::write(
-            temp.path().join("spacetime.local.json"),
-            r#"{ "database": "local-db" }"#,
-        )
-        .unwrap();
-
-        let previous = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp.path()).unwrap();
-
-        let cmd = Command::new("test").arg(Arg::new("database"));
-        let matches = cmd.get_matches_from(vec!["test"]);
-
-        let db = get_database_from_args_or_config(&matches, "database").unwrap();
-        assert_eq!(db, "local-db");
-
-        std::env::set_current_dir(previous).unwrap();
-    }
-
-    #[test]
-    fn test_get_database_from_args_or_config_errors_when_missing() {
-        let _guard = cwd_lock();
-        let temp = TempDir::new().unwrap();
-        let previous = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp.path()).unwrap();
-
-        let cmd = Command::new("test").arg(Arg::new("database"));
-        let matches = cmd.get_matches_from(vec!["test"]);
-
-        let err = get_database_from_args_or_config(&matches, "database").unwrap_err();
-        assert!(
-            err.to_string().contains("Database name or identity not provided"),
-            "unexpected error: {err}"
-        );
-
-        std::env::set_current_dir(previous).unwrap();
-    }
 }

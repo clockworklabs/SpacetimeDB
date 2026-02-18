@@ -12,7 +12,11 @@ pub fn cli() -> clap::Command {
         .about(format!(
             "Describe the structure of a database or entities within it. {UNSTABLE_WARNING}"
         ))
-        .arg(Arg::new("database").help("The name or identity of the database to describe"))
+        .arg(
+            Arg::new("database")
+                .required(true)
+                .help("The name or identity of the database to describe"),
+        )
         .arg(
             Arg::new("entity_type")
                 .value_parser(clap::value_parser!(EntityType))

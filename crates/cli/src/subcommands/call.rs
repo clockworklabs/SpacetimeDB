@@ -20,7 +20,11 @@ pub fn cli() -> clap::Command {
         .about(format!(
             "Invokes a function (reducer or procedure) in a database. {UNSTABLE_WARNING}"
         ))
-        .arg(Arg::new("database").help("The database name or identity to use to invoke the call"))
+        .arg(
+            Arg::new("database")
+                .required(true)
+                .help("The database name or identity to use to invoke the call"),
+        )
         .arg(
             Arg::new("function_name")
                 .required(true)

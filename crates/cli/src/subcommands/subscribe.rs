@@ -25,7 +25,11 @@ use crate::Config;
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
         .about(format!("Subscribe to SQL queries on the database. {UNSTABLE_WARNING}"))
-        .arg(Arg::new("database").help("The name or identity of the database you would like to query"))
+        .arg(
+            Arg::new("database")
+                .required(true)
+                .help("The name or identity of the database you would like to query"),
+        )
         .arg(
             Arg::new("query")
                 .required(true)
