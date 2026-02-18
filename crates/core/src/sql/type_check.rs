@@ -95,16 +95,17 @@ fn resolve_type(field: &FieldExpr, ty: AlgebraicType) -> Result<Option<Algebraic
     if let AlgebraicType::Sum(ty) = &ty {
         // We can use in `sql` coercion from string to sum type: `tag = 'name'`
         if let FieldExpr::Value(val_rhs) = field {
-            if let Some(val_rhs) = val_rhs.as_string() {
-                if ty.get_variant_simple(val_rhs).is_some() {
-                    return Ok(Some(AlgebraicType::Sum(ty.clone())));
-                }
+            if let Some(val_rhs) = val_rhs.as_string()
+                && ty.get_variant_simple(val_rhs).is_some()
+            {
+                return Ok(Some(AlgebraicType::Sum(ty.clone())));
             }
             // or check it against a `SumValue` type: `tag = { tag: 0, value: 1 }`
-            if let Some(val_rhs) = val_rhs.as_sum() {
-                if ty.is_simple_enum() && ty.get_variant_by_tag(val_rhs.tag).is_some() {
-                    return Ok(Some(AlgebraicType::Sum(ty.clone())));
-                }
+            if let Some(val_rhs) = val_rhs.as_sum()
+                && ty.is_simple_enum()
+                && ty.get_variant_by_tag(val_rhs.tag).is_some()
+            {
+                return Ok(Some(AlgebraicType::Sum(ty.clone())));
             }
         }
     }
@@ -147,12 +148,11 @@ fn check_both(op: OpQuery, lhs: &Typed, rhs: &Typed) -> Result<(), PlanError> {
 
 /// Patch the type of the field if the type is an `Identity`, `ConnectionId` or `Enum`
 fn patch_type(lhs: &FieldOp, ty_lhs: &mut Typed, ty_rhs: &Typed) -> Result<(), PlanError> {
-    if let FieldOp::Field(lhs_field) = lhs {
-        if let Some(ty) = ty_rhs.ty() {
-            if ty.is_sum() || ty.as_product().is_some_and(|x| x.is_special()) {
-                ty_lhs.set_ty(resolve_type(lhs_field, ty.clone())?);
-            }
-        }
+    if let FieldOp::Field(lhs_field) = lhs
+        && let Some(ty) = ty_rhs.ty()
+        && (ty.is_sum() || ty.as_product().is_some_and(|x| x.is_special()))
+    {
+        ty_lhs.set_ty(resolve_type(lhs_field, ty.clone())?);
     }
     Ok(())
 }

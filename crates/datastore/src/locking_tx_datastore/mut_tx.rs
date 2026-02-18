@@ -111,7 +111,7 @@ impl ViewReadSets {
     }
 
     /// Returns the views that perform a full scan of this table
-    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> + use<'_> {
         self.tables
             .get(table_id)
             .into_iter()
@@ -149,7 +149,7 @@ impl ViewReadSets {
         &'a self,
         table_id: &TableId,
         row_ptr: RowRef<'a>,
-    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+    ) -> impl Iterator<Item = &'a ViewCallInfo> + use<'a> {
         self.tables
             .get(table_id)
             .into_iter()
@@ -301,11 +301,11 @@ impl MutTxId {
         upper: Bound<AlgebraicValue>,
     ) {
         // Check for precise index seek.
-        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper) {
-            if low_val == up_val {
-                self.record_index_scan_point_inner(view, table_id, index_id, low_val.clone());
-                return;
-            }
+        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper)
+            && low_val == up_val
+        {
+            self.record_index_scan_point_inner(view, table_id, index_id, low_val.clone());
+            return;
         }
 
         // Everything else is treated as a table scan.
@@ -2604,7 +2604,9 @@ impl MutTxId {
         ) {
             // This is possible on restart if the database was previously running a version
             // before this system table was added.
-            log::error!("[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}");
+            log::error!(
+                "[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}"
+            );
         }
         Ok(())
     }
@@ -2619,7 +2621,7 @@ impl MutTxId {
             identity: identity.into(),
             connection_id: connection_id.into(),
         };
-        if let Some(ptr) = self
+        match self
             .iter_by_col_eq(
                 ST_CLIENT_ID,
                 // TODO(perf, minor, centril): consider a `const_col_list([x, ..])`
@@ -2630,9 +2632,12 @@ impl MutTxId {
             .next()
             .map(|row| row.pointer())
         {
-            self.delete(ST_CLIENT_ID, ptr).map(drop)?
-        } else {
-            log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
+            Some(ptr) => self.delete(ST_CLIENT_ID, ptr).map(drop)?,
+            _ => {
+                log::error!(
+                    "[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident"
+                );
+            }
         }
         self.delete_st_client_credentials(database_identity, connection_id)
     }
@@ -3007,7 +3012,7 @@ impl MutTxId {
                 commit_table.check_unique_constraints(
                     tx_row_ref,
                     // Don't check this index since we'll do a 1-1 old/new replacement.
-                    |ixs| ixs.filter(|(&id, _)| id != index_id),
+                    |ixs| ixs.filter(|&(&id, _)| id != index_id),
                     is_deleted,
                 )
             } {

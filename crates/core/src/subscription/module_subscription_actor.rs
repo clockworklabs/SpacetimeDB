@@ -1056,20 +1056,26 @@ impl ModuleSubscriptions {
         let mut new_queries = 0;
 
         for (sql, hash, hash_with_param) in query_hashes {
-            if let Some(unit) = guard.query(&hash) {
-                plans.push(unit);
-            } else if let Some(unit) = guard.query(&hash_with_param) {
-                plans.push(unit);
-            } else {
-                plans.push(Arc::new(
-                    compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
-                        DBError::WithSql {
-                            error: Box::new(DBError::Other(err.into())),
-                            sql: sql.into(),
-                        }
-                    })?,
-                ));
-                new_queries += 1;
+            match guard.query(&hash) {
+                Some(unit) => {
+                    plans.push(unit);
+                }
+                _ => match guard.query(&hash_with_param) {
+                    Some(unit) => {
+                        plans.push(unit);
+                    }
+                    _ => {
+                        plans.push(Arc::new(
+                            compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
+                                DBError::WithSql {
+                                    error: Box::new(DBError::Other(err.into())),
+                                    sql: sql.into(),
+                                }
+                            })?,
+                        ));
+                        new_queries += 1;
+                    }
+                },
             }
         }
 

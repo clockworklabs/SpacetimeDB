@@ -206,28 +206,28 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let mut need_space_before_filename = false;
         let mut need_colon_sep = false;
         let dimmed = ColorSpec::new().set_dimmed(true).clone();
-        if let Some(function) = record.function {
-            if function != SENTINEL {
-                out.set_color(&dimmed)?;
-                write!(out, "{function}")?;
-                out.reset()?;
-                need_space_before_filename = true;
-                need_colon_sep = true;
-            }
+        if let Some(function) = record.function
+            && function != SENTINEL
+        {
+            out.set_color(&dimmed)?;
+            write!(out, "{function}")?;
+            out.reset()?;
+            need_space_before_filename = true;
+            need_colon_sep = true;
         }
-        if let Some(filename) = record.filename {
-            if filename != SENTINEL {
-                out.set_color(&dimmed)?;
-                if need_space_before_filename {
-                    write!(out, " ")?;
-                }
-                write!(out, "{filename}")?;
-                if let Some(line) = record.line_number {
-                    write!(out, ":{line}")?;
-                }
-                out.reset()?;
-                need_colon_sep = true;
+        if let Some(filename) = record.filename
+            && filename != SENTINEL
+        {
+            out.set_color(&dimmed)?;
+            if need_space_before_filename {
+                write!(out, " ")?;
             }
+            write!(out, "{filename}")?;
+            if let Some(line) = record.line_number {
+                write!(out, ":{line}")?;
+            }
+            out.reset()?;
+            need_colon_sep = true;
         }
         if need_colon_sep {
             write!(out, ": ")?;

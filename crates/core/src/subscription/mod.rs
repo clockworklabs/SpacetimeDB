@@ -270,27 +270,31 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                 let start_time = std::time::Instant::now();
 
                 let result = if plan.returns_view_table() {
-                    if let Some(schema) = plan.return_table() {
-                        let pipelined_plan = PipelinedProject::from(plan.clone());
-                        let view_plan = ViewProject::new(pipelined_plan, schema.num_cols(), schema.num_private_cols());
-                        collect_table_update_for_view(
-                            &[view_plan],
-                            table_id,
-                            table_name.clone(),
-                            tx,
-                            update_type,
-                            rlb_pool,
-                        )?
-                    } else {
-                        let pipelined_plan = PipelinedProject::from(plan.clone());
-                        collect_table_update(
-                            &[pipelined_plan],
-                            table_id,
-                            table_name.clone(),
-                            tx,
-                            update_type,
-                            rlb_pool,
-                        )?
+                    match plan.return_table() {
+                        Some(schema) => {
+                            let pipelined_plan = PipelinedProject::from(plan.clone());
+                            let view_plan =
+                                ViewProject::new(pipelined_plan, schema.num_cols(), schema.num_private_cols());
+                            collect_table_update_for_view(
+                                &[view_plan],
+                                table_id,
+                                table_name.clone(),
+                                tx,
+                                update_type,
+                                rlb_pool,
+                            )?
+                        }
+                        _ => {
+                            let pipelined_plan = PipelinedProject::from(plan.clone());
+                            collect_table_update(
+                                &[pipelined_plan],
+                                table_id,
+                                table_name.clone(),
+                                tx,
+                                update_type,
+                                rlb_pool,
+                            )?
+                        }
                     }
                 } else {
                     let pipelined_plan = PipelinedProject::from(plan.clone());

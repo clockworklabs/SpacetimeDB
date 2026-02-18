@@ -145,34 +145,34 @@ impl OpenAiClient {
 
         let parsed: ResponsesPayload = serde_json::from_str(&body).context("parse OpenAI response")?;
 
-        if let Some(t) = parsed.output_text.as_ref() {
-            if !t.is_empty() {
-                return Ok(t.clone());
-            }
+        if let Some(t) = parsed.output_text.as_ref()
+            && !t.is_empty()
+        {
+            return Ok(t.clone());
         }
         if let Some(items) = parsed.output.as_ref() {
             for it in items {
-                if it.r#type.as_deref() == Some("message") {
-                    if let Some(content) = &it.content {
-                        for c in content {
-                            if let Some(txt) = &c.text {
-                                if !txt.is_empty() {
-                                    return Ok(txt.clone());
-                                }
-                            }
+                if it.r#type.as_deref() == Some("message")
+                    && let Some(content) = &it.content
+                {
+                    for c in content {
+                        if let Some(txt) = &c.text
+                            && !txt.is_empty()
+                        {
+                            return Ok(txt.clone());
                         }
                     }
                 }
             }
             for it in items {
-                if it.r#type.as_deref() == Some("reasoning") {
-                    if let Some(summary) = &it.summary {
-                        for c in summary {
-                            if let Some(txt) = &c.text {
-                                if !txt.is_empty() {
-                                    return Ok(txt.clone());
-                                }
-                            }
+                if it.r#type.as_deref() == Some("reasoning")
+                    && let Some(summary) = &it.summary
+                {
+                    for c in summary {
+                        if let Some(txt) = &c.text
+                            && !txt.is_empty()
+                        {
+                            return Ok(txt.clone());
                         }
                     }
                 }

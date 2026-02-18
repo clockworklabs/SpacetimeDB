@@ -53,13 +53,13 @@ impl MetaLlamaClient {
 
         let mut messages: Vec<Msg> = Vec::new();
 
-        if let Some(sys) = system.as_deref() {
-            if !sys.is_empty() {
-                messages.push(Msg {
-                    role: "system",
-                    content: sys,
-                });
-            }
+        if let Some(sys) = system.as_deref()
+            && !sys.is_empty()
+        {
+            messages.push(Msg {
+                role: "system",
+                content: sys,
+            });
         }
         if !static_prefix.is_empty() {
             messages.push(Msg {

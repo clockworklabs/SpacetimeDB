@@ -632,19 +632,17 @@ async fn ws_main_loop<HotswapWatcher>(
             // [`tokio::task::AbortHandle`]s), the reasonable thing to do is to
             // exit the loop as if the tasks completed normally.
             res = &mut send_task => {
-                if let Err(e) = res {
-                    if e.is_panic() {
+                if let Err(e) = res
+                    && e.is_panic() {
                         panic::resume_unwind(e.into_panic())
                     }
-                }
                 break;
             },
             res = &mut recv_task => {
-                if let Err(e) = res {
-                    if e.is_panic() {
+                if let Err(e) = res
+                    && e.is_panic() {
                         panic::resume_unwind(e.into_panic())
                     }
-                }
                 break;
             },
 
@@ -762,15 +760,15 @@ async fn ws_recv_task<MessageHandler>(
     while let Some((data, timer)) = recv_handler.next().await {
         let result = message_handler(data, timer).await;
         if let Err(e) = result {
-            if ws_version == WsVersion::V1 {
-                if let MessageHandleError::Execution(err) = e {
-                    log::error!("{err:#}");
-                    // If the send task has exited, also exit this recv task.
-                    if unordered_tx.send(err.into()).is_err() {
-                        break;
-                    }
-                    continue;
+            if ws_version == WsVersion::V1
+                && let MessageHandleError::Execution(err) = e
+            {
+                log::error!("{err:#}");
+                // If the send task has exited, also exit this recv task.
+                if unordered_tx.send(err.into()).is_err() {
+                    break;
                 }
+                continue;
             }
             log::debug!("Client caused error: {e}");
             let close = CloseFrame {
@@ -1442,7 +1440,7 @@ async fn ws_encode_message_v2(
     message: ws_v2::ServerMessage,
     is_large_message: bool,
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
-) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
     let start = Instant::now();
 
     let (in_use, data) = if is_large_message {

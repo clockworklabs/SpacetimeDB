@@ -385,13 +385,13 @@ pub async fn exec_with_options(
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
-        if let Some(path_to_project) = path_to_project.as_ref() {
-            if !path_to_project.exists() {
-                return Err(anyhow::anyhow!(
-                    "Project path does not exist: {}",
-                    path_to_project.display()
-                ));
-            }
+        if let Some(path_to_project) = path_to_project.as_ref()
+            && !path_to_project.exists()
+        {
+            return Err(anyhow::anyhow!(
+                "Project path does not exist: {}",
+                path_to_project.display()
+            ));
         }
 
         // Decide program file path and read program.

@@ -189,7 +189,7 @@ impl ProductValue {
 }
 
 impl<'a> ValueWithType<'a, ProductValue> {
-    pub fn elements(&self) -> impl ExactSizeIterator<Item = ValueWithType<'a, AlgebraicValue>> {
+    pub fn elements(&self) -> impl ExactSizeIterator<Item = ValueWithType<'a, AlgebraicValue>> + use<'a> {
         self.ty_s().with_values(self.value())
     }
 }

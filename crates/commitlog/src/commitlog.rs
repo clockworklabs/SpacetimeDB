@@ -311,7 +311,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         &self,
         offset: u64,
         decoder: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, R, T>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
@@ -347,10 +347,10 @@ impl<R: Repo, T: Encode> Generic<R, T> {
 
 impl<R: Repo, T> Drop for Generic<R, T> {
     fn drop(&mut self) {
-        if !self.panicked {
-            if let Err(e) = self.head.commit() {
-                warn!("failed to commit on drop: {e}");
-            }
+        if !self.panicked
+            && let Err(e) = self.head.commit()
+        {
+            warn!("failed to commit on drop: {e}");
         }
     }
 }

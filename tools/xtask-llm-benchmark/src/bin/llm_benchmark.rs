@@ -859,12 +859,12 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| {
-            if let Some(map) = &config.model_filter {
-                if let Some(allowed) = map.get(&r.vendor) {
-                    let api = r.api_model.to_ascii_lowercase();
-                    let dn = r.display_name.to_ascii_lowercase();
-                    return allowed.contains(&api) || allowed.contains(&dn);
-                }
+            if let Some(map) = &config.model_filter
+                && let Some(allowed) = map.get(&r.vendor)
+            {
+                let api = r.api_model.to_ascii_lowercase();
+                let dn = r.display_name.to_ascii_lowercase();
+                return allowed.contains(&api) || allowed.contains(&dn);
             }
             true
         })
@@ -991,14 +991,12 @@ fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>)
                 continue;
             }
             let name = entry.file_name().to_string_lossy().into_owned();
-            if let Some(rest) = name.strip_prefix("t_") {
-                if let Some((num_str, _)) = rest.split_once('_') {
-                    if num_str.len() == 3 {
-                        if let Ok(n) = num_str.parse::<u32>() {
-                            nums.insert(n);
-                        }
-                    }
-                }
+            if let Some(rest) = name.strip_prefix("t_")
+                && let Some((num_str, _)) = rest.split_once('_')
+                && num_str.len() == 3
+                && let Ok(n) = num_str.parse::<u32>()
+            {
+                nums.insert(n);
             }
         }
     }
@@ -1081,10 +1079,10 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
 
     for lang_entry in &results.languages {
         // Skip if filtering by language
-        if let Some(filter_lang) = &args.lang {
-            if lang_entry.lang != filter_lang.as_str() {
-                continue;
-            }
+        if let Some(filter_lang) = &args.lang
+            && lang_entry.lang != filter_lang.as_str()
+        {
+            continue;
         }
 
         let golden_answers = &lang_entry.golden_answers;

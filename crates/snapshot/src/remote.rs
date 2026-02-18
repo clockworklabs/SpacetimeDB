@@ -757,7 +757,7 @@ impl BufPool {
     ///
     /// The buffer is returned to the pool when the returned [`ScopeGuard`]
     /// goes out of scope.
-    pub fn get(&self) -> ScopeGuard<BytesMut, impl FnOnce(BytesMut)> {
+    pub fn get(&self) -> ScopeGuard<BytesMut, impl FnOnce(BytesMut) + use<>> {
         let this = self.clone();
         scopeguard::guard(
             this.inner.pop().unwrap_or_else(|| BytesMut::with_capacity(PAGE_SIZE)),

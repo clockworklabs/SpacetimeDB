@@ -33,10 +33,13 @@ fn main() {
                 .on_applied(move |ctx| {
                     let check = || {
                         anyhow::ensure!(ctx.db.connected().count() == 1);
-                        if let Some(_row) = ctx.db.connected().iter().next() {
-                            // TODO: anyhow::ensure!(row.identity == ctx.identity().unwrap());
-                        } else {
-                            anyhow::bail!("Expected one row but Connected::iter().next() returned None");
+                        match ctx.db.connected().iter().next() {
+                            Some(_row) => {
+                                // TODO: anyhow::ensure!(row.identity == ctx.identity().unwrap());
+                            }
+                            _ => {
+                                anyhow::bail!("Expected one row but Connected::iter().next() returned None");
+                            }
                         }
                         Ok(())
                     };
@@ -85,10 +88,13 @@ fn main() {
         .on_applied(move |ctx| {
             let check = || {
                 anyhow::ensure!(ctx.db.disconnected().count() == 1);
-                if let Some(_row) = ctx.db.disconnected().iter().next() {
-                    // TODO: anyhow::ensure!(row.identity == ctx.identity().unwrap());
-                } else {
-                    anyhow::bail!("Expected one row but Disconnected::iter().next() returned None");
+                match ctx.db.disconnected().iter().next() {
+                    Some(_row) => {
+                        // TODO: anyhow::ensure!(row.identity == ctx.identity().unwrap());
+                    }
+                    _ => {
+                        anyhow::bail!("Expected one row but Disconnected::iter().next() returned None");
+                    }
                 }
                 Ok(())
             };

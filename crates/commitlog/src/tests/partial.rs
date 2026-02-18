@@ -334,13 +334,13 @@ where
             total_txs += 1;
         }
         let res = log.commit();
-        if let Err(Some(os)) = res.as_ref().map_err(|e| e.raw_os_error()) {
-            if os == ENOSPC {
-                debug!("fill: ignoring ENOSPC");
-                seen_enospc = true;
-                log.commit().unwrap();
-                continue;
-            }
+        if let Err(Some(os)) = res.as_ref().map_err(|e| e.raw_os_error())
+            && os == ENOSPC
+        {
+            debug!("fill: ignoring ENOSPC");
+            seen_enospc = true;
+            log.commit().unwrap();
+            continue;
         }
         res.unwrap();
     }

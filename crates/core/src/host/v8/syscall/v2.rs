@@ -445,22 +445,22 @@ pub(super) fn call_call_reducer<'scope>(
             // and overwrite the previously caught exception, which is our desired behavior.
 
             // If we're terminating execution, don't try to check `instanceof`.
-            if scope.can_continue() {
-                if let Some(exc) = scope.exception().and_then(|exc| exc.try_cast::<Object>().ok()) {
-                    // if (exc instanceof SenderError)
-                    if exc
-                        .instance_of(scope, hooks.sender_error_class.unwrap().into())
-                        .ok_or_else(exception_already_thrown)?
-                    {
-                        // let message = String(exc.message)
-                        let key = str_from_ident!(message).string(scope);
-                        let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
-                        let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
-                        return Ok(Err(message.to_rust_string_lossy(scope).into()));
-                    }
-                }
+            if scope.can_continue()
+                && let Some(exc) = scope.exception()
+                && let Ok(exc) = exc.try_cast::<Object>()
+                // if (exc instanceof SenderError)
+                && exc
+                    .instance_of(scope, hooks.sender_error_class.unwrap().into())
+                    .ok_or_else(exception_already_thrown)?
+            {
+                // let message = String(exc.message)
+                let key = str_from_ident!(message).string(scope);
+                let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
+                let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
+                Ok(Err(message.to_rust_string_lossy(scope).into()))
+            } else {
+                Err(e)
             }
-            Err(e)
         }
     }
 }
