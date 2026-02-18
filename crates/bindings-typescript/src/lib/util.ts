@@ -128,7 +128,7 @@ export function toSnakeCase<T extends string>(str: T): SnakeCase<T> {
 }
 
 import type { AlgebraicType } from './algebraic_type';
-import type Typespace from './autogen/typespace_type';
+import type { Typespace } from './autogen/types';
 import type { ColumnBuilder, Infer, TypeBuilder } from './type_builders';
 import type { ParamsObj } from './reducers';
 

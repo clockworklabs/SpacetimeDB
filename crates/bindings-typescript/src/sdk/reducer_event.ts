@@ -1,6 +1,6 @@
 import { type Infer } from '../';
 import { Timestamp } from '../';
-import type ReducerOutcome from './client_api/reducer_outcome_type.ts';
+import type { ReducerOutcome } from './client_api/types';
 import type { ReducerEventInfo } from './reducers.ts';
 
 export type ReducerEvent<Reducer extends ReducerEventInfo> = {

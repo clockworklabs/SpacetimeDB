@@ -1,9 +1,14 @@
+import type { ProcedureExport, ReducerExport, t } from '../server';
 import type { errors } from '../server/errors';
-import type RawConstraintDefV10 from './autogen/raw_constraint_def_v_10_type';
-import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
-import type RawIndexDefV10 from './autogen/raw_index_def_v_10_type';
-import type RawSequenceDefV10 from './autogen/raw_sequence_def_v_10_type';
-import type RawColumnDefaultValueV10 from './autogen/raw_column_default_value_v_10_type';
+import {
+  RawColumnDefaultValueV10,
+  RawConstraintDefV10,
+  RawIndexAlgorithm,
+  RawIndexDefV10,
+  RawSequenceDefV10,
+  RawTableDefV10,
+} from './autogen/types';
+import BinaryWriter from './binary_writer';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type {
   ColumnIndex,
@@ -29,9 +34,6 @@ import type {
   ValidateColumnMetadata,
 } from './type_util';
 import { toPascalCase } from './util';
-import BinaryWriter from './binary_writer';
-import type { ProcedureExport, ReducerExport, t } from '../server';
-import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;

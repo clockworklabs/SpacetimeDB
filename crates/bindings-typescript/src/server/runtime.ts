@@ -6,9 +6,12 @@ import {
   ProductType,
   type Deserializer,
 } from '../lib/algebraic_type';
-import RawModuleDef from '../lib/autogen/raw_module_def_type';
-import type RawTableDefV10 from '../lib/autogen/raw_table_def_v_10_type';
-import type Typespace from '../lib/autogen/typespace_type';
+import {
+  RawModuleDef,
+  ViewResultHeader,
+  type RawTableDefV10,
+  type Typespace,
+} from '../lib/autogen/types';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import { Timestamp } from '../lib/timestamp';
@@ -38,7 +41,6 @@ import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
-import ViewResultHeader from '../lib/autogen/view_result_header_type';
 import { makeRandom, type Random } from './rng';
 import type { SchemaInner } from './schema';
 

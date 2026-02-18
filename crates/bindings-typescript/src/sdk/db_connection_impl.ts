@@ -2,13 +2,15 @@ import { ConnectionId, ProductBuilder, ProductType } from '../';
 import { AlgebraicType, type ComparablePrimitive } from '../';
 import { BinaryReader } from '../';
 import { BinaryWriter } from '../';
-import BsatnRowList from './client_api/bsatn_row_list_type.ts';
-import ClientMessage from './client_api/client_message_type.ts';
-import QueryRows from './client_api/query_rows_type.ts';
-import QuerySetUpdate from './client_api/query_set_update_type.ts';
-import ServerMessage from './client_api/server_message_type.ts';
-import TableUpdateRows from './client_api/table_update_rows_type.ts';
-import UnsubscribeFlags from './client_api/unsubscribe_flags_type.ts';
+import {
+  BsatnRowList,
+  ClientMessage,
+  QueryRows,
+  QuerySetUpdate,
+  ServerMessage,
+  TableUpdateRows,
+  UnsubscribeFlags,
+} from './client_api/types';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { INTERNAL_REMOTE_MODULE } from './internal.ts';

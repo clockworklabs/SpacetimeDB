@@ -1,5 +1,5 @@
 import { BinaryWriter, type Infer } from '../';
-import ServerMessage from './client_api/server_message_type';
+import { ServerMessage } from './client_api/types';
 
 class WebsocketTestAdapter {
   onclose: any;

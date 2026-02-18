@@ -5,10 +5,12 @@ import {
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
-import type RawModuleDefV10Section from './autogen/raw_module_def_v_10_section_type';
-import type RawModuleDefV10 from './autogen/raw_module_def_v_10_type';
-import type RawScopedTypeNameV10 from './autogen/raw_scoped_type_name_v_10_type';
-import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
+import type {
+  RawModuleDefV10,
+  RawModuleDefV10Section,
+  RawScopedTypeNameV10,
+  RawTableDefV10,
+} from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';

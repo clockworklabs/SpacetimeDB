@@ -1,5 +1,5 @@
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
-import Lifecycle from '../lib/autogen/lifecycle_type';
+import { Lifecycle } from '../lib/autogen/types';
 import {
   type ParamsAsObject,
   type ParamsObj,

@@ -1,10 +1,9 @@
+import type { ProcedureExport, ReducerExport } from '../server';
 import type { ProductType } from './algebraic_type';
-import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
-import type RawScheduleDefV10 from './autogen/raw_schedule_def_v_10_type';
+import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
 import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
-import type { ProcedureExport, ReducerExport } from '../server';
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.

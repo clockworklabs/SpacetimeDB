@@ -1,6 +1,5 @@
 import { AlgebraicType } from '../lib/algebraic_type';
-import FunctionVisibility from '../lib/autogen/function_visibility_type';
-import type Lifecycle from '../lib/autogen/lifecycle_type';
+import { FunctionVisibility, type Lifecycle } from '../lib/autogen/types';
 import type { ParamsObj, Reducer } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { RowBuilder, type Infer, type RowObj } from '../lib/type_builders';

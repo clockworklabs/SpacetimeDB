@@ -1,5 +1,5 @@
 import type { ProductType } from './algebraic_type';
-import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
+import type { RawReducerDefV9 } from './autogen/types';
 import type { ParamsObj } from './reducers';
 import type { Infer, RowBuilder, RowObj } from './type_builders';
 import type { CamelCase } from './type_util';
