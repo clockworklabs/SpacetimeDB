@@ -19,7 +19,8 @@ use spacetimedb_smoketests::workspace_root;
 // 2) start server and publish module
 // 3) restart server immediately on the same data dir and same version
 // 4) verify `spacetime logs` succeeds
-const V1_GIT_REF: &str = "v1.12.0";
+const V1_GIT_REF: &str = "2772036d511ab8ead00c132e484a057b1bdb6bd4";
+const MODULE_PATH_FLAG_CUTOFF_COMMIT: &str = "4c962b9170c577b6e6c7afeecf05a60635fa1536";
 
 fn log_step(msg: &str) {
     eprintln!("[manual-upgrade] {msg}");
@@ -65,6 +66,55 @@ fn run_cmd_ok(args: &[OsString], cwd: &Path) -> Result<String> {
         log_step(&format!("stderr:\n{}", stderr.trim()));
     }
     Ok(stdout)
+}
+
+fn is_strictly_before_commit(repo: &Path, candidate_ref: &str, boundary_commit: &str) -> Result<bool> {
+    let candidate = run_cmd_ok(
+        &[
+            OsString::from("git"),
+            OsString::from("rev-parse"),
+            OsString::from(candidate_ref),
+        ],
+        repo,
+    )?
+    .trim()
+    .to_string();
+    let boundary = run_cmd_ok(
+        &[
+            OsString::from("git"),
+            OsString::from("rev-parse"),
+            OsString::from(boundary_commit),
+        ],
+        repo,
+    )?
+    .trim()
+    .to_string();
+
+    if candidate == boundary {
+        return Ok(false);
+    }
+
+    let out = run_cmd(
+        &[
+            OsString::from("git"),
+            OsString::from("merge-base"),
+            OsString::from("--is-ancestor"),
+            OsString::from(&candidate),
+            OsString::from(&boundary),
+        ],
+        repo,
+    )?;
+    match out.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => bail!(
+            "failed checking commit ancestry between {} and {}:\nstdout: {}\nstderr: {}",
+            candidate,
+            boundary,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    }
 }
 
 fn pick_unused_port() -> Result<u16> {
@@ -188,35 +238,41 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
     log_step("starting manual kill-after-publish test");
     log_step(&format!("pinned source ref={}", V1_GIT_REF));
     let repo = workspace_root();
+    let stable_worktree_dir = repo
+        .join("target")
+        .join("smoketest-worktrees")
+        .join("kill-after-publish-v1");
     let temp = tempfile::tempdir()?;
     let temp_path = temp.path();
-    let old_worktree = temp_path.join("old");
+    let old_worktree = stable_worktree_dir;
     let data_dir = temp_path.join("db-data");
     std::fs::create_dir_all(&data_dir)?;
     log_step(&format!("workspace={}", repo.display()));
+    log_step(&format!("worktree={}", old_worktree.display()));
     log_step(&format!("temp root={}", temp_path.display()));
     log_step(&format!("data dir={}", data_dir.display()));
 
     // Build pinned sources from a temporary worktree.
-    log_step(&format!("creating worktree at ref {}", V1_GIT_REF));
-    run_cmd_ok(
-        &[
-            OsString::from("git"),
-            OsString::from("worktree"),
-            OsString::from("add"),
-            old_worktree.clone().into_os_string(),
-            OsString::from(V1_GIT_REF),
-        ],
-        &repo,
-    )?;
-
-    let cleanup_worktree = || {
-        let _ = Command::new("git")
-            .args(["worktree", "remove", "--force"])
-            .arg(&old_worktree)
-            .current_dir(&repo)
-            .status();
-    };
+    if !old_worktree.exists() {
+        let parent = old_worktree
+            .parent()
+            .ok_or_else(|| anyhow!("worktree path has no parent: {}", old_worktree.display()))?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create worktree parent {}", parent.display()))?;
+        log_step(&format!("creating worktree at ref {}", V1_GIT_REF));
+        run_cmd_ok(
+            &[
+                OsString::from("git"),
+                OsString::from("worktree"),
+                OsString::from("add"),
+                old_worktree.clone().into_os_string(),
+                OsString::from(V1_GIT_REF),
+            ],
+            &repo,
+        )?;
+    } else {
+        log_step("reusing existing worktree");
+    }
 
     let old_result: Result<()> = (|| {
         log_step("building pinned spacetimedb-cli and spacetimedb-standalone");
@@ -236,13 +292,18 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
             .join("target")
             .join("debug")
             .join(exe_name("spacetimedb-cli"));
-        anyhow::ensure!(
-            old_cli.exists(),
-            "pinned CLI binary not found at {}",
-            old_cli.display()
-        );
+        anyhow::ensure!(old_cli.exists(), "pinned CLI binary not found at {}", old_cli.display());
 
         log_step(&format!("pinned CLI path={}", old_cli.display()));
+        let publish_path_flag = if is_strictly_before_commit(&repo, V1_GIT_REF, MODULE_PATH_FLAG_CUTOFF_COMMIT)? {
+            "--project-path"
+        } else {
+            "--module-path"
+        };
+        log_step(&format!(
+            "using {} for publish path (cutoff {})",
+            publish_path_flag, MODULE_PATH_FLAG_CUTOFF_COMMIT
+        ));
 
         // Start pinned server and publish pinned quickstart module.
         let old_port = pick_unused_port()?;
@@ -263,7 +324,7 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
                 OsString::from("publish"),
                 OsString::from("--server"),
                 OsString::from(&old_url),
-                OsString::from("--project-path"),
+                OsString::from(publish_path_flag),
                 old_worktree
                     .join("templates/chat-console-rs/spacetimedb")
                     .into_os_string(),
@@ -306,8 +367,6 @@ fn kill_after_publish_logs_after_restart() -> Result<()> {
         Ok(())
     })();
 
-    log_step("cleaning up temporary git worktree");
-    cleanup_worktree();
     log_step("manual test finished");
     old_result
 }
