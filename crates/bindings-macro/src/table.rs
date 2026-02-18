@@ -80,7 +80,7 @@ impl TableArgs {
         let mut access = None;
         let mut scheduled = None;
         let mut accessor = None;
-        let mut name = None;
+        let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
         let mut event = None;
         syn::meta::parser(|meta| {
@@ -101,6 +101,23 @@ impl TableArgs {
                 sym::name => {
                     check_duplicate(&name, &meta)?;
                     let value = meta.value()?;
+                    // The update from SpacetimeDB 1.* to 2.* changes `name =` to `accessor =`,
+                    // and uses `name =` for a different thing. Now, only `accessor =` is mandatory,
+                    // and `name =` accepts a string literal rather than an identifier.
+                    // Detect the specific case where the user specifies a 1.*-style `name = ident`,
+                    // and offer a diagnostic with a simple migration path.
+                    // Unfortunately, we can't hook in to rustc's system for providing quick fixes in compiler errors,
+                    // until [this ancient issue](https://github.com/rust-lang/rust/issues/54140) gets stabilized.
+                    if let Ok(sym) = value.fork().parse::<Ident>() {
+                        return Err(syn::Error::new_spanned(
+                            &sym,
+                            format_args!(
+                                "Expected a string literal for `name`, but found an identifier. Did you mean to specify an `accessor`?
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor = {sym}`."
+                            ),
+                        ))
+                    }
                     name = Some(value.parse()?);
                 }
                 sym::index => indices.push(IndexArg::parse_meta(meta)?),
@@ -117,11 +134,32 @@ impl TableArgs {
         })
         .parse2(input)?;
         let accessor = accessor.ok_or_else(|| {
-            let table = struct_ident.to_string().to_snake_case();
-            syn::Error::new(
-                Span::call_site(),
-                format_args!("must specify table name, e.g. `#[spacetimedb::table(accessor = {table})]"),
-            )
+            if let Some(name_str) = &name {
+                // If a user's gotten partway through migrating from 1.* to 2.* in a misguided way,
+                // they may end up with a `table` invocation that specifies `name = "my_table_name"` and no `accessor`.
+                // In this case, they probably intended to change `name =` to `accessor =`,
+                // but were misled into keeping `name =` and changing the name from an ident into a lit string.
+                // Detect that and offer a diagnostic with a simple fix.
+                // Unfortunately, we can't hook in to rustc's system for providing quick fixes in compiler errors,
+                // until [this ancient issue](https://github.com/rust-lang/rust/issues/54140) gets stabilized.
+                let name_str = name_str.value();
+                syn::Error::new(
+                    Span::call_site(),
+                    format_args!(
+                        "Expected an `accessor` in table definition, but got only a `name`.
+Did you mean to specify `accessor` instead?
+`accessor` is required, but `name` is optional.
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {name_str:?}` with `accessor = {name_str}`",
+                    ),
+                )
+            } else {
+                let table = struct_ident.to_string().to_snake_case();
+                syn::Error::new(
+                    Span::call_site(),
+                    format_args!("must specify table accessor, e.g. `#[spacetimedb::table(accessor = {table})]"),
+                )
+            }
         })?;
         Ok(TableArgs {
             access,
