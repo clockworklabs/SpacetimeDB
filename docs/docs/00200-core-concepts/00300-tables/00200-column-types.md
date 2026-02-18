@@ -5,6 +5,7 @@ slug: /tables/column-types
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Columns define the structure of your tables. SpacetimeDB supports primitive types, composite types for complex data, and special types for database-specific functionality.
@@ -134,6 +135,8 @@ These optimizations apply across all supported languages.
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 | Category | Type | Description |
 |----------|------|-------------|

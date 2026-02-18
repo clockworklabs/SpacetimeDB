@@ -5,6 +5,7 @@ slug: /functions/reducers
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Reducers are functions that modify database state in response to client requests or system events. They are the **only** way to mutate tables in SpacetimeDB - all database changes must go through reducers.
@@ -110,6 +111,8 @@ If you see errors like "no method named `try_insert` found", add this import.
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 Use the `SPACETIMEDB_REDUCER` macro on a function:
 

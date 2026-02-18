@@ -5,6 +5,7 @@ slug: /databases/developing
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 # `spacetime dev`
 
@@ -175,6 +176,8 @@ my-project/
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```text
 my-project/

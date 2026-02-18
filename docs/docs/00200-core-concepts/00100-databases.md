@@ -3,6 +3,7 @@ title: The Database Module
 slug: /databases
 ---
 
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -59,6 +60,8 @@ Rust is fully supported for server modules. Rust is a great choice for performan
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 C++ is fully supported for server modules. C++ is an excellent choice for developers working with Unreal Engine or those who prefer to stay in the C++ ecosystem.
 
