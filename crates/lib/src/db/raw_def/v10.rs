@@ -399,12 +399,12 @@ pub struct RawSequenceDefV10 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawIndexDefV10 {
-    /// In the future, the user may FOR SOME REASON want to override this.
-    /// Even though there is ABSOLUTELY NO REASON TO.
-    /// TODO: Remove Option, must not be empty.
+    /// Must be supplied as `{table_name}_{column_names}_idx_{algorithm}`.
+    /// Where `{table_name}` is the name of the table containing in `RawTableDefV10`.
     pub source_name: Option<RawIdentifier>,
 
-    // not to be used in v10
+    /// `accessor_name` is the name of the index accessor function that is used inside the module
+    /// code.
     pub accessor_name: Option<RawIdentifier>,
 
     /// The algorithm parameters for the index.
@@ -1190,19 +1190,28 @@ impl RawTableDefBuilderV10<'_> {
     }
 
     /// Generates a [RawIndexDefV10] using the supplied `columns`.
-    pub fn with_index(mut self, algorithm: RawIndexAlgorithm, source_name: impl Into<RawIdentifier>) -> Self {
+    pub fn with_index(
+        mut self,
+        algorithm: RawIndexAlgorithm,
+        source_name: impl Into<RawIdentifier>,
+        accessor_name: impl Into<RawIdentifier>,
+    ) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
             source_name: Some(source_name.into()),
-            accessor_name: None,
+            accessor_name: Some(accessor_name.into()),
             algorithm,
         });
         self
     }
 
-    /// Generates a [RawIndexDefV10] using the supplied `columns` but with no `accessor_name`.
-    pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
+    /// Generates a [RawIndexDefV10] using the supplied `columns`.
+    pub fn with_index_no_accessor_name(
+        mut self,
+        algorithm: RawIndexAlgorithm,
+        source_name: impl Into<RawIdentifier>,
+    ) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
-            source_name: None,
+            source_name: Some(source_name.into()),
             accessor_name: None,
             algorithm,
         });

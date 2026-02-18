@@ -449,11 +449,13 @@ impl ValidatedIndex<'_> {
             }
         };
         let source_name = self.index_name.clone();
+        let accessor_name = self.accessor_name.to_string();
         // Note: we do not pass the index_name through here.
         // We trust the schema validation logic to reconstruct the name we've stored in `self.name`.
         //TODO(shub): pass generated index name instead of accessor name as source_name
         quote!(spacetimedb::table::IndexDesc {
             source_name: #source_name,
+            accessor_name: #accessor_name,
             algo: #algo,
         })
     }
