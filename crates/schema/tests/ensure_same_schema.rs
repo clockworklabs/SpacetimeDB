@@ -1,14 +1,8 @@
 // Wrap these tests in a `mod` whose name contains `csharp`
 // so that we can run tests with `--skip csharp` in environments without dotnet installed.
 use serial_test::serial;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
-use spacetimedb_schema::def::{
-    ColumnDef, ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup as _, ProcedureDef, ReducerDef, ScheduleDef,
-    ScopedTypeName, SequenceDef, TableDef, TypeDef, ViewDef,
-};
-use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::reducer_name::ReducerName;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 
 fn get_normalized_schema(module_name: &str) -> ModuleDef {
