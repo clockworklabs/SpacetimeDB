@@ -164,23 +164,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
     let old_publish_path_flag = old_prepared.publish_path_flag;
 
     // Install a pinned 1.0 release via the system `spacetime` command.
-    log_step(&format!(
-        "installing and selecting release {} via system spacetime",
-        V1_RELEASE_VERSION
-    ));
-    run_cmd_ok(
-        &[
-            OsString::from("spacetime"),
-            OsString::from("version"),
-            OsString::from("install"),
-            OsString::from(V1_RELEASE_VERSION),
-            OsString::from("--use"),
-            OsString::from("--yes"),
-        ],
-        &repo,
-    )?;
-    let installed_v1_cli = PathBuf::from("spacetime");
-    log_step("using system 'spacetime' command as v1 CLI");
+    let installed_v1_cli = old_cli;
 
     // Build 1.0 sources from pinned ref.
 

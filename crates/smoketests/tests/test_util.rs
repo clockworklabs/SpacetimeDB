@@ -190,6 +190,7 @@ pub fn prepare_pinned_chat_workspace(
         &[
             OsString::from("cargo"),
             OsString::from("build"),
+            OsString::from("--release"),
             OsString::from("-p"),
             OsString::from("spacetimedb-cli"),
             OsString::from("-p"),
@@ -200,7 +201,7 @@ pub fn prepare_pinned_chat_workspace(
 
     let cli_path = worktree_dir
         .join("target")
-        .join("debug")
+        .join("release")
         .join(exe_name("spacetimedb-cli"));
     anyhow::ensure!(
         cli_path.exists(),
