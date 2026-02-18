@@ -15,7 +15,7 @@ use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::{Arg, ArgMatches, Command};
 use colored::Colorize;
-use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input};
 use futures::stream::{self, StreamExt};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -189,11 +189,65 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Load spacetime.json config early so we can use it for determining project
     // directories
-    let loaded_config = if no_config {
+    let mut loaded_config = if no_config {
         None
     } else {
         find_and_load_with_env_from(Some(env), project_dir.clone()).with_context(|| "Failed to load spacetime.json")?
     };
+    let has_any_config_files = loaded_config.is_some();
+
+    // Config exists, but default module dir is missing: recover by asking for module-path
+    // and persisting it on the root config.
+    if !no_config && has_any_config_files && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
+        let merged_has_module_path = loaded_config
+            .as_ref()
+            .and_then(|lc| lc.config.additional_fields.get("module-path"))
+            .and_then(|v| v.as_str())
+            .is_some();
+
+        if !merged_has_module_path && module_path_from_cli.is_none() {
+            let files = loaded_config
+                .as_ref()
+                .map(|lc| {
+                    lc.loaded_files
+                        .iter()
+                        .map(|f| f.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_else(|| "spacetime.json".to_string());
+            println!("{} {}", "Found config files:".yellow().bold(), files.dimmed());
+            println!(
+                "{}",
+                "Could not determine module path because no `module-path` was found and `./spacetimedb` does not exist."
+                    .yellow()
+            );
+            let should_provide = Confirm::new()
+                .with_prompt("Would you like to provide --module-path now?")
+                .default(true)
+                .interact()?;
+            if !should_provide {
+                anyhow::bail!("Cannot continue without a module path.");
+            }
+
+            let provided_module_path: String = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Module path")
+                .default("spacetimedb".to_string())
+                .interact_text()?;
+
+            // Save to root `spacetime.json` (not env/local overlays), then reload merged config.
+            let config_dir = loaded_config
+                .as_ref()
+                .map(|lc| lc.config_dir.clone())
+                .ok_or_else(|| anyhow::anyhow!("Missing loaded config directory"))?;
+            let saved_path = save_root_module_path_to_spacetime_json(&config_dir, &provided_module_path)?;
+            println!("{} Updated {}", "✓".green(), saved_path.display());
+
+            loaded_config = find_and_load_with_env_from(Some(env), project_dir.clone())
+                .with_context(|| "Failed to reload spacetime.json after updating module-path")?;
+        }
+    }
+
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
     let using_spacetime_config = spacetime_config.is_some();
     // A config has publish targets if it has a "database" field or children
@@ -272,7 +326,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Check if we are in a SpacetimeDB project directory, but only if we don't have any
     // publish_configs that would specify desired modules
-    if publish_configs.is_empty() && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
+    if !has_any_config_files && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
             .with_prompt("Would you like to initialize a new project?")
@@ -1267,6 +1321,23 @@ fn create_local_spacetime_config_if_missing(
     Ok(Some(local_config_path))
 }
 
+// Persist the root module-path so subsequent layered loads resolve module location
+// without interactive prompts.
+fn save_root_module_path_to_spacetime_json(config_dir: &Path, module_path: &str) -> anyhow::Result<PathBuf> {
+    let config_path = config_dir.join(CONFIG_FILENAME);
+    let mut config = SpacetimeConfig::load(&config_path).with_context(|| {
+        format!(
+            "Failed to load root config for writing module-path: {}",
+            config_path.display()
+        )
+    })?;
+    config
+        .additional_fields
+        .insert("module-path".to_string(), json!(module_path));
+    config.save(&config_path)?;
+    Ok(config_path)
+}
+
 /// Start the client development server as a child process.
 /// The process inherits stdout/stderr so the user can see the output.
 /// Sets SPACETIMEDB_DB_NAME and SPACETIMEDB_HOST environment variables for the client.
@@ -1612,5 +1683,33 @@ mod tests {
             reloaded.dev.as_ref().and_then(|d| d.run.as_deref()),
             Some("npm run dev")
         );
+    }
+
+    #[test]
+    fn test_save_root_module_path_to_spacetime_json_updates_root_config() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("spacetime.json");
+        fs::write(
+            &config_path,
+            r#"{
+                "server": "maincloud",
+                "children": [{ "database": "child-db" }]
+            }"#,
+        )
+        .unwrap();
+
+        let saved = save_root_module_path_to_spacetime_json(temp.path(), "./custom-module").unwrap();
+        assert_eq!(saved, config_path);
+
+        let reloaded = SpacetimeConfig::load(&config_path).unwrap();
+        assert_eq!(
+            reloaded.additional_fields.get("module-path").and_then(|v| v.as_str()),
+            Some("./custom-module")
+        );
+        assert_eq!(
+            reloaded.additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("maincloud")
+        );
+        assert!(reloaded.children.is_some());
     }
 }
