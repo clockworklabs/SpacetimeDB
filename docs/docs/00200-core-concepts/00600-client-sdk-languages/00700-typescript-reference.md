@@ -260,7 +260,7 @@ The `DbContext` interface is implemented by connections and contexts to _every_ 
 | [`db` field](#field-db)                               | Access subscribed rows of tables and register row callbacks. |
 | [`reducers` field](#field-reducers)                   | Request reducer invocations and register reducer callbacks.  |
 | [`disconnect` method](#method-disconnect)             | End the connection.                                          |
-| [Subscribe to queries](#subscribe-to-queries)         | Register SQL queries to receive updates about matching rows. |
+| [Subscribe to queries](#subscribe-to-queries)         | Register subscription queries to receive updates about matching rows. |
 | [Read connection metadata](#read-connection-metadata) | Access the connection's `Identity` and `ConnectionId`        |
 
 #### Field `db`
@@ -311,7 +311,7 @@ SubscriptionBuilder;
 | [`ctx.subscriptionBuilder()` constructor](#constructor-ctxsubscriptionbuilder) | Begin configuring a new subscription.                           |
 | [`onApplied` callback](#callback-onapplied)                                    | Register a callback to run when matching rows become available. |
 | [`onError` callback](#callback-onerror)                                        | Register a callback to run if the subscription fails.           |
-| [`subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more SQL queries.  |
+| [`subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more queries.       |
 | [`subscribeToAllTables` method](#method-subscribetoalltables)                  | Convenience method to subscribe to the entire database.         |
 
 ##### Constructor `ctx.subscriptionBuilder()`
@@ -360,7 +360,7 @@ class SubscriptionBuilder {
 }
 ```
 
-Subscribe to a set of queries. You can pass raw SQL strings, or use [query builders](#query-builder-api) for type-safe, auto-completing queries.
+Subscribe to a set of queries. Use [query builders](#query-builder-api) as the default for type-safe, auto-completing queries. Raw SQL strings are also supported for advanced use cases.
 
 ```typescript
 import { tables } from './module_bindings';
@@ -371,13 +371,9 @@ conn.subscriptionBuilder().subscribe([tables.user, tables.message]);
 conn.subscriptionBuilder().subscribe(
   tables.user.where(r => r.online.eq(true))
 );
-
-// Raw SQL — still supported
-conn.subscriptionBuilder().subscribe('SELECT * FROM user');
-conn.subscriptionBuilder().subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
 ```
 
-See [the SpacetimeDB SQL Reference](/reference/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
+For raw SQL subscription syntax, see [the SpacetimeDB SQL Reference](/reference/sql#subscriptions).
 
 ##### Method `subscribeToAllTables`
 
@@ -391,7 +387,7 @@ Subscribe to all rows from all public tables. This method is provided as a conve
 
 ## Query Builder API
 
-The TypeScript SDK provides a type-safe query builder as an alternative to raw SQL strings. Query builders give you auto-completion and compile-time type checking for your subscription queries.
+The TypeScript SDK provides a type-safe query builder as the recommended way to define subscriptions. Query builders give you auto-completion and compile-time type checking.
 
 ### The `tables` export
 
@@ -400,8 +396,8 @@ Your generated `module_bindings` exports a `tables` object. Each property on `ta
 ```typescript
 import { tables } from './module_bindings';
 
-// `tables.user` is a query builder for `SELECT * FROM user`
-// `tables.message` is a query builder for `SELECT * FROM message`
+// `tables.user` selects all rows from `user`
+// `tables.message` selects all rows from `message`
 ```
 
 ### Building queries with `where`
@@ -491,9 +487,6 @@ conn.subscriptionBuilder().subscribe([
   tables.user,
   tables.message,
 ]);
-
-// Raw SQL is still supported
-conn.subscriptionBuilder().subscribe('SELECT * FROM user');
 ```
 
 #### Type `SubscriptionHandle`

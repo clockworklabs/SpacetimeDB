@@ -570,7 +570,7 @@ Subscribe to the provided SQL queries and return a handle for managing the subsc
 USubscriptionHandle* SubscribeToAllTables();
 ```
 
-Subscribe to all tables in the module (equivalent to `Subscribe({ "SELECT * FROM *" })`).
+Subscribe to all public tables in the module.
 
 ### Type `USubscriptionHandle`
 

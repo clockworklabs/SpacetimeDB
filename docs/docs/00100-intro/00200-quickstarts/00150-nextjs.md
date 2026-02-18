@@ -139,7 +139,7 @@ spacetime logs my-nextjs-app
     <StepCode>
 ```tsx
 // lib/spacetimedb-server.ts
-import { DbConnection } from '../src/module_bindings';
+import { DbConnection, tables } from '../src/module_bindings';
 
 export async function fetchPeople() {
   return new Promise((resolve, reject) => {
@@ -153,7 +153,7 @@ export async function fetchPeople() {
             conn.disconnect();
             resolve(people);
           })
-          .subscribe('SELECT * FROM person');
+          .subscribe(tables.person);
       })
       .build();
   });

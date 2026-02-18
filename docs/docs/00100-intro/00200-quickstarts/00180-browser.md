@@ -54,7 +54,7 @@ npm run build
       The JavaScript code runs inline in a script tag, using the bundled `DbConnection` class.
 
       :::tip
-      When using npm imports with a bundler (e.g. React, Vue, Svelte), you can use type-safe [query builders](/sdks/typescript#query-builder-api) instead of raw SQL strings. The IIFE bundle shown here uses raw SQL.
+      The browser IIFE bundle also exposes the generated `tables` query builders, so you can use query-builder subscriptions here too.
       :::
     </StepText>
     <StepCode>
@@ -82,7 +82,7 @@ npm run build
             console.log(person.name);
           }
         })
-        .subscribe(['SELECT * FROM person']);
+        .subscribe(tables.person);
     })
     .build();
 </script>

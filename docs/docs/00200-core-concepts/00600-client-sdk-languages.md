@@ -32,7 +32,7 @@ See [Connecting to SpacetimeDB](/sdks/connection) for details.
 
 ### Client-Side Data Cache
 
-Each client maintains a local cache of database rows through [subscriptions](/subscriptions). Clients define which data they need using SQL queries, and SpacetimeDB automatically synchronizes changes to the subscribed data. The local cache can be queried without network round-trips, providing fast access to frequently-read data.
+Each client maintains a local cache of database rows through [subscriptions](/subscriptions). Clients define which data they need using typed query builders (or raw SQL when needed), and SpacetimeDB automatically synchronizes changes to the subscribed data. The local cache can be queried without network round-trips, providing fast access to frequently-read data.
 
 ### Real-Time Updates
 

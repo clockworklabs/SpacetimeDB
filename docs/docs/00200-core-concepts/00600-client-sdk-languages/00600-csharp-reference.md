@@ -254,7 +254,7 @@ The `IDbContext` interface is implemented by connections and contexts to _every_
 | [`Db` method](#method-db)                                   | Provides access to the subscribed view of the remote database's tables. |
 | [`Reducers` method](#method-reducers)                       | Provides access to reducers exposed by the remote module.               |
 | [`Disconnect` method](#method-disconnect)                   | End the connection.                                                     |
-| [Subscribe to queries](#subscribe-to-queries)               | Register SQL queries to receive updates about matching rows.            |
+| [Subscribe to queries](#subscribe-to-queries)               | Register subscription queries to receive updates about matching rows.    |
 | [Read connection metadata](#read-connection-metadata)       | Access the connection's `Identity` and `ConnectionId`                   |
 
 ### Interface `IRemoteDbContext`
@@ -328,7 +328,7 @@ Gracefully close the `DbConnection`. Throws an error if the connection is alread
 | [`ctx.SubscriptionBuilder()` constructor](#constructor-ctxsubscriptionbuilder) | Begin configuring a new subscription.                           |
 | [`OnApplied` callback](#callback-onapplied)                                    | Register a callback to run when matching rows become available. |
 | [`OnError` callback](#callback-onerror)                                        | Register a callback to run if the subscription fails.           |
-| [`Subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more SQL queries.  |
+| [`Subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more queries.       |
 | [`AddQuery` method](#method-addquery)                                          | Build a typed subscription query without writing query strings. |
 | [`SubscribeToAllTables` method](#method-subscribetoalltables)                  | Convenience method to subscribe to the entire database.         |
 

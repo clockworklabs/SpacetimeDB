@@ -266,7 +266,7 @@ The `DbContext` trait is implemented by connections and contexts to _every_ modu
 | [`db` method](#method-db)                             | Trait-generic alternative to the `db` field of `DbConnection`.           |
 | [`reducers` method](#method-reducers)                 | Trait-generic alternative to the `reducers` field of `DbConnection`.     |
 | [`disconnect` method](#method-disconnect)             | End the connection.                                                      |
-| [Subscribe to queries](#subscribe-to-queries)         | Register SQL queries to receive updates about matching rows.             |
+| [Subscribe to queries](#subscribe-to-queries)         | Register subscription queries to receive updates about matching rows.     |
 | [Read connection metadata](#read-connection-metadata) | Access the connection's `Identity` and `ConnectionId`                    |
 
 ### Trait `RemoteDbContext`
@@ -345,7 +345,7 @@ spacetimedb_sdk::SubscriptionBuilder
 | [`ctx.subscription_builder()` constructor](#constructor-ctxsubscription_builder) | Begin configuring a new subscription.                           |
 | [`on_applied` callback](#callback-on_applied)                                    | Register a callback to run when matching rows become available. |
 | [`on_error` callback](#callback-on_error)                                        | Register a callback to run if the subscription fails.           |
-| [`subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more SQL queries.  |
+| [`subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more queries.       |
 | [`add_query` method](#method-add_query)                                          | Build a typed subscription query without writing query strings. |
 | [`subscribe_to_all_tables` method](#method-subscribe_to_all_tables)              | Convenience method to subscribe to the entire database.         |
 

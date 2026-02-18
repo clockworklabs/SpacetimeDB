@@ -74,7 +74,9 @@ var conn = DbConnection.Builder()
                     Console.WriteLine($"User: {user.Name}");
                 }
             })
-            .Subscribe(new[] { "SELECT * FROM user", "SELECT * FROM message" });
+            .AddQuery(q => q.From.User())
+            .AddQuery(q => q.From.Message())
+            .Subscribe();
     })
     .Build();
 
@@ -115,7 +117,9 @@ let conn = DbConnection::builder()
                     println!("User: {}", user.name);
                 }
             })
-            .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+            .add_query(|q| q.from.user())
+            .add_query(|q| q.from.message())
+            .subscribe();
     })
     .build();
 
@@ -139,7 +143,7 @@ conn.db().user().on_update(|ctx, old_user, new_user| {
 </Tabs>
 
 :::tip Typed Query Builders
-Type-safe query builders are available in TypeScript, C#, and Rust as an alternative to query strings. Query builders provide auto-completion and compile-time type checking. For complete API details, see [TypeScript](/sdks/typescript#query-builder-api), [C#](/sdks/c-sharp#query-builder-api), and [Rust](/sdks/rust#query-builder-api) references.
+Type-safe query builders are available in TypeScript, C#, and Rust and are the recommended default. They provide auto-completion and compile-time type checking. For complete API details, see [TypeScript](/sdks/typescript#query-builder-api), [C#](/sdks/c-sharp#query-builder-api), and [Rust](/sdks/rust#query-builder-api) references.
 :::
 
 ## How Subscriptions Work
@@ -151,7 +155,7 @@ Type-safe query builders are available in TypeScript, C#, and Rust as an alterna
 
 The client maintains a local cache of subscribed data. Reading from the cache is instant since it's local memory.
 
-For more information on subscription SQL syntax see the [SQL docs](/reference/sql#subscriptions).
+For advanced raw SQL subscription syntax, see the [SQL docs](/reference/sql#subscriptions).
 
 ## Common API Concepts
 
@@ -167,7 +171,7 @@ All SDKs expose a builder API for creating subscriptions:
 
 ### Query Forms
 
-SDKs support query strings. Some SDKs also support typed query builders:
+All SDKs support subscriptions. TypeScript, C#, and Rust support query builders (recommended), while Unreal uses query strings:
 
 | SDK | Typed Query Builder Support | Entry Point |
 | --- | --- | --- |
@@ -197,9 +201,9 @@ Subscribing returns a handle that manages an individual subscription lifecycle.
 
 ## Best Practices for Optimizing Server Compute and Reducing Serialization Overhead
 
-### 1. Writing Efficient SQL Queries
+### 1. Writing Efficient Subscription Queries
 
-For writing efficient SQL queries, see our [SQL Best Practices Guide](/reference/sql#best-practices-for-performance-and-scalability).
+Use the typed query builder to express precise filters and keep subscriptions small. If you use raw SQL subscriptions, see [SQL Best Practices](/reference/sql#best-practices-for-performance-and-scalability).
 
 ### 2. Group Subscriptions with the Same Lifetime Together
 
@@ -254,19 +258,15 @@ var conn = ConnectToDB();
 // Never need to unsubscribe from global subscriptions
 var globalSubscriptions = conn
     .SubscriptionBuilder()
-    .Subscribe(new string[] {
-        // Global messages the client should always display
-        "SELECT * FROM announcements",
-        // A description of rewards for in-game achievements
-        "SELECT * FROM badges",
-    });
+    .AddQuery(q => q.From.Announcements())
+    .AddQuery(q => q.From.Badges())
+    .Subscribe();
 
 // May unsubscribe to shop_items as player advances
 var shopSubscription = conn
     .SubscriptionBuilder()
-    .Subscribe(new string[] {
-        "SELECT * FROM shop_items WHERE required_level <= 5"
-    });
+    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(5U)))
+    .Subscribe();
 ```
 
 </TabItem>
@@ -278,19 +278,15 @@ let conn: DbConnection = connect_to_db();
 // Never need to unsubscribe from global subscriptions
 let global_subscriptions = conn
     .subscription_builder()
-    .subscribe([
-        // Global messages the client should always display
-        "SELECT * FROM announcements",
-        // A description of rewards for in-game achievements
-        "SELECT * FROM badges",
-    ]);
+    .add_query(|q| q.from.announcements())
+    .add_query(|q| q.from.badges())
+    .subscribe();
 
 // May unsubscribe to shop_items as player advances
 let shop_subscription = conn
     .subscription_builder()
-    .subscribe([
-        "SELECT * FROM shop_items WHERE required_level <= 5",
-    ]);
+    .add_query(|q| q.from.shop_items().r#where(|r| r.required_level.lte(5u32)))
+    .subscribe();
 ```
 
 </TabItem>
@@ -352,20 +348,16 @@ var conn = ConnectToDB();
 // Initial subscription: player at level 5.
 var shopSubscription = conn
     .SubscriptionBuilder()
-    .Subscribe(new string[] {
-        // For displaying the price of shop items in the player's currency of choice
-        "SELECT * FROM exchange_rates",
-        "SELECT * FROM shop_items WHERE required_level <= 5"
-    });
+    .AddQuery(q => q.From.ExchangeRates())
+    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(5U)))
+    .Subscribe();
 
 // New subscription: player now at level 6, which overlaps with the previous query.
 var newShopSubscription = conn
     .SubscriptionBuilder()
-    .Subscribe(new string[] {
-        // For displaying the price of shop items in the player's currency of choice
-        "SELECT * FROM exchange_rates",
-        "SELECT * FROM shop_items WHERE required_level <= 6"
-    });
+    .AddQuery(q => q.From.ExchangeRates())
+    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(6U)))
+    .Subscribe();
 
 // Unsubscribe from the old subscription once the new one is in place.
 if (shopSubscription.IsActive)
@@ -383,20 +375,16 @@ let conn: DbConnection = connect_to_db();
 // Initial subscription: player at level 5.
 let shop_subscription = conn
     .subscription_builder()
-    .subscribe([
-        // For displaying the price of shop items in the player's currency of choice
-        "SELECT * FROM exchange_rates",
-        "SELECT * FROM shop_items WHERE required_level <= 5",
-    ]);
+    .add_query(|q| q.from.exchange_rates())
+    .add_query(|q| q.from.shop_items().r#where(|r| r.required_level.lte(5u32)))
+    .subscribe();
 
 // New subscription: player now at level 6, which overlaps with the previous query.
 let new_shop_subscription = conn
     .subscription_builder()
-    .subscribe([
-        // For displaying the price of shop items in the player's currency of choice
-        "SELECT * FROM exchange_rates",
-        "SELECT * FROM shop_items WHERE required_level <= 6",
-    ]);
+    .add_query(|q| q.from.exchange_rates())
+    .add_query(|q| q.from.shop_items().r#where(|r| r.required_level.lte(6u32)))
+    .subscribe();
 
 // Unsubscribe from the old subscription once the new one is active.
 if shop_subscription.is_active() {
@@ -413,11 +401,11 @@ This refers to distinct queries that return intersecting data sets,
 which can result in the server processing and serializing the same row multiple times.
 While SpacetimeDB can manage this redundancy, it may lead to unnecessary inefficiencies.
 
-Consider the following two queries:
+Consider the following two query builder subscriptions:
 
-```sql
-SELECT * FROM User
-SELECT * FROM User WHERE id = 5
+```typescript
+tables.user
+tables.user.where(r => r.id.eq(5))
 ```
 
 If `User.id` is a unique or primary key column,
@@ -425,11 +413,11 @@ the cost of subscribing to both queries is minimal.
 This is because the server will use an index when processing the 2nd query,
 and it will only serialize a single row for the 2nd query.
 
-In contrast, consider these two queries:
+In contrast, consider these two query builder subscriptions:
 
-```sql
-SELECT * FROM User
-SELECT * FROM User WHERE id != 5
+```typescript
+tables.user
+tables.user.where(r => r.id.ne(5))
 ```
 
 The server must now process each row of the `User` table twice,

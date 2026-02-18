@@ -2101,13 +2101,11 @@ void Reducer_OnSendMessageEvent(ReducerEventContext ctx, string text)
 
 ### Subscribe to queries
 
-SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database using `SubscribeToAllTables`.
-
-You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/reference/sql) enumerates the operations that are accepted in our SQL syntax.
+SpacetimeDB is set up so that each client subscribes to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database using `SubscribeToAllTables`.
 
 When we specify our subscriptions, we can supply an `OnApplied` callback. This will run when the subscription is applied and the matching rows become available in our client cache. We'll use this opportunity to print the message backlog in proper order.
 
-We can also provide an `OnError` callback. This will run if the subscription fails, usually due to an invalid or malformed SQL queries. We can't handle this case, so we'll just print out the error and exit the process.
+We can also provide an `OnError` callback. With query-builder subscriptions, invalid query shapes are caught by the type system, so this callback is less likely to fire due to query construction mistakes. (With raw SQL subscriptions, invalid query text can fail at runtime.) We can't handle this case here, so we'll just print out the error and exit the process.
 
 In `Program.cs`, update our `OnConnected` function to include `conn.SubscriptionBuilder().OnApplied(OnSubscriptionApplied).SubscribeToAllTables();` so that it reads:
 
@@ -2347,7 +2345,7 @@ Our `main` function will do the following:
 
 1. Connect to the database.
 2. Register a number of callbacks to run in response to various database events.
-3. Subscribe to a set of SQL queries, whose results will be replicated and automatically updated in our client.
+3. Subscribe to a set of queries, whose results will be replicated and automatically updated in our client.
 4. Spawn a background thread where our connection will process messages and invoke callbacks.
 5. Enter a loop to handle user input from the command line.
 
@@ -2361,7 +2359,7 @@ fn main() {
     // Register callbacks to run in response to database events.
     register_callbacks(&ctx);
 
-    // Subscribe to SQL queries in order to construct a local partial replica of the database.
+    // Subscribe to queries in order to construct a local partial replica of the database.
     subscribe_to_tables(&ctx);
 
     // Spawn a thread, where the connection will process messages and invoke callbacks.
@@ -2590,11 +2588,11 @@ fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
 
 ### Subscribe to queries
 
-SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database.
+SpacetimeDB is set up so that each client subscribes to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database.
 
 When we specify our subscriptions, we can supply an `on_applied` callback. This will run when the subscription is applied and the matching rows become available in our client cache. We'll use this opportunity to print the message backlog in proper order.
 
-We'll also provide an `on_error` callback. This will run if the subscription fails, usually due to an invalid or malformed SQL queries. We can't handle this case, so we'll just print out the error and exit the process.
+We'll also provide an `on_error` callback. This will run if the subscription fails for any reason, such as for an invalid or malformed query. These errors are less likely when using the query builder since invalid query shapes are caught by the type system. They are more likely to occur when using raw SQL.
 
 To `src/main.rs`, add:
 
@@ -2604,7 +2602,9 @@ fn subscribe_to_tables(ctx: &DbConnection) {
     ctx.subscription_builder()
         .on_applied(on_sub_applied)
         .on_error(on_sub_error)
-        .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+        .add_query(|q| q.from.user())
+        .add_query(|q| q.from.message())
+        .subscribe();
 }
 ```
 
@@ -2632,9 +2632,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 
 #### Notify about failed subscriptions
 
-It's possible for SpacetimeDB to reject subscriptions. This happens most often because of a typo in the SQL queries, but can be due to use of SQL features that SpacetimeDB doesn't support. See [SQL Support: Subscriptions](/reference/sql#subscriptions) for more information about what subscription queries SpacetimeDB supports.
-
-In our case, we're pretty confident that our queries are valid, but if SpacetimeDB rejects them, we want to know about it. Our callback will print the error, then exit the process.
+It's possible for SpacetimeDB to reject subscriptions. With raw SQL subscriptions, this often happens due to invalid query text. In our case, because we're using the query builder, we're pretty confident that our queries are valid, but if SpacetimeDB rejects them, we want to know about it. Our callback will print the error, then exit the process.
 
 ```rust
 /// Or `on_error` callback:
