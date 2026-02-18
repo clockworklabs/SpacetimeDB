@@ -595,10 +595,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 if matches!(
                     event.kind,
                     notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_)
-                ) {
-                    if event.paths.iter().any(|p| !should_ignore_path(p, &gitignore)) {
-                        let _ = tx.send(());
-                    }
+                ) && event.paths.iter().any(|p| !should_ignore_path(p, &gitignore))
+                {
+                    let _ = tx.send(());
                 }
             }
         },
