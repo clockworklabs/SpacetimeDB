@@ -10,6 +10,7 @@
 //! subdirectories that contain a `.template.json` metadata file.
 
 use anyhow::{bail, Context, Result};
+use regex::Regex;
 use serde_json::Value;
 use spacetimedb_smoketests::{pnpm_path, random_string, workspace_root, Smoketest};
 use std::env;
@@ -368,6 +369,53 @@ fn clear_cached_nuget_package(package_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reads `<Version>...</Version>` from a .csproj file.
+fn read_csproj_version(csproj_path: &Path) -> Result<String> {
+    let content = fs::read_to_string(csproj_path).with_context(|| format!("Failed to read {:?}", csproj_path))?;
+    let version_re = Regex::new(r"(?s)<Version>\s*([^<\s]+)\s*</Version>").unwrap();
+    let caps = version_re
+        .captures(&content)
+        .with_context(|| format!("No <Version> found in {:?}", csproj_path))?;
+    Ok(caps.get(1).unwrap().as_str().to_string())
+}
+
+/// Pins `SpacetimeDB.Runtime` in the server project to the exact local runtime
+/// package version, avoiding wildcard resolution drift to older published
+/// versions.
+fn pin_csharp_server_runtime_package_version(server_path: &Path) -> Result<()> {
+    let runtime_csproj = workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj");
+    let runtime_version = read_csproj_version(&runtime_csproj)?;
+
+    let csproj = fs::read_dir(server_path)
+        .with_context(|| format!("Failed to read {:?}", server_path))?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|ext| ext == "csproj"))
+        .with_context(|| format!("No .csproj found in {:?}", server_path))?;
+
+    let content = fs::read_to_string(&csproj).with_context(|| format!("Failed to read {:?}", csproj))?;
+    let runtime_ref_re =
+        Regex::new(r#"<PackageReference\s+Include="SpacetimeDB\.Runtime"\s+Version="[^"]+"\s*/>"#).unwrap();
+    let replacement = format!(
+        r#"<PackageReference Include="SpacetimeDB.Runtime" Version="{}" />"#,
+        runtime_version
+    );
+
+    if !runtime_ref_re.is_match(&content) {
+        bail!("No SpacetimeDB.Runtime PackageReference found to pin in {:?}", csproj);
+    }
+
+    let new_content = runtime_ref_re.replace_all(&content, replacement).to_string();
+    fs::write(&csproj, new_content).with_context(|| format!("Failed to write {:?}", csproj))?;
+
+    eprintln!(
+        "[TEMPLATES][C#] pinned SpacetimeDB.Runtime version in {:?} to {}",
+        csproj, runtime_version
+    );
+
+    Ok(())
+}
+
 /// Builds the TypeScript SDK (`crates/bindings-typescript`).
 ///
 /// Should be called once before testing any TypeScript templates.
@@ -582,6 +630,7 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
     setup_csharp_nuget(project_path)?;
 
     let server_path = project_path.join("spacetimedb");
+    pin_csharp_server_runtime_package_version(&server_path)?;
     // Copy nuget.config into the server directory so `spacetime publish` (which runs
     // `dotnet publish` from the server dir) can find the local package sources.
     let root_nuget = project_path.join("nuget.config");
