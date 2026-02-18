@@ -18,64 +18,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  smoketests_mod_rs_complete:
-    name: Check smoketests/mod.rs is complete
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Verify crates/smoketests/tests/smoketests/mod.rs lists all entries
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import pathlib
-          import sys
-
-          repo_root = pathlib.Path('.').resolve()
-          directory = repo_root / 'crates/smoketests/tests/smoketests'
-          mod_rs = directory / 'mod.rs'
-
-          if not directory.is_dir():
-            print(f"Error: directory not found: {directory}")
-            sys.exit(1)
-
-          if not mod_rs.is_file():
-            print(f"Error: mod.rs not found: {mod_rs}")
-            sys.exit(1)
-
-          mod_rs_text = mod_rs.read_text(encoding='utf-8', errors='strict')
-
-          expected = set()
-          for child in directory.iterdir():
-            name = child.name
-            if name == 'mod.rs':
-              continue
-            if name.startswith('.'):
-              continue
-
-            if child.is_dir():
-              expected.add(child.name)
-              continue
-
-            if child.is_file() and child.suffix == '.rs':
-              expected.add(child.stem)
-              continue
-
-          missing = []
-          for m in sorted(expected):
-            if f"mod {m};" not in mod_rs_text:
-              missing.append(m)
-
-          if missing:
-            print('Error: crates/smoketests/tests/smoketests/mod.rs is missing these entries:')
-            for m in missing:
-              print(f"- mod {m};")
-            sys.exit(1)
-
-          print('OK: crates/smoketests/tests/smoketests/mod.rs lists all entries.')
-          PY
-
   smoketests:
     needs: [lints]
     name: Smoketests (${{ matrix.name }})
@@ -1230,3 +1172,57 @@ jobs:
           fi
 
           echo "No Python smoketest changes detected."
+
+  smoketests_mod_rs_complete:
+    name: Check smoketests/mod.rs is complete
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          cache-on-failure: false
+          cache-all-crates: true
+          cache-workspace-crates: true
+          prefix-key: v1
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        shell: bash
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
+
+      - name: Verify crates/smoketests/tests/smoketests/mod.rs lists all entries
+        run: |
+          cargo ci smoketests check-mod-list
