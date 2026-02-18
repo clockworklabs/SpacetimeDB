@@ -256,13 +256,13 @@ const tablesSchema = __schema({
   logged_out_player: __table({
     name: 'logged_out_player',
     indexes: [
-      { name: 'logged_out_player_identity_idx_btree', algorithm: 'btree', columns: [
+      { name: 'identity', algorithm: 'btree', columns: [
         'identity',
       ] },
-      { name: 'logged_out_player_name_idx_btree', algorithm: 'btree', columns: [
+      { name: 'name', algorithm: 'btree', columns: [
         'name',
       ] },
-      { name: 'logged_out_player_player_id_idx_btree', algorithm: 'btree', columns: [
+      { name: 'player_id', algorithm: 'btree', columns: [
         'playerId',
       ] },
     ],
@@ -275,10 +275,10 @@ const tablesSchema = __schema({
   person: __table({
     name: 'person',
     indexes: [
-      { name: 'person_age_idx_btree', algorithm: 'btree', columns: [
+      { name: 'age', algorithm: 'btree', columns: [
         'age',
       ] },
-      { name: 'person_id_idx_btree', algorithm: 'btree', columns: [
+      { name: 'id', algorithm: 'btree', columns: [
         'id',
       ] },
     ],
@@ -289,13 +289,13 @@ const tablesSchema = __schema({
   player: __table({
     name: 'player',
     indexes: [
-      { name: 'player_identity_idx_btree', algorithm: 'btree', columns: [
+      { name: 'identity', algorithm: 'btree', columns: [
         'identity',
       ] },
-      { name: 'player_name_idx_btree', algorithm: 'btree', columns: [
+      { name: 'name', algorithm: 'btree', columns: [
         'name',
       ] },
-      { name: 'player_player_id_idx_btree', algorithm: 'btree', columns: [
+      { name: 'player_id', algorithm: 'btree', columns: [
         'playerId',
       ] },
     ],
@@ -319,7 +319,7 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, TestFRow),
-  my_player: __table({
+  myPlayer: __table({
     name: 'my_player',
     indexes: [
     ],
