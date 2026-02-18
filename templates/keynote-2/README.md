@@ -95,12 +95,12 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 **Server Machine (Variant B - Google Cloud):**
 
-- c4-standard-32-lssd (32 vCPUs, 120 GB Memory)
+- c4-standard-32-lssd (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
 - RAID 0 on 5 Local SSDs
 
 **Client Machine:**
 
-- c4-standard-32 (32 vCPUs, 120 GB Memory)
+- c4-standard-32 (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
 - Runs on a **separate machine** from the server
 
 **Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
