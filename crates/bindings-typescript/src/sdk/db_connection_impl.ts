@@ -590,16 +590,16 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     eventContext: EventContextInterface<RemoteModule>,
     tu: TransactionUpdate
   ): PendingCallback[] {
-    const all_updates: CacheTableUpdate<UntypedTableDef>[] = [];
+    const allUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
     for (const querySetUpdate of tu.querySets) {
       const tableUpdates = this.#querySetUpdateToTableUpdates(querySetUpdate);
       for (const update of tableUpdates) {
-        all_updates.push(update);
+        allUpdates.push(update);
       }
       // TODO: When we have per-query storage, we will want to apply the per-query events here.
     }
     return this.#applyTableUpdates(
-      this.#mergeTableUpdates(all_updates),
+      this.#mergeTableUpdates(allUpdates),
       eventContext
     );
   }
