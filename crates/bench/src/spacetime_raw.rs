@@ -56,6 +56,7 @@ impl BenchDatabase for SpacetimeRaw {
                             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                                 columns: ColId(0).into(),
                             }),
+                            alias: None,
                         },
                         true,
                     )?;
@@ -72,6 +73,7 @@ impl BenchDatabase for SpacetimeRaw {
                                 index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                                     columns: ColId(i as _).into(),
                                 }),
+                                alias: None,
                             },
                             false,
                         )?;

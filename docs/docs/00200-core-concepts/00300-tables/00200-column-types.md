@@ -234,7 +234,7 @@ public static partial class Module
         string Suspended
     )> { }
 
-    [SpacetimeDB.Table(Name = "Player", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Player", Public = true)]
     public partial struct Player
     {
         // Primitive types

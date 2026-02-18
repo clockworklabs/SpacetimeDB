@@ -301,7 +301,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "ScheduledTask", Scheduled = nameof(SendReminder))]
+    [SpacetimeDB.Table(Accessor = "ScheduledTask", Scheduled = nameof(SendReminder))]
     public partial struct ScheduledTask
     {
         [SpacetimeDB.PrimaryKey]

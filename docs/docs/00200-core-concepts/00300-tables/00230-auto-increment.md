@@ -42,7 +42,7 @@ Auto-increment columns must be integer types: `t.i8()`, `t.u8()`, `t.i16()`, `t.
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Post", Public = true)]
+[SpacetimeDB.Table(Accessor = "Post", Public = true)]
 public partial struct Post
 {
     [SpacetimeDB.PrimaryKey]
@@ -195,7 +195,7 @@ export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { nam
 ```csharp
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "user", Public = true)]
+    [SpacetimeDB.Table(Accessor = "user", Public = true)]
     public partial struct User
     {
         [SpacetimeDB.AutoInc]

@@ -307,7 +307,7 @@ export default spacetimedb;
 In `spacetimedb/Lib.cs`, add the definition of the tables to the `Module` class:
 
 ```csharp server
-[Table(Name = "User", Public = true)]
+[Table(Accessor = "User", Public = true)]
 public partial class User
 {
     [PrimaryKey]
@@ -316,7 +316,7 @@ public partial class User
     public bool Online;
 }
 
-[Table(Name = "Message", Public = true)]
+[Table(Accessor = "Message", Public = true)]
 public partial class Message
 {
     public Identity Sender;
