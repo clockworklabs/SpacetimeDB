@@ -69,7 +69,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = reminder_schedule, scheduled(send_reminder))]
+#[spacetimedb::table(accessor = reminder_schedule, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]

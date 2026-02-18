@@ -150,7 +150,7 @@ pub struct Player {
 }
 
 // Multi-column index
-#[table(accessor = score, index(name = idx, btree(columns = [player_id, level])))]
+#[table(accessor = score, index(accessor = idx, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u64,
     level: u32,

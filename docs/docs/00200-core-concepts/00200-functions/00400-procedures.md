@@ -228,7 +228,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureContext::with_tx`.
 
 ```rust
-#[spacetimedb::table(name = my_table)]
+#[spacetimedb::table(accessor = my_table)]
 struct MyTable {
     a: u32,
     b: String,
@@ -516,7 +516,7 @@ may return a value, and that value will be returned to the calling procedure.
 Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
 
 ```rust
-#[spacetimedb::table(name = player)]
+#[spacetimedb::table(accessor = player)]
 struct Player {
     id: spacetimedb::Identity,
     level: u32,

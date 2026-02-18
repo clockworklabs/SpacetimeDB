@@ -92,7 +92,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = user_avatar, public)]
+#[spacetimedb::table(accessor = user_avatar, public)]
 pub struct UserAvatar {
     #[primary_key]
     user_id: u64,
@@ -271,7 +271,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -519,7 +519,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ProcedureContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -787,7 +787,7 @@ public partial class Module
 ```rust
 use spacetimedb::{Identity, Timestamp};
 
-#[spacetimedb::table(name = image, public)]
+#[spacetimedb::table(accessor = image, public)]
 pub struct Image {
     #[primary_key]
     #[auto_inc]

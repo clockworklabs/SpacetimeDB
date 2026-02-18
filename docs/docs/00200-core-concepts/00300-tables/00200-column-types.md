@@ -285,7 +285,7 @@ pub enum Status {
     Suspended { reason: String },
 }
 
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     // Primitive types
     #[primary_key]

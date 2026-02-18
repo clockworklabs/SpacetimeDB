@@ -65,7 +65,7 @@ The `[SpacetimeDB.Default(value)]` attribute specifies the default value. The va
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
