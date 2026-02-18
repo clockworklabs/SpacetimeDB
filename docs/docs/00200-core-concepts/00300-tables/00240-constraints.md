@@ -136,7 +136,7 @@ public partial struct Inventory
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = inventory, public, index(name = inventory_index, btree(columns = [user_id, item_id])))]
+#[spacetimedb::table(accessor = inventory, public, index(accessor = inventory_index, btree(columns = [user_id, item_id])))]
 pub struct Inventory {
     #[primary_key]
     #[auto_inc]

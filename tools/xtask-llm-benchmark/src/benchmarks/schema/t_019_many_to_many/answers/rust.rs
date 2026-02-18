@@ -15,9 +15,9 @@ pub struct Group {
 }
 
 #[table(
-    name = membership,
-    index(name = by_user,  btree(columns = [user_id])),
-    index(name = by_group, btree(columns = [group_id]))
+    accessor = membership,
+    index(accessor = by_user,  btree(columns = [user_id])),
+    index(accessor = by_group, btree(columns = [group_id]))
 )]
 pub struct Membership {
     #[primary_key]

@@ -456,7 +456,7 @@ SpacetimeDB supports both single- and multi-column [B-Tree](https://en.wikipedia
 
 Indexes are declared using the syntax:
 
-[`#[table(..., index(name = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index).
+[`#[table(..., index(accessor = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index).
 
 For example:
 
@@ -464,7 +464,7 @@ For example:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
-#[table(accessor = paper, index(name = url_and_country, btree(columns = [url, country])))]
+#[table(accessor = paper, index(accessor = url_and_country, btree(columns = [url, country])))]
 struct Paper {
     url: String,
     country: String,

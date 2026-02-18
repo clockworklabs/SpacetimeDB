@@ -345,7 +345,7 @@ Database tables store the application's persistent state. They are defined using
 - **Primary Keys:** Designate a single field as the primary key using `#[primary_key]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
 - **Auto-Increment:** Mark an integer-typed primary key field with `#[auto_inc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
 - **Unique Constraints:** Enforce uniqueness on non-primary key fields using `#[unique]`. Attempts to insert or update rows violating this constraint will fail.
-- **Indexes:** Create B-tree indexes for faster lookups on specific fields or combinations of fields. Use `#[index(btree)]` on a single field for a simple index, or `#[table(index(name = my_index_name, btree(columns = [col_a, col_b])))])` within the `#[table(...)]` attribute for named, multi-column indexes.
+- **Indexes:** Create B-tree indexes for faster lookups on specific fields or combinations of fields. Use `#[index(btree)]` on a single field for a simple index, or `#[table(index(accessor = my_index_name, btree(columns = [col_a, col_b])))])` within the `#[table(...)]` attribute for named, multi-column indexes.
 - **Nullable Fields:** Use standard Rust `Option<T>` for fields that can hold null values.
 - **Instances vs. Database:** Remember that table struct instances (e.g., `let player = PlayerState { ... };`) are just data. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.db.player_state().insert(...)`).
 - **Case Sensitivity:** Table names specified via `name = ...` are case-sensitive and must be matched exactly in SQL queries.
@@ -362,10 +362,10 @@ use spacetimedb::{table, Identity, Timestamp, SpacetimeType, Table}; // Added Ta
 
 // Example Table Definition
 #[table(
-    name = player_state,
+    accessor = player_state,
     public,
     // Index definition is included here
-    index(name = idx_level_btree, btree(columns = [level]))
+    index(accessor = idx_level_btree, btree(columns = [level]))
 )]
 #[derive(Clone, Debug)] // No SpacetimeType needed here
 pub struct PlayerState {
@@ -640,7 +640,7 @@ SpacetimeDB provides powerful ways to filter and delete table rows using B-tree 
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, Table, log};
 
-#[table(accessor = points, index(name = idx_xy, btree(columns = [x, y])))]
+#[table(accessor = points, index(accessor = idx_xy, btree(columns = [x, y])))]
 #[derive(Clone, Debug)]
 pub struct Point { #[primary_key] id: u64, x: i64, y: i64 }
 #[table(accessor = items, index(btree(columns = [name])))]

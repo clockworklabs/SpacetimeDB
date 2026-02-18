@@ -212,7 +212,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = user, public, index(name = idx_age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = user, public, index(accessor = idx_age, btree(columns = [age])))]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -278,7 +278,7 @@ public partial struct Score
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = score, public, index(name = by_player_and_level, btree(columns = [player_id, level])))]
+#[spacetimedb::table(accessor = score, public, index(accessor = by_player_and_level, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u32,
     level: u32,
