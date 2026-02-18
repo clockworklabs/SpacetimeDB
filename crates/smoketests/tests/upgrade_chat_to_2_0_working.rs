@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -402,7 +402,7 @@ fn upgrade_chat_to_2_0_mixed_clients() -> Result<()> {
         let new_port = pick_unused_port()?;
         let new_url = format!("http://127.0.0.1:{new_port}");
         log_step("starting new server on same data dir");
-        let (mut new_server, new_server_logs) = spawn_server(&current_cli, &data_dir, new_port)?;
+        let (mut new_server, new_server_logs) = spawn_server(&installed_v1_cli, &data_dir, new_port)?;
         if let Err(e) = wait_for_ping(&new_url, Duration::from_secs(20)) {
             dump_server_logs("new server", &new_server_logs);
             kill_child(&mut new_server);
