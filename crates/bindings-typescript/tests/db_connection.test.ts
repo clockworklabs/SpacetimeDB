@@ -1,7 +1,14 @@
 import { DbConnection } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { BinaryWriter, ConnectionId, Timestamp, type Infer } from '../src';
+import {
+  BinaryWriter,
+  ConnectionId,
+  InternalError,
+  SenderError,
+  Timestamp,
+  type Infer,
+} from '../src';
 import ServerMessage from '../src/sdk/client_api/server_message_type';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
@@ -99,6 +106,17 @@ function makeReducerErrorResult(requestId: number, error: string) {
     result: {
       tag: 'Err',
       value: errorPayload,
+    },
+  });
+}
+
+function makeReducerInternalErrorResult(requestId: number, error: string) {
+  return ServerMessage.ReducerResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    result: {
+      tag: 'InternalError',
+      value: error,
     },
   });
 }
@@ -263,8 +281,53 @@ describe('DbConnection', () => {
     const requestId = getLastCallReducerRequestId(wsAdapter);
     wsAdapter.sendToClient(makeReducerErrorResult(requestId, 'test error'));
 
-    await expect(reducerPromise).rejects.toBe('test error');
+    await expect(reducerPromise).rejects.toBeInstanceOf(SenderError);
+    await expect(reducerPromise).rejects.toHaveProperty(
+      'message',
+      'test error'
+    );
     expect(insertCalled).toBeFalsy();
+  });
+
+  test('reducer internal error rejects with InternalError', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    const reducerPromise = client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 1, y: 2 },
+    });
+
+    await Promise.resolve();
+    const requestId = getLastCallReducerRequestId(wsAdapter);
+    wsAdapter.sendToClient(
+      makeReducerInternalErrorResult(requestId, 'internal test error')
+    );
+
+    await expect(reducerPromise).rejects.toBeInstanceOf(InternalError);
+    await expect(reducerPromise).rejects.toHaveProperty(
+      'message',
+      'internal test error'
+    );
   });
 
   /*

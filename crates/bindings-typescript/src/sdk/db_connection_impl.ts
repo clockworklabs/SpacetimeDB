@@ -62,6 +62,7 @@ import { toCamelCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
+import { InternalError, SenderError } from '../lib/errors.ts';
 
 export {
   DbConnectionBuilder,
@@ -820,9 +821,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           /// Interpret the user-returned error as a string.
           const reader = new BinaryReader(result.value);
           const errorString = reader.readString();
-          reject(errorString);
+          reject(new SenderError(errorString));
+        } else if (result.tag === 'InternalError') {
+          reject(new InternalError(result.value));
         } else {
-          reject(result.value);
+          const unreachable: never = result;
+          reject(new Error('Unexpected reducer result'));
+          void unreachable;
         }
       }
     });
