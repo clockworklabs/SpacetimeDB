@@ -121,7 +121,7 @@ Run `spacetime help publish` for more detailed information.
 
 Deletes a SpacetimeDB database
 
-**Usage:** `spacetime delete [OPTIONS] [database]`
+**Usage:** `spacetime delete [OPTIONS] <database>`
 
 Run `spacetime help delete` for more detailed information.
 
@@ -141,7 +141,7 @@ Run `spacetime help delete` for more detailed information.
 
 Prints logs from a SpacetimeDB database
 
-**Usage:** `spacetime logs [OPTIONS] [database]`
+**Usage:** `spacetime logs [OPTIONS] <database>`
 
 Run `spacetime help logs` for more detailed information.
 
@@ -169,7 +169,7 @@ Run `spacetime help logs` for more detailed information.
 
 Invokes a function (reducer or procedure) in a database. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime call [OPTIONS] [database] <function_name> [arguments]...`
+**Usage:** `spacetime call [OPTIONS] <database> <function_name> [arguments]...`
 
 Run `spacetime help call` for more detailed information.
 
@@ -192,7 +192,7 @@ Run `spacetime help call` for more detailed information.
 
 Describe the structure of a database or entities within it. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime describe [OPTIONS] --json [database] [entity_type] [entity_name]`
+**Usage:** `spacetime describe [OPTIONS] --json <database> [entity_type] [entity_name]`
 
 Run `spacetime help describe` for more detailed information.
 
@@ -285,7 +285,7 @@ Show current energy balance for an identity
 
 Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime sql [OPTIONS] [database] <query>`
+**Usage:** `spacetime sql [OPTIONS] <database> <query>`
 
 ###### **Arguments:**
 
@@ -596,7 +596,7 @@ Deletes all data from all local databases
 
 Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime subscribe [OPTIONS] [database] <query>...`
+**Usage:** `spacetime subscribe [OPTIONS] <database> <query>...`
 
 ###### **Arguments:**
 

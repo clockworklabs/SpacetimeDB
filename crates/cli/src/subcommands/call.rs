@@ -17,7 +17,6 @@ use super::sql::parse_req;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
-        .allow_missing_positional(true)
         .about(format!(
             "Invokes a function (reducer or procedure) in a database. {UNSTABLE_WARNING}"
         ))

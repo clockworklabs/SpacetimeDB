@@ -17,7 +17,6 @@ use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
-        .allow_missing_positional(true)
         .about(format!("Runs a SQL query on the database. {UNSTABLE_WARNING}"))
         .arg(Arg::new("database").help("The name or identity of the database you would like to query"))
         .arg(
