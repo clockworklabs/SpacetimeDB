@@ -277,7 +277,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .get_one::<PathBuf>("module_path")
             .context("failed to read module_path from config")?
         {
-            spacetimedb_dir = path;
+            spacetimedb_dir = resolve_module_path_from_config(&path, &project_dir);
+            let parent = spacetimedb_dir
+                .parent()
+                .expect("module_path must have a parent directory");
+            project_dir = parent.to_path_buf();
+            module_bindings_dir = project_dir.join(module_bindings_path);
         }
     }
 
@@ -285,9 +290,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Initialize when the resolved module directory does not exist.
     if missing_project_dir {
-        println!("{}", "No SpacetimeDB project found in current directory.".yellow());
+        println!("{}", "No SpacetimeDB project found.".yellow());
         let should_init = Confirm::new()
-            .with_prompt("Would you like to initialize a new project?")
+            .with_prompt("Would you like to initialize a new project under the current directory?")
             .default(true)
             .interact()?;
 
@@ -316,7 +321,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
-    } else if template.is_some() && !missing_project_dir {
+    } else if template.is_some() {
         println!(
             "{}",
             "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
@@ -679,6 +684,14 @@ fn determine_publish_configs<'a>(
         // If there is no provided database name nor publish configs return no
         // configs, we will handle it by asking user for a database or auto-generate one
         Ok(vec![])
+    }
+}
+
+fn resolve_module_path_from_config(module_path: &Path, project_dir: &Path) -> PathBuf {
+    if module_path.is_absolute() {
+        module_path.to_path_buf()
+    } else {
+        project_dir.join(module_path)
     }
 }
 
@@ -1526,5 +1539,48 @@ mod tests {
             .cloned();
 
         assert_eq!(database_name_from_cli, Some("my-db-name".to_string()));
+    }
+
+    #[test]
+    fn test_template_with_db_name_resolves_paths_under_project_subdir() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().join("my-spacetime-app");
+        let module_bindings_path = PathBuf::from("src/module_bindings");
+
+        let cmd = cli();
+        let matches = cmd.clone().get_matches_from(vec![
+            "dev",
+            "--template",
+            "react-ts",
+            "--project-path",
+            project_dir.to_str().unwrap(),
+            "my-db-name",
+        ]);
+
+        let database_name_from_cli: Option<String> = matches
+            .get_one::<String>("database")
+            .or_else(|| matches.get_one::<String>("database-flag"))
+            .cloned();
+
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish", "my-db-name"]);
+        let publish_configs = determine_publish_configs(
+            database_name_from_cli,
+            None,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+        )
+        .unwrap();
+
+        let configured_module_path = publish_configs[0].get_one::<PathBuf>("module_path").unwrap().unwrap();
+        let resolved_spacetimedb_dir = resolve_module_path_from_config(&configured_module_path, &project_dir);
+        let resolved_module_bindings_dir = resolved_spacetimedb_dir.parent().unwrap().join(&module_bindings_path);
+
+        assert_eq!(resolved_spacetimedb_dir, project_dir.join("spacetimedb"));
+        assert_eq!(resolved_module_bindings_dir, project_dir.join("src/module_bindings"));
+        assert!(!resolved_spacetimedb_dir.exists());
     }
 }
