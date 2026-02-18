@@ -147,6 +147,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   // These fields are meant to be strictly private.
   #queryId = 0;
   #requestId = 0;
+  #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #messageQueue = Promise.resolve();
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
@@ -550,6 +551,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     });
   }
 
+  #nextEventId(): string {
+    this.#eventId += 1;
+    return `${this.connectionId.toHexString()}:${this.#eventId}`;
+  }
+
   /**
    * Handles WebSocket onOpen event.
    */
@@ -621,7 +627,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           );
           return;
         }
-        const event: Event<never> = { tag: 'SubscribeApplied' };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'SubscribeApplied',
+        };
         const eventContext = this.#makeEventContext(event);
         const tableUpdates = this.#queryRowsToTableUpdates(
           serverMessage.value.rows,
@@ -646,7 +655,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           );
           return;
         }
-        const event: Event<never> = { tag: 'UnsubscribeApplied' };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'UnsubscribeApplied',
+        };
         const eventContext = this.#makeEventContext(event);
         const tableUpdates = serverMessage.value.rows
           ? this.#queryRowsToTableUpdates(serverMessage.value.rows, 'delete')
@@ -663,7 +675,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       case 'SubscriptionError': {
         const querySetId = serverMessage.value.querySetId.id;
         const error = Error(serverMessage.value.error);
-        const event: Event<never> = { tag: 'Error', value: error };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'Error',
+          value: error,
+        };
         const eventContext = this.#makeEventContext(event);
         const errorContext = {
           ...eventContext,
@@ -683,7 +699,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         break;
       }
       case 'TransactionUpdate': {
-        const event: Event<never> = { tag: 'UnknownTransaction' };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'UnknownTransaction',
+        };
         const eventContext = this.#makeEventContext(event);
         const callbacks = this.#applyTransactionUpdates(
           eventContext,
@@ -699,8 +718,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
         if (result.tag === 'Ok') {
           const reducerInfo = this.#reducerCallInfo.get(requestId);
+          const eventId: string = this.#nextEventId();
           const event: Event<any> = reducerInfo
             ? {
+                id: eventId,
                 tag: 'Reducer',
                 value: {
                   timestamp: serverMessage.value.timestamp,
@@ -711,7 +732,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
                   },
                 },
               }
-            : { tag: 'UnknownTransaction' };
+            : {
+                id: eventId,
+                tag: 'UnknownTransaction',
+              };
           const eventContext = this.#makeEventContext(event as any);
 
           const callbacks = this.#applyTransactionUpdates(

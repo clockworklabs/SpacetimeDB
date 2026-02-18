@@ -863,13 +863,44 @@ function resolveValue(
   return toComparableValue(row[expr.column]);
 }
 
+type TimestampLike = {
+  __timestamp_micros_since_unix_epoch__: bigint;
+};
+
+type HexSerializableLike = {
+  toHexString: () => string;
+};
+
+function isHexSerializableLike(value: unknown): value is HexSerializableLike {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as { toHexString?: unknown }).toHexString === 'function'
+  );
+}
+
+// Check if this value is a Timestamp-like object. This is here because
+// running locally can end up with different versions of the Timestamp class,
+// which breaks the simple instanceof version.
+function isTimestampLike(value: unknown): value is TimestampLike {
+  if (!value || typeof value !== 'object') return false;
+
+  if (value instanceof Timestamp) return true;
+
+  const micros = (value as Record<string, unknown>)[
+    '__timestamp_micros_since_unix_epoch__'
+  ];
+  return typeof micros === 'bigint';
+}
+
 // Exported for tests.
 export function toComparableValue(value: any): any {
-  if (value instanceof Identity || value instanceof ConnectionId) {
+  // Handle `ConnectionId` and `Identity`.
+  if (isHexSerializableLike(value)) {
     return value.toHexString();
   }
-  if (value instanceof Timestamp) {
-    return value.microsSinceUnixEpoch;
+  if (isTimestampLike(value)) {
+    return value.__timestamp_micros_since_unix_epoch__;
   }
   return value;
 }
