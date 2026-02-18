@@ -9,6 +9,7 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use spacetimedb_client_api_messages::name::parse_database_name;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -490,6 +491,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
 
     let project_name = get_project_name(options, is_interactive).await?;
     let project_path = get_project_path(options, &project_name, is_interactive, is_server_only).await?;
+    let local_database_name = get_local_database_name(&project_name, is_interactive)?;
 
     let mut template_config = if is_interactive {
         get_template_config_interactive(options, project_name, project_path.clone()).await?
@@ -551,11 +553,32 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
         }
     }
 
-    if let Some(path) = create_local_spacetime_config_if_missing(&project_path, &template_config.project_name)? {
+    if let Some(path) = create_local_spacetime_config_if_missing(&project_path, &local_database_name)? {
         println!("{} Created {}", "✓".green(), path.display());
     }
 
     Ok(project_path)
+}
+
+fn get_local_database_name(project_name: &str, is_interactive: bool) -> anyhow::Result<String> {
+    let default_database = format!("{project_name}-{}", random_suffix(5));
+    if !is_interactive {
+        return Ok(default_database);
+    }
+
+    let theme = ColorfulTheme::default();
+    let database_name = Input::with_theme(&theme)
+        .with_prompt("Database name")
+        .default(default_database)
+        .validate_with(|input: &String| -> Result<(), String> {
+            parse_database_name(input.trim()).map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .interact_text()?
+        .trim()
+        .to_string();
+
+    Ok(database_name)
 }
 
 fn create_default_spacetime_config_if_missing(project_path: &Path) -> anyhow::Result<Option<PathBuf>> {
@@ -580,7 +603,7 @@ fn create_default_spacetime_config_if_missing(project_path: &Path) -> anyhow::Re
 
 fn create_local_spacetime_config_if_missing(
     project_path: &Path,
-    project_name: &str,
+    database_name: &str,
 ) -> anyhow::Result<Option<PathBuf>> {
     let main_config_path = project_path.join(CONFIG_FILENAME);
     if !main_config_path.exists() {
@@ -592,25 +615,33 @@ fn create_local_spacetime_config_if_missing(
         return Ok(None);
     }
 
-    let random_suffix = random_suffix();
-    let local_database = format!("{project_name}-{random_suffix:06}");
-
     let mut local_config = SpacetimeConfig::default();
     local_config
         .additional_fields
-        .insert("database".to_string(), json!(local_database));
+        .insert("database".to_string(), json!(database_name));
     local_config.save(&local_config_path)?;
 
     Ok(Some(local_config_path))
 }
 
-fn random_suffix() -> u32 {
+fn random_suffix(len: usize) -> String {
+    const ALNUM: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
     let pid = std::process::id() as u64;
-    ((now ^ (pid << 16)) % 1_000_000) as u32
+    let mut state = now ^ (pid << 16);
+    let mut out = String::with_capacity(len);
+    for _ in 0..len {
+        // Simple xorshift to derive pseudo-random chars without extra deps.
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let idx = (state % ALNUM.len() as u64) as usize;
+        out.push(ALNUM[idx] as char);
+    }
+    out
 }
 
 async fn get_template_config_non_interactive(
@@ -1955,7 +1986,7 @@ mod tests {
 
         std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
 
-        let created = create_local_spacetime_config_if_missing(project_path, "my-app")
+        let created = create_local_spacetime_config_if_missing(project_path, "my-app-abc12")
             .unwrap()
             .expect("expected local config to be created");
         assert_eq!(created, project_path.join("spacetime.local.json"));
@@ -1967,13 +1998,7 @@ mod tests {
             .and_then(|v| v.as_str())
             .expect("database should be present");
 
-        assert!(
-            db.starts_with("my-app-"),
-            "expected database to start with `my-app-`, got: {db}"
-        );
-        let suffix = &db["my-app-".len()..];
-        assert_eq!(suffix.len(), 6);
-        assert!(suffix.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(db, "my-app-abc12");
 
         let obj = parsed.as_object().expect("local config should be a JSON object");
         assert_eq!(obj.len(), 1, "local config should only contain database");

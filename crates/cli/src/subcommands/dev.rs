@@ -270,14 +270,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
-    let using_spacetime_config = spacetime_config.is_some();
     // A config has publish targets if it has a "database" field or children
     let has_publish_targets_in_config = spacetime_config
         .map(|c| c.additional_fields.contains_key("database") || c.children.is_some())
         .unwrap_or(false);
-    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> =
-        spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
-    let has_generate_targets_in_config = !generate_configs_from_file.is_empty();
+    let has_generate_targets_in_config = spacetime_config
+        .and_then(|c| c.generate.as_ref())
+        .map(|g| !g.is_empty())
+        .unwrap_or(false);
 
     let module_path_from_cli_flag = args.value_source("module-path") == Some(ValueSource::CommandLine);
     let project_path_from_cli_flag = args.value_source("project-path") == Some(ValueSource::CommandLine);
@@ -398,6 +398,30 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 project_dir.join(path)
             };
         }
+    }
+
+    // Refresh layered config after potential init/config creation so downstream behavior
+    // uses the latest spacetime.json + local/env overlays.
+    if !no_config {
+        loaded_config = find_and_load_with_env_from(Some(env), project_dir.clone())
+            .with_context(|| "Failed to reload spacetime.json after initialization")?;
+    }
+
+    let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
+    let using_spacetime_config = spacetime_config.is_some();
+    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> =
+        spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
+
+    // Re-resolve publish targets now that config files may have been created by init.
+    if publish_configs.is_empty() {
+        publish_configs = determine_publish_configs(
+            database_name_from_cli_for_init.clone(),
+            spacetime_config,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            resolved_server,
+        )?;
     }
 
     let use_local = resolved_server == "local";
