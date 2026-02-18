@@ -61,8 +61,7 @@ conn.SubscriptionBuilder()
     {
         Console.WriteLine($"Subscription failed: {error}");
     })
-    .AddQuery(qb => qb.From.User().Build())
-    .Subscribe();
+    .Subscribe("SELECT * FROM user");
 ```
 
 </TabItem>
