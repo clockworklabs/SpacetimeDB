@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void SayHello()
         {
-            conn.InternalCallReducer(new Reducer.SayHello(), this.SetCallReducerFlags.SayHelloFlags);
+            conn.InternalCallReducer(new Reducer.SayHello());
         }
 
         public bool InvokeSayHello(ReducerEventContext ctx, Reducer.SayHello args)
@@ -49,11 +49,5 @@ namespace SpacetimeDB.Types
         {
             string IReducerArgs.ReducerName => "SayHello";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SayHelloFlags;
-        public void SayHello(CallReducerFlags flags) => SayHelloFlags = flags;
     }
 }

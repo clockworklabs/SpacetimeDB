@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void Add(string name)
         {
-            conn.InternalCallReducer(new Reducer.Add(name), this.SetCallReducerFlags.AddFlags);
+            conn.InternalCallReducer(new Reducer.Add(name));
         }
 
         public bool InvokeAdd(ReducerEventContext ctx, Reducer.Add args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "Add";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags AddFlags;
-        public void Add(CallReducerFlags flags) => AddFlags = flags;
     }
 }
