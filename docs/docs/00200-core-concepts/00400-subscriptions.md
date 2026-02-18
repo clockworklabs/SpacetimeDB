@@ -61,20 +61,22 @@ conn.db.user.onUpdate((ctx, oldUser, newUser) => {
 var conn = DbConnection.Builder()
     .WithUri("wss://maincloud.spacetimedb.com")
     .WithDatabaseName("my_module")
-    .OnConnect((ctx) =>
+    .OnConnect(ctx =>
     {
-        // Subscribe to users and messages
+        // Subscribe to users and messages via the Query Builder API
         ctx.SubscriptionBuilder()
-            .OnApplied(() =>
+            .OnApplied(subscriptionCtx =>
             {
                 Console.WriteLine("Subscription ready!");
                 // Initial data is now in the client cache
-                foreach (var user in ctx.Db.User.Iter())
+                foreach (var user in subscriptionCtx.Db.User.Iter())
                 {
                     Console.WriteLine($"User: {user.Name}");
                 }
             })
-            .Subscribe(new[] { "SELECT * FROM user", "SELECT * FROM message" });
+            .AddQuery(qb => qb.From.User().Build())
+            .AddQuery(qb => qb.From.Message().Build())
+            .Subscribe();
     })
     .Build();
 
@@ -350,9 +352,11 @@ var conn = ConnectToDB();
 // Register a subscription with the database
 var userSubscription = conn
     .SubscriptionBuilder()
-    .OnApplied((ctx) => { /* handle applied state */ })
+    .OnApplied(ctx => { /* handle applied state */ })
     .OnError((errorCtx, error) => { /* handle error */ })
-    .Subscribe(new string[] { "SELECT * FROM user", "SELECT * FROM message" });
+    .AddQuery(qb => qb.From.User().Build())
+    .AddQuery(qb => qb.From.Message().Build())
+    .Subscribe();
 ```
 
 </TabItem>
