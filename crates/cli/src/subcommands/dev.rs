@@ -360,6 +360,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 local: resolved_server == "local",
                 template: args.get_one::<String>("template").cloned(),
                 project_name_default: database_name_from_cli_for_init.clone(),
+                database_name_default: database_name_from_cli_for_init.clone(),
                 ..Default::default()
             };
             let created_project_path = init::exec_with_options(&mut config, &init_options).await?;
@@ -473,12 +474,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     if !no_config {
-        if let Some(first_db_name) = publish_configs
-            .first()
-            .and_then(|cfg| cfg.get_config_value("database"))
-            .and_then(|v| v.as_str())
-        {
-            if let Some(path) = create_local_spacetime_config_if_missing(&project_dir, first_db_name)? {
+        let db_to_persist = database_name_from_cli_for_init.as_deref().or_else(|| {
+            publish_configs
+                .first()
+                .and_then(|cfg| cfg.get_config_value("database"))
+                .and_then(|v| v.as_str())
+        });
+        if let Some(db_name) = db_to_persist {
+            if let Some(path) = create_local_spacetime_config_if_missing(&project_dir, db_name)? {
                 println!("{} Created {}", "✓".green(), path.display());
             }
         }
@@ -1367,7 +1370,16 @@ fn create_local_spacetime_config_if_missing(
 
     let local_config_path = project_dir.join("spacetime.local.json");
     if local_config_path.exists() {
-        return Ok(None);
+        let mut local_config = SpacetimeConfig::load(&local_config_path)
+            .with_context(|| format!("Failed to load {}", local_config_path.display()))?;
+        if local_config.additional_fields.contains_key("database") {
+            return Ok(None);
+        }
+        local_config
+            .additional_fields
+            .insert("database".to_string(), json!(database_name));
+        local_config.save(&local_config_path)?;
+        return Ok(Some(local_config_path));
     }
 
     let mut local_config = SpacetimeConfig::default();
@@ -1700,6 +1712,25 @@ mod tests {
 
         let obj = parsed.as_object().expect("local config should be a JSON object");
         assert_eq!(obj.len(), 1, "local config should only contain database");
+    }
+
+    #[test]
+    fn test_create_local_spacetime_config_if_missing_upserts_missing_database() {
+        let temp = TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
+        std::fs::write(project_path.join("spacetime.local.json"), r#"{ "server": "local" }"#).unwrap();
+
+        let updated = create_local_spacetime_config_if_missing(project_path, "my-cli-db")
+            .unwrap()
+            .expect("expected local config to be updated");
+        assert_eq!(updated, project_path.join("spacetime.local.json"));
+
+        let content = std::fs::read_to_string(project_path.join("spacetime.local.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("local"));
+        assert_eq!(parsed.get("database").and_then(|v| v.as_str()), Some("my-cli-db"));
     }
 
     #[test]

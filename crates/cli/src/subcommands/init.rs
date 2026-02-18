@@ -127,6 +127,7 @@ pub struct InitOptions {
     pub project_path: Option<PathBuf>,
     pub project_name: Option<String>,
     pub project_name_default: Option<String>,
+    pub database_name_default: Option<String>,
     pub server_only: bool,
     pub lang: Option<String>,
     pub template: Option<String>,
@@ -140,6 +141,7 @@ impl InitOptions {
             project_path: args.get_one::<PathBuf>("project-path").cloned(),
             project_name: args.get_one::<String>("project-name").cloned(),
             project_name_default: None,
+            database_name_default: None,
             server_only: args.get_flag("server-only"),
             lang: args.get_one::<String>("lang").cloned(),
             template: args.get_one::<String>("template").cloned(),
@@ -491,7 +493,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
 
     let project_name = get_project_name(options, is_interactive).await?;
     let project_path = get_project_path(options, &project_name, is_interactive, is_server_only).await?;
-    let local_database_name = get_local_database_name(&project_name, is_interactive)?;
+    let local_database_name = get_local_database_name(options, &project_name, is_interactive)?;
 
     let mut template_config = if is_interactive {
         get_template_config_interactive(options, project_name, project_path.clone()).await?
@@ -560,8 +562,11 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
     Ok(project_path)
 }
 
-fn get_local_database_name(project_name: &str, is_interactive: bool) -> anyhow::Result<String> {
-    let default_database = format!("{project_name}-{}", random_suffix(5));
+fn get_local_database_name(options: &InitOptions, project_name: &str, is_interactive: bool) -> anyhow::Result<String> {
+    let default_database = options
+        .database_name_default
+        .clone()
+        .unwrap_or_else(|| format!("{project_name}-{}", random_suffix(5)));
     if !is_interactive {
         return Ok(default_database);
     }
@@ -2002,5 +2007,16 @@ mod tests {
 
         let obj = parsed.as_object().expect("local config should be a JSON object");
         assert_eq!(obj.len(), 1, "local config should only contain database");
+    }
+
+    #[test]
+    fn test_get_local_database_name_uses_explicit_default_without_suffix() {
+        let options = InitOptions {
+            database_name_default: Some("my-explicit-db".to_string()),
+            ..Default::default()
+        };
+
+        let db = get_local_database_name(&options, "my-project", false).unwrap();
+        assert_eq!(db, "my-explicit-db");
     }
 }
