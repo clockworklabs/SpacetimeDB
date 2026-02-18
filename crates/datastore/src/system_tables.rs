@@ -1080,7 +1080,7 @@ impl From<StIndexAlgorithm> for IndexAlgorithm {
     fn from(algorithm: StIndexAlgorithm) -> Self {
         match algorithm {
             StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
-            StIndexAlgorithm::Hash { columns } => BTreeAlgorithm { columns }.into(),
+            StIndexAlgorithm::Hash { columns } => HashAlgorithm { columns }.into(),
             StIndexAlgorithm::Direct { column } => DirectAlgorithm { column }.into(),
             algo => unreachable!("unexpected `{algo:?}` in system table `st_indexes`"),
         }
