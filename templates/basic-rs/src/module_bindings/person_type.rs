@@ -41,3 +41,5 @@ impl __sdk::__query_builder::HasIxCols for Person {
         PersonIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for Person {}

@@ -20,8 +20,6 @@ impl __sdk::InModule for AddArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct AddCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `add`.
 ///
@@ -31,66 +29,37 @@ pub trait add {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_add`] callbacks.
-    fn add(&self, name: String) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `add`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`add:add_then`] to run a callback after the reducer completes.
+    fn add(&self, name: String) -> __sdk::Result<()> {
+        self.add_then(name, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `add` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`AddCallbackId`] can be passed to [`Self::remove_on_add`]
-    /// to cancel the callback.
-    fn on_add(&self, callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static) -> AddCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_add`],
-    /// causing it not to run in the future.
-    fn remove_on_add(&self, callback: AddCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn add_then(
+        &self,
+        name: String,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl add for super::RemoteReducers {
-    fn add(&self, name: String) -> __sdk::Result<()> {
-        self.imp.call_reducer("add", AddArgs { name })
-    }
-    fn on_add(&self, mut callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static) -> AddCallbackId {
-        AddCallbackId(self.imp.on_reducer(
-            "add",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::Add { name },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, name)
-            }),
-        ))
-    }
-    fn remove_on_add(&self, callback: AddCallbackId) {
-        self.imp.remove_on_reducer("add", callback.0)
-    }
-}
+    fn add_then(
+        &self,
+        name: String,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `add`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_add {
-    /// Set the call-reducer flags for the reducer `add` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn add(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_add for super::SetReducerFlags {
-    fn add(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("add", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(AddArgs { name }, callback)
     }
 }

@@ -18,8 +18,6 @@ impl __sdk::InModule for SayHelloArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct SayHelloCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `say_hello`.
 ///
@@ -29,69 +27,35 @@ pub trait say_hello {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_say_hello`] callbacks.
-    fn say_hello(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `say_hello`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`say_hello:say_hello_then`] to run a callback after the reducer completes.
+    fn say_hello(&self) -> __sdk::Result<()> {
+        self.say_hello_then(|_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `say_hello` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`SayHelloCallbackId`] can be passed to [`Self::remove_on_say_hello`]
-    /// to cancel the callback.
-    fn on_say_hello(&self, callback: impl FnMut(&super::ReducerEventContext) + Send + 'static) -> SayHelloCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_say_hello`],
-    /// causing it not to run in the future.
-    fn remove_on_say_hello(&self, callback: SayHelloCallbackId);
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn say_hello_then(
+        &self,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl say_hello for super::RemoteReducers {
-    fn say_hello(&self) -> __sdk::Result<()> {
-        self.imp.call_reducer("say_hello", SayHelloArgs {})
-    }
-    fn on_say_hello(
+    fn say_hello_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> SayHelloCallbackId {
-        SayHelloCallbackId(self.imp.on_reducer(
-            "say_hello",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::SayHello {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_say_hello(&self, callback: SayHelloCallbackId) {
-        self.imp.remove_on_reducer("say_hello", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `say_hello`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_say_hello {
-    /// Set the call-reducer flags for the reducer `say_hello` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn say_hello(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_say_hello for super::SetReducerFlags {
-    fn say_hello(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("say_hello", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(SayHelloArgs {}, callback)
     }
 }
