@@ -58,7 +58,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class InvalidHttpRequestArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "InvalidHttpRequest";
+            string IProcedureArgs.ProcedureName => "invalid_http_request";
         }
 
     }

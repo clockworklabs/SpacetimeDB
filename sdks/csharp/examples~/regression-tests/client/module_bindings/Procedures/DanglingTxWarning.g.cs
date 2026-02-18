@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class DanglingTxWarningArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "DanglingTxWarning";
+            string IProcedureArgs.ProcedureName => "dangling_tx_warning";
         }
 
     }

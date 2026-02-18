@@ -47,7 +47,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class Noop : Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "Noop";
+            string IReducerArgs.ReducerName => "noop";
         }
     }
 }
