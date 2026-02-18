@@ -355,7 +355,77 @@ impl<R: Repo, T> Drop for Generic<R, T> {
     }
 }
 
-/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// The most recently written [segment::Metadata] for a given [Repo].
+///
+/// The type preserves the error information in case the most recent segment
+/// contains corrupted data at the end (typically due to a torn write).
+///
+/// Created by [committed_meta].
+pub enum CommittedMeta {
+    /// The most recent segment could not be traversed successfully until the
+    /// end, i.e. there is trailing garbage in the segment.
+    Prefix {
+        /// The metadata of the prefix that could be traversed successfully.
+        ///
+        /// It is guaranteed that the metadata spans at least one commit.
+        metadata: segment::Metadata,
+        /// The error encountered.
+        error: io::Error,
+    },
+    /// The most recent segment could be traversed successfully until the end.
+    Complete {
+        /// The segment metadata.
+        ///
+        /// It is guaranteed that the metadata spans at least one commit.
+        metadata: segment::Metadata,
+    },
+}
+
+impl CommittedMeta {
+    pub fn metadata(&self) -> &segment::Metadata {
+        let (Self::Prefix { metadata, .. } | Self::Complete { metadata }) = self;
+        metadata
+    }
+
+    fn extract(repo: impl Repo) -> io::Result<Option<Self>> {
+        let Some((offset, mut storage)) = repo::open_newest_non_empty_segment(&repo)? else {
+            return Ok(None);
+        };
+        let offset_index = repo.get_offset_index(offset).ok();
+        match segment::Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
+            // TODO: Should this be an `assert!` instead?
+            Ok(metadata) if metadata.tx_range.is_empty() => Ok(None),
+            // Segment is intact.
+            Ok(metadata) => Ok(Some(CommittedMeta::Complete { metadata })),
+            // Segment is non-empty, but first commit is corrupt.
+            Err(error::SegmentMetadata::InvalidCommit { sofar, source }) if sofar.tx_range.is_empty() => {
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "repo {}: first commit in the most recent segment is corrupt: {}",
+                        repo, source
+                    ),
+                ))
+            }
+            // Some prefix of the segment is good.
+            Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => Ok(Some(CommittedMeta::Prefix {
+                metadata: sofar,
+                error: source,
+            })),
+            // Something went wrong, including out-of-order errors and such.
+            Err(error::SegmentMetadata::Io(e)) => Err(e),
+        }
+    }
+}
+
+impl From<CommittedMeta> for segment::Metadata {
+    fn from(meta: CommittedMeta) -> Self {
+        let (CommittedMeta::Prefix { metadata, .. } | CommittedMeta::Complete { metadata }) = meta;
+        metadata
+    }
+}
+
+/// Extract the most recently written [CommittedMeta] from the commitlog
 /// in `repo`.
 ///
 /// Returns `None` if the commitlog is empty.
@@ -373,18 +443,12 @@ impl<R: Repo, T> Drop for Generic<R, T> {
 /// like so:
 ///
 /// ```ignore
-/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// let max_offset = committed_meta(..)?.map(|meta| meta.metadata().tx_range.end);
 /// ```
 ///
 /// Unlike `open`, no segment will be created in an empty `repo`.
-pub fn committed_meta(repo: impl Repo) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
-    let Some(last) = repo.existing_offsets()?.pop() else {
-        return Ok(None);
-    };
-
-    let mut storage = repo.open_segment_reader(last)?;
-    let offset_index = repo.get_offset_index(last).ok();
-    segment::Metadata::extract(last, &mut storage, offset_index.as_ref()).map(Some)
+pub fn committed_meta(repo: impl Repo) -> io::Result<Option<CommittedMeta>> {
+    CommittedMeta::extract(repo)
 }
 
 pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -> io::Result<Commits<R>> {

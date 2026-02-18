@@ -6,7 +6,7 @@ use crate::{
     commit::Commit,
     error,
     index::{IndexFile, IndexFileMut},
-    segment::{FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
+    segment::{self, FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
     Options,
 };
 
@@ -258,6 +258,7 @@ pub fn resume_segment_writer<R: Repo>(
         size_in_bytes,
         max_epoch,
         max_commit_offset: _,
+        max_commit: _,
     } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
@@ -312,6 +313,32 @@ pub fn open_segment_reader<R: Repo>(
     debug!("open segment reader at {offset}");
     let storage = repo.open_segment_reader(offset)?;
     Reader::new(max_log_format_version, offset, storage)
+}
+
+/// Open the newest, non-empty segment in `repo`.
+///
+/// A segment is considered non-empty if its size is greater than
+/// [segment::Header::LEN].
+///
+/// Returns the segment offset alongside the raw [Repo::SegmentReader],
+/// or `None` if the repo is empty (i.e. contains no non-empty segment).
+pub(crate) fn open_newest_non_empty_segment<R: Repo>(repo: &R) -> io::Result<Option<(u64, R::SegmentReader)>> {
+    let mut segments = repo.existing_offsets()?;
+
+    let mut newest;
+    let mut reader;
+    loop {
+        let Some(last) = segments.pop() else {
+            return Ok(None);
+        };
+        newest = last;
+        reader = repo.open_segment_reader(newest)?;
+        if reader.segment_len()? > segment::Header::LEN as u64 {
+            break;
+        }
+    }
+
+    Ok(Some((newest, reader)))
 }
 
 /// Allocate [Options::max_segment_size] of space for [FileLike]
