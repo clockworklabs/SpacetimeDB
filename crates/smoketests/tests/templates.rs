@@ -394,24 +394,111 @@ fn pin_csharp_server_runtime_package_version(server_path: &Path) -> Result<()> {
         .with_context(|| format!("No .csproj found in {:?}", server_path))?;
 
     let content = fs::read_to_string(&csproj).with_context(|| format!("Failed to read {:?}", csproj))?;
-    let runtime_ref_re =
-        Regex::new(r#"<PackageReference\s+Include="SpacetimeDB\.Runtime"\s+Version="[^"]+"\s*/>"#).unwrap();
-    let replacement = format!(
-        r#"<PackageReference Include="SpacetimeDB.Runtime" Version="{}" />"#,
-        runtime_version
-    );
+    // Match PackageReference with Include+Version in either attribute order.
+    let runtime_ref_re_a =
+        Regex::new(r#"<PackageReference\b[^>]*\bInclude="SpacetimeDB\.Runtime"[^>]*\bVersion="([^"]+)"[^>]*/?>"#)
+            .unwrap();
+    let runtime_ref_re_b =
+        Regex::new(r#"<PackageReference\b[^>]*\bVersion="([^"]+)"[^>]*\bInclude="SpacetimeDB\.Runtime"[^>]*/?>"#)
+            .unwrap();
 
-    if !runtime_ref_re.is_match(&content) {
-        bail!("No SpacetimeDB.Runtime PackageReference found to pin in {:?}", csproj);
+    if runtime_ref_re_a.is_match(&content) || runtime_ref_re_b.is_match(&content) {
+        let updated = runtime_ref_re_a
+            .replace_all(&content, |caps: &regex::Captures| {
+                caps[0].replace(
+                    &format!(r#"Version="{}""#, &caps[1]),
+                    &format!(r#"Version="{}""#, runtime_version),
+                )
+            })
+            .to_string();
+        let new_content = runtime_ref_re_b
+            .replace_all(&updated, |caps: &regex::Captures| {
+                caps[0].replace(
+                    &format!(r#"Version="{}""#, &caps[1]),
+                    &format!(r#"Version="{}""#, runtime_version),
+                )
+            })
+            .to_string();
+        fs::write(&csproj, new_content).with_context(|| format!("Failed to write {:?}", csproj))?;
+        eprintln!(
+            "[TEMPLATES][C#] pinned SpacetimeDB.Runtime version in {:?} to {}",
+            csproj, runtime_version
+        );
+    } else {
+        eprintln!(
+            "[TEMPLATES][C#] no SpacetimeDB.Runtime PackageReference found in {:?}; skipping runtime pin",
+            csproj
+        );
     }
 
-    let new_content = runtime_ref_re.replace_all(&content, replacement).to_string();
-    fs::write(&csproj, new_content).with_context(|| format!("Failed to write {:?}", csproj))?;
+    Ok(())
+}
 
-    eprintln!(
-        "[TEMPLATES][C#] pinned SpacetimeDB.Runtime version in {:?} to {}",
-        csproj, runtime_version
-    );
+/// Pins/rewires the C# client SDK reference to the current local SDK.
+fn pin_csharp_client_sdk_package_version(project_path: &Path) -> Result<()> {
+    let client_csproj = project_path.join("client.csproj");
+    if !client_csproj.exists() {
+        return Ok(());
+    }
+
+    let client_sdk_csproj = workspace_root().join("sdks/csharp/SpacetimeDB.ClientSDK.csproj");
+    let client_sdk_version = read_csproj_version(&client_sdk_csproj)?;
+    let content = fs::read_to_string(&client_csproj).with_context(|| format!("Failed to read {:?}", client_csproj))?;
+
+    let package_ref_re_a =
+        Regex::new(r#"<PackageReference\b[^>]*\bInclude="SpacetimeDB\.ClientSDK"[^>]*\bVersion="([^"]+)"[^>]*/?>"#)
+            .unwrap();
+    let package_ref_re_b =
+        Regex::new(r#"<PackageReference\b[^>]*\bVersion="([^"]+)"[^>]*\bInclude="SpacetimeDB\.ClientSDK"[^>]*/?>"#)
+            .unwrap();
+    let project_ref_re =
+        Regex::new(r#"<ProjectReference\b[^>]*\bInclude="[^"]*SpacetimeDB\.ClientSDK\.csproj"[^>]*/?>"#).unwrap();
+
+    let mut changed = false;
+    let mut new_content = content.clone();
+
+    if package_ref_re_a.is_match(&new_content) || package_ref_re_b.is_match(&new_content) {
+        new_content = package_ref_re_a
+            .replace_all(&new_content, |caps: &regex::Captures| {
+                changed = true;
+                caps[0].replace(
+                    &format!(r#"Version="{}""#, &caps[1]),
+                    &format!(r#"Version="{}""#, client_sdk_version),
+                )
+            })
+            .to_string();
+        new_content = package_ref_re_b
+            .replace_all(&new_content, |caps: &regex::Captures| {
+                changed = true;
+                caps[0].replace(
+                    &format!(r#"Version="{}""#, &caps[1]),
+                    &format!(r#"Version="{}""#, client_sdk_version),
+                )
+            })
+            .to_string();
+    }
+
+    if project_ref_re.is_match(&new_content) {
+        let project_ref = format!(
+            r#"<ProjectReference Include="{}" />"#,
+            normalize_dependency_path(&client_sdk_csproj)
+        );
+        new_content = project_ref_re.replace_all(&new_content, project_ref).to_string();
+        changed = true;
+    }
+
+    if changed {
+        fs::write(&client_csproj, new_content).with_context(|| format!("Failed to write {:?}", client_csproj))?;
+        eprintln!(
+            "[TEMPLATES][C#] pinned client SDK reference in {:?} to version {}",
+            client_csproj, client_sdk_version
+        );
+    } else {
+        eprintln!(
+            "[TEMPLATES][C#] no SpacetimeDB.ClientSDK reference found in {:?}; skipping client pin",
+            client_csproj
+        );
+    }
 
     Ok(())
 }
@@ -656,6 +743,7 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
     let _ = test.spacetime(&["delete", "--server", &test.server_url, "--yes", &domain]);
 
     if template.client_lang.as_deref() == Some("csharp") {
+        pin_csharp_client_sdk_package_version(project_path)?;
         run_dotnet(&["build"], project_path)?;
     }
     Ok(())
