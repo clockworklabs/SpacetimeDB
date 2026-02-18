@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, get_database_from_args_or_config};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -15,7 +15,6 @@ pub fn cli() -> clap::Command {
         .about("Prints logs from a SpacetimeDB database")
         .arg(
             Arg::new("database")
-                .required(true)
                 .help("The name or identity of the database to print logs from"),
         )
         .arg(
@@ -122,13 +121,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
-    let database = args.get_one::<String>("database").unwrap();
+    let database = get_database_from_args_or_config(args, "database")?;
     let follow = args.get_flag("follow");
     let format = *args.get_one::<Format>("format").unwrap();
 
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    let database_identity = database_identity(&config, database, server).await?;
+    let database_identity = database_identity(&config, &database, server).await?;
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.

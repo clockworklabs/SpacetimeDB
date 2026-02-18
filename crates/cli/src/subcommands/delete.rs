@@ -2,7 +2,9 @@ use std::io;
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header, y_or_n, AuthHeader};
+use crate::util::{
+    add_auth_header_opt, database_identity, get_auth_header, get_database_from_args_or_config, y_or_n, AuthHeader,
+};
 use clap::{Arg, ArgMatches};
 use http::StatusCode;
 use itertools::Itertools as _;
@@ -14,11 +16,7 @@ use tokio::io::AsyncWriteExt as _;
 pub fn cli() -> clap::Command {
     clap::Command::new("delete")
         .about("Deletes a SpacetimeDB database")
-        .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The name or identity of the database to delete"),
-        )
+        .arg(Arg::new("database").help("The name or identity of the database to delete"))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
         .after_help("Run `spacetime help delete` for more detailed information.\n")
@@ -26,10 +24,10 @@ pub fn cli() -> clap::Command {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let database = args.get_one::<String>("database").unwrap();
+    let database = get_database_from_args_or_config(args, "database")?;
     let force = args.get_flag("force");
 
-    let identity = database_identity(&config, database, server).await?;
+    let identity = database_identity(&config, &database, server).await?;
     let host_url = config.get_host_url(server)?;
     let request_path = format!("{host_url}/v1/database/{identity}");
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;

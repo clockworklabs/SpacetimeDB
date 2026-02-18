@@ -5,7 +5,9 @@ use std::time::{Duration, Instant};
 use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
+use crate::util::{
+    database_identity, get_auth_header, get_database_from_args_or_config, ResponseExt, UNSTABLE_WARNING,
+};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
@@ -16,11 +18,7 @@ use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
         .about(format!("Runs a SQL query on the database. {UNSTABLE_WARNING}"))
-        .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The name or identity of the database you would like to query"),
-        )
+        .arg(Arg::new("database").help("The name or identity of the database you would like to query"))
         .arg(
             Arg::new("query")
                 .action(ArgAction::Set)
@@ -44,14 +42,14 @@ pub fn cli() -> clap::Command {
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
-    let database_name_or_identity = args.get_one::<String>("database").unwrap();
+    let database_name_or_identity = get_database_from_args_or_config(args, "database")?;
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
         host: config.get_host_url(server)?,
         auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
-        database_identity: database_identity(&config, database_name_or_identity, server).await?,
-        database: database_name_or_identity.to_string(),
+        database_identity: database_identity(&config, &database_name_or_identity, server).await?,
+        database: database_name_or_identity,
     })
 }
 
