@@ -5,6 +5,7 @@ slug: /tables/auto-increment
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Auto-increment columns automatically generate unique integer values for new rows. When you insert a row with a zero value in an auto-increment column, SpacetimeDB assigns the next value from an internal sequence.
@@ -95,6 +96,8 @@ Auto-increment columns must be integer types: `i8`, `i16`, `i32`, `i64`, `i128`,
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Post {

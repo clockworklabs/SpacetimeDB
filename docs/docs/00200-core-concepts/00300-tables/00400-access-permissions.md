@@ -5,6 +5,7 @@ slug: /tables/access-permissions
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB controls data access through table visibility and context-based permissions. Tables can be public or private, and different execution contexts (reducers, views, clients) have different levels of access.
@@ -89,6 +90,8 @@ pub struct Player {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 // Private table (default) - only accessible from server-side code
@@ -954,4 +957,4 @@ SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx)
 
 ## Client Access - Read-Only Access
 
-Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](/subscriptions) for details on client-side table access.
+Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](/clients/subscriptions) for details on client-side table access.

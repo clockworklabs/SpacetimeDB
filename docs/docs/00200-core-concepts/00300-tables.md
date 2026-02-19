@@ -5,6 +5,7 @@ slug: /tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
@@ -167,6 +168,8 @@ The `pub` modifier on the struct follows normal Rust visibility rules and has no
 </TabItem>
 <TabItem value="cpp" label="C++">
 
+<CppModuleVersionNotice />
+
 Register the struct with `SPACETIMEDB_STRUCT`, the table with `SPACETIMEDB_TABLE`, then add field constraints:
 
 ```cpp
@@ -301,7 +304,7 @@ These conventions align with each language's standard style guides and make your
 Tables can be **private** (default) or **public**:
 
 - **Private tables**: Visible only to [reducers](/functions/reducers) and the database owner. Clients cannot access them.
-- **Public tables**: Exposed for client read access through [subscriptions](/subscriptions). Writes still occur only through reducers.
+- **Public tables**: Exposed for client read access through [subscriptions](/clients/subscriptions). Writes still occur only through reducers.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">

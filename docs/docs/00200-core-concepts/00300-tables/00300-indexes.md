@@ -5,6 +5,7 @@ slug: /tables/indexes
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Indexes accelerate queries by maintaining sorted data structures alongside your tables. Without an index, finding rows that match a condition requires scanning every row. With an index, the database locates matching rows directly.
@@ -148,6 +149,8 @@ pub struct User {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct User {

@@ -1,7 +1,6 @@
-import { type Infer } from '../';
 import type { TableUpdate } from './table_cache.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
-import type ReducerOutcome from './client_api/reducer_outcome_type.ts';
+import type { ReducerOutcome } from './client_api/types';
 
 export type TransactionUpdateMessage = {
   tag: 'TransactionUpdate';
@@ -29,7 +28,7 @@ export type SubscriptionError = {
 export type ReducerResultMessage = {
   tag: 'ReducerResult';
   requestId: number;
-  result: Infer<typeof ReducerOutcome>;
+  result: ReducerOutcome;
 };
 
 export type ProcedureResultMessage = {

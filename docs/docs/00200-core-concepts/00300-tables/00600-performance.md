@@ -5,6 +5,7 @@ slug: /tables/performance
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Follow these guidelines to optimize table performance in your SpacetimeDB modules.
@@ -41,6 +42,8 @@ ctx.db.player().name().filter("Alice")
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 // Fast: Uses index on name
@@ -635,5 +638,5 @@ Be mindful of unbounded table growth:
 ## Next Steps
 
 - Learn about [Indexes](/tables/indexes) to optimize queries
-- Explore [Subscriptions](/subscriptions) for efficient client data sync
+- Explore [Subscriptions](/clients/subscriptions) for efficient client data sync
 - Review [Reducers](/functions/reducers) for efficient data modification patterns

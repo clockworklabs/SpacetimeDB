@@ -5,6 +5,7 @@ slug: /intro/key-architecture
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 ## Host
 
@@ -74,6 +75,8 @@ pub struct Player {
 </TabItem>
 <TabItem value="cpp" label="C++">
 
+<CppModuleVersionNotice />
+
 ```cpp
 struct Player {
     uint64_t id;
@@ -96,7 +99,7 @@ Tables marked `public` can also be read by [clients](#client).
 ## Reducer
 
 A **reducer** is a function exported by a [database](#database).
-Connected [clients](/sdks) can call reducers to interact with the database.
+Connected [clients](/clients) can call reducers to interact with the database.
 This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_procedure_call).
 
 <Tabs groupId="syntax" queryString>
@@ -553,7 +556,7 @@ See [Views](/functions/views) for more details about views.
 
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
-Clients are written using the [client-side SDKs](/sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
+Clients are written using the [client-side SDKs](/clients). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
 
 Clients are regular software applications that developers can choose how to deploy (through Steam, app stores, package managers, or any other software deployment method, depending on the needs of the application.)
 
