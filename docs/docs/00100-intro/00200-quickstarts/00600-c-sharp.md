@@ -106,10 +106,12 @@ public static partial class Module
 
   <Step title="Test with the CLI">
     <StepText>
-      Use the SpacetimeDB CLI to call reducers and query your data directly.
+      Open a new terminal and navigate to your project directory. Then use the SpacetimeDB CLI to call reducers and query your data directly.
     </StepText>
     <StepCode>
 ```bash
+cd my-spacetime-app
+
 # Call the add reducer to insert a person
 spacetime call <database-name> Add Alice
 

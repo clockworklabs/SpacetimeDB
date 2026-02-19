@@ -362,6 +362,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 template: args.get_one::<String>("template").cloned(),
                 project_name_default: database_name_from_cli_for_init.clone(),
                 database_name_default: database_name_from_cli_for_init.clone(),
+                skip_next_steps: true,
                 ..Default::default()
             };
             let created_project_path = init::exec_with_options(&mut config, &init_options).await?;
@@ -371,7 +372,20 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 .context("Failed to canonicalize created project path")?;
             spacetimedb_dir = canonical_created_path.join("spacetimedb");
             module_bindings_dir = canonical_created_path.join(module_bindings_path);
-            project_dir = canonical_created_path;
+            project_dir = canonical_created_path.clone();
+
+            // If the project was created in a subdirectory, hint the user to cd into it.
+            let current_dir = std::env::current_dir().context("Failed to get current directory")?;
+            if canonical_created_path != current_dir {
+                let rel_path = canonical_created_path
+                    .strip_prefix(&current_dir)
+                    .unwrap_or(&canonical_created_path);
+                println!(
+                    "\n{} To interact with your database, open a new terminal and run:\n  cd ./{}\n",
+                    "Tip:".yellow().bold(),
+                    rel_path.display()
+                );
+            }
 
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
