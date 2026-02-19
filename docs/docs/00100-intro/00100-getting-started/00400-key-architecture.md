@@ -5,6 +5,7 @@ slug: /intro/key-architecture
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 ## Host
 
@@ -73,6 +74,8 @@ pub struct Player {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Player {

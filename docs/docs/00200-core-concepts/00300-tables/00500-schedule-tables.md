@@ -5,6 +5,7 @@ slug: /tables/schedule-tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Tables can trigger [reducers](/functions/reducers) or [procedures](/functions/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
@@ -88,6 +89,8 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Reminder {

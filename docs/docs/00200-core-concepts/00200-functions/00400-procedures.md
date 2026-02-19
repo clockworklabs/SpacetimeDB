@@ -5,6 +5,7 @@ slug: /functions/procedures
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 A **procedure** is a function exported by a [database](/databases), similar to a [reducer](/functions/reducers).
@@ -97,6 +98,8 @@ fn add_two_numbers(ctx: &mut spacetimedb::ProcedureContext, lhs: u32, rhs: u32) 
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 :::warning Unstable Feature
 Procedures in C++ are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
