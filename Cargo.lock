@@ -7497,6 +7497,7 @@ dependencies = [
  "anymap",
  "byte-unit",
  "clap 4.5.50",
+ "convert_case 0.6.0",
  "criterion",
  "foldhash 0.2.0",
  "futures",
