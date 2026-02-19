@@ -1,7 +1,6 @@
 import { stringify as ssStringify } from 'safe-stable-stringify';
 import { u128ToHexString, u256ToHexString } from '../lib/util';
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug' | 'trace';
-type LogMessage = any | (() => any);
 
 const LogLevelIdentifierIcon = {
   component: '📦',
