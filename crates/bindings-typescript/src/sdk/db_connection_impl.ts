@@ -2,13 +2,15 @@ import { ConnectionId, ProductBuilder, ProductType } from '../';
 import { AlgebraicType, type ComparablePrimitive } from '../';
 import { BinaryReader } from '../';
 import { BinaryWriter } from '../';
-import BsatnRowList from './client_api/bsatn_row_list_type.ts';
-import ClientMessage from './client_api/client_message_type.ts';
-import QueryRows from './client_api/query_rows_type.ts';
-import QuerySetUpdate from './client_api/query_set_update_type.ts';
-import ServerMessage from './client_api/server_message_type.ts';
-import TableUpdateRows from './client_api/table_update_rows_type.ts';
-import UnsubscribeFlags from './client_api/unsubscribe_flags_type.ts';
+import {
+  BsatnRowList,
+  ClientMessage,
+  QueryRows,
+  QuerySetUpdate,
+  ServerMessage,
+  TableUpdateRows,
+  UnsubscribeFlags,
+} from './client_api/types';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { INTERNAL_REMOTE_MODULE } from './internal.ts';
@@ -21,13 +23,7 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type {
-  Deserializer,
-  Identity,
-  Infer,
-  InferTypeOfRow,
-  Serializer,
-} from '../';
+import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
@@ -151,7 +147,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #messageQueue = Promise.resolve();
-  #outboundQueue: Infer<typeof ClientMessage>[] = [];
+  #outboundQueue: ClientMessage[] = [];
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #reducerCallbacks = new Map<
@@ -422,7 +418,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #parseRowList(
     type: 'insert' | 'delete',
     tableName: string,
-    rowList: Infer<typeof BsatnRowList>
+    rowList: BsatnRowList
   ): Operation[] {
     const buffer = rowList.rowsData;
     const reader = new BinaryReader(buffer);
@@ -485,7 +481,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   }
 
   #queryRowsToTableUpdates(
-    rows: Infer<typeof QueryRows>,
+    rows: QueryRows,
     opType: 'insert' | 'delete'
   ): CacheTableUpdate<UntypedTableDef>[] {
     const updates: CacheTableUpdate<UntypedTableDef>[] = [];
@@ -500,7 +496,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   #tableUpdateRowsToOperations(
     tableName: string,
-    rows: Infer<typeof TableUpdateRows>
+    rows: TableUpdateRows
   ): Operation[] {
     if (rows.tag === 'PersistentTable') {
       const inserts = this.#parseRowList(
@@ -524,7 +520,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   }
 
   #querySetUpdateToTableUpdates(
-    querySetUpdate: Infer<typeof QuerySetUpdate>
+    querySetUpdate: QuerySetUpdate
   ): CacheTableUpdate<UntypedTableDef>[] {
     const updates: CacheTableUpdate<UntypedTableDef>[] = [];
     for (const tableUpdate of querySetUpdate.tables) {
@@ -544,7 +540,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   #sendEncoded(
     wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter,
-    message: Infer<typeof ClientMessage>
+    message: ClientMessage,
   ): void {
     const writer = new BinaryWriter(1024);
     AlgebraicType.serializeValue(writer, ClientMessage.algebraicType, message);
@@ -564,7 +560,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
-  #sendMessage(message: Infer<typeof ClientMessage>): void {
+  #sendMessage(message: ClientMessage): void {
     this.wsPromise.then(wsResolved => {
       if (!wsResolved || !this.isActive) {
         this.#outboundQueue.push(message);
