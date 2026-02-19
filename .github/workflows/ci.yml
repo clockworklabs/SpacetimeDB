@@ -1184,6 +1184,8 @@ jobs:
   smoketests_mod_rs_complete:
     name: Check smoketests/mod.rs is complete
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
