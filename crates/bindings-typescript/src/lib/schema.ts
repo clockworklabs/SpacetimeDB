@@ -30,7 +30,7 @@ import {
   type RowObj,
   type VariantsObj,
 } from './type_builders';
-import type {  Values } from './type_util';
+import type { Values } from './type_util';
 
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
