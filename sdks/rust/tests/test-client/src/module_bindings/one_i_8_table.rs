@@ -5,7 +5,7 @@
 use super::one_i_8_type::OneI8;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_i8`.
+/// Table handle for the table `one_i_8`.
 ///
 /// Obtain a handle from the [`OneI8TableAccess::one_i_8`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_i_8()`.
@@ -19,19 +19,19 @@ pub struct OneI8TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_i8`.
+/// Extension trait for access to the table `one_i_8`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneI8TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneI8TableHandle`], which mediates access to the table `one_i8`.
+    /// Obtain a [`OneI8TableHandle`], which mediates access to the table `one_i_8`.
     fn one_i_8(&self) -> OneI8TableHandle<'_>;
 }
 
 impl OneI8TableAccess for super::RemoteTables {
     fn one_i_8(&self) -> OneI8TableHandle<'_> {
         OneI8TableHandle {
-            imp: self.imp.get_table::<OneI8>("one_i8"),
+            imp: self.imp.get_table::<OneI8>("one_i_8"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneI8TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneI8>("one_i8");
+    let _table = client_cache.get_or_make_table::<OneI8>("one_i_8");
 }
 
 #[doc(hidden)]

@@ -5,7 +5,7 @@
 use super::result_i_32_string_type::ResultI32String;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `result_i32_string`.
+/// Table handle for the table `result_i_32_string`.
 ///
 /// Obtain a handle from the [`ResultI32StringTableAccess::result_i_32_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.result_i_32_string()`.
@@ -19,19 +19,19 @@ pub struct ResultI32StringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `result_i32_string`.
+/// Extension trait for access to the table `result_i_32_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait ResultI32StringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`ResultI32StringTableHandle`], which mediates access to the table `result_i32_string`.
+    /// Obtain a [`ResultI32StringTableHandle`], which mediates access to the table `result_i_32_string`.
     fn result_i_32_string(&self) -> ResultI32StringTableHandle<'_>;
 }
 
 impl ResultI32StringTableAccess for super::RemoteTables {
     fn result_i_32_string(&self) -> ResultI32StringTableHandle<'_> {
         ResultI32StringTableHandle {
-            imp: self.imp.get_table::<ResultI32String>("result_i32_string"),
+            imp: self.imp.get_table::<ResultI32String>("result_i_32_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for ResultI32StringTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<ResultI32String>("result_i32_string");
+    let _table = client_cache.get_or_make_table::<ResultI32String>("result_i_32_string");
 }
 
 #[doc(hidden)]

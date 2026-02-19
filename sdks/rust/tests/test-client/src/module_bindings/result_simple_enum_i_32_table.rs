@@ -6,7 +6,7 @@ use super::result_simple_enum_i_32_type::ResultSimpleEnumI32;
 use super::simple_enum_type::SimpleEnum;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `result_simple_enum_i32`.
+/// Table handle for the table `result_simple_enum_i_32`.
 ///
 /// Obtain a handle from the [`ResultSimpleEnumI32TableAccess::result_simple_enum_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.result_simple_enum_i_32()`.
@@ -20,19 +20,19 @@ pub struct ResultSimpleEnumI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `result_simple_enum_i32`.
+/// Extension trait for access to the table `result_simple_enum_i_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait ResultSimpleEnumI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`ResultSimpleEnumI32TableHandle`], which mediates access to the table `result_simple_enum_i32`.
+    /// Obtain a [`ResultSimpleEnumI32TableHandle`], which mediates access to the table `result_simple_enum_i_32`.
     fn result_simple_enum_i_32(&self) -> ResultSimpleEnumI32TableHandle<'_>;
 }
 
 impl ResultSimpleEnumI32TableAccess for super::RemoteTables {
     fn result_simple_enum_i_32(&self) -> ResultSimpleEnumI32TableHandle<'_> {
         ResultSimpleEnumI32TableHandle {
-            imp: self.imp.get_table::<ResultSimpleEnumI32>("result_simple_enum_i32"),
+            imp: self.imp.get_table::<ResultSimpleEnumI32>("result_simple_enum_i_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -81,7 +81,7 @@ impl<'ctx> __sdk::Table for ResultSimpleEnumI32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<ResultSimpleEnumI32>("result_simple_enum_i32");
+    let _table = client_cache.get_or_make_table::<ResultSimpleEnumI32>("result_simple_enum_i_32");
 }
 
 #[doc(hidden)]

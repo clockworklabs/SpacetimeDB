@@ -5,7 +5,7 @@
 use super::option_vec_option_i_32_type::OptionVecOptionI32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `option_vec_option_i32`.
+/// Table handle for the table `option_vec_option_i_32`.
 ///
 /// Obtain a handle from the [`OptionVecOptionI32TableAccess::option_vec_option_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_vec_option_i_32()`.
@@ -19,19 +19,19 @@ pub struct OptionVecOptionI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `option_vec_option_i32`.
+/// Extension trait for access to the table `option_vec_option_i_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionVecOptionI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionVecOptionI32TableHandle`], which mediates access to the table `option_vec_option_i32`.
+    /// Obtain a [`OptionVecOptionI32TableHandle`], which mediates access to the table `option_vec_option_i_32`.
     fn option_vec_option_i_32(&self) -> OptionVecOptionI32TableHandle<'_>;
 }
 
 impl OptionVecOptionI32TableAccess for super::RemoteTables {
     fn option_vec_option_i_32(&self) -> OptionVecOptionI32TableHandle<'_> {
         OptionVecOptionI32TableHandle {
-            imp: self.imp.get_table::<OptionVecOptionI32>("option_vec_option_i32"),
+            imp: self.imp.get_table::<OptionVecOptionI32>("option_vec_option_i_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OptionVecOptionI32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OptionVecOptionI32>("option_vec_option_i32");
+    let _table = client_cache.get_or_make_table::<OptionVecOptionI32>("option_vec_option_i_32");
 }
 
 #[doc(hidden)]

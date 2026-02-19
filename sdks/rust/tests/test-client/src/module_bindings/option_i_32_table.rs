@@ -5,7 +5,7 @@
 use super::option_i_32_type::OptionI32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `option_i32`.
+/// Table handle for the table `option_i_32`.
 ///
 /// Obtain a handle from the [`OptionI32TableAccess::option_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_i_32()`.
@@ -19,19 +19,19 @@ pub struct OptionI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `option_i32`.
+/// Extension trait for access to the table `option_i_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionI32TableHandle`], which mediates access to the table `option_i32`.
+    /// Obtain a [`OptionI32TableHandle`], which mediates access to the table `option_i_32`.
     fn option_i_32(&self) -> OptionI32TableHandle<'_>;
 }
 
 impl OptionI32TableAccess for super::RemoteTables {
     fn option_i_32(&self) -> OptionI32TableHandle<'_> {
         OptionI32TableHandle {
-            imp: self.imp.get_table::<OptionI32>("option_i32"),
+            imp: self.imp.get_table::<OptionI32>("option_i_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OptionI32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OptionI32>("option_i32");
+    let _table = client_cache.get_or_make_table::<OptionI32>("option_i_32");
 }
 
 #[doc(hidden)]

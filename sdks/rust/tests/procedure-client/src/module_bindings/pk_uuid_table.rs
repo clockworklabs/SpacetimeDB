@@ -78,6 +78,23 @@ impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
     }
 }
 
+pub struct PkUuidUpdateCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkUuidTableHandle<'ctx> {
+    type UpdateCallbackId = PkUuidUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkUuidUpdateCallbackId {
+        PkUuidUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkUuidUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PkUuid>("pk_uuid");
@@ -96,14 +113,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `PkUuid`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait pk_uuidQueryTableAccess {
+pub trait pkUuidQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkUuid`.
-    fn pk_uuid(&self) -> __sdk::__query_builder::Table<PkUuid>;
+    fn pkUuid(&self) -> __sdk::__query_builder::Table<PkUuid>;
 }
 
-impl pk_uuidQueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_uuid(&self) -> __sdk::__query_builder::Table<PkUuid> {
-        __sdk::__query_builder::Table::new("pk_uuid")
+impl pkUuidQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pkUuid(&self) -> __sdk::__query_builder::Table<PkUuid> {
+        __sdk::__query_builder::Table::new("pkUuid")
     }
 }

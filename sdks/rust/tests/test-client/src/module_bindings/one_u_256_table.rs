@@ -5,7 +5,7 @@
 use super::one_u_256_type::OneU256;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_u256`.
+/// Table handle for the table `one_u_256`.
 ///
 /// Obtain a handle from the [`OneU256TableAccess::one_u_256`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_u_256()`.
@@ -19,19 +19,19 @@ pub struct OneU256TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_u256`.
+/// Extension trait for access to the table `one_u_256`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneU256TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneU256TableHandle`], which mediates access to the table `one_u256`.
+    /// Obtain a [`OneU256TableHandle`], which mediates access to the table `one_u_256`.
     fn one_u_256(&self) -> OneU256TableHandle<'_>;
 }
 
 impl OneU256TableAccess for super::RemoteTables {
     fn one_u_256(&self) -> OneU256TableHandle<'_> {
         OneU256TableHandle {
-            imp: self.imp.get_table::<OneU256>("one_u256"),
+            imp: self.imp.get_table::<OneU256>("one_u_256"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneU256TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneU256>("one_u256");
+    let _table = client_cache.get_or_make_table::<OneU256>("one_u_256");
 }
 
 #[doc(hidden)]

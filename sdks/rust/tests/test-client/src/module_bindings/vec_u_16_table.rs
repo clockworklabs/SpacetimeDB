@@ -5,7 +5,7 @@
 use super::vec_u_16_type::VecU16;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `vec_u16`.
+/// Table handle for the table `vec_u_16`.
 ///
 /// Obtain a handle from the [`VecU16TableAccess::vec_u_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_u_16()`.
@@ -19,19 +19,19 @@ pub struct VecU16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `vec_u16`.
+/// Extension trait for access to the table `vec_u_16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecU16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecU16TableHandle`], which mediates access to the table `vec_u16`.
+    /// Obtain a [`VecU16TableHandle`], which mediates access to the table `vec_u_16`.
     fn vec_u_16(&self) -> VecU16TableHandle<'_>;
 }
 
 impl VecU16TableAccess for super::RemoteTables {
     fn vec_u_16(&self) -> VecU16TableHandle<'_> {
         VecU16TableHandle {
-            imp: self.imp.get_table::<VecU16>("vec_u16"),
+            imp: self.imp.get_table::<VecU16>("vec_u_16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for VecU16TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecU16>("vec_u16");
+    let _table = client_cache.get_or_make_table::<VecU16>("vec_u_16");
 }
 
 #[doc(hidden)]

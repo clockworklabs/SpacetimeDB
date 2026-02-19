@@ -5,7 +5,7 @@
 use super::one_i_64_type::OneI64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_i64`.
+/// Table handle for the table `one_i_64`.
 ///
 /// Obtain a handle from the [`OneI64TableAccess::one_i_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_i_64()`.
@@ -19,19 +19,19 @@ pub struct OneI64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_i64`.
+/// Extension trait for access to the table `one_i_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneI64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneI64TableHandle`], which mediates access to the table `one_i64`.
+    /// Obtain a [`OneI64TableHandle`], which mediates access to the table `one_i_64`.
     fn one_i_64(&self) -> OneI64TableHandle<'_>;
 }
 
 impl OneI64TableAccess for super::RemoteTables {
     fn one_i_64(&self) -> OneI64TableHandle<'_> {
         OneI64TableHandle {
-            imp: self.imp.get_table::<OneI64>("one_i64"),
+            imp: self.imp.get_table::<OneI64>("one_i_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneI64TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneI64>("one_i64");
+    let _table = client_cache.get_or_make_table::<OneI64>("one_i_64");
 }
 
 #[doc(hidden)]

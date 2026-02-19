@@ -99,14 +99,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `IndexedSimpleEnum`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait indexed_simple_enumQueryTableAccess {
+pub trait indexedSimpleEnumQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `IndexedSimpleEnum`.
-    fn indexed_simple_enum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum>;
+    fn indexedSimpleEnum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum>;
 }
 
-impl indexed_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
-    fn indexed_simple_enum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum> {
-        __sdk::__query_builder::Table::new("indexed_simple_enum")
+impl indexedSimpleEnumQueryTableAccess for __sdk::QueryTableAccessor {
+    fn indexedSimpleEnum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum> {
+        __sdk::__query_builder::Table::new("indexedSimpleEnum")
     }
 }

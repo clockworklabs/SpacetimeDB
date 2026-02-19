@@ -5,7 +5,7 @@
 use super::unique_u_8_type::UniqueU8;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_u8`.
+/// Table handle for the table `unique_u_8`.
 ///
 /// Obtain a handle from the [`UniqueU8TableAccess::unique_u_8`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_8()`.
@@ -19,19 +19,19 @@ pub struct UniqueU8TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_u8`.
+/// Extension trait for access to the table `unique_u_8`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU8TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU8TableHandle`], which mediates access to the table `unique_u8`.
+    /// Obtain a [`UniqueU8TableHandle`], which mediates access to the table `unique_u_8`.
     fn unique_u_8(&self) -> UniqueU8TableHandle<'_>;
 }
 
 impl UniqueU8TableAccess for super::RemoteTables {
     fn unique_u_8(&self) -> UniqueU8TableHandle<'_> {
         UniqueU8TableHandle {
-            imp: self.imp.get_table::<UniqueU8>("unique_u8"),
+            imp: self.imp.get_table::<UniqueU8>("unique_u_8"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,7 +78,7 @@ impl<'ctx> __sdk::Table for UniqueU8TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `unique_u8`,
+/// Access to the `n` unique index on the table `unique_u_8`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU8NUnique::find`] method.
 ///
@@ -91,7 +91,7 @@ pub struct UniqueU8NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU8TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_u8`.
+    /// Get a handle on the `n` unique index on the table `unique_u_8`.
     pub fn n(&self) -> UniqueU8NUnique<'ctx> {
         UniqueU8NUnique {
             imp: self.imp.get_unique_constraint::<u8>("n"),
@@ -110,7 +110,7 @@ impl<'ctx> UniqueU8NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueU8>("unique_u8");
+    let _table = client_cache.get_or_make_table::<UniqueU8>("unique_u_8");
     _table.add_unique_constraint::<u8>("n", |row| &row.n);
 }
 

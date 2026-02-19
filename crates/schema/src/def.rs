@@ -909,7 +909,7 @@ impl From<IndexDef> for RawIndexDefV9 {
 impl From<IndexDef> for RawIndexDefV10 {
     fn from(val: IndexDef) -> Self {
         RawIndexDefV10 {
-            source_name: Some(val.name),
+            source_name: Some(val.source_name),
             accessor_name: val.accessor_name.map(Into::into),
             algorithm: val.algorithm.into(),
         }

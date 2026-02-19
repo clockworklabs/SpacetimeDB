@@ -5,7 +5,7 @@
 use super::pk_u_64_type::PkU64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `pk_u64`.
+/// Table handle for the table `pk_u_64`.
 ///
 /// Obtain a handle from the [`PkU64TableAccess::pk_u_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_u_64()`.
@@ -19,19 +19,19 @@ pub struct PkU64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `pk_u64`.
+/// Extension trait for access to the table `pk_u_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkU64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkU64TableHandle`], which mediates access to the table `pk_u64`.
+    /// Obtain a [`PkU64TableHandle`], which mediates access to the table `pk_u_64`.
     fn pk_u_64(&self) -> PkU64TableHandle<'_>;
 }
 
 impl PkU64TableAccess for super::RemoteTables {
     fn pk_u_64(&self) -> PkU64TableHandle<'_> {
         PkU64TableHandle {
-            imp: self.imp.get_table::<PkU64>("pk_u64"),
+            imp: self.imp.get_table::<PkU64>("pk_u_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -95,7 +95,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU64TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `pk_u64`,
+/// Access to the `n` unique index on the table `pk_u_64`,
 /// which allows point queries on the field of the same name
 /// via the [`PkU64NUnique::find`] method.
 ///
@@ -108,7 +108,7 @@ pub struct PkU64NUnique<'ctx> {
 }
 
 impl<'ctx> PkU64TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_u64`.
+    /// Get a handle on the `n` unique index on the table `pk_u_64`.
     pub fn n(&self) -> PkU64NUnique<'ctx> {
         PkU64NUnique {
             imp: self.imp.get_unique_constraint::<u64>("n"),
@@ -127,7 +127,7 @@ impl<'ctx> PkU64NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkU64>("pk_u64");
+    let _table = client_cache.get_or_make_table::<PkU64>("pk_u_64");
     _table.add_unique_constraint::<u64>("n", |row| &row.n);
 }
 

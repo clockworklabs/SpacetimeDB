@@ -146,14 +146,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `ScheduledTable`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait scheduled_tableQueryTableAccess {
+pub trait scheduledTableQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ScheduledTable`.
-    fn scheduled_table(&self) -> __sdk::__query_builder::Table<ScheduledTable>;
+    fn scheduledTable(&self) -> __sdk::__query_builder::Table<ScheduledTable>;
 }
 
-impl scheduled_tableQueryTableAccess for __sdk::QueryTableAccessor {
-    fn scheduled_table(&self) -> __sdk::__query_builder::Table<ScheduledTable> {
-        __sdk::__query_builder::Table::new("scheduled_table")
+impl scheduledTableQueryTableAccess for __sdk::QueryTableAccessor {
+    fn scheduledTable(&self) -> __sdk::__query_builder::Table<ScheduledTable> {
+        __sdk::__query_builder::Table::new("scheduledTable")
     }
 }

@@ -5,7 +5,7 @@
 use super::one_f_32_type::OneF32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_f32`.
+/// Table handle for the table `one_f_32`.
 ///
 /// Obtain a handle from the [`OneF32TableAccess::one_f_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_f_32()`.
@@ -19,19 +19,19 @@ pub struct OneF32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_f32`.
+/// Extension trait for access to the table `one_f_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneF32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneF32TableHandle`], which mediates access to the table `one_f32`.
+    /// Obtain a [`OneF32TableHandle`], which mediates access to the table `one_f_32`.
     fn one_f_32(&self) -> OneF32TableHandle<'_>;
 }
 
 impl OneF32TableAccess for super::RemoteTables {
     fn one_f_32(&self) -> OneF32TableHandle<'_> {
         OneF32TableHandle {
-            imp: self.imp.get_table::<OneF32>("one_f32"),
+            imp: self.imp.get_table::<OneF32>("one_f_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneF32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneF32>("one_f32");
+    let _table = client_cache.get_or_make_table::<OneF32>("one_f_32");
 }
 
 #[doc(hidden)]

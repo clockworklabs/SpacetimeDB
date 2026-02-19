@@ -98,14 +98,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `ProcInsertsInto`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait proc_inserts_intoQueryTableAccess {
+pub trait procInsertsIntoQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ProcInsertsInto`.
-    fn proc_inserts_into(&self) -> __sdk::__query_builder::Table<ProcInsertsInto>;
+    fn procInsertsInto(&self) -> __sdk::__query_builder::Table<ProcInsertsInto>;
 }
 
-impl proc_inserts_intoQueryTableAccess for __sdk::QueryTableAccessor {
-    fn proc_inserts_into(&self) -> __sdk::__query_builder::Table<ProcInsertsInto> {
-        __sdk::__query_builder::Table::new("proc_inserts_into")
+impl procInsertsIntoQueryTableAccess for __sdk::QueryTableAccessor {
+    fn procInsertsInto(&self) -> __sdk::__query_builder::Table<ProcInsertsInto> {
+        __sdk::__query_builder::Table::new("procInsertsInto")
     }
 }

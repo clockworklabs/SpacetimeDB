@@ -5,7 +5,7 @@
 use super::unique_i_128_type::UniqueI128;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_i128`.
+/// Table handle for the table `unique_i_128`.
 ///
 /// Obtain a handle from the [`UniqueI128TableAccess::unique_i_128`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_i_128()`.
@@ -19,19 +19,19 @@ pub struct UniqueI128TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_i128`.
+/// Extension trait for access to the table `unique_i_128`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueI128TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueI128TableHandle`], which mediates access to the table `unique_i128`.
+    /// Obtain a [`UniqueI128TableHandle`], which mediates access to the table `unique_i_128`.
     fn unique_i_128(&self) -> UniqueI128TableHandle<'_>;
 }
 
 impl UniqueI128TableAccess for super::RemoteTables {
     fn unique_i_128(&self) -> UniqueI128TableHandle<'_> {
         UniqueI128TableHandle {
-            imp: self.imp.get_table::<UniqueI128>("unique_i128"),
+            imp: self.imp.get_table::<UniqueI128>("unique_i_128"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,7 +78,7 @@ impl<'ctx> __sdk::Table for UniqueI128TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `unique_i128`,
+/// Access to the `n` unique index on the table `unique_i_128`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueI128NUnique::find`] method.
 ///
@@ -91,7 +91,7 @@ pub struct UniqueI128NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueI128TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_i128`.
+    /// Get a handle on the `n` unique index on the table `unique_i_128`.
     pub fn n(&self) -> UniqueI128NUnique<'ctx> {
         UniqueI128NUnique {
             imp: self.imp.get_unique_constraint::<i128>("n"),
@@ -110,7 +110,7 @@ impl<'ctx> UniqueI128NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueI128>("unique_i128");
+    let _table = client_cache.get_or_make_table::<UniqueI128>("unique_i_128");
     _table.add_unique_constraint::<i128>("n", |row| &row.n);
 }
 

@@ -5,7 +5,7 @@
 use super::vec_f_32_type::VecF32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `vec_f32`.
+/// Table handle for the table `vec_f_32`.
 ///
 /// Obtain a handle from the [`VecF32TableAccess::vec_f_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_f_32()`.
@@ -19,19 +19,19 @@ pub struct VecF32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `vec_f32`.
+/// Extension trait for access to the table `vec_f_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecF32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecF32TableHandle`], which mediates access to the table `vec_f32`.
+    /// Obtain a [`VecF32TableHandle`], which mediates access to the table `vec_f_32`.
     fn vec_f_32(&self) -> VecF32TableHandle<'_>;
 }
 
 impl VecF32TableAccess for super::RemoteTables {
     fn vec_f_32(&self) -> VecF32TableHandle<'_> {
         VecF32TableHandle {
-            imp: self.imp.get_table::<VecF32>("vec_f32"),
+            imp: self.imp.get_table::<VecF32>("vec_f_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for VecF32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecF32>("vec_f32");
+    let _table = client_cache.get_or_make_table::<VecF32>("vec_f_32");
 }
 
 #[doc(hidden)]

@@ -5,7 +5,7 @@
 use super::pk_u_32_two_type::PkU32Two;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `pk_u32_two`.
+/// Table handle for the table `pk_u_32_two`.
 ///
 /// Obtain a handle from the [`PkU32TwoTableAccess::pk_u_32_two`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_u_32_two()`.
@@ -19,19 +19,19 @@ pub struct PkU32TwoTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `pk_u32_two`.
+/// Extension trait for access to the table `pk_u_32_two`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkU32TwoTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkU32TwoTableHandle`], which mediates access to the table `pk_u32_two`.
+    /// Obtain a [`PkU32TwoTableHandle`], which mediates access to the table `pk_u_32_two`.
     fn pk_u_32_two(&self) -> PkU32TwoTableHandle<'_>;
 }
 
 impl PkU32TwoTableAccess for super::RemoteTables {
     fn pk_u_32_two(&self) -> PkU32TwoTableHandle<'_> {
         PkU32TwoTableHandle {
-            imp: self.imp.get_table::<PkU32Two>("pk_u32_two"),
+            imp: self.imp.get_table::<PkU32Two>("pk_u_32_two"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -95,7 +95,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU32TwoTableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `pk_u32_two`,
+/// Access to the `n` unique index on the table `pk_u_32_two`,
 /// which allows point queries on the field of the same name
 /// via the [`PkU32TwoNUnique::find`] method.
 ///
@@ -108,7 +108,7 @@ pub struct PkU32TwoNUnique<'ctx> {
 }
 
 impl<'ctx> PkU32TwoTableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_u32_two`.
+    /// Get a handle on the `n` unique index on the table `pk_u_32_two`.
     pub fn n(&self) -> PkU32TwoNUnique<'ctx> {
         PkU32TwoNUnique {
             imp: self.imp.get_unique_constraint::<u32>("n"),
@@ -127,7 +127,7 @@ impl<'ctx> PkU32TwoNUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkU32Two>("pk_u32_two");
+    let _table = client_cache.get_or_make_table::<PkU32Two>("pk_u_32_two");
     _table.add_unique_constraint::<u32>("n", |row| &row.n);
 }
 

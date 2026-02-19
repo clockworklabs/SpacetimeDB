@@ -5,7 +5,7 @@
 use super::pk_i_8_type::PkI8;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `pk_i8`.
+/// Table handle for the table `pk_i_8`.
 ///
 /// Obtain a handle from the [`PkI8TableAccess::pk_i_8`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_i_8()`.
@@ -19,19 +19,19 @@ pub struct PkI8TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `pk_i8`.
+/// Extension trait for access to the table `pk_i_8`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkI8TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkI8TableHandle`], which mediates access to the table `pk_i8`.
+    /// Obtain a [`PkI8TableHandle`], which mediates access to the table `pk_i_8`.
     fn pk_i_8(&self) -> PkI8TableHandle<'_>;
 }
 
 impl PkI8TableAccess for super::RemoteTables {
     fn pk_i_8(&self) -> PkI8TableHandle<'_> {
         PkI8TableHandle {
-            imp: self.imp.get_table::<PkI8>("pk_i8"),
+            imp: self.imp.get_table::<PkI8>("pk_i_8"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -95,7 +95,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI8TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `pk_i8`,
+/// Access to the `n` unique index on the table `pk_i_8`,
 /// which allows point queries on the field of the same name
 /// via the [`PkI8NUnique::find`] method.
 ///
@@ -108,7 +108,7 @@ pub struct PkI8NUnique<'ctx> {
 }
 
 impl<'ctx> PkI8TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_i8`.
+    /// Get a handle on the `n` unique index on the table `pk_i_8`.
     pub fn n(&self) -> PkI8NUnique<'ctx> {
         PkI8NUnique {
             imp: self.imp.get_unique_constraint::<i8>("n"),
@@ -127,7 +127,7 @@ impl<'ctx> PkI8NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkI8>("pk_i8");
+    let _table = client_cache.get_or_make_table::<PkI8>("pk_i_8");
     _table.add_unique_constraint::<i8>("n", |row| &row.n);
 }
 

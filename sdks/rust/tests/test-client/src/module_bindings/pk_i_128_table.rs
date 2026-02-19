@@ -5,7 +5,7 @@
 use super::pk_i_128_type::PkI128;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `pk_i128`.
+/// Table handle for the table `pk_i_128`.
 ///
 /// Obtain a handle from the [`PkI128TableAccess::pk_i_128`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_i_128()`.
@@ -19,19 +19,19 @@ pub struct PkI128TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `pk_i128`.
+/// Extension trait for access to the table `pk_i_128`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkI128TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkI128TableHandle`], which mediates access to the table `pk_i128`.
+    /// Obtain a [`PkI128TableHandle`], which mediates access to the table `pk_i_128`.
     fn pk_i_128(&self) -> PkI128TableHandle<'_>;
 }
 
 impl PkI128TableAccess for super::RemoteTables {
     fn pk_i_128(&self) -> PkI128TableHandle<'_> {
         PkI128TableHandle {
-            imp: self.imp.get_table::<PkI128>("pk_i128"),
+            imp: self.imp.get_table::<PkI128>("pk_i_128"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -95,7 +95,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI128TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `pk_i128`,
+/// Access to the `n` unique index on the table `pk_i_128`,
 /// which allows point queries on the field of the same name
 /// via the [`PkI128NUnique::find`] method.
 ///
@@ -108,7 +108,7 @@ pub struct PkI128NUnique<'ctx> {
 }
 
 impl<'ctx> PkI128TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_i128`.
+    /// Get a handle on the `n` unique index on the table `pk_i_128`.
     pub fn n(&self) -> PkI128NUnique<'ctx> {
         PkI128NUnique {
             imp: self.imp.get_unique_constraint::<i128>("n"),
@@ -127,7 +127,7 @@ impl<'ctx> PkI128NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkI128>("pk_i128");
+    let _table = client_cache.get_or_make_table::<PkI128>("pk_i_128");
     _table.add_unique_constraint::<i128>("n", |row| &row.n);
 }
 

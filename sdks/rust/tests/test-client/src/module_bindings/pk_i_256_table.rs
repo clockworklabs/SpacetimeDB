@@ -5,7 +5,7 @@
 use super::pk_i_256_type::PkI256;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `pk_i256`.
+/// Table handle for the table `pk_i_256`.
 ///
 /// Obtain a handle from the [`PkI256TableAccess::pk_i_256`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_i_256()`.
@@ -19,19 +19,19 @@ pub struct PkI256TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `pk_i256`.
+/// Extension trait for access to the table `pk_i_256`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkI256TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkI256TableHandle`], which mediates access to the table `pk_i256`.
+    /// Obtain a [`PkI256TableHandle`], which mediates access to the table `pk_i_256`.
     fn pk_i_256(&self) -> PkI256TableHandle<'_>;
 }
 
 impl PkI256TableAccess for super::RemoteTables {
     fn pk_i_256(&self) -> PkI256TableHandle<'_> {
         PkI256TableHandle {
-            imp: self.imp.get_table::<PkI256>("pk_i256"),
+            imp: self.imp.get_table::<PkI256>("pk_i_256"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -95,7 +95,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI256TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `pk_i256`,
+/// Access to the `n` unique index on the table `pk_i_256`,
 /// which allows point queries on the field of the same name
 /// via the [`PkI256NUnique::find`] method.
 ///
@@ -108,7 +108,7 @@ pub struct PkI256NUnique<'ctx> {
 }
 
 impl<'ctx> PkI256TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_i256`.
+    /// Get a handle on the `n` unique index on the table `pk_i_256`.
     pub fn n(&self) -> PkI256NUnique<'ctx> {
         PkI256NUnique {
             imp: self.imp.get_unique_constraint::<__sats::i256>("n"),
@@ -127,7 +127,7 @@ impl<'ctx> PkI256NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkI256>("pk_i256");
+    let _table = client_cache.get_or_make_table::<PkI256>("pk_i_256");
     _table.add_unique_constraint::<__sats::i256>("n", |row| &row.n);
 }
 

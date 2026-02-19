@@ -5,7 +5,7 @@
 use super::unique_u_16_type::UniqueU16;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_u16`.
+/// Table handle for the table `unique_u_16`.
 ///
 /// Obtain a handle from the [`UniqueU16TableAccess::unique_u_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_16()`.
@@ -19,19 +19,19 @@ pub struct UniqueU16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_u16`.
+/// Extension trait for access to the table `unique_u_16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU16TableHandle`], which mediates access to the table `unique_u16`.
+    /// Obtain a [`UniqueU16TableHandle`], which mediates access to the table `unique_u_16`.
     fn unique_u_16(&self) -> UniqueU16TableHandle<'_>;
 }
 
 impl UniqueU16TableAccess for super::RemoteTables {
     fn unique_u_16(&self) -> UniqueU16TableHandle<'_> {
         UniqueU16TableHandle {
-            imp: self.imp.get_table::<UniqueU16>("unique_u16"),
+            imp: self.imp.get_table::<UniqueU16>("unique_u_16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,7 +78,7 @@ impl<'ctx> __sdk::Table for UniqueU16TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `unique_u16`,
+/// Access to the `n` unique index on the table `unique_u_16`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU16NUnique::find`] method.
 ///
@@ -91,7 +91,7 @@ pub struct UniqueU16NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU16TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_u16`.
+    /// Get a handle on the `n` unique index on the table `unique_u_16`.
     pub fn n(&self) -> UniqueU16NUnique<'ctx> {
         UniqueU16NUnique {
             imp: self.imp.get_unique_constraint::<u16>("n"),
@@ -110,7 +110,7 @@ impl<'ctx> UniqueU16NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
+    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u_16");
     _table.add_unique_constraint::<u16>("n", |row| &row.n);
 }
 

@@ -5,7 +5,7 @@
 use super::unique_i_64_type::UniqueI64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_i64`.
+/// Table handle for the table `unique_i_64`.
 ///
 /// Obtain a handle from the [`UniqueI64TableAccess::unique_i_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_i_64()`.
@@ -19,19 +19,19 @@ pub struct UniqueI64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_i64`.
+/// Extension trait for access to the table `unique_i_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueI64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueI64TableHandle`], which mediates access to the table `unique_i64`.
+    /// Obtain a [`UniqueI64TableHandle`], which mediates access to the table `unique_i_64`.
     fn unique_i_64(&self) -> UniqueI64TableHandle<'_>;
 }
 
 impl UniqueI64TableAccess for super::RemoteTables {
     fn unique_i_64(&self) -> UniqueI64TableHandle<'_> {
         UniqueI64TableHandle {
-            imp: self.imp.get_table::<UniqueI64>("unique_i64"),
+            imp: self.imp.get_table::<UniqueI64>("unique_i_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,7 +78,7 @@ impl<'ctx> __sdk::Table for UniqueI64TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `unique_i64`,
+/// Access to the `n` unique index on the table `unique_i_64`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueI64NUnique::find`] method.
 ///
@@ -91,7 +91,7 @@ pub struct UniqueI64NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueI64TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_i64`.
+    /// Get a handle on the `n` unique index on the table `unique_i_64`.
     pub fn n(&self) -> UniqueI64NUnique<'ctx> {
         UniqueI64NUnique {
             imp: self.imp.get_unique_constraint::<i64>("n"),
@@ -110,7 +110,7 @@ impl<'ctx> UniqueI64NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueI64>("unique_i64");
+    let _table = client_cache.get_or_make_table::<UniqueI64>("unique_i_64");
     _table.add_unique_constraint::<i64>("n", |row| &row.n);
 }
 
