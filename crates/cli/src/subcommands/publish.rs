@@ -326,13 +326,23 @@ pub async fn exec_with_options(
         .copied()
         .unwrap_or(ClearMode::Never);
     let force = args.get_flag("force");
+    let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
 
-    execute_publish_configs(&mut config, publish_configs, using_config, clear_database, force).await
+    execute_publish_configs(
+        &mut config,
+        publish_configs,
+        using_config,
+        config_dir,
+        clear_database,
+        force,
+    )
+    .await
 }
 
 pub async fn exec_from_entry(
     mut config: Config,
     entry: HashMap<String, serde_json::Value>,
+    config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
     force: bool,
 ) -> Result<(), anyhow::Error> {
@@ -343,13 +353,22 @@ pub async fn exec_from_entry(
     let command_config = CommandConfig::new(&schema, entry, &matches)?;
     command_config.validate()?;
 
-    execute_publish_configs(&mut config, vec![command_config], true, clear_database, force).await
+    execute_publish_configs(
+        &mut config,
+        vec![command_config],
+        true,
+        config_dir,
+        clear_database,
+        force,
+    )
+    .await
 }
 
 async fn execute_publish_configs<'a>(
     config: &mut Config,
     publish_configs: Vec<CommandConfig<'a>>,
     using_config: bool,
+    config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
     force: bool,
 ) -> Result<(), anyhow::Error> {
@@ -363,10 +382,11 @@ async fn execute_publish_configs<'a>(
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
+        let resolved_module_path = command_config.get_resolved_path("module_path", config_dir)?;
         let path_to_project = if wasm_file.is_some() || js_file.is_some() {
-            command_config.get_one::<PathBuf>("module_path")?
+            resolved_module_path
         } else {
-            Some(match command_config.get_one::<PathBuf>("module_path")? {
+            Some(match resolved_module_path {
                 Some(path) => path,
                 None => default_publish_module_path(&std::env::current_dir()?),
             })

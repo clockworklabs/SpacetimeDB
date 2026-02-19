@@ -6,8 +6,8 @@ use crate::spacetime_config::{
 };
 use crate::subcommands::init;
 use crate::util::{
-    add_auth_header_opt, database_identity, get_auth_header, get_login_token_or_log_in, spacetime_reverse_dns,
-    ResponseExt,
+    add_auth_header_opt, database_identity, find_module_path, get_auth_header, get_login_token_or_log_in,
+    spacetime_reverse_dns, ResponseExt,
 };
 use crate::{common_args, generate};
 use crate::{publish, tasks};
@@ -162,7 +162,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .or(default_server_name.as_deref())
         .ok_or_else(|| anyhow::anyhow!("Server not specified and no default server configured."))?;
 
-    let mut project_dir = project_path.clone();
+    let cwd = std::env::current_dir()?;
+    let mut project_dir = if project_path.is_absolute() {
+        project_path.clone()
+    } else {
+        cwd.join(project_path)
+    };
 
     if module_bindings_path.is_absolute() {
         anyhow::bail!("Module bindings path must be a relative path");
@@ -194,6 +199,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else {
         find_and_load_with_env_from(Some(env), project_dir.clone()).with_context(|| "Failed to load spacetime.json")?
     };
+
+    // If config was found while starting from a subdirectory (for example from `spacetimedb/`),
+    // treat the config directory as the project root for all relative defaults.
+    if let Some(lc) = loaded_config.as_ref() {
+        project_dir = lc.config_dir.clone();
+        module_bindings_dir = project_dir.join(module_bindings_path);
+        if module_path_from_cli.is_none() {
+            spacetimedb_dir = project_dir.join("spacetimedb");
+        }
+    }
+
     let has_any_config_files = loaded_config.is_some();
 
     // Config exists, but default module dir is missing: recover by asking for module-path
@@ -348,6 +364,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Check if we are in a SpacetimeDB project directory, but only if we don't have any
     // publish_configs that would specify desired modules
+    if !has_any_config_files
+        && module_path_from_cli.is_none()
+        && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir())
+    {
+        if let Some(found_module) = find_module_path(&std::env::current_dir()?) {
+            spacetimedb_dir = found_module;
+        }
+    }
+
     if !has_any_config_files && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
@@ -641,10 +666,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     println!("{}", "Press Ctrl+C to stop".dimmed());
     println!();
+    let loaded_config_dir = loaded_config.as_ref().map(|lc| lc.config_dir.clone());
 
     generate_build_and_publish(
         &config,
         &project_dir,
+        loaded_config_dir.as_deref(),
         &spacetimedb_dir,
         &module_bindings_dir,
         client_language,
@@ -752,6 +779,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             match generate_build_and_publish(
                 &config,
                 &project_dir,
+                loaded_config_dir.as_deref(),
                 &spacetimedb_dir,
                 &module_bindings_dir,
                 client_language,
@@ -865,6 +893,7 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
 async fn generate_build_and_publish(
     config: &Config,
     project_dir: &Path,
+    config_dir: Option<&Path>,
     spacetimedb_dir: &Path,
     module_bindings_dir: &Path,
     client_language: Option<&Language>,
@@ -892,7 +921,13 @@ async fn generate_build_and_publish(
             );
         } else {
             println!("{}", "Generating module bindings from spacetime.json...".cyan());
-            generate::exec_from_entries(generate_configs.to_vec(), crate::generate::extract_descriptions, yes).await?;
+            generate::exec_from_entries(
+                generate_configs.to_vec(),
+                crate::generate::extract_descriptions,
+                yes,
+                config_dir,
+            )
+            .await?;
         }
     } else {
         let resolved_client_language = generate::resolve_language(spacetimedb_dir, client_language.copied())?;
@@ -924,7 +959,13 @@ async fn generate_build_and_publish(
             Some(resolved_client_language),
             Some(module_bindings_dir),
         );
-        generate::exec_from_entries(vec![generate_entry], crate::generate::extract_descriptions, yes).await?;
+        generate::exec_from_entries(
+            vec![generate_entry],
+            crate::generate::extract_descriptions,
+            yes,
+            config_dir,
+        )
+        .await?;
     }
 
     if skip_publish {
@@ -981,7 +1022,7 @@ async fn generate_build_and_publish(
             publish_entry.insert("break-clients".to_string(), json!(true));
         }
 
-        publish::exec_from_entry(config.clone(), publish_entry, clear_database, yes).await?;
+        publish::exec_from_entry(config.clone(), publish_entry, config_dir, clear_database, yes).await?;
     }
 
     println!("{}", "Published successfully!".green().bold());
