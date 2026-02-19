@@ -856,7 +856,7 @@ fn define_body_for_sum(
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
     writeln!(out, " = __t.enum(\"{name}\", {{");
-      // Convert variant names to PascalCase
+    // Convert variant names to PascalCase
     let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
         .iter()
         .map(|(ident, ty)| {
