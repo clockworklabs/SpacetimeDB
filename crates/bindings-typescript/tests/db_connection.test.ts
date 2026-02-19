@@ -77,6 +77,22 @@ function getLastCallReducerRequestId(wsAdapter: WebsocketTestAdapter): number {
   throw new Error('No CallReducer message found in messageQueue.');
 }
 
+function getLastSubscribeMessageInfo(wsAdapter: WebsocketTestAdapter): {
+  requestId: number;
+  querySetId: number;
+} {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'Subscribe') {
+      return {
+        requestId: message.value.requestId,
+        querySetId: message.value.querySetId.id,
+      };
+    }
+  }
+  throw new Error('No Subscribe message found in messageQueue.');
+}
+
 function makeReducerResult(
   requestId: number,
   reducerQuerySetUpdate: ReturnType<typeof makeQuerySetUpdate>
@@ -176,6 +192,74 @@ describe('DbConnection', () => {
     await onConnectPromise.promise;
 
     expect(called).toBeTruthy();
+  });
+
+  test('disconnects when SubscriptionError has no requestId', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onDisconnect(() => {
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.SubscriptionError({
+        requestId: undefined,
+        querySetId: { id: 9999 },
+        error: 'test subscription error',
+      })
+    );
+
+    await onDisconnectPromise.promise;
+
+    expect(wsAdapter.closed).toBeTruthy();
+  });
+
+  test('handles SubscriptionError with requestId via subscription error callback', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    const onErrorPromise = new Deferred<void>();
+    client
+      .subscriptionBuilder()
+      .onError((ctx) => {
+        expect(ctx.event!.message).toEqual('test subscription error');
+        onErrorPromise.resolve();
+      })
+      .subscribe('SELECT * FROM user');
+
+    await Promise.resolve();
+    const { requestId, querySetId } = getLastSubscribeMessageInfo(wsAdapter);
+    wsAdapter.sendToClient(
+      ServerMessage.SubscriptionError({
+        requestId,
+        querySetId: { id: querySetId },
+        error: 'test subscription error',
+      })
+    );
+
+    await onErrorPromise.promise;
+    expect(wsAdapter.closed).toBeFalsy();
   });
 
   test('fires row callbacks after reducer resolution in ReducerResult', async () => {
