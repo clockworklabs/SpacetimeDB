@@ -1,6 +1,7 @@
 import type { ProcedureExport, ReducerExport, t } from '../server';
 import type { errors } from '../server/errors';
 import {
+  ExplicitNameEntry,
   RawColumnDefaultValueV10,
   RawConstraintDefV10,
   RawIndexAlgorithm,
@@ -322,7 +323,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
-  const indexes: RawIndexDefV10[] = [];
+  const indexes: (RawIndexDefV10 & { canonicalName?: string })[] = [];
   const constraints: RawConstraintDefV10[] = [];
   const sequences: RawSequenceDefV10[] = [];
 
