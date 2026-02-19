@@ -878,7 +878,7 @@ impl InstanceEnv {
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
         // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
-        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_DEFAULT_TIMEOUT);
+        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
 
         // reqwest's timeout covers from the start of the request to the end of reading the body,
         // so there's no need to do our own timeout operation.
@@ -968,12 +968,14 @@ impl InstanceEnv {
     }
 }
 
-/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
-///
-/// If the user requests a timeout longer than this, we will clamp to this value.
+/// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+/// Maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(10);
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
 struct FilteredDnsResolver;

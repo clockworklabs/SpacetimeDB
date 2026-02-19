@@ -1,9 +1,8 @@
 import { AlgebraicType } from '../lib/algebraic_type';
-import FunctionVisibility from '../lib/autogen/function_visibility_type';
-import type Lifecycle from '../lib/autogen/lifecycle_type';
+import { FunctionVisibility, type Lifecycle } from '../lib/autogen/types';
 import type { ParamsObj, Reducer } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
-import { RowBuilder, type Infer, type RowObj } from '../lib/type_builders';
+import { RowBuilder, type RowObj } from '../lib/type_builders';
 import { toPascalCase } from '../lib/util';
 import {
   exportContext,
@@ -30,7 +29,7 @@ export function makeReducerExport<
   opts: ReducerOpts | undefined,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof Lifecycle>
+  lifecycle?: Lifecycle
 ): ReducerExport<S, Params> {
   const name = opts?.name;
 
@@ -60,7 +59,7 @@ export function registerReducer(
   name: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof Lifecycle>
+  lifecycle?: Lifecycle
 ): void {
   ctx.defineFunction(name);
 

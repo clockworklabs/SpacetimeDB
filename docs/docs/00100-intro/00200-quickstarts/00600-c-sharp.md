@@ -134,4 +134,4 @@ spacetime logs <database-name>
 ## Next steps
 
 - See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [C# SDK Reference](/sdks/c-sharp) for detailed API docs
+- Read the [C# SDK Reference](/clients/c-sharp) for detailed API docs

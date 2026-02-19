@@ -1,5 +1,18 @@
+import { beforeEach, describe, expect, test } from 'vitest';
+import {
+  BinaryWriter,
+  ConnectionId,
+  Identity,
+  InternalError,
+  SenderError,
+  Timestamp,
+  type Infer,
+} from '../src';
+import { ServerMessage } from '../src/sdk/client_api/types';
+import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
 import { DbConnection } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
+<<<<<<< HEAD
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
   BinaryWriter,
@@ -12,6 +25,14 @@ import {
 import ServerMessage from '../src/sdk/client_api/server_message_type';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
+||||||| 0cb23814d
+import { beforeEach, describe, expect, test } from 'vitest';
+import { ConnectionId, type Infer } from '../src';
+import ServerMessage from '../src/sdk/client_api/server_message_type';
+import { Identity } from '../src';
+import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
+=======
+>>>>>>> jsdt/fix-generate-issue
 import {
   anIdentity,
   bobIdentity,

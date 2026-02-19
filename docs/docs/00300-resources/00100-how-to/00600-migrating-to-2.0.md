@@ -69,7 +69,7 @@ fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
 **Server (module) -- after:**
 ```rust
 // 2.0 server -- explicitly publish events via an event table
-#[spacetimedb::table(name = damage_event, public, event)]
+#[spacetimedb::table(accessor = damage_event, public, event)]
 pub struct DamageEvent {
     pub target: Identity,
     pub amount: u32,
@@ -104,7 +104,7 @@ conn.db.damage_event().on_insert(|ctx, event| {
 - **Flexibility**: Multiple reducers can insert the same event type. In 1.0, events were tied 1:1 to a specific reducer.
 - **Transactional**: Events are only published if the transaction commits. In 1.0, workarounds using scheduled reducers were not transactional.
 - **Row-level security**: RLS rules apply to event tables, so you can control which clients see which events.
-- **Queryable**: Event tables are subscribed to with standard SQL, and can be filtered per-client.
+- **Queryable**: Event tables can be subscribed to with query builders (or SQL), and can be filtered per-client.
 
 ### Event table details
 
@@ -112,7 +112,7 @@ conn.db.damage_event().on_insert(|ctx, event| {
 - On the client, `count()` always returns 0 and `iter()` is always empty.
 - Only `on_insert` callbacks are generated (no `on_delete` or `on_update`).
 - The `event` keyword in `#[table(..., event)]` marks the table as transient.
-- Event tables must be subscribed to explicitly (they are excluded from `SELECT * FROM *`).
+- Event tables must be subscribed to explicitly (they are excluded from `subscribeToAllTables` / `SubscribeToAllTables` / `subscribe_to_all_tables`).
 
 ## Light Mode
 
@@ -189,16 +189,18 @@ The subscription API is largely unchanged:
 ctx.subscription_builder()
     .on_applied(|ctx| { /* ... */ })
     .on_error(|ctx, error| { /* ... */ })
-    .subscribe(["SELECT * FROM my_table"]);
+    .add_query(|q| q.from.my_table())
+    .subscribe();
 ```
 
 Note that subscribing to event tables requires an explicit query:
 
 ```rust
-// Event tables are excluded from SELECT * FROM *, so subscribe explicitly:
+// Event tables are excluded from subscribe_to_all_tables(), so subscribe explicitly:
 ctx.subscription_builder()
     .on_applied(|ctx| { /* ... */ })
-    .subscribe(["SELECT * FROM damage_event"]);
+    .add_query(|q| q.from.damage_event())
+    .subscribe();
 ```
 
 ## Quick Migration Checklist

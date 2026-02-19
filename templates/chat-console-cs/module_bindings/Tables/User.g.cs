@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "User";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class UserIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(User row) => row.Identity;
 
-                public IdentityUniqueIndex(UserHandle table) : base(table) { }
+                public UserIdentityIdxBtreeUniqueIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly UserIdentityIdxBtreeUniqueIndex UserIdentityIdxBtree;
 
             internal UserHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
+                UserIdentityIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Identity;

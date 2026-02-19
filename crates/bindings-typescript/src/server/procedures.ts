@@ -4,7 +4,7 @@ import {
   type Deserializer,
   type Serializer,
 } from '../lib/algebraic_type';
-import FunctionVisibility from '../lib/autogen/function_visibility_type';
+import { FunctionVisibility } from '../lib/autogen/types';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';

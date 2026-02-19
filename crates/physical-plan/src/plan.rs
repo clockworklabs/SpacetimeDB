@@ -842,7 +842,10 @@ impl PhysicalPlan {
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Lhs)
             }
             Self::IxJoin(join, Semi::All) => {
-                let reqs = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                if !reqs.contains(&join.lhs_field.label) {
+                    reqs.push(join.lhs_field.label);
+                }
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)

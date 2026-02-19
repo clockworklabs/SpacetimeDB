@@ -3,7 +3,11 @@ export * from './db_connection_impl.ts';
 export * from './client_cache.ts';
 export * from './message_types.ts';
 export * from '../lib/errors.ts';
+<<<<<<< HEAD
 export * from './logger.ts';
+||||||| 0cb23814d
+=======
+>>>>>>> jsdt/fix-generate-issue
 export { type ClientTable } from './client_table.ts';
 export { type RemoteModule } from './spacetime_module.ts';
 export * from '../lib/type_builders.ts';

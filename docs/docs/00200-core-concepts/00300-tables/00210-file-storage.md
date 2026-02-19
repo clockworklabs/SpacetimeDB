@@ -5,6 +5,7 @@ slug: /tables/file-storage
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB can store binary data directly in table columns, making it suitable for files, images, and other blobs that need to participate in transactions and subscriptions.
@@ -92,7 +93,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = user_avatar, public)]
+#[spacetimedb::table(accessor = user_avatar, public)]
 pub struct UserAvatar {
     #[primary_key]
     user_id: u64,
@@ -123,6 +124,8 @@ pub fn upload_avatar(
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct UserAvatar {
@@ -271,7 +274,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -519,7 +522,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ProcedureContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -787,7 +790,7 @@ public partial class Module
 ```rust
 use spacetimedb::{Identity, Timestamp};
 
-#[spacetimedb::table(name = image, public)]
+#[spacetimedb::table(accessor = image, public)]
 pub struct Image {
     #[primary_key]
     #[auto_inc]
