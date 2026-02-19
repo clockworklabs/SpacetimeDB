@@ -147,6 +147,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #messageQueue = Promise.resolve();
+  #outboundQueue: ClientMessage[] = [];
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #reducerCallbacks = new Map<
@@ -537,14 +538,36 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
+  #sendEncoded(
+    wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter,
+    message: ClientMessage
+  ): void {
+    const writer = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(writer, ClientMessage.algebraicType, message);
+    const encoded = writer.getBuffer();
+    wsResolved.send(encoded);
+  }
+
+  #flushOutboundQueue(
+    wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter
+  ): void {
+    if (!this.isActive || this.#outboundQueue.length === 0) {
+      return;
+    }
+    const pending = this.#outboundQueue.splice(0);
+    for (const message of pending) {
+      this.#sendEncoded(wsResolved, message);
+    }
+  }
+
   #sendMessage(message: ClientMessage): void {
     this.wsPromise.then(wsResolved => {
-      if (wsResolved) {
-        const writer = new BinaryWriter(1024);
-        ClientMessage.serialize(writer, message);
-        const encoded = writer.getBuffer();
-        wsResolved.send(encoded);
+      if (!wsResolved || !this.isActive) {
+        this.#outboundQueue.push(message);
+        return;
       }
+      this.#flushOutboundQueue(wsResolved);
+      this.#sendEncoded(wsResolved, message);
     });
   }
 
@@ -558,6 +581,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   #handleOnOpen(): void {
     this.isActive = true;
+    if (this.ws) {
+      this.#flushOutboundQueue(this.ws);
+    }
   }
 
   #applyTableUpdates(
