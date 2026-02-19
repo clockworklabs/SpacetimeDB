@@ -83,7 +83,9 @@ export const stringify = (value: unknown): string | undefined =>
       '__identity__' in current &&
       typeof (current as { __identity__: unknown }).__identity__ === 'bigint'
     ) {
-      return u256ToHexString((current as { __identity__: bigint }).__identity__);
+      return u256ToHexString(
+        (current as { __identity__: bigint }).__identity__
+      );
     }
     if (
       current &&
@@ -103,7 +105,10 @@ export const stringify = (value: unknown): string | undefined =>
       const head = current.subarray(0, 10);
       return `Uint8Array(len=${current.length}, head=0x${toHex(head)})`;
     }
-    if (Array.isArray(current) && current.length >= ARRAY_TRUNCATION_THRESHOLD) {
+    if (
+      Array.isArray(current) &&
+      current.length >= ARRAY_TRUNCATION_THRESHOLD
+    ) {
       const head = ssStringify(current.slice(0, ARRAY_PREVIEW_COUNT));
       return `Array(len=${current.length}, head=${head ?? '[]'})`;
     }
