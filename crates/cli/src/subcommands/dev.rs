@@ -609,27 +609,29 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     }
 
-    // Safety prompt: warn if publishing from spacetime.json (not a dev-specific config)
+    // Safety prompt: warn if any selected database target is defined in spacetime.json.
     if let Some(ref lc) = loaded_config {
-        // Treat local overrides as dev-safe to avoid warning when per-user config is present.
-        // TODO: Should this also accept other env local files (for example: spacetime.staging.local.json)?
-        let has_local_override = lc.loaded_files.iter().any(|p| {
-            p.file_name()
-                .and_then(|s| s.to_str())
-                .map(|name| name == "spacetime.local.json" || name == "spacetime.dev.local.json")
-                .unwrap_or(false)
-        });
+        let database_sources = resolve_database_sources(&lc.config);
+        let databases_from_main_config: Vec<String> = db_names_for_logging
+            .iter()
+            .filter(|db| {
+                database_sources
+                    .get((*db).as_str())
+                    .is_some_and(|src| src.as_deref() == Some("spacetime.json"))
+            })
+            .cloned()
+            .collect();
 
-        if !lc.has_dev_file && !has_local_override && !force {
+        if !databases_from_main_config.is_empty() && !force {
             eprintln!(
-                "{} Publishing from spacetime.json (not a dev-specific config).",
-                "Warning:".yellow().bold()
+                "{} You are trying to publish databases in dev mode that were defined in the main spacetime.json file: {}",
+                "Warning:".yellow().bold(),
+                databases_from_main_config.join(", ")
             );
-            eprintln!(
-                "{}",
-                "Consider creating spacetime.dev.json for development settings.".dimmed()
-            );
-            let should_continue = Confirm::new().with_prompt("Continue?").default(true).interact()?;
+            let should_continue = Confirm::new()
+                .with_prompt("Do you want to proceed?")
+                .default(true)
+                .interact()?;
             if !should_continue {
                 anyhow::bail!("Aborted.");
             }
@@ -1277,6 +1279,16 @@ fn format_log_record<W: WriteColor>(
 fn generate_database_name() -> String {
     let mut generator = names::Generator::with_naming(names::Name::Numbered);
     generator.next().unwrap()
+}
+
+fn resolve_database_sources(config: &SpacetimeConfig) -> HashMap<String, Option<String>> {
+    let mut sources = HashMap::new();
+    for target in config.collect_all_targets_with_inheritance() {
+        if let Some(database) = target.fields.get("database").and_then(|v| v.as_str()) {
+            sources.insert(database.to_string(), target.source_config.clone());
+        }
+    }
+    sources
 }
 
 /// Extract unique watch directories from publish configs
