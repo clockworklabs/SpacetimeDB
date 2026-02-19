@@ -624,7 +624,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
         if !databases_from_main_config.is_empty() && !force {
             eprintln!(
-                "{} You are trying to publish databases in dev mode that were defined in the main spacetime.json file: {}",
+                "{} Database(s) `{}` are defined in spacetime.json (usually reserved for production databases).",
                 "Warning:".yellow().bold(),
                 databases_from_main_config.join(", ")
             );
