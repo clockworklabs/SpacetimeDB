@@ -374,17 +374,22 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             module_bindings_dir = canonical_created_path.join(module_bindings_path);
             project_dir = canonical_created_path.clone();
 
-            // If the project was created in a subdirectory, hint the user to cd into it.
+            // If the project was created in a subdirectory, hint the user to cd into it
+            // and show useful CLI commands they can run from there.
             let current_dir = std::env::current_dir().context("Failed to get current directory")?;
             if canonical_created_path != current_dir {
                 let rel_path = canonical_created_path
                     .strip_prefix(&current_dir)
                     .unwrap_or(&canonical_created_path);
                 println!(
-                    "\n{} To interact with your database, open a new terminal and run:\n  cd ./{}\n",
+                    "\n{} To interact with your database, open a new terminal and run:",
                     "Tip:".yellow().bold(),
-                    rel_path.display()
                 );
+                println!("  cd ./{}", rel_path.display());
+                println!("  spacetime call add Alice");
+                println!("  spacetime sql \"SELECT * FROM person\"");
+                println!("  spacetime logs");
+                println!();
             }
 
             if !spacetimedb_dir.exists() {
