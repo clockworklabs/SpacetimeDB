@@ -29,7 +29,7 @@ Get a SpacetimeDB Next.js app running in under 5 minutes.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template nextjs-ts my-nextjs-app
+spacetime dev --template nextjs-ts
 ```
     </StepCode>
   </Step>

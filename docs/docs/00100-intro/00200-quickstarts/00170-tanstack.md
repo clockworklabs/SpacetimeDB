@@ -29,7 +29,7 @@ Get a SpacetimeDB app with TanStack Start running in under 5 minutes.
     <StepCode>
 
 ```bash
-spacetime dev --template tanstack-ts my-spacetime-app
+spacetime dev --template tanstack-ts
 ```
 
     </StepCode>
