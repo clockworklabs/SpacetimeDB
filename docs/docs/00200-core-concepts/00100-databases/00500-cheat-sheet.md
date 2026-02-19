@@ -3,6 +3,7 @@ title: Cheat Sheet
 slug: /databases/cheat-sheet
 ---
 
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -43,6 +44,8 @@ spacetime publish <DATABASE_NAME>
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```bash
 spacetime init --lang cpp --project-path my-project my-project
@@ -150,7 +153,7 @@ pub struct Player {
 }
 
 // Multi-column index
-#[table(accessor = score, index(name = idx, btree(columns = [player_id, level])))]
+#[table(accessor = score, index(accessor = idx, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u64,
     level: u32,

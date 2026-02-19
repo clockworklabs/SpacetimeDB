@@ -5,6 +5,7 @@ slug: /tables/indexes
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Indexes accelerate queries by maintaining sorted data structures alongside your tables. Without an index, finding rows that match a condition requires scanning every row. With an index, the database locates matching rows directly.
@@ -73,7 +74,7 @@ const position = table(
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = position, public)]
+#[spacetimedb::table(accessor = position, public)]
 pub struct Position {
     #[primary_key]
     #[index(direct)]
@@ -135,7 +136,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -148,6 +149,8 @@ pub struct User {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct User {
@@ -212,7 +215,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public, index(name = idx_age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = user, public, index(accessor = idx_age, btree(columns = [age])))]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -278,7 +281,7 @@ public partial struct Score
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = score, public, index(name = by_player_and_level, btree(columns = [player_id, level])))]
+#[spacetimedb::table(accessor = score, public, index(accessor = by_player_and_level, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u32,
     level: u32,

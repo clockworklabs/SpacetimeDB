@@ -109,7 +109,7 @@
             Count: 4
           },
           User: {
-            Identity: {},
+            UserIdentityIdxBtree: {},
             Count: 3
           }
         },
@@ -141,7 +141,7 @@
             Count: 4
           },
           User: {
-            Identity: {},
+            UserIdentityIdxBtree: {},
             Count: 3
           }
         },

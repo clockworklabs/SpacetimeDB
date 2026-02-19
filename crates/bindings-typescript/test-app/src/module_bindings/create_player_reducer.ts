@@ -10,7 +10,7 @@ import {
   type Infer as __Infer,
 } from '../../../src/index';
 
-import Point from './point_type';
+import { Point } from './types';
 
 export default {
   name: __t.string(),

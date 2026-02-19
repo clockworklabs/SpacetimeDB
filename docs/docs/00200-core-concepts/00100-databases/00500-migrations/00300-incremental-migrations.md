@@ -19,7 +19,7 @@ For example, imagine we have a table `player` which stores information about our
 <!-- TODO: switchable language widget with C# version of below code. -->
 
 ```rust
-#[spacetimedb::table(name = character, public)]
+#[spacetimedb::table(accessor = character, public)]
 pub struct Character {
     #[primary_key]
     player_id: Identity,
@@ -130,7 +130,7 @@ See [the SATS JSON reference](/sats-json) for more on the encoding of arguments 
 Now we want to add a new feature: each player should be able to align themselves with the forces of good or evil, so we can get some healthy competition going between our players. We'll start each character off with `Alliance::Neutral`, and then offer them a reducer `choose_alliance` to set it to either `Alliance::Good` or `Alliance::Evil`. Our first attempt will be to add a new column to the type `Character`:
 
 ```rust
-#[spacetimedb::table(name = character, public)]
+#[spacetimedb::table(accessor = character, public)]
 struct Character {
     #[primary_key]
     player_id: Identity,
@@ -176,7 +176,7 @@ Adding a column alliance to table character requires a manual migration
 Instead, we'll add a new table, `character_v2`, which will coexist with our original `character` table:
 
 ```rust
-#[spacetimedb::table(name = character_v2, public)]
+#[spacetimedb::table(accessor = character_v2, public)]
 struct CharacterV2 {
     #[primary_key]
     player_id: Identity,

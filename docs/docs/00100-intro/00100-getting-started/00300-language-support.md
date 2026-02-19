@@ -16,10 +16,10 @@ SpacetimeDB modules define your database schema and server-side business logic. 
 
 **Clients** are applications that connect to SpacetimeDB databases. The `spacetime` CLI tool can automatically generate type-safe client code for your database.
 
-- **[Rust](/sdks/rust)** - [(Quickstart)](/quickstarts/rust)
-- **[C#](/sdks/c-sharp)** - [(Quickstart)](/quickstarts/c-sharp)
-- **[TypeScript](/sdks/typescript)** - [(Quickstart)](/quickstarts/typescript)
-- **[Unreal Engine](/sdks/unreal)** - C++ and Blueprint support [(Tutorial)](/tutorials/unreal/part-1)
+- **[Rust](/clients/rust)** - [(Quickstart)](/quickstarts/rust)
+- **[C#](/clients/c-sharp)** - [(Quickstart)](/quickstarts/c-sharp)
+- **[TypeScript](/clients/typescript)** - [(Quickstart)](/quickstarts/typescript)
+- **[Unreal Engine](/clients/unreal)** - C++ and Blueprint support [(Tutorial)](/tutorials/unreal/part-1)
 
 ### Unity
 

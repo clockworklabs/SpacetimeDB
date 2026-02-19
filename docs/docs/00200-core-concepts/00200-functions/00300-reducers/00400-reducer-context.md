@@ -5,6 +5,7 @@ slug: /functions/reducers/reducer-context
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Every reducer receives a special context parameter as its first argument. This context provides read-write access to the database, information about the caller, and additional utilities like random number generation.
@@ -84,6 +85,8 @@ fn create_user(ctx: &ReducerContext, name: String) {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 #include <spacetimedb.h>

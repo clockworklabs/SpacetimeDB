@@ -5,6 +5,7 @@ slug: /tables/auto-increment
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Auto-increment columns automatically generate unique integer values for new rows. When you insert a row with a zero value in an auto-increment column, SpacetimeDB assigns the next value from an internal sequence.
@@ -71,7 +72,7 @@ Auto-increment columns must be integer types: `sbyte`, `byte`, `short`, `ushort`
 ```rust
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = post, public)]
+#[spacetimedb::table(accessor = post, public)]
 pub struct Post {
     #[primary_key]
     #[auto_inc]
@@ -95,6 +96,8 @@ Auto-increment columns must be integer types: `i8`, `i16`, `i32`, `i64`, `i128`,
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Post {
@@ -214,7 +217,7 @@ public partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[auto_inc]
     user_id: u64,
@@ -287,14 +290,14 @@ If your application requires strictly sequential numbering without gaps, maintai
 use spacetimedb::{ReducerContext, Table};
 
 #[derive(Clone)]
-#[spacetimedb::table(name = counter, public)]
+#[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
     name: String,
     value: u64,
 }
 
-#[spacetimedb::table(name = invoice, public)]
+#[spacetimedb::table(accessor = invoice, public)]
 pub struct Invoice {
     #[primary_key]
     invoice_number: u64,
@@ -328,7 +331,7 @@ This pattern guarantees sequential values because the counter update and row ins
 Auto-increment columns are commonly combined with primary keys:
 
 ```rust
-#[spacetimedb::table(name = post, public)]
+#[spacetimedb::table(accessor = post, public)]
 pub struct Post {
     #[primary_key]
     #[auto_inc]
@@ -340,7 +343,7 @@ pub struct Post {
 Auto-increment columns can also be combined with unique constraints:
 
 ```rust
-#[spacetimedb::table(name = item, public)]
+#[spacetimedb::table(accessor = item, public)]
 pub struct Item {
     #[primary_key]
     name: String,
