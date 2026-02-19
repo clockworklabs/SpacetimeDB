@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-19T17:22:16.754Z",
+  "generated_at": "2026-02-19T17:51:09.850Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -1915,41 +1915,57 @@
             "Grok 3 Mini (Beta)": {
               "categories": {
                 "basics": {
-                  "tasks": 1,
-                  "total_tests": 1,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0,
-                  "task_pass_equiv": 0.0,
-                  "task_pass_pct": 0.0
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 20,
+                  "pass_pct": 74.07407,
+                  "task_pass_equiv": 7.833333,
+                  "task_pass_pct": 65.27777
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 8,
+                  "pass_pct": 23.529411,
+                  "task_pass_equiv": 2.5333335,
+                  "task_pass_pct": 25.333336
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 1,
-                "passed_tests": 0,
-                "pass_pct": 0.0,
-                "task_pass_equiv": 0.0,
-                "task_pass_pct": 0.0
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 28,
+                "pass_pct": 45.901638,
+                "task_pass_equiv": 10.366666,
+                "task_pass_pct": 47.12121
               }
             },
             "Grok 4": {
               "categories": {
                 "basics": {
-                  "tasks": 1,
-                  "total_tests": 1,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0,
-                  "task_pass_equiv": 0.0,
-                  "task_pass_pct": 0.0
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 24,
+                  "pass_pct": 88.888885,
+                  "task_pass_equiv": 9.0,
+                  "task_pass_pct": 75.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 24,
+                  "pass_pct": 70.588234,
+                  "task_pass_equiv": 6.866667,
+                  "task_pass_pct": 68.666664
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 1,
-                "passed_tests": 0,
-                "pass_pct": 0.0,
-                "task_pass_equiv": 0.0,
-                "task_pass_pct": 0.0
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 48,
+                "pass_pct": 78.68852,
+                "task_pass_equiv": 15.866666,
+                "task_pass_pct": 72.12121
               }
             },
             "Meta Llama 3.1 405B": {
