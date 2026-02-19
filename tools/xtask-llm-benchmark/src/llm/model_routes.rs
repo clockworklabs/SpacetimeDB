@@ -76,6 +76,11 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             api_model: "grok-4",
         },
         ModelRoute {
+            display_name: "Grok Code Fast 1",
+            vendor: Xai,
+            api_model: "grok-code-fast-1",
+        },
+        ModelRoute {
             display_name: "Grok 3 Mini (Beta)",
             vendor: Xai,
             api_model: "grok-3-mini",

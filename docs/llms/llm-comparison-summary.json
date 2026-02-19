@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-19T17:51:09.850Z",
+  "generated_at": "2026-02-19T18:50:23.246Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -1966,6 +1966,34 @@
                 "pass_pct": 78.68852,
                 "task_pass_equiv": 15.866666,
                 "task_pass_pct": 72.12121
+              }
+            },
+            "Grok Code Fast 1": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 24,
+                  "pass_pct": 88.888885,
+                  "task_pass_equiv": 9.0,
+                  "task_pass_pct": 75.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 31,
+                  "passed_tests": 20,
+                  "pass_pct": 64.51613,
+                  "task_pass_equiv": 5.866667,
+                  "task_pass_pct": 58.66667
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 58,
+                "passed_tests": 44,
+                "pass_pct": 75.86207,
+                "task_pass_equiv": 14.866666,
+                "task_pass_pct": 67.57575
               }
             },
             "Meta Llama 3.1 405B": {

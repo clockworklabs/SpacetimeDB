@@ -151,6 +151,9 @@ pub fn meta_ctx_limit_tokens(model: &str) -> usize {
 
 pub fn xai_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
+    if m.contains("grok-code-fast-1") {
+        return 256_000;
+    }
     if m.contains("grok-4") || m.contains("grok-3") {
         return 128_000;
     }
