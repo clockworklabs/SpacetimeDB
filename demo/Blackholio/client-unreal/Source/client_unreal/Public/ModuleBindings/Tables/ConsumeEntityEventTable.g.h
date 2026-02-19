@@ -5,23 +5,23 @@
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
 #include "Types/Builtins.h"
-#include "ModuleBindings/Types/EntityType.g.h"
+#include "ModuleBindings/Types/ConsumeEntityEventType.g.h"
 #include "Tables/RemoteTable.h"
 #include "DBCache/WithBsatn.h"
 #include "DBCache/TableHandle.h"
 #include "DBCache/TableCache.h"
-#include "EntityTable.g.generated.h"
+#include "ConsumeEntityEventTable.g.generated.h"
 
 UCLASS(BlueprintType)
-class CLIENT_UNREAL_API UEntityTable : public URemoteTable
+class CLIENT_UNREAL_API UConsumeEntityEventTable : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
     void PostInitialize();
 
-    /** Update function for entity table*/
-    FTableAppliedDiff<FEntityType> Update(TArray<FWithBsatn<FEntityType>> InsertsRef, TArray<FWithBsatn<FEntityType>> DeletesRef);
+    /** Update function for consume_entity_event table*/
+    FTableAppliedDiff<FConsumeEntityEventType> Update(TArray<FWithBsatn<FConsumeEntityEventType>> InsertsRef, TArray<FWithBsatn<FConsumeEntityEventType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
@@ -29,36 +29,36 @@ public:
 
     /** Return all subscribed rows in the cache */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-    TArray<FEntityType> Iter() const;
+    TArray<FConsumeEntityEventType> Iter() const;
 
     // Table Events
     DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( 
-        FOnEntityInsert,
+        FOnConsumeEntityEventInsert,
         const FEventContext&, Context,
-        const FEntityType&, NewRow);
+        const FConsumeEntityEventType&, NewRow);
 
     DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams( 
-        FOnEntityUpdate,
+        FOnConsumeEntityEventUpdate,
         const FEventContext&, Context,
-        const FEntityType&, OldRow,
-        const FEntityType&, NewRow);
+        const FConsumeEntityEventType&, OldRow,
+        const FConsumeEntityEventType&, NewRow);
 
     DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( 
-        FOnEntityDelete,
+        FOnConsumeEntityEventDelete,
         const FEventContext&, Context,
-        const FEntityType&, DeletedRow);
+        const FConsumeEntityEventType&, DeletedRow);
 
     UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnEntityInsert OnInsert;
+    FOnConsumeEntityEventInsert OnInsert;
 
     UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnEntityUpdate OnUpdate;
+    FOnConsumeEntityEventUpdate OnUpdate;
 
     UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnEntityDelete OnDelete;
+    FOnConsumeEntityEventDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("entity");
+    const FString TableName = TEXT("consume_entity_event");
 
-    TSharedPtr<UClientCache<FEntityType>> Data;
+    TSharedPtr<UClientCache<FConsumeEntityEventType>> Data;
 };

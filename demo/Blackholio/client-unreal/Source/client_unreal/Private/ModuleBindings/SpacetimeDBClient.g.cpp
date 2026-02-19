@@ -6,6 +6,7 @@
 #include "BSATN/UEBSATNHelpers.h"
 #include "ModuleBindings/Tables/CircleTable.g.h"
 #include "ModuleBindings/Tables/ConfigTable.g.h"
+#include "ModuleBindings/Tables/ConsumeEntityEventTable.g.h"
 #include "ModuleBindings/Tables/EntityTable.g.h"
 #include "ModuleBindings/Tables/FoodTable.g.h"
 #include "ModuleBindings/Tables/PlayerTable.g.h"
@@ -63,6 +64,7 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 
 	RegisterTable<FCircleType, UCircleTable, FEventContext>(TEXT("circle"), Db->Circle);
 	RegisterTable<FConfigType, UConfigTable, FEventContext>(TEXT("config"), Db->Config);
+	RegisterTable<FConsumeEntityEventType, UConsumeEntityEventTable, FEventContext>(TEXT("consume_entity_event"), Db->ConsumeEntityEvent);
 	RegisterTable<FEntityType, UEntityTable, FEventContext>(TEXT("entity"), Db->Entity);
 	RegisterTable<FFoodType, UFoodTable, FEventContext>(TEXT("food"), Db->Food);
 	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("player"), Db->Player);
@@ -103,6 +105,7 @@ void URemoteTables::Initialize()
 	/** Creating tables */
 	Circle = NewObject<UCircleTable>(this);
 	Config = NewObject<UConfigTable>(this);
+	ConsumeEntityEvent = NewObject<UConsumeEntityEventTable>(this);
 	Entity = NewObject<UEntityTable>(this);
 	Food = NewObject<UFoodTable>(this);
 	Player = NewObject<UPlayerTable>(this);
@@ -111,6 +114,7 @@ void URemoteTables::Initialize()
 	/** Initialization */
 	Circle->PostInitialize();
 	Config->PostInitialize();
+	ConsumeEntityEvent->PostInitialize();
 	Entity->PostInitialize();
 	Food->PostInitialize();
 	Player->PostInitialize();
