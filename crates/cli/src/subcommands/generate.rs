@@ -293,7 +293,6 @@ pub struct GenerateRunConfig {
 fn prepare_generate_run_configs<'a>(
     generate_configs: Vec<CommandConfig<'a>>,
     _using_config: bool,
-    has_json_module: bool,
 ) -> anyhow::Result<Vec<GenerateRunConfig>> {
     let mut runs = Vec::with_capacity(generate_configs.len());
 
@@ -324,11 +323,11 @@ fn prepare_generate_run_configs<'a>(
         }
 
         // Validate module source path for source-based generation.
-        if !has_json_module && wasm_file.is_none() && js_file.is_none() && !project_path.is_dir() {
+        if wasm_file.is_none() && js_file.is_none() && !project_path.is_dir() {
             anyhow::bail!(
                 "Could not find module source at '{}'. \
                  If this is not correct, pass --module-path or add module-path in spacetime.json. \
-                 You can also pass --bin-path/--js-path/--module-def to generate without building from source.",
+                 You can also pass --bin-path/--js-path to generate without building from source.",
                 project_path.display()
             );
         }
@@ -614,10 +613,10 @@ pub async fn exec_ex(
         (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
     };
 
+    let run_configs = prepare_generate_run_configs(generate_configs, using_config)?;
     let json_module = args
         .get_many::<PathBuf>("json_module")
         .map(|vals| vals.cloned().collect::<Vec<_>>());
-    let run_configs = prepare_generate_run_configs(generate_configs, using_config, json_module.is_some())?;
     let force = args.get_flag("force");
     let namespace_from_cli = args.value_source("namespace") == Some(ValueSource::CommandLine);
 
@@ -651,7 +650,7 @@ pub async fn exec_from_entries(
         })
         .collect::<Result<Vec<_>, anyhow::Error>>()?;
 
-    let run_configs = prepare_generate_run_configs(generate_configs, true, false)?;
+    let run_configs = prepare_generate_run_configs(generate_configs, true)?;
     run_prepared_generate_configs(run_configs, extract_descriptions, None, force, false).await
 }
 
@@ -951,7 +950,7 @@ mod tests {
         );
 
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
-        let runs = prepare_generate_run_configs(vec![command_config], false, false).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].out_dir, PathBuf::from("src/module_bindings"));
     }
@@ -964,28 +963,8 @@ mod tests {
             .clone()
             .get_matches_from(vec!["generate", "--lang", "rust", "--bin-path", "dummy.wasm"]);
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
-        let runs = prepare_generate_run_configs(vec![command_config], false, false).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].project_path, PathBuf::from("spacetimedb"));
-    }
-
-    #[test]
-    fn test_module_def_does_not_require_existing_module_path() {
-        let cmd = cli();
-        let schema = build_generate_config_schema(&cmd).unwrap();
-        let matches = cmd.clone().get_matches_from(vec![
-            "generate",
-            "--lang",
-            "typescript",
-            "--out-dir",
-            "src/module_bindings",
-            "--module-def",
-            "schema.json",
-        ]);
-        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
-        let runs = prepare_generate_run_configs(vec![command_config], false, true).unwrap();
-        assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].project_path, PathBuf::from("spacetimedb"));
-        assert_eq!(runs[0].lang, Language::TypeScript);
     }
 
     #[test]
@@ -1002,7 +981,7 @@ mod tests {
             serde_json::Value::String(module_dir.display().to_string()),
         );
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
-        let runs = prepare_generate_run_configs(vec![command_config], false, false).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].out_dir, PathBuf::from("src/module_bindings"));
     }
 
@@ -1020,7 +999,7 @@ mod tests {
             serde_json::Value::String(module_dir.display().to_string()),
         );
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
-        let runs = prepare_generate_run_configs(vec![command_config], false, false).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].out_dir, PathBuf::from("module_bindings"));
     }
 
@@ -1039,7 +1018,7 @@ mod tests {
             serde_json::Value::String(module_dir.display().to_string()),
         );
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
-        let runs = prepare_generate_run_configs(vec![command_config], false, false).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].lang, Language::TypeScript);
         assert_eq!(runs[0].out_dir, PathBuf::from("src/module_bindings"));
     }
@@ -1059,7 +1038,7 @@ mod tests {
             serde_json::Value::String(module_dir.display().to_string()),
         );
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
-        let runs = prepare_generate_run_configs(vec![command_config], false, false).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
         assert_eq!(runs[0].lang, Language::Csharp);
         assert_eq!(runs[0].out_dir, PathBuf::from("module_bindings"));
     }
@@ -1070,7 +1049,7 @@ mod tests {
         let schema = build_generate_config_schema(&cmd).unwrap();
         let matches = cmd.clone().get_matches_from(vec!["generate"]);
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
-        let err = prepare_generate_run_configs(vec![command_config], false, false).unwrap_err();
+        let err = prepare_generate_run_configs(vec![command_config], false).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("Could not find module source at 'spacetimedb'"));
         assert!(msg.contains("--module-path"));
@@ -1091,7 +1070,7 @@ mod tests {
             serde_json::Value::String(module_dir.display().to_string()),
         );
         let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
-        let err = prepare_generate_run_configs(vec![command_config], false, false).unwrap_err();
+        let err = prepare_generate_run_configs(vec![command_config], false).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("Could not auto-detect client language"));
         assert!(msg.contains("--lang"));
