@@ -215,6 +215,13 @@ pub(crate) struct ExceptionThrown {
     _priv: (),
 }
 
+impl ExceptionThrown {
+    /// Turns a caught JS exception in `scope` into a [`JSError`].
+    pub(crate) fn into_error(self, scope: &mut PinTryCatch) -> JsError {
+        JsError::from_caught(scope)
+    }
+}
+
 /// A result where the error indicates that an exception has already been thrown in V8.
 pub(crate) type ExcResult<T> = Result<T, ExceptionThrown>;
 
@@ -247,6 +254,15 @@ pub(super) enum ErrorOrException<Exc> {
     Exception(Exc),
 }
 
+impl<Exc> ErrorOrException<Exc> {
+    pub(super) fn map_exception<Exc2>(self, f: impl FnOnce(Exc) -> Exc2) -> ErrorOrException<Exc2> {
+        match self {
+            ErrorOrException::Err(e) => ErrorOrException::Err(e),
+            ErrorOrException::Exception(exc) => ErrorOrException::Exception(f(exc)),
+        }
+    }
+}
+
 impl<E> From<anyhow::Error> for ErrorOrException<E> {
     fn from(e: anyhow::Error) -> Self {
         Self::Err(e)
@@ -277,8 +293,11 @@ pub(super) struct JsError {
 
 impl fmt::Display for JsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "js error {}", self.msg)?;
-        writeln!(f, "{}", self.trace)?;
+        let Self { msg, trace } = self;
+        write!(f, "{msg}")?;
+        if !trace.frames.is_empty() {
+            write!(f, "\n{trace}")?;
+        }
         Ok(())
     }
 }
@@ -314,8 +333,11 @@ impl JsStackTrace {
 
 impl fmt::Display for JsStackTrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for frame in self.frames.iter() {
-            writeln!(f, "\t{frame}")?;
+        for (i, frame) in self.frames.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?
+            }
+            write!(f, "\t{frame}")?;
         }
 
         Ok(())
@@ -526,10 +548,7 @@ impl JsError {
 pub(super) fn log_traceback(replica_ctx: &ReplicaContext, func_type: &str, func: &str, e: &anyhow::Error) {
     log::info!("{func_type} \"{func}\" runtime error: {e:}");
     if let Some(js_err) = e.downcast_ref::<JsError>() {
-        log::info!("js error {}", js_err.msg);
-        for (index, frame) in js_err.trace.frames.iter().enumerate() {
-            log::info!("  Frame #{index}: {frame}");
-        }
+        log::info!("JS error: {js_err}",);
 
         // Also log to module logs.
         let first_frame = js_err.trace.frames.first();
@@ -554,35 +573,7 @@ pub(super) fn catch_exception<'scope, T>(
     body: impl FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
 ) -> Result<T, ErrorOrException<JsError>> {
     tc_scope!(scope, scope);
-    body(scope).map_err(|e| match e {
-        ErrorOrException::Err(e) => ErrorOrException::Err(e),
-        ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
-    })
+    body(scope).map_err(|e| e.map_exception(|exc| exc.into_error(scope)))
 }
 
 pub(super) type PinTryCatch<'scope, 'iso, 'x, 's> = PinnedRef<'x, TryCatch<'s, 'scope, HandleScope<'iso>>>;
-
-/// Encodes whether it is safe to continue using the [`Isolate`]
-/// for further execution after [`catch_exception`] has happened.
-#[derive(Debug)]
-pub(super) enum CanContinue {
-    Yes,
-    YesCancelTermination,
-    No,
-}
-
-impl CanContinue {
-    /// Check the try/catch scope for whether we `CanContinue`.
-    pub(super) fn from_catch(scope: &PinTryCatch<'_, '_, '_, '_>) -> Self {
-        if scope.can_continue() {
-            // We can continue.
-            CanContinue::Yes
-        } else if scope.has_terminated() {
-            // We can continue if we do `Isolate::cancel_terminate_execution`.
-            CanContinue::YesCancelTermination
-        } else {
-            // We cannot.
-            CanContinue::No
-        }
-    }
-}
