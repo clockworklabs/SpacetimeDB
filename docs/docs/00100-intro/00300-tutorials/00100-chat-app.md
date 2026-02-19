@@ -8,6 +8,7 @@ toc_max_heading_level: 2
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 In this tutorial, we'll implement a simple chat server as a SpacetimeDB module. You can write your module in TypeScript, C#, or Rust - use the tabs throughout this guide to see code examples in your preferred language.
@@ -43,6 +44,8 @@ SpacetimeDB runs your module inside the database host (not Node.js). There's no 
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 - Each table is defined as a C++ struct with the `SPACETIMEDB_STRUCT` macro to register its fields, and the `SPACETIMEDB_TABLE` macro to create the table. An instance of the struct represents a row, and each field represents a column.
 - By default, tables are **private**. Use `SPACETIMEDB_TABLE(StructName, table_name, Public)` to make a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
@@ -840,9 +843,36 @@ spacetime logs --server local quickstart-chat
 
 SpacetimeDB supports a subset of SQL so you can query your data:
 
+<Tabs groupId="lang">
+<TabItem value="typescript" label="TypeScript">
+
 ```bash
 spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```bash
+spacetime sql --server local quickstart-chat "SELECT * FROM Message"
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```bash
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
+```
+
+</TabItem>
+</Tabs>
 
 Output will resemble:
 
@@ -923,8 +953,9 @@ The app we're going to create is a basic chat application. We will begin by crea
 Replace the entire contents of `src/App.tsx` with the following:
 
 ```tsx
-import React, { useEffect, useState } from 'react';
-import { Message, tables, reducers } from './module_bindings';
+import React, { useState } from 'react';
+import { tables, reducers } from './module_bindings';
+import type * as Types from './module_bindings/types';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
@@ -939,11 +970,11 @@ export type PrettyMessage = {
 function App() {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessages, setSystemMessages] = useState([] as Infer<typeof Message>[]);
+  const [systemMessages, setSystemMessages] = useState([] as Types.Message[]);
   const [newMessage, setNewMessage] = useState('');
 
-  const onlineUsers: User[] = [];
-  const offlineUsers: User[] = [];
+  const onlineUsers: Types.User[] = [];
+  const offlineUsers: Types.User[] = [];
   const users = [...onlineUsers, ...offlineUsers];
   const prettyMessages: PrettyMessage[] = [];
 
@@ -1327,16 +1358,22 @@ Take a look inside `src/module_bindings`. The CLI should have generated several 
 
 ```
 module_bindings
-├── client_connected_reducer.ts
-├── client_disconnected_reducer.ts
 ├── index.ts
-├── init_reducer.ts
+├── init_type.ts
 ├── message_table.ts
 ├── message_type.ts
+├── on_connect_type.ts
+├── on_disconnect_type.ts
 ├── send_message_reducer.ts
+├── send_message_type.ts
 ├── set_name_reducer.ts
+├── set_name_type.ts
 ├── user_table.ts
-└── user_type.ts
+├── user_type.ts
+└── types
+    ├── index.ts
+    ├── procedures.ts
+    └── reducers.ts
 ```
 
 With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder.
@@ -1366,8 +1403,8 @@ Now that we've imported the `DbConnection` type, we can use it to connect our ap
 Replace the body of the `main.tsx` file with the following, just below your imports:
 
 ```tsx
-const HOST = 'ws://localhost:3000';
-const DB_NAME = 'quickstart-chat';
+const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'quickstart-chat';
 const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
 const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
@@ -1376,9 +1413,6 @@ const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
     'Connected to SpacetimeDB with identity:',
     identity.toHexString()
   );
-  conn.reducers.onSendMessage(() => {
-    console.log('Message sent.');
-  });
 };
 
 const onDisconnect = () => {
@@ -1406,7 +1440,7 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store the connection state, our `Identity`, and our SpacetimeDB credentials in our React state. If there is an error connecting, we also print that error to the console.
+Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store our credentials in `localStorage` and log our `Identity`. If there is an error connecting, we also print that error to the console.
 
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
@@ -1435,7 +1469,7 @@ const sendMessage = useReducer(reducers.sendMessage);
 const [messages] = useTable(tables.message);
 ```
 
-Next replace `const onlineUsers: User[] = [];` with the following:
+Next replace `const onlineUsers: Types.User[] = [];` with the following:
 
 ```tsx
 // Subscribe to all online users in the chat
@@ -1600,7 +1634,7 @@ const prettyMessages: PrettyMessage[] = Array.from(messages)
   });
 ```
 
-Finally, let's also subscribe to offline users so we can show them in the sidebar as well. Replace `const offlineUsers: User[] = [];` with:
+Finally, let's also subscribe to offline users so we can show them in the sidebar as well. Replace `const offlineUsers: Types.User[] = [];` with:
 
 ```tsx
 const [offlineUsers] = useTable(
@@ -1637,6 +1671,8 @@ Next, we'll show you how to get up and running with a simple SpacetimeDB app wit
 
 We'll implement a command-line client for the module created in our [Rust](/docs/quickstarts/rust) or [C# Module](/docs/quickstarts/c-sharp) Quickstart guides. Ensure you followed one of these guides before continuing.
 
+If you've not already installed .NET 8, the [C# Module](/docs/quickstarts/c-sharp) Quickstart guide will show you how to install it, which we will need to run the client.
+
 ### Project structure
 
 Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
@@ -1661,6 +1697,39 @@ Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/S
 dotnet add package SpacetimeDB.ClientSDK
 ```
 
+Note:
+For developers with multiple .NET version installed, you may need to update the `.csproj` file at the root of your client project, to specify .NET 8.0 in the `<TargetFramework>` element like this:`<TargetFramework>net8.0</TargetFramework>`
+For developers creating both a C# server and a C# client, you will need to update the `.csproj` file at the root of your server project, to ignore the server code in the `spacetimedb` directory by adding the following:
+```xml
+  <ItemGroup>
+    <Compile Remove="spacetimedb/**" />
+  </ItemGroup>
+```
+Or simply replace the contents of your client's `.csproj` file with:
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.ClientSDK" Version="2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="spacetimedb/**" />
+  </ItemGroup>
+
+</Project>
+```
+
 ### Clear `Program.cs`
 
 Clear out any data from `Program.cs` so we can write our chat client.
@@ -1680,8 +1749,6 @@ Take a look inside `module_bindings`. The CLI should have generated three folder
 ```
 module_bindings
 ├── Reducers
-│   ├── ClientConnected.g.cs
-│   ├── ClientDisconnected.g.cs
 │   ├── SendMessage.g.cs
 │   └── SetName.g.cs
 ├── Tables
@@ -2181,7 +2248,7 @@ Main();
 Now, we can run the client by hitting start in Visual Studio or Rider; or by running the following command in the `client` directory:
 
 ```bash
-dotnet run --project client
+dotnet run --project quickstart-chat
 ```
 
 </TabItem>
@@ -2215,7 +2282,7 @@ cargo init
 Below the `[dependencies]` line in `Cargo.toml`, add:
 
 ```toml
-spacetimedb-sdk = "1.0"
+spacetimedb-sdk = "2.0"
 hex = "0.4"
 ```
 
@@ -2246,8 +2313,6 @@ Take a look inside `src/module_bindings`. The CLI should have generated a few fi
 
 ```
 module_bindings/
-├── client_connected_reducer.rs
-├── client_disconnected_reducer.rs
 ├── message_table.rs
 ├── message_type.rs
 ├── mod.rs

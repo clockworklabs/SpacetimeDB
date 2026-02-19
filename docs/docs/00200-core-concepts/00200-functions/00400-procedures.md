@@ -5,6 +5,7 @@ slug: /functions/procedures
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 A **procedure** is a function exported by a [database](/databases), similar to a [reducer](/functions/reducers).
@@ -97,6 +98,8 @@ fn add_two_numbers(ctx: &mut spacetimedb::ProcedureContext, lhs: u32, rhs: u32) 
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 :::warning Unstable Feature
 Procedures in C++ are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
@@ -228,7 +231,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureContext::with_tx`.
 
 ```rust
-#[spacetimedb::table(name = my_table)]
+#[spacetimedb::table(accessor = my_table)]
 struct MyTable {
     a: u32,
     b: String,
@@ -516,7 +519,7 @@ may return a value, and that value will be returned to the calling procedure.
 Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
 
 ```rust
-#[spacetimedb::table(name = player)]
+#[spacetimedb::table(accessor = player)]
 struct Player {
     id: spacetimedb::Identity,
     level: u32,
@@ -1189,6 +1192,7 @@ A common use case for procedures is integrating with external APIs like OpenAI's
 
 ```typescript
 import { schema, t, table, SenderError } from 'spacetimedb/server';
+import { TimeDuration } from 'spacetimedb';
 
 const aiMessage = table(
   { name: 'ai_message', public: true },
@@ -1218,6 +1222,8 @@ export const ask_ai = spacetimedb.procedure(
         model: 'gpt-4',
         messages: [{ role: 'user', content: prompt }],
       }),
+      // Give it some time to think
+      timeout: TimeDuration.fromMillis(3000),
     });
 
     if (response.status !== 200) {
@@ -1284,7 +1290,9 @@ public static partial class Module
                 new HttpHeader("Content-Type", "application/json"),
                 new HttpHeader("Authorization", $"Bearer {apiKey}")
             },
-            Body = HttpBody.FromString(requestBody)
+            Body = HttpBody.FromString(requestBody),
+            // Give it some time to think
+            Timeout = TimeSpan.FromMilliseconds(3000)
         };
 
         // Make the HTTP request
@@ -1334,7 +1342,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{table, procedure, ProcedureContext, Identity, Timestamp};
+use spacetimedb::{procedure, table, Identity, ProcedureContext, Table, TimeDuration, Timestamp};
 
 #[table(accessor = ai_message, public)]
 pub struct AiMessage {
@@ -1344,20 +1352,40 @@ pub struct AiMessage {
     created_at: Timestamp,
 }
 
+#[derive(serde::Deserialize)]
+struct AiResponse {
+    choices: Vec<AiResponseChoice>,
+    // more fields...
+}
+
+#[derive(serde::Deserialize)]
+struct AiResponseChoice {
+    message: AiResponseMessage,
+    // more fields...
+}
+
+#[derive(serde::Deserialize)]
+struct AiResponseMessage {
+    content: String,
+    // more fields...
+}
+
 #[procedure]
 pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Result<String, String> {
     // Build the request to OpenAI's API
-    let request_body = format!(
-        r#"{{"model": "gpt-4", "messages": [{{"role": "user", "content": "{}"}}]}}"#,
-        prompt.replace('"', "\\\"")
-    );
+    let request_body = serde_json::json!({
+        "model": "gpt-4",
+        "messages": [{ "role": "user", "content": prompt }]
+    });
 
     let request = spacetimedb::http::Request::builder()
         .uri("https://api.openai.com/v1/chat/completions")
         .method("POST")
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", api_key))
-        .body(request_body)
+        // Give it some time to think
+        .extension(spacetimedb::http::Timeout(TimeDuration::from_micros(3_000_000)))
+        .body(serde_json::to_vec(&request_body).unwrap())
         .map_err(|e| format!("Failed to build request: {e}"))?;
 
     // Make the HTTP request
@@ -1370,16 +1398,15 @@ pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Re
         return Err(format!("API returned status {}", parts.status));
     }
 
-    let body_str = body.into_string_lossy();
-
-    // Parse the response (simplified - in production use serde_json)
-    let ai_response = extract_content(&body_str)
-        .ok_or("Failed to parse AI response")?;
+    let body = body.into_bytes();
+    let ai_response: AiResponse =
+        serde_json::from_slice(&body).map_err(|e| format!("Failed to parse AI response: {e}"))?;
+    let ai_response = ai_response.choices[0].message.content.clone();
 
     // Store the conversation in the database
     ctx.with_tx(|tx_ctx| {
         tx_ctx.db.ai_message().insert(AiMessage {
-            user: tx_ctx.sender,
+            user: tx_ctx.sender(),
             prompt: prompt.clone(),
             response: ai_response.clone(),
             created_at: tx_ctx.timestamp,
@@ -1387,13 +1414,6 @@ pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Re
     });
 
     Ok(ai_response)
-}
-
-fn extract_content(json: &str) -> Option<String> {
-    // Simple extraction - in production, use proper JSON parsing
-    let content_start = json.find("\"content\":")? + 11;
-    let content_end = json[content_start..].find('"')? + content_start;
-    Some(json[content_start..content_end].to_string())
 }
 ```
 

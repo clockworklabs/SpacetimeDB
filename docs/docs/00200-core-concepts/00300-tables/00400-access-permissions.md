@@ -5,6 +5,7 @@ slug: /tables/access-permissions
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB controls data access through table visibility and context-based permissions. Tables can be public or private, and different execution contexts (reducers, views, clients) have different levels of access.
@@ -69,7 +70,7 @@ public partial struct Player
 
 ```rust
 // Private table (default) - only accessible from server-side code
-#[spacetimedb::table(name = internal_config)]
+#[spacetimedb::table(accessor = internal_config)]
 pub struct InternalConfig {
     #[primary_key]
     key: String,
@@ -77,7 +78,7 @@ pub struct InternalConfig {
 }
 
 // Public table - clients can subscribe and query
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -89,6 +90,8 @@ pub struct Player {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 // Private table (default) - only accessible from server-side code
@@ -496,7 +499,7 @@ public partial class Module
 use spacetimedb::{Identity, Timestamp, ViewContext};
 
 // Private table containing all messages
-#[spacetimedb::table(name = message)]  // Private by default
+#[spacetimedb::table(accessor = message)]  // Private by default
 pub struct Message {
     #[primary_key]
     #[auto_inc]
@@ -664,7 +667,7 @@ public partial class Module
 use spacetimedb::{SpacetimeType, ViewContext, Timestamp, Identity};
 
 // Private table with sensitive data
-#[spacetimedb::table(name = user_account)]  // Private by default
+#[spacetimedb::table(accessor = user_account)]  // Private by default
 pub struct UserAccount {
     #[primary_key]
     #[auto_inc]
@@ -863,7 +866,7 @@ public partial class Module
 use spacetimedb::{SpacetimeType, Identity, ViewContext};
 
 // Private table with all employee data
-#[spacetimedb::table(name = employee)]
+#[spacetimedb::table(accessor = employee)]
 pub struct Employee {
     #[primary_key]
     id: u64,

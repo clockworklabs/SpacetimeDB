@@ -5,6 +5,7 @@ slug: /intro/key-architecture
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 ## Host
 
@@ -61,7 +62,7 @@ public partial struct Player
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = players, public)]
+#[spacetimedb::table(accessor = players, public)]
 pub struct Player {
    #[primary_key]
    id: u64,
@@ -73,6 +74,8 @@ pub struct Player {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Player {

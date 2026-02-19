@@ -1,7 +1,7 @@
 use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
 use std::time::Duration;
 
-#[table(name = tick_timer, scheduled(tick))]
+#[table(accessor = tick_timer, scheduled(tick))]
 pub struct TickTimer {
     #[primary_key]
     #[auto_inc]

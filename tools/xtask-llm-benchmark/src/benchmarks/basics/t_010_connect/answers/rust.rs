@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
-#[table(name = event)]
+#[table(accessor = event)]
 pub struct Event {
     #[primary_key]
     #[auto_inc]
@@ -10,10 +10,16 @@ pub struct Event {
 
 #[reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
-    ctx.db.event().insert(Event { id: 0, kind: "connected".into() });
+    ctx.db.event().insert(Event {
+        id: 0,
+        kind: "connected".into(),
+    });
 }
 
 #[reducer(client_disconnected)]
 pub fn client_disconnected(ctx: &ReducerContext) {
-    ctx.db.event().insert(Event { id: 0, kind: "disconnected".into() });
+    ctx.db.event().insert(Event {
+        id: 0,
+        kind: "disconnected".into(),
+    });
 }
