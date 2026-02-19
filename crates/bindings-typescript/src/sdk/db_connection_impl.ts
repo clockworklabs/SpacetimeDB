@@ -45,7 +45,7 @@ import {
   SubscriptionManager,
   type SubscribeEvent,
 } from './subscription_builder_impl.ts';
-import { stdbLogger } from './logger.ts';
+import { stdbLogger, stringify } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type {
   ReducerEventInfo,
@@ -603,6 +603,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   async #processMessage(data: Uint8Array): Promise<void> {
     const serverMessage = ServerMessage.deserialize(new BinaryReader(data));
+    stdbLogger('trace', () => `Processing server message: ${stringify(serverMessage)}`);
     switch (serverMessage.tag) {
       case 'InitialConnection': {
         this.identity = serverMessage.value.identity;
@@ -636,6 +637,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('applied', subscriptionEventContext);
+        stdbLogger('trace', `Calling ${callbacks.length} triggered row callbacks`);
         for (const callback of callbacks) {
           callback.cb();
         }
@@ -664,6 +666,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('end', subscriptionEventContext);
         this.#subscriptionManager.subscriptions.delete(querySetId);
+        stdbLogger('trace', `Calling ${callbacks.length} triggered row callbacks`);
         for (const callback of callbacks) {
           callback.cb();
         }
@@ -688,7 +691,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           subscription.emitter.emit('error', errorContext, error);
           this.#subscriptionManager.subscriptions.delete(querySetId);
         } else {
-          console.error(
+          stdbLogger('error',
             `Received SubscriptionError for unknown querySetId ${querySetId}:`,
             error
           );
@@ -705,6 +708,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           eventContext,
           serverMessage.value
         );
+        stdbLogger('trace', `Calling ${callbacks.length} triggered row callbacks`);
         for (const callback of callbacks) {
           callback.cb();
         }
@@ -739,6 +743,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             eventContext,
             result.value.transactionUpdate
           );
+          stdbLogger('trace', `Calling ${callbacks.length} triggered row callbacks`);
           for (const callback of callbacks) {
             callback.cb();
           }
@@ -761,7 +766,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         break;
       }
       case 'OneOffQueryResult': {
-        console.warn(
+        stdbLogger(
+          'warn',
           'Received OneOffQueryResult but SDK does not expose one-off query APIs yet.'
         );
         break;

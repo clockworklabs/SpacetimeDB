@@ -1,15 +1,5 @@
-<<<<<<< HEAD
-import { BinaryReader, BinaryWriter, type Infer } from '../';
-import ClientMessageSerde from './client_api/client_message_type';
-import ServerMessage from './client_api/server_message_type';
-import type { ClientMessage } from './client_api/types';
-||||||| 0cb23814d
-import { BinaryWriter, type Infer } from '../';
-import ServerMessage from './client_api/server_message_type';
-=======
 import { BinaryReader, BinaryWriter } from '../';
 import { ClientMessage, ServerMessage } from './client_api/types';
->>>>>>> jsdt/fix-generate-issue
 
 class WebsocketTestAdapter {
   onclose: any;
@@ -29,14 +19,7 @@ class WebsocketTestAdapter {
   }
 
   send(message: any): void {
-<<<<<<< HEAD
-    const parsedMessage = ClientMessageSerde.deserialize(
-      new BinaryReader(message)
-    );
-||||||| 0cb23814d
-=======
     const parsedMessage = ClientMessage.deserialize(new BinaryReader(message));
->>>>>>> jsdt/fix-generate-issue
     this.outgoingMessages.push(parsedMessage);
     // console.ClientMessageSerde.deserialize(message);
     this.messageQueue.push(message);
