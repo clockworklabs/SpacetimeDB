@@ -730,6 +730,11 @@ impl<'a> CommandConfig<'a> {
         self.config_values.get(key)
     }
 
+    /// Returns true when this key was explicitly provided via CLI.
+    pub fn is_from_cli(&self, key: &str) -> bool {
+        self.schema.is_from_cli(self.matches, key)
+    }
+
     /// Validate that all required keys are present in either config or CLI.
     pub fn validate(&self) -> Result<(), CommandConfigError> {
         for key in &self.schema.keys {
