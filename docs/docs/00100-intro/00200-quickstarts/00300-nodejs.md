@@ -200,11 +200,11 @@ DbConnection.builder()
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call <database-name> add Charlie
+spacetime call add Charlie
 
 # Query the person table
 
-spacetime sql <database-name> "SELECT \* FROM person"
+spacetime sql "SELECT \* FROM person"
 name
 
 ---
@@ -215,11 +215,11 @@ name
 
 # Call say_hello to greet everyone
 
-spacetime call <database-name> say_hello
+spacetime call say_hello
 
 # View the module logs
 
-spacetime logs <database-name>
+spacetime logs
 2025-01-13T12:00:00.000000Z INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z INFO: Hello, Bob!
 2025-01-13T12:00:00.000000Z INFO: Hello, Charlie!
