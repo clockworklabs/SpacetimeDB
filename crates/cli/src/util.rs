@@ -242,10 +242,12 @@ pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLa
     // check for Cargo.toml
     if path_to_project.join("Cargo.toml").exists() {
         Ok(ModuleLanguage::Rust)
-    } else if path_to_project
-        .read_dir()
-        .unwrap()
-        .any(|entry| entry.unwrap().path().extension() == Some("csproj".as_ref()))
+    } else if path_to_project.is_dir()
+        && path_to_project
+            .read_dir()
+            .map_err(|e| anyhow::anyhow!("Failed to read directory {}: {}", path_to_project.display(), e))?
+            .flatten()
+            .any(|entry| entry.path().extension() == Some("csproj".as_ref()))
     {
         Ok(ModuleLanguage::Csharp)
     } else if path_to_project.join("package.json").exists() {

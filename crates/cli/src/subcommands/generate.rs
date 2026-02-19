@@ -21,7 +21,7 @@ use crate::spacetime_config::{
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::{find_module_path, resolve_sibling_binary, y_or_n};
+use crate::util::{detect_module_language, resolve_sibling_binary, y_or_n, ModuleLanguage};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -277,9 +277,303 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
     exec_ex(config, args, extract_descriptions, false, None).await
 }
 
+#[derive(Debug, Clone)]
+pub struct GenerateRunConfig {
+    pub project_path: PathBuf,
+    pub wasm_file: Option<PathBuf>,
+    pub js_file: Option<PathBuf>,
+    pub lang: Language,
+    pub namespace: String,
+    pub module_name: Option<String>,
+    pub build_options: String,
+    pub out_dir: PathBuf,
+    pub include_private: bool,
+}
+
+fn prepare_generate_run_configs<'a>(
+    generate_configs: Vec<CommandConfig<'a>>,
+    _using_config: bool,
+) -> anyhow::Result<Vec<GenerateRunConfig>> {
+    let mut runs = Vec::with_capacity(generate_configs.len());
+
+    for command_config in generate_configs {
+        let project_path = command_config
+            .get_one::<PathBuf>("module_path")?
+            .unwrap_or_else(|| PathBuf::from("spacetimedb"));
+
+        let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
+        let js_file = command_config.get_one::<PathBuf>("js_file")?;
+        let requested_lang = command_config.get_one::<Language>("language")?;
+        let namespace = command_config
+            .get_one::<String>("namespace")?
+            .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
+        let module_name = command_config.get_one::<String>("unreal_module_name")?;
+        let build_options = command_config
+            .get_one::<String>("build_options")?
+            .unwrap_or_else(String::new);
+
+        // Validate Unreal-specific args first to preserve focused errors for this mode.
+        if requested_lang == Some(Language::UnrealCpp) {
+            if command_config.get_one::<PathBuf>("uproject_dir")?.is_none() {
+                return Err(anyhow::anyhow!("--uproject-dir is required for --lang unrealcpp"));
+            }
+            if module_name.is_none() {
+                return Err(anyhow::anyhow!("--unreal-module-name is required for --lang unrealcpp"));
+            }
+        }
+
+        // Validate module source path for source-based generation.
+        if wasm_file.is_none() && js_file.is_none() && !project_path.is_dir() {
+            anyhow::bail!(
+                "Could not find module source at '{}'. \
+                 If this is not correct, pass --module-path or add module-path in spacetime.json. \
+                 You can also pass --bin-path/--js-path to generate without building from source.",
+                project_path.display()
+            );
+        }
+
+        let lang = match requested_lang {
+            Some(lang) => lang,
+            None => {
+                let detected = detect_default_language(&project_path)?;
+                println!(
+                    "Detected client language '{}' from module '{}'. If this is not correct, pass --lang or add a generate target in spacetime.json.",
+                    language_cli_name(detected),
+                    project_path.display()
+                );
+                detected
+            }
+        };
+
+        let out_dir = command_config
+            .get_one::<PathBuf>("out_dir")?
+            .or_else(|| command_config.get_one::<PathBuf>("uproject_dir").ok().flatten())
+            .or_else(|| default_out_dir_for_language(lang))
+            .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
+
+        let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
+
+        runs.push(GenerateRunConfig {
+            project_path,
+            wasm_file,
+            js_file,
+            lang,
+            namespace,
+            module_name,
+            build_options,
+            out_dir,
+            include_private,
+        });
+    }
+
+    Ok(runs)
+}
+
+fn detect_default_language(module_path: &Path) -> anyhow::Result<Language> {
+    let module_lang = detect_module_language(module_path).map_err(|err| {
+        anyhow::anyhow!(
+            "Could not auto-detect client language from module '{}': {}. \
+             If this is not correct, pass --lang or add a generate target in spacetime.json.",
+            module_path.display(),
+            err
+        )
+    })?;
+
+    Ok(match module_lang {
+        ModuleLanguage::Rust => Language::Rust,
+        ModuleLanguage::Csharp => Language::Csharp,
+        ModuleLanguage::Javascript => Language::TypeScript,
+        // For C++ modules we generate Rust client bindings by default.
+        ModuleLanguage::Cpp => Language::Rust,
+    })
+}
+
+fn language_cli_name(lang: Language) -> &'static str {
+    match lang {
+        Language::Rust => "rust",
+        Language::Csharp => "csharp",
+        Language::TypeScript => "typescript",
+        Language::UnrealCpp => "unrealcpp",
+    }
+}
+
+pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
+    match lang {
+        Language::Rust | Language::TypeScript => Some(PathBuf::from("src/module_bindings")),
+        Language::Csharp => Some(PathBuf::from("module_bindings")),
+        Language::UnrealCpp => None,
+    }
+}
+
+pub fn resolve_language(module_path: &Path, requested: Option<Language>) -> anyhow::Result<Language> {
+    match requested {
+        Some(lang) => Ok(lang),
+        None => detect_default_language(module_path),
+    }
+}
+
+pub fn build_generate_entry(
+    module_path: Option<&Path>,
+    language: Option<Language>,
+    out_dir: Option<&Path>,
+) -> HashMap<String, serde_json::Value> {
+    let mut entry = HashMap::new();
+    if let Some(lang) = language {
+        entry.insert("language".to_string(), serde_json::json!(language_cli_name(lang)));
+    }
+    if let Some(path) = module_path {
+        entry.insert("module-path".to_string(), serde_json::json!(path));
+    }
+    if let Some(path) = out_dir {
+        entry.insert("out-dir".to_string(), serde_json::json!(path));
+    }
+    entry
+}
+
+pub async fn run_prepared_generate_configs(
+    run_configs: Vec<GenerateRunConfig>,
+    extract_descriptions: ExtractDescriptions,
+    json_module: Option<Vec<PathBuf>>,
+    force: bool,
+    namespace_from_cli: bool,
+) -> anyhow::Result<()> {
+    for run in run_configs {
+        println!(
+            "Generating {} module bindings for module {}",
+            run.lang.display_name(),
+            run.project_path.display()
+        );
+
+        if namespace_from_cli && run.lang != Language::Csharp {
+            return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
+        }
+
+        let module: ModuleDef = if let Some(paths) = &json_module {
+            let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = paths.first() {
+                serde_json::from_slice(&fs::read(path)?)?
+            } else {
+                serde_json::from_reader(std::io::stdin().lock())?
+            };
+            module.try_into()?
+        } else {
+            let path = if let Some(path) = &run.wasm_file {
+                println!("Skipping build. Instead we are inspecting {}", path.display());
+                path.clone()
+            } else if let Some(path) = &run.js_file {
+                println!("Skipping build. Instead we are inspecting {}", path.display());
+                path.clone()
+            } else {
+                let (path, _) = build::exec_with_argstring(&run.project_path, &run.build_options).await?;
+                path
+            };
+            let spinner = indicatif::ProgressBar::new_spinner();
+            spinner.enable_steady_tick(std::time::Duration::from_millis(60));
+            spinner.set_message(format!("Extracting schema from {}...", path.display()));
+            extract_descriptions(&path).context("could not extract schema")?
+        };
+
+        fs::create_dir_all(&run.out_dir)?;
+
+        let mut paths = BTreeSet::new();
+        let private_tables = private_table_names(&module);
+        if !private_tables.is_empty() && !run.include_private {
+            println!("Skipping private tables during codegen: {}.", private_tables.join(", "));
+        }
+        let mut options = CodegenOptions::default();
+        if run.include_private {
+            options.visibility = CodegenVisibility::IncludePrivate;
+        }
+
+        let csharp_lang;
+        let unreal_cpp_lang;
+        let gen_lang = match run.lang {
+            Language::Csharp => {
+                csharp_lang = Csharp {
+                    namespace: &run.namespace,
+                };
+                &csharp_lang as &dyn Lang
+            }
+            Language::UnrealCpp => {
+                unreal_cpp_lang = UnrealCpp {
+                    module_name: run.module_name.as_ref().unwrap(),
+                    uproject_dir: &run.out_dir,
+                };
+                &unreal_cpp_lang as &dyn Lang
+            }
+            Language::Rust => &Rust,
+            Language::TypeScript => &TypeScript,
+        };
+
+        for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
+            let fname = Path::new(&filename);
+            if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
+                println!("Creating directory {}", run.out_dir.join(parent).display());
+                fs::create_dir_all(run.out_dir.join(parent))?;
+            }
+            let path = run.out_dir.join(fname);
+            if !path.exists() || fs::read_to_string(&path)? != code {
+                println!("Writing file {}", path.display());
+                fs::write(&path, code)?;
+            }
+            paths.insert(path);
+        }
+
+        let cleanup_root = match run.lang {
+            Language::UnrealCpp => run.out_dir.join("Source").join(run.module_name.as_ref().unwrap()),
+            _ => run.out_dir.clone(),
+        };
+
+        let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
+        let files_to_delete = walkdir::WalkDir::new(&cleanup_root)
+            .into_iter()
+            .map(|entry_result| {
+                let entry = entry_result?;
+                if !entry.file_type().is_file() {
+                    return Ok(None);
+                }
+                let path = entry.into_path();
+                if paths.contains(&path) {
+                    return Ok(None);
+                }
+                let mut file = fs::File::open(&path)?;
+                Ok(match file.read_exact(&mut auto_generated_buf) {
+                    Ok(()) => (auto_generated_buf == AUTO_GENERATED_PREFIX.as_bytes()).then_some(path),
+                    Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => None,
+                    Err(err) => return Err(err.into()),
+                })
+            })
+            .filter_map(Result::transpose)
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        if !files_to_delete.is_empty() {
+            println!("The following files were not generated by this command and will be deleted:");
+            for path in &files_to_delete {
+                println!("  {}", path.to_str().unwrap());
+            }
+
+            if y_or_n(force, "Are you sure you want to delete these files?")? {
+                for path in files_to_delete {
+                    fs::remove_file(path)?;
+                }
+                println!("Files deleted successfully.");
+            } else {
+                println!("Files not deleted.");
+            }
+        }
+
+        if let Err(err) = run.lang.format_files(&run.out_dir, paths) {
+            eprintln!("Could not format generated files: {err}");
+        }
+
+        println!("Generate finished successfully.");
+    }
+
+    Ok(())
+}
+
 /// Like `exec`, but lets you specify a custom a function to extract a schema from a file.
 pub async fn exec_ex(
-    config: Config,
+    _config: Config,
     args: &clap::ArgMatches,
     extract_descriptions: ExtractDescriptions,
     quiet_config: bool,
@@ -311,220 +605,53 @@ pub async fn exec_ex(
     let (using_config, generate_configs) = if let Some(loaded) = loaded_config_ref {
         let filtered = get_filtered_generate_configs(&loaded.config, &cmd, &schema, args)?;
         if filtered.is_empty() {
-            anyhow::bail!(
-                "No matching generate target found in spacetime.json for the provided arguments. \
-                 Use --no-config to ignore the config file."
-            );
+            (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
+        } else {
+            (true, filtered)
         }
-        (true, filtered)
     } else {
         (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
     };
 
-    // Execute generate for each config
-    for command_config in generate_configs {
-        // Get values using command_config.get_one() which merges CLI + config
-        let project_path = match command_config.get_one::<PathBuf>("module_path")? {
-            Some(path) => path,
-            None if using_config => {
-                anyhow::bail!("module-path must be specified for each generate target when using spacetime.json");
-            }
-            None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
-                     Use --module-path to specify the module location."
-                )
-            })?,
-        };
-        let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
-        let js_file = command_config.get_one::<PathBuf>("js_file")?;
-        let json_module = args.get_many::<PathBuf>("json_module");
-        let lang = command_config
-            .get_one::<Language>("language")?
-            .ok_or_else(|| anyhow::anyhow!("Language is required (use --lang or add to config)"))?;
+    let run_configs = prepare_generate_run_configs(generate_configs, using_config)?;
+    let json_module = args
+        .get_many::<PathBuf>("json_module")
+        .map(|vals| vals.cloned().collect::<Vec<_>>());
+    let force = args.get_flag("force");
+    let namespace_from_cli = args.value_source("namespace") == Some(ValueSource::CommandLine);
 
-        println!(
-            "Generating {} module bindings for module {}",
-            lang.display_name(),
-            project_path.display()
-        );
+    run_prepared_generate_configs(
+        run_configs,
+        extract_descriptions,
+        json_module,
+        force,
+        namespace_from_cli,
+    )
+    .await
+}
 
-        let namespace = command_config
-            .get_one::<String>("namespace")?
-            .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
-        let module_name = command_config.get_one::<String>("unreal_module_name")?;
-        let force = args.get_flag("force");
-        let build_options = command_config
-            .get_one::<String>("build_options")?
-            .unwrap_or_else(String::new);
+/// Execute generate from explicit entries without parsing generate CLI arguments
+/// or loading any config files from disk.
+pub async fn exec_from_entries(
+    entries: Vec<HashMap<String, serde_json::Value>>,
+    extract_descriptions: ExtractDescriptions,
+    force: bool,
+) -> anyhow::Result<()> {
+    let cmd = cli();
+    let schema = build_generate_config_schema(&cmd)?;
+    let empty_matches = cmd.get_matches_from(vec!["generate"]);
 
-        // Validate namespace is only used with csharp
-        if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
-            return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
-        }
+    let generate_configs: Vec<CommandConfig> = entries
+        .into_iter()
+        .map(|entry| {
+            let command_config = CommandConfig::new(&schema, entry, &empty_matches)?;
+            command_config.validate()?;
+            Ok(command_config)
+        })
+        .collect::<Result<Vec<_>, anyhow::Error>>()?;
 
-        // Get output directory (either out_dir or uproject_dir)
-        let out_dir = command_config
-            .get_one::<PathBuf>("out_dir")?
-            .or_else(|| command_config.get_one::<PathBuf>("uproject_dir").ok().flatten())
-            .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
-
-        // Validate language-specific requirements
-        match lang {
-            Language::Rust | Language::Csharp | Language::TypeScript => {
-                // These languages require out_dir (not uproject_dir)
-                if command_config.get_one::<PathBuf>("out_dir")?.is_none() {
-                    return Err(anyhow::anyhow!(
-                        "--out-dir is required for --lang {}",
-                        match lang {
-                            Language::Rust => "rust",
-                            Language::Csharp => "csharp",
-                            Language::TypeScript => "typescript",
-                            _ => unreachable!(),
-                        }
-                    ));
-                }
-            }
-            Language::UnrealCpp => {
-                // UnrealCpp requires uproject_dir and module_name
-                if command_config.get_one::<PathBuf>("uproject_dir")?.is_none() {
-                    return Err(anyhow::anyhow!("--uproject-dir is required for --lang unrealcpp"));
-                }
-                if module_name.is_none() {
-                    return Err(anyhow::anyhow!("--unreal-module-name is required for --lang unrealcpp"));
-                }
-            }
-        }
-
-        let module: ModuleDef = if let Some(mut json_module) = json_module {
-            let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = json_module.next() {
-                serde_json::from_slice(&fs::read(path)?)?
-            } else {
-                serde_json::from_reader(std::io::stdin().lock())?
-            };
-            module.try_into()?
-        } else {
-            let path = if let Some(path) = wasm_file {
-                println!("Skipping build. Instead we are inspecting {}", path.display());
-                path.clone()
-            } else if let Some(path) = js_file {
-                println!("Skipping build. Instead we are inspecting {}", path.display());
-                path.clone()
-            } else {
-                let (path, _) = build::exec_with_argstring(config.clone(), &project_path, &build_options).await?;
-                path
-            };
-            let spinner = indicatif::ProgressBar::new_spinner();
-            spinner.enable_steady_tick(std::time::Duration::from_millis(60));
-            spinner.set_message(format!("Extracting schema from {}...", path.display()));
-            extract_descriptions(&path).context("could not extract schema")?
-        };
-
-        fs::create_dir_all(&out_dir)?;
-
-        let mut paths = BTreeSet::new();
-
-        let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
-        let private_tables = private_table_names(&module);
-        if !private_tables.is_empty() && !include_private {
-            println!("Skipping private tables during codegen: {}.", private_tables.join(", "));
-        }
-        let mut options = CodegenOptions::default();
-        if include_private {
-            options.visibility = CodegenVisibility::IncludePrivate;
-        }
-
-        let csharp_lang;
-        let unreal_cpp_lang;
-        let gen_lang = match lang {
-            Language::Csharp => {
-                csharp_lang = Csharp { namespace: &namespace };
-                &csharp_lang as &dyn Lang
-            }
-            Language::UnrealCpp => {
-                unreal_cpp_lang = UnrealCpp {
-                    module_name: module_name.as_ref().unwrap(),
-                    uproject_dir: &out_dir,
-                };
-                &unreal_cpp_lang as &dyn Lang
-            }
-            Language::Rust => &Rust,
-            Language::TypeScript => &TypeScript,
-        };
-
-        for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
-            let fname = Path::new(&filename);
-            // If a generator asks for a file in a subdirectory, create the subdirectory first.
-            if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
-                println!("Creating directory {}", out_dir.join(parent).display());
-                fs::create_dir_all(out_dir.join(parent))?;
-            }
-            let path = out_dir.join(fname);
-            if !path.exists() || fs::read_to_string(&path)? != code {
-                println!("Writing file {}", path.display());
-                fs::write(&path, code)?;
-            }
-            paths.insert(path);
-        }
-
-        // For Unreal, we want to clean up just the module directory, not the entire uproject directory tree.
-        let cleanup_root = match lang {
-            Language::UnrealCpp => out_dir.join("Source").join(module_name.as_ref().unwrap()),
-            _ => out_dir.clone(),
-        };
-
-        // TODO: We should probably just delete all generated files before we generate any, rather than selectively deleting some afterward.
-        let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
-        let files_to_delete = walkdir::WalkDir::new(&cleanup_root)
-            .into_iter()
-            .map(|entry_result| {
-                let entry = entry_result?;
-                // Only delete files.
-                if !entry.file_type().is_file() {
-                    return Ok(None);
-                }
-                let path = entry.into_path();
-                // Don't delete regenerated files.
-                if paths.contains(&path) {
-                    return Ok(None);
-                }
-                // Only delete files that start with the auto-generated prefix.
-                let mut file = fs::File::open(&path)?;
-                Ok(match file.read_exact(&mut auto_generated_buf) {
-                    Ok(()) => (auto_generated_buf == AUTO_GENERATED_PREFIX.as_bytes()).then_some(path),
-                    Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => None,
-                    Err(err) => return Err(err.into()),
-                })
-            })
-            .filter_map(Result::transpose)
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        if !files_to_delete.is_empty() {
-            println!("The following files were not generated by this command and will be deleted:");
-            for path in &files_to_delete {
-                println!("  {}", path.to_str().unwrap());
-            }
-
-            if y_or_n(force, "Are you sure you want to delete these files?")? {
-                for path in files_to_delete {
-                    fs::remove_file(path)?;
-                }
-                println!("Files deleted successfully.");
-            } else {
-                println!("Files not deleted.");
-            }
-        }
-
-        if let Err(err) = lang.format_files(&out_dir, paths) {
-            // If we couldn't format the files, print a warning but don't fail the entire
-            // task as the output should still be usable, just less pretty.
-            eprintln!("Could not format generated files: {err}");
-        }
-
-        println!("Generate finished successfully.");
-    }
-
-    Ok(())
+    let run_configs = prepare_generate_run_configs(generate_configs, true)?;
+    run_prepared_generate_configs(run_configs, extract_descriptions, None, force, false).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
@@ -801,25 +928,153 @@ mod tests {
 
     // Language-Specific Validation Tests
 
-    #[tokio::test]
-    async fn test_rust_requires_out_dir() {
-        use crate::config::Config;
-        use spacetimedb_paths::cli::CliTomlPath;
-        use spacetimedb_paths::FromPathUnchecked;
-
+    #[test]
+    fn test_rust_defaults_out_dir() {
         let cmd = cli();
-        let config = Config::new_with_localhost(CliTomlPath::from_path_unchecked("/tmp/test-config.toml"));
-
-        // Missing --out-dir for rust
+        let schema = build_generate_config_schema(&cmd).unwrap();
         let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "rust"]);
-        let result = exec(config, &matches).await;
 
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("--out-dir") || err_msg.contains("--uproject-dir"),
-            "Expected error about missing output directory, got: {err_msg}"
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        std::fs::write(
+            module_dir.join("Cargo.toml"),
+            "[package]\nname = \"m\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
         );
+
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].out_dir, PathBuf::from("src/module_bindings"));
+    }
+
+    #[test]
+    fn test_module_path_defaults_to_spacetimedb() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["generate", "--lang", "rust", "--bin-path", "dummy.wasm"]);
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
+        assert_eq!(runs[0].project_path, PathBuf::from("spacetimedb"));
+    }
+
+    #[test]
+    fn test_typescript_defaults_out_dir() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "typescript"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
+        assert_eq!(runs[0].out_dir, PathBuf::from("src/module_bindings"));
+    }
+
+    #[test]
+    fn test_csharp_defaults_out_dir() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "csharp"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
+        assert_eq!(runs[0].out_dir, PathBuf::from("module_bindings"));
+    }
+
+    #[test]
+    fn test_detect_typescript_language_from_module() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        std::fs::write(module_dir.join("package.json"), "{\"name\":\"m\"}").unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
+        assert_eq!(runs[0].lang, Language::TypeScript);
+        assert_eq!(runs[0].out_dir, PathBuf::from("src/module_bindings"));
+    }
+
+    #[test]
+    fn test_detect_csharp_language_from_module() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        std::fs::write(module_dir.join("Module.csproj"), "<Project/>").unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false).unwrap();
+        assert_eq!(runs[0].lang, Language::Csharp);
+        assert_eq!(runs[0].out_dir, PathBuf::from("module_bindings"));
+    }
+
+    #[test]
+    fn test_error_when_default_module_path_missing_and_lang_not_set() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
+        let err = prepare_generate_run_configs(vec![command_config], false).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Could not find module source at 'spacetimedb'"));
+        assert!(msg.contains("--module-path"));
+        assert!(msg.contains("spacetime.json"));
+    }
+
+    #[test]
+    fn test_error_when_module_exists_but_language_cannot_be_detected() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let err = prepare_generate_run_configs(vec![command_config], false).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Could not auto-detect client language"));
+        assert!(msg.contains("--lang"));
+        assert!(msg.contains("spacetime.json"));
     }
 
     #[tokio::test]

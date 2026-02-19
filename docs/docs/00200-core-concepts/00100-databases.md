@@ -3,6 +3,7 @@ title: The Database Module
 slug: /databases
 ---
 
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -59,6 +60,8 @@ Rust is fully supported for server modules. Rust is a great choice for performan
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 C++ is fully supported for server modules. C++ is an excellent choice for developers working with Unreal Engine or those who prefer to stay in the C++ ecosystem.
 
@@ -207,7 +210,7 @@ If you're new to SpacetimeDB, follow this recommended learning path:
 2. **[Build and Publish](/databases/building-publishing)** - Learn how to compile and deploy your module
 3. **[Define Tables](/tables)** - Structure your data with tables, columns, and indexes
 4. **[Write Reducers](/functions/reducers)** - Create transactional functions that modify your database
-5. **[Connect a Client](/sdks)** - Build a client application that connects to your database
+5. **[Connect a Client](/clients)** - Build a client application that connects to your database
 
 ### Core Concepts
 
@@ -239,5 +242,5 @@ When you're ready to go live:
 
 - Learn about [Tables](/tables) to define your database schema
 - Create [Reducers](/functions/reducers) to modify database state
-- Understand [Subscriptions](/subscriptions) for real-time data sync
+- Understand [Subscriptions](/clients/subscriptions) for real-time data sync
 - Review the [CLI Reference](/cli-reference) for all available commands

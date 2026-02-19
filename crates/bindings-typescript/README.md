@@ -21,7 +21,7 @@ You can use the package in the browser, using a bundler like vite/parcel/rsbuild
 In order to connect to a database you have to generate module bindings for your database.
 
 ```ts
-import { DbConnection } from './module_bindings';
+import { DbConnection, tables } from './module_bindings';
 
 const connection = DbConnection.builder()
   .withUri('ws://localhost:3000')
@@ -38,7 +38,7 @@ const connection = DbConnection.builder()
       identity.toHexString()
     );
 
-    connection.subscriptionBuilder().subscribe('SELECT * FROM player');
+    connection.subscriptionBuilder().subscribe(tables.player);
   })
   .withToken('TOKEN')
   .build();
@@ -85,7 +85,7 @@ const connectionBuilder = DbConnection.builder()
       identity.toHexString()
     );
 
-    conn.subscriptionBuilder().subscribe('SELECT * FROM player');
+    conn.subscriptionBuilder().subscribe(tables.player);
   })
   .withToken('TOKEN');
 

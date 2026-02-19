@@ -1,6 +1,6 @@
 ---
 title: Generating Client Bindings
-slug: /sdks/codegen
+slug: /clients/codegen
 ---
 
 import Tabs from '@theme/Tabs';
@@ -361,9 +361,9 @@ If you're actively developing and testing changes, consider adding `spacetime ge
 
 Once you've generated the bindings, you're ready to connect to your database and start interacting with it. See:
 
-- [Connecting to SpacetimeDB](/sdks/connection) for establishing a connection
-- [SDK API Reference](/sdks/api) for using the generated bindings
-- Language-specific references: [Rust](/sdks/rust), [C#](/sdks/c-sharp), [TypeScript](/sdks/typescript), [Unreal](/sdks/unreal)
+- [Connecting to SpacetimeDB](/clients/connection) for establishing a connection
+- [SDK API Reference](/clients/api) for using the generated bindings
+- Language-specific references: [Rust](/clients/rust), [C#](/clients/c-sharp), [TypeScript](/clients/typescript), [Unreal](/clients/unreal)
 
 ## Troubleshooting
 

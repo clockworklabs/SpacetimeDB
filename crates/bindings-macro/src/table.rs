@@ -79,7 +79,7 @@ impl TableArgs {
         let mut access = None;
         let mut scheduled = None;
         let mut accessor = None;
-        let mut name = None;
+        let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
         let mut event = None;
         syn::meta::parser(|meta| {
@@ -100,6 +100,44 @@ impl TableArgs {
                 sym::name => {
                     check_duplicate(&name, &meta)?;
                     let value = meta.value()?;
+                    // `fork` as a way to do lookahead `peek`, so that below when we parse as the `LitStr` we actually want,
+                    // it works.
+                    if let Ok(sym) = value.fork().parse::<Ident>() {
+                        // The update from SpacetimeDB 1.* to 2.* changes `name =` to `accessor =`,
+                        // and uses `name =` for a different thing. Now, only `accessor =` is mandatory,
+                        // and `name =` accepts a string literal rather than an identifier.
+                        // Detect the specific case where the user specifies a 1.*-style `name = ident`,
+                        // and offer a diagnostic with a simple migration path.
+                        // Unfortunately, we can't hook in to rustc's system for providing quick fixes in compiler errors,
+                        // until [this ancient issue](https://github.com/rust-lang/rust/issues/54140) gets stabilized.
+                        return Err(
+                            if accessor.is_some() {
+                                // If we've already encountered an `accessor`,
+                                // then probably the user is actually trying to overwrite the `name`,
+                                // so tell them to use a string literal instead of an ident.
+                                // This is a best-effort check, and we won't hit it if the user specifies `name` first,
+                                // but we're prioritizing the migration UX here.
+                                meta.error(format_args!(
+                                    "Expected a string literal for `name`, but found an identifier.
+
+To overwrite the canonical name of the table, replace `name = {sym}` with `name = \"{sym}\"`."
+                                ))
+                            } else {
+                                // FIXME: Ideally, this error span would point to the full pair `name = my_table`,
+                                // but I (pgoldman 2026-02-18) can only figure out how to get it at either `name` or `my_table`.
+                                // This version points at `name`, which, :shrug:.
+                                // Note that, if the user specifies `name = {ident}` followed by `accessor = {ident}`,
+                                // we'll hit this branch, even though the diagnostic doesn't apply and we'd prefer not to.
+                                // I (pgoldman 2026-02-18) don't see a good way to distinguish this case
+                                // without making our parsing dramatically more complicated,
+                                // and it seems unlikely to occur.
+                                meta.error(format_args!(
+                                    "Expected a string literal for `name`, but found an identifier. Did you mean to specify an `accessor`?
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor = {sym}`."
+                                ))
+                            })
+                    }
                     name = Some(value.parse()?);
                 }
                 sym::index => indices.push(IndexArg::parse_meta(meta)?),
@@ -116,11 +154,32 @@ impl TableArgs {
         })
         .parse2(input)?;
         let accessor = accessor.ok_or_else(|| {
-            let table = struct_ident.to_string().to_snake_case();
-            syn::Error::new(
-                Span::call_site(),
-                format_args!("must specify table name, e.g. `#[spacetimedb::table(accessor = {table})]"),
-            )
+            if let Some(name_str) = &name {
+                // If a user's gotten partway through migrating from 1.* to 2.* in a misguided way,
+                // they may end up with a `table` invocation that specifies `name = "my_table_name"` and no `accessor`.
+                // In this case, they probably intended to change `name =` to `accessor =`,
+                // but were misled into keeping `name =` and changing the name from an ident into a lit string.
+                // Detect that and offer a diagnostic with a simple fix.
+                // Unfortunately, we can't hook in to rustc's system for providing quick fixes in compiler errors,
+                // until [this ancient issue](https://github.com/rust-lang/rust/issues/54140) gets stabilized.
+                let name_str_value = name_str.value();
+                syn::Error::new_spanned(
+                    name_str,
+                    format_args!(
+                        "Expected an `accessor` in table definition, but got only a `name`.
+Did you mean to specify `accessor` instead?
+`accessor` is required, but `name` is optional.
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` with `accessor = {name_str_value}`",
+                    ),
+                )
+            } else {
+                let table = struct_ident.to_string().to_snake_case();
+                syn::Error::new(
+                    Span::call_site(),
+                    format_args!("must specify table accessor, e.g. `#[spacetimedb::table(accessor = {table})]"),
+                )
+            }
         })?;
         Ok(TableArgs {
             access,
@@ -200,6 +259,44 @@ impl IndexArg {
                 sym::direct => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_direct(meta)?);
+                }
+                sym::name => {
+                    // If the user is trying to specify a `name`, do a bit of guessing at what their goal is.
+                    // This is going to be best-effort, and we're not going to try to do lookahead or anything.
+
+                    return Err(if accessor.is_some() {
+                        // If the user's already specified an `accessor`,
+                        // then probably they're trying to specify the canonical name,
+                        // like you can for tables.
+                        // Print an error that says this is unsupported.
+                        meta.error(
+                            "Unexpected argument `name` in index definition.
+
+Overwriting the `name` of an index is currently unsupported.",
+                        )
+                    } else if let Ok(sym) = meta.value().and_then(|val| val.parse::<Ident>()) {
+                        // If we haven't seen an `accessor` yet, and the value is an ident,
+                        // then probably this is 1.* syntax that needs a migration.
+                        // Note that, if the user specifies `name = {ident}` followed by `accessor = {ident}`,
+                        // we'll hit this branch, even though the diagnostic doesn't apply and we'd prefer not to.
+                        // I (pgoldman 2026-02-18) don't see a good way to distinguish this case
+                        // without making our parsing dramatically more complicated,
+                        // and it seems unlikely to occur.
+                        meta.error(format_args!(
+                            "Expected an `accessor` in index definition, but got a `name` instead.
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor = {sym}`."
+                        ))
+                    } else {
+                        // If we haven't seen an `accessor` yet, but the value is not an ident,
+                        // then we're not really sure what's going wrong, so print a more generic error message.
+                        meta.error(format_args!(
+                            "Unexpected argument `name` in index definition.
+
+Overwriting the `name` of an index is currently unsupported.
+Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`, where `my_index` is an unquoted identifier."
+                        ))
+                    });
                 }
             });
             Ok(())

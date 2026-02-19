@@ -91,10 +91,10 @@ export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;
 /** Builder class to configure a new subscription to the remote SpacetimeDB instance. */
 export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
   typeof REMOTE_MODULE
-> {}
+> { }
 
 /** Builder class to configure a new database connection to the remote SpacetimeDB instance. */
-export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
+export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> { }
 
 /** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {

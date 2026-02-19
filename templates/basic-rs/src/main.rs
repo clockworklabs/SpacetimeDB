@@ -32,7 +32,8 @@ fn main() {
     conn.subscription_builder()
         .on_applied(|_ctx| println!("Subscripted to the person table"))
         .on_error(|_ctx, e| eprintln!("There was an error when subscring to the person table: {e}"))
-        .subscribe(["SELECT * FROM person"]);
+        .add_query(|q| q.from.person())
+        .subscribe();
 
     // Register a callback for when rows are inserted into the person table
     conn.db().person().on_insert(|_ctx, person| {
