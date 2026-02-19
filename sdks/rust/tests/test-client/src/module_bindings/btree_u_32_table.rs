@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `BTreeU32`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait btreeU32QueryTableAccess {
+pub trait btree_u_32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `BTreeU32`.
-    fn btreeU32(&self) -> __sdk::__query_builder::Table<BTreeU32>;
+    fn btree_u_32(&self) -> __sdk::__query_builder::Table<BTreeU32>;
 }
 
-impl btreeU32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn btreeU32(&self) -> __sdk::__query_builder::Table<BTreeU32> {
-        __sdk::__query_builder::Table::new("btreeU32")
+impl btree_u_32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn btree_u_32(&self) -> __sdk::__query_builder::Table<BTreeU32> {
+        __sdk::__query_builder::Table::new("btree_u_32")
     }
 }

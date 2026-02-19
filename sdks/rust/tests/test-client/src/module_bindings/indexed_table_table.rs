@@ -98,14 +98,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `IndexedTable`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait indexedTableQueryTableAccess {
+pub trait indexed_tableQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `IndexedTable`.
-    fn indexedTable(&self) -> __sdk::__query_builder::Table<IndexedTable>;
+    fn indexed_table(&self) -> __sdk::__query_builder::Table<IndexedTable>;
 }
 
-impl indexedTableQueryTableAccess for __sdk::QueryTableAccessor {
-    fn indexedTable(&self) -> __sdk::__query_builder::Table<IndexedTable> {
-        __sdk::__query_builder::Table::new("indexedTable")
+impl indexed_tableQueryTableAccess for __sdk::QueryTableAccessor {
+    fn indexed_table(&self) -> __sdk::__query_builder::Table<IndexedTable> {
+        __sdk::__query_builder::Table::new("indexed_table")
     }
 }

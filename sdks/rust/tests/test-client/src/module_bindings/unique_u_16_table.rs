@@ -127,14 +127,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `UniqueU16`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait unique_u16QueryTableAccess {
+pub trait unique_u_16QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueU16`.
-    fn unique_u16(&self) -> __sdk::__query_builder::Table<UniqueU16>;
+    fn unique_u_16(&self) -> __sdk::__query_builder::Table<UniqueU16>;
 }
 
-impl unique_u16QueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_u16(&self) -> __sdk::__query_builder::Table<UniqueU16> {
-        __sdk::__query_builder::Table::new("unique_u16")
+impl unique_u_16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_u_16(&self) -> __sdk::__query_builder::Table<UniqueU16> {
+        __sdk::__query_builder::Table::new("unique_u_16")
     }
 }

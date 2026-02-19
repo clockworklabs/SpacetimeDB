@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `OneF64`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_f64QueryTableAccess {
+pub trait one_f_64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneF64`.
-    fn one_f64(&self) -> __sdk::__query_builder::Table<OneF64>;
+    fn one_f_64(&self) -> __sdk::__query_builder::Table<OneF64>;
 }
 
-impl one_f64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_f64(&self) -> __sdk::__query_builder::Table<OneF64> {
-        __sdk::__query_builder::Table::new("one_f64")
+impl one_f_64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_f_64(&self) -> __sdk::__query_builder::Table<OneF64> {
+        __sdk::__query_builder::Table::new("one_f_64")
     }
 }

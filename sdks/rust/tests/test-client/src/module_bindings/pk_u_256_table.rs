@@ -144,14 +144,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `PkU256`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait pk_u256QueryTableAccess {
+pub trait pk_u_256QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkU256`.
-    fn pk_u256(&self) -> __sdk::__query_builder::Table<PkU256>;
+    fn pk_u_256(&self) -> __sdk::__query_builder::Table<PkU256>;
 }
 
-impl pk_u256QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_u256(&self) -> __sdk::__query_builder::Table<PkU256> {
-        __sdk::__query_builder::Table::new("pk_u256")
+impl pk_u_256QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u_256(&self) -> __sdk::__query_builder::Table<PkU256> {
+        __sdk::__query_builder::Table::new("pk_u_256")
     }
 }

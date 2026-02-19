@@ -144,14 +144,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `PkI8`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait pk_i8QueryTableAccess {
+pub trait pk_i_8QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkI8`.
-    fn pk_i8(&self) -> __sdk::__query_builder::Table<PkI8>;
+    fn pk_i_8(&self) -> __sdk::__query_builder::Table<PkI8>;
 }
 
-impl pk_i8QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_i8(&self) -> __sdk::__query_builder::Table<PkI8> {
-        __sdk::__query_builder::Table::new("pk_i8")
+impl pk_i_8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_i_8(&self) -> __sdk::__query_builder::Table<PkI8> {
+        __sdk::__query_builder::Table::new("pk_i_8")
     }
 }

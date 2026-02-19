@@ -144,14 +144,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `PkI32`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait pk_i32QueryTableAccess {
+pub trait pk_i_32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkI32`.
-    fn pk_i32(&self) -> __sdk::__query_builder::Table<PkI32>;
+    fn pk_i_32(&self) -> __sdk::__query_builder::Table<PkI32>;
 }
 
-impl pk_i32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_i32(&self) -> __sdk::__query_builder::Table<PkI32> {
-        __sdk::__query_builder::Table::new("pk_i32")
+impl pk_i_32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_i_32(&self) -> __sdk::__query_builder::Table<PkI32> {
+        __sdk::__query_builder::Table::new("pk_i_32")
     }
 }

@@ -127,14 +127,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `UniqueI64`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait unique_i64QueryTableAccess {
+pub trait unique_i_64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueI64`.
-    fn unique_i64(&self) -> __sdk::__query_builder::Table<UniqueI64>;
+    fn unique_i_64(&self) -> __sdk::__query_builder::Table<UniqueI64>;
 }
 
-impl unique_i64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_i64(&self) -> __sdk::__query_builder::Table<UniqueI64> {
-        __sdk::__query_builder::Table::new("unique_i64")
+impl unique_i_64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_i_64(&self) -> __sdk::__query_builder::Table<UniqueI64> {
+        __sdk::__query_builder::Table::new("unique_i_64")
     }
 }

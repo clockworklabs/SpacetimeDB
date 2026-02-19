@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `OneU128`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_u128QueryTableAccess {
+pub trait one_u_128QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneU128`.
-    fn one_u128(&self) -> __sdk::__query_builder::Table<OneU128>;
+    fn one_u_128(&self) -> __sdk::__query_builder::Table<OneU128>;
 }
 
-impl one_u128QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_u128(&self) -> __sdk::__query_builder::Table<OneU128> {
-        __sdk::__query_builder::Table::new("one_u128")
+impl one_u_128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_u_128(&self) -> __sdk::__query_builder::Table<OneU128> {
+        __sdk::__query_builder::Table::new("one_u_128")
     }
 }

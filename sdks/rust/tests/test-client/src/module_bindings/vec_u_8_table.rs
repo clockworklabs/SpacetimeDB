@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `VecU8`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait vec_u8QueryTableAccess {
+pub trait vec_u_8QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecU8`.
-    fn vec_u8(&self) -> __sdk::__query_builder::Table<VecU8>;
+    fn vec_u_8(&self) -> __sdk::__query_builder::Table<VecU8>;
 }
 
-impl vec_u8QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_u8(&self) -> __sdk::__query_builder::Table<VecU8> {
-        __sdk::__query_builder::Table::new("vec_u8")
+impl vec_u_8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_u_8(&self) -> __sdk::__query_builder::Table<VecU8> {
+        __sdk::__query_builder::Table::new("vec_u_8")
     }
 }

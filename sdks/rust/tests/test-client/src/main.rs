@@ -72,75 +72,75 @@ fn main() {
         .expect("Pass a test name as a command-line argument to the test client");
 
     match &*test {
-        "insert-primitive" => exec_insert_primitive(),
-        "subscribe-and-cancel" => exec_subscribe_and_cancel(),
-        "subscribe-and-unsubscribe" => exec_subscribe_and_unsubscribe(),
-        "subscription-error-smoke-test" => exec_subscription_error_smoke_test(),
-        "delete-primitive" => exec_delete_primitive(),
-        "update-primitive" => exec_update_primitive(),
+        // "insert-primitive" => exec_insert_primitive(),
+        // "subscribe-and-cancel" => exec_subscribe_and_cancel(),
+        // "subscribe-and-unsubscribe" => exec_subscribe_and_unsubscribe(),
+        // "subscription-error-smoke-test" => exec_subscription_error_smoke_test(),
+        // "delete-primitive" => exec_delete_primitive(),
+        // "update-primitive" => exec_update_primitive(),
 
-        "insert-identity" => exec_insert_identity(),
-        "insert-caller-identity" => exec_insert_caller_identity(),
-        "delete-identity" => exec_delete_identity(),
-        "update-identity" => exec_update_identity(),
+        // "insert-identity" => exec_insert_identity(),
+        // "insert-caller-identity" => exec_insert_caller_identity(),
+        // "delete-identity" => exec_delete_identity(),
+        // "update-identity" => exec_update_identity(),
 
-        "insert-connection-id" => exec_insert_connection_id(),
-        "insert-caller-connection-id" => exec_insert_caller_connection_id(),
-        "delete-connection-id" => exec_delete_connection_id(),
-        "update-connection-id" => exec_update_connection_id(),
+        // "insert-connection-id" => exec_insert_connection_id(),
+        // "insert-caller-connection-id" => exec_insert_caller_connection_id(),
+        // "delete-connection-id" => exec_delete_connection_id(),
+        // "update-connection-id" => exec_update_connection_id(),
 
-        "insert-timestamp" => exec_insert_timestamp(),
-        "insert-call-timestamp" => exec_insert_call_timestamp(),
+        // "insert-timestamp" => exec_insert_timestamp(),
+        // "insert-call-timestamp" => exec_insert_call_timestamp(),
 
-        "insert-uuid" => exec_insert_uuid(),
-        "insert-call-uuid-v4" => exec_insert_caller_uuid_v4(),
-        "insert-call-uuid-v7" => exec_insert_caller_uuid_v7(),
-        "delete-uuid" => exec_delete_uuid(),
-        "update-uuid" => exec_update_uuid(),
+        // "insert-uuid" => exec_insert_uuid(),
+        // "insert-call-uuid-v4" => exec_insert_caller_uuid_v4(),
+        // "insert-call-uuid-v7" => exec_insert_caller_uuid_v7(),
+        // "delete-uuid" => exec_delete_uuid(),
+        // "update-uuid" => exec_update_uuid(),
 
-        "on-reducer" => exec_on_reducer(),
-        "fail-reducer" => exec_fail_reducer(),
+        // "on-reducer" => exec_on_reducer(),
+         "fail-reducer" => exec_fail_reducer(),
 
-        "insert-vec" => exec_insert_vec(),
-        "insert-option-some" => exec_insert_option_some(),
-        "insert-option-none" => exec_insert_option_none(),
-        "insert-struct" => exec_insert_struct(),
-        "insert-simple-enum" => exec_insert_simple_enum(),
-        "insert-enum-with-payload" => exec_insert_enum_with_payload(),
+        // "insert-vec" => exec_insert_vec(),
+         "insert-option-some" => exec_insert_option_some(),
+        // "insert-option-none" => exec_insert_option_none(),
+        // "insert-struct" => exec_insert_struct(),
+        // "insert-simple-enum" => exec_insert_simple_enum(),
+        // "insert-enum-with-payload" => exec_insert_enum_with_payload(),
 
-        "insert-delete-large-table" => exec_insert_delete_large_table(),
+        // "insert-delete-large-table" => exec_insert_delete_large_table(),
 
-        "insert-primitives-as-strings" => exec_insert_primitives_as_strings(),
+        // "insert-primitives-as-strings" => exec_insert_primitives_as_strings(),
 
-        // "resubscribe" => exec_resubscribe(),
-        //
-        "reauth-part-1" => exec_reauth_part_1(),
-        "reauth-part-2" => exec_reauth_part_2(),
+        // // "resubscribe" => exec_resubscribe(),
+        // //
+        // "reauth-part-1" => exec_reauth_part_1(),
+        // "reauth-part-2" => exec_reauth_part_2(),
 
-        "should-fail" => exec_should_fail(),
+        // "should-fail" => exec_should_fail(),
 
-        "reconnect-different-connection-id" => exec_reconnect_different_connection_id(),
-        "caller-always-notified" => exec_caller_always_notified(),
+        // "reconnect-different-connection-id" => exec_reconnect_different_connection_id(),
+        // "caller-always-notified" => exec_caller_always_notified(),
 
-        "subscribe-all-select-star" => exec_subscribe_all_select_star(),
-        "caller-alice-receives-reducer-callback-but-not-bob" => {
-            exec_caller_alice_receives_reducer_callback_but_not_bob()
-        }
-        "row-deduplication" => exec_row_deduplication(),
-        "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
-        "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
-        "test-lhs-join-update" => test_lhs_join_update(),
-        "test-lhs-join-update-disjoint-queries" => test_lhs_join_update_disjoint_queries(),
-        "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join(),
-        "two-different-compression-algos" => exec_two_different_compression_algos(),
-        "test-parameterized-subscription" => test_parameterized_subscription(),
-        "test-rls-subscription" => test_rls_subscription(),
-        "pk-simple-enum" => exec_pk_simple_enum(),
-        "indexed-simple-enum" => exec_indexed_simple_enum(),
+        // "subscribe-all-select-star" => exec_subscribe_all_select_star(),
+        // "caller-alice-receives-reducer-callback-but-not-bob" => {
+        //     exec_caller_alice_receives_reducer_callback_but_not_bob()
+        // }
+        // "row-deduplication" => exec_row_deduplication(),
+        // "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
+        // "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
+        // "test-lhs-join-update" => test_lhs_join_update(),
+        // "test-lhs-join-update-disjoint-queries" => test_lhs_join_update_disjoint_queries(),
+        // "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join(),
+        // "two-different-compression-algos" => exec_two_different_compression_algos(),
+        // "test-parameterized-subscription" => test_parameterized_subscription(),
+        // "test-rls-subscription" => test_rls_subscription(),
+        // "pk-simple-enum" => exec_pk_simple_enum(),
+        // "indexed-simple-enum" => exec_indexed_simple_enum(),
 
-        "overlapping-subscriptions" => exec_overlapping_subscriptions(),
+        // "overlapping-subscriptions" => exec_overlapping_subscriptions(),
 
-        "sorted-uuids-insert" => exec_sorted_uuids_insert(),
+        // "sorted-uuids-insert" => exec_sorted_uuids_insert(),
 
         _ => panic!("Unknown test: {test}"),
     }

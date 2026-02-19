@@ -127,14 +127,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `UniqueU256`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait unique_u256QueryTableAccess {
+pub trait unique_u_256QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueU256`.
-    fn unique_u256(&self) -> __sdk::__query_builder::Table<UniqueU256>;
+    fn unique_u_256(&self) -> __sdk::__query_builder::Table<UniqueU256>;
 }
 
-impl unique_u256QueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_u256(&self) -> __sdk::__query_builder::Table<UniqueU256> {
-        __sdk::__query_builder::Table::new("unique_u256")
+impl unique_u_256QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_u_256(&self) -> __sdk::__query_builder::Table<UniqueU256> {
+        __sdk::__query_builder::Table::new("unique_u_256")
     }
 }
