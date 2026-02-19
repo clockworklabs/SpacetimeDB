@@ -17,8 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "entity";
 
+            public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
+            {
+                protected override int GetKey(Entity row) => row.EntityId;
+
+                public EntityIdUniqueIndex(EntityHandle table) : base(table) { }
+            }
+
+            public readonly EntityIdUniqueIndex EntityId;
+
             internal EntityHandle(DbConnection conn) : base(conn)
             {
+                EntityId = new(this);
             }
 
             protected override object GetPrimaryKey(Entity row) => row.EntityId;

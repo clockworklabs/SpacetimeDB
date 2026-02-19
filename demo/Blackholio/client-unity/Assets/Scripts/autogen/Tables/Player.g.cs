@@ -17,8 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "player";
 
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            {
+                protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
+
+                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
+            }
+
+            public readonly IdentityUniqueIndex Identity;
+
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<int>
+            {
+                protected override int GetKey(Player row) => row.PlayerId;
+
+                public PlayerIdUniqueIndex(PlayerHandle table) : base(table) { }
+            }
+
+            public readonly PlayerIdUniqueIndex PlayerId;
+
             internal PlayerHandle(DbConnection conn) : base(conn)
             {
+                Identity = new(this);
+                PlayerId = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;
