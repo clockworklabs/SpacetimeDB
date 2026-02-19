@@ -9,32 +9,6 @@ const testIdentity = Identity.fromString(
 
 // We need to test a fresh instance each time, so we import the class directly
 // and create new instances rather than using the singleton
-class Deferred<T> {
-  #isResolved: boolean = false;
-  #isRejected: boolean = false;
-  #resolve: (value: T | PromiseLike<T>) => void = () => {};
-  #reject: (reason?: any) => void = () => {};
-  promise: Promise<T>;
-
-  constructor() {
-    this.promise = new Promise<T>((resolve, reject) => {
-      this.#resolve = resolve;
-      this.#reject = reject;
-    });
-  }
-
-  get isResolved(): boolean {
-    return this.#isResolved;
-  }
-
-  resolve(value: T): void {
-    if (!this.#isResolved && !this.#isRejected) {
-      this.#isResolved = true;
-      this.#resolve(value);
-    }
-  }
-}
-
 // ConnectionState type matching the implementation
 type ConnectionState = {
   isActive: boolean;
@@ -154,14 +128,12 @@ class MockConnection {
 // ConnectionManager calls builder.onConnect() AFTER build(), so we need to handle that
 class MockBuilder {
   #connection: MockConnection;
-  #built = false;
 
   constructor(connection: MockConnection) {
     this.#connection = connection;
   }
 
   build(): MockConnection {
-    this.#built = true;
     return this.#connection;
   }
 
