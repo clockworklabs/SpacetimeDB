@@ -629,7 +629,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 databases_from_main_config.join(", ")
             );
             let should_continue = Confirm::new()
-                .with_prompt("Do you want to proceed?")
+                .with_prompt("Do you want to proceed with publishing in dev mode?")
                 .default(true)
                 .interact()?;
             if !should_continue {
