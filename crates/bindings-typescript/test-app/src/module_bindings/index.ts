@@ -3,7 +3,6 @@
 
 // This was generated using spacetimedb cli version 2.0.0 (commit de2b65fb8d8d765048bc19553332eeb0b8e75853).
 
-
 /* eslint-disable */
 /* tslint:disable */
 import {
