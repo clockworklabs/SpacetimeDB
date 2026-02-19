@@ -1985,20 +1985,21 @@ mod tests {
         assert_eq!(fb.indexes.len(), 2);
 
         // "RawBasketLookup" → explicit "fb_lookuP"
-               let idx_explicit = fb
-                   .indexes
-                   .values()
-                   .find(|i| i.accessor_name == Some(id("RawBasketLookup")))
-                   .expect("index with accessor 'RawBasketLookup' not found");
-               assert_eq!(
-                   idx_explicit.name,
-                   "fb_lookuP".into(),
-                   "explicit index name used verbatim"
-               );
-               assert_eq!(
-                   idx_explicit.accessor_name, Some(id("RawBasketLookup")),
-                   "accessor_name preserves raw source"
-               );
+        let idx_explicit = fb
+            .indexes
+            .values()
+            .find(|i| i.accessor_name == Some(id("fruitNameIndex")))
+            .expect("index with accessor 'RawBasketLookup' not found");
+        assert_eq!(
+            idx_explicit.name,
+            "fb_lookuP".into(),
+            "explicit index name used verbatim"
+        );
+        assert_eq!(
+            idx_explicit.accessor_name,
+            Some(id("fruitNameIndex")),
+            "accessor_name preserves raw source"
+        );
         //
         // Non-overridden index on deliveryRecord still uses policy-derived table name.
         let dr_index = dr.indexes.values().next().unwrap();
