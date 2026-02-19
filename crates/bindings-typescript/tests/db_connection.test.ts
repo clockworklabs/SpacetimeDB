@@ -1,17 +1,17 @@
-import { DbConnection } from '../test-app/src/module_bindings';
-import User from '../test-app/src/module_bindings/user_table';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
   BinaryWriter,
   ConnectionId,
+  Identity,
   InternalError,
   SenderError,
   Timestamp,
   type Infer,
 } from '../src';
-import ServerMessage from '../src/sdk/client_api/server_message_type';
-import { Identity } from '../src';
+import { ServerMessage } from '../src/sdk/client_api/types';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
+import { DbConnection } from '../test-app/src/module_bindings';
+import User from '../test-app/src/module_bindings/user_table';
 import {
   anIdentity,
   bobIdentity,

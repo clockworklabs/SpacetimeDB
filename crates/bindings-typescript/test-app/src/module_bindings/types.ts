@@ -3,15 +3,41 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from '../../../src/index';
+import {
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../../src/index';
 
-// Import all non-reducer types
-import Player from './player_type';
-import Point from './point_type';
-import UnindexedPlayer from './unindexed_player_type';
-import User from './user_type';
-
+export const Player = __t.object('Player', {
+  id: __t.u32(),
+  userId: __t.identity(),
+  name: __t.string(),
+  get location() {
+    return Point;
+  },
+});
 export type Player = __Infer<typeof Player>;
+
+export const Point = __t.object('Point', {
+  x: __t.u16(),
+  y: __t.u16(),
+});
 export type Point = __Infer<typeof Point>;
+
+export const UnindexedPlayer = __t.object('UnindexedPlayer', {
+  id: __t.u32(),
+  ownerId: __t.identity(),
+  name: __t.string(),
+  get location() {
+    return Point;
+  },
+});
 export type UnindexedPlayer = __Infer<typeof UnindexedPlayer>;
+
+export const User = __t.object('User', {
+  identity: __t.identity(),
+  username: __t.string(),
+});
 export type User = __Infer<typeof User>;
