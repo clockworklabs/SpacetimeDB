@@ -209,11 +209,9 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
         let ft = entry.file_type()?;
         if ft.is_dir() {
             expected.insert(name.to_string());
-        } else if ft.is_file() {
-            if path.extension() == Some(OsStr::new("rs")) {
-                if let Some(stem) = path.file_stem() {
-                    expected.insert(stem.to_string_lossy().to_string());
-                }
+        } else if ft.is_file() && path.extension() == Some(OsStr::new("rs")) {
+            if let Some(stem) = path.file_stem() {
+                expected.insert(stem.to_string_lossy().to_string());
             }
         }
     }

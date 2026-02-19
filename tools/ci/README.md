@@ -121,6 +121,17 @@ Usage: prepare
 
 - `--help`: Print help (see a summary with '-h')
 
+#### `check-mod-list`
+
+**Usage:**
+```bash
+Usage: check-mod-list
+```
+
+**Options:**
+
+- `--help`: 
+
 #### `help`
 
 **Usage:**
