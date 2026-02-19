@@ -9,6 +9,7 @@ use std::sync::{Arc, Barrier, Mutex};
 use module_bindings::*;
 
 use rand::RngCore;
+use spacetimedb_sdk::error::InternalError;
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{
     credentials, i256, u256, Compression, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent,
@@ -433,6 +434,20 @@ fn subscribe_these_then(
         .subscribe(queries);
 }
 
+fn assert_outcome_committed(reducer_name: &'static str, outcome: Result<Result<(), String>, InternalError>) {
+    match outcome {
+        Ok(Ok(())) => (),
+        Ok(Err(msg)) => panic!("`{reducer_name}` reducer returned error: {msg}"),
+        Err(internal_error) => panic!("`{reducer_name}` reducer panicked: {internal_error:?}"),
+    }
+}
+
+fn reducer_callback_assert_committed(
+    reducer_name: &'static str,
+) -> impl FnOnce(&ReducerEventContext, Result<Result<(), String>, InternalError>) + Send + 'static {
+    move |_ctx, outcome| assert_outcome_committed(reducer_name, outcome)
+}
+
 fn exec_subscribe_and_cancel() {
     let test_counter = TestCounter::new();
     let cb = test_counter.add_test("unsubscribe_then_called");
@@ -465,7 +480,9 @@ fn exec_subscribe_and_unsubscribe() {
     let cb = test_counter.add_test("unsubscribe_then_called");
     connect_then(&test_counter, {
         move |ctx| {
-            ctx.reducers.insert_one_u_8(1).unwrap();
+            ctx.reducers
+                .insert_one_u_8_then(1, reducer_callback_assert_committed("insert_one_u_8_then"))
+                .unwrap();
             let handle_cell: Arc<Mutex<Option<module_bindings::SubscriptionHandle>>> = Arc::new(Mutex::new(None));
             let hc_clone = handle_cell.clone();
             let handle = ctx
@@ -666,7 +683,9 @@ fn exec_insert_caller_identity() {
                 on_insert_one::<OneIdentity>(ctx, &test_counter, ctx.identity(), |event| {
                     matches!(event, Reducer::InsertCallerOneIdentity)
                 });
-                ctx.reducers.insert_caller_one_identity().unwrap();
+                ctx.reducers
+                    .insert_caller_one_identity_then(reducer_callback_assert_committed("insert_caller_one_identity"))
+                    .unwrap();
 
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
@@ -751,7 +770,11 @@ fn exec_insert_caller_connection_id() {
                 on_insert_one::<OneConnectionId>(ctx, &test_counter, ctx.connection_id(), |event| {
                     matches!(event, Reducer::InsertCallerOneConnectionId)
                 });
-                ctx.reducers.insert_caller_one_connection_id().unwrap();
+                ctx.reducers
+                    .insert_caller_one_connection_id_then(reducer_callback_assert_committed(
+                        "insert_caller_one_connection_id",
+                    ))
+                    .unwrap();
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
@@ -861,7 +884,9 @@ fn exec_insert_call_timestamp() {
                     };
                     (on_insert_result.take().unwrap())(run_checks());
                 });
-                ctx.reducers.insert_call_timestamp().unwrap();
+                ctx.reducers
+                    .insert_call_timestamp_then(reducer_callback_assert_committed("insert_call_timestamp"))
+                    .unwrap();
             });
             sub_applied_nothing_result(assert_all_tables_empty(ctx));
         }
@@ -1429,7 +1454,7 @@ fn exec_insert_delete_large_table() {
 
                         // Now we'll delete the row we just inserted and check that the delete callback is called.
                         let large_table = large_table();
-                        ctx.reducers.delete_large_table(
+                        ctx.reducers.delete_large_table_then(
                             large_table.a,
                             large_table.b,
                             large_table.c,
@@ -1452,6 +1477,7 @@ fn exec_insert_delete_large_table() {
                             large_table.t,
                             large_table.u,
                             large_table.v,
+                            reducer_callback_assert_committed("delete_large_table_then"),
                         )?;
 
                         Ok(())
@@ -1479,7 +1505,7 @@ fn exec_insert_delete_large_table() {
             });
             let large_table = large_table();
             ctx.reducers
-                .insert_large_table(
+                .insert_large_table_then(
                     large_table.a,
                     large_table.b,
                     large_table.c,
@@ -1502,6 +1528,7 @@ fn exec_insert_delete_large_table() {
                     large_table.t,
                     large_table.u,
                     large_table.v,
+                    reducer_callback_assert_committed("insert_large_table"),
                 )
                 .unwrap();
 
@@ -1570,7 +1597,9 @@ fn exec_insert_primitives_as_strings() {
                     (result.take().unwrap())(run_tests());
                 }
             });
-            ctx.reducers.insert_primitives_as_strings(s).unwrap();
+            ctx.reducers
+                .insert_primitives_as_strings_then(s, reducer_callback_assert_committed("insert_primitives_as_strings"))
+                .unwrap();
 
             sub_applied_nothing_result(assert_all_tables_empty(ctx))
         }
@@ -1885,8 +1914,14 @@ fn exec_sorted_uuids_insert() {
         let test_counter = test_counter.clone();
         move |ctx| {
             ctx.reducers
-                .sorted_uuids_insert_then(move |ctx, _status| {
+                .sorted_uuids_insert_then(move |ctx, status| {
+                    // FIXME(pgoldman 2026-02-19): What's the deal with this test?
+                    // Surely it should have some more assertions in it...
                     let run_checks = || {
+                        match status {
+                            Ok(Ok(())) => (),
+                            _ => anyhow::bail!("Unexpected status: Expected Ok(Ok(())) but got {status:?}"),
+                        }
                         if !matches!(ctx.event.reducer, Reducer::SortedUuidsInsert) {
                             anyhow::bail!(
                                 "Unexpected Event: expected reducer SortedUuidsInsert but found {:?}",
@@ -1973,7 +2008,8 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     let alice_gets_reducer_callback = counter.add_test("gets_reducer_callback_alice");
     conns[0]
         .reducers()
-        .insert_one_u_8_then(42, move |_ctx, _status| {
+        .insert_one_u_8_then(42, move |_ctx, status| {
+            assert_outcome_committed("insert_one_u_8", status);
             alice_gets_reducer_callback(check_val(42u8, 42u8));
         })
         .unwrap();
@@ -1981,7 +2017,10 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     // Alice executes a reducer without registering a callback.
     // In v2, no reducer completion callback is fired unless _then is used,
     // so no special flags are needed.
-    conns[0].reducers().insert_one_u_16(24).unwrap();
+    conns[0]
+        .reducers()
+        .insert_one_u_16_then(24, reducer_callback_assert_committed("insert_one_u_16"))
+        .unwrap();
 
     counter.wait_for_all();
 
@@ -2100,7 +2139,14 @@ fn exec_row_deduplication_join_r_and_s() {
                 assert_eq!(val.n, KEY);
                 assert_eq!(val.data, D1);
                 put_result(&mut pk_u32_on_insert_result, Ok(()));
-                ctx.reducers.insert_unique_u_32_update_pk_u_32(KEY, DU, D2).unwrap();
+                ctx.reducers
+                    .insert_unique_u_32_update_pk_u_32_then(
+                        KEY,
+                        DU,
+                        D2,
+                        reducer_callback_assert_committed("insert_unique_u_32_update_pk_u_32"),
+                    )
+                    .unwrap();
             });
             // This is caused by the reducer invocation ^-----
             PkU32::on_update(ctx, move |_, old, new| {
@@ -2155,7 +2201,13 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
             PkU32::on_insert(ctx, move |ctx, val| {
                 assert_eq!(val, &PkU32 { n: KEY, data: DATA });
                 put_result(&mut pk_u32_on_insert_result, Ok(()));
-                ctx.reducers.delete_pk_u_32_insert_pk_u_32_two(KEY, DATA).unwrap();
+                ctx.reducers
+                    .delete_pk_u_32_insert_pk_u_32_two_then(
+                        KEY,
+                        DATA,
+                        reducer_callback_assert_committed("delete_pk_u_32_insert_pk_u_32_two"),
+                    )
+                    .unwrap();
             });
             PkU32Two::on_insert(ctx, move |_, val| {
                 assert_eq!(val, &PkU32Two { n: KEY, data: DATA });
@@ -2202,27 +2254,35 @@ fn test_lhs_join_update() {
 
     // Add two pk_u32 rows to the subscription
     conn.reducers
-        .insert_pk_u_32_then(1, 0, move |_, _| {
+        .insert_pk_u_32_then(1, 0, move |_, outcome| {
+            assert_outcome_committed("insert_pk_u_32", outcome);
             put_result(&mut on_insert_1, Ok(()));
         })
         .unwrap();
     conn.reducers
-        .insert_pk_u_32_then(2, 0, move |_, _| {
+        .insert_pk_u_32_then(2, 0, move |_, outcome| {
+            assert_outcome_committed("insert_pk_u_32", outcome);
             put_result(&mut on_insert_2, Ok(()));
         })
         .unwrap();
-    conn.reducers.insert_unique_u_32(1, 3).unwrap();
-    conn.reducers.insert_unique_u_32(2, 4).unwrap();
+    conn.reducers
+        .insert_unique_u_32_then(1, 3, reducer_callback_assert_committed("insert_unique_u_32"))
+        .unwrap();
+    conn.reducers
+        .insert_unique_u_32_then(2, 4, reducer_callback_assert_committed("insert_unique_u_32"))
+        .unwrap();
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
     insert_counter.wait_for_all();
     conn.reducers
-        .update_pk_u_32_then(2, 1, move |ctx, _| {
+        .update_pk_u_32_then(2, 1, move |ctx, outcome| {
+            assert_outcome_committed("update_pk_u_32", outcome);
             put_result(&mut on_update_1, Ok(()));
             // Chain another update to verify the second update callback.
             ctx.reducers
-                .update_pk_u_32_then(2, 0, move |_, _| {
+                .update_pk_u_32_then(2, 0, move |_, outcome| {
+                    assert_outcome_committed("update_pk_u_32", outcome);
                     put_result(&mut on_update_2, Ok(()));
                 })
                 .unwrap();
@@ -2253,27 +2313,35 @@ fn test_lhs_join_update_disjoint_queries() {
 
     // Add two pk_u32 rows to the subscription
     conn.reducers
-        .insert_pk_u_32_then(1, 0, move |_, _| {
+        .insert_pk_u_32_then(1, 0, move |_, outcome| {
+            assert_outcome_committed("insert_pk_u_32", outcome);
             put_result(&mut on_insert_1, Ok(()));
         })
         .unwrap();
     conn.reducers
-        .insert_pk_u_32_then(2, 0, move |_, _| {
+        .insert_pk_u_32_then(2, 0, move |_, outcome| {
+            assert_outcome_committed("insert_pk_u_32", outcome);
             put_result(&mut on_insert_2, Ok(()));
         })
         .unwrap();
-    conn.reducers.insert_unique_u_32(1, 3).unwrap();
-    conn.reducers.insert_unique_u_32(2, 4).unwrap();
+    conn.reducers
+        .insert_unique_u_32_then(1, 3, reducer_callback_assert_committed("insert_unique_u_32"))
+        .unwrap();
+    conn.reducers
+        .insert_unique_u_32_then(2, 4, reducer_callback_assert_committed("insert_unique_u_32"))
+        .unwrap();
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
     insert_counter.wait_for_all();
     conn.reducers
-        .update_pk_u_32_then(2, 1, move |ctx, _| {
+        .update_pk_u_32_then(2, 1, move |ctx, outcome| {
+            assert_outcome_committed("update_pk_u_32", outcome);
             put_result(&mut on_update_1, Ok(()));
             // Chain another update to verify the second update callback.
             ctx.reducers
-                .update_pk_u_32_then(2, 0, move |_, _| {
+                .update_pk_u_32_then(2, 0, move |_, outcome| {
+                    assert_outcome_committed("update_pk_u_32", outcome);
                     put_result(&mut on_update_2, Ok(()));
                 })
                 .unwrap();
@@ -2309,7 +2377,10 @@ fn test_intra_query_bag_semantics_for_join() {
                     // so no subscription update will be sent,
                     // and no callbacks invoked.
                     ctx.reducers
-                        .insert_into_btree_u_32(vec![BTreeU32 { n: 0, data: 0 }])
+                        .insert_into_btree_u_32_then(
+                            vec![BTreeU32 { n: 0, data: 0 }],
+                            reducer_callback_assert_committed("insert_into_btree_u_32"),
+                        )
                         .unwrap();
 
                     // Insert (n: 0, data: 0) into pk_u32.
@@ -2322,7 +2393,11 @@ fn test_intra_query_bag_semantics_for_join() {
                     //
                     // IMPORTANT: The multiplicity of this row is 2.
                     ctx.reducers
-                        .insert_into_pk_btree_u_32(vec![PkU32 { n: 0, data: 0 }], vec![BTreeU32 { n: 0, data: 1 }])
+                        .insert_into_pk_btree_u_32_then(
+                            vec![PkU32 { n: 0, data: 0 }],
+                            vec![BTreeU32 { n: 0, data: 1 }],
+                            reducer_callback_assert_committed("insert_into_pk_btree_u_32"),
+                        )
                         .unwrap();
 
                     // Delete (n: 0, data: 0) from btree_u32.
@@ -2332,7 +2407,10 @@ fn test_intra_query_bag_semantics_for_join() {
                     // Hence on_delete should not be invoked,
                     // Only the multiplicity should be decremented by 1.
                     ctx.reducers
-                        .delete_from_btree_u_32(vec![BTreeU32 { n: 0, data: 0 }])
+                        .delete_from_btree_u_32_then(
+                            vec![BTreeU32 { n: 0, data: 0 }],
+                            reducer_callback_assert_committed("delete_from_into_btree_u_32"),
+                        )
                         .unwrap();
 
                     // Delete (n: 0, data: 1) from btree_u32.
@@ -2340,7 +2418,10 @@ fn test_intra_query_bag_semantics_for_join() {
                     // There are no more rows that join with pk_u32(n: 0, data: 0),
                     // so on_delete should be invoked.
                     ctx.reducers
-                        .delete_from_btree_u_32(vec![BTreeU32 { n: 0, data: 1 }])
+                        .delete_from_btree_u_32_then(
+                            vec![BTreeU32 { n: 0, data: 1 }],
+                            reducer_callback_assert_committed("delete_from_btree_u_32"),
+                        )
                         .unwrap();
 
                     sub_applied_nothing_result(assert_all_tables_empty(ctx));
@@ -2526,7 +2607,9 @@ fn test_rls_subscription() {
                     put_result(&mut record_sub, Ok(()));
                     // Wait to insert until both client connections have been made
                     ctr_for_subs.wait_for_all();
-                    ctx.reducers.insert_user(user_name, sender).unwrap();
+                    ctx.reducers
+                        .insert_user_then(user_name, sender, reducer_callback_assert_committed("insert_user"))
+                        .unwrap();
                 });
                 ctx.db.users().on_insert(move |_, user| {
                     assert_eq!(user.name, expected_name);
@@ -2570,10 +2653,14 @@ fn exec_pk_simple_enum() {
             ctx.db.pk_simple_enum().on_insert(move |ctx, row| {
                 assert_eq!(row.data, data1);
                 assert_eq!(row.a, a);
-                ctx.reducers().update_pk_simple_enum(a, data2).unwrap();
+                ctx.reducers()
+                    .update_pk_simple_enum_then(a, data2, reducer_callback_assert_committed("update_pk_simple_enum"))
+                    .unwrap();
             });
             ctx.db.pk_simple_enum().on_delete(|_, _| unreachable!());
-            ctx.reducers().insert_pk_simple_enum(a, data1).unwrap();
+            ctx.reducers()
+                .insert_pk_simple_enum_then(a, data1, reducer_callback_assert_committed("insert_pk_simple_enum"))
+                .unwrap();
         });
     });
     test_counter.wait_for_all();
@@ -2587,14 +2674,26 @@ fn exec_indexed_simple_enum() {
             let a1 = SimpleEnum::Two;
             let a2 = SimpleEnum::One;
             ctx.db.indexed_simple_enum().on_insert(move |ctx, row| match &row.n {
-                SimpleEnum::Two => ctx.reducers().update_indexed_simple_enum(a1, a2).unwrap(),
+                SimpleEnum::Two => ctx
+                    .reducers()
+                    .update_indexed_simple_enum_then(
+                        a1,
+                        a2,
+                        reducer_callback_assert_committed("update_indexed_simple_enum"),
+                    )
+                    .unwrap(),
                 SimpleEnum::One => {
                     assert_eq!(row.n, a2);
                     put_result(&mut updated, Ok(()));
                 }
                 SimpleEnum::Zero => unreachable!(),
             });
-            ctx.reducers().insert_into_indexed_simple_enum(a1).unwrap();
+            ctx.reducers()
+                .insert_into_indexed_simple_enum_then(
+                    a1,
+                    reducer_callback_assert_committed("insert_into_indexed_simple_enum"),
+                )
+                .unwrap();
         });
     });
     test_counter.wait_for_all();
@@ -2675,7 +2774,11 @@ fn exec_overlapping_subscriptions() {
         })())
     });
 
-    call_update_result(conn.reducers.update_pk_u_8(1, 1).map_err(|e| e.into()));
+    call_update_result(
+        conn.reducers
+            .update_pk_u_8_then(1, 1, reducer_callback_assert_committed("update_pk_u_8"))
+            .map_err(|e| e.into()),
+    );
 
     test_counter.wait_for_all();
 }
