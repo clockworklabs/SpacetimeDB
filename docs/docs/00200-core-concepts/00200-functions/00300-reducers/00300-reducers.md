@@ -707,4 +707,4 @@ See [Schedule Tables](/tables/schedule-tables) for more scheduling options.
 
 - Learn about [Tables](/tables) to understand data storage
 - Explore [Procedures](/functions/procedures) for side effects beyond the database
-- Review [Subscriptions](/subscriptions) for real-time client updates
+- Review [Subscriptions](/clients/subscriptions) for real-time client updates

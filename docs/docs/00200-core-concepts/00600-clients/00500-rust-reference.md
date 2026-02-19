@@ -1,7 +1,7 @@
 ---
 title: Rust Reference
 toc_max_heading_level: 6
-slug: /sdks/rust
+slug: /clients/rust
 ---
 
 
@@ -9,9 +9,9 @@ The SpacetimeDB client SDK for Rust contains all the tools you need to build nat
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/sdks/codegen) - How to generate Rust bindings from your module
-- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
-- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](/clients/codegen) - How to generate Rust bindings from your module
+- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections
+- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
 
 | Name                                                              | Description                                                                                                                            |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -23,6 +23,7 @@ Before diving into the reference, you may want to review:
 | [`ReducerEventContext` type](#type-reducereventcontext)           | [`DbContext`](#trait-dbcontext) available in [reducer callbacks](#observe-and-invoke-reducers).                                        |
 | [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | [`DbContext`](#trait-dbcontext) available in [subscription-related callbacks](#subscribe-to-queries).                                  |
 | [`ErrorContext` type](#type-errorcontext)                         | [`DbContext`](#trait-dbcontext) available in error-related callbacks.                                                                  |
+| [Query Builder API](#query-builder-api)                           | Type-safe query builder for typed subscription queries.                                                                                 |
 | [Access the client cache](#access-the-client-cache)               | Make local queries against subscribed rows, and register [row callbacks](#callback-on_insert) to run when subscribed rows change.      |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.                                |
 | [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                                                    |
@@ -265,7 +266,7 @@ The `DbContext` trait is implemented by connections and contexts to _every_ modu
 | [`db` method](#method-db)                             | Trait-generic alternative to the `db` field of `DbConnection`.           |
 | [`reducers` method](#method-reducers)                 | Trait-generic alternative to the `reducers` field of `DbConnection`.     |
 | [`disconnect` method](#method-disconnect)             | End the connection.                                                      |
-| [Subscribe to queries](#subscribe-to-queries)         | Register SQL queries to receive updates about matching rows.             |
+| [Subscribe to queries](#subscribe-to-queries)         | Register subscription queries to receive updates about matching rows.     |
 | [Read connection metadata](#read-connection-metadata) | Access the connection's `Identity` and `ConnectionId`                    |
 
 ### Trait `RemoteDbContext`
@@ -330,7 +331,8 @@ Gracefully close the `DbConnection`. Returns an `Err` if the connection is alrea
 | Name                                                    | Description                                                 |
 | ------------------------------------------------------- | ----------------------------------------------------------- |
 | [`SubscriptionBuilder` type](#type-subscriptionbuilder) | Builder-pattern constructor to register subscribed queries. |
-| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscripion.                               |
+| [`TypedSubscriptionBuilder` type](#type-typedsubscriptionbuilder) | Builder for typed query subscriptions. |
+| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscription.                              |
 
 #### Type `SubscriptionBuilder`
 
@@ -343,7 +345,8 @@ spacetimedb_sdk::SubscriptionBuilder
 | [`ctx.subscription_builder()` constructor](#constructor-ctxsubscription_builder) | Begin configuring a new subscription.                           |
 | [`on_applied` callback](#callback-on_applied)                                    | Register a callback to run when matching rows become available. |
 | [`on_error` callback](#callback-on_error)                                        | Register a callback to run if the subscription fails.           |
-| [`subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more SQL queries.  |
+| [`subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more queries.       |
+| [`add_query` method](#method-add_query)                                          | Build a typed subscription query without writing query strings. |
 | [`subscribe_to_all_tables` method](#method-subscribe_to_all_tables)              | Convenience method to subscribe to the entire database.         |
 
 ##### Constructor `ctx.subscription_builder()`
@@ -388,6 +391,29 @@ Subscribe to a set of queries. `queries` should be a string or an array, vec or 
 
 See [the SpacetimeDB SQL Reference](/reference/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
+For typed query subscriptions, use [`add_query`](#method-add_query).
+
+##### Method `add_query`
+
+```rust
+impl<M: SpacetimeModule> SubscriptionBuilder<M> {
+    fn add_query<T>(
+        self,
+        build: impl Fn(M::QueryBuilder) -> impl Query<T>,
+    ) -> TypedSubscriptionBuilder<M>;
+}
+```
+
+Start a typed query subscription. Once a typed query is added, continue with typed queries on `TypedSubscriptionBuilder` and finish with `subscribe()`.
+
+```rust
+let handle = conn
+    .subscription_builder()
+    .add_query(|q| q.from.user())
+    .add_query(|q| q.from.message())
+    .subscribe();
+```
+
 ##### Method `subscribe_to_all_tables`
 
 ```rust
@@ -397,6 +423,136 @@ impl SubscriptionBuilder {
 ```
 
 Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribe_to_all_tables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
+
+#### Type `TypedSubscriptionBuilder`
+
+```rust
+TypedSubscriptionBuilder<M>
+```
+
+| Name                                                           | Description |
+| -------------------------------------------------------------- | ----------- |
+| [`add_query` method](#method-add_query-typedsubscriptionbuilder) | Add another typed query to the same subscription. |
+| [`subscribe` method](#method-subscribe-typedsubscriptionbuilder) | Subscribe to all typed queries added so far. |
+
+##### Method `add_query` (TypedSubscriptionBuilder)
+
+```rust
+impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+    fn add_query<T>(
+        self,
+        build: impl Fn(M::QueryBuilder) -> impl Query<T>,
+    ) -> Self;
+}
+```
+
+Add another typed query. This keeps all added queries grouped under one returned `SubscriptionHandle`.
+
+##### Method `subscribe` (TypedSubscriptionBuilder)
+
+```rust
+impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+    fn subscribe(self) -> M::SubscriptionHandle;
+}
+```
+
+Subscribe to the set of typed queries that were added to the builder.
+
+## Query Builder API
+
+The Rust SDK provides a type-safe query builder for subscriptions. You use it through `subscription_builder().add_query(...)`.
+
+### Entry Point
+
+Typed query builders are created from generated table accessors under `QueryBuilder.from`.
+
+```rust
+let handle = conn
+    .subscription_builder()
+    .add_query(|q| q.from.user())
+    .subscribe();
+```
+
+### Building Queries with `where` / `filter`
+
+Rust uses the raw identifier form `r#where(...)` because `where` is a keyword. `filter(...)` is an alias. Chaining multiple `r#where`/`filter` calls combines conditions with logical `AND`.
+
+```rust
+// All users
+q.from.user()
+
+// Filtered users
+q.from.user().r#where(|u| u.online.eq(true))
+q.from.user().filter(|u| u.name.ne("Anonymous"))
+
+// Chained filters (AND semantics)
+q.from
+    .user()
+    .r#where(|u| u.score.gte(1000u64))
+    .filter(|u| u.level.gte(10u32))
+```
+
+### Comparison Operators
+
+| Operator | Description              | Example                      |
+| --- | --- | --- |
+| `eq` | Equal to | `u.online.eq(true)` |
+| `ne` | Not equal to | `u.name.ne("BOT")` |
+| `lt` | Less than | `u.level.lt(10u32)` |
+| `lte` | Less than or equal to | `u.level.lte(10u32)` |
+| `gt` | Greater than | `u.score.gt(1000u64)` |
+| `gte` | Greater than or equal to | `u.score.gte(1000u64)` |
+
+### Boolean Combinators
+
+Combine conditions with `and`, `or`, and `not`:
+
+```rust
+q.from.user().r#where(|u| u.level.gte(5u32).and(u.level.lt(10u32)))
+q.from.user().r#where(|u| u.online.eq(true).or(u.name.eq("Admin")))
+q.from.user().r#where(|u| u.banned.eq(true).not())
+```
+
+### Semijoins
+
+Semijoins match rows across two tables and return rows from one side:
+
+- `left_semijoin(...)` returns rows from the left side that match at least one row on the right.
+- `right_semijoin(...)` returns rows from the right side that match at least one row on the left.
+- The join predicate uses indexed columns (`IxCols`) and compares one indexed column from each side with `eq`.
+- Filters before a semijoin apply to the pre-join source side. Filters after a semijoin apply to the returned side.
+
+```rust
+let handle = conn
+    .subscription_builder()
+    .add_query(|q| {
+        q.from
+            .player()
+            .r#where(|p| p.score.gte(1000u64))
+            .left_semijoin(q.from.player_level(), |p, pl| p.id.eq(pl.player_id))
+            .r#where(|p| p.online.eq(true))
+    })
+    .add_query(|q| {
+        q.from
+            .player()
+            .r#where(|p| p.score.gte(1000u64))
+            .right_semijoin(q.from.player_level(), |p, pl| p.id.eq(pl.player_id))
+            .r#where(|pl| pl.level.gte(10u32))
+    })
+    .subscribe();
+```
+
+### Using Query Builders with Subscriptions
+
+`add_query` accepts a builder function returning `impl Query<T>`. You can add multiple typed queries and subscribe once.
+
+```rust
+let handle = conn
+    .subscription_builder()
+    .add_query(|q| q.from.user().r#where(|u| u.online.eq(true)))
+    .add_query(|q| q.from.message().r#where(|m| m.channel_id.eq(1u32)))
+    .subscribe();
+```
 
 #### Type `SubscriptionHandle`
 

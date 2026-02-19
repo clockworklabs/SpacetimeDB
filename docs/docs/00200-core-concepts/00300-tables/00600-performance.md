@@ -638,5 +638,5 @@ Be mindful of unbounded table growth:
 ## Next Steps
 
 - Learn about [Indexes](/tables/indexes) to optimize queries
-- Explore [Subscriptions](/subscriptions) for efficient client data sync
+- Explore [Subscriptions](/clients/subscriptions) for efficient client data sync
 - Review [Reducers](/functions/reducers) for efficient data modification patterns
