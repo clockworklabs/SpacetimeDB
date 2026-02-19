@@ -59,11 +59,7 @@ const tablesSchema = __schema({
     {
       name: 'user',
       indexes: [
-        {
-          name: 'identity',
-          algorithm: 'btree',
-          columns: ['identity'],
-        },
+        { name: 'identity', algorithm: 'btree', columns: ['identity'] },
       ],
       constraints: [
         {
