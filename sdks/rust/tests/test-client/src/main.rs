@@ -289,21 +289,21 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
 
 /// A great big honking query that subscribes to all rows from all tables.
 const SUBSCRIBE_ALL: &[&str] = &[
-    "SELECT * FROM one_u8;",
-    "SELECT * FROM one_u16;",
-    "SELECT * FROM one_u32;",
-    "SELECT * FROM one_u64;",
-    "SELECT * FROM one_u128;",
-    "SELECT * FROM one_u256;",
-    "SELECT * FROM one_i8;",
-    "SELECT * FROM one_i16;",
-    "SELECT * FROM one_i32;",
-    "SELECT * FROM one_i64;",
-    "SELECT * FROM one_i128;",
-    "SELECT * FROM one_i256;",
+    "SELECT * FROM one_u_8;",
+    "SELECT * FROM one_u_16;",
+    "SELECT * FROM one_u_32;",
+    "SELECT * FROM one_u_64;",
+    "SELECT * FROM one_u_128;",
+    "SELECT * FROM one_u_256;",
+    "SELECT * FROM one_i_8;",
+    "SELECT * FROM one_i_16;",
+    "SELECT * FROM one_i_32;",
+    "SELECT * FROM one_i_64;",
+    "SELECT * FROM one_i_128;",
+    "SELECT * FROM one_i_256;",
     "SELECT * FROM one_bool;",
-    "SELECT * FROM one_f32;",
-    "SELECT * FROM one_f64;",
+    "SELECT * FROM one_f_32;",
+    "SELECT * FROM one_f_64;",
     "SELECT * FROM one_string;",
     "SELECT * FROM one_identity;",
     "SELECT * FROM one_connection_id;",
@@ -315,21 +315,21 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM one_byte_struct;",
     "SELECT * FROM one_every_primitive_struct;",
     "SELECT * FROM one_every_vec_struct;",
-    "SELECT * FROM vec_u8;",
-    "SELECT * FROM vec_u16;",
-    "SELECT * FROM vec_u32;",
-    "SELECT * FROM vec_u64;",
-    "SELECT * FROM vec_u128;",
-    "SELECT * FROM vec_u256;",
-    "SELECT * FROM vec_i8;",
-    "SELECT * FROM vec_i16;",
-    "SELECT * FROM vec_i32;",
-    "SELECT * FROM vec_i64;",
-    "SELECT * FROM vec_i128;",
-    "SELECT * FROM vec_i256;",
+    "SELECT * FROM vec_u_8;",
+    "SELECT * FROM vec_u_16;",
+    "SELECT * FROM vec_u_32;",
+    "SELECT * FROM vec_u_64;",
+    "SELECT * FROM vec_u_128;",
+    "SELECT * FROM vec_u_256;",
+    "SELECT * FROM vec_i_8;",
+    "SELECT * FROM vec_i_16;",
+    "SELECT * FROM vec_i_32;",
+    "SELECT * FROM vec_i_64;",
+    "SELECT * FROM vec_i_128;",
+    "SELECT * FROM vec_i_256;",
     "SELECT * FROM vec_bool;",
-    "SELECT * FROM vec_f32;",
-    "SELECT * FROM vec_f64;",
+    "SELECT * FROM vec_f_32;",
+    "SELECT * FROM vec_f_64;",
     "SELECT * FROM vec_string;",
     "SELECT * FROM vec_identity;",
     "SELECT * FROM vec_connection_id;",
@@ -341,42 +341,42 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM vec_byte_struct;",
     "SELECT * FROM vec_every_primitive_struct;",
     "SELECT * FROM vec_every_vec_struct;",
-    "SELECT * FROM option_i32;",
+    "SELECT * FROM option_i_32;",
     "SELECT * FROM option_string;",
     "SELECT * FROM option_identity;",
     "SELECT * FROM option_uuid;",
     "SELECT * FROM option_simple_enum;",
     "SELECT * FROM option_every_primitive_struct;",
-    "SELECT * FROM option_vec_option_i32;",
-    "SELECT * FROM unique_u8;",
-    "SELECT * FROM unique_u16;",
-    "SELECT * FROM unique_u32;",
-    "SELECT * FROM unique_u64;",
-    "SELECT * FROM unique_u128;",
-    "SELECT * FROM unique_u256;",
-    "SELECT * FROM unique_i8;",
-    "SELECT * FROM unique_i16;",
-    "SELECT * FROM unique_i32;",
-    "SELECT * FROM unique_i64;",
-    "SELECT * FROM unique_i128;",
-    "SELECT * FROM unique_i256;",
+    "SELECT * FROM option_vec_option_i_32;",
+    "SELECT * FROM unique_u_8;",
+    "SELECT * FROM unique_u_16;",
+    "SELECT * FROM unique_u_32;",
+    "SELECT * FROM unique_u_64;",
+    "SELECT * FROM unique_u_128;",
+    "SELECT * FROM unique_u_256;",
+    "SELECT * FROM unique_i_8;",
+    "SELECT * FROM unique_i_16;",
+    "SELECT * FROM unique_i_32;",
+    "SELECT * FROM unique_i_64;",
+    "SELECT * FROM unique_i_128;",
+    "SELECT * FROM unique_i_256;",
     "SELECT * FROM unique_bool;",
     "SELECT * FROM unique_string;",
     "SELECT * FROM unique_identity;",
     "SELECT * FROM unique_connection_id;",
     "SELECT * FROM unique_uuid;",
-    "SELECT * FROM pk_u8;",
-    "SELECT * FROM pk_u16;",
-    "SELECT * FROM pk_u32;",
-    "SELECT * FROM pk_u64;",
-    "SELECT * FROM pk_u128;",
-    "SELECT * FROM pk_u256;",
-    "SELECT * FROM pk_i8;",
-    "SELECT * FROM pk_i16;",
-    "SELECT * FROM pk_i32;",
-    "SELECT * FROM pk_i64;",
-    "SELECT * FROM pk_i128;",
-    "SELECT * FROM pk_i256;",
+    "SELECT * FROM pk_u_8;",
+    "SELECT * FROM pk_u_16;",
+    "SELECT * FROM pk_u_32;",
+    "SELECT * FROM pk_u_64;",
+    "SELECT * FROM pk_u_128;",
+    "SELECT * FROM pk_u_256;",
+    "SELECT * FROM pk_i_8;",
+    "SELECT * FROM pk_i_16;",
+    "SELECT * FROM pk_i_32;",
+    "SELECT * FROM pk_i_64;",
+    "SELECT * FROM pk_i_128;",
+    "SELECT * FROM pk_i_256;",
     "SELECT * FROM pk_bool;",
     "SELECT * FROM pk_string;",
     "SELECT * FROM pk_identity;",
@@ -444,7 +444,7 @@ fn exec_subscribe_and_cancel() {
                     panic!("Subscription should never be applied");
                 })
                 .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-                .subscribe("SELECT * FROM one_u8;");
+                .subscribe("SELECT * FROM one_u_8;");
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
             let handle_clone = handle.clone();
@@ -487,7 +487,7 @@ fn exec_subscribe_and_unsubscribe() {
                         .unwrap();
                 })
                 .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-                .subscribe("SELECT * FROM one_u8;");
+                .subscribe("SELECT * FROM one_u_8;");
             handle_cell.lock().unwrap().replace(handle.clone());
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
@@ -2013,8 +2013,8 @@ fn exec_row_deduplication() {
     let conn = connect_then(&test_counter, {
         move |ctx| {
             let queries = [
-                "SELECT * FROM pk_u32 WHERE pk_u32.n < 100;",
-                "SELECT * FROM pk_u32 WHERE pk_u32.n < 200;",
+                "SELECT * FROM pk_u_32 WHERE pk_u_32.n < 100;",
+                "SELECT * FROM pk_u_32 WHERE pk_u_32.n < 200;",
             ];
 
             // The general approach in this test is that
@@ -2076,7 +2076,7 @@ fn exec_row_deduplication_join_r_and_s() {
     connect_then(&test_counter, {
         move |ctx| {
             let queries = [
-                "SELECT * FROM pk_u32;",
+                "SELECT * FROM pk_u_32;",
                 "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
             ];
 
@@ -2137,8 +2137,8 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
     connect_then(&test_counter, {
         move |ctx| {
             let queries = [
-                "SELECT * FROM pk_u32;",
-                "SELECT * FROM pk_u32_two;",
+                "SELECT * FROM pk_u_32;",
+                "SELECT * FROM pk_u_32_two;",
                 "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
                 "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32_two ON unique_u32.n = pk_u32_two.n;",
             ];
@@ -2391,7 +2391,7 @@ fn exec_two_different_compression_algos() {
             compression_name,
             |b| b.with_compression(compression),
             move |ctx| {
-                subscribe_these_then(ctx, &["SELECT * FROM vec_u8"], move |ctx| {
+                subscribe_these_then(ctx, &["SELECT * FROM vec_u_8"], move |ctx| {
                     VecU8::on_insert(ctx, move |_, actual| {
                         let actual: &[u8] = actual.n.as_slice();
                         let res = if actual == &*expected1 {
