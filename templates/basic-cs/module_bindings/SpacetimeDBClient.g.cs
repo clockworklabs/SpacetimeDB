@@ -27,8 +27,7 @@ namespace SpacetimeDB.Types
     {
         public RemoteTables(DbConnection conn)
         {
-            AddTable(Message = new(conn));
-            AddTable(User = new(conn));
+            AddTable(Person = new(conn));
         }
     }
 
@@ -525,16 +524,14 @@ namespace SpacetimeDB.Types
 
         internal static string[] AllTablesSqlQueries() => new string[]
         {
-            new QueryBuilder().From.Message().ToSql(),
-            new QueryBuilder().From.User().ToSql(),
+            new QueryBuilder().From.Person().ToSql(),
         }
         ;
     }
 
     public sealed class From
     {
-        public global::SpacetimeDB.Table<Message, MessageCols, MessageIxCols> Message() => new("Message", new MessageCols("Message"), new MessageIxCols("Message"));
-        public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new("User", new UserCols("User"), new UserIxCols("User"));
+        public global::SpacetimeDB.Table<Person, PersonCols, PersonIxCols> Person() => new("Person", new PersonCols("Person"), new PersonIxCols("Person"));
     }
 
     public sealed class TypedSubscriptionBuilder
@@ -616,8 +613,8 @@ namespace SpacetimeDB.Types
             var eventContext = (ReducerEventContext)context;
             return reducer switch
             {
-                Reducer.SendMessage args => Reducers.InvokeSendMessage(eventContext, args),
-                Reducer.SetName args => Reducers.InvokeSetName(eventContext, args),
+                Reducer.Add args => Reducers.InvokeAdd(eventContext, args),
+                Reducer.SayHello args => Reducers.InvokeSayHello(eventContext, args),
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }
