@@ -29,7 +29,7 @@ Get a SpacetimeDB app with TanStack Start running in under 5 minutes.
     <StepCode>
 
 ```bash
-spacetime dev --template tanstack-ts my-spacetime-app
+spacetime dev --template tanstack-ts
 ```
 
     </StepCode>
@@ -111,19 +111,19 @@ spacetimedb.reducer('say_hello', (ctx) => {
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call <database-name> add Alice
+spacetime call add Alice
 
 # Query the person table
-spacetime sql <database-name> "SELECT * FROM person"
+spacetime sql "SELECT * FROM person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call <database-name> say_hello
+spacetime call say_hello
 
 # View the module logs
-spacetime logs <database-name>
+spacetime logs
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
