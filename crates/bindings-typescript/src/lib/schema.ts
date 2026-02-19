@@ -30,8 +30,7 @@ import {
   type RowObj,
   type VariantsObj,
 } from './type_builders';
-import type { CamelCase, Values } from './type_util';
-import { toCamelCase } from './util';
+import type {  Values } from './type_util';
 
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
@@ -58,7 +57,7 @@ export interface TableToSchema<
   AccName extends string,
   T extends UntypedTableSchema,
 > extends UntypedTableDef {
-  accessorName: CamelCase<AccName>;
+  accessorName: AccName;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
   indexes: T['idxs'];
@@ -92,7 +91,7 @@ export function tableToSchema<
   type AllowedCol = keyof T['rowType']['row'] & string;
   return {
     sourceName: accName,
-    accessorName: toCamelCase(accName),
+    accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     constraints: tableDef.constraints.map(c => ({

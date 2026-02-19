@@ -34,7 +34,7 @@ import {
 } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import { hasOwn, toCamelCase } from '../lib/util';
+import { hasOwn } from '../lib/util';
 import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
@@ -288,7 +288,7 @@ class ModuleHooksImpl implements ModuleHooks {
     return (this.#dbView_ ??= freeze(
       Object.fromEntries(
         Object.values(this.#schema.schemaType.tables).map(table => [
-          toCamelCase(table.accessorName),
+          table.accessorName,
           makeTableView(this.#schema.typespace, table.tableDef),
         ])
       )
