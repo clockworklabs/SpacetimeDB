@@ -1052,7 +1052,7 @@ mod test {
         );
         let actual = ret.expect_err("should trap").to_string().replace("\t", "    ");
         let expected = r#"
-js error Uncaught Error: foobar
+Uncaught Error: foobar
     at __call_reducer__ (spacetimedb_module:6:27)
         "#;
         assert_eq!(actual.trim(), expected.trim());
