@@ -57,6 +57,18 @@ def load_nuget_config(p: Path):
             return xmltodict.parse(f.read(), force_list=["add", "packageSource", "package"])
     return {}
 
+
+def _nuget_config_path(project_dir: Path) -> Path:
+    p_upper = project_dir / "NuGet.Config"
+    if p_upper.exists():
+        return p_upper
+
+    p_lower = project_dir / "nuget.config"
+    if p_lower.exists():
+        return p_lower
+
+    return p_upper
+
 def save_nuget_config(p: Path, doc: dict):
     # Write back (pretty, UTF-8, no BOM)
     xml = xmltodict.unparse(doc, pretty=True)
@@ -66,8 +78,8 @@ def add_source(doc: dict, *, key: str, path: str) -> None:
     cfg = doc.setdefault("configuration", {})
     sources = cfg.setdefault("packageSources", {})
     source_entries = sources.setdefault("add", [])
-    source = {"@key": key, "@value": path}
-    source_entries.append(source)
+
+    source_entries.append({"@key": key, "@value": str(path)})
 
 def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
     cfg = doc.setdefault("configuration", {})
@@ -90,12 +102,25 @@ def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
 def override_nuget_package(*, project_dir: Path, package: str, source_dir: Path, build_subdir: str):
     """Override nuget config to use a local NuGet package on a .NET project"""
     # Make sure the local package is built
-    run_cmd("dotnet", "pack", cwd=source_dir)
+    repo_nuget_config = STDB_DIR / "NuGet.Config"
+    if repo_nuget_config.exists():
+        run_cmd(
+            "dotnet",
+            "restore",
+            "--configfile",
+            str(repo_nuget_config),
+            cwd=source_dir,
+            capture_stderr=True,
+        )
+        run_cmd("dotnet", "pack", "-c", "Release", "--no-restore", cwd=source_dir)
+    else:
+        run_cmd("dotnet", "pack", "-c", "Release", cwd=source_dir)
 
-    p = Path(project_dir) / "nuget.config"
+    p = _nuget_config_path(Path(project_dir))
     doc = load_nuget_config(p)
     add_source(doc, key=package, path=source_dir/build_subdir)
     add_mapping(doc, key=package, pattern=package)
+    add_source(doc, key="nuget.org", path="https://api.nuget.org/v3/index.json")
     # Fallback for other packages
     add_mapping(doc, key="nuget.org", pattern="*")
     save_nuget_config(p, doc)
@@ -180,7 +205,7 @@ class BaseQuickstart(Smoketest):
         self.spacetime(
             "generate", "--lang", client_lang,
             "--out-dir", client_path / self.module_bindings,
-            "--project-path", self.project_path, capture_stderr=True
+            "--module-path", self.project_path, capture_stderr=True
         )
         # Replay the quickstart guide steps
         main = _parse_quickstart(self.client_doc, client_lang, self._module_name, server=False)

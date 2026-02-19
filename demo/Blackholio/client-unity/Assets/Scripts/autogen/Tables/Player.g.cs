@@ -17,33 +17,59 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "player";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class PlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerIdentityIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly PlayerIdentityIdxBtreeUniqueIndex PlayerIdentityIdxBtree;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<int>
+            public sealed class PlayerPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<int>
             {
                 protected override int GetKey(Player row) => row.PlayerId;
 
-                public PlayerIdUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerPlayerIdIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdUniqueIndex PlayerId;
+            public readonly PlayerPlayerIdIdxBtreeUniqueIndex PlayerPlayerIdIdxBtree;
 
             internal PlayerHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
-                PlayerId = new(this);
+                PlayerIdentityIdxBtree = new(this);
+                PlayerPlayerIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;
         }
 
         public readonly PlayerHandle Player;
+    }
+
+    public sealed class PlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, int> PlayerId { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public PlayerCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.Col<Player, int>(tableName, "player_id");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
+        }
+    }
+
+    public sealed class PlayerIxCols
+    {
+        public global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<Player, int> PlayerId { get; }
+
+        public PlayerIxCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.IxCol<Player, int>(tableName, "player_id");
+        }
     }
 }

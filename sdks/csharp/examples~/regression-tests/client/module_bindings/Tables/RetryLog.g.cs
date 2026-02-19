@@ -17,23 +17,45 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "retry_log";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class RetryLogIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(RetryLog row) => row.Id;
 
-                public IdUniqueIndex(RetryLogHandle table) : base(table) { }
+                public RetryLogIdIdxBtreeUniqueIndex(RetryLogHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly RetryLogIdIdxBtreeUniqueIndex RetryLogIdIdxBtree;
 
             internal RetryLogHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
+                RetryLogIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(RetryLog row) => row.Id;
         }
 
         public readonly RetryLogHandle RetryLog;
+    }
+
+    public sealed class RetryLogCols
+    {
+        public global::SpacetimeDB.Col<RetryLog, uint> Id { get; }
+        public global::SpacetimeDB.Col<RetryLog, uint> Attempts { get; }
+
+        public RetryLogCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "Id");
+            Attempts = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "Attempts");
+        }
+    }
+
+    public sealed class RetryLogIxCols
+    {
+        public global::SpacetimeDB.IxCol<RetryLog, uint> Id { get; }
+
+        public RetryLogIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<RetryLog, uint>(tableName, "Id");
+        }
     }
 }

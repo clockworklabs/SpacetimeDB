@@ -96,13 +96,17 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
-    let reducer_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
+    let reducer_name = ident_to_litstr(func_name);
 
     assert_only_lifetime_generics(original_function, "reducers")?;
 
     let lifecycle = args.lifecycle.iter().filter_map(|lc| lc.to_lifecycle_value());
 
     let typed_args = extract_typed_args(original_function)?;
+
+    let explicit_name = args.name.as_ref();
+
+    let generate_explicit_names = generate_explicit_names_impl(&reducer_name.value(), func_name, explicit_name);
 
     // Extract all function parameter names.
     let opt_arg_names = typed_args.iter().map(|arg| {
@@ -151,7 +155,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             }
         };
         impl #func_name {
-            fn invoke(__ctx: spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
+            fn invoke(__ctx: &spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
                 spacetimedb::rt::invoke_reducer(#func_name, __ctx, __args)
             }
         }
@@ -165,5 +169,36 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
             const INVOKE: Self::Invoke = #func_name::invoke;
         }
+
+        #generate_explicit_names
     })
+}
+
+pub(crate) fn generate_explicit_names_impl(
+    func_name: &str,
+    func_handle: &Ident,
+    explicit_name: Option<&LitStr>,
+) -> TokenStream {
+    let mut explicit_names_body = Vec::new();
+
+    // Table name
+    if let Some(explicit_name) = explicit_name {
+        explicit_names_body.push(quote! {
+            names.insert_function(
+                #func_name,
+                #explicit_name,
+            );
+        });
+    };
+
+    quote! {
+
+        impl spacetimedb::rt::ExplicitNames for #func_handle {
+            fn explicit_names() -> spacetimedb::spacetimedb_lib::ExplicitNames {
+                let mut names = spacetimedb::spacetimedb_lib::ExplicitNames::default();
+                #(#explicit_names_body)*
+                names
+            }
+        }
+    }
 }

@@ -433,11 +433,11 @@ pub(super) async fn call_scheduled_function(
                 // Background: Scheduled reducers start with Workload::Internal, but
                 // call_reducer_with_tx only sets ReducerContext when tx is None.
                 // Since we pass Some(tx), we must set it here.
-                let reducer_name = &*module_info.module_def.reducer_by_id(params.reducer_id).name;
+                let reducer_name = &module_info.module_def.reducer_by_id(params.reducer_id).name;
                 tx.ctx = ExecutionContext::with_workload(
                     tx.ctx.database_identity(),
                     Workload::Reducer(ReducerContext {
-                        name: reducer_name.into(),
+                        name: reducer_name.clone(),
                         caller_identity: params.caller_identity,
                         caller_connection_id: params.caller_connection_id,
                         timestamp: params.timestamp,
@@ -526,6 +526,7 @@ fn commit_and_broadcast_deletion_event(tx: MutTxId, module_info: &ModuleInfo) {
         caller_connection_id: None,
         function_call: ModuleFunctionCall::default(),
         status: EventStatus::Committed(DatabaseUpdate::default()),
+        reducer_return_value: None,
         //Keeping them 0 as it is internal transaction, not by reducer
         energy_quanta_used: EnergyQuanta { quanta: 0 },
         host_execution_duration: Duration::from_millis(0),

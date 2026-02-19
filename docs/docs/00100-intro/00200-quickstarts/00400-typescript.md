@@ -29,7 +29,7 @@ Get a SpacetimeDB TypeScript app running in under 5 minutes.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-typescript
+spacetime dev --template basic-ts my-spacetime-app
 ```
     </StepCode>
   </Step>
@@ -65,20 +65,21 @@ my-spacetime-app/
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-export const spacetimedb = schema(
-  table(
-    { name: 'person' },
+const spacetimedb = schema({
+  person: table(
+    {},
     {
       name: t.string(),
     }
   )
-);
+});
+export default spacetimedb;
 
-spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
+export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.person.insert({ name });
 });
 
-spacetimedb.reducer('say_hello', (ctx) => {
+export const say_hello = spacetimedb.reducer((ctx) => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }
@@ -118,4 +119,4 @@ spacetime logs <database-name>
 ## Next steps
 
 - See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](/sdks/typescript) for detailed API docs
+- Read the [TypeScript SDK Reference](/clients/typescript) for detailed API docs

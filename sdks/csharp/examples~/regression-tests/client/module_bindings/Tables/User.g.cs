@@ -15,35 +15,87 @@ namespace SpacetimeDB.Types
     {
         public sealed class UserHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "User";
+            protected override string RemoteTableName => "user";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
+            public sealed class UserAgeIdxBtreeIndex : BTreeIndexBase<byte>
+            {
+                protected override byte GetKey(User row) => row.Age;
+
+                public UserAgeIdxBtreeIndex(UserHandle table) : base(table) { }
+            }
+
+            public readonly UserAgeIdxBtreeIndex UserAgeIdxBtree;
+
+            public sealed class UserIdIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
             {
                 protected override SpacetimeDB.Uuid GetKey(User row) => row.Id;
 
-                public IdUniqueIndex(UserHandle table) : base(table) { }
+                public UserIdIdxBtreeUniqueIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly UserIdIdxBtreeUniqueIndex UserIdIdxBtree;
 
-            public sealed class IsAdminIndex : BTreeIndexBase<bool>
+            public sealed class UserIsAdminIdxBtreeIndex : BTreeIndexBase<bool>
             {
                 protected override bool GetKey(User row) => row.IsAdmin;
 
-                public IsAdminIndex(UserHandle table) : base(table) { }
+                public UserIsAdminIdxBtreeIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly IsAdminIndex IsAdmin;
+            public readonly UserIsAdminIdxBtreeIndex UserIsAdminIdxBtree;
+
+            public sealed class UserNameIdxBtreeIndex : BTreeIndexBase<string>
+            {
+                protected override string GetKey(User row) => row.Name;
+
+                public UserNameIdxBtreeIndex(UserHandle table) : base(table) { }
+            }
+
+            public readonly UserNameIdxBtreeIndex UserNameIdxBtree;
 
             internal UserHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
-                IsAdmin = new(this);
+                UserAgeIdxBtree = new(this);
+                UserIdIdxBtree = new(this);
+                UserIsAdminIdxBtree = new(this);
+                UserNameIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Id;
         }
 
         public readonly UserHandle User;
+    }
+
+    public sealed class UserCols
+    {
+        public global::SpacetimeDB.Col<User, SpacetimeDB.Uuid> Id { get; }
+        public global::SpacetimeDB.Col<User, string> Name { get; }
+        public global::SpacetimeDB.Col<User, bool> IsAdmin { get; }
+        public global::SpacetimeDB.Col<User, byte> Age { get; }
+
+        public UserCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "Id");
+            Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
+            IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "IsAdmin");
+            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "Age");
+        }
+    }
+
+    public sealed class UserIxCols
+    {
+        public global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid> Id { get; }
+        public global::SpacetimeDB.IxCol<User, string> Name { get; }
+        public global::SpacetimeDB.IxCol<User, bool> IsAdmin { get; }
+        public global::SpacetimeDB.IxCol<User, byte> Age { get; }
+
+        public UserIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid>(tableName, "Id");
+            Name = new global::SpacetimeDB.IxCol<User, string>(tableName, "Name");
+            IsAdmin = new global::SpacetimeDB.IxCol<User, bool>(tableName, "IsAdmin");
+            Age = new global::SpacetimeDB.IxCol<User, byte>(tableName, "Age");
+        }
     }
 }

@@ -5,6 +5,7 @@ slug: /tables/column-types
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Columns define the structure of your tables. SpacetimeDB supports primitive types, composite types for complex data, and special types for database-specific functionality.
@@ -133,6 +134,31 @@ These optimizations apply across all supported languages.
 | Special | `ScheduleAt` | When a scheduled reducer should execute |
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+| Category | Type | Description |
+|----------|------|-------------|
+| Primitive | `bool` | Boolean value |
+| Primitive | `std::string` | UTF-8 string |
+| Primitive | `float` | 32-bit floating point |
+| Primitive | `double` | 64-bit floating point |
+| Primitive | `int8_t`, `int16_t`, `int32_t`, `int64_t` | Signed integers (8-bit to 64-bit) |
+| Primitive | `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t` | Unsigned integers (8-bit to 64-bit) |
+| Primitive | `SpacetimeDB::i128`, `SpacetimeDB::i256` | Signed 128-bit and 256-bit integers |
+| Primitive | `SpacetimeDB::u128`, `SpacetimeDB::u256` | Unsigned 128-bit and 256-bit integers |
+| Composite | `struct` with `SPACETIMEDB_STRUCT` | Product type for nested data |
+| Composite | `SPACETIMEDB_ENUM` | Sum type (tagged union) |
+| Composite | `std::vector<T>` | Vector of elements |
+| Composite | `std::optional<T>` | Optional value |
+| Special | `Identity` | Unique identity for authentication |
+| Special | `ConnectionId` | Client connection identifier |
+| Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
+| Special | `TimeDuration` | Relative duration in microseconds |
+| Special | `ScheduleAt` | When a scheduled reducer should execute |
+
+</TabItem>
 </Tabs>
 
 ## Complete Example
@@ -211,7 +237,7 @@ public static partial class Module
         string Suspended
     )> { }
 
-    [SpacetimeDB.Table(Name = "Player", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Player", Public = true)]
     public partial struct Player
     {
         // Primitive types
@@ -262,7 +288,7 @@ pub enum Status {
     Suspended { reason: String },
 }
 
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     // Primitive types
     #[primary_key]
@@ -287,6 +313,58 @@ pub struct Player {
     created_at: Timestamp,
     play_time: TimeDuration,
 }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Define a nested struct type for coordinates
+struct Coordinates {
+    double x;
+    double y;
+    double z;
+};
+SPACETIMEDB_STRUCT(Coordinates, x, y, z)
+
+// Define unit types for enum variants
+SPACETIMEDB_UNIT_TYPE(Active)
+SPACETIMEDB_UNIT_TYPE(Inactive)
+
+// Define an enum for status
+SPACETIMEDB_ENUM(PlayerStatus,
+    (Active, Active),
+    (Inactive, Inactive),
+    (Suspended, std::string)
+)
+
+struct Player {
+    // Primitive types
+    uint64_t id;
+    std::string name;
+    uint8_t level;
+    uint32_t experience;
+    float health;
+    int64_t score;
+    bool is_online;
+
+    // Composite types
+    Coordinates position;
+    PlayerStatus status;
+    std::vector<uint32_t> inventory;
+    std::optional<uint64_t> guild_id;
+
+    // Special types
+    Identity owner;
+    std::optional<ConnectionId> connection;
+    Timestamp created_at;
+    TimeDuration play_time;
+};
+SPACETIMEDB_STRUCT(Player, id, name, level, experience, health, score, is_online,
+                   position, status, inventory, guild_id,
+                   owner, connection, created_at, play_time)
+SPACETIMEDB_TABLE(Player, player, Public)
+FIELD_PrimaryKeyAutoInc(player, id)
 ```
 
 </TabItem>

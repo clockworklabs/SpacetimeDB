@@ -17,23 +17,47 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "entity";
 
-            public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
+            public sealed class EntityEntityIdIdxBtreeUniqueIndex : UniqueIndexBase<int>
             {
                 protected override int GetKey(Entity row) => row.EntityId;
 
-                public EntityIdUniqueIndex(EntityHandle table) : base(table) { }
+                public EntityEntityIdIdxBtreeUniqueIndex(EntityHandle table) : base(table) { }
             }
 
-            public readonly EntityIdUniqueIndex EntityId;
+            public readonly EntityEntityIdIdxBtreeUniqueIndex EntityEntityIdIdxBtree;
 
             internal EntityHandle(DbConnection conn) : base(conn)
             {
-                EntityId = new(this);
+                EntityEntityIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Entity row) => row.EntityId;
         }
 
         public readonly EntityHandle Entity;
+    }
+
+    public sealed class EntityCols
+    {
+        public global::SpacetimeDB.Col<Entity, int> EntityId { get; }
+        public global::SpacetimeDB.Col<Entity, DbVector2> Position { get; }
+        public global::SpacetimeDB.Col<Entity, int> Mass { get; }
+
+        public EntityCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.Col<Entity, int>(tableName, "entity_id");
+            Position = new global::SpacetimeDB.Col<Entity, DbVector2>(tableName, "position");
+            Mass = new global::SpacetimeDB.Col<Entity, int>(tableName, "mass");
+        }
+    }
+
+    public sealed class EntityIxCols
+    {
+        public global::SpacetimeDB.IxCol<Entity, int> EntityId { get; }
+
+        public EntityIxCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.IxCol<Entity, int>(tableName, "entity_id");
+        }
     }
 }

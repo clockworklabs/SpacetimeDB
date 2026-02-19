@@ -200,7 +200,9 @@ class ConnectionManagerImpl {
           managed.connection.removeOnDisconnect(managed.onDisconnect as any);
         }
         if (managed.onConnectError) {
-          managed.connection.removeOnConnectError(managed.onConnectError as any);
+          managed.connection.removeOnConnectError(
+            managed.onConnectError as any
+          );
         }
         managed.connection.disconnect();
       }

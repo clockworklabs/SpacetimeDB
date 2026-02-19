@@ -13,19 +13,19 @@
 #include "CircleTable.g.generated.h"
 
 UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UCircleEntityIdUniqueIndex : public UObject
+class CLIENT_UNREAL_API UCircleCircleEntityIdIdxBtreeUniqueIndex : public UObject
 {
     GENERATED_BODY()
 
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FCircleType, int32, FTableCache<FCircleType>> EntityIdIndexHelper;
+    FUniqueIndexHelper<FCircleType, int32, FTableCache<FCircleType>> CircleEntityIdIdxBtreeIndexHelper;
 
 public:
-    UCircleEntityIdUniqueIndex()
+    UCircleCircleEntityIdIdxBtreeUniqueIndex()
         // Initialize the helper with the specific unique index name
-        : EntityIdIndexHelper("entity_id") {
+        : CircleEntityIdIdxBtreeIndexHelper("entity_id") {
     }
 
     /**
@@ -37,20 +37,20 @@ public:
     FCircleType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
-        return EntityIdIndexHelper.FindUniqueIndex(Key);
+        return CircleEntityIdIdxBtreeIndexHelper.FindUniqueIndex(Key);
     }
 
     // A public setter to provide the cache to the helper after construction
     // This is a common pattern when the cache might be created or provided by another system.
     void SetCache(TSharedPtr<const FTableCache<FCircleType>> InCircleCache)
     {
-        EntityIdIndexHelper.Cache = InCircleCache;
+        CircleEntityIdIdxBtreeIndexHelper.Cache = InCircleCache;
     }
 };
 /***/
 
 UCLASS(Blueprintable)
-class UCirclePlayerIdIndex : public UObject
+class UCircleCirclePlayerIdIdxBtreeIndex : public UObject
 {
     GENERATED_BODY()
 
@@ -61,7 +61,7 @@ public:
 
         LocalCache->FindByMultiKeyBTreeIndex<TTuple<int32>>(
             OutResults,
-            TEXT("player_id"),
+            TEXT("circle_player_id_idx_btree"),
             MakeTuple(PlayerId)
         );
 
@@ -90,14 +90,14 @@ class CLIENT_UNREAL_API UCircleTable : public URemoteTable
 
 public:
     UPROPERTY(BlueprintReadOnly)
-    UCircleEntityIdUniqueIndex* EntityId;
+    UCircleCircleEntityIdIdxBtreeUniqueIndex* CircleEntityIdIdxBtree;
 
     UPROPERTY(BlueprintReadOnly)
-    UCirclePlayerIdIndex* PlayerId;
+    UCircleCirclePlayerIdIdxBtreeIndex* CirclePlayerIdIdxBtree;
 
     void PostInitialize();
 
-    /** Update function for logged_out_circle table*/
+    /** Update function for circle table*/
     FTableAppliedDiff<FCircleType> Update(TArray<FWithBsatn<FCircleType>> InsertsRef, TArray<FWithBsatn<FCircleType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -135,7 +135,7 @@ public:
     FOnCircleDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("logged_out_circle");
+    const FString TableName = TEXT("circle");
 
     TSharedPtr<UClientCache<FCircleType>> Data;
 };

@@ -40,7 +40,7 @@ dotnet workload install wasi-experimental
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-c-sharp
+spacetime dev --template basic-cs my-spacetime-app
 ```
     </StepCode>
   </Step>
@@ -78,7 +78,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Person", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Person", Public = true)]
     public partial struct Person
     {
         public string Name;
@@ -134,4 +134,4 @@ spacetime logs <database-name>
 ## Next steps
 
 - See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [C# SDK Reference](/sdks/c-sharp) for detailed API docs
+- Read the [C# SDK Reference](/clients/c-sharp) for detailed API docs

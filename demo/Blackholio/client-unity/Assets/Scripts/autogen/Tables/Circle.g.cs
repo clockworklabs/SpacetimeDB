@@ -17,33 +17,63 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "circle";
 
-            public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
+            public sealed class CircleEntityIdIdxBtreeUniqueIndex : UniqueIndexBase<int>
             {
                 protected override int GetKey(Circle row) => row.EntityId;
 
-                public EntityIdUniqueIndex(CircleHandle table) : base(table) { }
+                public CircleEntityIdIdxBtreeUniqueIndex(CircleHandle table) : base(table) { }
             }
 
-            public readonly EntityIdUniqueIndex EntityId;
+            public readonly CircleEntityIdIdxBtreeUniqueIndex CircleEntityIdIdxBtree;
 
-            public sealed class PlayerIdIndex : BTreeIndexBase<int>
+            public sealed class CirclePlayerIdIdxBtreeIndex : BTreeIndexBase<int>
             {
                 protected override int GetKey(Circle row) => row.PlayerId;
 
-                public PlayerIdIndex(CircleHandle table) : base(table) { }
+                public CirclePlayerIdIdxBtreeIndex(CircleHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdIndex PlayerId;
+            public readonly CirclePlayerIdIdxBtreeIndex CirclePlayerIdIdxBtree;
 
             internal CircleHandle(DbConnection conn) : base(conn)
             {
-                EntityId = new(this);
-                PlayerId = new(this);
+                CircleEntityIdIdxBtree = new(this);
+                CirclePlayerIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Circle row) => row.EntityId;
         }
 
         public readonly CircleHandle Circle;
+    }
+
+    public sealed class CircleCols
+    {
+        public global::SpacetimeDB.Col<Circle, int> EntityId { get; }
+        public global::SpacetimeDB.Col<Circle, int> PlayerId { get; }
+        public global::SpacetimeDB.Col<Circle, DbVector2> Direction { get; }
+        public global::SpacetimeDB.Col<Circle, float> Speed { get; }
+        public global::SpacetimeDB.Col<Circle, SpacetimeDB.Timestamp> LastSplitTime { get; }
+
+        public CircleCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.Col<Circle, int>(tableName, "entity_id");
+            PlayerId = new global::SpacetimeDB.Col<Circle, int>(tableName, "player_id");
+            Direction = new global::SpacetimeDB.Col<Circle, DbVector2>(tableName, "direction");
+            Speed = new global::SpacetimeDB.Col<Circle, float>(tableName, "speed");
+            LastSplitTime = new global::SpacetimeDB.Col<Circle, SpacetimeDB.Timestamp>(tableName, "last_split_time");
+        }
+    }
+
+    public sealed class CircleIxCols
+    {
+        public global::SpacetimeDB.IxCol<Circle, int> EntityId { get; }
+        public global::SpacetimeDB.IxCol<Circle, int> PlayerId { get; }
+
+        public CircleIxCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.IxCol<Circle, int>(tableName, "entity_id");
+            PlayerId = new global::SpacetimeDB.IxCol<Circle, int>(tableName, "player_id");
+        }
     }
 }

@@ -1,13 +1,7 @@
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-    ops::{Bound, Deref, DerefMut},
-    sync::Arc,
-};
-
 use anyhow::{bail, Result};
 use derive_more::From;
 use either::Either;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
@@ -17,6 +11,11 @@ use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
+use std::{
+    borrow::Cow,
+    ops::{Bound, Deref, DerefMut},
+    sync::Arc,
+};
 
 use crate::rules::{
     ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
@@ -120,6 +119,13 @@ impl ProjectPlan {
     pub fn reads_from_view(&self, anonymous: bool) -> bool {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
+        }
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_event_table(),
         }
     }
 }
@@ -227,6 +233,15 @@ impl ProjectListPlan {
             Self::Limit(plan, _) => plan.reads_from_view(anonymous),
             Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
             Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+        }
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::Limit(plan, _) => plan.reads_from_event_table(),
+            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_event_table()),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_event_table()),
         }
     }
 }
@@ -827,7 +842,10 @@ impl PhysicalPlan {
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Lhs)
             }
             Self::IxJoin(join, Semi::All) => {
-                let reqs = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                if !reqs.contains(&join.lhs_field.label) {
+                    reqs.push(join.lhs_field.label);
+                }
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)
@@ -1151,6 +1169,17 @@ impl PhysicalPlan {
             _ => false,
         })
     }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    ///
+    /// Note, we only care about index joins because this method is only relevant for subscriptions,
+    /// and index joins are the only type of join allowed in subscriptions.
+    pub fn reads_from_event_table(&self) -> bool {
+        self.any(&|plan| match plan {
+            Self::IxJoin(join, _) => join.rhs.is_event,
+            _ => false,
+        })
+    }
 }
 
 /// Scan a table row by row, returning row ids
@@ -1426,7 +1455,9 @@ mod tests {
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
+        identifier::Identifier,
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
+        table_name::TableName,
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
@@ -1468,16 +1499,17 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            table_name.to_owned().into_boxed_str(),
+            TableName::for_test(table_name),
             None,
             columns
                 .iter()
                 .enumerate()
                 .map(|(i, (name, ty))| ColumnSchema {
                     table_id,
-                    col_name: (*name).to_owned().into_boxed_str(),
+                    col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
+                    alias: None,
                 })
                 .collect(),
             indexes
@@ -1486,10 +1518,11 @@ mod tests {
                 .map(|(i, cols)| IndexSchema {
                     table_id,
                     index_id: i.into(),
-                    index_name: "".to_owned().into_boxed_str(),
+                    index_name: "".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
+                    alias: None,
                 })
                 .collect(),
             unique
@@ -1498,7 +1531,7 @@ mod tests {
                 .map(|(i, cols)| ConstraintSchema {
                     table_id,
                     constraint_id: i.into(),
-                    constraint_name: "".to_owned().into_boxed_str(),
+                    constraint_name: "".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: ColSet::from_iter(cols.iter().copied()),
                     }),
@@ -1509,6 +1542,8 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
+            false,
+            None,
         )))
     }
 

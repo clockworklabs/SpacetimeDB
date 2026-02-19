@@ -1,5 +1,7 @@
-import { AlgebraicType, BinaryWriter, type Infer } from '../';
+import { BinaryReader, BinaryWriter, type Infer } from '../';
+import ClientMessageSerde from './client_api/client_message_type';
 import ServerMessage from './client_api/server_message_type';
+import type { ClientMessage } from './client_api/types';
 
 class WebsocketTestAdapter {
   onclose: any;
@@ -9,14 +11,21 @@ class WebsocketTestAdapter {
   onerror: any;
 
   messageQueue: any[];
+  outgoingMessages: ClientMessage[];
   closed: boolean;
 
   constructor() {
     this.messageQueue = [];
+    this.outgoingMessages = [];
     this.closed = false;
   }
 
   send(message: any): void {
+    const parsedMessage = ClientMessageSerde.deserialize(
+      new BinaryReader(message)
+    );
+    this.outgoingMessages.push(parsedMessage);
+    // console.ClientMessageSerde.deserialize(message);
     this.messageQueue.push(message);
   }
 
@@ -30,7 +39,7 @@ class WebsocketTestAdapter {
 
   sendToClient(message: Infer<typeof ServerMessage>): void {
     const writer = new BinaryWriter(1024);
-    AlgebraicType.serializeValue(writer, ServerMessage.algebraicType, message);
+    ServerMessage.serialize(writer, message);
     const rawBytes = writer.getBuffer();
     // The brotli library's `compress` is somehow broken: it returns `null` for some inputs.
     // See https://github.com/foliojs/brotli.js/issues/36, which is closed but not actually fixed.
@@ -43,7 +52,11 @@ class WebsocketTestAdapter {
   async createWebSocketFn(_args: {
     url: URL;
     wsProtocol: string;
+    nameOrAddress: string;
     authToken?: string;
+    compression: 'gzip' | 'none';
+    lightMode: boolean;
+    confirmedReads?: boolean;
   }): Promise<WebsocketTestAdapter> {
     return this;
   }

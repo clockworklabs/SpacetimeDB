@@ -1,0 +1,19 @@
+{
+  "name": "@clockworklabs/browser-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2",
+    "vite": "^7.1.5"
+  }
+}

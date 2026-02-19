@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB
+namespace SpacetimeDB
 {
     namespace Internal
     {
@@ -58,7 +58,7 @@
         ///
         /// <para>Defaults to the <c>nameof</c> of the target type.</para>
         /// </summary>
-        public string? Name { get; init; }
+        public string? Accessor { get; init; }
 
         /// <summary>
         /// Set to <c>true</c> to make the table visible to everyone.
@@ -66,6 +66,8 @@
         /// <para>Defaults to the table only being visible to its owner.</para>
         /// </summary>
         public bool Public { get; init; } = false;
+
+        public bool Event { get; init; } = false;
 
         /// <summary>
         /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
@@ -90,7 +92,7 @@
         /// <summary>
         /// Views must have an explicit name.
         /// </summary>
-        public string? Name { get; init; }
+        public string? Accessor { get; init; }
 
         /// <summary>
         /// Marks the view as callable by any client. Leave false to restrict to the module owner.
@@ -106,7 +108,7 @@
     {
         public string? Table { get; init; }
 
-        public string? Name { get; init; }
+        public string? Accessor { get; init; }
 
         public sealed class BTreeAttribute : Index
         {

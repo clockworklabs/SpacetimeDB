@@ -5,6 +5,7 @@ slug: /intro/key-architecture
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 ## Host
 
@@ -16,9 +17,9 @@ A SpacetimeDB **database** is an application that runs on a [host](#host).
 
 A database exports [tables](#table), which store data, and [reducers](#reducer), which allow [clients](#client) to make requests.
 
-A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C# or Rust.
+A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C#, C++, Rust or TypeScript.
 
-(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
+(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
 
 ## Table
 
@@ -46,7 +47,7 @@ const players = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -61,7 +62,7 @@ public partial struct Player
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = players, public)]
+#[spacetimedb::table(accessor = players, public)]
 pub struct Player {
    #[primary_key]
    id: u64,
@@ -69,6 +70,23 @@ pub struct Player {
    age: u32,
    user: Identity,
 }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+struct Player {
+    uint64_t id;
+    std::string name;
+    uint32_t age;
+    Identity user;
+};
+SPACETIMEDB_STRUCT(Player, id, name, age, user)
+SPACETIMEDB_TABLE(Player, players, Public)
+FIELD_PrimaryKey(players, id)
 ```
 
 </TabItem>
@@ -81,7 +99,7 @@ Tables marked `public` can also be read by [clients](#client).
 ## Reducer
 
 A **reducer** is a function exported by a [database](#database).
-Connected [clients](/sdks) can call reducers to interact with the database.
+Connected [clients](/clients) can call reducers to interact with the database.
 This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_procedure_call).
 
 <Tabs groupId="syntax" queryString>
@@ -90,7 +108,7 @@ This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_p
 A reducer can be written in a TypeScript module like so:
 
 ```typescript
-spacetimedb.reducer('set_player_name', { id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
+export const set_player_name = spacetimedb.reducer({ id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
    // ...
 });
 ```
@@ -148,6 +166,28 @@ fn main() {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+A reducer can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_REDUCER(set_player_name, ReducerContext ctx, uint64_t id, std::string name) {
+   // ...
+   return Ok();
+}
+```
+
+And an Unreal C++ [client](#client) can call that reducer:
+
+```cpp
+void AMyGameManager::UpdatePlayerName()
+{
+   // ...setup code, then...
+   Conn->Reducers->SetPlayerName(57, "Marceline");
+}
+```
+
+</TabItem>
 </Tabs>
 
 These look mostly like regular function calls, but under the hood,
@@ -177,7 +217,7 @@ the changes in the nested one are still persisted.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('hello', (ctx) => {
+export const hello = spacetimedb.reducer((ctx) => {
    try {
       world(ctx);
    } catch {
@@ -185,7 +225,7 @@ spacetimedb.reducer('hello', (ctx) => {
    }
 });
 
-spacetimedb.reducer('world', (ctx) => {
+export const world = spacetimedb.reducer((ctx) => {
    clearAllTables(ctx);
    // ...
 });
@@ -243,6 +283,27 @@ a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spac
 or at a specific time.
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_REDUCER(world, ReducerContext ctx) {
+    clear_all_tables(ctx);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(hello, ReducerContext ctx) {
+    if (world(ctx).is_err()) {
+        other_changes(ctx);
+    }
+    return Ok();
+}
+```
+
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
+or at a specific time.
+
+</TabItem>
 </Tabs>
 
 See [Reducers](/functions/reducers) for more details about reducers.
@@ -263,7 +324,7 @@ Procedures are currently in beta, and their API may change in upcoming Spacetime
 A procedure can be defined in a TypeScript module:
 
 ```typescript
-spacetimedb.procedure("make_request", t.string(), ctx => {
+export const make_request = spacetimedb.procedure(t.string(), ctx => {
    // ...
 })
 ```
@@ -361,7 +422,21 @@ fn main() {
 ```
 
 </TabItem>
-<TabItem value="cpp" label="Unreal C++">
+<TabItem value="cpp" label="C++">
+
+A procedure can be defined in a C++ module:
+
+```cpp
+SPACETIMEDB_PROCEDURE(std::string, make_request, ProcedureContext ctx) {
+   // ...
+   return std::string{"result"};
+}
+```
+
+Use the other tabs (TypeScript/C#/Rust/Unreal C++/Blueprint) for client call examples.
+
+</TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
 
 An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
 
@@ -420,7 +495,7 @@ Views must be declared as `public` and accept only a context parameter. They can
 A view can be written in a TypeScript module like so:
 
 ```typescript
-spacetimedb.view(
+export const my_player = spacetimedb.view(
   { name: 'my_player', public: true },
   t.option(players.row()),
   (ctx) => {
@@ -436,7 +511,7 @@ spacetimedb.view(
 A view can be written in C# like so:
 
 ```csharp
-[SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+[SpacetimeDB.View(Accessor = "MyPlayer", Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
     return ctx.Db.Player.Identity.Find(ctx.Sender) as Player;
@@ -449,9 +524,20 @@ public static Player? MyPlayer(ViewContext ctx)
 A view can be written in Rust like so:
 
 ```rust
-#[spacetimedb::view(name = my_player, public)]
+#[spacetimedb::view(accessor = my_player, public)]
 fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+A view can be written in C++ like so:
+
+```cpp
+SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
+   return ctx.db[player_identity].find(ctx.sender);
 }
 ```
 
@@ -470,7 +556,7 @@ See [Views](/functions/views) for more details about views.
 
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
-Clients are written using the [client-side SDKs](/sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
+Clients are written using the [client-side SDKs](/clients). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
 
 Clients are regular software applications that developers can choose how to deploy (through Steam, app stores, package managers, or any other software deployment method, depending on the needs of the application.)
 

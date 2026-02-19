@@ -1,6 +1,5 @@
 use core::ops::Deref;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
 
 use super::locking_tx_datastore::datastore::TxMetrics;
@@ -8,13 +7,17 @@ use super::system_tables::ModuleKind;
 use super::Result;
 use crate::execution_context::Workload;
 use crate::system_tables::ST_TABLE_ID;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::IntSet;
+use spacetimedb_data_structures::small_map::SmallHashMap;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
+use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
@@ -168,36 +171,70 @@ pub enum IsolationLevel {
 
 pub type EphemeralTables = IntSet<TableId>;
 
+/// The [`TxData`] entry for one table.
+///
+/// All information about a table is stored in one place
+/// as the access pattern is to write as fast as possible
+/// and because it all fits within a single cache line
+/// and so that we can use `SmallVec`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TxDataTableEntry {
+    /// The name of the table for which there were deletions and/or insertions.
+    pub table_name: TableName,
+
+    /// The set of inserts for this table in the transaction.
+    // Note: `Arc<[ProductValue]>` allows to cheaply
+    // use the values from `TxData` without cloning the
+    // contained `ProductValue`s.
+    pub inserts: Arc<[ProductValue]>,
+
+    /// The set of deletes for this table in the transaction.
+    pub deletes: Arc<[ProductValue]>,
+
+    /// Was the entire table truncated?
+    ///
+    /// *Truncating* means that all rows in the table have been deleted.
+    /// In other words, a truncated table is a cleared table.
+    ///
+    /// Note that when this is `true`,
+    /// `deletes` will be non-empty and contain all deleted rows.
+    pub truncated: bool,
+
+    /// Is this table ephemeral?
+    ///
+    /// An ephemeral table is only populated when a view is executed
+    /// and does not need to be persisted to disk.
+    pub ephemeral: bool,
+}
+
+static_assert_size!(TxDataTableEntry, 56);
+
+impl TxDataTableEntry {
+    /// Create a new, empty `TxDataTableEntry` for `table_name`.
+    pub fn new(table_name: TableName) -> Self {
+        Self {
+            table_name,
+            inserts: [].into(),
+            deletes: [].into(),
+            truncated: false,
+            ephemeral: false,
+        }
+    }
+}
+
 /// A record of all the operations within a transaction.
 ///
 /// Some extra information is embedded here
 /// so that the recording of execution metrics can be done without holding the tx lock.
 #[derive(Default)]
 pub struct TxData {
-    /// The inserted rows per table.
-    inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
-    /// The deleted rows per table.
-    deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
-    /// *Truncating* means that all rows in the table have been deleted.
-    /// In other words, a truncated table is a cleared table.
-    ///
-    /// Note that when a table has an entry in `truncates`,
-    /// it will also have an entry in `deletes`.
-    truncates: IntSet<TableId>,
-    /// Map of all `TableId`s in both `inserts` and `deletes` to their
-    /// corresponding table name.
-    // TODO: Store table name as ref counted string.
-    tables: IntMap<TableId, String>,
+    entries: SmallHashMap<TableId, TxDataTableEntry, 1, 8>,
+
     /// Tx offset of the transaction which performed these operations.
     ///
     /// `None` implies that `inserts` and `deletes` are both empty,
     /// but `Some` does not necessarily imply that either is non-empty.
     tx_offset: Option<u64>,
-
-    /// Set of ephemeral tables modified in this transaction (only populated when a view is executed).
-    /// These tables do not need to be persisted to disk.
-    /// Every table listed here must appear in either `inserts` or `deletes`.
-    ephemeral_tables: Option<EphemeralTables>,
 }
 
 impl TxData {
@@ -215,103 +252,97 @@ impl TxData {
         self.tx_offset
     }
 
+    /// Ensures that an entry for `table_id` exists
+    /// or initializes it with `table_name`.
+    fn init_entry(&mut self, table_id: TableId, table_name: &TableName) -> &mut TxDataTableEntry {
+        self.entries
+            .get_or_insert(table_id, || TxDataTableEntry::new(table_name.clone()))
+    }
+
     /// Set `rows` as the inserted rows for `(table_id, table_name)`.
-    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
-        self.inserts.insert(table_id, rows);
-        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &TableName, rows: Arc<[ProductValue]>) {
+        self.init_entry(table_id, table_name).inserts = rows;
     }
 
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
     ///
     /// When `truncated` is set, the table has been emptied in this transaction.
-    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
-        self.deletes.insert(table_id, rows);
-        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &TableName, rows: Arc<[ProductValue]>) {
+        self.init_entry(table_id, table_name).deletes = rows;
     }
 
-    pub fn add_truncates(&mut self, truncated_tables: impl IntoIterator<Item = TableId>) {
-        self.truncates.extend(truncated_tables);
+    /// Mark the given `truncated_tables` as truncated in this transaction.
+    pub fn set_truncates(&mut self, truncated_tables: impl IntoIterator<Item = TableId>) {
+        for table_id in truncated_tables {
+            if let Some(entry) = self.entries.get_mut(&table_id) {
+                entry.truncated = true;
+            }
+        }
     }
 
     /// Determines which ephemeral tables were modified in this transaction.
     ///
     /// Iterates over the tables updated in this transaction and records those that
     /// also appear in `all_ephemeral_tables`.
-    /// `self.ephemeral_tables` remains `None` if no ephemeral tables were modified.
     pub fn set_ephemeral_tables(&mut self, all_ephemeral_tables: &EphemeralTables) {
-        for tid in self.tables.keys() {
-            if all_ephemeral_tables.contains(tid) {
-                self.ephemeral_tables
-                    .get_or_insert_with(EphemeralTables::default)
-                    .insert(*tid);
+        for tid in all_ephemeral_tables {
+            if let Some(entry) = self.entries.get_mut(tid) {
+                entry.ephemeral = true;
             }
         }
     }
 
-    pub fn ephemeral_tables(&self) -> Option<&EphemeralTables> {
-        self.ephemeral_tables.as_ref()
+    /// Returns an iterator over the persistent inserted rows per table.
+    pub fn persistent_inserts(&self) -> impl Iterator<Item = (TableId, Arc<[ProductValue]>)> + '_ {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| !entry.ephemeral && !entry.inserts.is_empty())
+            .map(|(table_id, entry)| (*table_id, entry.inserts.clone()))
     }
 
-    /// Check if `table_id` is in the set of ephemeral tables for this transaction.
-    ///
-    /// Beware that ephemeral tables are known only after [Self::set_ephemeral_tables]
-    /// has been called.
-    pub fn is_ephemeral_table(&self, table_id: &TableId) -> bool {
-        self.ephemeral_tables
-            .as_ref()
-            .is_some_and(|etables| etables.contains(table_id))
-    }
-
-    /// Obtain an iterator over the inserted rows per table.
-    pub fn inserts(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
-        self.inserts.iter()
+    /// Returns an iterator over the inserted rows per table.
+    pub fn inserts(&self) -> impl Iterator<Item = (TableId, &Arc<[ProductValue]>)> + '_ {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| !entry.inserts.is_empty())
+            .map(|(table_id, entry)| (*table_id, &entry.inserts))
     }
 
     /// Get the `i`th inserted row for `table_id` if it exists
     pub fn get_ith_insert(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
-        self.inserts.get(&table_id).and_then(|rows| rows.get(i))
+        self.inserts_for_table(table_id).and_then(|is| is.get(i))
     }
 
-    /// Obtain an iterator over the inserted rows per table.
+    /// Returns an iterator over the persistent deleted rows per table.
     ///
-    /// If you don't need access to the table name, [`Self::inserts`] is
-    /// slightly more efficient.
-    pub fn inserts_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
-        self.inserts.iter().map(|(table_id, rows)| {
-            let table_name = self
-                .tables
-                .get(table_id)
-                .expect("invalid `TxData`: partial table name mapping");
-            (table_id, table_name.as_str(), rows)
-        })
+    /// Truncated tables are not included.
+    pub fn persistent_deletes(&self) -> impl Iterator<Item = (TableId, Arc<[ProductValue]>)> + '_ {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| !entry.ephemeral && !entry.truncated && !entry.deletes.is_empty())
+            .map(|(table_id, entry)| (*table_id, entry.deletes.clone()))
     }
 
-    /// Obtain an iterator over the deleted rows per table.
-    pub fn deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
-        self.deletes.iter()
+    /// Returns an iterator over the deleted rows per table.
+    pub fn deletes(&self) -> impl Iterator<Item = (TableId, &Arc<[ProductValue]>)> + '_ {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| !entry.deletes.is_empty())
+            .map(|(table_id, entry)| (*table_id, &entry.deletes))
     }
 
     /// Get the `i`th deleted row for `table_id` if it exists
     pub fn get_ith_delete(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
-        self.deletes.get(&table_id).and_then(|rows| rows.get(i))
+        self.deletes_for_table(table_id).and_then(|ds| ds.get(i))
     }
 
-    /// Obtain an iterator over the inserted rows per table.
-    ///
-    /// If you don't need access to the table name, [`Self::deletes`] is
-    /// slightly more efficient.
-    pub fn deletes_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
-        self.deletes.iter().map(|(table_id, rows)| {
-            let table_name = self
-                .tables
-                .get(table_id)
-                .expect("invalid `TxData`: partial table name mapping");
-            (table_id, table_name.as_str(), rows)
-        })
-    }
-
-    pub fn truncates(&self) -> impl Iterator<Item = TableId> + '_ {
-        self.truncates.iter().copied()
+    /// Returns an iterator over all the non-emphemeral tables
+    /// that were truncated in this transaction.
+    pub fn persistent_truncates(&self) -> impl Iterator<Item = TableId> + '_ {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| !entry.ephemeral && entry.truncated)
+            .map(|(table_id, _)| *table_id)
     }
 
     /// Check if this [`TxData`] contains any `inserted | deleted` rows
@@ -322,12 +353,13 @@ impl TxData {
     /// the method returns `false`.
     ///
     /// This is used to determine if a transaction should be written to disk.
-    pub fn has_rows_or_connect_disconnect(&self, reducer_name: Option<&str>) -> bool {
-        let is_non_ephemeral_mutation =
-            |(table_id, rows): (_, &Arc<[_]>)| !(self.is_ephemeral_table(table_id) || rows.is_empty());
-
-        self.inserts().any(is_non_ephemeral_mutation)
-            || self.deletes().any(is_non_ephemeral_mutation)
+    pub fn has_rows_or_connect_disconnect(&self, reducer_name: Option<&ReducerName>) -> bool {
+        // Persist if the table is non-emphemeral and had any inserts or deletes.
+        self.entries.values().any(|e|
+            !e.ephemeral
+            && (!e.inserts.is_empty() || !e.deletes.is_empty())
+        )
+        // Also persist for connect/disconnect reducers.
             || matches!(
                 reducer_name.map(|rn| rn.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
@@ -336,12 +368,32 @@ impl TxData {
 
     /// Returns a list of tables affected in this transaction.
     pub fn table_ids_and_names(&self) -> impl '_ + Iterator<Item = (TableId, &str)> {
-        self.tables.iter().map(|(k, v)| (*k, &**v))
+        self.entries.iter().map(|(k, e)| (*k, &*e.table_name))
     }
 
     /// Returns the number o tables affected in this transaction.
     pub fn num_tables_affected(&self) -> usize {
-        self.tables.len()
+        self.entries.len()
+    }
+
+    /// Returns the entry for `table_id`.
+    pub fn entry_for(&self, table_id: TableId) -> Option<&TxDataTableEntry> {
+        self.entries.get(&table_id)
+    }
+
+    /// Returns the inserts for `table_id`.
+    pub fn inserts_for_table(&self, table_id: TableId) -> Option<&[ProductValue]> {
+        self.entry_for(table_id).map(|entry| &*entry.inserts)
+    }
+
+    /// Returns the inserts for `table_id`.
+    pub fn deletes_for_table(&self, table_id: TableId) -> Option<&[ProductValue]> {
+        self.entry_for(table_id).map(|entry| &*entry.deletes)
+    }
+
+    /// Returns an iterator over all [`TxDataTableEntry`]s in this transaction.
+    pub fn iter_table_entries(&self) -> impl '_ + ExactSizeIterator<Item = (TableId, &TxDataTableEntry)> {
+        self.entries.iter().map(|(k, v)| (*k, v))
     }
 }
 
@@ -399,8 +451,8 @@ pub trait Tx {
     ///   observed transactions.
     ///
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String);
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, Option<ReducerName>);
 }
 
 pub trait MutTx {
@@ -424,15 +476,16 @@ pub trait MutTx {
     ///
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran during this transaction.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>>;
+    /// - `ReducerName`, the name of the reducer which ran during this transaction.
+    #[allow(clippy::type_complexity)]
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, Option<ReducerName>)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran within this transaction.
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String);
+    /// - `ReducerName`, the name of the reducer which ran within this transaction.
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, Option<ReducerName>);
 }
 
 /// Standard metadata associated with a database.
@@ -552,7 +605,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>>;
     fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
+    fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: TableName) -> Result<()>;
     fn view_id_from_name_mut_tx(&self, tx: &Self::MutTx, view_name: &str) -> Result<Option<ViewId>>;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool;

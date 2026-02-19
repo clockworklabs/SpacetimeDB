@@ -21,8 +21,8 @@ use tokio::runtime::{Builder, Runtime};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::host::FunctionArgs;
-use spacetimedb::messages::websocket::CallReducerFlags;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
@@ -59,7 +59,7 @@ impl ModuleHandle {
     async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
         let result = self
             .client
-            .call_reducer(reducer, args, 0, Instant::now(), CallReducerFlags::FullUpdate)
+            .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
             .await;
         let result = match result {
             Ok(result) => result.into(),
@@ -204,7 +204,7 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+            JobCores::without_pinned_cores(),
         )
         .await
         .unwrap();
@@ -221,6 +221,7 @@ impl CompiledModule {
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
+                organization: None,
             },
             MigrationPolicy::Compatible,
         )
@@ -330,6 +331,20 @@ impl ModuleLanguage for TypeScript {
     fn get_module() -> &'static CompiledModule {
         lazy_static::lazy_static! {
             pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-ts", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct Cpp;
+
+impl ModuleLanguage for Cpp {
+    const NAME: &'static str = "cpp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cpp", COMPILATION_MODE);
         }
 
         &MODULE

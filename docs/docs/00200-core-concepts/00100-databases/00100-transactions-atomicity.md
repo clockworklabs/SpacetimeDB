@@ -5,6 +5,7 @@ slug: /databases/transactions-atomicity
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB provides strong transactional guarantees for all database operations. Every [reducer](/functions/reducers) runs inside a database transaction, ensuring your data remains consistent and reliable even under concurrent load.
@@ -71,7 +72,7 @@ When a reducer calls another reducer directly (not via scheduling), they execute
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('parent_reducer', (ctx) => {
+export const parent_reducer = spacetimedb.reducer((ctx) => {
     TableA.insert({ /* ... */ });
     
     // This runs in the SAME transaction
@@ -153,6 +154,44 @@ pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+using namespace SpacetimeDB;
+
+// Forward declare child reducer to allow calling it before its definition
+ReducerResult child_reducer(ReducerContext&, bool some_condition);
+
+SPACETIMEDB_REDUCER(parent_reducer, ReducerContext ctx, bool some_condition) {
+    ctx.db[table_a].insert(RowA{ /* ... */ });
+    
+    // This runs in the SAME transaction
+    ReducerResult result = child_reducer(ctx, some_condition);
+    if (result.is_err()) {
+        return result;
+    }
+    
+    ctx.db[table_b].insert(RowB{ /* ... */ });
+    
+    // All changes from both parent and child commit together
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(child_reducer, ReducerContext ctx, bool some_condition) {
+    ctx.db[table_c].insert(RowC{ /* ... */ });
+    
+    // If this returns Err, the parent's changes also roll back
+    if (some_condition) {
+        return Err("Child failed");
+    }
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 :::important
@@ -194,11 +233,11 @@ SpacetimeDB does not support nested transactions. When one reducer calls another
 The `#[auto_inc]` sequence generator is not transactional:
 - Sequence numbers are allocated even if a transaction rolls back
 - This can create gaps in your sequence
-- See [SEQUENCE documentation](/reference/appendix#sequence) for details
+- See [Auto-Increment](/tables/auto-increment#crash-recovery) for details
 
 ## Related Topics
 
 - **[Reducers](/functions/reducers)** - Functions that modify database state transactionally
 - **[Procedures](/functions/procedures)** - Functions with manual transaction control
 - **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers for separate transactions
-- **[Subscriptions](/subscriptions)** - How clients receive transactional updates
+- **[Subscriptions](/clients/subscriptions)** - How clients receive transactional updates

@@ -147,11 +147,11 @@ Getting started with SpacetimeDB involves a few key steps:
       ```bash
       # Example: Build a module located in the current directory (.)
       # Mount current dir to /module inside container, set working dir to /module
-      docker run --rm -v "$(pwd):/module" -w /module clockworklabs/spacetime build --project-path .
+      docker run --rm -v "$(pwd):/module" -w /module clockworklabs/spacetime build --module-path .
 
       # Example: Publish the module after building
       # Assumes a local server is running (or use --host for Maincloud/other)
-      docker run --rm -v "$(pwd):/module" -w /module --network host clockworklabs/spacetime publish --project-path . my-database-name
+      docker run --rm -v "$(pwd):/module" -w /module --network host clockworklabs/spacetime publish --module-path . my-database-name
       # Note: `--network host` is often needed to connect to a local server from the container.
       ```
 
@@ -182,14 +182,14 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
 4.  **Build Module:** Compile your module code into WebAssembly using the CLI:
     ```bash
     # Run from the directory containing your module folder
-    spacetime build --project-path my_server_module
+    spacetime build --module-path my_server_module
     ```
     :::note C# Build Prerequisite (.NET SDK)
     Building a **C# module** (on any platform: Windows, macOS, Linux) requires the .NET SDK to be installed. If the build fails with an error mentioning `dotnet workload list` or `No .NET SDKs were found`, you need to install the SDK first. Download and install the **.NET 8 SDK** specifically from the official Microsoft website: [https://dotnet.microsoft.com/download](https://dotnet.microsoft.com/download). Newer versions (like .NET 9) are not currently supported for building SpacetimeDB modules, although they can be installed alongside .NET 8 without conflicting.
     :::
 5.  **Publish Module:** Deploy your compiled module to a SpacetimeDB instance (either a local one started with `spacetime start` or the managed Maincloud). Publishing creates or updates a database associated with your module.
     - Providing a `[name|identity]` for the database is **optional**. If omitted, a nameless database will be created and assigned a unique `Identity` automatically. If providing a _name_, it must match the regex `^[a-z0-9]+(-[a-z0-9]+)*$`.
-    - By default (`--project-path`), it builds the module before publishing. Use `--bin-path <wasm_file>` to publish a pre-compiled WASM instead.
+    - By default (`--module-path`), it builds the module before publishing. Use `--bin-path <wasm_file>` to publish a pre-compiled WASM instead.
     - Use `-s, --server <server>` to specify the target instance (e.g., `maincloud.spacetimedb.com` or the nickname `maincloud`). If omitted, it targets a local instance or uses your configured default (check with `spacetime server list`).
     - Use `-c, --delete-data` when updating an existing database identity to destroy all existing data first.
 
@@ -199,7 +199,7 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
 
     ```bash
     # Build and publish from source to 'my-database-name' on the default server
-    spacetime publish --project-path my_server_module my-database-name
+    spacetime publish --module-path my_server_module my-database-name
 
     # Example: Publish a pre-compiled wasm to Maincloud using its nickname, clearing existing data
     spacetime publish --bin-path ./my_module/target/wasm32-wasi/debug/my_module.wasm -s maincloud -c my-cloud-db-identity
@@ -219,9 +219,9 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
     This command inspects your compiled module's schema (tables, types, reducers) and generates corresponding code (classes, structs, functions) for your target client language. This allows you to interact with your SpacetimeDB module in a type-safe way on the client.
     ```bash
     # For Rust client (output to src/module_bindings)
-    spacetime generate --lang rust --out-dir path/to/client/src/module_bindings --project-path my_server_module
+    spacetime generate --lang rust --out-dir path/to/client/src/module_bindings --module-path my_server_module
     # For C# client (output to module_bindings directory)
-    spacetime generate --lang csharp --out-dir path/to/client/module_bindings --project-path my_server_module
+    spacetime generate --lang csharp --out-dir path/to/client/module_bindings --module-path my_server_module
     ```
 8.  **Develop Client:** Create your client application (e.g., Rust binary, C# console app, Unity game). Use the generated bindings and the appropriate client SDK to:
     - Connect to the database (`my-database-name`).
@@ -339,13 +339,13 @@ The `[lib]` section in your module's `Cargo.toml` must contain `crate-type = ["c
 
 Database tables store the application's persistent state. They are defined using Rust structs annotated with the `#[table]` macro.
 
-- **Core Attribute:** `#[table(name = my_table_name, ...)]` marks a struct as a database table definition. The specified `name` (an identifier, _not_ a string literal) is how the table will be referenced in SQL queries and generated APIs.
+- **Core Attribute:** `#[table(accessor = my_table_name, ...)]` marks a struct as a database table definition. The specified `name` (an identifier, _not_ a string literal) is how the table will be referenced in SQL queries and generated APIs.
 - **Derivations:** The `#[table]` macro automatically handles deriving necessary traits like `SpacetimeType`, `Serialize`, `Deserialize`, and `Debug`. **Do not** manually add `#[derive(SpacetimeType)]` to a `#[table]` struct, as it will cause compilation conflicts.
 - **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, mark it as `public` using `#[table(..., public)]`. This is a common source of errors if forgotten.
 - **Primary Keys:** Designate a single field as the primary key using `#[primary_key]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
 - **Auto-Increment:** Mark an integer-typed primary key field with `#[auto_inc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
 - **Unique Constraints:** Enforce uniqueness on non-primary key fields using `#[unique]`. Attempts to insert or update rows violating this constraint will fail.
-- **Indexes:** Create B-tree indexes for faster lookups on specific fields or combinations of fields. Use `#[index(btree)]` on a single field for a simple index, or `#[table(index(name = my_index_name, btree(columns = [col_a, col_b])))])` within the `#[table(...)]` attribute for named, multi-column indexes.
+- **Indexes:** Create B-tree indexes for faster lookups on specific fields or combinations of fields. Use `#[index(btree)]` on a single field for a simple index, or `#[table(index(accessor = my_index_name, btree(columns = [col_a, col_b])))])` within the `#[table(...)]` attribute for named, multi-column indexes.
 - **Nullable Fields:** Use standard Rust `Option<T>` for fields that can hold null values.
 - **Instances vs. Database:** Remember that table struct instances (e.g., `let player = PlayerState { ... };`) are just data. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.db.player_state().insert(...)`).
 - **Case Sensitivity:** Table names specified via `name = ...` are case-sensitive and must be matched exactly in SQL queries.
@@ -353,7 +353,7 @@ Database tables store the application's persistent state. They are defined using
   - Avoid manually inserting values into `#[auto_inc]` fields that are also `#[unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
   - Ensure `public` is set if clients need access.
   - Do not manually derive `SpacetimeType`.
-  - Define indexes _within_ the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
+  - Define indexes _within_ the main `#[table(accessor=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires an `accessor`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```rust
 use spacetimedb::{table, Identity, Timestamp, SpacetimeType, Table}; // Added Table import
@@ -362,10 +362,10 @@ use spacetimedb::{table, Identity, Timestamp, SpacetimeType, Table}; // Added Ta
 
 // Example Table Definition
 #[table(
-    name = player_state,
+    accessor = player_state,
     public,
     // Index definition is included here
-    index(name = idx_level_btree, btree(columns = [level]))
+    index(accessor = idx_level_btree, btree(columns = [level]))
 )]
 #[derive(Clone, Debug)] // No SpacetimeType needed here
 pub struct PlayerState {
@@ -381,7 +381,7 @@ pub struct PlayerState {
     last_login: Option<Timestamp>, // Nullable timestamp
 }
 
-#[table(name = inventory_item, public)]
+#[table(accessor = inventory_item, public)]
 #[derive(Clone, Debug)]
 pub struct InventoryItem {
     #[primary_key]
@@ -394,7 +394,7 @@ pub struct InventoryItem {
 }
 
 // Example of a private table
-#[table(name = internal_game_data)] // No `public` flag
+#[table(accessor = internal_game_data)] // No `public` flag
 #[derive(Clone, Debug)]
 struct InternalGameData {
     #[primary_key]
@@ -418,8 +418,8 @@ use spacetimedb::{table, Identity, Timestamp, Table}; // Added Table import
 // Note: #[table] automatically derives SpacetimeType, Serialize, Deserialize
 // Do NOT add #[derive(SpacetimeType)] here.
 #[derive(Clone, Debug)]
-#[table(name = logged_in_players, public)]  // Identifier name
-#[table(name = players_in_lobby, public)]   // Identifier name
+#[table(accessor = logged_in_players, public)]  // Identifier name
+#[table(accessor = players_in_lobby, public)]   // Identifier name
 pub struct PlayerSessionData {
     #[primary_key]
     player_id: Identity,
@@ -434,7 +434,7 @@ pub struct PlayerSessionData {
 fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     // Reducers interact with the specific table handles:
     let session = PlayerSessionData {
-        player_id: ctx.sender, // Example: Use sender identity
+        player_id: ctx.sender(), // Example: Use sender identity
         session_id: 0, // Assuming auto_inc
         last_activity: ctx.timestamp,
     };
@@ -446,12 +446,12 @@ fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     }
 
     // Find a player in the 'players_in_lobby' table by primary key
-    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender) {
+    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender()) {
         spacetimedb::log::info!("Player {} found in lobby.", lobby_player.player_id);
     }
 
     // Delete from the 'logged_in_players' table using the PK index
-    ctx.db.logged_in_players().player_id().delete(&ctx.sender);
+    ctx.db.logged_in_players().player_id().delete(&ctx.sender());
 }
 ```
 
@@ -491,15 +491,15 @@ Reducers are the functions within your server module responsible for atomically 
 use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 
 // Assume User and Message tables are defined as previously
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 #[derive(Clone, Debug)] pub struct User { #[primary_key] identity: Identity, name: Option<String>, online: bool }
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 #[derive(Clone, Debug)] pub struct Message { #[primary_key] #[auto_inc] id: u64, sender: Identity, text: String, sent: Timestamp }
 
 // Example: Basic reducer to set a user's name
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let sender_id = ctx.sender;
+    let sender_id = ctx.sender();
     let name = validate_name(name)?; // Use helper for validation
 
     // Find the user row by primary key
@@ -519,13 +519,13 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 #[reducer]
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?; // Use helper for validation
-    log::info!("User {} sent message: {}", ctx.sender, text);
+    log::info!("User {} sent message: {}", ctx.sender(), text);
 
     // Insert a new row into the Message table
     // Note: id is auto_inc, so we provide 0. insert() panics on constraint violation.
     let new_message = Message {
         id: 0,
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     };
@@ -567,15 +567,15 @@ Reducers can indicate failure either by returning `Err` from a function with a `
 Special reducers handle specific events:
 
 - `#[reducer(init)]`: Runs once when the module is first published **and** any time the database is manually cleared (e.g., via `spacetime publish -c` or `spacetime server clear`). Failure prevents publishing or clearing. Often used for initial data setup.
-- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
-- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
 
 These reducers cannot take arguments beyond `&ReducerContext`.
 
 ```rust
 use spacetimedb::{reducer, table, ReducerContext, Table, log};
 
-#[table(name = settings)]
+#[table(accessor = settings)]
 #[derive(Clone, Debug)]
 pub struct Settings {
     #[primary_key]
@@ -611,14 +611,14 @@ pub fn initialize_database(ctx: &ReducerContext) {
 // Example client_connected reducer
 #[reducer(client_connected)]
 pub fn handle_connect(ctx: &ReducerContext) {
-    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... setup initial state for ctx.sender ...
 }
 
 // Example client_disconnected reducer
 #[reducer(client_disconnected)]
 pub fn handle_disconnect(ctx: &ReducerContext) {
-    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... cleanup state for ctx.sender ...
 }
 ```
@@ -640,10 +640,10 @@ SpacetimeDB provides powerful ways to filter and delete table rows using B-tree 
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, Table, log};
 
-#[table(name = points, index(name = idx_xy, btree(columns = [x, y])))]
+#[table(accessor = points, index(accessor = idx_xy, btree(columns = [x, y])))]
 #[derive(Clone, Debug)]
 pub struct Point { #[primary_key] id: u64, x: i64, y: i64 }
-#[table(name = items, index(btree(columns = [name])))]
+#[table(accessor = items, index(btree(columns = [name])))]
 #[derive(Clone, Debug)] // No SpacetimeType derive
 pub struct Item { #[primary_key] item_key: u32, name: String }
 
@@ -699,7 +699,7 @@ The `TryInsertError` enum provides specific variants detailing the cause of fail
 ````rust
 use spacetimedb::{table, reducer, ReducerContext, Table, log, TryInsertError};
 
-#[table(name = items)]
+#[table(accessor = items)]
 #[derive(Clone, Debug)]
 pub struct Item {
     #[primary_key] #[auto_inc] id: u64,
@@ -772,7 +772,7 @@ use spacetimedb::{table, reducer, ReducerContext, Timestamp, TimeDuration, Sched
 use log::debug;
 
 // 1. Declare the table with scheduling information, linking it to `send_message`.
-#[table(name = send_message_schedule, scheduled(send_message))]
+#[table(accessor = send_message_schedule, scheduled(send_message))]
 struct SendMessageSchedule {
     // Mandatory fields:
     // ============================
@@ -800,7 +800,7 @@ struct SendMessageSchedule {
 #[reducer]
 fn send_message(ctx: &ReducerContext, args: SendMessageSchedule) -> Result<(), String> {
     // Security check is important!
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         return Err("Reducer `send_message` may not be invoked by clients, only via scheduling.".into());
     }
 
@@ -851,7 +851,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
 - **Best-Effort Scheduling:** Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution when a database is under heavy load.
 
-- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender`) to the module's own identity (`ctx.identity()`).
+- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender()`) to the module's own identity (`ctx.identity()`).
 
   ```rust
   use spacetimedb::{reducer, ReducerContext};
@@ -860,7 +860,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
   #[reducer]
   fn my_scheduled_reducer(ctx: &ReducerContext, args: MyScheduleArgs) -> Result<(), String> {
-      if ctx.sender != ctx.identity() {
+      if ctx.sender() != ctx.identity() {
           return Err("Reducer `my_scheduled_reducer` may not be invoked by clients, only via scheduling.".into());
       }
       // ... Reducer body proceeds only if called by scheduler ...
@@ -869,7 +869,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
   ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will be `None`.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender()` will be the module's own identity, and `ctx.connection_id()` will be `None`.
 :::
 
 #### View Functions
@@ -891,7 +891,7 @@ Views are defined using the `#[view]` macro and must specify a `name` and `publi
 use spacetimedb::{view, ViewContext, AnonymousViewContext, table, SpacetimeType};
 use spacetimedb_lib::Identity;
 
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -901,7 +901,7 @@ pub struct Player {
     name: String,
 }
 
-#[spacetimedb::table(name = player_level, public)]
+#[spacetimedb::table(accessor = player_level, public)]
 pub struct PlayerLevel {
     #[unique]
     player_id: u64,
@@ -920,14 +920,14 @@ pub struct PlayerAndLevel {
 
 // View that returns the caller's player (user-specific)
 // Returns Option<T> for at-most-one row
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // View that returns all players at a specific level (same for all callers)
 // Returns Vec<T> for multiple rows
-#[view(name = players_for_level, public)]
+#[view(accessor = players_for_level, public)]
 fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
     ctx.db
         .player_level()
@@ -953,7 +953,7 @@ fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
 
 Views use one of two context types:
 
-- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender()`. Use this when the view depends on who is querying it (e.g., "get my player").
 - **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
 Both contexts provide read-only access to tables and indexes through `ctx.db`.
@@ -980,11 +980,11 @@ use spacetimedb::{view, ViewContext, Query};
 
 // This view can scan the whole table efficiently because
 // Query<T> results are computed incrementally
-#[view(name = my_messages, public)]
+#[view(accessor = my_messages, public)]
 fn my_messages(ctx: &ViewContext) -> Query<Message> {
     // Build a typed query using the query builder
     ctx.db.message()
-        .filter(|cols| cols.sender.eq(ctx.sender))
+        .filter(|cols| cols.sender.eq(ctx.sender()))
         .build()
 }
 
@@ -1041,7 +1041,7 @@ Client code relies on generated bindings specific to your server module. Use the
 mkdir -p src/module_bindings
 spacetime generate --lang rust \
     --out-dir src/module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Then, declare the generated module in your `main.rs` or `lib.rs`:
@@ -1057,7 +1057,7 @@ mod module_bindings;
 The core type for managing a connection is `module_bindings::DbConnection`. You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection::builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_module_name("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_database_name("my_database")`).
 - **Authentication:** Provide an identity token using `.with_token(Option<String>)`. If `None` or omitted for the first connection, the server issues a new identity and token (retrieved via the `on_connect` callback).
 - **Callbacks:** Register callbacks for connection lifecycle events:
   - `.on_connect(|conn, identity, token| { ... })`: Runs on successful connection. Often used to store the `token` for future connections.
@@ -1080,7 +1080,7 @@ fn connect_to_db() -> DbConnection {
 
     DbConnection::builder()
         .with_uri(HOST)
-        .with_module_name(DB_NAME)
+        .with_database_name(DB_NAME)
         .with_token(creds_store().load().ok()) // Load token if exists
         .on_connect(|conn, identity, auth_token| {
             println!("Connected. Identity: {}", identity.to_hex());
@@ -1320,22 +1320,22 @@ Table and Type definitions in C# should use the `partial` keyword (e.g., `public
 
 Database tables store the application's persistent state. They are defined using C# classes or structs marked with the `[Table]` attribute.
 
-- **Core Attribute:** `[Table(Name = "my_table_name", ...)]` marks a class or struct as a database table definition. The specified string `Name` is how the table will be referenced in SQL queries and generated APIs.
+- **Core Attribute:** `[Table(Accessor = "my_table_name", ...)]` marks a class or struct as a database table definition. The specified string `Accessor` is how the table will be referenced in SQL queries and generated APIs.
 - **Partial Modifier:** Use the `partial` keyword (e.g., `public partial class MyTable`) to allow SpacetimeDB's source generators to add necessary methods and logic to your definition.
 - **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, set `Public = true` within the attribute: `[Table(..., Public = true)]`. This is a common source of errors if forgotten.
 - **Primary Keys:** Designate a single **public field** as the primary key using `[PrimaryKey]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
 - **Auto-Increment:** Mark an integer-typed primary key **public field** with `[AutoInc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
 - **Unique Constraints:** Enforce uniqueness on non-primary key **public fields** using `[Unique]`. Attempts to insert or update rows violating this constraint will fail (throw an exception).
-- **Indexes:** Create B-tree indexes for faster lookups on specific **public fields** or combinations of fields. Use `[Index.BTree]` on a single field for a simple index, or define indexes at the class/struct level using `[Index.BTree(Name = "MyIndexName", Columns = new[] { nameof(ColA), nameof(ColB) })]`.
+- **Indexes:** Create B-tree indexes for faster lookups on specific **public fields** or combinations of fields. Use `[Index.BTree]` on a single field for a simple index, or define indexes at the class/struct level using `[Index.BTree(Accessor = "MyIndexName", Columns = new[] { nameof(ColA), nameof(ColB) })]`.
 - **Nullable Fields:** Use standard C# nullable reference types (`string?`) or nullable value types (`int?`, `Timestamp?`) for fields that can hold null values.
 - **Instances vs. Database:** Remember that table class/struct instances (e.g., `var player = new PlayerState { ... };`) are just data objects. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.Db.player_state.Insert(...)`).
-- **Case Sensitivity:** Table names specified via `Name = "..."` are case-sensitive and must be matched exactly in SQL queries.
+- **Case Sensitivity:** Table names specified via `Accessor = "..."` are case-sensitive and must be matched exactly in SQL queries.
 - **Pitfalls:**
   - SpacetimeDB attributes (`[PrimaryKey]`, `[AutoInc]`, `[Unique]`, `[Index.BTree]`) **must** be applied to **public fields**, not properties (`{ get; set; }`). Using properties can cause build errors or runtime issues.
   - Avoid manually inserting values into `[AutoInc]` fields that are also `[Unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
   - Ensure `Public = true` is set if clients need access.
   - Always use the `partial` keyword on table definitions.
-  - Define indexes _within_ the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
+  - Define indexes _within_ the main `#[table(accessor=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires an `accessor`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```csharp
 using SpacetimeDB;
@@ -1344,8 +1344,8 @@ using System; // For Nullable types if needed
 // Assume Position, PlayerStatus, ItemType are defined as types
 
 // Example Table Definition
-[Table(Name = "player_state", Public = true)]
-[Index.BTree(Name = "idx_level", Columns = new[] { nameof(Level) })] // Table-level index
+[Table(Accessor = "player_state", Public = true)]
+[Index.BTree(Accessor = "idx_level", Columns = new[] { nameof(Level) })] // Table-level index
 public partial class PlayerState
 {
     [PrimaryKey]
@@ -1359,7 +1359,7 @@ public partial class PlayerState
     public Timestamp? LastLogin; // Public field, nullable struct
 }
 
-[Table(Name = "inventory_item", Public = true)]
+[Table(Accessor = "inventory_item", Public = true)]
 public partial class InventoryItem
 {
     [PrimaryKey]
@@ -1372,7 +1372,7 @@ public partial class InventoryItem
 }
 
 // Example of a private table
-[Table(Name = "internal_game_data")] // Public = false is default
+[Table(Accessor = "internal_game_data")] // Public = false is default
 public partial class InternalGameData
 {
     [PrimaryKey]
@@ -1399,13 +1399,13 @@ public partial class CharacterInfo
 }
 
 // Define derived classes, each with its own table attribute
-[Table(Name = "active_characters")]
+[Table(Accessor = "active_characters")]
 public partial class ActiveCharacter : CharacterInfo {
     // Can add specific public fields if needed
     public bool IsOnline;
 }
 
-[Table(Name = "deleted_characters")]
+[Table(Accessor = "deleted_characters")]
 public partial class DeletedCharacter : CharacterInfo {
     // Can add specific public fields if needed
     public Timestamp DeletionTime;
@@ -1423,8 +1423,8 @@ using SpacetimeDB;
 // Define the core data structure once
 // Apply multiple [Table] attributes to map it to different tables
 [Type] // Mark as a type if used elsewhere (e.g., reducer args)
-[Table(Name = "logged_in_players", Public = true)]
-[Table(Name = "players_in_lobby", Public = true)]
+[Table(Accessor = "logged_in_players", Public = true)]
+[Table(Accessor = "players_in_lobby", Public = true)]
 public partial class PlayerSessionData
 {
     [PrimaryKey]
@@ -1466,11 +1466,11 @@ using System.Linq; // Used in more complex examples later
 public static partial class Module
 {
     // Assume PlayerState and InventoryItem tables are defined as previously
-    [Table(Name = "player_state", Public = true)] public partial class PlayerState {
+    [Table(Accessor = "player_state", Public = true)] public partial class PlayerState {
         [PrimaryKey] public Identity PlayerId;
         [Unique] public string Name = "";
         public uint Health; public ushort Level; /* ... other fields */ }
-    [Table(Name = "inventory_item", Public = true)] public partial class InventoryItem {
+    [Table(Accessor = "inventory_item", Public = true)] public partial class InventoryItem {
         [PrimaryKey] #[AutoInc] public ulong ItemId;
         public Identity OwnerId; /* ... other fields */ }
 
@@ -1583,7 +1583,7 @@ using System;
 
 public static partial class Module
 {
-    [Table(Name = "unique_items")]
+    [Table(Accessor = "unique_items")]
     public partial class UniqueItem {
         [PrimaryKey] public string ItemName;
         public int Value;
@@ -1649,7 +1649,7 @@ In addition to lifecycle annotations, reducers can be scheduled. This allows cal
 
 The scheduling information for a reducer is stored in a table. This table links to the reducer function and has specific mandatory fields:
 
-1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Name = ..., Scheduled = nameof(YourReducerName), ScheduledAt = nameof(YourScheduleAtColumnName))]`.
+1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Accessor = ..., Scheduled = nameof(YourReducerName), ScheduledAt = nameof(YourScheduleAtColumnName))]`.
     - The `Scheduled` parameter links this table to the static reducer method `YourReducerName`.
     - The `ScheduledAt` parameter specifies the name of the field within this table that holds the scheduling information. This field **must** be of type `SpacetimeDB.ScheduleAt`.
     - The table **must** also have a primary key field (often `[AutoInc] ulong Id`).
@@ -1672,7 +1672,7 @@ public static partial class Module
 {
     // 1. Define the table with scheduling information, linking to `SendMessage` reducer.
     // Specifies that the `ScheduledAt` field holds the schedule info.
-    [Table(Name = "send_message_schedule", Scheduled = nameof(SendMessage), ScheduledAt = nameof(ScheduledAt))]
+    [Table(Accessor = "send_message_schedule", Scheduled = nameof(SendMessage), ScheduledAt = nameof(ScheduledAt))]
     public partial struct SendMessageSchedule
     {
         // Mandatory fields:
@@ -1824,7 +1824,7 @@ public static partial class Module
 
     // View that returns the caller's player (user-specific)
     // Returns T? for at-most-one row
-    [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyPlayer", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
         return ctx.Db.Player.Identity.Find(ctx.Sender);
@@ -1832,7 +1832,7 @@ public static partial class Module
 
     // View that returns all players at a specific level (same for all callers)
     // Returns List<T> for multiple rows
-    [SpacetimeDB.View(Name = "PlayersForLevel", Public = true)]
+    [SpacetimeDB.View(Accessor = "PlayersForLevel", Public = true)]
     public static List<PlayerAndLevel> PlayersForLevel(AnonymousViewContext ctx)
     {
         var rows = new List<PlayerAndLevel>();
@@ -1883,7 +1883,7 @@ The query builder provides a fluent API for constructing type-safe SQL queries:
 ```csharp
 // This view can scan the whole table efficiently because
 // Query<T> results are computed incrementally
-[SpacetimeDB.View(Name = "MyMessages", Public = true)]
+[SpacetimeDB.View(Accessor = "MyMessages", Public = true)]
 public static Query<Message> MyMessages(ViewContext ctx)
 {
     return ctx.Db.Message
@@ -1941,7 +1941,7 @@ Client code relies on generated bindings specific to your server module. Use the
 mkdir -p module_bindings # Or your preferred output location
 spacetime generate --lang csharp \
     --out-dir module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Include the generated `.cs` files in your C# project or Unity Assets folder.
@@ -1951,7 +1951,7 @@ Include the generated `.cs` files in your C# project or Unity Assets folder.
 The core type for managing a connection is `SpacetimeDB.Types.DbConnection` (this type name comes from the generated bindings). You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection.Builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithModuleName("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithDatabaseName("my_database")`).
 - **Authentication:** Provide an identity token using `.WithToken(string?)`. The SDK provides a helper `AuthToken.Token` which loads a token from a local file (initialized via `AuthToken.Init(".credentials_filename")`). If `null` or omitted for the first connection, the server issues a new identity and token (retrieved via the `OnConnect` callback).
 - **Callbacks:** Register callbacks (as delegates or lambda expressions) for connection lifecycle events:
   - `.OnConnect((conn, identity, token) => { ... })`: Runs on successful connection. Often used to save the `token` using `AuthToken.SaveToken(token)`.
@@ -1977,7 +1977,7 @@ public class ClientManager // Example class
 
         connection = DbConnection.Builder()
             .WithUri(HOST)
-            .WithModuleName(DB_NAME)
+            .WithDatabaseName(DB_NAME)
             .WithToken(AuthToken.Token) // Load token if exists
             .OnConnect(HandleConnect)
             .OnConnectError(HandleConnectError)
@@ -2238,7 +2238,7 @@ import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 // Define a User table with columns
 // table() takes two objects: options first, then columns
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -2248,7 +2248,7 @@ const User = table(
 );
 
 // Define a Message table
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -2258,7 +2258,8 @@ const Message = table(
 );
 
 // Compose the schema - this gives us ctx.db.user and ctx.db.message
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ user, message });
+export default spacetimedb;
 ```
 
 **Type Builders**
@@ -2304,7 +2305,7 @@ const GameState = t.enum('GameState', {
 });
 
 // Use in a table - note table() takes options object first, then columns
-const Player = table(
+const player = table(
   { name: 'player', public: true },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -2314,7 +2315,8 @@ const Player = table(
   }
 );
 
-const spacetimedb = schema(Player);
+const spacetimedb = schema({ player });
+export default spacetimedb;
 ```
 
 #### 3. Writing Reducers
@@ -2324,7 +2326,7 @@ Reducers are functions that modify database state. They are defined using `space
 ```typescript
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -2333,7 +2335,7 @@ const User = table(
   }
 );
 
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -2342,7 +2344,8 @@ const Message = table(
   }
 );
 
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ user, message });
+export default spacetimedb;
 
 // Helper function for validation
 function validateName(name: string) {
@@ -2353,7 +2356,7 @@ function validateName(name: string) {
 
 // Set user's name
 // Arguments: reducer name, argument types object, callback
-spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
+export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -2363,7 +2366,7 @@ spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
 });
 
 // Send a message
-spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
+export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   if (!text) {
     throw new SenderError('Messages must not be empty');
   }
@@ -2392,13 +2395,13 @@ SpacetimeDB provides special lifecycle methods on the `spacetimedb` object:
 
 ```typescript
 // Called once when the module is first published
-spacetimedb.init(ctx => {
+export const init = spacetimedb.init(ctx => {
   console.log('Module initialized');
   // Seed initial data, set up schedules, etc.
 });
 
 // Called when a client connects
-spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: true });
@@ -2412,7 +2415,7 @@ spacetimedb.clientConnected(ctx => {
 });
 
 // Called when a client disconnects
-spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
@@ -2427,13 +2430,13 @@ Views are read-only functions that return computed data from tables. Define view
 ```typescript
 // View that returns the caller's user (user-specific)
 // Uses spacetimedb.view() which provides ctx.sender
-spacetimedb.view('my_user', ctx => {
+export const my_user = spacetimedb.view({ name: 'my_user' }, ctx => {
   return ctx.db.user.identity.find(ctx.sender);
 });
 
 // View that returns all online users (same for all callers)
 // Uses spacetimedb.anonymousView() - no access to ctx.sender
-spacetimedb.anonymousView('online_users', ctx => {
+export const online_users = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
   return ctx.db.user.filter(u => u.online);
 });
 ```
@@ -2489,10 +2492,10 @@ Publish to SpacetimeDB:
 
 ```bash
 # Local development (from the project root, spacetimedb/ is the module directory)
-spacetime publish --server local --project-path spacetimedb my_module
+spacetime publish --server local --module-path spacetimedb my_module
 
 # Or to SpacetimeDB cloud
-spacetime publish --server maincloud --project-path spacetimedb my_module
+spacetime publish --server maincloud --module-path spacetimedb my_module
 ```
 
 ### Client SDK (TypeScript)
@@ -2522,7 +2525,7 @@ Generate the module-specific bindings using the `spacetime generate` command:
 mkdir -p src/module_bindings
 spacetime generate --lang typescript \
     --out-dir src/module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Import the necessary generated types and SDK components:
@@ -2587,7 +2590,7 @@ class ChatClient {
 
     const connectionInstance = DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
+      .withDatabaseName(DB_NAME)
       .withToken(token)
       .onConnect(this.handleConnect)
       .onDisconnect(this.handleDisconnect)

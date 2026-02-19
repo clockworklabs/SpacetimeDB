@@ -8,7 +8,6 @@ use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
-use crate::host::module_host::ModuleRuntime as _;
 use crate::host::v8::V8Runtime;
 use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
@@ -18,7 +17,7 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager, TransactionOffset};
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::util::asyncify;
-use crate::util::jobs::{JobCores, SingleCoreExecutor};
+use crate::util::jobs::{AllocatedJobCore, JobCores};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
@@ -28,7 +27,7 @@ use parking_lot::Mutex;
 use scopeguard::defer;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
@@ -37,7 +36,7 @@ use spacetimedb_lib::{hash_bytes, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
-use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
@@ -94,7 +93,7 @@ pub type ProgramStorage = Arc<dyn ExternalStorage>;
 #[derive(Clone)]
 pub struct HostController {
     /// Map of all hosts managed by this controller,
-    /// keyed by database instance id.
+    /// keyed by replica id.
     hosts: Hosts,
     /// The root directory for database data.
     pub data_dir: Arc<ServerDataDir>,
@@ -156,7 +155,7 @@ impl From<ReducerCallResult> for Result<(), anyhow::Error> {
 #[derive(Clone, Debug)]
 pub enum ReducerOutcome {
     Committed,
-    Failed(String),
+    Failed(Box<Box<str>>),
     BudgetExceeded,
 }
 
@@ -178,7 +177,9 @@ impl From<&EventStatus> for ReducerOutcome {
     fn from(status: &EventStatus) -> Self {
         match &status {
             EventStatus::Committed(_) => ReducerOutcome::Committed,
-            EventStatus::Failed(e) => ReducerOutcome::Failed(e.clone()),
+            EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => {
+                ReducerOutcome::Failed(Box::new((&**e).into()))
+            }
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
@@ -338,7 +339,7 @@ impl HostController {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
-        Host::try_init_in_memory_to_check(
+        let (program, launched) = Host::try_init_in_memory_to_check(
             &self.runtimes,
             self.page_pool.clone(),
             database,
@@ -351,7 +352,14 @@ impl HostController {
             self.db_cores.take(),
             self.bsatn_rlb_pool.clone(),
         )
-        .await
+        .await?;
+
+        let call_result = launched.module_host.init_database(program).await?;
+        if let Some(call_result) = call_result {
+            Result::from(call_result)?;
+        }
+
+        Ok(launched.module_host.info)
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
@@ -605,6 +613,12 @@ impl HostController {
         maybe_host.is_some()
     }
 
+    /// Obtain a snapshot of the replica ids of all hosts currently registered
+    /// with the controller.
+    pub fn managed_replicas(&self) -> IntSet<u64> {
+        self.hosts.lock().keys().copied().collect()
+    }
+
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
     ///
     /// Removes the module with the given `replica_id` from this controller.
@@ -702,39 +716,41 @@ async fn make_module_host(
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
-    executor: SingleCoreExecutor,
+    core: AllocatedJobCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
     // `make_actor` is blocking, as it needs to compile the wasm to native code,
     // which may be computationally expensive - sometimes up to 1s for a large module.
     // TODO: change back to using `spawn_rayon` here - asyncify runs on tokio blocking
     //       threads, but those aren't for computation. Also, wasmtime uses rayon
     //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
-    asyncify(move || {
-        let database_identity = replica_ctx.database_identity;
+    let database_identity = replica_ctx.database_identity;
 
-        let mcc = ModuleCreationContext {
-            replica_ctx,
-            scheduler,
-            program: &program,
-            energy_monitor,
-        };
+    let mcc = ModuleCreationContext {
+        replica_ctx,
+        scheduler,
+        program_hash: program.hash,
+        energy_monitor,
+    };
 
-        let start = Instant::now();
-        let module_host = match host_type {
-            HostType::Wasm => {
-                let (actor, init_inst) = runtimes.wasmtime.make_actor(mcc)?;
+    match host_type {
+        HostType::Wasm => {
+            asyncify(move || {
+                let start = Instant::now();
+                let module = runtimes.wasmtime.make_actor(mcc, &program.bytes, core)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
-            }
-            HostType::Js => {
-                let (actor, init_inst) = runtimes.v8.make_actor(mcc)?;
-                trace!("v8::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
-            }
-        };
-        Ok((program, module_host))
-    })
-    .await
+                let module_host = ModuleHost::new(module, unregister, database_identity);
+                Ok((program, module_host))
+            })
+            .await
+        }
+        HostType::Js => {
+            let start = Instant::now();
+            let module = runtimes.v8.make_actor(mcc, &program.bytes, core).await?;
+            trace!("v8::make_actor blocked for {:?}", start.elapsed());
+            let module_host = ModuleHost::new(module, unregister, database_identity);
+            Ok((program, module_host))
+        }
+    }
 }
 
 async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Program> {
@@ -762,7 +778,7 @@ async fn launch_module(
     energy_monitor: Arc<dyn EnergyMonitor>,
     module_logs: Option<ModuleLogsDir>,
     runtimes: Arc<HostRuntimes>,
-    executor: SingleCoreExecutor,
+    core: AllocatedJobCore,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
@@ -780,7 +796,7 @@ async fn launch_module(
         program,
         energy_monitor.clone(),
         on_panic,
-        executor,
+        core,
     )
     .await?;
 
@@ -1003,8 +1019,7 @@ impl Host {
         })
     }
 
-    /// Construct an in-memory instance of `database` running `program`,
-    /// initialize it, then immediately destroy it.
+    /// Construct an in-memory instance of `database` running `program`.
     ///
     /// This is used during an initial, fresh publish operation
     /// in order to check the `program`'s validity as a module,
@@ -1018,9 +1033,9 @@ impl Host {
         page_pool: PagePool,
         database: Database,
         program: Program,
-        executor: SingleCoreExecutor,
+        core: AllocatedJobCore,
         bsatn_rlb_pool: BsatnRowListBuilderPool,
-    ) -> anyhow::Result<Arc<ModuleInfo>> {
+    ) -> anyhow::Result<(Program, LaunchedModule)> {
         let (db, _connected_clients) = RelationalDB::open(
             database.database_identity,
             database.owner_identity,
@@ -1030,7 +1045,7 @@ impl Host {
             page_pool,
         )?;
 
-        let (program, launched) = launch_module(
+        launch_module(
             database,
             0,
             program,
@@ -1042,17 +1057,10 @@ impl Host {
             Arc::new(NullEnergyMonitor),
             None,
             runtimes.clone(),
-            executor,
+            core,
             bsatn_rlb_pool,
         )
-        .await?;
-
-        let call_result = launched.module_host.init_database(program).await?;
-        if let Some(call_result) = call_result {
-            Result::from(call_result)?;
-        }
-
-        Ok(launched.module_host.info)
+        .await
     }
 
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running
@@ -1076,7 +1084,7 @@ impl Host {
         policy: MigrationPolicy,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
-        executor: SingleCoreExecutor,
+        core: AllocatedJobCore,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -1089,7 +1097,7 @@ impl Host {
             program,
             energy_monitor,
             on_panic,
-            executor,
+            core,
         )
         .await?;
 
@@ -1154,6 +1162,13 @@ impl Host {
 
         let module_def =
             extract_schema_with_pools(page_pool, bsatn_rlb_pool, host_runtimes, program.bytes, host_type).await?;
+        let major_version_upgrade = matches!(
+            (
+                old_module.module_def.raw_module_def_version(),
+                module_def.raw_module_def_version()
+            ),
+            (RawModuleDefVersion::V9OrEarlier, RawModuleDefVersion::V10)
+        );
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {
             Ok(plan) => MigratePlanResult::Success {
@@ -1161,8 +1176,12 @@ impl Host {
                 new_module_hash: program.hash,
                 breaks_client: plan.breaks_client(),
                 plan: plan.pretty_print(style)?.into(),
+                major_version_upgrade,
             },
-            Err(e) => MigratePlanResult::AutoMigrationError(e),
+            Err(e) => MigratePlanResult::AutoMigrationError {
+                error: e,
+                major_version_upgrade,
+            },
         };
 
         Ok(res)
@@ -1187,8 +1206,12 @@ pub enum MigratePlanResult {
         new_module_hash: Hash,
         plan: Box<str>,
         breaks_client: bool,
+        major_version_upgrade: bool,
     },
-    AutoMigrationError(ErrorStream<AutoMigrateError>),
+    AutoMigrationError {
+        error: ErrorStream<AutoMigrateError>,
+        major_version_upgrade: bool,
+    },
 }
 
 const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(15);
@@ -1253,13 +1276,17 @@ pub(crate) async fn extract_schema_with_pools(
         initial_program: program.hash,
     };
 
-    let core = SingleCoreExecutor::in_current_tokio_runtime();
-    let module_info =
-        Host::try_init_in_memory_to_check(runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
+    let core = AllocatedJobCore::default();
+    // Limit the scope of the launched module just to this block.
+    let module_info = {
+        let (_, launched) =
+            Host::try_init_in_memory_to_check(runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
+        launched.module_host.info
+    };
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {
-        Ok(info) => info.module_def,
-        Err(info) => info.module_def.clone(),
+        Ok(info) => Arc::try_unwrap(info.module_def).unwrap_or_else(|module_def| (*module_def).clone()),
+        Err(info) => (*info.module_def).clone(),
     };
 
     Ok(module_def)

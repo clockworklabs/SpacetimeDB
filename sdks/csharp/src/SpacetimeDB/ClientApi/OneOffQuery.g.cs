@@ -13,23 +13,22 @@ namespace SpacetimeDB.ClientApi
     [DataContract]
     public sealed partial class OneOffQuery
     {
-        [DataMember(Name = "message_id")]
-        public System.Collections.Generic.List<byte> MessageId;
+        [DataMember(Name = "request_id")]
+        public uint RequestId;
         [DataMember(Name = "query_string")]
         public string QueryString;
 
         public OneOffQuery(
-            System.Collections.Generic.List<byte> MessageId,
+            uint RequestId,
             string QueryString
         )
         {
-            this.MessageId = MessageId;
+            this.RequestId = RequestId;
             this.QueryString = QueryString;
         }
 
         public OneOffQuery()
         {
-            this.MessageId = new();
             this.QueryString = "";
         }
     }

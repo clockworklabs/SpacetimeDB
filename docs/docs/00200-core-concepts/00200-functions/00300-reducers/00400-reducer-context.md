@@ -5,6 +5,7 @@ slug: /functions/reducers/reducer-context
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Every reducer receives a special context parameter as its first argument. This context provides read-write access to the database, information about the caller, and additional utilities like random number generation.
@@ -29,9 +30,10 @@ const user = table(
   }
 );
 
-const spacetimedb = schema(user);
+const spacetimedb = schema({ user });
+export default spacetimedb;
 
-spacetimedb.reducer('create_user', { name: t.string() }, (ctx, { name }) => {
+export const create_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.user.insert({ id: 0n, name });
 });
 ```
@@ -67,7 +69,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, reducer, ReducerContext};
 
-#[table(name = user)]
+#[table(accessor = user)]
 pub struct User {
     #[primary_key]
     #[auto_inc]
@@ -78,6 +80,29 @@ pub struct User {
 #[reducer]
 fn create_user(ctx: &ReducerContext, name: String) {
     ctx.db.user().insert(User { id: 0, name });
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct User {
+    uint64_t id;
+    std::string name;
+};
+SPACETIMEDB_STRUCT(User, id, name);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKeyAutoInc(user, id);
+
+SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
+    ctx.db[user].insert(User{0, name});
+    return Ok();
 }
 ```
 
@@ -107,9 +132,10 @@ const player = table(
   }
 );
 
-const spacetimedb = schema(player);
+const spacetimedb = schema({ player });
+export default spacetimedb;
 
-spacetimedb.reducer('update_score', { newScore: t.u32() }, (ctx, { newScore }) => {
+export const update_score = spacetimedb.reducer({ newScore: t.u32() }, (ctx, { newScore }) => {
   // Get the caller's identity
   const caller = ctx.sender;
   
@@ -163,7 +189,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, Identity};
 
-#[table(name = player)]
+#[table(accessor = player)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
@@ -174,13 +200,42 @@ pub struct Player {
 #[reducer]
 fn update_score(ctx: &ReducerContext, new_score: u32) {
     // Get the caller's identity
-    let caller = ctx.sender;
+    let caller = ctx.sender();
     
     // Find and update their player record
     if let Some(mut player) = ctx.db.player().identity().find(caller) {
         player.score = new_score;
         ctx.db.player().identity().update(player);
     }
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Player {
+    Identity identity;
+    std::string name;
+    uint32_t score;
+};
+SPACETIMEDB_STRUCT(Player, identity, name, score);
+SPACETIMEDB_TABLE(Player, player, Public);
+FIELD_PrimaryKey(player, identity);
+
+SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint32_t new_score) {
+    // Get the caller's identity
+    auto caller = ctx.sender;
+    
+    // Find and update their player record
+    if (auto player = ctx.db[player_identity].find(caller)) {
+        player->score = new_score;
+        ctx.db[player_identity].update(*player);
+    }
+    return Ok();
 }
 ```
 
@@ -220,7 +275,7 @@ This is particularly important for [scheduled reducers](/functions/reducers) tha
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
 const scheduledTask = table(
-  { name: 'scheduled_task', scheduled: 'send_reminder' },
+  { name: 'scheduled_task', scheduled: (): any => send_reminder },
   {
     taskId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -228,9 +283,10 @@ const scheduledTask = table(
   }
 );
 
-const spacetimedb = schema(scheduledTask);
+const spacetimedb = schema({ scheduledTask });
+export default spacetimedb;
 
-spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: scheduledTask.rowType }, (ctx, { arg }) => {
   // Only allow the scheduler (module identity) to call this
   if (ctx.sender != ctx.identity) {
     throw new SenderError('This reducer can only be called by the scheduler');
@@ -248,7 +304,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "ScheduledTask", Scheduled = nameof(SendReminder))]
+    [SpacetimeDB.Table(Accessor = "ScheduledTask", Scheduled = nameof(SendReminder))]
     public partial struct ScheduledTask
     {
         [SpacetimeDB.PrimaryKey]
@@ -278,7 +334,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, ScheduleAt};
 
-#[table(name = scheduled_task, scheduled(send_reminder))]
+#[table(accessor = scheduled_task, scheduled(send_reminder))]
 pub struct ScheduledTask {
     #[primary_key]
     #[auto_inc]
@@ -290,11 +346,41 @@ pub struct ScheduledTask {
 #[reducer]
 fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
     // Only allow the scheduler (module identity) to call this
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         panic!("This reducer can only be called by the scheduler");
     }
     
     spacetimedb::log::info!("Reminder: {}", task.message);
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct ScheduledTask {
+    uint64_t task_id;
+    ScheduleAt scheduled_at;
+    std::string message;
+};
+SPACETIMEDB_STRUCT(ScheduledTask, task_id, scheduled_at, message);
+SPACETIMEDB_TABLE(ScheduledTask, scheduled_task, Private);
+FIELD_PrimaryKeyAutoInc(scheduled_task, task_id);
+
+// Register the table for scheduling (column 1 = scheduled_at field, 0-based index)
+SPACETIMEDB_SCHEDULE(scheduled_task, 1, send_reminder);
+
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
+    // Only allow the scheduler (module identity) to call this
+    if (ctx.sender != ctx.identity()) {
+        return Err("This reducer can only be called by the scheduler");
+    }
+    
+    LOG_INFO("Reminder: " + task.message);
+    return Ok();
 }
 ```
 
@@ -345,5 +431,24 @@ TypeScript uses `Math.random()` for random number generation, which is automatic
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
 - `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+| Property        | Type                           | Description                                     |
+| --------------- | ------------------------------ | ----------------------------------------------- |
+| `db[table]`     | `Table<T>`                     | Access to a specific table's operations         |
+| `sender`        | `Identity`                     | Identity of the caller                          |
+| `timestamp`     | `Timestamp`                    | Time when the reducer was invoked               |
+| `connection_id` | `std::optional<ConnectionId>`  | Connection ID of the caller, if available       |
+
+**Methods:**
+
+- `identity() -> Identity` - Get the module's identity
+- `rng() -> StdbRng&` - Get the random number generator (deterministic and reproducible)
+- `sender_auth() -> const AuthCtx&` - Get authorization context for the caller (includes JWT claims and internal call detection)
+
+:::note
+C++ uses the `std::optional` type for the `connection_id` to represent values that may not be present. The `rng()` method returns a deterministic random number generator that is seeded consistently across all nodes.
+:::
 </TabItem>
 </Tabs>

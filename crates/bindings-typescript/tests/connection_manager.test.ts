@@ -171,12 +171,16 @@ class MockBuilder {
     return this;
   }
 
-  onDisconnect(cb: (ctx: ErrorContextInterface, error?: Error) => void): MockBuilder {
+  onDisconnect(
+    cb: (ctx: ErrorContextInterface, error?: Error) => void
+  ): MockBuilder {
     this.#connection.registerOnDisconnect(cb);
     return this;
   }
 
-  onConnectError(cb: (ctx: ErrorContextInterface, error: Error) => void): MockBuilder {
+  onConnectError(
+    cb: (ctx: ErrorContextInterface, error: Error) => void
+  ): MockBuilder {
     this.#connection.registerOnConnectError(cb);
     return this;
   }

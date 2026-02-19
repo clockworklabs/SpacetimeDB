@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_execution::{
     pipelined::{
         PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScanEq, PipelinedIxDeltaScanRange, PipelinedIxJoin,
@@ -11,8 +12,8 @@ use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
-use std::sync::Arc;
-use std::{collections::HashSet, ops::RangeBounds};
+use spacetimedb_schema::table_name::TableName;
+use std::ops::RangeBounds;
 
 /// A subscription is a view over a particular table.
 /// How do we incrementally maintain that view?
@@ -252,49 +253,6 @@ impl Fragments {
     }
 }
 
-/// Newtype wrapper for table names.
-///
-/// Uses an `Arc` internally, so `Clone` is cheap.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TableName(Arc<str>);
-
-impl From<Arc<str>> for TableName {
-    fn from(name: Arc<str>) -> Self {
-        TableName(name)
-    }
-}
-
-impl From<Box<str>> for TableName {
-    fn from(name: Box<str>) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl From<String> for TableName {
-    fn from(name: String) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl std::ops::Deref for TableName {
-    type Target = str;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl TableName {
-    pub fn table_name_from_str(name: &str) -> Self {
-        TableName(name.into())
-    }
-}
-
-impl std::fmt::Display for TableName {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 /// A join edge is used for pruning queries when evaluating subscription updates.
 ///
 /// If we have the following subscriptions:
@@ -380,6 +338,11 @@ impl SubscriptionPlan {
     /// Does this plan return rows from a view?
     pub fn is_view(&self) -> bool {
         self.plan_opt.returns_view_table()
+    }
+
+    /// Does this plan return rows from an event table?
+    pub fn returns_event_table(&self) -> bool {
+        self.plan_opt.return_table().is_some_and(|schema| schema.is_event)
     }
 
     /// The number of columns returned.
@@ -549,13 +512,15 @@ impl SubscriptionPlan {
 
         let mut subscriptions = vec![];
 
-        let return_name = TableName::from(return_name);
-
         for plan in plans {
             let plan_opt = plan.clone().optimize(auth)?;
 
             if has_non_index_join(&plan_opt) {
                 bail!("Subscriptions require indexes on join columns")
+            }
+
+            if plan_opt.reads_from_event_table() {
+                bail!("Event tables cannot be used as the lookup table in subscription joins")
             }
 
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);

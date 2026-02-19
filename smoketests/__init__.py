@@ -25,8 +25,8 @@ TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
 # the contents of files for the base smoketest project template
-TEMPLATE_LIB_RS = open(STDB_DIR / "templates/basic-rust/spacetimedb/src/lib.rs").read()
-TEMPLATE_CARGO_TOML = open(STDB_DIR / "templates/basic-rust/spacetimedb/Cargo.toml").read()
+TEMPLATE_LIB_RS = open(STDB_DIR / "templates/basic-rs/spacetimedb/src/lib.rs").read()
+TEMPLATE_CARGO_TOML = open(STDB_DIR / "templates/basic-rs/spacetimedb/Cargo.toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
 TYPESCRIPT_BINDINGS_PATH = (STDB_DIR / "crates/bindings-typescript").absolute()
@@ -92,7 +92,7 @@ def build_template_target():
 
         BuildModule.setUpClass()
         env = { **os.environ, "CARGO_TARGET_DIR": str(TEMPLATE_TARGET_DIR) }
-        spacetime("build", "--project-path", BuildModule.project_path, env=env)
+        spacetime("build", "--module-path", BuildModule.project_path, env=env)
         BuildModule.tearDownClass()
         BuildModule.doClassCleanups()
 
@@ -235,18 +235,20 @@ class Smoketest(unittest.TestCase):
         logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.database_identity)
         return list(map(json.loads, logs.splitlines()))
 
-    def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None, break_clients=False):
+    def publish_module(self, domain=None, *, clear=True, capture_stderr=True,
+                       num_replicas=None, break_clients=False, organization=None):
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
             *["-c"] if clear and domain is not None else [],
-            "--project-path", self.project_path,
+            "--module-path", self.project_path,
             # This is required if -c is provided, but is also required for SpacetimeDBPrivate's tests,
             # because the server address is `node` which doesn't look like `localhost` or `127.0.0.1`
             # and so the publish step prompts for confirmation.
             "--yes",
             *["--num-replicas", f"{num_replicas}"] if num_replicas is not None else [],
             *["--break-clients"] if break_clients else [],
+            *["--organization", f"{organization}"] if organization is not None else [],
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
@@ -406,7 +408,7 @@ class Smoketest(unittest.TestCase):
             result = cm.__enter__()
             cls.addClassCleanup(cm.__exit__, None, None, None)
             return result
-    
+
     def assertSql(self, sql: str, expected: str):
         """Assert that executing `sql` produces the expected output."""
         self.maxDiff = None

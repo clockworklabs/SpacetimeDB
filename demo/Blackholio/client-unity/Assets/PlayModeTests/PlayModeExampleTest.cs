@@ -27,7 +27,7 @@ public class PlayModeExampleTest
         {
             Debug.Assert(false, "Connection failed!");
         }).WithUri("http://127.0.0.1:3000")
-            .WithModuleName("blackholio").Build();
+            .WithDatabaseName("blackholio").Build();
 
         while (!connected)
         {
@@ -71,7 +71,7 @@ public class PlayModeExampleTest
         while (!playerCreated) yield return null;
 
         Debug.Assert(GameManager.LocalIdentity != default, "GameManager.localIdentity != default");
-        var player = GameManager.Conn.Db.Player.Identity.Find(GameManager.LocalIdentity);
+        var player = GameManager.Conn.Db.Player.PlayerIdentityIdxBtree.Find(GameManager.LocalIdentity);
         Debug.Assert(player != null, nameof(player) + " != null");
         var circle = GameManager.Conn.Db.Circle.Iter().FirstOrDefault(a => a.PlayerId == player.PlayerId);
 
@@ -87,13 +87,13 @@ public class PlayModeExampleTest
         while (foodEaten < 50)
         {
             Debug.Assert(circle != null, nameof(circle) + " != null");
-            var ourEntity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
+            var ourEntity = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(circle.EntityId);
             var toChosenFood = new UnityEngine.Vector2(1000, 0);
             int chosenFoodId = 0;
             foreach (var food in GameManager.Conn.Db.Food.Iter())
             {
                 var thisFoodId = food.EntityId;
-                var foodEntity = GameManager.Conn.Db.Entity.EntityId.Find(thisFoodId);
+                var foodEntity = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(thisFoodId);
                 Debug.Assert(foodEntity != null, nameof(foodEntity) + " != null");
                 Debug.Assert(ourEntity != null, nameof(ourEntity) + " != null");
                 var foodEntityPosition = foodEntity.Position;
@@ -109,10 +109,10 @@ public class PlayModeExampleTest
                 }
             }
 
-            if (GameManager.Conn.Db.Entity.EntityId.Find(chosenFoodId) != null)
+            if (GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(chosenFoodId) != null)
             {
-                var ourNewEntity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
-                var foodEntity = GameManager.Conn.Db.Entity.EntityId.Find(chosenFoodId);
+                var ourNewEntity = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(circle.EntityId);
+                var foodEntity = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(chosenFoodId);
                 Debug.Assert(foodEntity != null, nameof(foodEntity) + " != null");
                 Debug.Assert(ourNewEntity != null, nameof(ourNewEntity) + " != null");
                 var toThisFood = (Vector2)foodEntity.Position - (Vector2)ourNewEntity.Position;
@@ -130,9 +130,9 @@ public class PlayModeExampleTest
 
         PlayerController.Local.SetTestInput(UnityEngine.Vector2.zero);
         Debug.Assert(circle != null, nameof(circle) + " != null");
-        var massStart = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId)!.Mass;
+        var massStart = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(circle.EntityId)!.Mass;
         yield return new WaitForSeconds(10);
-        var massEnd = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId)!.Mass;
+        var massEnd = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(circle.EntityId)!.Mass;
         Debug.Assert(massEnd < massStart, "Mass should have decayed");
     }
 
@@ -260,7 +260,7 @@ public class PlayModeExampleTest
         while (!playerCreated) yield return null;
 
         Debug.Assert(GameManager.LocalIdentity != default, "GameManager.localIdentity != default");
-        var player = GameManager.Conn.Db.Player.Identity.Find(GameManager.LocalIdentity);
+        var player = GameManager.Conn.Db.Player.PlayerIdentityIdxBtree.Find(GameManager.LocalIdentity);
         Debug.Assert(player != null, nameof(player) + " != null");
         var circle = GameManager.Conn.Db.Circle.Iter().FirstOrDefault(a => a.PlayerId == player.PlayerId);
 
@@ -273,7 +273,7 @@ public class PlayModeExampleTest
         SceneManager.LoadScene("Scenes/Main");
 
         while (!connected || !subscribed) yield return null;
-        var newPlayer = GameManager.Conn.Db.Player.Identity.Find(GameManager.LocalIdentity);
+        var newPlayer = GameManager.Conn.Db.Player.PlayerIdentityIdxBtree.Find(GameManager.LocalIdentity);
         Debug.Assert(player.PlayerId == newPlayer.PlayerId, "PlayerIds should match!");
         var newCircle = GameManager.Conn.Db.Circle.Iter().FirstOrDefault(a => a.PlayerId == newPlayer.PlayerId);
         Debug.Assert(circle.EntityId == newCircle.EntityId, "Circle EntityIds should match!");

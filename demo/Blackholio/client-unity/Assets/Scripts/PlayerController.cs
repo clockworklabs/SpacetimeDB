@@ -11,18 +11,18 @@ public class PlayerController : MonoBehaviour
 
     public static PlayerController Local { get; private set; }
 
-    private int PlayerId;
+    private Identity PlayerIdentity;
     private float LastMovementSendTimestamp;
     private Vector2? LockInputPosition;
     private List<CircleController> OwnedCircles = new List<CircleController>();
 
-    public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+    public string Username => GameManager.Conn.Db.Player.PlayerIdentityIdxBtree.Find(PlayerIdentity).Name;
     public int NumberOfOwnedCircles => OwnedCircles.Count;
     public bool IsLocalPlayer => this == Local;
 
     public void Initialize(Player player)
     {
-        PlayerId = player.PlayerId;
+        PlayerIdentity = player.Identity;
         if (player.Identity == GameManager.LocalIdentity)
         {
             Local = this;
@@ -59,7 +59,7 @@ public class PlayerController : MonoBehaviour
     public int TotalMass()
     {
         return (int)OwnedCircles
-            .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
+            .Select(circle => GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(circle.EntityId))
             .Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
     }
 
@@ -74,7 +74,7 @@ public class PlayerController : MonoBehaviour
         float totalMass = 0;
         foreach (var circle in OwnedCircles)
         {
-            var entity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
+            var entity = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(circle.EntityId);
             var position = circle.transform.position;
             totalPos += (Vector2)position * entity.Mass;
             totalMass += entity.Mass;

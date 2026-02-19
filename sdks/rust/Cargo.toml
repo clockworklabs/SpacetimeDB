@@ -8,6 +8,9 @@ rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+allow_loopback_http_for_tests = ["spacetimedb-testing/allow_loopback_http_for_tests"]
+
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
@@ -15,6 +18,7 @@ spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"]}
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-query-builder.workspace = true
+spacetimedb-schema.workspace = true
 
 thiserror.workspace = true
 anymap.workspace = true
@@ -32,6 +36,9 @@ prometheus.workspace = true
 rand.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+# native-tls 0.2.17 fails to compile with Rust 1.93.0 due non-exhaustive
+# matching in upstream code. Pin until upstream ships a compatible release.
+native-tls = "=0.2.14"
 
 [dev-dependencies]
 # for quickstart-chat and cursive-chat examples

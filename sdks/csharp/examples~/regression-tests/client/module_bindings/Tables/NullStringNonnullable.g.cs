@@ -17,23 +17,45 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "null_string_nonnullable";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class NullStringNonnullableIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(NullStringNonNullable row) => row.Id;
 
-                public IdUniqueIndex(NullStringNonnullableHandle table) : base(table) { }
+                public NullStringNonnullableIdIdxBtreeUniqueIndex(NullStringNonnullableHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly NullStringNonnullableIdIdxBtreeUniqueIndex NullStringNonnullableIdIdxBtree;
 
             internal NullStringNonnullableHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
+                NullStringNonnullableIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(NullStringNonNullable row) => row.Id;
         }
 
         public readonly NullStringNonnullableHandle NullStringNonnullable;
+    }
+
+    public sealed class NullStringNonnullableCols
+    {
+        public global::SpacetimeDB.Col<NullStringNonNullable, ulong> Id { get; }
+        public global::SpacetimeDB.Col<NullStringNonNullable, string> Name { get; }
+
+        public NullStringNonnullableCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<NullStringNonNullable, ulong>(tableName, "Id");
+            Name = new global::SpacetimeDB.Col<NullStringNonNullable, string>(tableName, "Name");
+        }
+    }
+
+    public sealed class NullStringNonnullableIxCols
+    {
+        public global::SpacetimeDB.IxCol<NullStringNonNullable, ulong> Id { get; }
+
+        public NullStringNonnullableIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<NullStringNonNullable, ulong>(tableName, "Id");
+        }
     }
 }

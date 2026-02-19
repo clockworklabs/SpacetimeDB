@@ -6,10 +6,9 @@ pub struct Position {
     pub y: i32,
 }
 
-#[table(name = entity)]
+#[table(accessor = entity)]
 pub struct Entity {
     #[primary_key]
     pub id: i32,
     pub pos: Position,
 }
-
