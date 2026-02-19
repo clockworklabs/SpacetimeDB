@@ -792,7 +792,8 @@ impl __sdk::__query_builder::HasIxCols for {struct_name} {{
 
 pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, struct_name: &String) -> fmt::Result {
     // NEW: Generate query table accessor trait and implementation
-    let accessor_method = table.accessor_name.clone();
+    let accessor_method = table_method_name(&table.accessor_name);
+    let table_name = table.name.deref();
     let query_accessor_trait = accessor_method.to_string() + "QueryTableAccess";
 
     writeln!(
@@ -810,7 +811,7 @@ pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, st
 
         impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
             fn {accessor_method}(&self) -> __sdk::__query_builder::Table<{struct_name}> {{
-                __sdk::__query_builder::Table::new({accessor_method:?})
+                __sdk::__query_builder::Table::new({table_name:?})
             }}
         }}
 "
