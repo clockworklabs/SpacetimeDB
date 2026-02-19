@@ -32,10 +32,14 @@ Rules:\n\
             lang = self.lang
         ));
 
-        let static_prefix = Some(format!(
-            "<<<DOCS START>>>Context:\n{context}\n<<<DOCS END>>>\n",
-            context = context,
-        ));
+        let static_prefix = Some(if context.trim().is_empty() {
+            "<<<DOCS START>>>\nNo documentation provided. You must rely on your knowledge of SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
+        } else {
+            format!(
+                "<<<DOCS START>>>Context:\n{context}\n<<<DOCS END>>>\n",
+                context = context,
+            )
+        });
 
         // TASK: identical in both modes; API details must come from DOCS in Knowledge mode.
         // In Conformance mode we keep it the same—to measure formatting discipline separately in scoring.

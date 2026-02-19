@@ -274,7 +274,6 @@ byId('loadPasteBtn').addEventListener('click',()=>{
   const txt=byId('jsonPaste').value.trim(); if(!txt){setStatus('Paste box is empty.',true);return}
   const obj=safeParse(txt); loadJsonObject(obj,'pasted JSON');
 });
-
 function getControls(){
   const lang=byId('langSel').value, mode=byId('modeSel').value;
   const colsSel=byId('colsSel').value||'2', failedOnly=byId('failedOnly').checked, hidePerfectCats=byId('hidePerfectCats').checked;
@@ -374,8 +373,8 @@ function buildView(data,lang,mode){
         work_dir_llm: outcome?.work_dir_llm ?? null,
         llm_output: outcome?.llm_output ?? null,
         scorer_details: outcome?.scorer_details ?? null,
-        golden_answer: goldenAnswers?.[tid]?.answer ?? null,
-        golden_syntax: goldenAnswers?.[tid]?.syntax ?? null
+        golden_answer: (goldenAnswers?.[`${outcome?.category||''}/${tid}`] ?? goldenAnswers?.[tid])?.answer ?? null,
+        golden_syntax: (goldenAnswers?.[`${outcome?.category||''}/${tid}`] ?? goldenAnswers?.[tid])?.syntax ?? null
       };
     }
     modelTaskMap[mname]=tmap; modelOutcomeMap[mname]=omap;
@@ -499,10 +498,9 @@ function matchesSearch(tid,view,q,cols){
   if(!q) return true;
   const needle=q.toLowerCase();
   if(tid.toLowerCase().includes(needle)) return true;
-  const ga=view.goldenAnswers?.[tid]?.answer;
-  if(ga && String(ga).toLowerCase().includes(needle)) return true;
   for(const m of cols){
     const oc=view.modelOutcomeMap[m]?.[tid];
+    if(oc?.golden_answer && String(oc.golden_answer).toLowerCase().includes(needle)) return true;
     if(oc?.llm_output && String(oc.llm_output).toLowerCase().includes(needle)) return true;
   }
   return false;

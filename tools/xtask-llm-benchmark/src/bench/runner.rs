@@ -690,6 +690,7 @@ fn load_golden_source(task: &TaskPaths, lang: Lang) -> Result<String> {
 }
 
 // "1" | "01" | "001" | "t_001" -> "t_001"
+// "t_000_empty_reducers" | "t_001_basic_tables" -> accepted as-is (full task dir name)
 fn normalize_task_selector(raw: &str) -> Result<String> {
     let s = raw.trim().to_ascii_lowercase();
     if s.is_empty() {
@@ -699,6 +700,12 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
         if rest.chars().all(|c| c.is_ascii_digit()) {
             let n: u32 = rest.parse()?;
             return Ok(format!("t_{:03}", n));
+        }
+        // Full task dir name: t_000_empty_reducers, t_001_basic_tables, etc.
+        if rest.chars().next().map_or(false, |c| c.is_ascii_digit())
+            && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Ok(s);
         }
         bail!("invalid task selector: {raw}");
     }

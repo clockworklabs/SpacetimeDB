@@ -49,7 +49,7 @@ pub fn compute_processed_context_hash(mode: &str, lang: Lang) -> Result<String> 
 // --- stable base for stripping prefixes ---
 fn base_for_mode_hashing(mode: &str) -> Result<PathBuf> {
     Ok(match mode {
-        "docs" | "llms.md" | "cursor_rules" => docs_dir(),
+        "docs" | "llms.md" | "cursor_rules" | "none" => docs_dir(),
         "rustdoc_json" => rustdoc_crate_root(),
         _ => bail!("unknown mode `{mode}`"),
     })

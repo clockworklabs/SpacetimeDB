@@ -16,7 +16,7 @@ const spacetimedb = schema({ tickTimer });
 export default spacetimedb;
 
 export const tick = spacetimedb.reducer(
-  { schedule: TickTimer.rowType },
+  { schedule: tickTimer.rowType },
   (ctx, { schedule }) => {}
 );
 
