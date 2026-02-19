@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
 /// The filename for configuration
@@ -730,6 +730,26 @@ impl<'a> CommandConfig<'a> {
         self.config_values.get(key)
     }
 
+    /// Get a path value and resolve it against `config_dir` if it came from config (not CLI).
+    pub fn get_resolved_path(
+        &self,
+        key: &str,
+        config_dir: Option<&Path>,
+    ) -> Result<Option<PathBuf>, CommandConfigError> {
+        let path = self.get_one::<PathBuf>(key)?;
+        let from_cli = self.is_from_cli(key);
+        Ok(path.map(|p| {
+            let resolved = if p.is_absolute() || from_cli {
+                p
+            } else if let Some(base_dir) = config_dir {
+                base_dir.join(p)
+            } else {
+                p
+            };
+            normalize_path_lexical(&resolved)
+        }))
+    }
+
     /// Returns true when this key was explicitly provided via CLI.
     pub fn is_from_cli(&self, key: &str) -> bool {
         self.schema.is_from_cli(self.matches, key)
@@ -748,6 +768,24 @@ impl<'a> CommandConfig<'a> {
             }
         }
         Ok(())
+    }
+}
+
+fn normalize_path_lexical(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
     }
 }
 

@@ -641,10 +641,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     println!("{}", "Press Ctrl+C to stop".dimmed());
     println!();
+    let loaded_config_dir = loaded_config.as_ref().map(|lc| lc.config_dir.clone());
 
     generate_build_and_publish(
         &config,
         &project_dir,
+        loaded_config_dir.as_deref(),
         &spacetimedb_dir,
         &module_bindings_dir,
         client_language,
@@ -752,6 +754,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             match generate_build_and_publish(
                 &config,
                 &project_dir,
+                loaded_config_dir.as_deref(),
                 &spacetimedb_dir,
                 &module_bindings_dir,
                 client_language,
@@ -865,6 +868,7 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
 async fn generate_build_and_publish(
     config: &Config,
     project_dir: &Path,
+    config_dir: Option<&Path>,
     spacetimedb_dir: &Path,
     module_bindings_dir: &Path,
     client_language: Option<&Language>,
@@ -892,7 +896,13 @@ async fn generate_build_and_publish(
             );
         } else {
             println!("{}", "Generating module bindings from spacetime.json...".cyan());
-            generate::exec_from_entries(generate_configs.to_vec(), crate::generate::extract_descriptions, yes).await?;
+            generate::exec_from_entries(
+                generate_configs.to_vec(),
+                crate::generate::extract_descriptions,
+                yes,
+                config_dir,
+            )
+            .await?;
         }
     } else {
         let resolved_client_language = generate::resolve_language(spacetimedb_dir, client_language.copied())?;
@@ -924,7 +934,13 @@ async fn generate_build_and_publish(
             Some(resolved_client_language),
             Some(module_bindings_dir),
         );
-        generate::exec_from_entries(vec![generate_entry], crate::generate::extract_descriptions, yes).await?;
+        generate::exec_from_entries(
+            vec![generate_entry],
+            crate::generate::extract_descriptions,
+            yes,
+            config_dir,
+        )
+        .await?;
     }
 
     if skip_publish {
@@ -981,7 +997,7 @@ async fn generate_build_and_publish(
             publish_entry.insert("break-clients".to_string(), json!(true));
         }
 
-        publish::exec_from_entry(config.clone(), publish_entry, clear_database, yes).await?;
+        publish::exec_from_entry(config.clone(), publish_entry, config_dir, clear_database, yes).await?;
     }
 
     println!("{}", "Published successfully!".green().bold());

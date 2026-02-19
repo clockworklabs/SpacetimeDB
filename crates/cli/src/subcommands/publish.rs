@@ -342,6 +342,7 @@ pub async fn exec_with_options(
 pub async fn exec_from_entry(
     mut config: Config,
     entry: HashMap<String, serde_json::Value>,
+    config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
     force: bool,
 ) -> Result<(), anyhow::Error> {
@@ -352,7 +353,15 @@ pub async fn exec_from_entry(
     let command_config = CommandConfig::new(&schema, entry, &matches)?;
     command_config.validate()?;
 
-    execute_publish_configs(&mut config, vec![command_config], true, None, clear_database, force).await
+    execute_publish_configs(
+        &mut config,
+        vec![command_config],
+        true,
+        config_dir,
+        clear_database,
+        force,
+    )
+    .await
 }
 
 async fn execute_publish_configs<'a>(
@@ -373,9 +382,7 @@ async fn execute_publish_configs<'a>(
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
-        let module_path = command_config.get_one::<PathBuf>("module_path")?;
-        let module_path_from_cli = command_config.is_from_cli("module_path");
-        let resolved_module_path = resolve_publish_module_path(module_path, module_path_from_cli, config_dir);
+        let resolved_module_path = command_config.get_resolved_path("module_path", config_dir)?;
         let path_to_project = if wasm_file.is_some() || js_file.is_some() {
             resolved_module_path
         } else {
@@ -575,22 +582,6 @@ fn default_publish_module_path(current_dir: &std::path::Path) -> PathBuf {
     } else {
         current_dir.to_path_buf()
     }
-}
-
-fn resolve_publish_module_path(
-    module_path: Option<PathBuf>,
-    module_path_from_cli: bool,
-    config_dir: Option<&std::path::Path>,
-) -> Option<PathBuf> {
-    module_path.map(|path| {
-        if path.is_absolute() || module_path_from_cli {
-            path
-        } else if let Some(base_dir) = config_dir {
-            base_dir.join(path)
-        } else {
-            path
-        }
-    })
 }
 
 fn is_maincloud_host(database_host: &str) -> bool {
@@ -948,20 +939,6 @@ mod tests {
 
         let resolved = default_publish_module_path(&cwd);
         assert_eq!(resolved, cwd);
-    }
-
-    #[test]
-    fn test_resolve_publish_module_path_uses_config_dir_for_config_relative_path() {
-        let config_dir = std::path::Path::new("/tmp/project-root");
-        let resolved = resolve_publish_module_path(Some(PathBuf::from("spacetimedb")), false, Some(config_dir));
-        assert_eq!(resolved, Some(config_dir.join("spacetimedb")));
-    }
-
-    #[test]
-    fn test_resolve_publish_module_path_keeps_cli_relative_path() {
-        let config_dir = std::path::Path::new("/tmp/project-root");
-        let resolved = resolve_publish_module_path(Some(PathBuf::from("spacetimedb")), true, Some(config_dir));
-        assert_eq!(resolved, Some(PathBuf::from("spacetimedb")));
     }
 
     #[test]
