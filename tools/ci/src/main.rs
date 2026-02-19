@@ -46,7 +46,6 @@ fn check_global_json_policy() -> Result<()> {
     ensure_repo_root()?;
 
     let root_json = Path::new("global.json");
-    let root_real = fs::canonicalize(root_json)?;
     let root_contents = fs::read_to_string(root_json)?;
 
     fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -68,14 +67,6 @@ fn check_global_json_policy() -> Result<()> {
 
     let mut ok = true;
     for p in globals {
-        let resolved = fs::canonicalize(&p)?;
-
-        // The root global.json itself is allowed.
-        if resolved == root_real {
-            println!("OK: {}", p.display());
-            continue;
-        }
-
         let meta = fs::symlink_metadata(&p)?;
         let is_symlink = meta.file_type().is_symlink();
         let is_template_global_json = p.strip_prefix(".").unwrap_or(&p).starts_with(Path::new("templates"));
