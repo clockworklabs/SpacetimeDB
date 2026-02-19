@@ -583,8 +583,8 @@ public partial struct Orders
 
 ```rust
 #[table(
-    name = Inventory,
-    index(name = product_name, btree = [name]),
+    accessor = Inventory,
+    index(accessor = product_name, btree = [name]),
     public
 )]
 struct Inventory {
@@ -595,7 +595,7 @@ struct Inventory {
 }
 
 #[table(
-    name = Customers,
+    accessor = Customers,
     public
 )]
 struct Customers {
@@ -607,7 +607,7 @@ struct Customers {
 }
 
 #[table(
-    name = Orders,
+    accessor = Orders,
     public
 )]
 struct Orders {

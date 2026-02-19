@@ -396,6 +396,8 @@ fn main() -> Result<()> {
 
         Some(CiCmd::WasmBindings) => {
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+            // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
+            cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
             // catch any compile errors arising from a different transitive closure
@@ -403,17 +405,13 @@ fn main() -> Result<()> {
             //
             // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
             cmd!("cargo", "update").run()?;
-            cmd!(
-                "cargo",
-                "run",
-                "-p",
-                "spacetimedb-cli",
-                "--",
-                "build",
-                "--module-path",
-                "modules/module-test",
-            )
-            .run()?;
+            let cli_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .join("target/debug/spacetimedb-cli")
+                .with_extension(std::env::consts::EXE_EXTENSION);
+            cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
         }
 
         Some(CiCmd::Dlls) => {

@@ -69,7 +69,7 @@ fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
 **Server (module) -- after:**
 ```rust
 // 2.0 server -- explicitly publish events via an event table
-#[spacetimedb::table(name = damage_event, public, event)]
+#[spacetimedb::table(accessor = damage_event, public, event)]
 pub struct DamageEvent {
     pub target: Identity,
     pub amount: u32,

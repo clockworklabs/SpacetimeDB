@@ -61,7 +61,7 @@ public partial struct Player
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = players, public)]
+#[spacetimedb::table(accessor = players, public)]
 pub struct Player {
    #[primary_key]
    id: u64,

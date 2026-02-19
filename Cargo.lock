@@ -7619,6 +7619,7 @@ dependencies = [
  "reqwest 0.12.24",
  "rolldown",
  "rolldown_common",
+ "rolldown_error",
  "rolldown_utils",
  "rustyline",
  "serde",
