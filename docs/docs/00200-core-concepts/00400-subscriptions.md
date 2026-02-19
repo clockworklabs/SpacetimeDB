@@ -189,7 +189,7 @@ Subscribing returns a handle that manages an individual subscription lifecycle.
 - Unsubscribe is asynchronous: rows are removed after the unsubscribe operation is applied.
 - `subscribeToAllTables` / `SubscribeToAllTables` / `subscribe_to_all_tables` is a convenience entry point intended for simple clients and is not individually cancelable.
 
-### Canonical API References
+### API References
 
 - [TypeScript subscription API](/clients/typescript#subscribe-to-queries)
 - [TypeScript query builder API](/clients/typescript#query-builder-api)

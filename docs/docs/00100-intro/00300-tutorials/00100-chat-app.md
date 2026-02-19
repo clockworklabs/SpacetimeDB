@@ -2632,7 +2632,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 
 #### Notify about failed subscriptions
 
-It's possible for SpacetimeDB to reject subscriptions. With raw SQL subscriptions, this often happens due to invalid query text. In our case, because we're using the query builder, we're pretty confident that our queries are valid, but if SpacetimeDB rejects them, we want to know about it. Our callback will print the error, then exit the process.
+It's possible for SpacetimeDB to reject subscriptions. With raw SQL subscriptions, this often happens due to invalid query text. In our case, because we're using the query builder, we can be confident our queries are valid unless the database we're connecting to has changed. If SpacetimeDB rejects them, our callback will print the error, then exit the process.
 
 ```rust
 /// Or `on_error` callback:
