@@ -111,19 +111,19 @@ public static partial class Module
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call <database-name> Add Alice
+spacetime call Add Alice
 
 # Query the person table
-spacetime sql <database-name> "SELECT * FROM Person"
+spacetime sql "SELECT * FROM Person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call <database-name> SayHello
+spacetime call SayHello
 
 # View the module logs
-spacetime logs <database-name>
+spacetime logs
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
