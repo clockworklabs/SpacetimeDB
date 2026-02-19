@@ -165,10 +165,10 @@ pub fn test(ctx: &ReducerContext) {
         self.assertSql("SELECT * FROM t_enums", """\
  bool_opt      | bool_result  | action
 ---------------+--------------+---------------
- (some = true) | (ok = false) | (Active = ())
+ (some = true) | (ok = false) | (active = ())
 """)
         self.assertSql("SELECT * FROM t_enums_tuple", """\
  tuple
 --------------------------------------------------------------------------------
- (bool_opt = (some = true), bool_result = (ok = false), action = (Active = ()))
+ (bool_opt = (some = true), bool_result = (ok = false), action = (active = ()))
 """)
