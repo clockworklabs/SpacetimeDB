@@ -1,5 +1,7 @@
-import { BinaryWriter, type Infer } from '../';
+import { BinaryReader, BinaryWriter, type Infer } from '../';
+import ClientMessageSerde from './client_api/client_message_type';
 import ServerMessage from './client_api/server_message_type';
+import type { ClientMessage } from './client_api/types';
 
 class WebsocketTestAdapter {
   onclose: any;
@@ -9,14 +11,21 @@ class WebsocketTestAdapter {
   onerror: any;
 
   messageQueue: any[];
+  outgoingMessages: ClientMessage[];
   closed: boolean;
 
   constructor() {
     this.messageQueue = [];
+    this.outgoingMessages = [];
     this.closed = false;
   }
 
   send(message: any): void {
+    const parsedMessage = ClientMessageSerde.deserialize(
+      new BinaryReader(message)
+    );
+    this.outgoingMessages.push(parsedMessage);
+    // console.ClientMessageSerde.deserialize(message);
     this.messageQueue.push(message);
   }
 

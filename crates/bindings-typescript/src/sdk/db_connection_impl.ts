@@ -61,6 +61,8 @@ import type { RowType, UntypedTableDef } from '../lib/table.ts';
 import { toCamelCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
+import type { TransactionUpdate } from './client_api/types.ts';
+import { InternalError, SenderError } from '../lib/errors.ts';
 
 export {
   DbConnectionBuilder,
@@ -146,6 +148,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   // These fields are meant to be strictly private.
   #queryId = 0;
   #requestId = 0;
+  #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #messageQueue = Promise.resolve();
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
@@ -154,6 +157,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     number,
     (result: ReducerResultMessage['result']) => void
   >();
+  #reducerCallInfo = new Map<number, { name: string; args: object }>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
   #rowDeserializers: Record<string, Deserializer<any>>;
   #reducerArgsSerializers: Record<
@@ -313,7 +317,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const writer = new BinaryWriter(1024);
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
-        return this.callReducer(reducerName, argsBuffer);
+        return this.callReducer(reducerName, argsBuffer, params);
       };
     }
 
@@ -409,7 +413,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       ClientMessage.Unsubscribe({
         querySetId: { id: querySetId },
         requestId,
-        flags: UnsubscribeFlags.Default,
+        flags: UnsubscribeFlags.SendDroppedRows,
       })
     );
   }
@@ -460,6 +464,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return rows;
   }
 
+  // Take a bunch of table updates and ensure that there is at most one update per table.
   #mergeTableUpdates(
     updates: CacheTableUpdate<UntypedTableDef>[]
   ): CacheTableUpdate<UntypedTableDef>[] {
@@ -467,9 +472,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     for (const update of updates) {
       const ops = merged.get(update.tableName);
       if (ops) {
-        ops.push(...update.operations);
+        for (const op of update.operations) ops.push(op);
       } else {
-        merged.set(update.tableName, [...update.operations]);
+        merged.set(update.tableName, update.operations.slice());
       }
     }
     return Array.from(merged, ([tableName, operations]) => ({
@@ -547,6 +552,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     });
   }
 
+  #nextEventId(): string {
+    this.#eventId += 1;
+    return `${this.connectionId.toHexString()}:${this.#eventId}`;
+  }
+
   /**
    * Handles WebSocket onOpen event.
    */
@@ -577,6 +587,24 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return pendingCallbacks;
   }
 
+  #applyTransactionUpdates(
+    eventContext: EventContextInterface<RemoteModule>,
+    tu: TransactionUpdate
+  ): PendingCallback[] {
+    const allUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
+    for (const querySetUpdate of tu.querySets) {
+      const tableUpdates = this.#querySetUpdateToTableUpdates(querySetUpdate);
+      for (const update of tableUpdates) {
+        allUpdates.push(update);
+      }
+      // TODO: When we have per-query storage, we will want to apply the per-query events here.
+    }
+    return this.#applyTableUpdates(
+      this.#mergeTableUpdates(allUpdates),
+      eventContext
+    );
+  }
+
   async #processMessage(data: Uint8Array): Promise<void> {
     const serverMessage = ServerMessage.deserialize(new BinaryReader(data));
     switch (serverMessage.tag) {
@@ -600,7 +628,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           );
           return;
         }
-        const event: Event<never> = { tag: 'SubscribeApplied' };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'SubscribeApplied',
+        };
         const eventContext = this.#makeEventContext(event);
         const tableUpdates = this.#queryRowsToTableUpdates(
           serverMessage.value.rows,
@@ -625,7 +656,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           );
           return;
         }
-        const event: Event<never> = { tag: 'UnsubscribeApplied' };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'UnsubscribeApplied',
+        };
         const eventContext = this.#makeEventContext(event);
         const tableUpdates = serverMessage.value.rows
           ? this.#queryRowsToTableUpdates(serverMessage.value.rows, 'delete')
@@ -642,7 +676,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       case 'SubscriptionError': {
         const querySetId = serverMessage.value.querySetId.id;
         const error = Error(serverMessage.value.error);
-        const event: Event<never> = { tag: 'Error', value: error };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'Error',
+          value: error,
+        };
         const eventContext = this.#makeEventContext(event);
         const errorContext = {
           ...eventContext,
@@ -662,15 +700,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         break;
       }
       case 'TransactionUpdate': {
-        const event: Event<never> = { tag: 'UnknownTransaction' };
+        const event: Event<never> = {
+          id: this.#nextEventId(),
+          tag: 'UnknownTransaction',
+        };
         const eventContext = this.#makeEventContext(event);
-        for (const querySetUpdate of serverMessage.value.querySets) {
-          const tableUpdates =
-            this.#querySetUpdateToTableUpdates(querySetUpdate);
-          const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
-          for (const callback of callbacks) {
-            callback.cb();
-          }
+        const callbacks = this.#applyTransactionUpdates(
+          eventContext,
+          serverMessage.value
+        );
+        for (const callback of callbacks) {
+          callback.cb();
         }
         break;
       }
@@ -678,16 +718,36 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const { requestId, result } = serverMessage.value;
 
         if (result.tag === 'Ok') {
-          const tableUpdates = result.value.transactionUpdate.querySets.flatMap(
-            qs => this.#querySetUpdateToTableUpdates(qs)
+          const reducerInfo = this.#reducerCallInfo.get(requestId);
+          const eventId: string = this.#nextEventId();
+          const event: Event<any> = reducerInfo
+            ? {
+                id: eventId,
+                tag: 'Reducer',
+                value: {
+                  timestamp: serverMessage.value.timestamp,
+                  outcome: result,
+                  reducer: {
+                    name: reducerInfo.name,
+                    args: reducerInfo.args,
+                  },
+                },
+              }
+            : {
+                id: eventId,
+                tag: 'UnknownTransaction',
+              };
+          const eventContext = this.#makeEventContext(event as any);
+
+          const callbacks = this.#applyTransactionUpdates(
+            eventContext,
+            result.value.transactionUpdate
           );
-          const event: Event<never> = { tag: 'UnknownTransaction' };
-          const eventContext = this.#makeEventContext(event);
-          const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
           for (const callback of callbacks) {
             callback.cb();
           }
         }
+        this.#reducerCallInfo.delete(requestId);
         const cb = this.#reducerCallbacks.get(requestId);
         this.#reducerCallbacks.delete(requestId);
         cb?.(result);
@@ -733,7 +793,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * @param reducerName The name of the reducer to call
    * @param argsSerializer The arguments to pass to the reducer
    */
-  callReducer(reducerName: string, argsBuffer: Uint8Array): Promise<void> {
+  callReducer(
+    reducerName: string,
+    argsBuffer: Uint8Array,
+    reducerArgs?: object
+  ): Promise<void> {
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
@@ -743,11 +807,28 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       flags: 0,
     });
     this.#sendMessage(message);
+    if (reducerArgs) {
+      this.#reducerCallInfo.set(requestId, {
+        name: reducerName,
+        args: reducerArgs,
+      });
+    }
     this.#reducerCallbacks.set(requestId, result => {
       if (result.tag === 'Ok' || result.tag === 'OkEmpty') {
         resolve();
       } else {
-        reject(result.value);
+        if (result.tag === 'Err') {
+          /// Interpret the user-returned error as a string.
+          const reader = new BinaryReader(result.value);
+          const errorString = reader.readString();
+          reject(new SenderError(errorString));
+        } else if (result.tag === 'InternalError') {
+          reject(new InternalError(result.value));
+        } else {
+          const unreachable: never = result;
+          reject(new Error('Unexpected reducer result'));
+          void unreachable;
+        }
       }
     });
     return promise;
@@ -768,7 +849,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const writer = new BinaryWriter(1024);
     this.#reducerArgsSerializers[reducerName].serialize(writer, params);
     const argsBuffer = writer.getBuffer();
-    return this.callReducer(reducerName, argsBuffer);
+    return this.callReducer(reducerName, argsBuffer, params);
   }
 
   /**
