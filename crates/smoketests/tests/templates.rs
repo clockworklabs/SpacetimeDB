@@ -578,9 +578,11 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
     if client_package_json.exists() {
         setup_typescript_sdk_in_package_json(&client_package_json)?;
         run_pnpm(&["install"], project_path)?;
-
-        // TODO: some templates don't pass tsc yet, re-enable once they're fixed.
-        // run_pnpm(&["exec", "tsc", "--noEmit"], project_path)?;
+        if template.id.to_ascii_lowercase().contains("vue") {
+            run_pnpm(&["exec", "vue-tsc", "--noEmit"], project_path)?;
+        } else {
+            run_pnpm(&["exec", "tsc", "--noEmit"], project_path)?;
+        }
     }
     Ok(())
 }
