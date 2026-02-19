@@ -1,8 +1,8 @@
-import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
 import { describe, expect, test } from 'vitest';
-import Player from '../test-app/src/module_bindings/player_type.ts';
 import { AlgebraicType, Identity, type Infer } from '../src';
+import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
 import { tables } from '../test-app/src/module_bindings/index.ts';
+import { Player } from '../test-app/src/module_bindings/types';
 import UnindexedPlayer from '../test-app/src/module_bindings/unindexed_player_table.ts';
 
 interface ApplyOperations {
