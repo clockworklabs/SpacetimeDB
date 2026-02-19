@@ -540,7 +540,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   #sendEncoded(
     wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter,
-    message: ClientMessage,
+    message: ClientMessage
   ): void {
     const writer = new BinaryWriter(1024);
     AlgebraicType.serializeValue(writer, ClientMessage.algebraicType, message);
