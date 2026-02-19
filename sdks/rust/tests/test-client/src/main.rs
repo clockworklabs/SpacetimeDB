@@ -287,104 +287,41 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A great big honking query that subscribes to all rows from all tables.
-const SUBSCRIBE_ALL: &[&str] = &[
-    "SELECT * FROM one_u_8;",
-    "SELECT * FROM one_u_16;",
-    "SELECT * FROM one_u_32;",
-    "SELECT * FROM one_u_64;",
-    "SELECT * FROM one_u_128;",
-    "SELECT * FROM one_u_256;",
-    "SELECT * FROM one_i_8;",
-    "SELECT * FROM one_i_16;",
-    "SELECT * FROM one_i_32;",
-    "SELECT * FROM one_i_64;",
-    "SELECT * FROM one_i_128;",
-    "SELECT * FROM one_i_256;",
-    "SELECT * FROM one_bool;",
-    "SELECT * FROM one_f_32;",
-    "SELECT * FROM one_f_64;",
-    "SELECT * FROM one_string;",
-    "SELECT * FROM one_identity;",
-    "SELECT * FROM one_connection_id;",
-    "SELECT * FROM one_timestamp;",
-    "SELECT * FROM one_uuid;",
-    "SELECT * FROM one_simple_enum;",
-    "SELECT * FROM one_enum_with_payload;",
-    "SELECT * FROM one_unit_struct;",
-    "SELECT * FROM one_byte_struct;",
-    "SELECT * FROM one_every_primitive_struct;",
-    "SELECT * FROM one_every_vec_struct;",
-    "SELECT * FROM vec_u_8;",
-    "SELECT * FROM vec_u_16;",
-    "SELECT * FROM vec_u_32;",
-    "SELECT * FROM vec_u_64;",
-    "SELECT * FROM vec_u_128;",
-    "SELECT * FROM vec_u_256;",
-    "SELECT * FROM vec_i_8;",
-    "SELECT * FROM vec_i_16;",
-    "SELECT * FROM vec_i_32;",
-    "SELECT * FROM vec_i_64;",
-    "SELECT * FROM vec_i_128;",
-    "SELECT * FROM vec_i_256;",
-    "SELECT * FROM vec_bool;",
-    "SELECT * FROM vec_f_32;",
-    "SELECT * FROM vec_f_64;",
-    "SELECT * FROM vec_string;",
-    "SELECT * FROM vec_identity;",
-    "SELECT * FROM vec_connection_id;",
-    "SELECT * FROM vec_timestamp;",
-    "SELECT * FROM vec_uuid;",
-    "SELECT * FROM vec_simple_enum;",
-    "SELECT * FROM vec_enum_with_payload;",
-    "SELECT * FROM vec_unit_struct;",
-    "SELECT * FROM vec_byte_struct;",
-    "SELECT * FROM vec_every_primitive_struct;",
-    "SELECT * FROM vec_every_vec_struct;",
-    "SELECT * FROM option_i_32;",
-    "SELECT * FROM option_string;",
-    "SELECT * FROM option_identity;",
-    "SELECT * FROM option_uuid;",
-    "SELECT * FROM option_simple_enum;",
-    "SELECT * FROM option_every_primitive_struct;",
-    "SELECT * FROM option_vec_option_i_32;",
-    "SELECT * FROM unique_u_8;",
-    "SELECT * FROM unique_u_16;",
-    "SELECT * FROM unique_u_32;",
-    "SELECT * FROM unique_u_64;",
-    "SELECT * FROM unique_u_128;",
-    "SELECT * FROM unique_u_256;",
-    "SELECT * FROM unique_i_8;",
-    "SELECT * FROM unique_i_16;",
-    "SELECT * FROM unique_i_32;",
-    "SELECT * FROM unique_i_64;",
-    "SELECT * FROM unique_i_128;",
-    "SELECT * FROM unique_i_256;",
-    "SELECT * FROM unique_bool;",
-    "SELECT * FROM unique_string;",
-    "SELECT * FROM unique_identity;",
-    "SELECT * FROM unique_connection_id;",
-    "SELECT * FROM unique_uuid;",
-    "SELECT * FROM pk_u_8;",
-    "SELECT * FROM pk_u_16;",
-    "SELECT * FROM pk_u_32;",
-    "SELECT * FROM pk_u_64;",
-    "SELECT * FROM pk_u_128;",
-    "SELECT * FROM pk_u_256;",
-    "SELECT * FROM pk_i_8;",
-    "SELECT * FROM pk_i_16;",
-    "SELECT * FROM pk_i_32;",
-    "SELECT * FROM pk_i_64;",
-    "SELECT * FROM pk_i_128;",
-    "SELECT * FROM pk_i_256;",
-    "SELECT * FROM pk_bool;",
-    "SELECT * FROM pk_string;",
-    "SELECT * FROM pk_identity;",
-    "SELECT * FROM pk_connection_id;",
-    "SELECT * FROM pk_uuid;",
-    "SELECT * FROM large_table;",
-    "SELECT * FROM table_holds_table;",
-];
+/// Build subscription queries from the generated `ALL_TABLE_NAMES`,
+/// so they always match the module's actual table names regardless of
+/// case conversion policy or explicit accessor names.
+fn subscribe_all_queries() -> Vec<String> {
+    RemoteModule::ALL_TABLE_NAMES
+        .iter()
+        .map(|name| format!("SELECT * FROM {name};"))
+        .collect()
+}
+
+/// Look up the canonical table name from the generated bindings.
+///
+/// Finds the table whose name, after stripping underscores, matches `needle`
+/// (also stripped of underscores). This accounts for case conversion differences
+/// like `one_u8` vs `one_u_8`.
+fn table_name(needle: &str) -> &'static str {
+    let needle_stripped: String = needle.chars().filter(|c| *c != '_').collect();
+    RemoteModule::ALL_TABLE_NAMES
+        .iter()
+        .find(|name| {
+            let name_stripped: String = name.chars().filter(|c| *c != '_').collect();
+            name_stripped == needle_stripped
+        })
+        .unwrap_or_else(|| panic!("No table matching '{needle}' in ALL_TABLE_NAMES"))
+}
+
+/// Build a `SELECT * FROM <table>;` query using the canonical table name.
+fn select_star(table: &str) -> String {
+    format!("SELECT * FROM {};", table_name(table))
+}
+
+/// Build a `SELECT * FROM <table> WHERE ...;` query using the canonical table name.
+fn select_where(table: &str, condition: &str) -> String {
+    format!("SELECT * FROM {} WHERE {};", table_name(table), condition)
+}
 
 fn connect_with_then(
     test_counter: &std::sync::Arc<TestCounter>,
@@ -419,7 +356,9 @@ fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
-    subscribe_these_then(ctx, SUBSCRIBE_ALL, callback)
+    let queries = subscribe_all_queries();
+    let query_refs: Vec<&str> = queries.iter().map(|s| s.as_str()).collect();
+    subscribe_these_then(ctx, &query_refs, callback)
 }
 
 fn subscribe_these_then(
@@ -444,7 +383,7 @@ fn exec_subscribe_and_cancel() {
                     panic!("Subscription should never be applied");
                 })
                 .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-                .subscribe("SELECT * FROM one_u_8;");
+                .subscribe(&select_star("one_u8"));
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
             let handle_clone = handle.clone();
@@ -487,7 +426,7 @@ fn exec_subscribe_and_unsubscribe() {
                         .unwrap();
                 })
                 .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-                .subscribe("SELECT * FROM one_u_8;");
+                .subscribe(&select_star("one_u8"));
             handle_cell.lock().unwrap().replace(handle.clone());
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
@@ -2012,10 +1951,10 @@ fn exec_row_deduplication() {
 
     let conn = connect_then(&test_counter, {
         move |ctx| {
-            let queries = [
-                "SELECT * FROM pk_u_32 WHERE pk_u_32.n < 100;",
-                "SELECT * FROM pk_u_32 WHERE pk_u_32.n < 200;",
-            ];
+            let pk_u32 = table_name("pk_u32");
+            let q1 = format!("SELECT * FROM {pk_u32} WHERE {pk_u32}.n < 100;");
+            let q2 = format!("SELECT * FROM {pk_u32} WHERE {pk_u32}.n < 200;");
+            let queries = [q1.as_str(), q2.as_str()];
 
             // The general approach in this test is that
             // we expect at most a single `on_X` callback per row.
@@ -2075,10 +2014,11 @@ fn exec_row_deduplication_join_r_and_s() {
 
     connect_then(&test_counter, {
         move |ctx| {
-            let queries = [
-                "SELECT * FROM pk_u_32;",
-                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
-            ];
+            let pk_u32 = table_name("pk_u32");
+            let unique_u32 = table_name("unique_u32");
+            let q1 = format!("SELECT * FROM {pk_u32};");
+            let q2 = format!("SELECT {unique_u32}.* FROM {unique_u32} JOIN {pk_u32} ON {unique_u32}.n = {pk_u32}.n;");
+            let queries = [q1.as_str(), q2.as_str()];
 
             // These never happen. In the case of `PkU32` we get an update instead.
             UniqueU32::on_delete(ctx, move |_, _| panic!("we never delete a `UniqueU32`"));
@@ -2136,12 +2076,14 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
 
     connect_then(&test_counter, {
         move |ctx| {
-            let queries = [
-                "SELECT * FROM pk_u_32;",
-                "SELECT * FROM pk_u_32_two;",
-                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
-                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32_two ON unique_u32.n = pk_u32_two.n;",
-            ];
+            let pk_u32 = table_name("pk_u32");
+            let pk_u32_two = table_name("pk_u32_two");
+            let unique_u32 = table_name("unique_u32");
+            let q1 = format!("SELECT * FROM {pk_u32};");
+            let q2 = format!("SELECT * FROM {pk_u32_two};");
+            let q3 = format!("SELECT {unique_u32}.* FROM {unique_u32} JOIN {pk_u32} ON {unique_u32}.n = {pk_u32}.n;");
+            let q4 = format!("SELECT {unique_u32}.* FROM {unique_u32} JOIN {pk_u32_two} ON {unique_u32}.n = {pk_u32_two}.n;");
+            let queries = [q1.as_str(), q2.as_str(), q3.as_str(), q4.as_str()];
 
             const KEY: u32 = 42;
             const DATA: i32 = 0xbeef;
@@ -2189,12 +2131,13 @@ fn test_lhs_join_update() {
 
     let conn = Arc::new(connect_then(&update_counter, {
         move |ctx| {
+            let pk_u32 = table_name("pk_u32");
+            let unique_u32 = table_name("unique_u32");
+            let q1 = format!("SELECT p.* FROM {pk_u32} p WHERE n = 1");
+            let q2 = format!("SELECT p.* FROM {pk_u32} p JOIN {unique_u32} u ON p.n = u.n WHERE u.data > 0 AND u.data < 5");
             subscribe_these_then(
                 ctx,
-                &[
-                    "SELECT p.* FROM pk_u32 p WHERE n = 1",
-                    "SELECT p.* FROM pk_u32 p JOIN unique_u32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
-                ],
+                &[q1.as_str(), q2.as_str()],
                 |_| {},
             );
         }
@@ -2244,10 +2187,11 @@ fn test_lhs_join_update_disjoint_queries() {
 
     let conn = Arc::new(connect_then(&update_counter, {
         move |ctx| {
-            subscribe_these_then(ctx, &[
-                "SELECT p.* FROM pk_u32 p WHERE n = 1",
-                "SELECT p.* FROM pk_u32 p JOIN unique_u32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5 AND u.n != 1",
-            ], |_| {});
+            let pk_u32 = table_name("pk_u32");
+            let unique_u32 = table_name("unique_u32");
+            let q1 = format!("SELECT p.* FROM {pk_u32} p WHERE n = 1");
+            let q2 = format!("SELECT p.* FROM {pk_u32} p JOIN {unique_u32} u ON p.n = u.n WHERE u.data > 0 AND u.data < 5 AND u.n != 1");
+            subscribe_these_then(ctx, &[q1.as_str(), q2.as_str()], |_| {});
         }
     }));
 
@@ -2296,12 +2240,13 @@ fn test_intra_query_bag_semantics_for_join() {
 
     connect_then(&test_counter, {
         move |ctx| {
+            let pk_u32 = table_name("pk_u32");
+            let btree_u32 = table_name("btree_u32");
+            let q1 = format!("SELECT * from {btree_u32}");
+            let q2 = format!("SELECT {pk_u32}.* FROM {pk_u32} JOIN {btree_u32} ON {pk_u32}.n = {btree_u32}.n");
             subscribe_these_then(
                 ctx,
-                &[
-                    "SELECT * from btree_u32",
-                    "SELECT pk_u32.* FROM pk_u32 JOIN btree_u32 ON pk_u32.n = btree_u32.n",
-                ],
+                &[q1.as_str(), q2.as_str()],
                 move |ctx| {
                     // Insert (n: 0, data: 1) into btree_u32.
                     //
@@ -2391,7 +2336,8 @@ fn exec_two_different_compression_algos() {
             compression_name,
             |b| b.with_compression(compression),
             move |ctx| {
-                subscribe_these_then(ctx, &["SELECT * FROM vec_u_8"], move |ctx| {
+                let q = select_star("vec_u8");
+                subscribe_these_then(ctx, &[q.as_str()], move |ctx| {
                     VecU8::on_insert(ctx, move |_, actual| {
                         let actual: &[u8] = actual.n.as_slice();
                         let res = if actual == &*expected1 {
@@ -2451,7 +2397,8 @@ fn test_parameterized_subscription() {
         connect_with_then(&ctr_for_test, test_name, |builder| builder, {
             move |ctx| {
                 let sender = ctx.identity();
-                subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = :sender"], move |ctx| {
+                let q = select_where("pk_identity", "i = :sender");
+                subscribe_these_then(ctx, &[q.as_str()], move |ctx| {
                     put_result(&mut record_sub, Ok(()));
                     // Wait to insert until both client connections have been made
                     ctr_for_subs.wait_for_all();
@@ -2522,7 +2469,8 @@ fn test_rls_subscription() {
             move |ctx| {
                 let sender = ctx.identity();
                 let expected_identity = sender;
-                subscribe_these_then(ctx, &["SELECT * FROM users"], move |ctx| {
+                let q = select_star("users");
+                subscribe_these_then(ctx, &[q.as_str()], move |ctx| {
                     put_result(&mut record_sub, Ok(()));
                     // Wait to insert until both client connections have been made
                     ctr_for_subs.wait_for_all();
@@ -2556,7 +2504,8 @@ fn exec_pk_simple_enum() {
     let test_counter: Arc<TestCounter> = TestCounter::new();
     let mut updated = Some(test_counter.add_test("updated"));
     connect_then(&test_counter, move |ctx| {
-        subscribe_these_then(ctx, &["SELECT * FROM pk_simple_enum"], move |ctx| {
+        let q = select_star("pk_simple_enum");
+        subscribe_these_then(ctx, &[q.as_str()], move |ctx| {
             let data1 = 42;
             let data2 = 24;
             let a = SimpleEnum::Two;
@@ -2583,7 +2532,8 @@ fn exec_indexed_simple_enum() {
     let test_counter: Arc<TestCounter> = TestCounter::new();
     let mut updated = Some(test_counter.add_test("updated"));
     connect_then(&test_counter, move |ctx| {
-        subscribe_these_then(ctx, &["SELECT * FROM indexed_simple_enum"], move |ctx| {
+        let q = select_star("indexed_simple_enum");
+        subscribe_these_then(ctx, &[q.as_str()], move |ctx| {
             let a1 = SimpleEnum::Two;
             let a2 = SimpleEnum::One;
             ctx.db.indexed_simple_enum().on_insert(move |ctx, row| match &row.n {
