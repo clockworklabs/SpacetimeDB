@@ -240,4 +240,4 @@ The `#[auto_inc]` sequence generator is not transactional:
 - **[Reducers](/functions/reducers)** - Functions that modify database state transactionally
 - **[Procedures](/functions/procedures)** - Functions with manual transaction control
 - **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers for separate transactions
-- **[Subscriptions](/subscriptions)** - How clients receive transactional updates
+- **[Subscriptions](/clients/subscriptions)** - How clients receive transactional updates

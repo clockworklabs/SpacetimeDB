@@ -210,7 +210,7 @@ If you're new to SpacetimeDB, follow this recommended learning path:
 2. **[Build and Publish](/databases/building-publishing)** - Learn how to compile and deploy your module
 3. **[Define Tables](/tables)** - Structure your data with tables, columns, and indexes
 4. **[Write Reducers](/functions/reducers)** - Create transactional functions that modify your database
-5. **[Connect a Client](/sdks)** - Build a client application that connects to your database
+5. **[Connect a Client](/clients)** - Build a client application that connects to your database
 
 ### Core Concepts
 
@@ -242,5 +242,5 @@ When you're ready to go live:
 
 - Learn about [Tables](/tables) to define your database schema
 - Create [Reducers](/functions/reducers) to modify database state
-- Understand [Subscriptions](/subscriptions) for real-time data sync
+- Understand [Subscriptions](/clients/subscriptions) for real-time data sync
 - Review the [CLI Reference](/cli-reference) for all available commands

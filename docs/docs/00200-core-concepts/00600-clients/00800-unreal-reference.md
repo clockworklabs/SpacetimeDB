@@ -1,6 +1,6 @@
 ---
 title: Unreal Reference
-slug: /sdks/unreal
+slug: /clients/unreal
 ---
 
 
@@ -8,9 +8,9 @@ The SpacetimeDB client for Unreal Engine contains all the tools you need to buil
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/sdks/codegen) - How to generate Unreal bindings from your module
-- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
-- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](/clients/codegen) - How to generate Unreal bindings from your module
+- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections
+- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
 
 | Name                                                        | Description                                                                                             |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -570,7 +570,7 @@ Subscribe to the provided SQL queries and return a handle for managing the subsc
 USubscriptionHandle* SubscribeToAllTables();
 ```
 
-Subscribe to all tables in the module (equivalent to `Subscribe({ "SELECT * FROM *" })`).
+Subscribe to all public tables in the module.
 
 ### Type `USubscriptionHandle`
 

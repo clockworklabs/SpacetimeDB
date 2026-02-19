@@ -1,18 +1,18 @@
 ---
 title: Connecting to SpacetimeDB
-slug: /sdks/connection
+slug: /clients/connection
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-After [generating client bindings](/sdks/codegen) for your module, you can establish a connection to your SpacetimeDB [database](/databases) from your client application. The `DbConnection` type provides a persistent WebSocket connection that enables real-time communication with the server.
+After [generating client bindings](/clients/codegen) for your module, you can establish a connection to your SpacetimeDB [database](/databases) from your client application. The `DbConnection` type provides a persistent WebSocket connection that enables real-time communication with the server.
 
 ## Prerequisites
 
 Before connecting, ensure you have:
 
-1. [Generated client bindings](/sdks/codegen) for your module
+1. [Generated client bindings](/clients/codegen) for your module
 2. A published database running on SpacetimeDB (local or on [MainCloud](/how-to/deploy/maincloud))
 3. The database's URI and name or identity
 
@@ -454,13 +454,13 @@ The [identity](/intro/key-architecture#identity) persists across connections and
 
 Now that you have a connection established, you can:
 
-- [Use the SDK API](/sdks/api) to interact with tables, invoke reducers, and subscribe to data
+- [Use the SDK API](/clients/api) to interact with tables, invoke reducers, and subscribe to data
 - Register callbacks for observing database changes
 - Call reducers and procedures on the server
 
 For language-specific details, see:
 
-- [Rust SDK Reference](/sdks/rust)
-- [C# SDK Reference](/sdks/c-sharp)
-- [TypeScript SDK Reference](/sdks/typescript)
-- [Unreal SDK Reference](/sdks/unreal)
+- [Rust SDK Reference](/clients/rust)
+- [C# SDK Reference](/clients/c-sharp)
+- [TypeScript SDK Reference](/clients/typescript)
+- [Unreal SDK Reference](/clients/unreal)

@@ -20,6 +20,12 @@ export const my_player = spacetimedb.view(
   ctx => ctx.db.playerState.identity.find(ctx.sender)
 );
 
+export const all_players = spacetimedb.anonymousView(
+  { public: true },
+  t.array(playerState.rowType),
+  ctx => ctx.from.playerState
+);
+
 export const insert_player_proc = spacetimedb.procedure(
   { name: t.string() },
   t.unit(),
@@ -508,5 +514,26 @@ fn test_typescript_procedure_triggers_subscription_updates() {
         serde_json::json!([
             {"my_player": {"deletes": [], "inserts": [{"name": "Alice"}]}}
         ])
+    );
+}
+
+#[test]
+fn test_typescript_query_builder_view_query() {
+    require_pnpm!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_typescript_module_source(
+        "views-subscribe-typescript",
+        "views-subscribe-typescript",
+        TS_VIEWS_SUBSCRIBE_MODULE,
+    )
+    .unwrap();
+
+    test.call("insert_player_proc", &["Alice"]).unwrap();
+
+    test.assert_sql(
+        "SELECT name FROM all_players",
+        r#" name
+---------
+ "Alice""#,
     );
 }
