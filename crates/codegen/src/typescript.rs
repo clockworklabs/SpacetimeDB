@@ -864,7 +864,7 @@ fn define_body_for_sum(
             (Identifier::for_test(pascal), ty.clone())
         })
         .collect();
-    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants,, None, false, false).unwrap());
+    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap());
     writeln!(out, "}});");
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
