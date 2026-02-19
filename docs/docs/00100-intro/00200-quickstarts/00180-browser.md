@@ -29,7 +29,7 @@ Get a SpacetimeDB app running in the browser with inline JavaScript.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template browser-ts my-spacetime-app
+spacetime dev --template browser-ts
 ```
     </StepCode>
   </Step>

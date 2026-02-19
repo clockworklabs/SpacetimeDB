@@ -1191,13 +1191,13 @@ fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
     Ok(String::from_utf8(result)?)
 }
 
-/// Just do 1.* for now
+/// Just do 2.* for now
 fn get_spacetimedb_csharp_runtime_version() -> String {
-    "1.*".to_string()
+    "2.*".to_string()
 }
 
 fn get_spacetimedb_csharp_clientsdk_version() -> String {
-    "1.*".to_string()
+    "2.*".to_string()
 }
 
 /// Writes a `.env.local` file that includes all common
