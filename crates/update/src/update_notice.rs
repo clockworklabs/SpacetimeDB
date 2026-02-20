@@ -133,6 +133,7 @@ fn check_and_notify(config_dir: &Path) -> Option<()> {
     Some(())
 }
 
+#[allow(clippy::disallowed_macros)]
 fn print_notice(current: &semver::Version, latest: &semver::Version) {
     eprintln!("\x1b[33mA new version of SpacetimeDB is available: v{latest} (current: v{current})\x1b[0m");
     eprintln!("Run `spacetime version upgrade` to update.");
