@@ -1137,7 +1137,7 @@ export const insert_primitives_as_strings = spacetimedb.reducer(
 export const no_op_succeeds = spacetimedb.reducer(_ctx => {});
 
 export const oneu8Filter = spacetimedb.clientVisibilityFilter.sql(
-  'SELECT * FROM one_u8'
+  'SELECT * FROM one_u_8'
 );
 
 export const send_scheduled_message = spacetimedb.reducer(

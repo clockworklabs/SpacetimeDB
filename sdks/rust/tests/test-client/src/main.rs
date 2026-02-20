@@ -2116,7 +2116,7 @@ fn exec_row_deduplication_join_r_and_s() {
         move |ctx| {
             let queries = [
                 "SELECT * FROM pk_u_32;",
-                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
+                "SELECT unique_u_32.* FROM unique_u_32 JOIN pk_u_32 ON unique_u_32.n = pk_u_32.n;",
             ];
 
             // These never happen. In the case of `PkU32` we get an update instead.
@@ -2185,8 +2185,8 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
             let queries = [
                 "SELECT * FROM pk_u_32;",
                 "SELECT * FROM pk_u_32_two;",
-                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
-                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32_two ON unique_u32.n = pk_u32_two.n;",
+                "SELECT unique_u_32.* FROM unique_u_32 JOIN pk_u_32 ON unique_u_32.n = pk_u_32.n;",
+                "SELECT unique_u_32.* FROM unique_u_32 JOIN pk_u_32_two ON unique_u_32.n = pk_u_32_two.n;",
             ];
 
             const KEY: u32 = 42;
@@ -2244,8 +2244,8 @@ fn test_lhs_join_update() {
             subscribe_these_then(
                 ctx,
                 &[
-                    "SELECT p.* FROM pk_u32 p WHERE n = 1",
-                    "SELECT p.* FROM pk_u32 p JOIN unique_u32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
+                    "SELECT p.* FROM pk_u_32 p WHERE n = 1",
+                    "SELECT p.* FROM pk_u_32 p JOIN unique_u_32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
                 ],
                 |_| {},
             );
@@ -2305,8 +2305,8 @@ fn test_lhs_join_update_disjoint_queries() {
     let conn = Arc::new(connect_then(&update_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &[
-                "SELECT p.* FROM pk_u32 p WHERE n = 1",
-                "SELECT p.* FROM pk_u32 p JOIN unique_u32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5 AND u.n != 1",
+                "SELECT p.* FROM pk_u_32 p WHERE n = 1",
+                "SELECT p.* FROM pk_u_32 p JOIN unique_u_32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5 AND u.n != 1",
             ], |_| {});
         }
     }));
@@ -2743,7 +2743,7 @@ fn exec_overlapping_subscriptions() {
     // Now, subscribe to two queries which each match that row.
     subscribe_these_then(
         &conn,
-        &["select * from pk_u8 where n < 100", "select * from pk_u8 where n > 0"],
+        &["select * from pk_u_8 where n < 100", "select * from pk_u_8 where n > 0"],
         move |ctx| {
             // It's not exposed to users of the SDK, so we won't assert on it,
             // but we expect the row to have multiplicity 2.
