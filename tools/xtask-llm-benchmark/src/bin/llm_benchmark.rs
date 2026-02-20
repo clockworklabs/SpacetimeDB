@@ -1267,10 +1267,10 @@ fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
     let count = failures.len();
     println!("Scanning {} — {} LLM API failures\n", details_path.display(), count);
 
-    // Group by (lang, vendor, api_model) -> sorted task IDs
-    let mut groups: HashMap<(String, String, String), (String, Vec<String>)> = HashMap::new();
-    for (lang, vendor, api_model, model_name, task_id) in failures {
-        let key = (lang.clone(), vendor.clone(), api_model.clone());
+    // Group by (lang, mode, vendor, api_model) -> sorted task IDs
+    let mut groups: HashMap<(String, String, String, String), (String, Vec<String>)> = HashMap::new();
+    for (lang, mode, vendor, api_model, model_name, task_id) in failures {
+        let key = (lang.clone(), mode.clone(), vendor.clone(), api_model.clone());
         let entry = groups.entry(key).or_insert_with(|| (model_name, Vec::new()));
         if !entry.1.contains(&task_id) {
             entry.1.push(task_id);
@@ -1283,24 +1283,21 @@ fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
     let mut keys: Vec<_> = groups.keys().collect();
     keys.sort();
 
-    for (lang, vendor, api_model) in keys {
-        let (model_name, tasks) = groups.get(&(lang.clone(), vendor.clone(), api_model.clone())).unwrap();
+    for (lang, mode, vendor, api_model) in keys {
+        let (model_name, tasks) = groups.get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone())).unwrap();
         let tasks_arg = tasks.join(",");
+        println!("# {} + {} ({})", model_name, lang, mode);
         println!(
-            "# {} + {}",
-            model_name, lang
-        );
-        println!(
-            "cargo run --package xtask-llm-benchmark -- run --lang {} --models {}:{} --tasks {}",
-            lang, vendor, api_model, tasks_arg
+            "cargo run --package xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+            lang, mode, vendor, api_model, tasks_arg
         );
         println!();
     }
     Ok(())
 }
 
-/// Collect LLM API failures with full (lang, vendor, api_model, model_name, task_id) for building rerun commands.
-fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String, String, String, String)>> {
+/// Collect LLM API failures with full (lang, mode, vendor, api_model, model_name, task_id) for building rerun commands.
+fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String, String, String, String, String)>> {
     use xtask_llm_benchmark::results::schema::Results;
 
     let content = match fs::read_to_string(details_path) {
@@ -1310,7 +1307,7 @@ fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String
     };
     let results: Results = serde_json::from_str(&content).with_context(|| "parse details.json")?;
 
-    let mut out: Vec<(String, String, String, String, String)> = Vec::new();
+    let mut out: Vec<(String, String, String, String, String, String)> = Vec::new();
     for lang_entry in &results.languages {
         for mode_entry in &lang_entry.modes {
             for model_entry in &mode_entry.models {
@@ -1343,6 +1340,7 @@ fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String
                         });
                     out.push((
                         lang_entry.lang.clone(),
+                        mode_entry.mode.clone(),
                         vendor,
                         api_model,
                         model_entry.name.clone(),
@@ -1471,7 +1469,7 @@ fn outcome_matches_run_scope(
     true
 }
 
-/// Print a summary of HTTP/timeout failures: grouped by (lang, vendor, api_model) with one rerun command per group.
+/// Print a summary of HTTP/timeout failures: grouped by (lang, mode, vendor, api_model) with one rerun command per group.
 fn print_http_failures_summary(
     total_failures: u32,
     http_failures: &[(String, String, String, String, String, String)],
@@ -1485,9 +1483,9 @@ fn print_http_failures_summary(
         total_failures
     );
 
-    let mut groups: HashMap<(String, String, String), (String, Vec<String>)> = HashMap::new();
-    for (lang, _mode, model_name, task_id, vendor, api_model) in http_failures {
-        let key = (lang.clone(), vendor.clone(), api_model.clone());
+    let mut groups: HashMap<(String, String, String, String), (String, Vec<String>)> = HashMap::new();
+    for (lang, mode, model_name, task_id, vendor, api_model) in http_failures {
+        let key = (lang.clone(), mode.clone(), vendor.clone(), api_model.clone());
         let entry = groups.entry(key).or_insert_with(|| (model_name.clone(), Vec::new()));
         if !entry.1.contains(task_id) {
             entry.1.push(task_id.clone());
@@ -1500,13 +1498,13 @@ fn print_http_failures_summary(
     let mut keys: Vec<_> = groups.keys().collect();
     keys.sort();
 
-    for (lang, vendor, api_model) in keys {
-        let (model_name, tasks) = groups.get(&(lang.clone(), vendor.clone(), api_model.clone())).unwrap();
+    for (lang, mode, vendor, api_model) in keys {
+        let (model_name, tasks) = groups.get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone())).unwrap();
         let tasks_arg = tasks.join(",");
-        println!("# {} + {}", model_name, lang);
+        println!("# {} + {} ({})", model_name, lang, mode);
         println!(
-            "cargo run --package xtask-llm-benchmark -- run --lang {} --models {}:{} --tasks {}",
-            lang, vendor, api_model, tasks_arg
+            "cargo run --package xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+            lang, mode, vendor, api_model, tasks_arg
         );
         println!();
     }
