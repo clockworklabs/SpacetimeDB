@@ -34,10 +34,10 @@ namespace SpacetimeDB.Types
 
         public PlayersAtLevelOneCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<PlayerAndLevel, ulong>(tableName, "Id");
-            Identity = new global::SpacetimeDB.Col<PlayerAndLevel, SpacetimeDB.Identity>(tableName, "Identity");
-            Name = new global::SpacetimeDB.Col<PlayerAndLevel, string>(tableName, "Name");
-            Level = new global::SpacetimeDB.Col<PlayerAndLevel, ulong>(tableName, "Level");
+            Id = new global::SpacetimeDB.Col<PlayerAndLevel, ulong>(tableName, "id");
+            Identity = new global::SpacetimeDB.Col<PlayerAndLevel, SpacetimeDB.Identity>(tableName, "identity");
+            Name = new global::SpacetimeDB.Col<PlayerAndLevel, string>(tableName, "name");
+            Level = new global::SpacetimeDB.Col<PlayerAndLevel, ulong>(tableName, "level");
         }
     }
 

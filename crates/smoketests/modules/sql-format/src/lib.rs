@@ -127,19 +127,18 @@ pub fn test(ctx: &ReducerContext) {
 pub struct AccessorRow {
     #[primary_key]
     id: u32,
-    #[sats(name = "canonical_value")]
-    accessor_value: u32,
+    accessor_value1: u32,
 }
 
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     ctx.db.accessor_table().insert(AccessorRow {
         id: 1,
-        accessor_value: 7,
+        accessor_value1: 7,
     });
 }
 
 #[spacetimedb::view(accessor = accessor_filtered, name = "canonical_filtered", public)]
 fn accessor_filtered(ctx: &ViewContext) -> impl Query<AccessorRow> {
-    ctx.from.accessor_table().r#where(|r| r.accessor_value.eq(7))
+    ctx.from.accessor_table().r#where(|r| r.accessor_value1.eq(7))
 }

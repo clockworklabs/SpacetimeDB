@@ -25,11 +25,11 @@ impl __sdk::InModule for InsertPkI64Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_pk_i64`.
+/// Extension trait for access to the reducer `insert_pk_i_64`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait insert_pk_i_64 {
-    /// Request that the remote module invoke the reducer `insert_pk_i64` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `insert_pk_i_64` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -39,7 +39,7 @@ pub trait insert_pk_i_64 {
         self.insert_pk_i_64_then(n, data, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `insert_pk_i64` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `insert_pk_i_64` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.

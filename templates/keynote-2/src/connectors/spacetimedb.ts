@@ -43,7 +43,7 @@ export function spacetimedb(
 
     const builder = Db.builder()
       .withUri(url)
-      .withModuleName(moduleName)
+      .withDatabaseName(moduleName)
       .withConfirmedReads(process.env.STDB_CONFIRMED_READS === '1')
       .onConnect((ctx) => {
         console.log('[stdb] connected');

@@ -29,7 +29,7 @@ Get a SpacetimeDB Next.js app running in under 5 minutes.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template nextjs-ts my-nextjs-app
+spacetime dev --template nextjs-ts
 ```
     </StepCode>
   </Step>
@@ -103,24 +103,26 @@ spacetimedb.reducer('say_hello', (ctx) => {
 
   <Step title="Test with the CLI">
     <StepText>
-      Use the SpacetimeDB CLI to call reducers and query your data directly.
+      Open a new terminal and navigate to your project directory. Then use the SpacetimeDB CLI to call reducers and query your data directly.
     </StepText>
     <StepCode>
 ```bash
+cd my-spacetime-app
+
 # Call the add reducer to insert a person
-spacetime call my-nextjs-app add Alice
+spacetime call add Alice
 
 # Query the person table
-spacetime sql my-nextjs-app "SELECT * FROM person"
+spacetime sql "SELECT * FROM person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call my-nextjs-app say_hello
+spacetime call say_hello
 
 # View the module logs
-spacetime logs my-nextjs-app
+spacetime logs
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```

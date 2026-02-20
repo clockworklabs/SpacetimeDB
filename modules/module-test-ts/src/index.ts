@@ -22,7 +22,7 @@ type TestAlias = TestA;
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Rust: #[derive(SpacetimeType)] pub struct TestB { foo: String }
-const testB = t.object('TestB', {
+const testB = t.object('testB', {
   foo: t.string(),
 });
 type TestB = Infer<typeof testB>;
@@ -151,37 +151,36 @@ const spacetimedb = schema({
   // person (public) with btree index on age
   person: table(
     {
-      name: 'person',
       public: true,
-      indexes: [{ name: 'age', algorithm: 'btree', columns: ['age'] }],
+      indexes: [{ accessor: "age", algorithm: 'btree', columns: ['age'] }],
     },
     personRow
   ),
 
   // test_a with index foo on x
-  testA: table(
+  testATable: table(
     {
-      name: 'test_a',
-      indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
+      name: "test_a",
+      indexes: [{ accessor: "foo", algorithm: 'btree', columns: ['x'] }],
     },
     testA
   ),
 
   // test_d (public) with default(Some(DEFAULT_TEST_C)) option field
-  testD: table({ name: 'test_d', public: true }, testDRow),
+  testD: table({ public: true }, testDRow),
 
   // test_e, default private, with primary key id auto_inc and btree index on name
   testE: table(
     {
       name: 'test_e',
       public: false,
-      indexes: [{ name: 'name', algorithm: 'btree', columns: ['name'] }],
+      indexes: [{ accessor:"name", algorithm: 'btree', columns: ['name'] }],
     },
     testERow
   ),
 
   // test_f (public) with Foobar field
-  testF: table({ name: 'test_f', public: true }, testFRow),
+  testF: table({ public: true }, testFRow),
 
   // private_table (explicit private)
   privateTable: table(
@@ -195,7 +194,7 @@ const spacetimedb = schema({
       name: 'points',
       public: false,
       indexes: [
-        { name: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
+        { accessor: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
       ],
     },
     pointsRow
@@ -208,7 +207,7 @@ const spacetimedb = schema({
   repeatingTestArg: table(
     {
       name: 'repeating_test_arg',
-      scheduled: (): any => repeating_test,
+      scheduled: (): any => repeatingTest
     },
     repeatingTestArg
   ),
@@ -230,8 +229,8 @@ export default spacetimedb;
 // VIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const my_player = spacetimedb.view(
-  { name: 'my_player', public: true },
+export const myPlayer = spacetimedb.view(
+  { public: true },
   playerLikeRow.optional(),
   // FIXME: this should not be necessary; change `OptionBuilder` to accept `null|undefined` for `none`
   ctx => ctx.db.player.identity.find(ctx.sender) ?? undefined
@@ -251,7 +250,7 @@ export const init = spacetimedb.init(ctx => {
 });
 
 // repeating_test
-export const repeating_test = spacetimedb.reducer(
+export const repeatingTest = spacetimedb.reducer(
   { arg: repeatingTestArg },
   (ctx, { arg }) => {
     const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
@@ -276,7 +275,7 @@ export const say_hello = spacetimedb.reducer(ctx => {
 });
 
 // list_over_age(age)
-export const list_over_age = spacetimedb.reducer(
+export const listOverAge = spacetimedb.reducer(
   { age: t.u8() },
   (ctx, { age }) => {
     // Prefer an index-based scan if exposed by bindings; otherwise iterate.
@@ -313,28 +312,28 @@ export const test = spacetimedb.reducer(
 
     // Insert test_a rows
     for (let i = 0; i < 1000; i++) {
-      ctx.db.testA.insert({
+      ctx.db.testATable.insert({
         x: (i >>> 0) + arg.x,
         y: (i >>> 0) + arg.y,
         z: 'Yo',
       });
     }
 
-    const rowCountBefore = ctx.db.testA.count();
+    const rowCountBefore = ctx.db.testATable.count();
     console.info(`Row count before delete: ${rowCountBefore}`);
 
     // Delete rows by the indexed column `x` in [5,10)
     let numDeleted = 0;
     for (let x = 5; x < 10; x++) {
       // Prefer index deletion if available; fallback to filter+delete
-      for (const row of ctx.db.testA.iter()) {
+      for (const row of ctx.db.testATable.iter()) {
         if (row.x === x) {
-          if (ctx.db.testA.delete(row)) numDeleted++;
+          if (ctx.db.testATable.delete(row)) numDeleted++;
         }
       }
     }
 
-    const rowCountAfter = ctx.db.testA.count();
+    const rowCountAfter = ctx.db.testATable.count();
     if (Number(rowCountBefore) !== Number(rowCountAfter) + numDeleted) {
       console.error(
         `Started with ${rowCountBefore} rows, deleted ${numDeleted}, and wound up with ${rowCountAfter} rows... huh?`
@@ -351,7 +350,7 @@ export const test = spacetimedb.reducer(
 
     console.info(`Row count after delete: ${rowCountAfter}`);
 
-    const otherRowCount = ctx.db.testA.count();
+    const otherRowCount = ctx.db.testATable.count();
     console.info(`Row count filtered by condition: ${otherRowCount}`);
 
     console.info('MultiColumn');
@@ -465,7 +464,7 @@ export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
 // Hit SpacetimeDB's schema HTTP route and return its result as a string.
 //
 // This is a silly thing to do, but an effective test of the procedure HTTP API.
-export const get_my_schema_via_http = spacetimedb.procedure(t.string(), ctx => {
+export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   const module_identity = ctx.identity;
   try {
     const response = ctx.http.fetch(

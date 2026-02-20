@@ -352,7 +352,13 @@ fn exec_schedule_procedure() {
 
             subscribe_all_then(ctx, move |ctx| {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
-                ctx.reducers.schedule_proc().unwrap();
+                ctx.reducers
+                    .schedule_proc_then(|_ctx, outcome| match outcome {
+                        Ok(Ok(())) => (),
+                        Ok(Err(msg)) => panic!("`schedule_proc` reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("`schedule_proc` reducer panicked: {internal_error:?}"),
+                    })
+                    .unwrap();
             });
         }
     });
