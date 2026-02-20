@@ -7,16 +7,16 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-The SpacetimeDB client SDKs provide a comprehensive API for interacting with your [database](/databases). After [generating client bindings](/sdks/codegen) and [establishing a connection](/sdks/connection), you can query data, invoke server functions, and observe real-time changes.
+The SpacetimeDB client SDKs provide a comprehensive API for interacting with your [database](../00100-databases.md). After [generating client bindings](./00200-codegen.md) and [establishing a connection](./00300-connection.md), you can query data, invoke server functions, and observe real-time changes.
 
-This page describes the core concepts and patterns that apply across all client SDKs. For language-specific details and complete API documentation, see the reference pages for [Rust](/sdks/rust), [C#](/sdks/c-sharp), [TypeScript](/sdks/typescript), or [Unreal Engine](/sdks/unreal).
+This page describes the core concepts and patterns that apply across all client SDKs. For language-specific details and complete API documentation, see the reference pages for [Rust](./00500-rust-reference.md), [C#](./00600-csharp-reference.md), [TypeScript](./00700-typescript-reference.md), or [Unreal Engine](./00800-unreal-reference.md).
 
 ## Prerequisites
 
 Before using the SDK API, you must:
 
-1. [Generate client bindings](/sdks/codegen) using `spacetime generate`
-2. [Create a connection](/sdks/connection) to your database
+1. [Generate client bindings](./00200-codegen.md) using `spacetime generate`
+2. [Create a connection](./00300-connection.md) to your database
 
 ## Subscriptions
 
@@ -110,7 +110,7 @@ void OnSubscriptionError(const FErrorContext& Ctx)
 </TabItem>
 </Tabs>
 
-See the [Subscriptions documentation](/subscriptions) for detailed information on subscription queries and semantics. Subscribe to [tables](/tables) for row data, or to [views](/functions/views) for computed query results.
+See the [Subscriptions documentation](../00400-subscriptions.md) for detailed information on subscription queries and semantics. Subscribe to [tables](../00300-tables.md) for row data, or to [views](../00200-functions/00500-views.md) for computed query results.
 
 ### Querying the Local Cache
 
@@ -335,16 +335,16 @@ These callbacks fire whenever the local cache changes due to subscription update
 
 For complete working examples, see the language-specific reference pages:
 
-- [Rust SDK Reference](/sdks/rust) - Comprehensive Rust API documentation
-- [C# SDK Reference](/sdks/c-sharp) - C# and Unity-specific patterns
-- [TypeScript SDK Reference](/sdks/typescript) - Browser and Node.js examples
-- [Unreal SDK Reference](/sdks/unreal) - Unreal Engine C++ and Blueprint patterns
+- [Rust SDK Reference](./00500-rust-reference.md) - Comprehensive Rust API documentation
+- [C# SDK Reference](./00600-csharp-reference.md) - C# and Unity-specific patterns
+- [TypeScript SDK Reference](./00700-typescript-reference.md) - Browser and Node.js examples
+- [Unreal SDK Reference](./00800-unreal-reference.md) - Unreal Engine C++ and Blueprint patterns
 
 ## Related Documentation
 
-- [Generating Client Bindings](/sdks/codegen) - How to generate type-safe bindings
-- [Connecting to SpacetimeDB](/sdks/connection) - Connection setup and lifecycle
-- [Subscriptions](/subscriptions) - Detailed subscription semantics
-- [Reducers](/functions/reducers) - Server-side transactional functions
-- [Procedures](/functions/procedures) - Server-side functions with external capabilities
-- [Tables](/tables) - Database schema and storage
+- [Generating Client Bindings](./00200-codegen.md) - How to generate type-safe bindings
+- [Connecting to SpacetimeDB](./00300-connection.md) - Connection setup and lifecycle
+- [Subscriptions](../00400-subscriptions.md) - Detailed subscription semantics
+- [Reducers](../00200-functions/00300-reducers/00300-reducers.md) - Server-side transactional functions
+- [Procedures](../00200-functions/00400-procedures.md) - Server-side functions with external capabilities
+- [Tables](../00300-tables.md) - Database schema and storage

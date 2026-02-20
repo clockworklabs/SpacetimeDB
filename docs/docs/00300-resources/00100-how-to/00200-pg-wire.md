@@ -24,7 +24,7 @@ implemented, or behave differently:
 
 - **Protocol Version**: Only _PGWire_ protocol _version 3.0_ is supported, and only the _Simple Query Protocol_, and
   without parameterized queries.
-- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](/reference/sql) are
+- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](../00200-reference/00400-sql-reference.md) are
   supported. Subscription queries do not update in real time.
 - **Authentication**: SpacetimeDB does not implement database users or roles. The connection string
   `user_name@database_name` ignores `user_name`; only `database_name` is used. Authentication is based on the _auth
@@ -102,7 +102,7 @@ spacetime start --pg-port 5432 [ARGS]
 ## Examples
 
 In the following example, we assume you are using the `quickstart-chat` database created in
-the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp),
+the [Rust Module Quickstart](../../00100-intro/00200-quickstarts/00500-rust.md) or [C# Module Quickstart](../../00100-intro/00200-quickstarts/00600-c-sharp.md),
 and have set the `auth token` as shown above.
 
 ### Using `psql`

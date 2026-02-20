@@ -211,7 +211,7 @@ Never use external random number generators (like `Math.random()` in TypeScript 
 
 The context provides access to the module's own identity, which is useful for distinguishing between user-initiated and system-initiated reducer calls.
 
-This is particularly important for [scheduled reducers](/functions/reducers) that should only be invoked by the system, not by external clients.
+This is particularly important for [scheduled reducers](./00300-reducers.md) that should only be invoked by the system, not by external clients.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">

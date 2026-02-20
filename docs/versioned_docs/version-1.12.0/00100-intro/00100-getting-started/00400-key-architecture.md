@@ -18,7 +18,7 @@ A database exports [tables](#table), which store data, and [reducers](#reducer),
 
 A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C#, Rust or TypeScript.
 
-(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/databases) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
+(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) or JavaScript bundle, that imports a specific low-level [WebAssembly ABI](../../00300-resources/00200-reference/00300-internals/00100-module-abi-reference.md) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](../../00200-core-concepts/00100-databases.md) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
 
 ## Table
 
@@ -81,7 +81,7 @@ Tables marked `public` can also be read by [clients](#client).
 ## Reducer
 
 A **reducer** is a function exported by a [database](#database).
-Connected [clients](/sdks) can call reducers to interact with the database.
+Connected [clients](../../00200-core-concepts/00600-client-sdk-languages.md) can call reducers to interact with the database.
 This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_procedure_call).
 
 <Tabs groupId="syntax" queryString>
@@ -192,7 +192,7 @@ const world = spacetimedb.reducer('world', (ctx) => {
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
+a reducer can [schedule another reducer](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -217,7 +217,7 @@ public static void World(ReducerContext ctx)
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
+a reducer can [schedule another reducer](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -245,7 +245,7 @@ or at a specific time.
 </TabItem>
 </Tabs>
 
-See [Reducers](/functions/reducers) for more details about reducers.
+See [Reducers](../../00200-core-concepts/00200-functions/00300-reducers/00300-reducers.md) for more details about reducers.
 
 ## Procedure
 
@@ -406,7 +406,7 @@ An Unreal [client](#client) can also register a callback to run when a procedure
 </TabItem>
 </Tabs>
 
-See [Procedures](/functions/procedures) for more details about procedures.
+See [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) for more details about procedures.
 
 ## View
 
@@ -464,13 +464,13 @@ Views can be queried and subscribed to using SQL:
 SELECT * FROM my_player;
 ```
 
-See [Views](/functions/views) for more details about views.
+See [Views](../../00200-core-concepts/00200-functions/00500-views.md) for more details about views.
 
 ## Client
 
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
-Clients are written using the [client-side SDKs](/sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
+Clients are written using the [client-side SDKs](../../00200-core-concepts/00600-client-sdk-languages.md). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
 
 Clients are regular software applications that developers can choose how to deploy (through Steam, app stores, package managers, or any other software deployment method, depending on the needs of the application.)
 

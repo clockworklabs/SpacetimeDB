@@ -10,13 +10,13 @@ import TabItem from '@theme/TabItem';
 :::danger Experimental Feature - Use Views Instead
 **Row Level Security is an experimental, unstable feature.** The API may change or be removed in future releases.
 
-For access control, **use [Views](/functions/views) instead**. Views provide:
+For access control, **use [Views](../../00200-core-concepts/00200-functions/00500-views.md) instead**. Views provide:
 - A simpler, more flexible approach to controlling data visibility
 - Better performance characteristics
 - Full control over which rows and columns clients can access
 - The ability to filter by caller identity using `ViewContext`
 
-See [Using Views for Fine-Grained Access Control](/tables/access-permissions#using-views-for-fine-grained-access-control) for examples of implementing row and column filtering with views.
+See [Using Views for Fine-Grained Access Control](../../00200-core-concepts/00300-tables/00400-access-permissions.md#using-views-for-fine-grained-access-control) for examples of implementing row and column filtering with views.
 
 Only use RLS if you have a specific use case that views cannot address.
 :::

@@ -205,5 +205,5 @@ This creates a new Rust project with:
 
 After creating your database module:
 
-- Learn about [Tables](/tables), [Reducers](/functions/reducers), and [Procedures](/functions/procedures)
-- [Build and publish your module](/databases/building-publishing)
+- Learn about [Tables](../00300-tables.md), [Reducers](../00200-functions/00300-reducers/00300-reducers.md), and [Procedures](../00200-functions/00400-procedures.md)
+- [Build and publish your module](./00300-spacetime-publish.md)

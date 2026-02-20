@@ -1438,11 +1438,11 @@ At this point you've learned how to create a basic TypeScript client for your Sp
 
 Next, we'll show you how to get up and running with a simple SpacetimeDB app with a client written in C#.
 
-We'll implement a command-line client for the module created in our [Rust](/docs/quickstarts/rust) or [C# Module](/docs/quickstarts/c-sharp) Quickstart guides. Ensure you followed one of these guides before continuing.
+We'll implement a command-line client for the module created in our [Rust](../00200-quickstarts/00500-rust.md) or [C# Module](../00200-quickstarts/00600-c-sharp.md) Quickstart guides. Ensure you followed one of these guides before continuing.
 
 ### Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](../00200-quickstarts/00500-rust.md) or [C# Module Quickstart](../00200-quickstarts/00600-c-sharp.md) guides:
 
 ```bash
 cd quickstart-chat
@@ -1839,7 +1839,7 @@ void Reducer_OnSendMessageEvent(ReducerEventContext ctx, string text)
 
 SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database using `SubscribeToAllTables`.
 
-You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/reference/sql) enumerates the operations that are accepted in our SQL syntax.
+You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](../../00300-resources/00200-reference/00400-sql-reference.md) enumerates the operations that are accepted in our SQL syntax.
 
 When we specify our subscriptions, we can supply an `OnApplied` callback. This will run when the subscription is applied and the matching rows become available in our client cache. We'll use this opportunity to print the message backlog in proper order.
 
@@ -1996,7 +1996,7 @@ We'll implement a command-line client for the module created in our Rust or C# M
 
 ### Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](../00200-quickstarts/00500-rust.md) or [C# Module Quickstart](../00200-quickstarts/00600-c-sharp.md) guides:
 
 ```bash
 cd quickstart-chat
@@ -2411,7 +2411,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 
 #### Notify about failed subscriptions
 
-It's possible for SpacetimeDB to reject subscriptions. This happens most often because of a typo in the SQL queries, but can be due to use of SQL features that SpacetimeDB doesn't support. See [SQL Support: Subscriptions](/reference/sql#subscriptions) for more information about what subscription queries SpacetimeDB supports.
+It's possible for SpacetimeDB to reject subscriptions. This happens most often because of a typo in the SQL queries, but can be due to use of SQL features that SpacetimeDB doesn't support. See [SQL Support: Subscriptions](../../00300-resources/00200-reference/00400-sql-reference.md#subscriptions) for more information about what subscription queries SpacetimeDB supports.
 
 In our case, we're pretty confident that our queries are valid, but if SpacetimeDB rejects them, we want to know about it. Our callback will print the error, then exit the process.
 
@@ -2495,6 +2495,6 @@ User <my-name> connected.
 
 Congratulations! You've built a chat app with SpacetimeDB.
 
-- Check out the [SDK Reference documentation](/sdks) for more advanced usage
-- Explore the [Unity Tutorial](/docs/tutorials/unity) or [Unreal Tutorial](/docs/tutorials/unreal) for game development
-- Learn about [Procedures](/functions/procedures) for making external API calls
+- Check out the [SDK Reference documentation](../../00200-core-concepts/00600-client-sdk-languages.md) for more advanced usage
+- Explore the [Unity Tutorial](./00300-unity-tutorial/index.md) or [Unreal Tutorial](./00400-unreal-tutorial/index.md) for game development
+- Learn about [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) for making external API calls

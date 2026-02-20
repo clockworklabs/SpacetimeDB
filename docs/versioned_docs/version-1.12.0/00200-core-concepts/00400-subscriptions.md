@@ -147,7 +147,7 @@ conn.db().user().on_update(|ctx, old_user, new_user| {
 
 The client maintains a local cache of subscribed data. Reading from the cache is instant since it's local memory.
 
-For more information on subscription SQL syntax see the [SQL docs](/reference/sql#subscriptions).
+For more information on subscription SQL syntax see the [SQL docs](../00300-resources/00200-reference/00400-sql-reference.md#subscriptions).
 
 ## API Reference
 
@@ -553,7 +553,7 @@ All other subscriptions continue to remain in effect.
 
 ### 1. Writing Efficient SQL Queries
 
-For writing efficient SQL queries, see our [SQL Best Practices Guide](/reference/sql#best-practices-for-performance-and-scalability).
+For writing efficient SQL queries, see our [SQL Best Practices Guide](../00300-resources/00200-reference/00400-sql-reference.md#best-practices-for-performance-and-scalability).
 
 ### 2. Group Subscriptions with the Same Lifetime Together
 

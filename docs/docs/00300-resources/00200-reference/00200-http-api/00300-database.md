@@ -34,7 +34,7 @@ Accessible through the CLI as `spacetime publish`.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 #### Data
 
@@ -67,7 +67,7 @@ Accessible through the CLI as `spacetime publish`.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 #### Data
 
@@ -127,7 +127,7 @@ Accessible through the CLI as `spacetime delete <identity>`.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 ## `GET /v1/database/:name_or_identity/names`
 
@@ -151,7 +151,7 @@ Add a new name for this database.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 #### Data
 
@@ -184,7 +184,7 @@ Set the list of names for this database.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 #### Data
 
@@ -228,16 +228,16 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 | `Sec-WebSocket-Version`  | `13`                                                                  |
 | `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64. |
 
-The SpacetimeDB binary WebSocket protocol, `v1.bsatn.spacetimedb`, encodes messages as well as reducer and row data using [BSATN](/bsatn).
+The SpacetimeDB binary WebSocket protocol, `v1.bsatn.spacetimedb`, encodes messages as well as reducer and row data using [BSATN](../00300-internals/00300-bsatn.md).
 Its messages are defined [here](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/src/websocket.rs).
 
-The SpacetimeDB text WebSocket protocol, `v1.json.spacetimedb`, encodes messages according to the [SATS-JSON format](/sats-json).
+The SpacetimeDB text WebSocket protocol, `v1.json.spacetimedb`, encodes messages according to the [SATS-JSON format](../00300-internals/00200-sats-json.md).
 
 #### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 ## `POST /v1/database/:name_or_identity/call/:reducer`
 
@@ -253,7 +253,7 @@ Invoke a reducer in a database.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 #### Data
 
@@ -413,7 +413,7 @@ Accessible through the CLI as `spacetime logs <name_or_identity>`.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 #### Returns
 
@@ -429,7 +429,7 @@ Accessible through the CLI as `spacetime sql <name_or_identity> <query>`.
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](/http/authorization#authorization-headers). |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
 #### Data
 
@@ -446,6 +446,6 @@ Returns a JSON array of statement results, each of which takes the form:
 }
 ```
 
-The `schema` will be a [JSON-encoded `ProductType`](/sats-json) describing the type of the returned rows.
+The `schema` will be a [JSON-encoded `ProductType`](../00300-internals/00200-sats-json.md) describing the type of the returned rows.
 
-The `rows` will be an array of [JSON-encoded `ProductValue`s](/sats-json), each of which conforms to the `schema`.
+The `rows` will be an array of [JSON-encoded `ProductValue`s](../00300-internals/00200-sats-json.md), each of which conforms to the `schema`.

@@ -143,7 +143,7 @@ conn.db().user().on_update(|ctx, old_user, new_user| {
 </Tabs>
 
 :::tip Typed Query Builders
-Type-safe query builders are available in TypeScript, C#, and Rust and are the recommended default. They provide auto-completion and compile-time type checking. For complete API details, see [TypeScript](/clients/typescript#query-builder-api), [C#](/clients/c-sharp#query-builder-api), and [Rust](/clients/rust#query-builder-api) references.
+Type-safe query builders are available in TypeScript, C#, and Rust and are the recommended default. They provide auto-completion and compile-time type checking. For complete API details, see [TypeScript](./00600-clients/00700-typescript-reference.md#query-builder-api), [C#](./00600-clients/00600-csharp-reference.md#query-builder-api), and [Rust](./00600-clients/00500-rust-reference.md#query-builder-api) references.
 :::
 
 ## How Subscriptions Work
@@ -155,7 +155,7 @@ Type-safe query builders are available in TypeScript, C#, and Rust and are the r
 
 The client maintains a local cache of subscribed data. Reading from the cache is instant since it's local memory.
 
-For advanced raw SQL subscription syntax, see the [SQL docs](/reference/sql#subscriptions).
+For advanced raw SQL subscription syntax, see the [SQL docs](../00300-resources/00200-reference/00400-sql-reference.md#subscriptions).
 
 ## Common API Concepts
 
@@ -191,19 +191,19 @@ Subscribing returns a handle that manages an individual subscription lifecycle.
 
 ### API References
 
-- [TypeScript subscription API](/clients/typescript#subscribe-to-queries)
-- [TypeScript query builder API](/clients/typescript#query-builder-api)
-- [C# subscription API](/clients/c-sharp#subscribe-to-queries)
-- [C# query builder API](/clients/c-sharp#query-builder-api)
-- [Rust subscription API](/clients/rust#subscribe-to-queries)
-- [Rust query builder API](/clients/rust#query-builder-api)
-- [Unreal subscription API](/clients/unreal#subscriptions)
+- [TypeScript subscription API](./00600-clients/00700-typescript-reference.md#subscribe-to-queries)
+- [TypeScript query builder API](./00600-clients/00700-typescript-reference.md#query-builder-api)
+- [C# subscription API](./00600-clients/00600-csharp-reference.md#subscribe-to-queries)
+- [C# query builder API](./00600-clients/00600-csharp-reference.md#query-builder-api)
+- [Rust subscription API](./00600-clients/00500-rust-reference.md#subscribe-to-queries)
+- [Rust query builder API](./00600-clients/00500-rust-reference.md#query-builder-api)
+- [Unreal subscription API](./00600-clients/00800-unreal-reference.md#subscriptions)
 
 ## Best Practices for Optimizing Server Compute and Reducing Serialization Overhead
 
 ### 1. Writing Efficient Subscription Queries
 
-Use the typed query builder to express precise filters and keep subscriptions small. If you use raw SQL subscriptions, see [SQL Best Practices](/reference/sql#best-practices-for-performance-and-scalability).
+Use the typed query builder to express precise filters and keep subscriptions small. If you use raw SQL subscriptions, see [SQL Best Practices](../00300-resources/00200-reference/00400-sql-reference.md#best-practices-for-performance-and-scalability).
 
 ### 2. Group Subscriptions with the Same Lifetime Together
 

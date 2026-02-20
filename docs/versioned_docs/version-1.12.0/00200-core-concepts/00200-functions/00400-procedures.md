@@ -7,8 +7,8 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-A **procedure** is a function exported by a [database](/databases), similar to a [reducer](/functions/reducers).
-Connected [clients](/sdks) can call procedures.
+A **procedure** is a function exported by a [database](../00100-databases.md), similar to a [reducer](./00300-reducers/00300-reducers.md).
+Connected [clients](../00600-client-sdk-languages.md) can call procedures.
 Procedures can perform additional operations not possible in reducers, including making HTTP requests to external services.
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
@@ -130,7 +130,7 @@ spacetimedb.procedure("insert_a_value", { a: t.u32(), b: t.u32() }, t.unit(), (c
 
 `ProcedureCtx.withTx` takes a function of `(ctx: TransactionCtx) => T`.
 Within that function, the `TransactionCtx` can be used to access the database
-[in all the same ways as a `ReducerCtx`](/functions/reducers/reducer-context)
+[in all the same ways as a `ReducerCtx`](./00300-reducers/00400-reducer-context.md)
 When the function returns, the transaction will be committed,
 and its changes to the database state will become permanent and be broadcast to clients.
 If the function throws an error, the transaction will be rolled back, and its changes will be discarded.
@@ -182,7 +182,7 @@ public static partial class Module
 
 `ProcedureContext.WithTx` takes a function of type `Func<ProcedureTxContext, T>`.
 Within that function, the `TransactionContext` can be used to access the database
-[in all the same ways as a `ReducerContext`](/functions/reducers/reducer-context).
+[in all the same ways as a `ReducerContext`](./00300-reducers/00400-reducer-context.md).
 When the function returns, the transaction will be committed,
 and its changes to the database state will become permanent and be broadcast to clients.
 If the function throws an exception, the transaction will be rolled back, and its changes will be discarded.

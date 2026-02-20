@@ -300,7 +300,7 @@ This pattern keeps large files out of SpacetimeDB while maintaining metadata in 
 
 ### Example: Uploading to S3 from a Procedure
 
-[Procedures](/functions/procedures) can make HTTP requests, enabling direct uploads to external storage services like S3. This example shows uploading a file to S3 and storing the metadata in SpacetimeDB:
+[Procedures](../00200-functions/00400-procedures.md) can make HTTP requests, enabling direct uploads to external storage services like S3. This example shows uploading a file to S3 and storing the metadata in SpacetimeDB:
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">

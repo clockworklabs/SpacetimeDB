@@ -493,7 +493,7 @@ LOG_INFO("Total users: " + std::to_string(total));
 </TabItem>
 </Tabs>
 
-For more details on querying with indexes, including range queries and multi-column indexes, see [Indexes](/tables/indexes).
+For more details on querying with indexes, including range queries and multi-column indexes, see [Indexes](../../00300-tables/00300-indexes.md).
 
 ## Reducer Isolation
 
@@ -504,7 +504,7 @@ Reducers run in an isolated environment and **cannot** interact with the outside
 - ❌ No system calls
 - ✅ Only database operations
 
-If you need to interact with external systems, use [Procedures](/functions/procedures) instead. Procedures can make network calls and perform other side effects, but they have different execution semantics and limitations.
+If you need to interact with external systems, use [Procedures](../00400-procedures.md) instead. Procedures can make network calls and perform other side effects, but they have different execution semantics and limitations.
 
 :::warning Global and Static Variables Are Undefined Behavior
 Relying on global variables, static variables, or module-level state to persist across reducer calls is **undefined behavior**. SpacetimeDB does not guarantee that values stored in these locations will be available in subsequent reducer invocations.
@@ -536,7 +536,7 @@ pub struct Counter {
 
 ## Scheduling Procedures
 
-Reducers cannot call procedures directly (procedures may have side effects incompatible with transactional execution). Instead, schedule a procedure to run by inserting into a [schedule table](/tables/schedule-tables):
+Reducers cannot call procedures directly (procedures may have side effects incompatible with transactional execution). Instead, schedule a procedure to run by inserting into a [schedule table](../../00300-tables/00500-schedule-tables.md):
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -701,10 +701,10 @@ SPACETIMEDB_REDUCER(queue_fetch, ReducerContext ctx, std::string url) {
 </TabItem>
 </Tabs>
 
-See [Schedule Tables](/tables/schedule-tables) for more scheduling options.
+See [Schedule Tables](../../00300-tables/00500-schedule-tables.md) for more scheduling options.
 
 ## Next Steps
 
-- Learn about [Tables](/tables) to understand data storage
-- Explore [Procedures](/functions/procedures) for side effects beyond the database
-- Review [Subscriptions](/clients/subscriptions) for real-time client updates
+- Learn about [Tables](../../00300-tables.md) to understand data storage
+- Explore [Procedures](../00400-procedures.md) for side effects beyond the database
+- Review [Subscriptions](../../00400-subscriptions.md) for real-time client updates

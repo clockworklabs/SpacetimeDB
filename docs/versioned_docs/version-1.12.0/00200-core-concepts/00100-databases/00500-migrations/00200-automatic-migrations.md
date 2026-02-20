@@ -52,7 +52,7 @@ The following changes cannot be performed with automatic migration and will caus
 
 ## Working with Forbidden Changes
 
-If you need to make changes that aren't supported by automatic migration, see [Incremental Migrations](/databases/incremental-migrations) for a production-ready pattern that allows complex schema changes without downtime or data loss.
+If you need to make changes that aren't supported by automatic migration, see [Incremental Migrations](./00300-incremental-migrations.md) for a production-ready pattern that allows complex schema changes without downtime or data loss.
 
 For development and testing, you can use `spacetime publish --delete-data` to completely reset your database, but this should **not** be used in production as it permanently deletes all data.
 
