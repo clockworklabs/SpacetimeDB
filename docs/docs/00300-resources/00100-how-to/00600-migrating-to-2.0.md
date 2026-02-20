@@ -3,6 +3,9 @@ title: Migrating from 1.0 to 2.0
 slug: /how-to/migrating-to-2-0
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Migrating from SpacetimeDB 1.0 to 2.0
 
 This guide covers the breaking changes between SpacetimeDB 1.0 and 2.0 and how to update your code.
@@ -162,7 +165,7 @@ public static void DealDamage(ReducerContext ctx, Identity target, uint amount)
 **Server (module) -- before:**
 ```rust
 // 1.0 server -- reducer args were automatically broadcast
-#[reducer]
+#[spacetimedb::reducer]
 fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
     // update game state...
 }
@@ -495,9 +498,11 @@ To avoid this manual migration, configure the case conversion policy in your mod
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
+```typescript
 export const moduleSettings: ModuleSettings = {
   caseConversionPolicy: CaseConversionPolicy.None,
 };
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -610,7 +615,8 @@ let conn = DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
     .with_module_name("my-database")
     // other options...
-    .build();
+    .build()
+    .expect("Failed to connect");
 
 // 2.0
 let conn = DbConnection::builder()
@@ -618,6 +624,7 @@ let conn = DbConnection::builder()
     .with_database_name("my-database")
     // other options...
     .build()
+    .expect("Failed to connect");
 ```
 
 </TabItem>
@@ -798,6 +805,7 @@ fn add_apple(ctx: &ReducerContext, name: String) {
 
 ```rust
 #[spacetimedb::table(accessor = user)]
+#[derive(Clone)]
 struct User {
     #[primary_key]
     identity: Identity,
