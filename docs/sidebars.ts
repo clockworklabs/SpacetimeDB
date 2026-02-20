@@ -96,6 +96,11 @@ const sidebars: SidebarsConfig = {
       defaultStyle: false,
     },
     {
+      type: 'link',
+      label: 'Migrating from 1.0 to 2.0',
+      href: '/upgrade',
+    },
+    {
       type: 'category',
       label: 'How To',
       collapsed: true,
