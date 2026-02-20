@@ -8561,6 +8561,7 @@ dependencies = [
  "self-replace",
  "semver",
  "serde",
+ "serde_json",
  "spacetimedb-paths",
  "tar",
  "tempfile",
