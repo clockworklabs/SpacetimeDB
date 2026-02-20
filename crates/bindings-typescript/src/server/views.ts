@@ -143,8 +143,7 @@ export function registerView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
-  const name = opts.name ?? exportName;
-  const paramsBuilder = new RowBuilder(params, toPascalCase(name));
+  const paramsBuilder = new RowBuilder(params, toPascalCase(exportName));
 
   // Register return types if they are product types
   let returnType = ctx.registerTypesRecursively(ret).algebraicType;
@@ -156,13 +155,23 @@ export function registerView<
   );
 
   ctx.moduleDef.views.push({
-    sourceName: name,
+    sourceName: exportName,
     index: (anon ? ctx.anonViews : ctx.views).length,
     isPublic: opts.public,
     isAnonymous: anon,
     params: paramType,
     returnType,
   });
+
+  if (opts.name != null) {
+    ctx.moduleDef.explicitNames.entries.push({
+      tag: 'Function',
+      value: {
+        sourceName: exportName,
+        canonicalName: opts.name,
+      },
+    });
+  }
 
   // If it is an option, we wrap the function to make the return look like an array.
   if (returnType.tag == 'Sum') {

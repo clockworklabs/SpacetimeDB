@@ -61,7 +61,7 @@ namespace SpacetimeDB.Types
                 this.Error = "";
             }
 
-            string IReducerArgs.ReducerName => "ThrowError";
+            string IReducerArgs.ReducerName => "throw_error";
         }
     }
 }

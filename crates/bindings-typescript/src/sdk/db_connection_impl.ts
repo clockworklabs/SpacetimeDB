@@ -54,7 +54,6 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
-import { toCamelCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -305,7 +304,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     for (const reducer of def.reducers) {
       const reducerName = reducer.name;
-      const key = toCamelCase(reducerName);
+      const key = reducer.accessorName;
 
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
@@ -326,7 +325,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     for (const procedure of def.procedures) {
       const procedureName = procedure.name;
-      const key = toCamelCase(procedureName);
+      const key = procedure.accessorName;
 
       const { serializeArgs, deserializeReturn } =
         this.#procedureSerializers[procedureName];

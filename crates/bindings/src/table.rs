@@ -140,6 +140,7 @@ pub trait TableInternal: Sized {
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
     pub source_name: &'a str,
+    pub accessor_name: &'a str,
     pub algo: IndexAlgo<'a>,
 }
 

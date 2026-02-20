@@ -50,9 +50,7 @@ const tablesSchema = __schema({
   player: __table(
     {
       name: 'player',
-      indexes: [
-        { name: 'player_id_idx_btree', algorithm: 'btree', columns: ['id'] },
-      ],
+      indexes: [{ name: 'id', algorithm: 'btree', columns: ['id'] }],
       constraints: [
         { name: 'player_id_key', constraint: 'unique', columns: ['id'] },
       ],
@@ -62,13 +60,7 @@ const tablesSchema = __schema({
   unindexed_player: __table(
     {
       name: 'unindexed_player',
-      indexes: [
-        {
-          name: 'unindexed_player_id_idx_btree',
-          algorithm: 'btree',
-          columns: ['id'],
-        },
-      ],
+      indexes: [{ name: 'id', algorithm: 'btree', columns: ['id'] }],
       constraints: [
         {
           name: 'unindexed_player_id_key',
@@ -83,11 +75,7 @@ const tablesSchema = __schema({
     {
       name: 'user',
       indexes: [
-        {
-          name: 'user_identity_idx_btree',
-          algorithm: 'btree',
-          columns: ['identity'],
-        },
+        { name: 'identity', algorithm: 'btree', columns: ['identity'] },
       ],
       constraints: [
         {

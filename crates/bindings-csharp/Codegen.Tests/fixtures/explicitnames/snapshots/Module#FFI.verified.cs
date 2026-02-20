@@ -269,12 +269,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 [
                     new(
                         SourceName: "DemoTable_Id_idx_btree",
-                        AccessorName: null,
+                        AccessorName: "Id",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     ),
                     new(
                         SourceName: "DemoTable_Id_idx_btree",
-                        AccessorName: null,
+                        AccessorName: "ById",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
                 ],
