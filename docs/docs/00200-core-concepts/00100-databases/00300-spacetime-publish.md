@@ -29,7 +29,7 @@ This compiles your module and validates its structure.
 If you're publishing your module, you don't need to run `spacetime build` separately - `spacetime publish` will automatically build your module if needed.
 :::
 
-For all build options, see the [`spacetime build` CLI reference](/cli-reference#spacetime-build).
+For all build options, see the [`spacetime build` CLI reference](../../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-build).
 
 ## Publishing Modules
 
@@ -88,7 +88,7 @@ spacetime publish --break-clients <DATABASE_NAME>
 
 ⚠️ **Warning:** This will break existing clients that haven't been updated to match your new schema.
 
-If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Notes](/upgrade) first.
+If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Notes](./00500-migrations/00100-upgrade-notes-2-0.md) first.
 
 #### Clearing Data
 
@@ -102,11 +102,11 @@ spacetime publish --delete-data <DATABASE_NAME>
 
 ### Publishing Options
 
-For all available publishing options and flags, see the [`spacetime publish` CLI reference](/cli-reference#spacetime-publish).
+For all available publishing options and flags, see the [`spacetime publish` CLI reference](../../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
 
 ## Next Steps
 
 After publishing:
 
-- Learn about [connecting a client](/clients) to your database
-- Learn about [Tables](/tables), [Reducers](/functions/reducers), and [Procedures](/functions/procedures)
+- Learn about [connecting a client](../00600-clients.md) to your database
+- Learn about [Tables](../00300-tables.md), [Reducers](../00200-functions/00300-reducers/00300-reducers.md), and [Procedures](../00200-functions/00400-procedures.md)
