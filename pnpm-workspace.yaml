@@ -15,7 +15,6 @@ packages:
   - 'templates/nodejs-ts'
   - 'templates/bun-ts'
   - 'templates/deno-ts'
-  - 'templates/keynote-2'
   - 'modules/benchmarks-ts'
   - 'modules/module-test-ts'
   - 'templates/chat-react-ts/spacetimedb'
