@@ -90,13 +90,6 @@ pub(crate) fn resolve_optional_database_parts(
         });
     }
 
-    if raw_parts.len() < 2 {
-        return if raw_parts.is_empty() {
-            Err(require_arg("database"))
-        } else {
-            Err(require_arg(required_arg_name))
-        };
-    }
     let db = &raw_parts[0];
     let Some(target) = config_targets.iter().find(|t| t.database == *db) else {
         return Err(anyhow::anyhow!(
@@ -104,6 +97,9 @@ pub(crate) fn resolve_optional_database_parts(
             db
         ));
     };
+    if raw_parts.len() < 2 {
+        return Err(require_arg(required_arg_name));
+    }
 
     Ok(ResolvedDbArgs {
         database: db.clone(),
