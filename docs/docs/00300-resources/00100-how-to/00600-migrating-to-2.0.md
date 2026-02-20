@@ -362,9 +362,11 @@ To avoid this manual migration, configure the case conversion policy in your mod
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
+```typescript
 export const moduleSettings: ModuleSettings = {
   caseConversionPolicy: CaseConversionPolicy.None,
 };
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
