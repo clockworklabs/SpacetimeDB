@@ -97,14 +97,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `MyTable`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait myTableQueryTableAccess {
+pub trait my_tableQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `MyTable`.
-    fn myTable(&self) -> __sdk::__query_builder::Table<MyTable>;
+    fn my_table(&self) -> __sdk::__query_builder::Table<MyTable>;
 }
 
-impl myTableQueryTableAccess for __sdk::QueryTableAccessor {
-    fn myTable(&self) -> __sdk::__query_builder::Table<MyTable> {
-        __sdk::__query_builder::Table::new("myTable")
+impl my_tableQueryTableAccess for __sdk::QueryTableAccessor {
+    fn my_table(&self) -> __sdk::__query_builder::Table<MyTable> {
+        __sdk::__query_builder::Table::new("my_table")
     }
 }
