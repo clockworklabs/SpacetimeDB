@@ -4,7 +4,9 @@ use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemi
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
-use spacetimedb_lib::db::raw_def::v10::{ExplicitNames as RawExplicitNames, RawModuleDefV10Builder};
+use spacetimedb_lib::db::raw_def::v10::{
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
+};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
@@ -853,6 +855,22 @@ where
 pub fn register_row_level_security(sql: &'static str) {
     register_describer(|module| {
         module.inner.add_row_level_security(sql);
+    })
+}
+
+/// Set the case conversion policy for this module.
+///
+/// This is called by the `#[spacetimedb::settings]` attribute macro.
+/// Do not call directly; use the attribute instead:
+///
+/// ```ignore
+/// #[spacetimedb::settings]
+/// const CASE_CONVERSION_POLICY: CaseConversionPolicy = CaseConversionPolicy::SnakeCase;
+/// ```
+#[doc(hidden)]
+pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
+    register_describer(move |module| {
+        module.inner.set_case_conversion_policy(policy);
     })
 }
 

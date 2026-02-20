@@ -6,6 +6,7 @@ import {
   type AlgebraicTypeVariants,
 } from './algebraic_type';
 import type {
+  CaseConversionPolicy,
   RawModuleDefV10,
   RawModuleDefV10Section,
   RawScopedTypeNameV10,
@@ -193,7 +194,21 @@ export class ModuleContext {
         value: module.explicitNames,
       }
     );
+    push(
+      module.caseConversionPolicy && {
+        tag: 'CaseConversionPolicy',
+        value: module.caseConversionPolicy,
+      }
+    );
     return { sections };
+  }
+
+  /**
+   * Set the case conversion policy for this module.
+   * Called by the settings mechanism.
+   */
+  setCaseConversionPolicy(policy: CaseConversionPolicy) {
+    this.#moduleDef.caseConversionPolicy = policy;
   }
 
   get typespace() {
