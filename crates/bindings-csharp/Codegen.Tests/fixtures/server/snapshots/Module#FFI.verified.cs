@@ -725,8 +725,8 @@ namespace SpacetimeDB.Internal.TableHandles
                 Indexes:
                 [
                     new(
-                        SourceName: null,
-                        AccessorName: "Location",
+                        SourceName: "BTreeMultiColumn_X_Y_Z_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0, 1, 2])
                     )
                 ],
@@ -901,18 +901,18 @@ namespace SpacetimeDB.Internal.TableHandles
                 Indexes:
                 [
                     new(
-                        SourceName: null,
-                        AccessorName: "Id",
+                        SourceName: "BTreeViews_Id_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     ),
                     new(
-                        SourceName: null,
-                        AccessorName: "Location",
+                        SourceName: "BTreeViews_X_Y_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1, 2])
                     ),
                     new(
-                        SourceName: null,
-                        AccessorName: "Faction",
+                        SourceName: "BTreeViews_Faction_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([3])
                     )
                 ],
@@ -1088,13 +1088,13 @@ namespace SpacetimeDB.Internal.TableHandles
                 Indexes:
                 [
                     new(
-                        SourceName: null,
-                        AccessorName: "Foo",
+                        SourceName: "MultiTable1_Foo_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
                     ),
                     new(
-                        SourceName: null,
-                        AccessorName: "Name",
+                        SourceName: "MultiTable1_Name_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
                 ],
@@ -1215,8 +1215,8 @@ namespace SpacetimeDB.Internal.TableHandles
                 Indexes:
                 [
                     new(
-                        SourceName: null,
-                        AccessorName: "Bar",
+                        SourceName: "MultiTable2_Bar_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
                     )
                 ],
@@ -1346,8 +1346,8 @@ namespace SpacetimeDB.Internal.TableHandles
                 Indexes:
                 [
                     new(
-                        SourceName: null,
-                        AccessorName: "Id",
+                        SourceName: "PublicTable_Id_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
                 ],
@@ -1429,13 +1429,13 @@ namespace SpacetimeDB.Internal.TableHandles
                 Indexes:
                 [
                     new(
-                        SourceName: null,
-                        AccessorName: "Unique1",
+                        SourceName: "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     ),
                     new(
-                        SourceName: null,
-                        AccessorName: "Unique2",
+                        SourceName: "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
                     )
                 ],
@@ -1552,8 +1552,8 @@ namespace SpacetimeDB.Internal.TableHandles
                 Indexes:
                 [
                     new(
-                        SourceName: null,
-                        AccessorName: "ScheduledId",
+                        SourceName: "SendMessageTimer_ScheduledId_idx_btree",
+                        AccessorName: null,
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
                 ],
