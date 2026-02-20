@@ -71,6 +71,5 @@ pub mod unstable {
     //! Unstable interfaces not ready for the prime time.
     //!
     //! These may change incompatibly without a major version bump.
-    pub use crate::db_connection::set_connection_id;
     pub use crate::metrics::{ClientMetrics, CLIENT_METRICS};
 }

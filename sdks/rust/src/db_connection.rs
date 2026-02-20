@@ -37,7 +37,7 @@ use http::Uri;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
 use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity, Timestamp};
 use spacetimedb_sats::Deserialize;
-use std::sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock};
+use std::sync::{atomic::AtomicU32, Arc, Mutex as StdMutex};
 use tokio::{
     runtime::{self, Runtime},
     sync::Mutex as TokioMutex,
@@ -765,39 +765,9 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
+    connection_id_override: Option<ConnectionId>,
+
     params: WsParams,
-}
-
-/// This process's global connection ID, which will be attacked to all connections it makes.
-// TODO: rip this out. Make the connection id a property of the `DbConnection`. Cloud can supply it to the builder.
-static CONNECTION_ID: OnceLock<ConnectionId> = OnceLock::new();
-
-fn get_connection_id_override() -> Option<ConnectionId> {
-    CONNECTION_ID.get().copied()
-}
-
-#[doc(hidden)]
-/// Attempt to set this process's connection ID to a known value.
-///
-/// This functionality is exposed for use in SpacetimeDB-cloud.
-/// It is unstable, and will be removed without warning in a future version.
-///
-/// Clients which want a particular connection ID must call this method
-/// before constructing any connection.
-/// Once any connection is constructed, the per-process connection ID value is locked in,
-/// and cannot be overwritten.
-///
-/// Returns `Err` if this process's connection ID has already been initialized to a random value.
-pub fn set_connection_id(id: ConnectionId) -> crate::Result<()> {
-    let stored = *CONNECTION_ID.get_or_init(|| id);
-
-    if stored != id {
-        return Err(InternalError::new(
-            "Call to set_connection_id after CONNECTION_ID was initialized to a different value ",
-        )
-        .into());
-    }
-    Ok(())
 }
 
 impl<M: SpacetimeModule> DbConnectionBuilder<M> {
@@ -812,6 +782,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
+            connection_id_override: None,
             params: <_>::default(),
         }
     }
@@ -854,7 +825,7 @@ but you must call one of them, or else the connection will never progress.
         let reducer_callbacks = ReducerCallbacks::default();
         let procedure_callbacks = ProcedureCallbacks::default();
 
-        let connection_id_override = get_connection_id_override();
+        let connection_id_override = self.connection_id_override;
         let ws_connection = tokio::task::block_in_place(|| {
             handle.block_on(WsConnection::connect(
                 self.uri.unwrap(),
@@ -962,6 +933,16 @@ but you must call one of them, or else the connection will never progress.
     /// If this method is not called, the server chooses the default.
     pub fn with_confirmed_reads(mut self, confirmed: bool) -> Self {
         self.params.confirmed = Some(confirmed);
+        self
+    }
+
+    #[doc(hidden)]
+    /// Inject a known connection ID, preventing the server from generating one.
+    ///
+    /// This functionality is provided for use in SpacetimeDB-cloud.
+    /// It is unstable, and will be removed without warning in a future version.
+    pub fn with_connection_id(mut self, connection_id: ConnectionId) -> Self {
+        self.connection_id_override = Some(connection_id);
         self
     }
 
