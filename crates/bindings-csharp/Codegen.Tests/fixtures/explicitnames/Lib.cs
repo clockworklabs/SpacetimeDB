@@ -5,8 +5,10 @@ using SpacetimeDB;
 public static partial class Module
 {
     [SpacetimeDB.Settings]
-    public const SpacetimeDB.Internal.CaseConversionPolicy CASE_CONVERSION_POLICY =
-        SpacetimeDB.Internal.CaseConversionPolicy.SnakeCase;
+    public const SpacetimeDB.Internal.CaseConversionPolicy CASE_CONVERSION_POLICY = SpacetimeDB
+        .Internal
+        .CaseConversionPolicy
+        .SnakeCase;
 }
 
 [SpacetimeDB.Type]

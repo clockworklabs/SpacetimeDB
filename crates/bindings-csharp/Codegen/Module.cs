@@ -377,7 +377,10 @@ record TableIndex
     /// Creates an index with the given attribute and columns.
     /// Used internally by other constructors that parse attributes.
     /// </summary>
-    private TableIndex(global::SpacetimeDB.Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
+    private TableIndex(
+        global::SpacetimeDB.Index.BTreeAttribute attr,
+        ImmutableArray<ColumnRef> columns
+    )
         : this(attr.Accessor, attr.Name, columns, attr.Table, TableIndexType.BTree) { }
 
     /// <summary>
@@ -439,10 +442,8 @@ record TableIndex
     // `FullName` and Roslyn have different ways of representing nested types in full names -
     // one uses a `Parent+Child` syntax, the other uses `Parent.Child`.
     // Manually fixup one to the other.
-    private static readonly string BTreeAttrName = typeof(global::SpacetimeDB.Index.BTreeAttribute).FullName.Replace(
-        '+',
-        '.'
-    );
+    private static readonly string BTreeAttrName =
+        typeof(global::SpacetimeDB.Index.BTreeAttribute).FullName.Replace('+', '.');
 
     public static bool CanParse(AttributeData data) =>
         data.AttributeClass?.ToString() == BTreeAttrName;
@@ -1681,12 +1682,12 @@ record ClientVisibilityFilterDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
-    private static string EscapeStringLiteral(string s) => s
-        .Replace("\\", "\\\\")
-        .Replace("\"", "\\\"")
-        .Replace("\r", "\\r")
-        .Replace("\n", "\\n")
-        .Replace("\t", "\\t");
+    private static string EscapeStringLiteral(string s) =>
+        s.Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t");
 
     /// <summary>
     /// Collects distinct items from a source sequence, ensuring no duplicate export names exist.
@@ -1955,7 +1956,10 @@ public class Module : IIncrementalGenerator
                     (
                         (
                             (
-                                ((((tableAccessors, settings), tableDecls), addReducers), addProcedures),
+                                (
+                                    (((tableAccessors, settings), tableDecls), addReducers),
+                                    addProcedures
+                                ),
                                 readOnlyAccessors
                             ),
                             views
@@ -1968,11 +1972,14 @@ public class Module : IIncrementalGenerator
                 if (settings.Array.Length > 1)
                 {
                     context.ReportDiagnostic(
-                        ErrorDescriptor.DuplicateSettings.ToDiag(settings.Array.Select(s => s.FullName))
+                        ErrorDescriptor.DuplicateSettings.ToDiag(
+                            settings.Array.Select(s => s.FullName)
+                        )
                     );
                 }
 
-                var settingsRegistration = settings.Array.Length == 1
+                var settingsRegistration =
+                    settings.Array.Length == 1
                     && settings.Array[0].CaseConversionPolicy is { } policyName
                         ? $"SpacetimeDB.Internal.Module.SetCaseConversionPolicy(SpacetimeDB.Internal.CaseConversionPolicy.{policyName});"
                         : string.Empty;
@@ -1980,8 +1987,7 @@ public class Module : IIncrementalGenerator
                 var explicitTableRegistrations = string.Join(
                     "\n",
                     tableDecls.Array.SelectMany(t =>
-                        t.TableAccessors
-                            .Where(a => !string.IsNullOrEmpty(a.CanonicalName))
+                        t.TableAccessors.Where(a => !string.IsNullOrEmpty(a.CanonicalName))
                             .Select(a =>
                                 $"SpacetimeDB.Internal.Module.RegisterExplicitTableName(\"{EscapeStringLiteral(a.Name)}\", \"{EscapeStringLiteral(a.CanonicalName!)}\");"
                             )
@@ -1990,21 +1996,21 @@ public class Module : IIncrementalGenerator
 
                 var explicitFunctionRegistrations = string.Join(
                     "\n",
-                    addReducers.Array
-                        .Where(r => !string.IsNullOrEmpty(r.CanonicalName))
+                    addReducers
+                        .Array.Where(r => !string.IsNullOrEmpty(r.CanonicalName))
                         .Select(r =>
                             $"SpacetimeDB.Internal.Module.RegisterExplicitFunctionName(\"{EscapeStringLiteral(r.Name)}\", \"{EscapeStringLiteral(r.CanonicalName!)}\");"
                         )
                         .Concat(
-                            addProcedures.Array
-                                .Where(p => !string.IsNullOrEmpty(p.CanonicalName))
+                            addProcedures
+                                .Array.Where(p => !string.IsNullOrEmpty(p.CanonicalName))
                                 .Select(p =>
                                     $"SpacetimeDB.Internal.Module.RegisterExplicitFunctionName(\"{EscapeStringLiteral(p.Name)}\", \"{EscapeStringLiteral(p.CanonicalName!)}\");"
                                 )
                         )
                         .Concat(
-                            views.Array
-                                .Where(v => !string.IsNullOrEmpty(v.CanonicalName))
+                            views
+                                .Array.Where(v => !string.IsNullOrEmpty(v.CanonicalName))
                                 .Select(v =>
                                     $"SpacetimeDB.Internal.Module.RegisterExplicitFunctionName(\"{EscapeStringLiteral(v.Name)}\", \"{EscapeStringLiteral(v.CanonicalName!)}\");"
                                 )
@@ -2030,13 +2036,16 @@ public class Module : IIncrementalGenerator
                     explicitTableRegistrations,
                     explicitFunctionRegistrations,
                     explicitIndexRegistrations,
-                }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray();
+                }
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .ToArray();
 
-                var preRegistrations = preRegistrationLines.Length == 0
-                    ? string.Empty
-                    : "\n                          "
-                        + string.Join("\n                          ", preRegistrationLines)
-                        + "\n";
+                var preRegistrations =
+                    preRegistrationLines.Length == 0
+                        ? string.Empty
+                        : "\n                          "
+                            + string.Join("\n                          ", preRegistrationLines)
+                            + "\n";
 
                 var queryBuilderMembers = string.Join(
                     "\n",

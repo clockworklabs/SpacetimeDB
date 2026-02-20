@@ -89,7 +89,8 @@ partial class RawModuleDefV10
         defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
     }
 
-    internal void SetCaseConversionPolicy(CaseConversionPolicy policy) => caseConversionPolicy = policy;
+    internal void SetCaseConversionPolicy(CaseConversionPolicy policy) =>
+        caseConversionPolicy = policy;
 
     internal void RegisterExplicitTableName(string sourceName, string canonicalName) =>
         explicitNames.Add(new ExplicitNameEntry.Table(new NameMapping(sourceName, canonicalName)));
