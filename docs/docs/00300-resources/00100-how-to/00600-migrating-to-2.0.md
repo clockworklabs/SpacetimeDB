@@ -37,7 +37,7 @@ TODO
 
 ```rust
 // 1.0 -- REMOVED in 2.0
-conn.reducers.deal_damage(|ctx, target, amount| {
+conn.reducers.on_deal_damage(|ctx, target, amount| {
     println!("Someone called deal_damage with args: ({target}, {amount})");
 });
 ```
