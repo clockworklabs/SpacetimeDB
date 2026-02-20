@@ -735,7 +735,7 @@ pub struct {cols_ix} {{"
             .iter()
             .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
             .unwrap();
-        let field_name = column.accessor_name.deref();
+        let field_name = column.accessor_name.deref().to_case(Case::Snake);
         let field_type = type_name(module, &column.ty_for_generate);
 
         writeln!(
@@ -763,7 +763,7 @@ impl __sdk::__query_builder::HasIxCols for {struct_name} {{
             .iter()
             .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
             .expect("singleton column");
-        let field_name = column.accessor_name.deref();
+        let field_name = column.accessor_name.deref().to_case(Case::Snake);
         let col_name = column.name.deref();
 
         writeln!(
