@@ -178,7 +178,7 @@ Run `spacetime help call` for more detailed information.
 
 ###### **Arguments:**
 
-* `<CALL_PARTS>` — Call arguments: [DATABASE] <FUNCTION_NAME> [ARGUMENTS...]
+* `<CALL_PARTS>` — Call arguments: [DATABASE] \<FUNCTION_NAME\> [ARGUMENTS...]
 
 ###### **Options:**
 
@@ -256,7 +256,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 Invokes commands related to database budgets. WARNING: This command is UNSTABLE and subject to breaking changes.
 
 **Usage:** `spacetime energy
-       energy <COMMAND>`
+       energy \<COMMAND\>`
 
 ###### **Subcommands:**
 
@@ -286,7 +286,7 @@ Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject 
 
 ###### **Arguments:**
 
-* `<SQL_PARTS>` — SQL arguments: [DATABASE] <QUERY>
+* `<SQL_PARTS>` — SQL arguments: [DATABASE] \<QUERY\>
 
 ###### **Options:**
 
@@ -377,7 +377,7 @@ Lists the databases attached to an identity. WARNING: This command is UNSTABLE a
 Manage your login to the SpacetimeDB CLI
 
 **Usage:** `spacetime login [OPTIONS]
-       login <COMMAND>`
+       login \<COMMAND\>`
 
 ###### **Subcommands:**
 
@@ -460,7 +460,7 @@ Builds a spacetime module.
 Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 
 **Usage:** `spacetime server
-       server <COMMAND>`
+       server \<COMMAND\>`
 
 ###### **Subcommands:**
 
@@ -597,7 +597,7 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 
 ###### **Arguments:**
 
-* `<SUBSCRIBE_PARTS>` — Subscribe arguments: [DATABASE] <QUERY> [QUERY...]
+* `<SUBSCRIBE_PARTS>` — Subscribe arguments: [DATABASE] \<QUERY\> [QUERY...]
 
 ###### **Options:**
 
