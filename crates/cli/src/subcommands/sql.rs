@@ -6,7 +6,7 @@ use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats
 use crate::common_args;
 use crate::config::Config;
 use crate::subcommands::db_arg_resolution::{
-    load_config_db_targets, resolve_database_arg, resolve_optional_database_parts,
+    load_config_db_targets, resolve_database_arg, resolve_optional_database_parts, ResolvedDbArgs,
 };
 use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
@@ -210,7 +210,32 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             config_targets.as_deref(),
             "query",
             "spacetime sql [database] <query> [--no-config]",
-        )?;
+        )
+        .or_else(|e| {
+            // `sql` expects exactly 1 query arg, so if we have 2+ positional args the first
+            // must be a database name. If it didn't match any config target, treat it as an
+            // ad-hoc database outside the project (auto-fallthrough).
+            if raw_parts.len() >= 2 {
+                Ok(ResolvedDbArgs {
+                    database: raw_parts[0].clone(),
+                    server: None,
+                    remaining_args: raw_parts[1..].to_vec(),
+                })
+            } else if raw_parts.len() == 1 && raw_parts[0].contains(' ') {
+                // The single arg contains spaces, so it's almost certainly a SQL query,
+                // not a database name. Give a clearer error than "missing <query>".
+                let targets = config_targets.as_deref().unwrap_or_default();
+                let known: Vec<&str> = targets.iter().map(|t| t.database.as_str()).collect();
+                Err(anyhow::anyhow!(
+                    "Multiple databases found in config: {}. Please specify which database to query:\n  \
+                     spacetime sql <database> \"{}\"",
+                    known.join(", "),
+                    raw_parts[0]
+                ))
+            } else {
+                Err(e)
+            }
+        })?;
         let query = resolved.remaining_args.join(" ");
         let confirmed = args.get_flag("confirmed");
 

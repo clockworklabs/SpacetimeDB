@@ -1,3 +1,26 @@
+// Database argument resolution for CLI commands.
+//
+// When a spacetime.json config file is present, CLI commands resolve database arguments
+// from the config. If the user provides a database name that doesn't match any configured
+// target, the behavior depends on whether the database argument is unambiguous:
+//
+// | Command     | Resolution function                | DB arg unambiguous? | Auto-fallthrough? |
+// |-------------|-------------------------------------|---------------------|-------------------|
+// | logs        | resolve_database_arg               | Yes (dedicated arg) | Yes               |
+// | delete      | resolve_database_arg               | Yes (dedicated arg) | Yes               |
+// | sql         | resolve_optional_database_parts    | Only with 2+ args   | Yes (at call site)|
+// | call        | resolve_optional_database_parts    | No (variable args)  | No                |
+// | subscribe   | resolve_optional_database_parts    | No (variable args)  | No                |
+// | describe    | resolve_database_with_optional_parts | No (optional args)| No                |
+//
+// "Auto-fallthrough" means: if the provided database name doesn't match any config target,
+// treat it as an ad-hoc database outside the project (equivalent to --no-config for that arg).
+//
+// Commands using `resolve_database_arg` always have an unambiguous `<database>` arg, so we
+// can safely fall through. For `sql`, the call site knows that exactly 1 query arg is expected,
+// so 2+ positional args means the first must be a database. For `call`/`subscribe`/`describe`,
+// the first positional could be a non-database argument, so we must error to avoid misinterpreting it.
+
 use crate::spacetime_config::find_and_load_with_env;
 use itertools::Itertools;
 
@@ -12,6 +35,25 @@ pub(crate) struct ResolvedDbArgs {
     pub database: String,
     pub server: Option<String>,
     pub remaining_args: Vec<String>,
+}
+
+/// Build an error for when the first positional arg doesn't match any configured database target.
+fn unknown_database_error(db: &str, config_targets: &[ConfigDbTarget]) -> anyhow::Error {
+    let known: Vec<&str> = config_targets.iter().map(|t| t.database.as_str()).collect();
+    if known.len() > 1 {
+        anyhow::anyhow!(
+            "Multiple databases found in config: {}. Please specify which database to use, \
+             or pass --no-config to use '{}' directly.",
+            known.join(", "),
+            db
+        )
+    } else {
+        anyhow::anyhow!(
+            "Database '{}' is not in the config file. \
+             If you want to run against a database outside of the current project, pass --no-config.",
+            db
+        )
+    }
 }
 
 pub(crate) fn load_config_db_targets(no_config: bool) -> anyhow::Result<Option<Vec<ConfigDbTarget>>> {
@@ -92,10 +134,7 @@ pub(crate) fn resolve_optional_database_parts(
 
     let db = &raw_parts[0];
     let Some(target) = config_targets.iter().find(|t| t.database == *db) else {
-        return Err(anyhow::anyhow!(
-            "Database '{}' is not in the config file. If you want to run against a database outside of the current project, pass --no-config.",
-            db
-        ));
+        return Err(unknown_database_error(db, config_targets));
     };
     if raw_parts.len() < 2 {
         return Err(require_arg(required_arg_name));
@@ -133,10 +172,13 @@ pub(crate) fn resolve_database_arg(
         let target = &config_targets[0];
         if let Some(db) = raw_database {
             if db != target.database {
-                return Err(anyhow::anyhow!(
-                    "Database '{}' is not in the config file. If you want to run against a database outside of the current project, pass --no-config.",
-                    db
-                ));
+                // The database arg is unambiguous, so treat it as an ad-hoc database
+                // outside the project config (auto-fallthrough).
+                return Ok(ResolvedDbArgs {
+                    database: db.to_string(),
+                    server: None,
+                    remaining_args: vec![],
+                });
             }
         }
         return Ok(ResolvedDbArgs {
@@ -148,10 +190,13 @@ pub(crate) fn resolve_database_arg(
 
     let db = raw_database.ok_or_else(require_database)?;
     let Some(target) = config_targets.iter().find(|t| t.database == db) else {
-        return Err(anyhow::anyhow!(
-            "Database '{}' is not in the config file. If you want to run against a database outside of the current project, pass --no-config.",
-            db
-        ));
+        // The database arg is unambiguous, so treat it as an ad-hoc database
+        // outside the project config (auto-fallthrough).
+        return Ok(ResolvedDbArgs {
+            database: db.to_string(),
+            server: None,
+            remaining_args: vec![],
+        });
     };
 
     Ok(ResolvedDbArgs {
@@ -204,10 +249,7 @@ pub(crate) fn resolve_database_with_optional_parts(
         return Err(require_database());
     };
     let Some(target) = config_targets.iter().find(|t| t.database == *db) else {
-        return Err(anyhow::anyhow!(
-            "Database '{}' is not in the config file. If you want to run against a database outside of the current project, pass --no-config.",
-            db
-        ));
+        return Err(unknown_database_error(db, config_targets));
     };
 
     Ok(ResolvedDbArgs {
@@ -281,7 +323,7 @@ mod tests {
             "spacetime subscribe [database] <query> [query...]",
         )
         .unwrap_err();
-        assert!(err.to_string().contains("Database 'baz' is not in the config file"));
+        assert!(err.to_string().contains("Multiple databases found in config: foo, bar"));
         assert!(err.to_string().contains("--no-config"));
     }
 
@@ -307,5 +349,33 @@ mod tests {
                 .unwrap();
         assert_eq!(resolved.database, "foo");
         assert!(resolved.remaining_args.is_empty());
+    }
+
+    #[test]
+    fn resolve_database_arg_single_target_falls_through_for_unknown_db() {
+        let targets = vec![ConfigDbTarget {
+            database: "foo".to_string(),
+            server: Some("maincloud".to_string()),
+        }];
+        let resolved = resolve_database_arg(Some("other-db"), Some(&targets), "spacetime logs [database]").unwrap();
+        assert_eq!(resolved.database, "other-db");
+        assert_eq!(resolved.server, None);
+    }
+
+    #[test]
+    fn resolve_database_arg_multi_target_falls_through_for_unknown_db() {
+        let targets = vec![
+            ConfigDbTarget {
+                database: "foo".to_string(),
+                server: Some("maincloud".to_string()),
+            },
+            ConfigDbTarget {
+                database: "bar".to_string(),
+                server: Some("local".to_string()),
+            },
+        ];
+        let resolved = resolve_database_arg(Some("other-db"), Some(&targets), "spacetime logs [database]").unwrap();
+        assert_eq!(resolved.database, "other-db");
+        assert_eq!(resolved.server, None);
     }
 }
