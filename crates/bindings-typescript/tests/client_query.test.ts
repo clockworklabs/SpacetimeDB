@@ -89,7 +89,7 @@ describe('ClientQuery.toSql', () => {
   it('renders semijoin queries without additional filters', () => {
     const sql = toSql(
       tables.player
-        .rightSemijoin(tables.unindexedPlayer, (player, other) =>
+        .rightSemijoin(tables.unindexed_player, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -104,7 +104,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       tables.player
         .where(row => row.id.eq(42))
-        .rightSemijoin(tables.unindexedPlayer, (player, other) =>
+        .rightSemijoin(tables.unindexed_player, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -119,7 +119,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       tables.player
         .where(row => row.name.eq("O'Brian"))
-        .rightSemijoin(tables.unindexedPlayer, (player, other) =>
+        .rightSemijoin(tables.unindexed_player, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -134,7 +134,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       tables.player
         .where(row => and(row.name.eq('Alice'), row.id.eq(30)))
-        .rightSemijoin(tables.unindexedPlayer, (player, other) =>
+        .rightSemijoin(tables.unindexed_player, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -196,7 +196,7 @@ describe('ClientQuery.toSql', () => {
   it('basic semijoin', () => {
     const sql = toSql(
       tables.player
-        .rightSemijoin(tables.unindexedPlayer, (player, other) =>
+        .rightSemijoin(tables.unindexed_player, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -209,7 +209,7 @@ describe('ClientQuery.toSql', () => {
   it('basic left semijoin', () => {
     const sql = toSql(
       tables.player
-        .leftSemijoin(tables.unindexedPlayer, (player, other) =>
+        .leftSemijoin(tables.unindexed_player, (player, other) =>
           other.id.eq(player.id)
         )
         .build()
@@ -252,7 +252,7 @@ describe('ClientQuery.toSql', () => {
     const sql = toSql(
       tables.player
         .where(row => row.id.eq(42))
-        .rightSemijoin(tables.unindexedPlayer, (player, other) =>
+        .rightSemijoin(tables.unindexed_player, (player, other) =>
           other.id.eq(player.id)
         )
         .where(row => row.name.eq('Gadget'))
@@ -286,7 +286,7 @@ describe('useTable type compatibility', () => {
 
   it('rightSemijoin result is assignable to useTable query param', () => {
     assertType<UseTableQuery>(
-      tables.player.rightSemijoin(tables.unindexedPlayer, (p, o) =>
+      tables.player.rightSemijoin(tables.unindexed_player, (p, o) =>
         o.id.eq(p.id)
       )
     );
@@ -294,7 +294,7 @@ describe('useTable type compatibility', () => {
 
   it('leftSemijoin result is assignable to useTable query param', () => {
     assertType<UseTableQuery>(
-      tables.player.leftSemijoin(tables.unindexedPlayer, (p, o) =>
+      tables.player.leftSemijoin(tables.unindexed_player, (p, o) =>
         o.id.eq(p.id)
       )
     );
@@ -303,7 +303,7 @@ describe('useTable type compatibility', () => {
   it('semijoin with .where() is assignable to useTable query param', () => {
     assertType<UseTableQuery>(
       tables.player
-        .rightSemijoin(tables.unindexedPlayer, (p, o) => o.id.eq(p.id))
+        .rightSemijoin(tables.unindexed_player, (p, o) => o.id.eq(p.id))
         .where(r => r.name.eq('test'))
     );
   });
@@ -320,7 +320,7 @@ describe('useTable type compatibility', () => {
 
   it('semijoin result exposes toSql() returning string', () => {
     const sql: string = tables.player
-      .rightSemijoin(tables.unindexedPlayer, (p, o) => o.id.eq(p.id))
+      .rightSemijoin(tables.unindexed_player, (p, o) => o.id.eq(p.id))
       .toSql();
     expect(typeof sql).toBe('string');
   });

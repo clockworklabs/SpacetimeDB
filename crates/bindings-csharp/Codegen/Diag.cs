@@ -239,4 +239,22 @@ internal static class ErrorDescriptor
                 $"View '{method.Identifier}' must have no arguments beyond the context. This is a temporary limitation.",
             method => method
         );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> SettingsMustBeConstCaseConversionPolicy =
+        new(
+            group,
+            "[SpacetimeDB.Settings] field must be a const CaseConversionPolicy",
+            field =>
+                $"Settings field {field.Name} must be declared as 'public const SpacetimeDB.Internal.CaseConversionPolicy ...'.",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IEnumerable<string>> DuplicateSettings =
+        new(
+            group,
+            "Multiple [SpacetimeDB.Settings] declarations",
+            fullNames =>
+                $"[SpacetimeDB.Settings] is declared multiple times: {string.Join(", ", fullNames)}",
+            _ => Location.None
+        );
 }

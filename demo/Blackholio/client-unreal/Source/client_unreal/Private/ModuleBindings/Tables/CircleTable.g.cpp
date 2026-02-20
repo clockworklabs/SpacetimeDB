@@ -13,24 +13,6 @@ void UCircleTable::PostInitialize()
     Data = MakeShared<UClientCache<FCircleType>>();
 
     TSharedPtr<FTableCache<FCircleType>> CircleTable = Data->GetOrAdd(TableName);
-    CircleTable->AddUniqueConstraint<int32>("entity_id", [](const FCircleType& Row) -> const int32& {
-        return Row.EntityId; });
-
-    CircleEntityIdIdxBtree = NewObject<UCircleCircleEntityIdIdxBtreeUniqueIndex>(this);
-    CircleEntityIdIdxBtree->SetCache(CircleTable);
-
-    // Register a new multi-key B-Tree index named "circle_player_id_idx_btree" on the CircleTable.
-    CircleTable->AddMultiKeyBTreeIndex<TTuple<int32>>(
-        TEXT("circle_player_id_idx_btree"),
-        [](const FCircleType& Row)
-        {
-            // This tuple is stored in the B-Tree index for fast composite key lookups.
-            return MakeTuple(Row.PlayerId);
-        }
-    );
-
-    CirclePlayerIdIdxBtree = NewObject<UCircleCirclePlayerIdIdxBtreeIndex>(this);
-    CirclePlayerIdIdxBtree->SetCache(CircleTable);
 
     /***/
 }
