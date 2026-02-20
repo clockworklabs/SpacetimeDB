@@ -38,6 +38,8 @@ conn.Reducers.OnDealDamage += (ctx, target, amount) => { ... };
 **Server:** Define event table, insert from reducer.
 
 ```rust
+use spacetimedb::{table, reducer, ReducerContext, Table, Identity};
+
 #[table(accessor = damage_event, public, event)]
 pub struct DamageEvent {
     pub target: Identity,

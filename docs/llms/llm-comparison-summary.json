@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-20T23:28:12.886Z",
+  "generated_at": "2026-02-20T23:37:19.670Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -520,7 +520,7 @@
           }
         },
         "docs": {
-          "hash": "475c22b985e81027333ffa0d043dc9cbbb2ed9171f8083e5747c79c5585722d9",
+          "hash": "9d3acb3d6846ea1568d76e4b62ded3705f5a1dea72331bd2cbcfb5aae9d6761c",
           "models": {
             "Claude 3.5 Haiku": {
               "categories": {
@@ -1163,27 +1163,27 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 23,
-                  "pass_pct": 85.18519,
+                  "passed_tests": 24,
+                  "pass_pct": 88.888885,
                   "task_pass_equiv": 11.0,
                   "task_pass_pct": 91.66667
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 17,
-                  "pass_pct": 50.0,
-                  "task_pass_equiv": 5.4,
-                  "task_pass_pct": 54.000004
+                  "passed_tests": 31,
+                  "pass_pct": 91.17647,
+                  "task_pass_equiv": 9.0,
+                  "task_pass_pct": 90.0
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 40,
-                "pass_pct": 65.57377,
-                "task_pass_equiv": 16.4,
-                "task_pass_pct": 74.545456
+                "passed_tests": 55,
+                "pass_pct": 90.16393,
+                "task_pass_equiv": 20.0,
+                "task_pass_pct": 90.909096
               }
             },
             "Grok Code": {
