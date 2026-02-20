@@ -30,7 +30,13 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+```csharp
+// 1.0-style global reducer callback semantics (no longer true in 2.0)
+conn.Reducers.OnDealDamage += (ctx, target, amount) =>
+{
+    Console.WriteLine($"Someone called DealDamage with args: ({target}, {amount})");
+};
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -59,7 +65,26 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+```csharp
+// 2.0 -- per-call callback on the calling connection
+conn.Reducers.OnDealDamage += (ctx, _, _) =>
+{
+    if (ctx.Event.Status is Status.Committed)
+    {
+        Console.WriteLine("Reducer succeeded");
+    }
+    else if (ctx.Event.Status is Status.Failed failed)
+    {
+        Console.WriteLine($"Reducer failed: {failed}");
+    }
+    else if (ctx.Event.Status is Status.OutOfEnergy)
+    {
+        Console.WriteLine("Reducer failed: out of energy");
+    }
+};
+
+conn.Reducers.DealDamage(target, amount);
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -98,7 +123,38 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+**Server (module) -- before:**
+```csharp
+// 1.0 server -- reducer args were automatically broadcast
+[SpacetimeDB.Reducer]
+public static void DealDamage(ReducerContext ctx, Identity target, uint amount)
+{
+    // update game state...
+}
+```
+
+**Server (module) -- after:**
+```csharp
+// 2.0 server -- explicitly publish events via an event table
+[SpacetimeDB.Table(Accessor = "DamageEvent", Public = true, Event = true)]
+public partial struct DamageEvent
+{
+    public Identity Target;
+    public uint Amount;
+}
+
+[SpacetimeDB.Reducer]
+public static void DealDamage(ReducerContext ctx, Identity target, uint amount)
+{
+    // update game state...
+
+    ctx.Db.DamageEvent.Insert(new DamageEvent
+    {
+        Target = target,
+        Amount = amount,
+    });
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -140,7 +196,23 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+**Client -- before:**
+```csharp
+// 1.0 client -- global reducer callback
+conn.Reducers.OnDealDamage += (ctx, target, amount) =>
+{
+    PlayDamageAnimation(target, amount);
+};
+```
+
+**Client -- after:**
+```csharp
+// 2.0 client -- event table callback
+conn.Db.DamageEvent.OnInsert += (ctx, damageEvent) =>
+{
+    PlayDamageAnimation(damageEvent.Target, damageEvent.Amount);
+};
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -193,7 +265,28 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+In 1.0, table callbacks could receive `Event<Reducer>.Reducer` with reducer information when a reducer caused a table change. Non-callers could also receive `Event<Reducer>.UnknownTransaction`.
+
+In 2.0, for known reducer updates:
+
+- **The caller** sees `Event<Reducer>.Reducer` with `ReducerEvent { Timestamp, Status, Reducer }`.
+- **Other clients** see `Event<Reducer>.Transaction` (no reducer details).
+
+```csharp
+// 2.0 -- checking who caused a table change
+conn.Db.Person.OnInsert += (ctx, row) =>
+{
+    if (ctx.Event is Event<Reducer>.Reducer(var reducerEvent))
+    {
+        // This client called the reducer that caused this insert.
+        Console.WriteLine($"Our reducer: {reducerEvent.Reducer}");
+    }
+    else if (ctx.Event is Event<Reducer>.Transaction)
+    {
+        // Another client's action caused this insert.
+    }
+};
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -239,7 +332,14 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+```csharp
+// 2.0 -- same as 1.0
+conn.SubscriptionBuilder()
+    .OnApplied(_ => { /* ... */ })
+    .OnError((_, error) => { /* ... */ })
+    .AddQuery(q => q.From.Person())
+    .Subscribe();
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -266,7 +366,13 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+```csharp
+// Subscribe explicitly to an event table:
+conn.SubscriptionBuilder()
+    .OnApplied(_ => { /* ... */ })
+    .AddQuery(q => q.From.DamageEvent())
+    .Subscribe();
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -298,7 +404,37 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+The `Name` argument on table and index attributes is now used to override the canonical SQL name and is optional. The `Accessor` argument controls the generated API names you use in module and client code.
+
+By default, the canonical name is derived from the accessor using the module's case-conversion policy.
+
+To migrate a 1.0 table definition to 2.0, replace `Name =` with `Accessor =` in table and index definitions:
+
+```csharp
+// 1.0 style -- NO LONGER VALID in 2.0
+[SpacetimeDB.Table(Name = "MyTable", Public = true)]
+[SpacetimeDB.Index.BTree(Name = "Position", Columns = [nameof(X), nameof(Y)])]
+public partial struct MyTable
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public uint Id;
+    public uint X;
+    public uint Y;
+}
+
+// 2.0
+[SpacetimeDB.Table(Accessor = "MyTable", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = [nameof(X), nameof(Y)])]
+public partial struct MyTable
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public uint Id;
+    public uint X;
+    public uint Y;
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -366,7 +502,11 @@ export const moduleSettings: ModuleSettings = {
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+```csharp
+[SpacetimeDB.Settings]
+public const SpacetimeDB.CaseConversionPolicy CASE_CONVERSION_POLICY =
+    SpacetimeDB.CaseConversionPolicy.None;
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -391,6 +531,18 @@ Alternatively, manually specify the correct canonical name of each table:
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+```csharp
+[SpacetimeDB.Table(Accessor = "MyTable", Name = "MyTable", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = [nameof(X), nameof(Y)])]
+public partial struct MyTable
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public uint Id;
+    public uint X;
+    public uint Y;
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -431,7 +583,21 @@ TODO: code snippet
 
 When constructing a `DbConnection` to a remote database, you now use `WithDatabaseName` to provide the database name, rather than `WithModuleName`. This is a more accurate terminology.
 
-TODO: code snippet
+```csharp
+// 1.0 -- NO LONGER CORRECT
+var conn = DbConnection.Builder()
+    .WithUri("https://maincloud.spacetimedb.com")
+    .WithModuleName("my-database")
+    // other options...
+    .Build();
+
+// 2.0
+var conn = DbConnection.Builder()
+    .WithUri("https://maincloud.spacetimedb.com")
+    .WithDatabaseName("my-database")
+    // other options...
+    .Build();
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -501,7 +667,92 @@ fn my_reducer(ctx: &ReducerContext) {
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+In 2.0 modules, only `[SpacetimeDB.PrimaryKey]` indexes expose an `Update` method, whereas previously, `[SpacetimeDB.Unique]` indexes also provided that method. The previous behavior led to confusion, as only updates which preserved the primary key value resulted in `OnUpdate` callbacks being invoked on the client.
 
+### Updates which preserve the primary key - update with the primary key index
+
+```csharp
+[SpacetimeDB.Table(Accessor = "User")]
+public partial struct User
+{
+    [SpacetimeDB.PrimaryKey]
+    public Identity Identity;
+
+    [SpacetimeDB.Unique]
+    public string Name;
+
+    public uint ApplesOwned;
+}
+
+// 1.0 -- REMOVED in 2.0
+[SpacetimeDB.Reducer]
+public static void AddAppleOld(ReducerContext ctx, string name)
+{
+    var user = ctx.Db.User.Name.Find(name).Value;
+    ctx.Db.User.Name.Update(new User
+    {
+        ApplesOwned = user.ApplesOwned + 1,
+        Identity = user.Identity,
+        Name = user.Name,
+    });
+}
+
+// 2.0
+[SpacetimeDB.Reducer]
+public static void AddApple(ReducerContext ctx, string name)
+{
+    var user = ctx.Db.User.Name.Find(name).Value;
+    ctx.Db.User.Identity.Update(new User
+    {
+        ApplesOwned = user.ApplesOwned + 1,
+        Identity = user.Identity,
+        Name = user.Name,
+    });
+}
+```
+
+### Updates which change the primary key - explicitly delete and insert
+
+```csharp
+[SpacetimeDB.Table(Accessor = "User")]
+public partial struct User
+{
+    [SpacetimeDB.PrimaryKey]
+    public Identity Identity;
+
+    [SpacetimeDB.Unique]
+    public string Name;
+
+    public uint ApplesOwned;
+}
+
+// 1.0 -- REMOVED in 2.0
+[SpacetimeDB.Reducer]
+public static void ChangeUserIdentityOld(ReducerContext ctx, string name, Identity identity)
+{
+    var user = ctx.Db.User.Name.Find(name).Value;
+    ctx.Db.User.Name.Update(new User
+    {
+        Identity = identity,
+        Name = user.Name,
+        ApplesOwned = user.ApplesOwned,
+    });
+}
+
+// 2.0
+[SpacetimeDB.Reducer]
+public static void ChangeUserIdentity(ReducerContext ctx, string name, Identity identity)
+{
+    var user = ctx.Db.User.Name.Find(name).Value;
+    ctx.Db.User.Delete(user);
+    ctx.Db.User.Insert(new User
+    {
+        Identity = identity,
+        Name = user.Name,
+        ApplesOwned = user.ApplesOwned,
+    });
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -596,6 +847,35 @@ Because scheduled reducers and procedures are now private, it's no longer necess
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+```csharp
+[SpacetimeDB.Table(Accessor = "MyTimer", Scheduled = nameof(RunMyTimer))]
+public partial struct MyTimer
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong ScheduledId;
+    public ScheduleAt ScheduledAt;
+}
+
+// 1.0 - SUPERFLUOUS
+[SpacetimeDB.Reducer]
+public static void RunMyTimer(ReducerContext ctx, MyTimer timer)
+{
+    if (ctx.Sender != ctx.Identity)
+    {
+        throw new Exception("`RunMyTimer` should only be invoked by the database!");
+    }
+    // Do stuff...
+}
+
+// 2.0
+[SpacetimeDB.Reducer]
+public static void RunMyTimer(ReducerContext ctx, MyTimer timer)
+{
+    // Do stuff...
+}
+```
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
@@ -638,6 +918,29 @@ In the rare event that you have a reducer or procedure which is intended to be i
 
 </TabItem>
 <TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Table(Accessor = "MyTimer", Scheduled = nameof(RunMyTimerPrivate))]
+public partial struct MyTimer
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong ScheduledId;
+    public ScheduleAt ScheduledAt;
+}
+
+[SpacetimeDB.Reducer]
+public static void RunMyTimerPrivate(ReducerContext ctx, MyTimer timer)
+{
+    // Do stuff...
+}
+
+[SpacetimeDB.Reducer]
+public static void RunMyTimer(ReducerContext ctx, MyTimer timer)
+{
+    RunMyTimerPrivate(ctx, timer);
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -687,7 +990,12 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+```csharp
+// 1.0
+DbConnection.Builder()
+    .WithLightMode(true)
+    // ...
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -712,7 +1020,14 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+```csharp
+// 2.0
+DbConnection.Builder()
+    .WithUri(uri)
+    .WithDatabaseName(name)
+    // no WithLightMode needed
+    .Build();
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -743,7 +1058,7 @@ TODO
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-TODO
+This migration item does not apply to C#. Before recent SpacetimeDB changes, C# had no public `CallReducerFlags` or `set_reducer_flags` equivalent.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
