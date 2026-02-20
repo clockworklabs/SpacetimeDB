@@ -18,6 +18,9 @@ default = ["rand"]
 rand = ["rand08"]
 rand08 = ["dep:rand08", "dep:getrandom02"]
 unstable = ["spacetimedb-bindings-sys/unstable"]
+## Internal-only feature for opting out of case conversion.
+## Used by the controldb module. Not part of the public API.
+__internal_no_case_conversion = []
 
 [dependencies]
 spacetimedb-bindings-sys.workspace = true
