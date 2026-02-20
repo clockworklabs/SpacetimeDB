@@ -1,7 +1,7 @@
 namespace SpacetimeDB.Internal;
 
-using SpacetimeDB.BSATN;
 using System.Buffers;
+using SpacetimeDB.BSATN;
 
 internal abstract class RawTableIterBase<T>
     where T : IStructuralReadWrite, new()
@@ -91,7 +91,13 @@ internal abstract class RawTableIterBase<T>
     {
         foreach (var chunk in this)
         {
-            using var stream = new MemoryStream(chunk.Array!, chunk.Offset, chunk.Count, writable: false, publiclyVisible: true);
+            using var stream = new MemoryStream(
+                chunk.Array!,
+                chunk.Offset,
+                chunk.Count,
+                writable: false,
+                publiclyVisible: true
+            );
             using var reader = new BinaryReader(stream);
             while (stream.Position < stream.Length)
             {
