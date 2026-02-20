@@ -2,7 +2,7 @@ use crate::eval::defaults::{
     default_schema_parity_scorers,
     make_reducer_sql_count_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
 use std::time::Duration;
 pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
@@ -18,6 +18,9 @@ pub fn spec() -> BenchmarkSpec {
         let x = ident("x", sb.case);
         let y = ident("y", sb.case);
 
+        let position_table = table_name("position", lang);
+        let next_position_table = table_name("next_position", lang);
+
         let base = |reducer: &str| ReducerSqlCountConfig {
             src_file: file!(),
             route_tag,
@@ -30,23 +33,22 @@ pub fn spec() -> BenchmarkSpec {
         };
 
         v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
-            sql_count_query: "SELECT COUNT(*) AS n FROM positions".into(),
+            sql_count_query: format!("SELECT COUNT(*) AS n FROM {position_table}"),
             expected_count: 2,
-            id_str: "ecs_seed_positions_count",
+            id_str: "ecs_seed_position_count",
             ..base(&seed) // or base("seed") if it's a &str
         }));
 
         v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
-            sql_count_query: "SELECT COUNT(*) AS n FROM next_positions".into(),
+            sql_count_query: format!("SELECT COUNT(*) AS n FROM {next_position_table}"),
             expected_count: 2,
-            id_str: "ecs_step_next_positions_count",
+            id_str: "ecs_step_next_position_count",
             ..base(&step) // or base("step")
         }));
 
         v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
             sql_count_query: format!(
-                "SELECT COUNT(*) AS n FROM next_positions WHERE {eid}=1 AND {x}=1 AND {y}=0",
-                eid = entity_id, x = x, y = y
+                "SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=1 AND {x}=1 AND {y}=0",
             ),
             expected_count: 1,
             id_str: "ecs_next_pos_entity1",
@@ -55,8 +57,7 @@ pub fn spec() -> BenchmarkSpec {
 
         v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
             sql_count_query: format!(
-                "SELECT COUNT(*) AS n FROM next_positions WHERE {eid}=2 AND {x}=8 AND {y}=3",
-                eid = entity_id, x = x, y = y
+                "SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=2 AND {x}=8 AND {y}=3",
             ),
             expected_count: 1,
             id_str: "ecs_next_pos_entity2",
