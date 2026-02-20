@@ -299,14 +299,14 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
     foreach (var data in conn.Db.ExampleData.Iter())
     {
         Debug.Assert(
-            conn.Db.ExampleData.ExampleDataIndexedIdxBtree.Filter(data.Id).Contains(data)
+            conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data)
         );
     }
     var outOfIndex = conn.Db.ExampleData.Iter().ToHashSet();
 
     for (uint i = 0; i < MAX_ID; i++)
     {
-        foreach (var data in conn.Db.ExampleData.ExampleDataIndexedIdxBtree.Filter(i))
+        foreach (var data in conn.Db.ExampleData.Indexed.Filter(i))
         {
             Debug.Assert(outOfIndex.Contains(data));
         }

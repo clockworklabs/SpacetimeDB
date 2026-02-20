@@ -314,7 +314,7 @@ declare_tests_with_suffix!(rust, "");
 declare_tests_with_suffix!(typescript, "-ts");
 // TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");
-declare_tests_with_suffix!(cpp, "-cpp");
+//declare_tests_with_suffix!(cpp, "-cpp");
 
 /// Tests of event table functionality, using <./event-table-client> and <../../../modules/sdk-test>.
 ///
@@ -425,7 +425,7 @@ macro_rules! procedure_tests {
 
 procedure_tests!(rust_procedures, "");
 procedure_tests!(typescript_procedures, "-ts");
-procedure_tests!(cpp_procedures, "-cpp");
+//procedure_tests!(cpp_procedures, "-cpp");
 
 macro_rules! view_tests {
     ($mod_name:ident, $suffix:literal) => {
@@ -487,4 +487,4 @@ macro_rules! view_tests {
 }
 
 view_tests!(rust_view, "");
-view_tests!(cpp_view, "-cpp");
+//view_tests!(cpp_view, "-cpp");

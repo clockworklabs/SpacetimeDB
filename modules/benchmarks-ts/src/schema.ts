@@ -79,28 +79,26 @@ export const btree_each_column_u32_u64_u64_tRow = t.row({
   y: t.u64().index('btree'),
 });
 
-const unique_0_u32_u64_str = table(
-  { name: 'unique_0_u32_u64_str' },
+const unique_0_u32_u64_str = table({},
   unique_0_u32_u64_str_tRow
 );
-const no_index_u32_u64_str = table(
-  { name: 'no_index_u32_u64_str' },
+const no_index_u32_u64_str = table({},
   no_index_u32_u64_str_tRow
 );
 const btree_each_column_u32_u64_str = table(
-  { name: 'btree_each_column_u32_u64_str' },
+  {},
   btree_each_column_u32_u64_str_tRow
 );
 const unique_0_u32_u64_u64 = table(
-  { name: 'unique_0_u32_u64_u64' },
+  {},
   unique_0_u32_u64_u64_tRow
 );
 const no_index_u32_u64_u64 = table(
-  { name: 'no_index_u32_u64_u64' },
+  { },
   no_index_u32_u64_u64_tRow
 );
 const btree_each_column_u32_u64_u64 = table(
-  { name: 'btree_each_column_u32_u64_u64' },
+  {},
   btree_each_column_u32_u64_u64_tRow
 );
 

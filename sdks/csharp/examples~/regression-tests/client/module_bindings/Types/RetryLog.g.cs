@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class RetryLog
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public uint Id;
-        [DataMember(Name = "Attempts")]
+        [DataMember(Name = "attempts")]
         public uint Attempts;
 
         public RetryLog(

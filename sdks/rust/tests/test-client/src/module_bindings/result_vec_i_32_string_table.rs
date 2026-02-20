@@ -5,7 +5,7 @@
 use super::result_vec_i_32_string_type::ResultVecI32String;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `result_vec_i32_string`.
+/// Table handle for the table `result_vec_i_32_string`.
 ///
 /// Obtain a handle from the [`ResultVecI32StringTableAccess::result_vec_i_32_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.result_vec_i_32_string()`.
@@ -19,19 +19,19 @@ pub struct ResultVecI32StringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `result_vec_i32_string`.
+/// Extension trait for access to the table `result_vec_i_32_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait ResultVecI32StringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`ResultVecI32StringTableHandle`], which mediates access to the table `result_vec_i32_string`.
+    /// Obtain a [`ResultVecI32StringTableHandle`], which mediates access to the table `result_vec_i_32_string`.
     fn result_vec_i_32_string(&self) -> ResultVecI32StringTableHandle<'_>;
 }
 
 impl ResultVecI32StringTableAccess for super::RemoteTables {
     fn result_vec_i_32_string(&self) -> ResultVecI32StringTableHandle<'_> {
         ResultVecI32StringTableHandle {
-            imp: self.imp.get_table::<ResultVecI32String>("result_vec_i32_string"),
+            imp: self.imp.get_table::<ResultVecI32String>("result_vec_i_32_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for ResultVecI32StringTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<ResultVecI32String>("result_vec_i32_string");
+    let _table = client_cache.get_or_make_table::<ResultVecI32String>("result_vec_i_32_string");
 }
 
 #[doc(hidden)]
@@ -98,14 +98,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `ResultVecI32String`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait result_vec_i32_stringQueryTableAccess {
+pub trait result_vec_i_32_stringQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ResultVecI32String`.
-    fn result_vec_i32_string(&self) -> __sdk::__query_builder::Table<ResultVecI32String>;
+    fn result_vec_i_32_string(&self) -> __sdk::__query_builder::Table<ResultVecI32String>;
 }
 
-impl result_vec_i32_stringQueryTableAccess for __sdk::QueryTableAccessor {
-    fn result_vec_i32_string(&self) -> __sdk::__query_builder::Table<ResultVecI32String> {
-        __sdk::__query_builder::Table::new("result_vec_i32_string")
+impl result_vec_i_32_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_vec_i_32_string(&self) -> __sdk::__query_builder::Table<ResultVecI32String> {
+        __sdk::__query_builder::Table::new("result_vec_i_32_string")
     }
 }

@@ -23,11 +23,11 @@ impl __sdk::InModule for DeleteFromBtreeU32Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `delete_from_btree_u32`.
+/// Extension trait for access to the reducer `delete_from_btree_u_32`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait delete_from_btree_u_32 {
-    /// Request that the remote module invoke the reducer `delete_from_btree_u32` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `delete_from_btree_u_32` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -37,7 +37,7 @@ pub trait delete_from_btree_u_32 {
         self.delete_from_btree_u_32_then(rows, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `delete_from_btree_u32` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `delete_from_btree_u_32` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
