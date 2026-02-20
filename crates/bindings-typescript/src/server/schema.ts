@@ -1,5 +1,5 @@
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
-import { Lifecycle } from '../lib/autogen/types';
+import { CaseConversionPolicy, Lifecycle } from '../lib/autogen/types';
 import {
   type ParamsAsObject,
   type ParamsObj,
@@ -525,10 +525,34 @@ export type InferSchema<SchemaDef extends Schema<any>> =
  * });
  * ```
  */
+/**
+ * Module-level settings that can be passed to `schema()`.
+ */
+export interface ModuleSettings {
+  /**
+   * The case conversion policy for this module.
+   * Defaults to `SnakeCase` if not specified.
+   *
+   * @example
+   * ```ts
+   * export default schema({
+   *   player,
+   * }, { CASE_CONVERSION_POLICY: CaseConversionPolicy.None });
+   * ```
+   */
+  CASE_CONVERSION_POLICY?: CaseConversionPolicy;
+}
+
 export function schema<const H extends Record<string, UntypedTableSchema>>(
-  tables: H
+  tables: H,
+  moduleSettings?: ModuleSettings
 ): Schema<TablesToSchema<H>> {
   const ctx = new SchemaInner<TablesToSchema<H>>(ctx => {
+    // Apply module settings.
+    if (moduleSettings?.CASE_CONVERSION_POLICY != null) {
+      ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
+    }
+
     const tableSchemas: Record<string, UntypedTableDef> = {};
     for (const [accName, table] of Object.entries(tables)) {
       const tableDef = table.tableDef(ctx, accName);
