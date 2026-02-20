@@ -21,7 +21,7 @@ partial class RawModuleDefV10
     private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
         new(StringComparer.Ordinal);
 
-    private CaseConversionPolicy? caseConversionPolicy = null;
+    private SpacetimeDB.CaseConversionPolicy? caseConversionPolicy = null;
     private readonly List<ExplicitNameEntry> explicitNames = [];
 
     // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
@@ -89,7 +89,7 @@ partial class RawModuleDefV10
         defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
     }
 
-    internal void SetCaseConversionPolicy(CaseConversionPolicy policy) =>
+    internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
         caseConversionPolicy = policy;
 
     internal void RegisterExplicitTableName(string sourceName, string canonicalName) =>
@@ -332,7 +332,7 @@ public static class Module
     public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
         moduleDef.RegisterTableDefaultValue(table, colId, value);
 
-    public static void SetCaseConversionPolicy(CaseConversionPolicy policy) =>
+    public static void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
         moduleDef.SetCaseConversionPolicy(policy);
 
     public static void RegisterExplicitTableName(string sourceName, string canonicalName) =>
