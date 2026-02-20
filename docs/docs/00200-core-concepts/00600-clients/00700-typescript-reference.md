@@ -619,7 +619,7 @@ type Event<Reducer> =
   | { tag: 'SubscribeApplied' }
   | { tag: 'UnsubscribeApplied' }
   | { tag: 'Error'; value: Error }
-  | { tag: 'UnknownTransaction' };
+  | { tag: 'Transaction' };
 ```
 
 | Name                                                        | Description                                                                                                                             |
@@ -628,7 +628,7 @@ type Event<Reducer> =
 | [`SubscribeApplied` variant](#variant-subscribeapplied)     | A new subscription was applied to the client cache.                                                                                     |
 | [`UnsubscribeApplied` variant](#variant-unsubscribeapplied) | A previous subscription was removed from the client cache after a call to [`unsubscribe`](#method-unsubscribe).                         |
 | [`Error` variant](#variant-error)                           | A previous subscription was removed from the client cache due to an error.                                                              |
-| [`UnknownTransaction` variant](#variant-unknowntransaction) | A transaction ran in the remote database, but was not attributed to a known reducer.                                                    |
+| [`Transaction` variant](#variant-transaction)        | A transaction ran in the remote database, but was not attributed to a known reducer.                                                    |
 | [`ReducerEvent` type](#type-reducerevent)                   | Metadata about a reducer run. Contained in [`Event::Reducer`](#variant-reducer) and [`ReducerEventContext`](#type-reducereventcontext). |
 | [`UpdateStatus` type](#type-updatestatus)                   | Completion status of a reducer run.                                                                                                     |
 | [`Reducer` type](#type-reducer)                             | Module-specific generated enum with a variant for each reducer defined by the module.                                                   |
@@ -683,11 +683,11 @@ Event when a subscription ends unexpectedly due to an error.
 
 This event is passed to [row `onDelete` callbacks](#callback-ondelete) resulting from the subscription ending.
 
-#### Variant `UnknownTransaction`
+#### Variant `Transaction`
 
 ```typescript
 {
-  tag: 'UnknownTransaction';
+  tag: 'Transaction';
 }
 ```
 

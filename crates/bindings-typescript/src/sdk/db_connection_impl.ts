@@ -740,7 +740,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       case 'TransactionUpdate': {
         const event: Event<never> = {
           id: this.#nextEventId(),
-          tag: 'UnknownTransaction',
+          tag: 'Transaction',
         };
         const eventContext = this.#makeEventContext(event);
         const callbacks = this.#applyTransactionUpdates(
@@ -777,7 +777,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
               }
             : {
                 id: eventId,
-                tag: 'UnknownTransaction',
+                tag: 'Transaction',
               };
           const eventContext = this.#makeEventContext(event as any);
 
