@@ -1044,7 +1044,7 @@ DbConnection.Builder()
 // 2.0
 DbConnection::builder()
     .with_uri(uri)
-    .with_module_name(name)
+    .with_database_name(name)
     // no with_light_mode needed
     .build()
 ```
