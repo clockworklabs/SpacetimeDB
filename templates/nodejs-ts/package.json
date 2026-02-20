@@ -4,9 +4,10 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
-    "build": "tsc",
+    "dev": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm --watch",
+    "start": "node dist/main.js",
+    "build": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm",
+    "typecheck": "tsc --noEmit",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
   },
   "dependencies": {
@@ -14,7 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "tsx": "^4.19.0",
+    "esbuild": "^0.24.0",
     "typescript": "~5.6.2",
     "undici": "^6.19.2"
   }
