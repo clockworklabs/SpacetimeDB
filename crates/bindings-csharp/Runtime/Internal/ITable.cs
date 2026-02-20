@@ -1,14 +1,16 @@
 namespace SpacetimeDB.Internal;
 
 using SpacetimeDB.BSATN;
+using System.Buffers;
 
 internal abstract class RawTableIterBase<T>
     where T : IStructuralReadWrite, new()
 {
     public sealed class Enumerator(FFI.RowIter handle) : IDisposable
     {
-        byte[] buffer = new byte[0x20_000];
-        public byte[] Current { get; private set; } = [];
+        private const int InitialBufferSize = 1024;
+        private byte[] buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+        public ArraySegment<byte> Current { get; private set; } = ArraySegment<byte>.Empty;
 
         public bool MoveNext()
         {
@@ -38,11 +40,10 @@ internal abstract class RawTableIterBase<T>
                 {
                     // Iterator advanced and may also be `EXHAUSTED`.
                     // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
-                    // In both cases, copy over the row data to `Current` from the scratch `buffer`.
+                    // In both cases, update `Current` to point at the valid range in the scratch `buffer`.
                     case Errno.EXHAUSTED
                     or Errno.OK:
-                        Current = new byte[buffer_len];
-                        Array.Copy(buffer, 0, Current, 0, buffer_len);
+                        Current = new ArraySegment<byte>(buffer, 0, (int)buffer_len);
                         return buffer_len != 0;
                     // Couldn't find the iterator, error!
                     case Errno.NO_SUCH_ITER:
@@ -51,7 +52,8 @@ internal abstract class RawTableIterBase<T>
                     // Grow `buffer` and try again.
                     // The `buffer_len` will have been updated with the necessary size.
                     case Errno.BUFFER_TOO_SMALL:
-                        buffer = new byte[buffer_len];
+                        ArrayPool<byte>.Shared.Return(buffer);
+                        buffer = ArrayPool<byte>.Shared.Rent((int)buffer_len);
                         continue;
                     default:
                         throw new UnknownException(ret);
@@ -66,6 +68,8 @@ internal abstract class RawTableIterBase<T>
                 FFI.row_iter_bsatn_close(handle);
                 handle = FFI.RowIter.INVALID;
             }
+
+            ArrayPool<byte>.Shared.Return(buffer);
         }
 
         public void Reset()
@@ -87,7 +91,7 @@ internal abstract class RawTableIterBase<T>
     {
         foreach (var chunk in this)
         {
-            using var stream = new MemoryStream(chunk);
+            using var stream = new MemoryStream(chunk.Array!, chunk.Offset, chunk.Count, writable: false, publiclyVisible: true);
             using var reader = new BinaryReader(stream);
             while (stream.Position < stream.Length)
             {
