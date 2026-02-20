@@ -40,7 +40,7 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
 
     let base = base_for_mode(mode)?;
     let files = if mode == "cursor_rules" {
-        gather_cursor_rules_files(base.join(".cursor/rules"), lang)?
+        gather_cursor_rules_files(base.join("static/ai-rules"), lang)?
     } else {
         resolve_mode_paths(mode)?
     };

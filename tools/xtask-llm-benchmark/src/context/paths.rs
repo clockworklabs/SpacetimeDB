@@ -16,8 +16,8 @@ const PINNED_NIGHTLY: &str = "nightly-2026-01-15";
 pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
-        "llms.md" => Ok(vec![docs_dir().join("llms.md")]),
-        "cursor_rules" => gather_cursor_rules_files(docs_dir().join(".cursor/rules"), None),
+        "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
         "none" => Ok(Vec::new()),
         other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none)"),
@@ -63,8 +63,8 @@ pub fn gather_cursor_rules_files(rules_dir: PathBuf, lang: Option<Lang>) -> Resu
 pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
-        "llms.md" => Ok(vec![docs_dir().join("llms.md")]),
-        "cursor_rules" => gather_cursor_rules_files(docs_dir().join(".cursor/rules"), None),
+        "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
         "none" => Ok(Vec::new()),
         "rustdoc_json" => {
             if let Some(p) = rustdoc_readme_path() {
